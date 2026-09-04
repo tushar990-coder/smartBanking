@@ -202,7 +202,7 @@ export default function AadhaarCardYadiReport() {
               <CreditCard size={14} className="stroke-[2.5]" />
             </div>
             <h1 className="text-xs font-bold text-gray-900 tracking-tight flex items-center gap-1">
-              <span>आधार कार्ड यादीasdasd</span>
+              <span>आधार कार्ड यादी</span>
               <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Aadhaar Card List)</span>
             </h1>
           </div>

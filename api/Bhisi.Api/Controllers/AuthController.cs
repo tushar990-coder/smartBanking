@@ -29,53 +29,33 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
-                // Auto-recovery for system admin
-                if (request.Username == "admin" && (request.Password == "Shri@2026" || request.Password == "admin123" || request.Password == "admin"))
-                {
-                    try
-                    {
-                        await _context.Database.ExecuteSqlRawAsync("UPDATE Users SET IsLocked = 0, IsActive = 1, FailedLoginAttempts = 0 WHERE Username = 'admin'");
-                    }
-                    catch { }
-                }
-
                 var user = await _context.Users
                     .Include(u => u.Role)
                     .Include(u => u.DefaultBranch)
                     .FirstOrDefaultAsync(u => u.Username == request.Username);
 
-                if (request.Username == "admin" && (request.Password == "Shri@2026" || request.Password == "admin123" || request.Password == "admin"))
+                // Auto-create initial admin if database has no admin account yet
+                if (user == null && request.Username == "admin" && request.Password == "Shri@2026")
                 {
-                    if (user == null)
+                    var adminRole = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Admin")
+                                    ?? new Role { RoleName = "Admin", Description = "System Administrator" };
+                    if (adminRole.RoleID == 0)
                     {
-                        var adminRole = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Admin")
-                                        ?? new Role { RoleName = "Admin", Description = "System Administrator" };
-                        if (adminRole.RoleID == 0)
-                        {
-                            _context.Roles.Add(adminRole);
-                            await _context.SaveChangesAsync();
-                        }
+                        _context.Roles.Add(adminRole);
+                        await _context.SaveChangesAsync();
+                    }
 
-                        user = new User
-                        {
-                            Username = "admin",
-                            PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123"),
-                            RoleID = adminRole.RoleID,
-                            IsActive = true,
-                            IsLocked = false,
-                            FailedLoginAttempts = 0
-                        };
-                        _context.Users.Add(user);
-                        await _context.SaveChangesAsync();
-                    }
-                    else
+                    user = new User
                     {
-                        user.IsLocked = false;
-                        user.IsActive = true;
-                        user.FailedLoginAttempts = 0;
-                        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-                        await _context.SaveChangesAsync();
-                    }
+                        Username = "admin",
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword("Shri@2026"),
+                        RoleID = adminRole.RoleID,
+                        IsActive = true,
+                        IsLocked = false,
+                        FailedLoginAttempts = 0
+                    };
+                    _context.Users.Add(user);
+                    await _context.SaveChangesAsync();
 
                     if (user.Role == null && user.RoleID > 0)
                     {

@@ -58,6 +58,7 @@ namespace Bhisi.Api.Services
         {
             string currentVersion = DefaultCurrentVersion;
             string buildDate = string.Empty;
+            List<string> changelog = new();
 
             // 1. Try reading local version.json
             string versionFile = Path.Combine(GetAppRoot(), "version.json");
@@ -74,6 +75,14 @@ namespace Bhisi.Api.Services
                     if (doc.RootElement.TryGetProperty("releaseDate", out var dProp))
                     {
                         buildDate = dProp.GetString() ?? string.Empty;
+                    }
+                    if (doc.RootElement.TryGetProperty("changelog", out var cProp) && cProp.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in cProp.EnumerateArray())
+                        {
+                            var str = item.GetString();
+                            if (!string.IsNullOrWhiteSpace(str)) changelog.Add(str);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -116,6 +125,7 @@ namespace Bhisi.Api.Services
                 DatabaseName = dbName,
                 LastUpdatedOn = latestEntry?.AppliedOn,
                 LastAppliedPatch = latestEntry?.PatchName ?? "Initial Setup",
+                Changelog = changelog,
                 History = history
             };
         }

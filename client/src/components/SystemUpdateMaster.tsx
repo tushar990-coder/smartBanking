@@ -25,6 +25,7 @@ interface VersionInfo {
   databaseName: string;
   lastUpdatedOn?: string | null;
   lastAppliedPatch?: string;
+  changelog?: string[];
   history: HistoryEntry[];
 }
 
@@ -308,6 +309,29 @@ export default function SystemUpdateMaster() {
         </div>
 
       </div>
+
+      {/* Current Version What's New Changelog Banner */}
+      {versionInfo?.changelog && versionInfo.changelog.length > 0 && (
+        <div className="bg-gradient-to-r from-emerald-50/90 via-teal-50/70 to-blue-50/90 border border-emerald-200/90 rounded-lg p-4 shadow-2xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="flex h-2.5 w-2.5 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600"></span>
+            </span>
+            <h3 className="text-xs font-black text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
+              <span>✨</span>
+              <span>सध्याच्या आवृत्तीतील (v{versionInfo.currentVersion}) प्रमुख वैशिष्ट्ये व सुधारणा (What's New in this Version):</span>
+            </h3>
+          </div>
+          <ul className="space-y-1.5 text-xs pl-4 list-disc font-medium">
+            {versionInfo.changelog.map((c, i) => (
+              <li key={i} className="leading-relaxed font-semibold text-slate-800">
+                {c}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Main Tabs Navigation */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">

@@ -13,6 +13,7 @@ namespace Bhisi.Api.Services
         public string DatabaseName { get; set; } = string.Empty;
         public DateTime? LastUpdatedOn { get; set; }
         public string LastAppliedPatch { get; set; } = string.Empty;
+        public List<string> Changelog { get; set; } = new();
         public List<SystemVersionHistory> History { get; set; } = new();
     }
 

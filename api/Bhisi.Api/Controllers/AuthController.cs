@@ -30,7 +30,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 // Auto-recovery for system admin
-                if (request.Username == "admin" && (request.Password == "admin123" || request.Password == "admin"))
+                if (request.Username == "admin" && (request.Password == "Shri@2026" || request.Password == "admin123" || request.Password == "admin"))
                 {
                     try
                     {
@@ -44,7 +44,7 @@ namespace Bhisi.Api.Controllers
                     .Include(u => u.DefaultBranch)
                     .FirstOrDefaultAsync(u => u.Username == request.Username);
 
-                if (request.Username == "admin" && (request.Password == "admin123" || request.Password == "admin"))
+                if (request.Username == "admin" && (request.Password == "Shri@2026" || request.Password == "admin123" || request.Password == "admin"))
                 {
                     if (user == null)
                     {

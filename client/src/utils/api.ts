@@ -75,6 +75,13 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      // Force instant logout across application
+      localStorage.removeItem('bhisi_user');
+      localStorage.removeItem('globalBranchId');
+      sessionStorage.removeItem('just_logged_in');
+      window.dispatchEvent(new CustomEvent('auth-unauthorized'));
+    }
     if (error.response?.status === 423) {
       // License Locked / Expired / Mismatch
       window.dispatchEvent(new CustomEvent('license-locked', { detail: error.response.data }));

@@ -23,7 +23,7 @@ namespace AuditRunner
             Console.WriteLine("================================================================================\n");
 
             // 1. Generate valid Admin JWT Token
-            var keyStr = "BhisiSoftware-VerySecure-SuperSecret-Key-256Bit-MinLength32Chars!";
+            var keyStr = "BhisiSoftware-SecureMasterKey-2026-ShriUpdated-MinLength32Chars!";
             var tokenHandler = new JwtSecurityTokenHandler();
             var key = Encoding.ASCII.GetBytes(keyStr);
             var tokenDescriptor = new SecurityTokenDescriptor

@@ -190,7 +190,15 @@ namespace Bhisi.Api.Controllers
                         CreatedBy = c.CreatedBy,
                         CreatedOn = c.CreatedOn,
                         UpdatedBy = c.UpdatedBy,
-                        UpdatedOn = c.UpdatedOn
+                        UpdatedOn = c.UpdatedOn,
+                        MemberProfile = c.MemberProfile != null ? new Member
+                        {
+                            MemberID = c.MemberProfile.MemberID,
+                            MemberCode = c.MemberProfile.MemberCode,
+                            LegacyMemberNo = c.MemberProfile.LegacyMemberNo,
+                            OldMemberCode = c.MemberProfile.OldMemberCode,
+                            MembershipType = c.MemberProfile.MembershipType
+                        } : null
                     })
                     .ToListAsync();
 

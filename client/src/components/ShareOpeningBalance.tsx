@@ -500,27 +500,30 @@ const ShareOpeningBalance: React.FC = () => {
     const itemDesc = isCertificate ? "हे शेअर प्रमाणपत्र / नोंद" : "ही संपूर्ण शेअर ओपनिंग नोंद";
     if (!window.confirm(`तुम्हाला नक्की ${itemDesc} डिलीट करायची आहे का? (Are you sure you want to delete this record?)`)) return;
     try {
+      setLoading(true);
       const url = isCertificate ? `/api/ShareAccounts/OpeningBalance/Certificate/${targetId}` : `/api/ShareAccounts/OpeningBalance/${targetId}`;
       const res = await fetch(url, { 
         method: 'DELETE',
         headers: getAuthHeaders()
       });
+      const data = await res.json();
       if (res.ok) {
-        setMessage('नोंद यशस्वीरित्या डिलीट केली आणि शिल्लक रीकन्साइल झाली!');
+        setMessage(data.message || 'नोंद यशस्वीरित्या डिलीट केली आणि सभासद कोड पूर्ववत रोलबॅक केला!');
         setMessageType('success');
         if (isEditMode && (editAccountId === targetId || editCertificateId === targetId)) {
           resetForm();
         }
-        fetchBalances();
-        fetchMembers();
-        fetchNextMemberCode();
-        fetchNextShareConfig();
+        await fetchBalances();
+        await fetchMembers();
+        await fetchNextMemberCode();
+        await fetchNextShareConfig();
       } else {
-        const data = await res.json();
         alert(data.message || 'त्रुटी (Error deleting).');
       }
     } catch (error) {
       alert('नेटवर्क त्रुटी (Network error).');
+    } finally {
+      setLoading(false);
     }
   };
 

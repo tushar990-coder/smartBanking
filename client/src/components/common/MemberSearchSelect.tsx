@@ -40,9 +40,13 @@ export default function MemberSearchSelect({
   const options = React.useMemo(() => {
     if (!Array.isArray(members)) return [];
     return members.map((m: any) => {
-      const mId = Number(m.memberID || m.memberId || m.MemberID || m.customerID || m.customerId || m.CustomerID || m.id || 0);
-      const code = (m.memberCode || m.code || m.MemberCode || '').trim();
-      const legacyNo = (m.legacyMemberNo || m.oldMemberCode || m.oldMemberNo || m.LegacyMemberNo || m.legacyCustomerNo || m.LegacyCustomerNo || '').trim();
+      const rawMemProfile = m.memberProfile || m.MemberProfile;
+      const memId = Number(rawMemProfile?.memberID || rawMemProfile?.MemberID || m.memberID || m.memberId || m.MemberID || 0);
+      const custId = Number(m.customerID || m.customerId || m.CustomerID || m.id || 0) || (memId > 0 ? memId : 0);
+      const primaryValueId = Number(m.memberID || m.memberId || m.MemberID || m.customerID || m.customerId || m.CustomerID || m.id || 0);
+
+      const code = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.code || m.MemberCode || '').trim();
+      const legacyNo = (rawMemProfile?.legacyMemberNo || rawMemProfile?.LegacyMemberNo || m.legacyMemberNo || m.oldMemberCode || m.oldMemberNo || m.LegacyMemberNo || m.legacyCustomerNo || m.LegacyCustomerNo || '').trim();
       const cif = (m.cifNo || m.cif || m.CifNo || m.CIFNo || '').trim();
       const mobile = (m.mobileNo || m.mobile || m.MobileNo || m.mobileNumber || '').trim();
       const aadhaar = (m.aadhaarNo || m.aadhaar || m.AadhaarNo || '').trim();
@@ -57,23 +61,30 @@ export default function MemberSearchSelect({
         fullName = [fName, mName, lName].filter(Boolean).join(' ').trim();
       }
       if (!fullName) {
-        fullName = `सभासद / खातेदार #${mId}`;
+        fullName = `सभासद / खातेदार #${primaryValueId}`;
       }
 
-      let codeDisplay = code && !code.startsWith('TEMP') ? code : (cif || `ID:${mId}`);
+      const hasAllottedCode = Boolean(code && !code.startsWith('TEMP'));
+      const hasMemberId = Boolean(memId > 0 && hasAllottedCode);
+
+      let codeDisplay = hasAllottedCode ? code : (cif || `ID:${primaryValueId}`);
+      if (hasMemberId && memId > 0) {
+        codeDisplay += ` (सभासद ID: #${memId})`;
+      }
       if (legacyNo) {
-        codeDisplay += ` (जुना:${legacyNo})`;
+        codeDisplay += ` [जुना:${legacyNo}]`;
       }
 
       const label = `[${codeDisplay}] ${fullName}${nick ? ` (${nick})` : ''}${mobile ? ` - ${mobile}` : ''}`;
 
       return {
-        value: mId,
+        value: primaryValueId,
         label: label,
         member: {
           ...m,
-          memberID: mId,
-          customerID: Number(m.customerID || m.customerId || m.CustomerID || mId),
+          memberID: primaryValueId,
+          memberIdOnly: memId,
+          customerID: custId,
           memberCode: code,
           legacyMemberNo: legacyNo,
           cifNo: cif,
@@ -115,6 +126,7 @@ export default function MemberSearchSelect({
       ${member.memberCode || ''}
       ${member.legacyMemberNo || ''}
       ${member.memberID || ''}
+      ${member.memberIdOnly || ''}
       ${member.customerID || ''}
     `.toLowerCase();
     
@@ -125,6 +137,7 @@ export default function MemberSearchSelect({
     if (cleanInput) {
       if (codeNum && (codeNum.includes(cleanInput) || parseInt(codeNum) === parseInt(cleanInput))) return true;
       if (cifNum && (cifNum.includes(cleanInput) || parseInt(cifNum) === parseInt(cleanInput))) return true;
+      if (member.memberIdOnly && member.memberIdOnly.toString().includes(cleanInput)) return true;
       if (member.memberID && member.memberID.toString().includes(cleanInput)) return true;
       if (member.customerID && member.customerID.toString().includes(cleanInput)) return true;
     }
@@ -135,19 +148,27 @@ export default function MemberSearchSelect({
   const formatOptionLabel = (data: any, { context }: any) => {
     const m = data.member;
     const fullName = m.fullName || `${m.firstName || ''} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName || ''}`.trim() || `सभासद #${m.memberID}`;
-    const code = m.memberCode && !m.memberCode.startsWith('TEMP') ? m.memberCode : (m.cifNo || `ID:${m.memberID}`);
+    const isMemberAllotted = Boolean(m.memberCode && !m.memberCode.startsWith('TEMP'));
+    const code = isMemberAllotted ? m.memberCode : (m.cifNo || `Cust#${m.customerID}`);
 
     if (context === 'value') {
       return (
         <div className="flex items-center gap-1.5 overflow-hidden text-[11px] py-0.5 w-full">
-          <span className="text-[10px] text-emerald-900 font-mono font-black shrink-0 bg-emerald-100 border border-emerald-300 px-1 py-0.2 rounded">
+          <span className={`text-[10px] font-mono font-black shrink-0 px-1 py-0.2 rounded border ${
+            isMemberAllotted ? 'bg-emerald-100 text-emerald-950 border-emerald-300' : 'bg-sky-100 text-sky-950 border-sky-300'
+          }`}>
             {code}
           </span>
+          {m.memberIdOnly > 0 && isMemberAllotted && (
+            <span className="text-[9.5px] bg-indigo-100 text-indigo-950 border border-indigo-300 px-1 py-0.2 rounded font-mono font-black shrink-0">
+              सभासद ID: #{m.memberIdOnly}
+            </span>
+          )}
           <span className="font-black text-slate-900 truncate">
             {fullName}
           </span>
           {m.cifNo && m.cifNo !== code && (
-            <span className="text-[9.5px] text-sky-900 font-mono font-bold shrink-0 bg-sky-100 border border-sky-300 px-1 py-0.2 rounded hidden sm:inline">
+            <span className="text-[9.5px] text-sky-900 font-mono font-bold shrink-0 bg-sky-50 border border-sky-200 px-1 py-0.2 rounded hidden sm:inline">
               CIF: {m.cifNo}
             </span>
           )}
@@ -163,7 +184,9 @@ export default function MemberSearchSelect({
     return (
       <div className="flex items-center justify-between py-1 px-1 w-full gap-3 hover:bg-transparent">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.5 rounded font-mono font-black text-[10px] shrink-0">
+          <span className={`px-1.5 py-0.5 rounded font-mono font-black text-[10px] shrink-0 border ${
+            isMemberAllotted ? 'bg-emerald-100 text-emerald-950 border-emerald-300' : 'bg-sky-100 text-sky-950 border-sky-300'
+          }`}>
             {code}
           </span>
           <span className="font-black text-slate-900 text-xs leading-tight">
@@ -181,8 +204,17 @@ export default function MemberSearchSelect({
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0 text-[10px]">
-          <span className="bg-sky-100 text-sky-900 border border-sky-300 px-1.5 py-0.5 rounded font-bold font-mono">
-            Cust ID: #{m.memberID}
+          {m.memberIdOnly > 0 && isMemberAllotted ? (
+            <span className="bg-indigo-100 text-indigo-950 border border-indigo-300 px-1.5 py-0.5 rounded font-black font-mono">
+              सभासद ID: #{m.memberIdOnly}
+            </span>
+          ) : (
+            <span className="bg-purple-100 text-purple-900 border border-purple-300 px-1.5 py-0.5 rounded font-bold font-mono">
+              (नवीन सभासद)
+            </span>
+          )}
+          <span className="bg-sky-50 text-sky-900 border border-sky-200 px-1.5 py-0.5 rounded font-bold font-mono">
+            Cust ID: #{m.customerID}
           </span>
           {m.cifNo && m.cifNo.trim() !== '' && code !== m.cifNo && (
             <span className="bg-slate-100 text-slate-700 border border-slate-300 px-1.5 py-0.5 rounded font-mono text-[9.5px]">

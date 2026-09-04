@@ -1743,9 +1743,49 @@ namespace Bhisi.Api.Controllers
                 _context.ShareAccounts.Remove(account);
 
                 await _context.SaveChangesAsync();
+
+                // Rollback / Cleanup of Member record & MemberCode so next code/ID decrements by -1
+                int targetMemberId = account.MemberId;
+                var member = await _context.Members.FindAsync(targetMemberId);
+                if (member != null)
+                {
+                    var mobIdsToDelete = shareCapitalMobs.Select(m => m.MemberOpeningBalanceID)
+                        .Concat(divMobs.Select(d => d.MemberOpeningBalanceID))
+                        .ToList();
+
+                    bool hasOtherShares = await _context.ShareAccounts.AnyAsync(s => s.ShareAccountId != account.ShareAccountId && s.MemberId == targetMemberId);
+                    bool hasLoans = await _context.LoanAccounts.AnyAsync(l => l.MemberID == targetMemberId || l.CoMemberID == targetMemberId || l.CoMember2ID == targetMemberId || l.Guarantor1MemberID == targetMemberId || l.Guarantor2MemberID == targetMemberId);
+                    bool hasLoanApps = await _context.LoanApplications.AnyAsync(l => l.MemberID == targetMemberId || l.CoMemberID == targetMemberId || l.Guarantor1MemberID == targetMemberId || l.Guarantor2MemberID == targetMemberId);
+                    bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => s.MemberID == targetMemberId);
+                    bool hasFds = await _context.FdAccounts.AnyAsync(f => f.MemberID == targetMemberId);
+                    bool hasRds = await _context.RdAccounts.AnyAsync(r => r.MemberID == targetMemberId);
+                    bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => p.MemberID == targetMemberId);
+                    bool hasLockers = await _context.LockerAllotments.AnyAsync(l => l.MemberID == targetMemberId);
+                    bool hasJoint = await _context.JointMembers.AnyAsync(j => j.PrimaryMemberID == targetMemberId);
+                    bool hasCommittee = await _context.CommitteeMembers.AnyAsync(c => c.MemberID == targetMemberId);
+                    bool hasOtherMobs = await _context.MemberOpeningBalances.AnyAsync(m => m.MemberID == targetMemberId && !mobIdsToDelete.Contains(m.MemberOpeningBalanceID));
+
+                    if (!hasOtherShares && !hasLoans && !hasLoanApps && !hasSavings && !hasFds && !hasRds && !hasPigmies && !hasLockers && !hasJoint && !hasCommittee && !hasOtherMobs)
+                    {
+                        // Safe to completely remove the uncommitted member record, restoring customer to pure CIF
+                        _context.Members.Remove(member);
+                    }
+                    else if (!hasOtherShares)
+                    {
+                        // Has other accounts (e.g. saving), but no longer a shareholder. Free up the MemberCode sequence
+                        member.MemberCode = null;
+                        member.MembershipType = "Nominal";
+                        member.LegacyMemberNo = null;
+                        member.OldMemberCode = null;
+                        _context.Members.Update(member);
+                    }
+
+                    await _context.SaveChangesAsync();
+                }
+
                 await transaction.CommitAsync();
 
-                return Ok(new { message = "शेअर ओपनिंग बॅलन्स यशस्वीरित्या डिलीट केला! (Opening balance deleted successfully.)" });
+                return Ok(new { message = "शेअर ओपनिंग बॅलन्स यशस्वीरित्या डिलीट केला व सभासद कोड पूर्ववत रोलबॅक केला! (Opening balance deleted and member code rolled back successfully.)" });
             }
             catch (Exception ex)
             {

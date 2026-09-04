@@ -2524,16 +2524,12 @@ END
 GO
 
 -- -----------------------------------------------------------------------------------------
--- 98. AUTOMATIC CUSTOMER TO MEMBER SYNCHRONIZATION
--- Ensures all registered Customers (e.g., 322 to 666) have a matching Member entry for Share migration
+-- 98. AUTOMATIC CUSTOMER TO MEMBER SYNCHRONIZATION & NON-SHAREHOLDER MEMBERCODE REPAIR
+-- Ensures all registered Customers (e.g., 322 to 666) have a matching Member entry for Share migration.
+-- PURE CUSTOMERS HAVE NULL MemberCode UNTIL SHARES ARE ALLOTTED!
 -- -----------------------------------------------------------------------------------------
 IF OBJECT_ID('Customers', 'U') IS NOT NULL AND OBJECT_ID('Members', 'U') IS NOT NULL
 BEGIN
-    DECLARE @MaxExistingCodeNum INT = 0;
-    SELECT @MaxExistingCodeNum = ISNULL(MAX(CAST(SUBSTRING(MemberCode, 4, 10) AS INT)), 0)
-    FROM Members
-    WHERE MemberCode LIKE 'MEM%' AND ISNUMERIC(SUBSTRING(MemberCode, 4, 10)) = 1;
-
     ;WITH MissingCustList AS (
         SELECT 
             c.CustomerID,
@@ -2585,8 +2581,7 @@ BEGIN
             c.CreatedOn,
             c.UpdatedBy,
             c.UpdatedOn,
-            c.IsDeleted,
-            ROW_NUMBER() OVER (ORDER BY c.CustomerID) AS RowNum
+            c.IsDeleted
         FROM Customers c
         LEFT JOIN Members m ON c.CustomerID = m.CustomerID
         WHERE m.MemberID IS NULL
@@ -2603,7 +2598,7 @@ BEGIN
     )
     SELECT 
         BranchID, CustomerID, CIFNo,
-        'MEM' + RIGHT('0000' + CAST((@MaxExistingCodeNum + RowNum) AS VARCHAR(10)), 4),
+        NULL, -- Pure Customer has NO MemberCode until Shares are allotted!
         LegacyCustomerNo, LegacyCustomerNo,
         FirstName, MiddleName, LastName, NickName, FirstNameEng, MiddleNameEng, LastNameEng,
         Address, AddressEng, Village, Taluka, District, MobileNo, AadhaarNo, PANNo,
@@ -2611,13 +2606,28 @@ BEGIN
         PhotoPath, SignaturePath, AadhaarDocPath, PanDocPath,
         NomineeName, NomineeRelation, NomineeAddress, NomineeBirthDate, NomineeIsMinor, NomineeGuardianName,
         IsMinor, GuardianName, GuardianRelation, GuardianMobileNo, GuardianAadhaarNo, GuardianAddress, GuardianNameEng, NomineeNameEng,
-        EmployerId, 'Regular', ISNULL(CreatedOn, GETDATE()), Status, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, IsDeleted
+        EmployerId, 'Nominal', ISNULL(CreatedOn, GETDATE()), Status, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, IsDeleted
     FROM MissingCustList;
 
     IF @@ROWCOUNT > 0
     BEGIN
-        PRINT 'Automatically synchronized missing Customers into Members table.';
+        PRINT 'Automatically synchronized missing Customers into Members table with NULL MemberCode (Nominal).';
     END
+
+    -- CRITICAL REPAIR: Reset MemberCode to NULL and MembershipType to Nominal for any Member who has NO active Share Account!
+    UPDATE m
+    SET m.[MemberCode] = NULL,
+        m.[MembershipType] = 'Nominal'
+    FROM [Members] m
+    WHERE m.[MemberID] NOT IN (
+        SELECT DISTINCT sa.[MemberId] 
+        FROM [ShareAccounts] sa 
+        WHERE sa.[TotalShareCount] > 0 
+          AND sa.[IsDeleted] = 0
+    )
+    AND (m.[MemberCode] IS NOT NULL OR m.[MembershipType] = 'Regular');
+
+    PRINT 'Repaired Members: Cleared MemberCode for all non-shareholders.';
 END
 GO
 

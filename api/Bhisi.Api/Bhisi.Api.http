@@ -1,0 +1,6 @@
+@Bhisi.Api_HostAddress = http://localhost:5238
+
+GET {{Bhisi.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

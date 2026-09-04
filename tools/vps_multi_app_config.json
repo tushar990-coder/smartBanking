@@ -1,0 +1,35 @@
+{
+  "SqlServerInstance": ".",
+  "TakeDbBackup": true,
+  "BackupFolder": "D:\\Backups",
+  "Targets": [
+    {
+      "SansthaName": "Shree Bambawade Nagari Sahakari PatSanstha (Bambavade)",
+      "TargetDatabase": "SmartBanking_Bambawade",
+      "IISAppPoolName": "apibambavade",
+      "BackendFolderPath": "D:\\WebApps\\bambavade\\api.bambavade.hellomindspace.in",
+      "FrontendFolderPath": "D:\\WebApps\\bambavade\\bambavade.hellomindspace.in"
+    },
+    {
+      "SansthaName": "Shree Jotirling Nagari Sahakari PatSanstha (Padawalwadi)",
+      "TargetDatabase": "SmartBanking_JotirlingPdw",
+      "IISAppPoolName": "api.jotirlingpdw.hellomindspace.in",
+      "BackendFolderPath": "D:\\WebApps\\Jotirlingpdw\\api.jotirlingpdw.hellomindspace.in",
+      "FrontendFolderPath": "D:\\WebApps\\Jotirlingpdw\\jotirlingpdw.hellomindspace.in"
+    },
+    {
+      "SansthaName": "Testing Environment",
+      "TargetDatabase": "SmartBanking_Testing",
+      "IISAppPoolName": "apitesting",
+      "BackendFolderPath": "D:\\WebApps\\Testing\\api.testing.hellomindspace.in",
+      "FrontendFolderPath": "D:\\WebApps\\Testing\\testing.hellomindspace.in"
+    },
+    {
+      "SansthaName": "Shree Gurudev Nagari Sahakari PatSanstha (Gurudev)",
+      "TargetDatabase": "SmartBanking_Gurudev",
+      "IISAppPoolName": "apigurudev",
+      "BackendFolderPath": "D:\\WebApps\\Gurudev\\api.gurudev.hellomindspace.in",
+      "FrontendFolderPath": "D:\\WebApps\\Gurudev\\gurudev.hellomindspace.in"
+    }
+  ]
+}

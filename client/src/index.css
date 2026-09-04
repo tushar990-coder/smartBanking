@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #005689; 
+}
+
+:root[data-theme='blue'] {
+  --color-primary: #005689; /* Corporate Navy Blue */
+}
+
+:root[data-theme='green'] {
+  --color-primary: #0E8A5A; /* Emerald Green (Amla) */
+}
+
+:root[data-theme='wine-red'] {
+  --color-primary: #880E4F; /* Royal Wine Red / Burgundy */
+}
+
+
+
+/* Application Background Modes */
+:root[data-bg-theme='slate-soft'] body,
+:root[data-bg-theme='slate-soft'] main,
+:root[data-bg-theme='slate-soft'] .app-main-content {
+  background-color: #f1f5f9 !important;
+}
+
+:root[data-bg-theme='ice-blue'] body,
+:root[data-bg-theme='ice-blue'] main,
+:root[data-bg-theme='ice-blue'] .app-main-content {
+  background-color: #e6eff8 !important;
+}
+
+:root[data-bg-theme='cream-warm'] body,
+:root[data-bg-theme='cream-warm'] main,
+:root[data-bg-theme='cream-warm'] .app-main-content {
+  background-color: #f7f4ee !important;
+}
+
+:root[data-bg-theme='pure-white'] body,
+:root[data-bg-theme='pure-white'] main,
+:root[data-bg-theme='pure-white'] .app-main-content {
+  background-color: #ffffff !important;
+}
+
+:root[data-bg-theme='neutral-gray'] body,
+:root[data-bg-theme='neutral-gray'] main,
+:root[data-bg-theme='neutral-gray'] .app-main-content {
+  background-color: #e2e8f0 !important;
+}
+
+
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Chrome, Safari, Edge, Opera */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox & Standard */
+input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Custom Scrollbar for Dark Sidebar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #0a1120;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #005689;
+}
+
+/* Global Print Unlocking Rules for Multi-Page Pagination */
+@media print {
+  html, body, #root, #root > div, main, .app-main-content, .overflow-hidden, .overflow-y-auto, .overflow-x-auto {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+  
+  .print\:hidden, .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}

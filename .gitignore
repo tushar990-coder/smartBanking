@@ -1,0 +1,86 @@
+# Node.js
+node_modules/
+dist/
+build/
+npm-debug.log
+.env
+.env.local
+
+# .NET / C#
+[Bb]in/
+[Oo]bj/
+*.sqlite
+*.db
+*.db-shm
+*.db-wal
+
+# VS Code / IDE
+.vscode/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Database & Archives (Never commit live databases)
+FinixDB/
+*.mdf
+*.ldf
+*.bak
+*.rar
+*.zip
+*.log
+*.sqlite
+*.db
+*.db-shm
+*.db-wal
+logs/
+publish/
+publish_packages/
+api/Bhisi.Api/publish/
+api/Bhisi.Api/publish_packages/
+api/Bhisi.Api/publish_vps_*/
+api/Bhisi.Api/logs/
+
+# Offline License Security (CRITICAL - Never commit private keys!)
+keys/vendor_private_key.*
+keys/client_public_key.*
+*.lic
+license.lic
+
+# Offline Release, Deploy Packages & Patches (Do not commit to Git)
+OfflineRelease/
+UpdatePatch/
+GoDaddyDeploy/
+ProductionPackage/
+installer_output/
+tools/LicenseGenerator/bin/
+tools/LicenseGenerator/obj/
+tools/LicenseGenerator/GeneratedLicenses/
+
+# Compiled Executables & Libraries
+*.exe
+*.dll
+*.pdb
+*.so
+*.dylib
+
+# Temporary scratch, patches, and build assets
+scratch/
+api/Bhisi.Api/scratch/
+api/Bhisi.Api/wwwroot/
+wwwroot/
+VPS_Multi_App_Master_Patch/
+VPS_All_In_One_Patch/
+VPS_Patch_Package*/
+VPS_Testing_Patch*/
+VPS_Bambavade_Patch*/
+VPS_DB_Clean_Patch*/
+*.bat
+
+
+

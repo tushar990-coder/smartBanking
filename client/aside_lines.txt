@@ -1,0 +1,571 @@
+        <div className="h-12 flex items-center px-4 border-b border-gray-100">
+          <span className="text-xl font-black text-primary tracking-tight">SMART <span className="text-gray-800">BANKING</span></span>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+          <button 
+            onClick={() => setActiveTab('dashboard')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              activeTab === 'dashboard' 
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">🏠</span>
+            डॅशबोर्ड (Dashboard)
+          </button>
+
+          <button 
+            onClick={() => handleNavigate('member-360')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              activeTab === 'member-360' 
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">💫</span>
+            सभासद ३६०° (Member 360)
+          </button>
+          
+          <button 
+            onClick={() => setActiveTab('voucher')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              activeTab === 'voucher'
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">🧾</span>
+            वाउचर (Voucher)
+          </button>
+          
+          <button 
+            onClick={() => setActiveTab('members')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              activeTab === 'members' || activeTab === 'member-opening' || activeTab === 'member-closure' || activeTab === 'share-master' || activeTab === 'share-withdrawal'
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">👥</span>
+            सभासद माहिती (Members)
+          </button>
+
+          {(activeTab === 'members' || activeTab === 'member-opening' || activeTab === 'member-closure' || activeTab === 'share-master' || activeTab === 'share-withdrawal') && (
+            <ul className="pl-6 space-y-0.5">
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'members'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('members')}
+              >
+                <span className="mr-2 opacity-75">›</span> नवीन सभासद नोंदणी (New Member)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'member-opening'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('member-opening')}
+              >
+                <span className="mr-2 opacity-75">›</span> सुरुवातीची शिल्लक (Opening Balance)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'share-master'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('share-master')}
+              >
+                <span className="mr-2 opacity-75">›</span> शेअर भांडवल (Share Capital)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'member-closure' ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('member-closure')}
+              >
+                <span className="mr-2 opacity-75">›</span> सभासदत्व रद्द (Member Closure)
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'share-withdrawal' ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('share-withdrawal')}
+              >
+                <span className="mr-2 opacity-75">›</span> शेअर परतावा (Share Withdrawal)
+              </li>
+            </ul>
+          )}
+
+
+          <button 
+            onClick={() => setActiveTab('saving')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              (activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing' || activeTab === 'saving-passbook')
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">💰</span>
+            बचत ठेव (Saving)
+          </button>
+
+          {(activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing' || activeTab === 'saving-passbook') && (
+            <ul className="pl-6 space-y-0.5">
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'saving-account'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('saving-account')}
+              >
+                <span className="mr-2 opacity-75">›</span> बचत खाती (Accounts)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'saving-transaction'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('saving-transaction')}
+              >
+                <span className="mr-2 opacity-75">›</span> जमा/नावे (Transactions)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'saving-setting'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('saving-setting')}
+              >
+                <span className="mr-2 opacity-75">›</span> व्याजदर सेटिंग (Settings)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'saving-posting'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('saving-posting')}
+              >
+                <span className="mr-2 opacity-75">›</span> व्याज आकारणी (Interest Posting)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'saving-closing'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('saving-closing')}
+              >
+                <span className="mr-2 opacity-75">›</span> खाते बंद करणे (Closing)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'saving-passbook'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('saving-passbook')}
+              >
+                <span className="mr-2 opacity-75">›</span> पासबुक प्रिंट (Passbook Print)
+              
+              </li>
+            </ul>
+          )}
+
+          <button 
+            onClick={() => setActiveTab('fd')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              (activeTab === 'fd' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-reports')
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">🏦</span>
+            मुदत ठेव (Fixed Deposit)
+          </button>
+
+          {(activeTab === 'fd' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-reports') && (
+            <ul className="pl-6 space-y-0.5">
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'fd-scheme'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('fd-scheme')}
+              >
+                <span className="mr-2 opacity-75">›</span> ठेव योजना (Schemes)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'fd-migrate'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('fd-migrate')}
+              >
+                <span className="mr-2 opacity-75">›</span> ठेव स्थलांतर (Migration)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'fd-account'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('fd-account')}
+              >
+                <span className="mr-2 opacity-75">›</span> नवीन खाते (New Opening)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'fd-withdrawal'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('fd-withdrawal')}
+              >
+                <span className="mr-2 opacity-75">›</span> क्लोजर/नूतनीकरण (Claim)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'fd-accrual'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('fd-accrual')}
+              >
+                <span className="mr-2 opacity-75">›</span> व्याज तरतूद (Accrual)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'fd-reports'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('fd-reports')}
+              >
+                <span className="mr-2 opacity-75">›</span> ठेव अहवाल (FD Reports)
+              
+              </li>
+            </ul>
+          )}
+
+          <button 
+            onClick={() => setActiveTab('pigmy')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              (activeTab === 'pigmy' || activeTab === 'pigmy-scheme' || activeTab === 'pigmy-agent' || activeTab === 'pigmy-account' || activeTab === 'pigmy-collection')
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">🐖</span>
+            पिग्मी ठेव (Pigmy Deposit)
+          </button>
+
+          {(activeTab === 'pigmy' || activeTab === 'pigmy-scheme' || activeTab === 'pigmy-agent' || activeTab === 'pigmy-account' || activeTab === 'pigmy-collection' || activeTab === 'pigmy-daybook' || activeTab === 'pigmy-commission' || activeTab === 'pigmy-interest' || activeTab === 'pigmy-closure') && (
+            <ul className="pl-6 space-y-0.5">
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'pigmy-scheme'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('pigmy-scheme')}
+              >
+                <span className="mr-2 opacity-75">›</span> ठेव योजना (Schemes)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'pigmy-agent'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('pigmy-agent')}
+              >
+                <span className="mr-2 opacity-75">›</span> एजंट मास्टर (Agents)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'pigmy-account'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('pigmy-account')}
+              >
+                <span className="mr-2 opacity-75">›</span> नवीन खाते (New Account)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'pigmy-collection'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('pigmy-collection')}
+              >
+                <span className="mr-2 opacity-75">›</span> दैनिक जमा (Collection)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'pigmy-daybook'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('pigmy-daybook')}
+              >
+                <span className="mr-2 opacity-75">›</span> एजंट डे बुक (Agent Day Book)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'pigmy-commission'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('pigmy-commission')}
+              >
+                <span className="mr-2 opacity-75">›</span> एजंट कमिशन (Commission)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'pigmy-interest'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('pigmy-interest')}
+              >
+                <span className="mr-2 opacity-75">›</span> व्याज आकारणी (Interest)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'pigmy-closure'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('pigmy-closure')}
+              >
+                <span className="mr-2 opacity-75">›</span> खाते बंद करणे (Closure)
+              
+              </li>
+            </ul>
+          )}
+
+          <button 
+            onClick={() => setActiveTab('rd')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              (activeTab === 'rd' || activeTab === 'rd-scheme' || activeTab === 'rd-migrate' || activeTab === 'rd-account' || activeTab === 'rd-collect' || activeTab === 'rd-withdrawal' || activeTab === 'rd-accrual' || activeTab === 'rd-reports')
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">💰</span>
+            आवर्ती ठेव (Recurring Deposit)
+          </button>
+
+          {(activeTab === 'rd' || activeTab === 'rd-scheme' || activeTab === 'rd-migrate' || activeTab === 'rd-account' || activeTab === 'rd-collect' || activeTab === 'rd-withdrawal' || activeTab === 'rd-accrual' || activeTab === 'rd-reports') && (
+            <ul className="pl-6 space-y-0.5">
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'rd-scheme'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('rd-scheme')}
+              >
+                <span className="mr-2 opacity-75">›</span> ठेव योजना (Schemes)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'rd-migrate'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('rd-migrate')}
+              >
+                <span className="mr-2 opacity-75">›</span> ठेव स्थलांतर (Migration)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'rd-account'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('rd-account')}
+              >
+                <span className="mr-2 opacity-75">›</span> नवीन खाते (New Opening)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'rd-collect'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('rd-collect')}
+              >
+                <span className="mr-2 opacity-75">›</span> मासिक हप्ता (Collection)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'rd-withdrawal'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('rd-withdrawal')}
+              >
+                <span className="mr-2 opacity-75">›</span> क्लोजर/नूतनीकरण (Claim)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'rd-accrual'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('rd-accrual')}
+              >
+                <span className="mr-2 opacity-75">›</span> व्याज तरतूद (Accrual)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'rd-reports'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('rd-reports')}
+              >
+                <span className="mr-2 opacity-75">›</span> ठेव अहवाल (RD Reports)
+              
+              </li>
+            </ul>
+          )}
+
+
+          <button 
+            onClick={() => setActiveTab('investment')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              (activeTab === 'investment' || activeTab === 'inv-institution' || activeTab === 'inv-scheme' || activeTab === 'inv-account' || activeTab === 'inv-claim' || activeTab === 'inv-accrual' || activeTab === 'inv-reports')
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">📊</span>
+            गुंतवणूक (Investment)
+          </button>
+
+          {(activeTab === 'investment' || activeTab === 'inv-institution' || activeTab === 'inv-scheme' || activeTab === 'inv-account' || activeTab === 'inv-claim' || activeTab === 'inv-accrual' || activeTab === 'inv-reports') && (
+            <ul className="pl-6 space-y-0.5">
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'inv-institution'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('inv-institution')}
+              >
+                <span className="mr-2 opacity-75">›</span> संस्था मास्टर (Institution)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'inv-scheme'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('inv-scheme')}
+              >
+                <span className="mr-2 opacity-75">›</span> योजना मास्टर (Scheme)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'inv-account'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('inv-account')}
+              >
+                <span className="mr-2 opacity-75">›</span> नवीन गुंतवणूक (Account)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'inv-claim'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('inv-claim')}
+              >
+                <span className="mr-2 opacity-75">›</span> क्लोजर/नूतनीकरण (Claim)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'inv-accrual'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('inv-accrual')}
+              >
+                <span className="mr-2 opacity-75">›</span> व्याज तरतूद (Accrual)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'inv-reports'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('inv-reports')}
+              >
+                <span className="mr-2 opacity-75">›</span> गुंतवणूक अहवाल (Reports)
+              
+              </li>
+            </ul>
+          )}
+
+          <button 
+            onClick={() => setActiveTab('assets')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              (activeTab === 'assets' || activeTab === 'asset-category' || activeTab === 'asset-master' || activeTab === 'asset-purchase' || activeTab === 'asset-reports')
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">🏢</span>
+            मालमत्ता (Assets)
+          </button>
+
+          {(activeTab === 'assets' || activeTab === 'asset-category' || activeTab === 'asset-master' || activeTab === 'asset-purchase' || activeTab === 'asset-reports') && (
+            <ul className="pl-6 space-y-0.5">
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'asset-category'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('asset-category')}
+              >
+                <span className="mr-2 opacity-75">›</span> मालमत्ता वर्ग (Categories)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'asset-master'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('asset-master')}
+              >
+                <span className="mr-2 opacity-75">›</span> मालमत्ता यादी (Assets List)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'asset-purchase'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('asset-purchase')}
+              >
+                <span className="mr-2 opacity-75">›</span> मालमत्ता खरेदी (Purchase)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'asset-reports'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('asset-reports')}
+              >
+                <span className="mr-2 opacity-75">›</span> मालमत्ता अहवाल (Reports)
+              
+              </li>
+            </ul>
+          )}
+
+          <button 
+            onClick={() => setActiveTab('loan')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              (activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-collection' || activeTab === 'gold-loan-details' || activeTab === 'loan-documents') 
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">📉</span>
+            कर्ज विभाग (Loan)
+          </button>
+
+          {(activeTab === 'loan' || activeTab === 'loan-process' || activeTab === 'loan-collection' || activeTab === 'gold-loan-details' || activeTab === 'loan-documents') && (
+            <ul className="pl-6 space-y-0.5">
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'loan-process'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('loan-process')}
+              >
+                <span className="mr-2 opacity-75">›</span> कर्ज मागणी व वितरण
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'gold-loan-details'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('gold-loan-details')}
+              >
+                <span className="mr-2 opacity-75">›</span> सुवर्ण कर्ज तारण (Gold)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'loan-collection'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('loan-collection')}
+              >
+                <span className="mr-2 opacity-75">›</span> कर्ज वसुली (Collection)
+              
+              </li>
+              <li 
+                className={`px-3 py-1.5 cursor-pointer flex items-center transition-colors text-[11px] rounded-sm ${activeTab === 'loan-documents'   ? 'bg-primary text-white' : 'hover:bg-blue-50 text-gray-700'}`}
+                onClick={() => setActiveTab('loan-documents')}
+              >
+                <span className="mr-2 opacity-75">›</span> कर्ज कागदपत्रे (Documents)
+              
+              </li>
+            </ul>
+          )}
+          
+          <button 
+            onClick={() => setActiveTab('npa-dashboard')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              (activeTab === 'npa-dashboard' || activeTab === 'npa-statement' || activeTab === 'collateral-compliance' || activeTab === 'npa-defaulters')
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">⚖️</span>
+            एन.पी.ए. विभाग (NPA)
+          </button>
+
+          <div className="pt-2 pb-1 border-t border-gray-100 mt-1">
+            <p className="px-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">युटिलिटीज (Utilities)</p>
+          </div>
+
+          <button 
+            onClick={() => setActiveTab('interest-calculator')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              activeTab === 'interest-calculator' 
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">🧮</span>
+            व्याज कॅल्क्युलेटर (Calculator)
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('data-import')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors mt-0.5 ${
+              activeTab === 'data-import' 
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">📤</span>
+            डेटा इम्पोर्ट (Data Import)
+          </button>
+
+          <div className="pt-2 pb-1 border-t border-gray-100 mt-1">
+            <p className="px-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">अहवाल (Reports)</p>
+          </div>
+
+          <button 
+            onClick={() => setActiveTab('reports')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              activeTab === 'reports' || activeTab === 'trial-balance' || activeTab === 'daybook' || activeTab === 'daybook-summary' || activeTab === 'profit-loss' || activeTab === 'balance-sheet' || activeTab === 'balance-sheet-form-n' || activeTab === 'general-ledger' || activeTab === 'member-balance-report' || activeTab === 'loan-disbursement-register' || activeTab === 'loan-collection-register' || activeTab === 'loan-ledger-report' || activeTab === 'loan-overdue-report' || activeTab === 'saving-account-list-report' || activeTab === 'npa-register' || activeTab === 'loan-rate'
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">📊</span>
+            सर्व अहवाल (All Reports)
+          </button>
+
+          <div className="pt-2 pb-1 border-t border-gray-100 mt-1">
+            <p className="px-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">सेटिंग्ज (Settings)</p>
+          </div>
+
+          <button 
+            onClick={() => setActiveTab('settings')}
+            className={`w-full flex items-center px-2 py-1.5 rounded-sm text-xs font-medium transition-colors ${
+              activeTab === 'settings' 
+                ? 'bg-primary text-white shadow-sm' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            <span className="mr-2 text-base">⚙️</span>
+            सर्व सेटिंग्ज (All Settings)
+          </button>
+        </div>

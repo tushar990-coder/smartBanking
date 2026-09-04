@@ -2523,9 +2523,42 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- 99. SYSTEM ADMIN CREDENTIALS & SECURITY SYNC
+-- -----------------------------------------------------------------------------------------
+IF OBJECT_ID('Users', 'U') IS NOT NULL
+BEGIN
+    DECLARE @MasterAdminHash NVARCHAR(255) = N'$2a$11$6fxAYBVHsmYhkIWjlMOe0OG98hAkMMAUUifrbG4Ju.jE/SMOyJtAK';
+    IF EXISTS (SELECT 1 FROM [Users] WHERE Username = 'admin')
+    BEGIN
+        UPDATE [Users]
+        SET PasswordHash = @MasterAdminHash,
+            IsLocked = 0,
+            IsActive = 1,
+            FailedLoginAttempts = 0,
+            RequirePasswordChange = 0
+        WHERE Username = 'admin';
+        PRINT 'Synchronized admin credentials with new security key (Shri@2026)';
+    END
+    ELSE
+    BEGIN
+        DECLARE @AdminRoleId INT = (SELECT TOP 1 RoleID FROM [Roles] WHERE RoleName = 'Admin');
+        IF @AdminRoleId IS NULL
+        BEGIN
+            INSERT INTO [Roles] (RoleName, Description) VALUES ('Admin', 'System Administrator');
+            SET @AdminRoleId = SCOPE_IDENTITY();
+        END
+        INSERT INTO [Users] (Username, PasswordHash, RoleID, IsActive, IsLocked, FailedLoginAttempts, RequirePasswordChange)
+        VALUES ('admin', @MasterAdminHash, @AdminRoleId, 1, 0, 0, 0);
+        PRINT 'Created admin user with master security credentials';
+    END
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO
+
 
 

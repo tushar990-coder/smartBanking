@@ -12,7 +12,7 @@ $patchFolder = Join-Path $workspaceRoot "VPS_Multi_App_Master_Patch"
 $zipOutputFile = Join-Path $workspaceRoot "SmartBanking_VPS_Multi_App_Master_Patch.zip"
 $clientDir = Join-Path $workspaceRoot "client"
 $apiDir = Join-Path $workspaceRoot "api\Bhisi.Api"
-$version = "2.2.0"
+$version = "2.4.1"
 $buildDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
 Write-Host "==================================================================" -ForegroundColor Cyan
@@ -116,11 +116,19 @@ $frontendDest = Join-Path $patchFolder "frontend"
 robocopy $frontendSource $frontendDest /E | Out-Null
 Write-Host "  -> Dynamic multi-domain frontend bundle copied." -ForegroundColor White
 
-# 3.4 Copy Mobile Application API Documentation
+# 3.4 Copy Mobile Application API Documentation & Version Manifest
 $mobileApiDoc = Join-Path $workspaceRoot "MOBILE_APPLICATION_API.md"
 if (Test-Path $mobileApiDoc) {
     Copy-Item $mobileApiDoc (Join-Path $patchFolder "MOBILE_APPLICATION_API.md") -Force
     Write-Host "  -> Mobile Application API Documentation included." -ForegroundColor White
+}
+
+$versionJsonSource = Join-Path $workspaceRoot "version.json"
+if (Test-Path $versionJsonSource) {
+    Copy-Item $versionJsonSource (Join-Path $patchFolder "version.json") -Force
+    Copy-Item $versionJsonSource (Join-Path $backendDest "version.json") -Force
+    Copy-Item $versionJsonSource (Join-Path $frontendDest "version.json") -Force
+    Write-Host "  -> version.json (v$version Changelog) included in patch." -ForegroundColor White
 }
 
 # Clean temp publish

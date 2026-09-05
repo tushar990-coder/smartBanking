@@ -84,9 +84,18 @@ FETCH NEXT FROM reseed_cursor INTO @IdTable;
 WHILE @@FETCH_STATUS = 0
 BEGIN
     BEGIN TRY
-        SET @ReseedSql = N'DBCC CHECKIDENT (''[dbo].[' + @IdTable + N']'', RESEED, 0);';
+        SET @ReseedSql = N'
+            IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID(''[dbo].[' + @IdTable + N']'') AND last_value IS NOT NULL)
+            BEGIN
+                DBCC CHECKIDENT (''[dbo].[' + @IdTable + N']'', RESEED, 0);
+            END
+            ELSE
+            BEGIN
+                DBCC CHECKIDENT (''[dbo].[' + @IdTable + N']'', RESEED, 1);
+            END
+        ';
         EXEC sp_executesql @ReseedSql;
-        PRINT '✓ Reseeded to 0: ' + @IdTable;
+        PRINT '✓ Reseeded to start at 1: ' + @IdTable;
     END TRY
     BEGIN CATCH
         PRINT '⚠️ Reseed चेतावणी (' + @IdTable + '): ' + ERROR_MESSAGE();

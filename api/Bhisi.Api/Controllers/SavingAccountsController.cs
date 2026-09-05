@@ -228,6 +228,86 @@ namespace Bhisi.Api.Controllers
             public List<int>? JointHolderCustomerIDs { get; set; }
         }
 
+        private async Task<(Customer? customer, Member? member, string? errorMessage)> ResolveEntityAsync(int? customerId, int? memberId, int branchId)
+        {
+            Customer? customer = null;
+            Member? member = null;
+
+            if (customerId.HasValue && customerId.Value > 0)
+            {
+                customer = await _context.Customers.FindAsync(customerId.Value);
+                if (customer == null)
+                {
+                    // Fallback: Check if this ID was accidentally passed as a memberId
+                    member = await _context.Members.FindAsync(customerId.Value);
+                    if (member != null)
+                    {
+                        if (member.CustomerID.HasValue && member.CustomerID.Value > 0)
+                        {
+                            customer = await _context.Customers.FindAsync(member.CustomerID.Value);
+                        }
+                    }
+                }
+                else
+                {
+                    if (memberId.HasValue && memberId.Value > 0)
+                    {
+                        member = await _context.Members.FindAsync(memberId.Value);
+                    }
+                    else
+                    {
+                        member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                    }
+                }
+            }
+            else if (memberId.HasValue && memberId.Value > 0)
+            {
+                member = await _context.Members.FindAsync(memberId.Value);
+                if (member == null) return (null, null, "निवडलेला खातेदार सभासद सिस्टीममध्ये अस्तित्वात नाही.");
+
+                if (member.CustomerID.HasValue && member.CustomerID.Value > 0)
+                {
+                    customer = await _context.Customers.FindAsync(member.CustomerID.Value);
+                }
+            }
+            else
+            {
+                return (null, null, "कृपया खातेदाराची (Customer / Member) निवड करा.");
+            }
+
+            // Auto-provision Customer entity if Member exists but Customer does not
+            if (customer == null && member != null)
+            {
+                customer = new Customer
+                {
+                    BranchID = member.BranchID > 0 ? member.BranchID : branchId,
+                    CIFNo = !string.IsNullOrWhiteSpace(member.CIFNo) ? member.CIFNo : $"CIF{member.MemberID:D6}",
+                    FirstName = member.FirstName,
+                    MiddleName = member.MiddleName,
+                    LastName = member.LastName,
+                    Address = member.Address,
+                    MobileNo = member.MobileNo,
+                    AadhaarNo = member.AadhaarNo,
+                    PANNo = member.PANNo,
+                    Status = member.Status ?? "Active",
+                    CreatedOn = DateTime.Now
+                };
+                _context.Customers.Add(customer);
+                await _context.SaveChangesAsync();
+
+                member.CustomerID = customer.CustomerID;
+                _context.Entry(member).State = EntityState.Modified;
+                await _context.SaveChangesAsync();
+            }
+
+            if (customer == null)
+            {
+                return (null, null, "निवडलेला खातेदार ग्राहक किंवा सभासद सापडला नाही.");
+            }
+
+            return (customer, member, null);
+        }
+
         // POST: api/SavingAccounts
         [HttpPost]
         public async Task<ActionResult<object>> PostSavingAccountMaster([FromBody] CreateSavingAccountDto dto)
@@ -264,37 +344,15 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // Verify Customer & Member existence
-            Customer? customer = null;
-            Member? member = null;
-
-            if (dto.CustomerID.HasValue && dto.CustomerID.Value > 0)
+            var (customer, member, errorMsg) = await ResolveEntityAsync(dto.CustomerID, dto.MemberID, dto.BranchID);
+            if (!string.IsNullOrEmpty(errorMsg) || customer == null)
             {
-                customer = await _context.Customers.FindAsync(dto.CustomerID.Value);
-                if (customer == null) return BadRequest("निवडलेला खातेदार ग्राहक सिस्टीममध्ये अस्तित्वात नाही.");
-                if (customer.Status != "Active") return BadRequest($"या ग्राहकाचे स्टेटस '{customer.Status}' असल्यामुळे नवीन बचत खाते उघडता येत नाही. केवळ सक्रिय (Active) ग्राहकांचेच खाते उघडता येते.");
-
-                member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
-            }
-            else if (dto.MemberID.HasValue && dto.MemberID.Value > 0)
-            {
-                member = await _context.Members.FindAsync(dto.MemberID.Value);
-                if (member == null) return BadRequest("निवडलेला खातेदार सभासद सिस्टीममध्ये अस्तित्वात नाही.");
-                if (member.Status != "Active") return BadRequest($"या सभासदाचे स्टेटस '{member.Status}' असल्यामुळे नवीन बचत खाते उघडता येत नाही. केवळ सक्रिय (Active) सभासदांचेच खाते उघडता येते.");
-
-                if (member.CustomerID > 0) customer = await _context.Customers.FindAsync(member.CustomerID);
-            }
-            else
-            {
-                return BadRequest("कृपया खातेदाराची (Customer / Member) निवड करा.");
+                return BadRequest(errorMsg ?? "कृपया खातेदाराची (Customer / Member) निवड करा.");
             }
 
-            int? resolvedCustomerId = customer?.CustomerID ?? (member?.CustomerID > 0 ? member.CustomerID : null);
-            int? resolvedMemberId = member?.MemberID;
-
-            if (resolvedCustomerId == null || resolvedCustomerId <= 0)
+            if (customer.Status != "Active")
             {
-                return BadRequest("कृपया ग्राहकाची निवड करा (Customer ID is required).");
+                return BadRequest($"या खातेदाराचे स्टेटस '{customer.Status}' असल्यामुळे नवीन बचत खाते उघडता येत नाही. केवळ सक्रिय (Active) खातेदारांचेच खाते उघडता येते.");
             }
 
             // Generate account number: [BranchCode]01[5-digit sequence] safely
@@ -304,8 +362,8 @@ namespace Bhisi.Api.Controllers
             {
                 BranchID = dto.BranchID,
                 AccountNo = generatedAccountNo,
-                CustomerID = resolvedCustomerId.Value,
-                MemberID = resolvedMemberId,
+                CustomerID = customer.CustomerID,
+                MemberID = member?.MemberID,
                 AccountType = dto.AccountType,
                 OpeningDate = dto.OpeningDate,
                 IsLegacyAccount = dto.IsLegacyAccount,
@@ -334,7 +392,7 @@ namespace Bhisi.Api.Controllers
             if (dto.AccountType == "Joint" && dto.JointHolderMemberIDs != null && dto.JointHolderMemberIDs.Count > 0)
             {
                 var validMemberIds = dto.JointHolderMemberIDs
-                    .Where(mId => mId > 0 && mId != dto.MemberID)
+                    .Where(mId => mId > 0 && mId != member?.MemberID)
                     .Distinct()
                     .ToList();
 
@@ -422,7 +480,13 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<object>> MigrateSavingAccountMaster([FromBody] CreateSavingAccountDto dto)
         {
             var branch = await _context.Branches.FindAsync(dto.BranchID);
-            if (branch == null) return BadRequest("निवडलेली शाखा सापडली नाही.");
+            if (branch == null) return BadRequest(new { message = "निवडलेली शाखा सापडली नाही." });
+
+            var (customer, member, errorMsg) = await ResolveEntityAsync(dto.CustomerID, dto.MemberID, dto.BranchID);
+            if (!string.IsNullOrEmpty(errorMsg) || customer == null)
+            {
+                return BadRequest(new { message = errorMsg ?? "कृपया वैध खातेदाराची निवड करा." });
+            }
 
             int targetLedgerId = dto.LedgerID;
             if (targetLedgerId <= 0 && dto.SettingID.HasValue && dto.SettingID.Value > 0)
@@ -435,112 +499,151 @@ namespace Bhisi.Api.Controllers
             }
             if (targetLedgerId <= 0) targetLedgerId = 7;
 
-            var savingAccount = new SavingAccountMaster
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
             {
-                BranchID = dto.BranchID,
-                AccountNo = "AUTO", // Replace with logic if needed
-                CustomerID = dto.CustomerID ?? dto.MemberID ?? 1,
-                MemberID = dto.MemberID,
-                AccountType = dto.AccountType,
-                OpeningDate = dto.OpeningDate,
-                IsLegacyAccount = true,
-                OldAccountNo = dto.OldAccountNo ?? dto.LegacyAccountNumber,
-                LegacyAccountNumber = dto.OldAccountNo ?? dto.LegacyAccountNumber,
-                LedgerID = targetLedgerId,
-                OpeningBalance = dto.OpeningBalance,
-                CurrentBalance = dto.OpeningBalance,
-                InterestRate = dto.InterestRate,
-                MinimumBalance = dto.MinimumBalance,
-                LienAmount = dto.LienAmount,
-                LienReason = dto.LienReason,
-                Status = dto.Status,
-                NomineeName = dto.NomineeName,
-                NomineeRelation = dto.NomineeRelation,
-                NomineeAddress = dto.NomineeAddress,
-                LastInterestPostingDate = dto.LastInterestPostingDate,
-                LastInterestAmount = dto.LastInterestAmount,
-                CreatedOn = DateTime.Now
-            };
+                string generatedAccountNo = await GenerateNextSavingAccountNo(dto.BranchID);
 
-            string generatedAccountNo = await GenerateNextSavingAccountNo(dto.BranchID);
-            savingAccount.AccountNo = generatedAccountNo;
-
-            _context.SavingAccountMasters.Add(savingAccount);
-            await _context.SaveChangesAsync();
-
-            // Add Joint Holders for Migrated Joint Saving Account
-            if (dto.AccountType == "Joint" && dto.JointHolderMemberIDs != null && dto.JointHolderMemberIDs.Count > 0)
-            {
-                var validMemberIds = dto.JointHolderMemberIDs
-                    .Where(mId => mId > 0 && mId != dto.MemberID)
-                    .Distinct()
-                    .ToList();
-
-                if (validMemberIds.Count > 0)
+                var savingAccount = new SavingAccountMaster
                 {
-                    foreach (var memberId in validMemberIds)
+                    BranchID = dto.BranchID,
+                    AccountNo = generatedAccountNo,
+                    CustomerID = customer.CustomerID,
+                    MemberID = member?.MemberID, // NULL if non-member customer
+                    AccountType = string.IsNullOrWhiteSpace(dto.AccountType) ? "Personal" : dto.AccountType,
+                    OpeningDate = dto.OpeningDate != default ? dto.OpeningDate : DateTime.Today,
+                    IsLegacyAccount = true,
+                    OldAccountNo = dto.OldAccountNo ?? dto.LegacyAccountNumber,
+                    LegacyAccountNumber = dto.OldAccountNo ?? dto.LegacyAccountNumber,
+                    LedgerID = targetLedgerId,
+                    OpeningBalance = dto.OpeningBalance,
+                    CurrentBalance = dto.OpeningBalance,
+                    InterestRate = dto.InterestRate,
+                    MinimumBalance = dto.MinimumBalance,
+                    LienAmount = dto.LienAmount,
+                    LienReason = dto.LienReason,
+                    Status = string.IsNullOrWhiteSpace(dto.Status) ? "Active" : dto.Status,
+                    NomineeName = dto.NomineeName,
+                    NomineeRelation = dto.NomineeRelation,
+                    NomineeAddress = dto.NomineeAddress,
+                    LastInterestPostingDate = dto.LastInterestPostingDate,
+                    LastInterestAmount = dto.LastInterestAmount,
+                    CreatedOn = DateTime.Now
+                };
+
+                _context.SavingAccountMasters.Add(savingAccount);
+                await _context.SaveChangesAsync();
+
+                // Add Joint Holders for Migrated Joint Saving Account
+                if (dto.AccountType == "Joint" && dto.JointHolderMemberIDs != null && dto.JointHolderMemberIDs.Count > 0)
+                {
+                    var validMemberIds = dto.JointHolderMemberIDs
+                        .Where(mId => mId > 0 && mId != member?.MemberID)
+                        .Distinct()
+                        .ToList();
+
+                    if (validMemberIds.Count > 0)
                     {
-                        var jointHolder = new SavingAccountJointHolder
+                        foreach (var memberId in validMemberIds)
                         {
-                            SavingAccountID = savingAccount.SavingAccountID,
-                            MemberID = memberId,
-                            CreatedOn = DateTime.Now
-                        };
-                        _context.SavingAccountJointHolders.Add(jointHolder);
+                            var jointHolder = new SavingAccountJointHolder
+                            {
+                                SavingAccountID = savingAccount.SavingAccountID,
+                                MemberID = memberId,
+                                CreatedOn = DateTime.Now
+                            };
+                            _context.SavingAccountJointHolders.Add(jointHolder);
+                        }
+                        await _context.SaveChangesAsync();
                     }
+                }
+
+                // Update Ledger Opening Balance
+                var ledger = await _context.Ledgers.FindAsync(savingAccount.LedgerID);
+                if (ledger != null)
+                {
+                    if (ledger.OpeningBalanceType == "Cr")
+                    {
+                        ledger.OpeningBalance += savingAccount.OpeningBalance;
+                    }
+                    else
+                    {
+                        ledger.OpeningBalance -= savingAccount.OpeningBalance;
+                        if (ledger.OpeningBalance < 0)
+                        {
+                            ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
+                            ledger.OpeningBalanceType = "Cr";
+                        }
+                    }
+                    _context.Entry(ledger).State = EntityState.Modified;
                     await _context.SaveChangesAsync();
                 }
-            }
 
-            // Legacy Account Logic
-            var ledger = await _context.Ledgers.FindAsync(savingAccount.LedgerID);
-            if (ledger != null)
-            {
-                if (ledger.OpeningBalanceType == "Cr")
+                // Audit in CustomerOpeningBalances
+                var custOb = new CustomerOpeningBalance
                 {
-                    ledger.OpeningBalance += savingAccount.OpeningBalance;
-                }
-                else
+                    CustomerID = customer.CustomerID,
+                    LedgerID = savingAccount.LedgerID,
+                    Amount = savingAccount.OpeningBalance,
+                    BalanceType = "Cr",
+                    CreatedBy = savingAccount.CreatedBy,
+                    CreatedOn = DateTime.Now
+                };
+                _context.CustomerOpeningBalances.Add(custOb);
+
+                // If regular member, also audit in MemberOpeningBalances
+                if (member != null && member.MemberID > 0)
                 {
-                    ledger.OpeningBalance -= savingAccount.OpeningBalance;
-                    if (ledger.OpeningBalance < 0)
+                    var memberOb = new MemberOpeningBalance
                     {
-                        ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
-                        ledger.OpeningBalanceType = "Cr";
-                    }
+                        MemberID = member.MemberID,
+                        LedgerID = savingAccount.LedgerID,
+                        Amount = savingAccount.OpeningBalance,
+                        BalanceType = "Cr",
+                        CreatedBy = savingAccount.CreatedBy,
+                        CreatedOn = DateTime.Now
+                    };
+                    _context.MemberOpeningBalances.Add(memberOb);
                 }
-                _context.Entry(ledger).State = EntityState.Modified;
+
+                // Initial Saving Transaction (Deposit)
+                var txn = new SavingTransaction
+                {
+                    SavingAccountID = savingAccount.SavingAccountID,
+                    CustomerID = customer.CustomerID,
+                    TransactionDate = savingAccount.OpeningDate,
+                    TransactionType = "Deposit",
+                    PaymentMode = "Cash",
+                    Amount = savingAccount.OpeningBalance,
+                    BalanceAfterTxn = savingAccount.OpeningBalance,
+                    Narration = "Opening Balance",
+                    CreatedBy = savingAccount.CreatedBy,
+                    CreatedOn = DateTime.Now
+                };
+                _context.SavingTransactions.Add(txn);
+                await _context.SaveChangesAsync();
+
+                await transaction.CommitAsync();
+
+                return Ok(new 
+                { 
+                    savingAccountID = savingAccount.SavingAccountID, 
+                    accountNo = savingAccount.AccountNo,
+                    customerID = savingAccount.CustomerID,
+                    memberID = savingAccount.MemberID,
+                    message = "बचत खाते स्थलांतर यशस्वी झाले!" 
+                });
             }
-
-            var memberOb = new MemberOpeningBalance
+            catch (Exception ex)
             {
-                MemberID = savingAccount.MemberID ?? savingAccount.CustomerID,
-                LedgerID = savingAccount.LedgerID,
-                Amount = savingAccount.OpeningBalance,
-                BalanceType = "Cr",
-                CreatedBy = savingAccount.CreatedBy,
-                CreatedOn = DateTime.Now
-            };
-            _context.MemberOpeningBalances.Add(memberOb);
-            
-            var txn = new SavingTransaction
-            {
-                SavingAccountID = savingAccount.SavingAccountID,
-                CustomerID = savingAccount.CustomerID,
-                TransactionDate = savingAccount.OpeningDate,
-                TransactionType = "Deposit",
-                PaymentMode = "Cash",
-                Amount = savingAccount.OpeningBalance,
-                BalanceAfterTxn = savingAccount.OpeningBalance,
-                Narration = "Opening Balance",
-                CreatedBy = savingAccount.CreatedBy,
-                CreatedOn = DateTime.Now
-            };
-            _context.SavingTransactions.Add(txn);
-            
-            await _context.SaveChangesAsync();
-
-            return Ok(new { savingAccount.SavingAccountID, savingAccount.AccountNo });
+                await transaction.RollbackAsync();
+                return StatusCode(500, new 
+                { 
+                    message = "बचत खाते सुरुवातीची शिल्लक सेव्ह करताना तांत्रिक त्रुटी आली.",
+                    detail = ex.Message,
+                    innerDetail = ex.InnerException?.Message
+                });
+            }
         }
 
         // DTO for updating saving account
@@ -548,7 +651,8 @@ namespace Bhisi.Api.Controllers
         {
             public int SavingAccountID { get; set; }
             public int BranchID { get; set; } = 1;
-            public int MemberID { get; set; }
+            public int? CustomerID { get; set; }
+            public int? MemberID { get; set; }
             public string AccountType { get; set; } = "Personal";
             public DateTime OpeningDate { get; set; } = DateTime.Today;
             public decimal OpeningBalance { get; set; } = 0;
@@ -591,159 +695,334 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = "बचत खाते सापडले नाही." });
             }
 
-            if (existing.IsLegacyAccount && dto.OpeningBalance >= 0)
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
             {
-                decimal oldBalance = existing.OpeningBalance;
-                decimal newBalance = dto.OpeningBalance;
-                int oldLedgerId = existing.LedgerID;
-                int newLedgerId = dto.LedgerID > 0 ? dto.LedgerID : existing.LedgerID;
-                if (newLedgerId <= 0 && dto.SettingID.HasValue && dto.SettingID.Value > 0)
-                {
-                    var scheme = await _context.SavingInterestSettings.FindAsync(dto.SettingID.Value);
-                    if (scheme != null)
-                    {
-                        newLedgerId = scheme.SavingLiabilityLedgerID ?? scheme.LedgerID ?? 7;
-                    }
-                }
-                if (newLedgerId <= 0) newLedgerId = 7;
+                // 1. Resolve Customer & Member if provided
+                int oldCustomerId = existing.CustomerID;
+                int? oldMemberId = existing.MemberID;
+                int resolvedCustomerId = oldCustomerId;
+                int? resolvedMemberId = oldMemberId;
 
-                if (oldLedgerId == newLedgerId)
+                if (dto.CustomerID.HasValue || dto.MemberID.HasValue)
                 {
-                    // Case 1: Same ledger, balance difference adjustment
-                    decimal balanceDiff = newBalance - oldBalance;
-                    if (balanceDiff != 0)
+                    var (customer, member, errorMsg) = await ResolveEntityAsync(dto.CustomerID, dto.MemberID, existing.BranchID);
+                    if (!string.IsNullOrEmpty(errorMsg) || customer == null)
                     {
-                        var ledger = await _context.Ledgers.FindAsync(newLedgerId);
-                        if (ledger != null)
+                        return BadRequest(new { message = errorMsg ?? "कृपया वैध खातेदाराची निवड करा." });
+                    }
+                    resolvedCustomerId = customer.CustomerID;
+                    resolvedMemberId = member?.MemberID;
+                }
+
+                // 2. Handle Opening Balance & Ledger changes for Legacy Accounts
+                if (existing.IsLegacyAccount && dto.OpeningBalance >= 0)
+                {
+                    decimal oldBalance = existing.OpeningBalance;
+                    decimal newBalance = dto.OpeningBalance;
+                    int oldLedgerId = existing.LedgerID;
+                    int newLedgerId = dto.LedgerID > 0 ? dto.LedgerID : existing.LedgerID;
+                    if (newLedgerId <= 0 && dto.SettingID.HasValue && dto.SettingID.Value > 0)
+                    {
+                        var scheme = await _context.SavingInterestSettings.FindAsync(dto.SettingID.Value);
+                        if (scheme != null)
                         {
-                            if (ledger.OpeningBalanceType == "Cr")
+                            newLedgerId = scheme.SavingLiabilityLedgerID ?? scheme.LedgerID ?? 7;
+                        }
+                    }
+                    if (newLedgerId <= 0) newLedgerId = 7;
+
+                    // Adjust General Ledgers
+                    if (oldLedgerId == newLedgerId)
+                    {
+                        decimal balanceDiff = newBalance - oldBalance;
+                        if (balanceDiff != 0)
+                        {
+                            var ledger = await _context.Ledgers.FindAsync(newLedgerId);
+                            if (ledger != null)
                             {
-                                ledger.OpeningBalance += balanceDiff;
+                                if (ledger.OpeningBalanceType == "Cr")
+                                {
+                                    ledger.OpeningBalance += balanceDiff;
+                                }
+                                else
+                                {
+                                    ledger.OpeningBalance -= balanceDiff;
+                                    if (ledger.OpeningBalance < 0)
+                                    {
+                                        ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
+                                        ledger.OpeningBalanceType = "Cr";
+                                    }
+                                }
+                                _context.Entry(ledger).State = EntityState.Modified;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Reverse from old ledger
+                        if (oldBalance > 0)
+                        {
+                            var oldLedger = await _context.Ledgers.FindAsync(oldLedgerId);
+                            if (oldLedger != null)
+                            {
+                                if (oldLedger.OpeningBalanceType == "Cr")
+                                {
+                                    oldLedger.OpeningBalance -= oldBalance;
+                                    if (oldLedger.OpeningBalance < 0)
+                                    {
+                                        oldLedger.OpeningBalance = Math.Abs(oldLedger.OpeningBalance);
+                                        oldLedger.OpeningBalanceType = "Dr";
+                                    }
+                                }
+                                else
+                                {
+                                    oldLedger.OpeningBalance += oldBalance;
+                                }
+                                _context.Entry(oldLedger).State = EntityState.Modified;
+                            }
+                        }
+
+                        // Add to new ledger
+                        if (newBalance > 0)
+                        {
+                            var newLedger = await _context.Ledgers.FindAsync(newLedgerId);
+                            if (newLedger != null)
+                            {
+                                if (newLedger.OpeningBalanceType == "Cr")
+                                {
+                                    newLedger.OpeningBalance += newBalance;
+                                }
+                                else
+                                {
+                                    newLedger.OpeningBalance -= newBalance;
+                                    if (newLedger.OpeningBalance < 0)
+                                    {
+                                        newLedger.OpeningBalance = Math.Abs(newLedger.OpeningBalance);
+                                        newLedger.OpeningBalanceType = "Cr";
+                                    }
+                                }
+                                _context.Entry(newLedger).State = EntityState.Modified;
+                            }
+                        }
+                    }
+
+                    // Adjust CustomerOpeningBalances
+                    if (oldCustomerId == resolvedCustomerId && oldLedgerId == newLedgerId)
+                    {
+                        var custOb = await _context.CustomerOpeningBalances.FirstOrDefaultAsync(c => 
+                            c.CustomerID == resolvedCustomerId && c.LedgerID == newLedgerId);
+                        if (custOb != null)
+                        {
+                            var otherCustAccounts = await _context.SavingAccountMasters
+                                .Where(a => a.SavingAccountID != id && a.CustomerID == resolvedCustomerId && a.LedgerID == newLedgerId && a.IsLegacyAccount)
+                                .ToListAsync();
+                            custOb.Amount = otherCustAccounts.Sum(a => a.OpeningBalance) + newBalance;
+                            _context.Entry(custOb).State = EntityState.Modified;
+                        }
+                        else if (newBalance > 0)
+                        {
+                            _context.CustomerOpeningBalances.Add(new CustomerOpeningBalance
+                            {
+                                CustomerID = resolvedCustomerId,
+                                LedgerID = newLedgerId,
+                                Amount = newBalance,
+                                BalanceType = "Cr",
+                                CreatedBy = existing.CreatedBy,
+                                CreatedOn = DateTime.Now
+                            });
+                        }
+                    }
+                    else
+                    {
+                        // Reconcile old customer/ledger
+                        var oldCustAccounts = await _context.SavingAccountMasters
+                            .Where(a => a.SavingAccountID != id && a.CustomerID == oldCustomerId && a.LedgerID == oldLedgerId && a.IsLegacyAccount)
+                            .ToListAsync();
+                        decimal remOldCustAmount = oldCustAccounts.Sum(a => a.OpeningBalance);
+                        var oldCustObs = await _context.CustomerOpeningBalances
+                            .Where(c => c.CustomerID == oldCustomerId && c.LedgerID == oldLedgerId)
+                            .ToListAsync();
+
+                        if (remOldCustAmount <= 0)
+                        {
+                            _context.CustomerOpeningBalances.RemoveRange(oldCustObs);
+                        }
+                        else if (oldCustObs.Any())
+                        {
+                            var firstOld = oldCustObs.First();
+                            firstOld.Amount = remOldCustAmount;
+                            _context.Entry(firstOld).State = EntityState.Modified;
+                            if (oldCustObs.Count > 1) _context.CustomerOpeningBalances.RemoveRange(oldCustObs.Skip(1));
+                        }
+
+                        // Add or update new customer/ledger
+                        if (newBalance > 0)
+                        {
+                            var newCustAccounts = await _context.SavingAccountMasters
+                                .Where(a => a.SavingAccountID != id && a.CustomerID == resolvedCustomerId && a.LedgerID == newLedgerId && a.IsLegacyAccount)
+                                .ToListAsync();
+                            decimal totalNewCustAmount = newCustAccounts.Sum(a => a.OpeningBalance) + newBalance;
+                            var newCustObs = await _context.CustomerOpeningBalances
+                                .Where(c => c.CustomerID == resolvedCustomerId && c.LedgerID == newLedgerId)
+                                .ToListAsync();
+
+                            if (newCustObs.Any())
+                            {
+                                var firstNew = newCustObs.First();
+                                firstNew.Amount = totalNewCustAmount;
+                                _context.Entry(firstNew).State = EntityState.Modified;
+                                if (newCustObs.Count > 1) _context.CustomerOpeningBalances.RemoveRange(newCustObs.Skip(1));
                             }
                             else
                             {
-                                ledger.OpeningBalance -= balanceDiff;
-                                if (ledger.OpeningBalance < 0)
+                                _context.CustomerOpeningBalances.Add(new CustomerOpeningBalance
                                 {
-                                    ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
-                                    ledger.OpeningBalanceType = "Cr";
-                                }
+                                    CustomerID = resolvedCustomerId,
+                                    LedgerID = newLedgerId,
+                                    Amount = totalNewCustAmount,
+                                    BalanceType = "Cr",
+                                    CreatedBy = existing.CreatedBy,
+                                    CreatedOn = DateTime.Now
+                                });
                             }
-                            _context.Entry(ledger).State = EntityState.Modified;
+                        }
+                    }
+
+                    // Adjust MemberOpeningBalances (if members involved)
+                    if (oldMemberId.HasValue && oldMemberId.Value > 0)
+                    {
+                        var oldMemAccounts = await _context.SavingAccountMasters
+                            .Where(a => a.SavingAccountID != id && a.MemberID == oldMemberId.Value && a.LedgerID == oldLedgerId && a.IsLegacyAccount)
+                            .ToListAsync();
+                        decimal remOldMemAmount = oldMemAccounts.Sum(a => a.OpeningBalance);
+                        var oldMemObs = await _context.MemberOpeningBalances
+                            .Where(m => m.MemberID == oldMemberId.Value && m.LedgerID == oldLedgerId)
+                            .ToListAsync();
+
+                        if (remOldMemAmount <= 0)
+                        {
+                            _context.MemberOpeningBalances.RemoveRange(oldMemObs);
+                        }
+                        else if (oldMemObs.Any())
+                        {
+                            var firstOldMem = oldMemObs.First();
+                            firstOldMem.Amount = remOldMemAmount;
+                            _context.Entry(firstOldMem).State = EntityState.Modified;
+                            if (oldMemObs.Count > 1) _context.MemberOpeningBalances.RemoveRange(oldMemObs.Skip(1));
+                        }
+                    }
+
+                    if (resolvedMemberId.HasValue && resolvedMemberId.Value > 0 && newBalance > 0)
+                    {
+                        var newMemAccounts = await _context.SavingAccountMasters
+                            .Where(a => a.SavingAccountID != id && a.MemberID == resolvedMemberId.Value && a.LedgerID == newLedgerId && a.IsLegacyAccount)
+                            .ToListAsync();
+                        decimal totalNewMemAmount = newMemAccounts.Sum(a => a.OpeningBalance) + newBalance;
+                        var newMemObs = await _context.MemberOpeningBalances
+                            .Where(m => m.MemberID == resolvedMemberId.Value && m.LedgerID == newLedgerId)
+                            .ToListAsync();
+
+                        if (newMemObs.Any())
+                        {
+                            var firstNewMem = newMemObs.First();
+                            firstNewMem.Amount = totalNewMemAmount;
+                            _context.Entry(firstNewMem).State = EntityState.Modified;
+                            if (newMemObs.Count > 1) _context.MemberOpeningBalances.RemoveRange(newMemObs.Skip(1));
+                        }
+                        else
+                        {
+                            _context.MemberOpeningBalances.Add(new MemberOpeningBalance
+                            {
+                                MemberID = resolvedMemberId.Value,
+                                LedgerID = newLedgerId,
+                                Amount = totalNewMemAmount,
+                                BalanceType = "Cr",
+                                CreatedBy = existing.CreatedBy,
+                                CreatedOn = DateTime.Now
+                            });
+                        }
+                    }
+
+                    // Update opening balance baseline transaction
+                    var obTxn = await _context.SavingTransactions.FirstOrDefaultAsync(t => t.SavingAccountID == id && t.Narration == "Opening Balance");
+                    if (obTxn != null)
+                    {
+                        obTxn.CustomerID = resolvedCustomerId;
+                        obTxn.Amount = newBalance;
+                        obTxn.BalanceAfterTxn = newBalance;
+                        obTxn.TransactionDate = dto.OpeningDate != default ? dto.OpeningDate : existing.OpeningDate;
+                        _context.Entry(obTxn).State = EntityState.Modified;
+                    }
+
+                    existing.LedgerID = newLedgerId;
+                    existing.OpeningBalance = newBalance;
+                    existing.CurrentBalance = (existing.CurrentBalance - oldBalance) + newBalance;
+                    existing.OpeningDate = dto.OpeningDate != default ? dto.OpeningDate : existing.OpeningDate;
+                }
+
+                existing.CustomerID = resolvedCustomerId;
+                existing.MemberID = resolvedMemberId;
+                existing.MinimumBalance = dto.MinimumBalance;
+                existing.InterestRate = dto.InterestRate;
+                existing.LienAmount = dto.LienAmount;
+                existing.LienReason = dto.LienReason;
+                existing.Status = string.IsNullOrWhiteSpace(dto.Status) ? existing.Status : dto.Status;
+                existing.NomineeName = dto.NomineeName;
+                existing.NomineeRelation = dto.NomineeRelation;
+                existing.NomineeAddress = dto.NomineeAddress;
+                existing.OldAccountNo = dto.OldAccountNo ?? dto.LegacyAccountNumber ?? existing.OldAccountNo;
+                existing.LegacyAccountNumber = dto.OldAccountNo ?? dto.LegacyAccountNumber ?? existing.LegacyAccountNumber;
+                existing.LastInterestPostingDate = dto.LastInterestPostingDate;
+                existing.LastInterestAmount = dto.LastInterestAmount;
+                existing.UpdatedOn = DateTime.Now;
+
+                // Joint Holders update
+                if (dto.AccountType == "Joint" && dto.JointHolderMemberIDs != null)
+                {
+                    existing.AccountType = "Joint";
+                    existing.JointHolders ??= new List<SavingAccountJointHolder>();
+                    if (existing.JointHolders.Any())
+                    {
+                        _context.SavingAccountJointHolders.RemoveRange(existing.JointHolders);
+                    }
+                    foreach (var memberId in dto.JointHolderMemberIDs)
+                    {
+                        if (memberId > 0 && memberId != existing.MemberID)
+                        {
+                            existing.JointHolders.Add(new SavingAccountJointHolder
+                            {
+                                SavingAccountID = id,
+                                MemberID = memberId,
+                                CreatedOn = DateTime.Now
+                            });
                         }
                     }
                 }
                 else
                 {
-                    // Case 2: Ledger changed! Reverse from old ledger, add to new ledger
-                    if (oldBalance > 0)
+                    existing.AccountType = "Personal";
+                    if (existing.JointHolders != null && existing.JointHolders.Any())
                     {
-                        var oldLedger = await _context.Ledgers.FindAsync(oldLedgerId);
-                        if (oldLedger != null)
-                        {
-                            if (oldLedger.OpeningBalanceType == "Cr")
-                            {
-                                oldLedger.OpeningBalance -= oldBalance;
-                                if (oldLedger.OpeningBalance < 0)
-                                {
-                                    oldLedger.OpeningBalance = Math.Abs(oldLedger.OpeningBalance);
-                                    oldLedger.OpeningBalanceType = "Dr";
-                                }
-                            }
-                            else
-                            {
-                                oldLedger.OpeningBalance += oldBalance;
-                            }
-                            _context.Entry(oldLedger).State = EntityState.Modified;
-                        }
-                    }
-
-                    if (newBalance > 0)
-                    {
-                        var newLedger = await _context.Ledgers.FindAsync(newLedgerId);
-                        if (newLedger != null)
-                        {
-                            if (newLedger.OpeningBalanceType == "Cr")
-                            {
-                                newLedger.OpeningBalance += newBalance;
-                            }
-                            else
-                            {
-                                newLedger.OpeningBalance -= newBalance;
-                                if (newLedger.OpeningBalance < 0)
-                                {
-                                    newLedger.OpeningBalance = Math.Abs(newLedger.OpeningBalance);
-                                    newLedger.OpeningBalanceType = "Cr";
-                                }
-                            }
-                            _context.Entry(newLedger).State = EntityState.Modified;
-                        }
-                    }
-
-                    // Update MemberOpeningBalance ledger and amount reference
-                    var memberOb = await _context.MemberOpeningBalances.FirstOrDefaultAsync(m => 
-                        m.MemberID == existing.MemberID && m.LedgerID == oldLedgerId && m.Amount == oldBalance);
-                    if (memberOb != null)
-                    {
-                        memberOb.LedgerID = newLedgerId;
-                        memberOb.Amount = newBalance;
-                        _context.Entry(memberOb).State = EntityState.Modified;
+                        _context.SavingAccountJointHolders.RemoveRange(existing.JointHolders);
                     }
                 }
 
-                existing.LedgerID = newLedgerId;
-                existing.OpeningBalance = newBalance;
-                existing.CurrentBalance = (existing.CurrentBalance - oldBalance) + newBalance;
-                existing.OpeningDate = dto.OpeningDate;
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
 
-                // Update opening balance baseline transaction
-                var obTxn = await _context.SavingTransactions.FirstOrDefaultAsync(t => t.SavingAccountID == id && t.Narration == "Opening Balance");
-                if (obTxn != null)
-                {
-                    obTxn.Amount = newBalance;
-                    obTxn.BalanceAfterTxn = newBalance;
-                    obTxn.TransactionDate = dto.OpeningDate;
-                    _context.Entry(obTxn).State = EntityState.Modified;
-                }
+                return Ok(new { message = "बचत खाते यशस्वीरित्या अपडेट केले!" });
             }
-
-            existing.MinimumBalance = dto.MinimumBalance;
-            existing.InterestRate = dto.InterestRate;
-            existing.LienAmount = dto.LienAmount;
-            existing.LienReason = dto.LienReason;
-            existing.Status = dto.Status;
-            existing.NomineeName = dto.NomineeName;
-            existing.NomineeRelation = dto.NomineeRelation;
-            existing.NomineeAddress = dto.NomineeAddress;
-            existing.OldAccountNo = dto.OldAccountNo ?? dto.LegacyAccountNumber;
-            existing.LegacyAccountNumber = dto.OldAccountNo ?? dto.LegacyAccountNumber;
-            existing.LastInterestPostingDate = dto.LastInterestPostingDate;
-            existing.LastInterestAmount = dto.LastInterestAmount;
-            existing.UpdatedOn = DateTime.Now;
-
-            // Handle joint holders update
-            if (dto.AccountType == "Joint" && dto.JointHolderMemberIDs != null)
+            catch (Exception ex)
             {
-                existing.AccountType = "Joint";
-                _context.SavingAccountJointHolders.RemoveRange(existing.JointHolders);
-                foreach (var memberId in dto.JointHolderMemberIDs)
-                {
-                    existing.JointHolders.Add(new SavingAccountJointHolder
-                    {
-                        SavingAccountID = id,
-                        MemberID = memberId,
-                        CreatedOn = DateTime.Now
-                    });
-                }
+                await transaction.RollbackAsync();
+                return StatusCode(500, new 
+                { 
+                    message = "बचत खाते अपडेट करताना तांत्रिक त्रुटी आली.",
+                    detail = ex.Message,
+                    innerDetail = ex.InnerException?.Message
+                });
             }
-            else
-            {
-                existing.AccountType = "Personal";
-                _context.SavingAccountJointHolders.RemoveRange(existing.JointHolders);
-            }
-
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "बचत खाते यशस्वीरित्या अपडेट केले!" });
         }
 
         // DELETE: api/SavingAccounts/5
@@ -769,100 +1048,131 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "या खात्यावर व्यवहार झालेले आहेत. त्यामुळे खाते डिलीट करता येणार नाही." });
             }
 
-            // If it's a legacy account, reverse the Ledger and reconcile MemberOpeningBalances safely
-            if (savingAccount.IsLegacyAccount && savingAccount.OpeningBalance > 0)
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
             {
-                // 1. Adjust General Ledger Opening Balance
-                var ledger = await _context.Ledgers.FindAsync(savingAccount.LedgerID);
-                if (ledger != null)
+                // If it's a legacy account, reverse the Ledger and reconcile CustomerOpeningBalances and MemberOpeningBalances safely
+                if (savingAccount.IsLegacyAccount && savingAccount.OpeningBalance > 0)
                 {
-                    if (ledger.OpeningBalanceType == "Cr")
+                    // 1. Adjust General Ledger Opening Balance
+                    var ledger = await _context.Ledgers.FindAsync(savingAccount.LedgerID);
+                    if (ledger != null)
                     {
-                        ledger.OpeningBalance -= savingAccount.OpeningBalance;
-                        if (ledger.OpeningBalance < 0)
+                        if (ledger.OpeningBalanceType == "Cr")
                         {
-                            ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
-                            ledger.OpeningBalanceType = "Dr";
+                            ledger.OpeningBalance -= savingAccount.OpeningBalance;
+                            if (ledger.OpeningBalance < 0)
+                            {
+                                ledger.OpeningBalance = Math.Abs(ledger.OpeningBalance);
+                                ledger.OpeningBalanceType = "Dr";
+                            }
                         }
-                    }
-                    else // Dr
-                    {
-                        ledger.OpeningBalance += savingAccount.OpeningBalance;
-                    }
-                    _context.Entry(ledger).State = EntityState.Modified;
-                }
-
-                // 2. Safe MemberOpeningBalances Reconciliation
-                // Check if the member has other remaining legacy accounts under the same ledger
-                var otherLegacyAccounts = await _context.SavingAccountMasters
-                    .Where(a => a.SavingAccountID != id && a.MemberID == savingAccount.MemberID && a.LedgerID == savingAccount.LedgerID && a.IsLegacyAccount)
-                    .ToListAsync();
-
-                decimal requiredRemainingAmount = otherLegacyAccounts.Sum(a => a.OpeningBalance);
-
-                var memberObs = await _context.MemberOpeningBalances
-                    .Where(m => m.MemberID == savingAccount.MemberID && m.LedgerID == savingAccount.LedgerID)
-                    .ToListAsync();
-
-                if (requiredRemainingAmount <= 0)
-                {
-                    // No other legacy accounts exist for this member under this ledger -> Remove all
-                    if (memberObs.Any())
-                    {
-                        _context.MemberOpeningBalances.RemoveRange(memberObs);
-                    }
-                }
-                else
-                {
-                    // Other legacy accounts still exist -> Reconcile total amount safely without deleting other accounts' balance
-                    if (memberObs.Any())
-                    {
-                        var primaryMob = memberObs.First();
-                        primaryMob.Amount = requiredRemainingAmount;
-                        _context.Entry(primaryMob).State = EntityState.Modified;
-
-                        if (memberObs.Count > 1)
+                        else // Dr
                         {
-                            _context.MemberOpeningBalances.RemoveRange(memberObs.Skip(1));
+                            ledger.OpeningBalance += savingAccount.OpeningBalance;
+                        }
+                        _context.Entry(ledger).State = EntityState.Modified;
+                    }
+
+                    // 2. Safe CustomerOpeningBalances Reconciliation
+                    var otherCustomerLegacyAccounts = await _context.SavingAccountMasters
+                        .Where(a => a.SavingAccountID != id && a.CustomerID == savingAccount.CustomerID && a.LedgerID == savingAccount.LedgerID && a.IsLegacyAccount)
+                        .ToListAsync();
+
+                    decimal requiredRemainingCustomerAmount = otherCustomerLegacyAccounts.Sum(a => a.OpeningBalance);
+
+                    var custObs = await _context.CustomerOpeningBalances
+                        .Where(c => c.CustomerID == savingAccount.CustomerID && c.LedgerID == savingAccount.LedgerID)
+                        .ToListAsync();
+
+                    if (requiredRemainingCustomerAmount <= 0)
+                    {
+                        if (custObs.Any())
+                        {
+                            _context.CustomerOpeningBalances.RemoveRange(custObs);
                         }
                     }
                     else
                     {
-                        _context.MemberOpeningBalances.Add(new MemberOpeningBalance
+                        if (custObs.Any())
                         {
-                            MemberID = savingAccount.MemberID ?? savingAccount.CustomerID,
-                            LedgerID = savingAccount.LedgerID,
-                            Amount = requiredRemainingAmount,
-                            BalanceType = "Cr",
-                            CreatedBy = savingAccount.CreatedBy,
-                            CreatedOn = DateTime.Now
-                        });
+                            var primaryCob = custObs.First();
+                            primaryCob.Amount = requiredRemainingCustomerAmount;
+                            _context.Entry(primaryCob).State = EntityState.Modified;
+
+                            if (custObs.Count > 1)
+                            {
+                                _context.CustomerOpeningBalances.RemoveRange(custObs.Skip(1));
+                            }
+                        }
+                    }
+
+                    // 3. Safe MemberOpeningBalances Reconciliation (if member was set)
+                    if (savingAccount.MemberID.HasValue && savingAccount.MemberID.Value > 0)
+                    {
+                        int memId = savingAccount.MemberID.Value;
+                        var otherMemberLegacyAccounts = await _context.SavingAccountMasters
+                            .Where(a => a.SavingAccountID != id && a.MemberID == memId && a.LedgerID == savingAccount.LedgerID && a.IsLegacyAccount)
+                            .ToListAsync();
+
+                        decimal requiredRemainingMemberAmount = otherMemberLegacyAccounts.Sum(a => a.OpeningBalance);
+
+                        var memberObs = await _context.MemberOpeningBalances
+                            .Where(m => m.MemberID == memId && m.LedgerID == savingAccount.LedgerID)
+                            .ToListAsync();
+
+                        if (requiredRemainingMemberAmount <= 0)
+                        {
+                            if (memberObs.Any())
+                            {
+                                _context.MemberOpeningBalances.RemoveRange(memberObs);
+                            }
+                        }
+                        else
+                        {
+                            if (memberObs.Any())
+                            {
+                                var primaryMob = memberObs.First();
+                                primaryMob.Amount = requiredRemainingMemberAmount;
+                                _context.Entry(primaryMob).State = EntityState.Modified;
+
+                                if (memberObs.Count > 1)
+                                {
+                                    _context.MemberOpeningBalances.RemoveRange(memberObs.Skip(1));
+                                }
+                            }
+                        }
                     }
                 }
-            }
 
-            // Delete Transactions
-            if (transactions.Any())
-            {
-                _context.SavingTransactions.RemoveRange(transactions);
-            }
+                // Delete Transactions
+                if (transactions.Any())
+                {
+                    _context.SavingTransactions.RemoveRange(transactions);
+                }
 
-            // Delete Joint Holders
-            if (savingAccount.JointHolders != null && savingAccount.JointHolders.Any())
-            {
-                _context.SavingAccountJointHolders.RemoveRange(savingAccount.JointHolders);
-            }
+                // Delete Joint Holders
+                if (savingAccount.JointHolders != null && savingAccount.JointHolders.Any())
+                {
+                    _context.SavingAccountJointHolders.RemoveRange(savingAccount.JointHolders);
+                }
 
-            // Delete the account
-            try
-            {
+                // Delete the account
                 _context.SavingAccountMasters.Remove(savingAccount);
                 await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
                 return Ok(new { message = "खाते यशस्वीरित्या डिलीट केले." });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return BadRequest(new { message = "या खात्यावर व्यवहाराच्या किंवा इतर मॉड्यूलमध्ये (उदा. कर्ज/व्हाउचर) नोंदी जोडलेल्या आहेत. त्यामुळे खाते डिलीट करता येणार नाही." });
+                await transaction.RollbackAsync();
+                return StatusCode(500, new 
+                { 
+                    message = "खाते डिलीट करताना तांत्रिक त्रुटी आली.", 
+                    detail = ex.Message,
+                    innerDetail = ex.InnerException?.Message
+                });
             }
         }
 

@@ -2622,12 +2622,160 @@ BEGIN
     WHERE m.[MemberID] NOT IN (
         SELECT DISTINCT sa.[MemberId] 
         FROM [ShareAccounts] sa 
-        WHERE sa.[TotalShareCount] > 0 
-          AND sa.[IsDeleted] = 0
+        WHERE sa.[TotalShareCount] > 0
     )
     AND (m.[MemberCode] IS NOT NULL OR m.[MembershipType] = 'Regular');
 
     PRINT 'Repaired Members: Cleared MemberCode for all non-shareholders.';
+END
+GO
+
+-- -----------------------------------------------------------------------------------------
+-- 50. SAVING & DEPOSIT CIF-FIRST SCHEMA & NULLABLE MEMBERID UPGRADES
+-- -----------------------------------------------------------------------------------------
+-- 50.1 SavingTransactions: Ensure CustomerID column exists
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SavingTransactions')
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SavingTransactions') AND name = 'CustomerID')
+    BEGIN
+        ALTER TABLE [SavingTransactions] ADD [CustomerID] INT NOT NULL DEFAULT 1;
+        PRINT 'Added CustomerID to SavingTransactions';
+    END
+END
+GO
+
+-- 50.2 SavingAccountJointHolders: Ensure CustomerID column exists and MemberID is nullable
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SavingAccountJointHolders')
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SavingAccountJointHolders') AND name = 'CustomerID')
+    BEGIN
+        ALTER TABLE [SavingAccountJointHolders] ADD [CustomerID] INT NULL;
+        PRINT 'Added CustomerID to SavingAccountJointHolders';
+    END
+
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SavingAccountJointHolders') AND name = 'MemberID' AND is_nullable = 0)
+    BEGIN
+        ALTER TABLE [SavingAccountJointHolders] ALTER COLUMN [MemberID] INT NULL;
+        PRINT 'Altered MemberID to INT NULL on SavingAccountJointHolders';
+    END
+END
+GO
+
+-- 50.3 SavingAccountMasters: Ensure MemberID is nullable for Non-Member accounts
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SavingAccountMasters')
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SavingAccountMasters') AND name = 'MemberID' AND is_nullable = 0)
+    BEGIN
+        ALTER TABLE [SavingAccountMasters] ALTER COLUMN [MemberID] INT NULL;
+        PRINT 'Altered MemberID to INT NULL on SavingAccountMasters';
+    END
+END
+GO
+
+-- 50.4 FdAccounts: Ensure MemberID is nullable for Non-Member accounts
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'FdAccounts')
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('FdAccounts') AND name = 'MemberID' AND is_nullable = 0)
+    BEGIN
+        ALTER TABLE [FdAccounts] ALTER COLUMN [MemberID] INT NULL;
+        PRINT 'Altered MemberID to INT NULL on FdAccounts';
+    END
+END
+GO
+
+-- 50.5 RdAccounts: Ensure MemberID is nullable for Non-Member accounts
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'RdAccounts')
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('RdAccounts') AND name = 'MemberID' AND is_nullable = 0)
+    BEGIN
+        ALTER TABLE [RdAccounts] ALTER COLUMN [MemberID] INT NULL;
+        PRINT 'Altered MemberID to INT NULL on RdAccounts';
+    END
+END
+GO
+
+-- 50.6 PigmyAccounts: Ensure MemberID is nullable for Non-Member accounts
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'PigmyAccounts')
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('PigmyAccounts') AND name = 'MemberID' AND is_nullable = 0)
+    BEGIN
+        ALTER TABLE [PigmyAccounts] ALTER COLUMN [MemberID] INT NULL;
+        PRINT 'Altered MemberID to INT NULL on PigmyAccounts';
+    END
+END
+GO
+
+-- -----------------------------------------------------------------------------------------
+-- 98. CORE BANKING: MEMBER CODE RESEQUENCING & NON-SHAREHOLDER CLEANUP
+-- -----------------------------------------------------------------------------------------
+IF OBJECT_ID('Members', 'U') IS NOT NULL AND OBJECT_ID('ShareAccounts', 'U') IS NOT NULL
+BEGIN
+    BEGIN TRY
+        -- Step 1: Clear phantom MemberCode for non-shareholders
+        UPDATE m
+        SET m.MemberCode = NULL,
+            m.MembershipType = 'Nominal'
+        FROM Members m
+        WHERE m.MemberID NOT IN (
+            SELECT DISTINCT sa.MemberId 
+            FROM ShareAccounts sa 
+            WHERE sa.TotalShareCount > 0
+        )
+        AND m.MemberCode IS NOT NULL;
+
+        -- Step 2: Resequence active shareholders cleanly
+        IF EXISTS (SELECT 1 FROM ShareAccounts WHERE TotalShareCount > 0)
+        BEGIN
+            DECLARE @ShareholdersTable TABLE (
+                SeqNo INT IDENTITY(1,1),
+                MemberID INT,
+                ShareAccountId INT
+            );
+
+            INSERT INTO @ShareholdersTable (MemberID, ShareAccountId)
+            SELECT 
+                sa.MemberId,
+                sa.ShareAccountId
+            FROM ShareAccounts sa
+            INNER JOIN Members m ON sa.MemberId = m.MemberID
+            OUTER APPLY (
+                SELECT TOP 1 sc.CertificateNo 
+                FROM ShareCertificates sc 
+                WHERE sc.ShareAccountId = sa.ShareAccountId 
+                ORDER BY sc.CertificateId ASC
+            ) cert
+            WHERE sa.TotalShareCount > 0
+            ORDER BY 
+                TRY_CAST(m.LegacyMemberNo AS INT) ASC,
+                TRY_CAST(REPLACE(REPLACE(COALESCE(cert.CertificateNo, ''), 'CERT-', ''), 'CERT', '') AS INT) ASC,
+                sa.ShareAccountId ASC;
+
+            -- Assign temporary unique codes to prevent unique constraint collision
+            UPDATE m
+            SET m.MemberCode = 'TMP' + CAST(s.SeqNo AS NVARCHAR(10))
+            FROM Members m
+            INNER JOIN @ShareholdersTable s ON m.MemberID = s.MemberID;
+
+            -- Assign clean sequential codes MEM0001, MEM0002...
+            UPDATE m
+            SET 
+                m.MemberCode = 'MEM' + RIGHT('0000' + CAST(s.SeqNo AS NVARCHAR(10)), 4),
+                m.MembershipType = 'Regular'
+            FROM Members m
+            INNER JOIN @ShareholdersTable s ON m.MemberID = s.MemberID;
+
+            -- Update ShareAccounts AccountNo to match
+            UPDATE sa
+            SET sa.AccountNo = 'SA-MEM' + RIGHT('0000' + CAST(s.SeqNo AS NVARCHAR(10)), 4)
+            FROM ShareAccounts sa
+            INNER JOIN @ShareholdersTable s ON sa.ShareAccountId = s.ShareAccountId;
+        END
+
+        PRINT 'Cleaned non-shareholder MemberCodes and resequenced active shareholders.';
+    END TRY
+    BEGIN CATCH
+        PRINT 'MemberCode Resequencing Notice: ' + ERROR_MESSAGE();
+    END CATCH
 END
 GO
 

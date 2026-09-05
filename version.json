@@ -1,13 +1,13 @@
 {
-  "version": "2.4.1",
+  "version": "2.4.2",
   "releaseDate": "2026-09-05",
-  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.4.1",
+  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.4.2",
   "changelog": [
-    "⭐ शेअर ओपनिंग बॅलन्स: नोंद डिलीट केल्यावर MemberID व MemberCode स्वयंचलित -1 ने रोलबॅक (Decrement) लॉजिक.",
-    "⭐ मेंबर सर्च व सिलेक्ट: [MEM0321] सभासद आणि [CIF000322] (नवीन सभासद) असे स्पष्ट व ठळक वर्गीकरण.",
-    "⭐ बांबवडे व सर्व VPS डेटाबेस: ग्राहक ते सभासद स्वयंचलित १-टू-१ सुरक्षित डेटा सिंक.",
-    "⭐ जुना सभासद आयडी (Legacy ID) रिअल-टाईम डुप्लिकेशन प्रिव्हेन्शन व ऑडीट सुरक्षा.",
-    "⭐ व्हाउचर्स मंजुरी, लेजर रीकन्सिलिएशन आणि सीबीएस मानके सुसंगती."
+    "⭐ बचत खाते सुरुवातीची शिल्लक स्थलांतर: CIF-First आर्किटेक्चर, Non-Member (MemberID = NULL) खाती सुरक्षित सेव्ह, एडिट व डिलीटची पूर्ण सुविधा.",
+    "⭐ बचत खाती यादी अहवाल: CIF Number (CIF क्र.) साठी स्वतंत्र समर्पित कॉलम, Print व Excel एक्सपोर्ट सपोर्ट.",
+    "⭐ डेटाबेस स्कीमा सुधारणा: SavingTransactions, SavingAccountJointHolders, SavingAccountMasters, FdAccounts, RdAccounts, PigmyAccounts मध्ये CustomerID सपोर्ट व Nullable MemberID सपोर्ट.",
+    "⭐ लेजर व कॅश बॅलन्स रीकन्सिलिएशन: बचत स्थलांतरित खाती एडिट किंवा डिलीट करताना सुरक्षित जर्नल व्हाउचर व लेजर बॅलन्स रीकन्सिलिएशन.",
+    "⭐ शेअर ओपनिंग बॅलन्स: नोंद डिलीट केल्यावर MemberID व MemberCode स्वयंचलित -1 ने रोलबॅक लॉजिक."
   ],
   "hasDatabaseMigration": true,
   "isCritical": false

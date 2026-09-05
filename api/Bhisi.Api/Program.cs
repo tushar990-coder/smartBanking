@@ -284,6 +284,14 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingTransactions')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingTransactions]') AND name = 'CustomerID')
+                BEGIN
+                    ALTER TABLE [SavingTransactions] ADD [CustomerID] int NOT NULL DEFAULT 1;
+                END
+            END
+
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AgentCustomerRequests')
             BEGIN
                 CREATE TABLE [AgentCustomerRequests] (

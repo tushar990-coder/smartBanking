@@ -284,7 +284,7 @@ namespace Bhisi.Api.Controllers
                 var shareholderCodes = await _context.Members
                     .AsNoTracking()
                     .Where(m => !string.IsNullOrEmpty(m.MemberCode) &&
-                                _context.ShareAccounts.Any(sa => sa.MemberId == m.MemberID))
+                                _context.ShareAccounts.Any(sa => sa.MemberId == m.MemberID && sa.TotalShareCount > 0))
                     .Select(m => m.MemberCode)
                     .ToListAsync();
 
@@ -307,25 +307,11 @@ namespace Bhisi.Api.Controllers
 
                 if (maxNum == 0)
                 {
-                    maxNum = await _context.ShareAccounts.CountAsync();
+                    maxNum = await _context.ShareAccounts.CountAsync(sa => sa.TotalShareCount > 0);
                 }
 
                 int nextNum = maxNum + 1;
                 string candidate = $"MEM{nextNum:D4}";
-
-                var allMemberCodes = await _context.Members
-                    .AsNoTracking()
-                    .Where(m => !string.IsNullOrEmpty(m.MemberCode))
-                    .Select(m => m.MemberCode)
-                    .ToListAsync();
-
-                // Ensure candidate is truly unique across all active records in database
-                var codeSet = new HashSet<string>(allMemberCodes.Where(c => !string.IsNullOrWhiteSpace(c))!, StringComparer.OrdinalIgnoreCase);
-                while (codeSet.Contains(candidate))
-                {
-                    nextNum++;
-                    candidate = $"MEM{nextNum:D4}";
-                }
 
                 return Content(candidate, "text/plain");
             }

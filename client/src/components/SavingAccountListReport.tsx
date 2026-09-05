@@ -185,8 +185,8 @@ export default function SavingAccountListReport() {
       excelRows.push({
         'अ.क्र.': sr++,
         'बचत खाते नं. (CBS)': a.accountNo,
-        'बचत खाते नं.': a.accountNo,
         'जुने खाते नं.': a.oldAccountNo || a.legacyAccountNumber || '-',
+        'CIF क्र.': getCifNo(a),
         'सभासद कोड': a.memberCode || a.member?.memberCode || a.memberID || '-',
         'खातेदाराचे नाव': getMemberName(a),
         'खाते उघडल्याचा दिनांक': formatDisplayDate(a.openingDate),
@@ -197,8 +197,9 @@ export default function SavingAccountListReport() {
 
     excelRows.push({
       'अ.क्र.': '',
-      'बचत खाते नं.': '',
+      'बचत खाते नं. (CBS)': '',
       'जुने खाते नं.': '',
+      'CIF क्र.': '',
       'सभासद कोड': '',
       'खातेदाराचे नाव': 'एकूण बचत शिल्लक (Grand Total):',
       'खाते उघडल्याचा दिनांक': '',
@@ -372,23 +373,24 @@ export default function SavingAccountListReport() {
           <table className="w-full border-collapse border border-gray-900 text-xs">
             <thead>
               <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
-                <th className="border border-gray-900 py-1.5 px-1 w-[6%] text-center">अ.क्र.</th>
-                <th className="border border-gray-900 py-1.5 px-2 w-[20%] text-center">बचत खाते नं.</th>
-                <th className="border border-gray-900 py-1.5 px-3 w-[40%] text-left">खातेदाराचे नाव</th>
-                <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-center">उघडल्याचा दिनांक</th>
-                <th className="border border-gray-900 py-1.5 px-3 w-[18%] text-right font-extrabold">शिल्लक रक्कम (₹)</th>
+                <th className="border border-gray-900 py-1.5 px-1 w-[5%] text-center">अ.क्र.</th>
+                <th className="border border-gray-900 py-1.5 px-2 w-[17%] text-center">बचत खाते नं.</th>
+                <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-center font-mono">CIF क्र.</th>
+                <th className="border border-gray-900 py-1.5 px-3 w-[35%] text-left">खातेदाराचे नाव</th>
+                <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-center">उघडल्याचा दिनांक</th>
+                <th className="border border-gray-900 py-1.5 px-3 w-[15%] text-right font-extrabold">शिल्लक रक्कम (₹)</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
+                  <td colSpan={6} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
                     माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
                   </td>
                 </tr>
               ) : filteredData.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
+                  <td colSpan={6} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
                     कोणतीही बचत खाते नोंद आढळली नाही.
                   </td>
                 </tr>
@@ -406,11 +408,14 @@ export default function SavingAccountListReport() {
                         </div>
                       )}
                     </td>
+                    <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-primary print:text-black">
+                      {getCifNo(acc)}
+                    </td>
                     <td className="border border-gray-900 py-1 px-3 font-medium">
                       <div className="font-bold text-gray-900 leading-snug">{getMemberName(acc)}</div>
-                      {(acc.memberCode || acc.cifNo) && (
+                      {acc.memberCode && (
                         <div className="text-[10px] text-gray-600 font-mono print:text-black mt-0.5">
-                          {acc.memberCode ? `कोड: ${acc.memberCode}` : ''} {acc.cifNo ? ` | CIF: ${acc.cifNo}` : ''}
+                          सभासद कोड: <span className="font-bold text-gray-800">{acc.memberCode}</span>
                         </div>
                       )}
                     </td>
@@ -424,20 +429,20 @@ export default function SavingAccountListReport() {
                 ))
               )}
             </tbody>
-              {filteredData.length > 0 && (
-                <tfoot>
-                  <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
-                    <td colSpan={4} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
-                      एकूण बचत शिल्लक बेरीज:
-                    </td>
-                    <td className="border border-gray-900 py-1.5 px-3 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
-                      ₹ {fmtCurrency(totalBalance)}
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
+            {filteredData.length > 0 && (
+              <tfoot>
+                <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
+                  <td colSpan={5} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                    एकूण बचत शिल्लक बेरीज:
+                  </td>
+                  <td className="border border-gray-900 py-1.5 px-3 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
+                    ₹ {fmtCurrency(totalBalance)}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
 
         {/* Verification Signatures Section */}
         <div className="mt-14 pt-4 border-t border-dashed border-gray-400 grid grid-cols-3 text-center text-xs font-bold text-gray-900">

@@ -38,6 +38,7 @@ export default function CustomerSearchSelect({
     return customers.map((c: any) => {
       const cId = Number(c.customerID || c.customerId || c.memberID || c.memberId || c.CustomerID || c.MemberID || 0);
       const cif = (c.cifNo || c.cif || c.CIFNo || '').trim();
+      const legacyCust = (c.legacyCustomerNo || c.LegacyCustomerNo || '').trim();
       const code = (c.memberProfile?.memberCode || c.memberProfile?.MemberCode || c.memberCode || c.code || c.MemberCode || '').trim();
       const mobile = (c.mobileNo || c.mobile || c.MobileNo || '').trim();
       const aadhaar = (c.aadhaarNo || c.aadhaar || c.AadhaarNo || '').trim();
@@ -48,8 +49,9 @@ export default function CustomerSearchSelect({
       const fullName = [fName, mName, lName].filter(Boolean).join(' ').trim();
 
       let codeParts: string[] = [];
-      if (code && !code.startsWith('TEMP')) codeParts.push(`सभासद क्र.: ${code}`);
       if (cif) codeParts.push(`CIF: ${cif}`);
+      if (legacyCust) codeParts.push(`जुना CIF: ${legacyCust}`);
+      if (code && !code.startsWith('TEMP')) codeParts.push(`सभासद: ${code}`);
       if (mobile) codeParts.push(`मो.: ${mobile}`);
 
       const codeStr = codeParts.join(' | ');
@@ -62,6 +64,7 @@ export default function CustomerSearchSelect({
           ...c,
           customerID: cId,
           cifNo: cif,
+          legacyCustomerNo: legacyCust,
           memberCode: code,
           mobileNo: mobile,
           aadhaarNo: aadhaar,
@@ -93,6 +96,7 @@ export default function CustomerSearchSelect({
       ${customer.lastName} 
       ${customer.fullName} 
       ${customer.cifNo || ''} 
+      ${customer.legacyCustomerNo || ''} 
       ${customer.memberCode || ''} 
       ${customer.mobileNo || ''} 
       ${customer.aadhaarNo || ''}

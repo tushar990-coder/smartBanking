@@ -67,6 +67,7 @@ const SavingOpeningBalance: React.FC = () => {
 
   const initialFormState = {
     branchID: user?.branchID || 1,
+    customerID: 0,
     memberID: 0,
     oldAccountNo: '',
     settingID: 0,
@@ -256,7 +257,8 @@ const SavingOpeningBalance: React.FC = () => {
 
     setFormData({
       branchID: account.branchID || user?.branchID || 1,
-      memberID: account.memberID,
+      customerID: account.customerID || 0,
+      memberID: account.memberID || 0,
       oldAccountNo: account.oldAccountNo || account.legacyAccountNumber || '',
       settingID: account.settingID || 0,
       accountType: account.accountType || 'Personal',
@@ -332,8 +334,18 @@ const SavingOpeningBalance: React.FC = () => {
     setError('');
     setSuccess('');
 
-    if (!formData.memberID || Number(formData.memberID) === 0) {
-      setError('कृपया सभासद निवडा.');
+    const selected = members.find(m => 
+      (Number(formData.customerID) > 0 && m.customerID === Number(formData.customerID)) ||
+      (Number(formData.memberID) > 0 && (m.memberID === Number(formData.memberID) || m.customerID === Number(formData.memberID))) ||
+      (m.id === Number(formData.customerID || formData.memberID))
+    );
+
+    const resolvedCustomerId = selected?.customerID || Number(formData.customerID) || (selected?.id ? Number(selected.id) : 0);
+    const rawMemId = selected?.memberProfile?.memberID || selected?.memberID;
+    const resolvedMemberId = rawMemId && Number(rawMemId) > 0 && !selected?.memberCode?.startsWith('TEMP') ? Number(rawMemId) : null;
+
+    if (!resolvedCustomerId && !resolvedMemberId) {
+      setError('कृपया ग्राहक किंवा सभासद निवडा.');
       return;
     }
 
@@ -359,25 +371,39 @@ const SavingOpeningBalance: React.FC = () => {
     }
 
     // Check duplicate account
-    if (!isEditMode && confirmedMemberID !== Number(formData.memberID)) {
-      const existing = allSavingAccounts.filter((a: any) => a.memberID === Number(formData.memberID));
+    if (!isEditMode && confirmedMemberID !== Number(formData.memberID || formData.customerID)) {
+      const existing = allSavingAccounts.filter((a: any) => 
+        (resolvedCustomerId > 0 && a.customerID === resolvedCustomerId) ||
+        (resolvedMemberId && a.memberID === resolvedMemberId)
+      );
       if (existing.length > 0) {
         setShowDuplicateConfirmModal(true);
         return;
       }
     }
 
-    await executeSave(finalJointHolders);
+    await executeSave(finalJointHolders, resolvedCustomerId, resolvedMemberId);
   };
 
-  const executeSave = async (finalJointHolders?: number[]) => {
+  const executeSave = async (finalJointHolders?: number[], customCustomerId?: number, customMemberId?: number | null) => {
     setLoading(true);
     try {
+      const selected = members.find(m => 
+        (Number(formData.customerID) > 0 && m.customerID === Number(formData.customerID)) ||
+        (Number(formData.memberID) > 0 && (m.memberID === Number(formData.memberID) || m.customerID === Number(formData.memberID))) ||
+        (m.id === Number(formData.customerID || formData.memberID))
+      );
+
+      const resolvedCustomerId = customCustomerId !== undefined ? customCustomerId : (selected?.customerID || Number(formData.customerID) || (selected?.id ? Number(selected.id) : 0));
+      const rawMemId = customMemberId !== undefined ? customMemberId : (selected?.memberProfile?.memberID || selected?.memberID);
+      const resolvedMemberId = rawMemId && Number(rawMemId) > 0 && !selected?.memberCode?.startsWith('TEMP') ? Number(rawMemId) : null;
+
       const jointIds = finalJointHolders !== undefined ? finalJointHolders : (formData.accountType === 'Joint' ? jointHolderMemberIDs : []);
       const payload = {
         savingAccountID: isEditMode && editAccountId ? editAccountId : 0,
         branchID: Number(formData.branchID),
-        memberID: Number(formData.memberID),
+        customerID: resolvedCustomerId > 0 ? resolvedCustomerId : null,
+        memberID: resolvedMemberId,
         oldAccountNo: formData.oldAccountNo ? formData.oldAccountNo.trim() : null,
         settingID: Number(formData.settingID) === -1 ? null : Number(formData.settingID),
         accountType: formData.accountType,
@@ -478,8 +504,18 @@ const SavingOpeningBalance: React.FC = () => {
     return `${cifPart}${m.memberCode} - ${m.firstName} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName}${oldCodePart}`;
   };
 
-  const selectedMember = members.find(m => (m.memberID || m.customerID) === Number(formData.memberID));
-  const existingMemberAccounts = allSavingAccounts.filter((a: any) => a.memberID === Number(formData.memberID) && a.savingAccountID !== editAccountId);
+  const selectedMember = members.find(m => 
+    (Number(formData.customerID) > 0 && m.customerID === Number(formData.customerID)) ||
+    (Number(formData.memberID) > 0 && (m.memberID === Number(formData.memberID) || m.customerID === Number(formData.memberID))) ||
+    (m.id === Number(formData.customerID || formData.memberID))
+  );
+
+  const existingMemberAccounts = allSavingAccounts.filter((a: any) => {
+    if (a.savingAccountID === editAccountId) return false;
+    if (formData.customerID && a.customerID === Number(formData.customerID)) return true;
+    if (formData.memberID && a.memberID === Number(formData.memberID)) return true;
+    return false;
+  });
 
   const filteredMigrated = migratedAccounts.filter(acc => {
     const q = searchQuery.toLowerCase().trim();
@@ -693,29 +729,55 @@ const SavingOpeningBalance: React.FC = () => {
 
             <div className="pt-1.5 border-t border-gray-200">
               <label className={labelClass}>
-                सभासद निवडा (Select Member) <span className="text-red-500">*</span>
+                ग्राहक / सभासद निवडा (Select Customer / Member) <span className="text-red-500">*</span>
               </label>
               <div className={isEditMode ? 'opacity-70 pointer-events-none' : ''}>
                 <MemberSearchSelect
                   members={members}
-                  value={formData.memberID ? Number(formData.memberID) : ''}
-                  onChange={(val) => setFormData((prev) => ({ ...prev, memberID: val ? Number(val) : 0 }))}
-                  placeholder="-- सभासद नाव, कोड किंवा मोबाईलने शोधा --"
+                  value={formData.customerID || formData.memberID || ''}
+                  onChange={(val) => {
+                    if (!val) {
+                      setFormData((prev) => ({ ...prev, customerID: 0, memberID: 0 }));
+                      return;
+                    }
+                    const selected = members.find(m => (m.customerID === Number(val) || m.memberID === Number(val) || m.id === Number(val)));
+                    const custId = selected?.customerID || Number(val);
+                    const memId = selected?.memberProfile?.memberID || selected?.memberID || 0;
+                    setFormData((prev) => ({
+                      ...prev,
+                      customerID: custId,
+                      memberID: memId
+                    }));
+                  }}
+                  placeholder="-- ग्राहक / सभासद नाव, कोड किंवा मोबाईलने शोधा --"
                 />
               </div>
               {selectedMember && (
-                <div className="mt-1 p-1.5 bg-primary/5 border border-primary/20 rounded-sm text-[10px] space-y-0.5 text-gray-800 font-medium">
+                <div className="mt-1 p-2 bg-primary/5 border border-primary/20 rounded-sm text-[11px] space-y-1 text-gray-800 font-medium">
                   <div className="flex justify-between items-center">
                     <span><b>CIF No:</b> {selectedMember.cifNo || '-'}</span>
-                    <span><b>सभासद कोड:</b> {selectedMember.memberCode}</span>
+                    <span>
+                      {selectedMember.memberCode && !selectedMember.memberCode.startsWith('TEMP') ? (
+                        <span className="text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          सभासद कोड: {selectedMember.memberCode}
+                        </span>
+                      ) : (
+                        <span className="text-blue-800 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                          बिगर-सभासद ग्राहक (Non-Member)
+                        </span>
+                      )}
+                    </span>
                   </div>
-                  <div className="pt-0.5"><b>ग्राहक नाव:</b> {selectedMember.firstName} {selectedMember.middleName ? selectedMember.middleName + ' ' : ''}{selectedMember.lastName}</div>
+                  <div className="pt-0.5">
+                    <b>खातेदार नाव:</b> {selectedMember.firstName} {selectedMember.middleName ? selectedMember.middleName + ' ' : ''}{selectedMember.lastName}
+                    {selectedMember.mobileNo && <span className="text-gray-500 ml-2">({selectedMember.mobileNo})</span>}
+                  </div>
                 </div>
               )}
               {existingMemberAccounts.length > 0 && !isEditMode && (
                 <div className="mt-1 p-1.5 bg-amber-50 border border-amber-300 rounded-sm text-[10px] text-amber-900 font-semibold flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span>या सभासदाचे आधीच {existingMemberAccounts.length} बचत खाते सुरू आहे ({existingMemberAccounts.map(a => a.accountNo || `Acc#${a.savingAccountID}`).join(', ')}).</span>
+                  <span>या खातेदाराचे आधीच {existingMemberAccounts.length} बचत खाते सुरू आहे ({existingMemberAccounts.map(a => a.accountNo || `Acc#${a.savingAccountID}`).join(', ')}).</span>
                 </div>
               )}
             </div>
@@ -1111,6 +1173,7 @@ const SavingOpeningBalance: React.FC = () => {
                       <th className="px-2 py-2 border-r border-gray-200 text-center w-10">अ.क्र.</th>
                       <th className="px-2 py-2 border-r border-gray-200 text-center w-24">कृती</th>
                       <th className="px-2.5 py-2 border-r border-gray-200 text-left min-w-[130px]">खाते क्र. व शाखा</th>
+                      <th className="px-2.5 py-2 border-r border-gray-200 text-center min-w-[110px] font-mono">CIF क्र.</th>
                       <th className="px-2.5 py-2 border-r border-gray-200 text-left min-w-[180px]">सभासद नाव व कोड</th>
                       <th className="px-2.5 py-2 border-r border-gray-200 text-left min-w-[160px]">खाते प्रकार व सह-खातेदार</th>
                       <th className="px-2.5 py-2 border-r border-gray-200 text-left min-w-[140px]">योजना व लेजर (GL)</th>
@@ -1170,14 +1233,28 @@ const SavingOpeningBalance: React.FC = () => {
                             </div>
                           </td>
 
+                          {/* 3.1 Dedicated CIF No */}
+                          <td className="px-2.5 py-2 border-r border-gray-200 text-center">
+                            <span className="font-mono font-bold text-xs text-primary bg-primary/5 px-2 py-0.5 rounded border border-primary/20 inline-block">
+                              {acc.cifNo || acc.customer?.cifNo || acc.member?.cifNo || '-'}
+                            </span>
+                          </td>
+
                           {/* 4. Member Name & Code */}
                           <td className="px-2.5 py-2 border-r border-gray-200 text-left">
                             <div className="font-bold text-gray-900 leading-snug">
                               {acc.memberName || `${acc.member?.firstName || ''} ${acc.member?.lastName || ''}`}
                             </div>
                             <div className="text-[10px] text-gray-500 font-mono mt-0.5">
-                              कोड: <span className="font-bold text-gray-700">{acc.memberCode || acc.member?.memberCode || '-'}</span> 
-                              {acc.cifNo ? ` | CIF: ${acc.cifNo}` : ''}
+                              {acc.memberCode || acc.member?.memberCode ? (
+                                <span className="bg-emerald-50 text-emerald-800 px-1 py-0.5 rounded border border-emerald-200 font-bold">
+                                  सभासद कोड: {acc.memberCode || acc.member?.memberCode}
+                                </span>
+                              ) : (
+                                <span className="bg-slate-100 text-slate-600 px-1 py-0.5 rounded border border-slate-200">
+                                  बिगर-सभासद ग्राहक
+                                </span>
+                              )}
                             </div>
                           </td>
 

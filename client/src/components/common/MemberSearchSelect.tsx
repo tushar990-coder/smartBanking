@@ -46,17 +46,18 @@ export default function MemberSearchSelect({
       const primaryValueId = Number(m.memberID || m.memberId || m.MemberID || m.customerID || m.customerId || m.CustomerID || m.id || 0);
 
       const code = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.code || m.MemberCode || '').trim();
-      const legacyNo = (rawMemProfile?.legacyMemberNo || rawMemProfile?.LegacyMemberNo || m.legacyMemberNo || m.oldMemberCode || m.oldMemberNo || m.LegacyMemberNo || m.legacyCustomerNo || m.LegacyCustomerNo || '').trim();
-      const cif = (m.cifNo || m.cif || m.CifNo || m.CIFNo || '').trim();
-      const mobile = (m.mobileNo || m.mobile || m.MobileNo || m.mobileNumber || '').trim();
-      const aadhaar = (m.aadhaarNo || m.aadhaar || m.AadhaarNo || '').trim();
+      const rawLegacyMember = String(rawMemProfile?.legacyMemberNo || rawMemProfile?.LegacyMemberNo || m.legacyMemberNo || m.oldMemberCode || m.oldMemberNo || m.LegacyMemberNo || '').trim();
+      const rawLegacyCust = String(m.legacyCustomerNo || m.LegacyCustomerNo || (m as any)?.customerProfile?.legacyCustomerNo || '').trim();
+      const cif = String(m.cifNo || m.cif || m.CifNo || m.CIFNo || '').trim();
+      const mobile = String(m.mobileNo || m.mobile || m.MobileNo || m.mobileNumber || '').trim();
+      const aadhaar = String(m.aadhaarNo || m.aadhaar || m.AadhaarNo || '').trim();
 
-      const fName = (m.firstName || m.FirstName || m.firstNameEng || m.FirstNameEng || '').trim();
-      const mName = (m.middleName || m.MiddleName || m.middleNameEng || m.MiddleNameEng || '').trim();
-      const lName = (m.lastName || m.LastName || m.lastNameEng || m.LastNameEng || '').trim();
-      const nick = (m.nickName || m.NickName || '').trim();
+      const fName = String(m.firstName || m.FirstName || m.firstNameEng || m.FirstNameEng || '').trim();
+      const mName = String(m.middleName || m.MiddleName || m.middleNameEng || m.MiddleNameEng || '').trim();
+      const lName = String(m.lastName || m.LastName || m.lastNameEng || m.LastNameEng || '').trim();
+      const nick = String(m.nickName || m.NickName || '').trim();
 
-      let fullName = (m.fullName || m.FullName || m.name || m.Name || m.customerName || m.CustomerName || '').trim();
+      let fullName = String(m.fullName || m.FullName || m.name || m.Name || m.customerName || m.CustomerName || '').trim();
       if (!fullName) {
         fullName = [fName, mName, lName].filter(Boolean).join(' ').trim();
       }
@@ -71,8 +72,12 @@ export default function MemberSearchSelect({
       if (hasMemberId && memId > 0) {
         codeDisplay += ` (सभासद ID: #${memId})`;
       }
-      if (legacyNo) {
-        codeDisplay += ` [जुना:${legacyNo}]`;
+      
+      const legacyTags: string[] = [];
+      if (rawLegacyCust) legacyTags.push(`जुना CIF:${rawLegacyCust}`);
+      if (rawLegacyMember) legacyTags.push(`जुना सभासद:${rawLegacyMember}`);
+      if (legacyTags.length > 0) {
+        codeDisplay += ` [${legacyTags.join(' | ')}]`;
       }
 
       const label = `[${codeDisplay}] ${fullName}${nick ? ` (${nick})` : ''}${mobile ? ` - ${mobile}` : ''}`;
@@ -86,7 +91,8 @@ export default function MemberSearchSelect({
           memberIdOnly: memId,
           customerID: custId,
           memberCode: code,
-          legacyMemberNo: legacyNo,
+          legacyMemberNo: rawLegacyMember,
+          legacyCustomerNo: rawLegacyCust,
           cifNo: cif,
           mobileNo: mobile,
           aadhaarNo: aadhaar,
@@ -104,7 +110,12 @@ export default function MemberSearchSelect({
 
   const selectedOption = React.useMemo(() => {
     if (numericValue === '' || isNaN(numericValue as number)) return null;
-    return options.find(o => o.value === numericValue) || null;
+    return options.find(o => 
+      o.value === numericValue || 
+      (o.member?.customerID && o.member.customerID === numericValue) || 
+      (o.member?.memberID && o.member.memberID === numericValue) || 
+      (o.member?.memberIdOnly && o.member.memberIdOnly === numericValue)
+    ) || null;
   }, [numericValue, options]);
 
   // Custom filter logic to search by name, mobile, aadhaar, cif, code, and legacy number

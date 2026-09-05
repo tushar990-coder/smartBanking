@@ -7,10 +7,24 @@
 -- ==============================================================================
 
 SET NOCOUNT ON;
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+
 BEGIN TRANSACTION;
 
 BEGIN TRY
-    PRINT '>>> Step 1: Creating temporary sequence table for active shareholding members...';
+    PRINT '>>> Step 1: Clearing MemberCode for non-shareholders...';
+    UPDATE m
+    SET m.MemberCode = NULL,
+        m.MembershipType = 'Nominal'
+    FROM Members m
+    WHERE m.MemberID NOT IN (
+        SELECT DISTINCT sa.MemberId 
+        FROM ShareAccounts sa 
+        WHERE sa.TotalShareCount > 0
+    );
+
+    PRINT '>>> Step 2: Creating temporary sequence table for active shareholding members...';
     
     -- Table variable to hold ordered list
     DECLARE @Shareholders TABLE (
@@ -40,18 +54,18 @@ BEGIN TRY
     ) cert
     WHERE sa.TotalShareCount > 0
     ORDER BY 
-        -- Try numeric sorting by Certificate number or Legacy number
-        TRY_CAST(REPLACE(REPLACE(COALESCE(cert.CertificateNo, ''), 'CERT-', ''), 'CERT', '') AS INT) ASC,
+        -- Try numeric sorting by Legacy number or Certificate number
         TRY_CAST(m.LegacyMemberNo AS INT) ASC,
+        TRY_CAST(REPLACE(REPLACE(COALESCE(cert.CertificateNo, ''), 'CERT-', ''), 'CERT', '') AS INT) ASC,
         sa.ShareAccountId ASC;
 
-    PRINT '>>> Step 2: Assigning temporary unique codes to avoid unique constraint collision...';
+    PRINT '>>> Step 3: Assigning temporary unique codes to avoid unique constraint collision...';
     UPDATE m
-    SET m.MemberCode = 'TMP_' + CAST(s.SeqNo AS NVARCHAR(10)) + '_' + CONVERT(NVARCHAR(8), NEWID())
+    SET m.MemberCode = 'TMP' + CAST(s.SeqNo AS NVARCHAR(10))
     FROM Members m
     INNER JOIN @Shareholders s ON m.MemberID = s.MemberID;
 
-    PRINT '>>> Step 3: Assigning clean sequential codes (MEM0001, MEM0002...)...';
+    PRINT '>>> Step 4: Assigning clean sequential codes (MEM0001, MEM0002...)...';
     UPDATE m
     SET 
         m.MemberCode = 'MEM' + RIGHT('0000' + CAST(s.SeqNo AS NVARCHAR(10)), 4),

@@ -321,7 +321,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
             updated.memberName = `${selMember.firstName || ''} ${selMember.lastName || ''}`.trim();
             updated.memberCode = selMember.memberCode || '';
             updated.cifNo = selMember.cifNo || '';
-            updated.legacyMemberNo = selMember.legacyMemberNo || '';
+            updated.legacyMemberNo = selMember.legacyMemberNo ? String(selMember.legacyMemberNo).trim() : '';
 
             // 🔍 Check if member already has an existing opening balance
             const existing = existingBalances.find(b => b.memberId === value);
@@ -574,21 +574,25 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
     setMessage('');
 
     try {
-      const payloadRecords = validRows.map(r => ({
-        memberId: Number(r.memberId),
-        certificateId: r.certificateId || null,
-        shareSchemeId: r.shareSchemeId ? Number(r.shareSchemeId) : (defaultSchemeId ? Number(defaultSchemeId) : null),
-        legacyMemberNo: r.legacyMemberNo || null,
-        openingDate: openingDate,
-        shareQuantity: Number(r.shareQuantity),
-        faceValue: Number(r.faceValue || 100),
-        dividendPayable: Number(r.dividendPayable || 0),
-        dividendPayableLedgerId: null,
-        fromShareNo: Number(r.fromShareNo || 0),
-        toShareNo: Number(r.toShareNo || 0),
-        certificateNo: r.certificateNo || `SC${r.memberId}`,
-        ledgerId: defaultLedgerId ? Number(defaultLedgerId) : null
-      }));
+      const payloadRecords = validRows.map(r => {
+        const m = members.find(mem => mem.memberID === r.memberId || (mem as any).customerID === r.memberId);
+        return {
+          memberId: Number(r.memberId),
+          customerId: (m as any)?.customerID || (m as any)?.id || null,
+          certificateId: r.certificateId || null,
+          shareSchemeId: r.shareSchemeId ? Number(r.shareSchemeId) : (defaultSchemeId ? Number(defaultSchemeId) : null),
+          legacyMemberNo: r.legacyMemberNo || null,
+          openingDate: openingDate,
+          shareQuantity: Number(r.shareQuantity),
+          faceValue: Number(r.faceValue || 100),
+          dividendPayable: Number(r.dividendPayable || 0),
+          dividendPayableLedgerId: null,
+          fromShareNo: Number(r.fromShareNo || 0),
+          toShareNo: Number(r.toShareNo || 0),
+          certificateNo: r.certificateNo || `SC${r.memberId}`,
+          ledgerId: defaultLedgerId ? Number(defaultLedgerId) : null
+        };
+      });
 
       const res = await fetch('/api/ShareAccounts/BulkOpeningBalance', {
         method: 'POST',

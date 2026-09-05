@@ -502,11 +502,10 @@ namespace Bhisi.Api.Controllers
             existingCustomer.UpdatedBy = userId;
             existingCustomer.UpdatedOn = DateTime.Now;
 
-            // Sync with linked Member record if exists
+            // Sync with linked Member record if exists (preserve existing Member.OldMemberCode / LegacyMemberNo)
             var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == id);
             if (linkedMember != null)
             {
-                linkedMember.OldMemberCode = customer.LegacyCustomerNo;
                 linkedMember.JoiningDate = customer.RegistrationDate;
                 linkedMember.FirstName = customer.FirstName;
                 linkedMember.MiddleName = customer.MiddleName;

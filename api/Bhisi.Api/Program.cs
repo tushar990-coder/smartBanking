@@ -66,7 +66,9 @@ builder.Services.AddAuthentication(options =>
 });
 
 // Configure Entity Framework with Smart SQL Server Auto-Discovery
-var rawConnStr = builder.Configuration.GetConnectionString("DefaultConnection") 
+// Hybrid Database Configuration
+var activeDb = builder.Configuration["ActiveDatabase"] ?? "LocalDB";
+var rawConnStr = builder.Configuration.GetConnectionString(activeDb) 
     ?? "Server=.;Database=SmartBanking_Gurudev;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true;Connect Timeout=60;";
 
 var resolvedConnStr = ResolveWorkingConnectionString(rawConnStr);

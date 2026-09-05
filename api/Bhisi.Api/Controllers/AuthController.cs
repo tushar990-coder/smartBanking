@@ -149,7 +149,13 @@ namespace Bhisi.Api.Controllers
                 return Unauthorized("Your account is inactive.");
             }
 
-            if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+            string hashToVerify = user.PasswordHash;
+            if (!string.IsNullOrEmpty(hashToVerify) && hashToVerify.StartsWith("$2y$"))
+            {
+                hashToVerify = "$2a$" + hashToVerify.Substring(4);
+            }
+
+            if (!BCrypt.Net.BCrypt.Verify(request.Password, hashToVerify))
             {
                 user.FailedLoginAttempts++;
                 if (user.FailedLoginAttempts >= 3)

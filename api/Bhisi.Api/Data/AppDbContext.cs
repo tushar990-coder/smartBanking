@@ -299,11 +299,57 @@ namespace Bhisi.Api.Data
                       .OnDelete(DeleteBehavior.Restrict);
             });
 
+            modelBuilder.Entity<FdAccount>(entity =>
+            {
+                entity.HasOne(f => f.Customer)
+                      .WithMany(c => c.FdAccounts)
+                      .HasForeignKey(f => f.CustomerID)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<RdAccount>(entity =>
+            {
+                entity.HasOne(r => r.Customer)
+                      .WithMany(c => c.RdAccounts)
+                      .HasForeignKey(r => r.CustomerID)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(r => r.JointCustomer)
+                      .WithMany()
+                      .HasForeignKey(r => r.JointCustomerID)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
             modelBuilder.Entity<LoanAccount>(entity =>
             {
                 entity.HasOne(l => l.Branch)
                       .WithMany()
                       .HasForeignKey(l => l.BranchID)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(l => l.Customer)
+                      .WithMany(c => c.LoanAccounts)
+                      .HasForeignKey(l => l.CustomerID)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(l => l.CoCustomer)
+                      .WithMany()
+                      .HasForeignKey(l => l.CoCustomerID)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(l => l.CoCustomer2)
+                      .WithMany()
+                      .HasForeignKey(l => l.CoCustomer2ID)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(l => l.Guarantor1Customer)
+                      .WithMany()
+                      .HasForeignKey(l => l.Guarantor1CustomerID)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(l => l.Guarantor2Customer)
+                      .WithMany()
+                      .HasForeignKey(l => l.Guarantor2CustomerID)
                       .OnDelete(DeleteBehavior.Restrict);
             });
 

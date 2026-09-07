@@ -197,7 +197,7 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
 
         {/* Official Legal Statement */}
         <div className="bg-slate-50/90 border border-slate-200 p-2 rounded text-[10px] leading-snug text-slate-800 text-justify">
-          प्रमाणित करण्यात येते की, श्री/श्रीमती <strong className="text-slate-950 font-bold">{account.memberName}</strong> (सभासद कोड: <strong className="text-primary font-mono font-bold">{account.memberCode || '-'}</strong>) यांनी शाखेत <strong className="text-primary font-black">{formatCurrency(account.depositAmount)}</strong> ठेव जमा केली असून नियमानुसार स्वीकारण्यात आली आहे.
+          प्रमाणित करण्यात येते की, श्री/श्रीमती <strong className="text-slate-950 font-bold">{account.memberName || account.customerName}</strong> ({account.memberCode ? `सभासद कोड: ${account.memberCode}` : `ग्राहक / CIF: ${account.cifNo || '-'}`}) यांनी शाखेत <strong className="text-primary font-black">{formatCurrency(account.depositAmount)}</strong> ठेव जमा केली असून नियमानुसार स्वीकारण्यात आली आहे.
         </div>
 
         {/* Particulars Grid Table */}

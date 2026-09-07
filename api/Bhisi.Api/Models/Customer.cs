@@ -167,6 +167,7 @@ namespace Bhisi.Api.Models
         public virtual ICollection<ShareTransaction> ShareTransactions { get; set; } = new List<ShareTransaction>();
         public virtual ICollection<PigmyAccount> PigmyAccounts { get; set; } = new List<PigmyAccount>();
         public virtual ICollection<FdAccount> FdAccounts { get; set; } = new List<FdAccount>();
+        [InverseProperty("Customer")]
         public virtual ICollection<RdAccount> RdAccounts { get; set; } = new List<RdAccount>();
         [InverseProperty("Customer")]
         public virtual ICollection<LoanAccount> LoanAccounts { get; set; } = new List<LoanAccount>();

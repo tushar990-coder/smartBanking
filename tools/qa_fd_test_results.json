@@ -1,0 +1,93 @@
+﻿[
+    {
+        "TestId":  "AUTH-01",
+        "Category":  "Authentication",
+        "Description":  "Admin Login \u0026 JWT Token Generation",
+        "Status":  "PASS",
+        "Details":  "JWT Token Acquired"
+    },
+    {
+        "TestId":  "FD-TC-01",
+        "Category":  "Sequencing",
+        "Description":  "Next FD Account Number Generation",
+        "Status":  "PASS",
+        "Details":  "Generated: HO1-001-FD-000020"
+    },
+    {
+        "TestId":  "FD-TC-02",
+        "Category":  "Opening",
+        "Description":  "Single FD Account Creation (Cash)",
+        "Status":  "PASS",
+        "Details":  "FD Account ID: 19, AccNo: HO1-001-FD-000020, Maturity: â‚¹54875"
+    },
+    {
+        "TestId":  "FD-TC-03",
+        "Category":  "Accounting",
+        "Description":  "Opening Voucher Balance \u0026 Sub-Ledger Tagging",
+        "Status":  "PASS",
+        "Details":  "Dr â‚¹50000.00 == Cr â‚¹50000.00, CustomerID=1 Tagged"
+    },
+    {
+        "TestId":  "FD-TC-04",
+        "Category":  "Bulk Opening",
+        "Description":  "Bulk Split FD (2 Receipts x â‚¹30,000)",
+        "Status":  "PASS",
+        "Details":  "Created 2 accounts: HO1-001-FD-000021, HO1-001-FD-000022"
+    },
+    {
+        "TestId":  "FD-TC-05",
+        "Category":  "Interest Accrual",
+        "Description":  "Accrual Calculation \u0026 DTO Mapping",
+        "Status":  "PASS",
+        "Details":  "Accrued: â‚¹370 for संग्राम बाळासाहेब चव्हाण (CustID: 1, Account: HO1-001-FD-000001)"
+    },
+    {
+        "TestId":  "FD-TC-06",
+        "Category":  "Premature Close",
+        "Description":  "FD Premature Closure \u0026 Net Payout Calculation",
+        "Status":  "PASS",
+        "Details":  "Payout: â‚¹50872.60, Recalc Int: â‚¹872.60, Clawback: â‚¹0"
+    },
+    {
+        "TestId":  "FD-TC-07",
+        "Category":  "Renewal",
+        "Description":  "Renewal CustomerID Integrity (Regression Bug Fix)",
+        "Status":  "PASS",
+        "Details":  "New Account: HO1-001-FD-000023, CustomerID correctly set to 2"
+    },
+    {
+        "TestId":  "FD-TC-08A",
+        "Category":  "Validation",
+        "Description":  "Zero Amount Deposit Rejection",
+        "Status":  "PASS",
+        "Details":  "Rejected with HTTP 400 Bad Request"
+    },
+    {
+        "TestId":  "FD-TC-08B",
+        "Category":  "Validation",
+        "Description":  "Invalid CustomerID Rejection",
+        "Status":  "PASS",
+        "Details":  "Rejected with HTTP 400"
+    },
+    {
+        "TestId":  "FD-TC-08C",
+        "Category":  "Validation",
+        "Description":  "Prevent Double Close on Closed Account",
+        "Status":  "PASS",
+        "Details":  "Prevented with HTTP 400: The remote server returned an error: (400) Bad Request."
+    },
+    {
+        "TestId":  "FD-TC-09",
+        "Category":  "Reporting",
+        "Description":  "Customer FD Ledger \u0026 360 Statement",
+        "Status":  "PASS",
+        "Details":  "Found 19 FD accounts for Customer 2 with principal â‚¹570000.00"
+    },
+    {
+        "TestId":  "FD-TC-10",
+        "Category":  "Integrity Guard",
+        "Description":  "Prevent Member Deletion when Active FDs Exist",
+        "Status":  "PASS",
+        "Details":  "Successfully blocked with HTTP 400 (Active accounts guard)"
+    }
+]

@@ -47,7 +47,7 @@ namespace Bhisi.Api.Controllers
         {
             var query = _context.RdAccounts
                 .Include(r => r.Customer)
-                .Include(r => r.Member)
+                    .ThenInclude(c => c.MemberProfile)
                 .Include(r => r.RdScheme)
                 .Include(r => r.Branch)
                 .AsQueryable();
@@ -62,7 +62,7 @@ namespace Bhisi.Api.Controllers
             }
             else if (memberId.HasValue && memberId.Value > 0)
             {
-                query = query.Where(r => r.MemberID == memberId.Value);
+                query = query.Where(r => r.Customer != null && r.Customer.MemberProfile != null && r.Customer.MemberProfile.MemberID == memberId.Value);
             }
 
             var accounts = await query
@@ -72,12 +72,15 @@ namespace Bhisi.Api.Controllers
                     r.BranchID,
                     BranchName = r.Branch != null ? r.Branch.BranchName : "",
                     r.CustomerID,
-                    r.MemberID,
-                    CIFNo = r.Customer != null ? r.Customer.CIFNo : (r.Member != null ? r.Member.CIFNo : ""),
+                    MemberID = r.Customer != null && r.Customer.MemberProfile != null ? (int?)r.Customer.MemberProfile.MemberID : null,
+                    CIFNo = r.Customer != null ? r.Customer.CIFNo : "",
+                    CustomerName = r.Customer != null 
+                        ? (r.Customer.FirstName + " " + r.Customer.LastName).Trim() 
+                        : "",
                     MemberName = r.Customer != null 
                         ? (r.Customer.FirstName + " " + r.Customer.LastName).Trim() 
-                        : (r.Member != null ? (r.Member.FirstName + " " + r.Member.LastName).Trim() : ""),
-                    MemberCode = r.Member != null ? r.Member.MemberCode : "",
+                        : "",
+                    MemberCode = r.Customer != null && r.Customer.MemberProfile != null ? r.Customer.MemberProfile.MemberCode : "",
                     r.RdSchemeID,
                     SchemeName = r.RdScheme != null ? r.RdScheme.SchemeName : "",
                     SchemeCode = r.RdScheme != null ? r.RdScheme.SchemeCode : "",
@@ -94,7 +97,7 @@ namespace Bhisi.Api.Controllers
                     r.LegacyAccruedInt,
                     r.Status,
                     r.AccountType,
-                    r.JointMemberID,
+                    r.JointCustomerID,
                     r.GuardianName,
                     r.GuardianRelation,
                     r.PaymentMode,
@@ -116,7 +119,8 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<object>> GetRdAccount(int id)
         {
             var r = await _context.RdAccounts
-                .Include(x => x.Member)
+                .Include(x => x.Customer)
+                    .ThenInclude(c => c.MemberProfile)
                 .Include(x => x.RdScheme)
                 .Include(x => x.Branch)
                 .FirstOrDefaultAsync(x => x.RdAccountID == id);
@@ -147,9 +151,12 @@ namespace Bhisi.Api.Controllers
                     r.RdAccountID,
                     r.BranchID,
                     BranchName = r.Branch != null ? r.Branch.BranchName : "",
-                    r.MemberID,
-                    MemberName = r.Member != null ? r.Member.FirstName + " " + r.Member.LastName : "",
-                    MemberCode = r.Member != null ? r.Member.MemberCode : "",
+                    r.CustomerID,
+                    CIFNo = r.Customer != null ? r.Customer.CIFNo : "",
+                    CustomerName = r.Customer != null ? (r.Customer.FirstName + " " + r.Customer.LastName).Trim() : "",
+                    MemberID = r.Customer != null && r.Customer.MemberProfile != null ? (int?)r.Customer.MemberProfile.MemberID : null,
+                    MemberName = r.Customer != null ? (r.Customer.FirstName + " " + r.Customer.LastName).Trim() : "",
+                    MemberCode = r.Customer != null && r.Customer.MemberProfile != null ? r.Customer.MemberProfile.MemberCode : "",
                     r.RdSchemeID,
                     SchemeName = r.RdScheme != null ? r.RdScheme.SchemeName : "",
                     SchemeCode = r.RdScheme != null ? r.RdScheme.SchemeCode : "",
@@ -165,6 +172,15 @@ namespace Bhisi.Api.Controllers
                     r.IsLegacyAccount,
                     r.LegacyAccruedInt,
                     r.Status,
+                    r.AccountType,
+                    r.JointCustomerID,
+                    r.GuardianName,
+                    r.GuardianRelation,
+                    r.PaymentMode,
+                    r.SavingAccountID,
+                    r.MaturityInstruction,
+                    r.AgentID,
+                    r.PassbookNo,
                     r.NomineeName,
                     r.NomineeRelation,
                     r.Remarks
@@ -242,32 +258,17 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<RdAccount>> PostRdAccount(RdAccount account)
         {
             // Resolve Customer & Member
-            Customer? customer = null;
-            Member? member = null;
-
-            if (account.CustomerID.HasValue && account.CustomerID.Value > 0)
+            if (account.CustomerID <= 0)
             {
-                customer = await _context.Customers.FindAsync(account.CustomerID.Value);
-                if (customer == null) return BadRequest("निवडलेला ग्राहक सिस्टीममध्ये अस्तित्वात नाही.");
-                if (customer.Status != "Active") return BadRequest($"या ग्राहकाचे स्टेटस '{customer.Status}' असल्यामुळे नवीन आवर्ती ठेव (RD) खाते उघडता येत नाही. केवळ सक्रिय (Active) ग्राहकांचीच ठेव स्वीकारली जाऊ शकते.");
-
-                member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
-            }
-            else if (account.MemberID.HasValue && account.MemberID.Value > 0)
-            {
-                member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == account.MemberID.Value);
-                if (member == null) return BadRequest("निवडलेला सभासद सिस्टीममध्ये अस्तित्वात नाही.");
-                if (member.Status != "Active") return BadRequest($"या सभासदाचे स्टेटस '{member.Status}' असल्यामुळे नवीन आवर्ती ठेव (RD) खाते उघडता येत नाही. केवळ सक्रिय (Active) सभासदांचीच ठेव स्वीकारली जाऊ शकते.");
-
-                if (member.CustomerID > 0) customer = await _context.Customers.FindAsync(member.CustomerID);
-            }
-            else
-            {
-                return BadRequest("कृपया खातेदाराची (Customer / Member) निवड करा.");
+                return BadRequest("कृपया खातेदाराची (CustomerID) निवड करा.");
             }
 
-            account.CustomerID = customer?.CustomerID ?? (member?.CustomerID > 0 ? member.CustomerID : null);
-            account.MemberID = member?.MemberID;
+            var customer = await _context.Customers.FindAsync(account.CustomerID);
+            if (customer == null) return BadRequest("निवडलेला ग्राहक सिस्टीममध्ये अस्तित्वात नाही.");
+            if (customer.Status != "Active") return BadRequest($"या ग्राहकाचे स्टेटस '{customer.Status}' असल्यामुळे नवीन आवर्ती ठेव (RD) खाते उघडता येत नाही. केवळ सक्रिय (Active) ग्राहकांचीच ठेव स्वीकारली जाऊ शकते.");
+
+            var member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+            int? linkedMemberId = member?.MemberID;
 
             var scheme = await _context.RdSchemes.FindAsync(account.RdSchemeID);
             if (scheme == null)
@@ -379,8 +380,8 @@ namespace Bhisi.Api.Controllers
 
 
                         // Dr Cash / Saving, Cr RD Liability
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Dr", Amount = account.InstallmentAmount, MemberID = account.MemberID });
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = account.InstallmentAmount, MemberID = account.MemberID });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Dr", Amount = account.InstallmentAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = account.InstallmentAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                         
                         await _context.SaveChangesAsync();
 
@@ -419,6 +420,14 @@ namespace Bhisi.Api.Controllers
         [HttpPost("Migrate")]
         public async Task<ActionResult<RdAccount>> MigrateRdAccount(RdAccount account)
         {
+            if (account.CustomerID <= 0)
+            {
+                return BadRequest("कृपया खातेदाराची (CustomerID) निवड करा.");
+            }
+            var customer = await _context.Customers.FindAsync(account.CustomerID);
+            if (customer == null) return BadRequest("निवडलेला ग्राहक सिस्टीममध्ये अस्तित्वात नाही.");
+            if (customer.Status != "Active") return BadRequest($"या ग्राहकाचे स्टेटस '{customer.Status}' असल्यामुळे जुने आवर्ती ठेव (RD) खाते मायग्रेट करता येत नाही.");
+
             if (account.InstallmentAmount <= 0)
             {
                 return BadRequest("Invalid installment amount.");
@@ -562,7 +571,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/RdAccounts/5/CollectInstallment
         [HttpPost("{id}/CollectInstallment")]
-        public async Task<IActionResult> CollectInstallment(int id, [FromQuery] int count, [FromQuery] decimal penaltyAmount, [FromQuery] string payMode)
+        public async Task<IActionResult> CollectInstallment(int id, [FromQuery] int count, [FromQuery] decimal penaltyAmount, [FromQuery] string payMode = "Cash")
         {
             var account = await _context.RdAccounts
                 .Include(a => a.RdScheme)
@@ -622,16 +631,19 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
 
+                    var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
+                    int? linkedMemberId = linkedMember?.MemberID;
+
                     // Dr Cash / Bank
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger?.LedgerID ?? 1, DrCr = "Dr", Amount = totalReceived, MemberID = account.MemberID });
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger?.LedgerID ?? 1, DrCr = "Dr", Amount = totalReceived, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                     
                     // Cr RD Liability
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = totalInstallmentPrincipal, MemberID = account.MemberID });
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = totalInstallmentPrincipal, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                     // Cr Penalty Income
                     if (penaltyAmount > 0 && penaltyLedger != null)
                     {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = penaltyLedger.LedgerID, DrCr = "Cr", Amount = penaltyAmount, MemberID = account.MemberID });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = penaltyLedger.LedgerID, DrCr = "Cr", Amount = penaltyAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                     }
                     await _context.SaveChangesAsync();
 
@@ -829,17 +841,20 @@ namespace Bhisi.Api.Controllers
                     _context.Vouchers.Add(voucher);
                     await _context.SaveChangesAsync();
 
+                    var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
+                    int? linkedMemberId = linkedMember?.MemberID;
+
                     // Dr RD Liability
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.TotalDepositedAmount, MemberID = account.MemberID });
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.TotalDepositedAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                     
                     // Dr Interest Payable
                     if (payableLedger != null && accruedInt > 0)
                     {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = accruedInt, MemberID = account.MemberID });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = accruedInt, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                     }
 
                     // Cr Cash
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = totalPayout, MemberID = account.MemberID });
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = totalPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                     // Log closed transaction details
                     _context.RdTransactions.Add(new RdTransaction
@@ -912,16 +927,18 @@ namespace Bhisi.Api.Controllers
                             .Where(t => t.RdAccountID == id && t.TransactionType == "Accrual")
                             .SumAsync(t => t.InterestAmount) + account.LegacyAccruedInt;
 
-                    // 5. Final payout
-                    decimal finalInterestPayable = recalculatedInterest;
+                    // 5. Final payout & Accounting calculation
+                    decimal extraInterest = 0;
                     decimal clawbackAmount = 0;
                     decimal netPayout = account.TotalDepositedAmount + recalculatedInterest;
 
                     if (alreadyAccruedInt > recalculatedInterest)
                     {
                         clawbackAmount = alreadyAccruedInt - recalculatedInterest;
-                        netPayout = account.TotalDepositedAmount - clawbackAmount;
-                        finalInterestPayable = 0;
+                    }
+                    else
+                    {
+                        extraInterest = recalculatedInterest - alreadyAccruedInt;
                     }
 
                     account.Status = "Closed";
@@ -929,7 +946,10 @@ namespace Bhisi.Api.Controllers
 
                     var rdLiabilityLedger = await GetLiabilityLedgerAsync(account.RdScheme);
                     var payableLedger = await GetPayableLedgerAsync(account.RdScheme);
-                    var cashLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("५१ हातातील रोख शिल्लक") || l.LedgerName.ToLower().Contains("cash"));
+                    int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "RD");
+                    var cashLedger = await _context.Ledgers.FindAsync(branchCashId)
+                        ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash In Hand")
+                        ?? await GetOrCreateLedgerAsync("५१ हातातील रोख शिल्लक", "रोख व बँक शिल्लक", "Dr");
 
                     if (rdLiabilityLedger == null || cashLedger == null)
                     {
@@ -951,25 +971,38 @@ namespace Bhisi.Api.Controllers
                     _context.Vouchers.Add(voucher);
                     await _context.SaveChangesAsync();
 
-                    // Dr RD Liability
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.TotalDepositedAmount, MemberID = account.MemberID });
+                    var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
+                    int? linkedMemberId = linkedMember?.MemberID;
 
-                    // Dr Interest Payable
+                    // Dr RD Liability
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.TotalDepositedAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                    // Dr Interest Payable (Clearing previously accrued interest)
                     if (payableLedger != null && alreadyAccruedInt > 0)
                     {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = alreadyAccruedInt, MemberID = account.MemberID });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = alreadyAccruedInt, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                    }
+
+                    // Dr Interest Expense (For any new unaccrued interest paid out)
+                    if (extraInterest > 0)
+                    {
+                        var expenseLedger = await GetExpenseLedgerAsync(account.RdScheme);
+                        if (expenseLedger != null)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = extraInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        }
                     }
 
                     // Cr Cash
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = netPayout, MemberID = account.MemberID });
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = netPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
-                    // Cr Interest Expense / Clawback Income
+                    // Cr Interest Expense / Clawback Income (If accrued was higher than recalculated)
                     if (clawbackAmount > 0)
                     {
                         var clawbackLedger = await GetExpenseLedgerAsync(account.RdScheme);
                         if (clawbackLedger != null)
                         {
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = clawbackAmount, MemberID = account.MemberID });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = clawbackAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                         }
                     }
 
@@ -1029,13 +1062,31 @@ namespace Bhisi.Api.Controllers
             {
                 try
                 {
+                    int resolvedCustId = oldAccount.CustomerID;
+                    if (resolvedCustId <= 0)
+                    {
+                        return BadRequest("आरडी खातेदाराचा वैध ग्राहक (Customer / CIF) सापडला नाही.");
+                    }
+
+                    var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == resolvedCustId);
+                    int? linkedMemberId = linkedMember?.MemberID;
+
                     // 1. Close old account
-                    oldAccount.Status = "Closed";
+                    oldAccount.Status = "Matured";
                     await _context.SaveChangesAsync();
 
-                    var rdLiabilityLedger = await GetOrCreateLedgerAsync("१३ मेंबर आरडी ठेव", "ठेवी", "Cr");
-                    var fdLiabilityLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१२ मेंबर मुदत ठेव") || l.LedgerName.ToLower().Contains("fixed deposit"));
-                    var payableLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("२३ देणे सभासद ठेव व्याज") || l.LedgerName.ToLower().Contains("interest payable"));
+                    var rdLiabilityLedger = await GetLiabilityLedgerAsync(oldAccount.RdScheme);
+                    Ledger? fdLiabilityLedger = null;
+                    if (fdScheme.FdLiabilityLedgerID.HasValue)
+                    {
+                        fdLiabilityLedger = await _context.Ledgers.FindAsync(fdScheme.FdLiabilityLedgerID.Value);
+                    }
+                    if (fdLiabilityLedger == null)
+                    {
+                        fdLiabilityLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("मुदत ठेव") || l.LedgerName.ToLower().Contains("fixed deposit"))
+                            ?? await GetOrCreateLedgerAsync("१२ मुदत ठेव", "ठेवी", "Cr");
+                    }
+                    var payableLedger = await GetPayableLedgerAsync(oldAccount.RdScheme);
 
                     if (rdLiabilityLedger == null || fdLiabilityLedger == null)
                     {
@@ -1062,7 +1113,7 @@ namespace Bhisi.Api.Controllers
                         InstitutionID = oldAccount.InstitutionID,
                         BranchID = oldAccount.BranchID,
                         FinancialYearID = oldAccount.FinancialYearID,
-                        MemberID = oldAccount.MemberID,
+                        CustomerID = resolvedCustId,
                         FdSchemeID = targetSchemeId,
                         AccountNo = $"{branchPrefix}-{oldAccount.BranchID:D3}-FD-{seq.CurrentValue:D6}",
                         OpeningDate = DateTime.Today,
@@ -1082,13 +1133,11 @@ namespace Bhisi.Api.Controllers
 
                     if (fdScheme.InterestType == "Cumulative")
                     {
-                        double baseVal = 1.0 + ((double)r / 400.0);
-                        double exponent = 4.0 * (double)t;
-                        newFd.MaturityAmount = p * (decimal)Math.Pow(baseVal, exponent);
+                        newFd.MaturityAmount = Math.Round(p * (decimal)Math.Pow((double)(1 + (r / 400m)), (double)(t * 4)), 2);
                     }
                     else
                     {
-                        newFd.MaturityAmount = p * (1.0m + (r * t / 100.0m));
+                        newFd.MaturityAmount = Math.Round(p + (p * r * t / 100m), 2);
                     }
 
                     _context.FdAccounts.Add(newFd);
@@ -1110,16 +1159,16 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     // Dr RD Liability
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = oldAccount.TotalDepositedAmount, MemberID = oldAccount.MemberID });
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = oldAccount.TotalDepositedAmount, CustomerID = resolvedCustId, MemberID = linkedMemberId });
                     
                     // Dr Interest Payable
                     if (payableLedger != null && accruedInt > 0)
                     {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = accruedInt, MemberID = oldAccount.MemberID });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = accruedInt, CustomerID = resolvedCustId, MemberID = linkedMemberId });
                     }
 
                     // Cr FD Liability
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = totalMaturityAmount, MemberID = oldAccount.MemberID });
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = totalMaturityAmount, CustomerID = resolvedCustId, MemberID = linkedMemberId });
 
                     // Log transactions
                     _context.RdTransactions.Add(new RdTransaction

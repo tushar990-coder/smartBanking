@@ -123,9 +123,9 @@ namespace Bhisi.Api.Services
                 }
             }
 
-            // 2. FD Maturity (मुदत ठेव मुदतपूर्ती - सभासद तपशील समाविष्ट)
+            // 2. FD Maturity (मुदत ठेव मुदतपूर्ती - खातेदार तपशील समाविष्ट)
             var fdMaturities = await _db.FdAccounts
-                .Include(f => f.Member)
+                .Include(f => f.Customer)
                 .Where(f => f.BranchID == branchId && f.MaturityDate.Date <= today.AddDays(7))
                 .Take(30)
                 .ToListAsync();
@@ -141,10 +141,10 @@ namespace Bhisi.Api.Services
 
                 if (!exists)
                 {
-                    string memberName = fd.Member != null 
-                        ? $"{fd.Member.FirstName} {fd.Member.MiddleName} {fd.Member.LastName}".Replace("  ", " ").Trim()
-                        : "सभासद";
-                    string mobileNo = fd.Member?.MobileNo ?? "N/A";
+                    string memberName = fd.Customer != null 
+                        ? $"{fd.Customer.FirstName} {fd.Customer.MiddleName} {fd.Customer.LastName}".Replace("  ", " ").Trim()
+                        : "खातेदार";
+                    string mobileNo = fd.Customer?.MobileNo ?? "N/A";
 
                     _db.SystemNotifications.Add(new SystemNotification
                     {
@@ -166,9 +166,9 @@ namespace Bhisi.Api.Services
                 }
             }
 
-            // 3. RD Due (आवर्ती ठेव हप्ता बाकी - सभासद तपशील समाविष्ट)
+            // 3. RD Due (आवर्ती ठेव हप्ता बाकी - ग्राहक तपशील समाविष्ट)
             var rdDues = await _db.RdAccounts
-                .Include(r => r.Member)
+                .Include(r => r.Customer)
                 .Where(r => r.BranchID == branchId && r.InstallmentAmount > 0)
                 .Take(30)
                 .ToListAsync();
@@ -184,18 +184,18 @@ namespace Bhisi.Api.Services
 
                 if (!exists)
                 {
-                    string memberName = rd.Member != null 
-                        ? $"{rd.Member.FirstName} {rd.Member.MiddleName} {rd.Member.LastName}".Replace("  ", " ").Trim()
-                        : "सभासद";
-                    string mobileNo = rd.Member?.MobileNo ?? "N/A";
+                    string customerName = rd.Customer != null 
+                        ? $"{rd.Customer.FirstName} {rd.Customer.MiddleName} {rd.Customer.LastName}".Replace("  ", " ").Trim()
+                        : "ग्राहक";
+                    string mobileNo = rd.Customer?.MobileNo ?? "N/A";
 
                     _db.SystemNotifications.Add(new SystemNotification
                     {
                         BranchID = branchId,
                         ModuleName = "RD",
                         NotificationType = "RdInstallmentDue",
-                        Title = $"३. आर.डी. हप्ता बाकी - {memberName} (खाते क्र. {rd.AccountNo})",
-                        Description = $"सभासद: {memberName} | मोबाईल: {mobileNo} | आर.डी. खाते: {rd.AccountNo} | हप्ता रक्कम ₹ {rd.InstallmentAmount:N2}.",
+                        Title = $"३. आर.डी. हप्ता बाकी - {customerName} (खाते क्र. {rd.AccountNo})",
+                        Description = $"ग्राहक: {customerName} | मोबाईल: {mobileNo} | आर.डी. खाते: {rd.AccountNo} | हप्ता रक्कम ₹ {rd.InstallmentAmount:N2}.",
                         Priority = "MEDIUM",
                         TargetTab = "rd-collection",
                         EntityName = "RdAccount",

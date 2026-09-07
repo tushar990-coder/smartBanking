@@ -56,7 +56,7 @@ namespace Bhisi.Api.Controllers
                 .FirstOrDefaultAsync();
 
             int nextNo = 1;
-            if (lastApp != null)
+            if (lastApp?.ApplicationNo != null)
             {
                 var parts = lastApp.ApplicationNo.Split('-');
                 if (parts.Length == 3 && int.TryParse(parts[2], out int lastNo))

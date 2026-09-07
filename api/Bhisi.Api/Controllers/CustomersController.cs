@@ -122,7 +122,7 @@ namespace Bhisi.Api.Controllers
                     string s = search.Trim().ToLower();
                     query = query.Where(c => c.FirstName.ToLower().Contains(s) || 
                                              c.LastName.ToLower().Contains(s) || 
-                                             c.CIFNo.ToLower().Contains(s) ||
+                                             (c.CIFNo != null && c.CIFNo.ToLower().Contains(s)) ||
                                              (c.MobileNo != null && c.MobileNo.Contains(s)) ||
                                              (c.AadhaarNo != null && c.AadhaarNo.Contains(s)));
                 }
@@ -625,8 +625,8 @@ namespace Bhisi.Api.Controllers
             // Check if there are active loans, savings, FDs, RDs, Pigmies, Shares, Lockers, Opening Balances
             bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => s.CustomerID == id);
             bool hasLoans = await _context.LoanAccounts.AnyAsync(l => (l.CustomerID == id || (linkedMemberId > 0 && (l.MemberID == linkedMemberId || l.CoMemberID == linkedMemberId || l.CoMember2ID == linkedMemberId || l.Guarantor1MemberID == linkedMemberId || l.Guarantor2MemberID == linkedMemberId))));
-            bool hasFds = await _context.FdAccounts.AnyAsync(f => (f.CustomerID == id || (linkedMemberId > 0 && f.MemberID == linkedMemberId)));
-            bool hasRds = await _context.RdAccounts.AnyAsync(r => (r.CustomerID == id || (linkedMemberId > 0 && r.MemberID == linkedMemberId)));
+            bool hasFds = await _context.FdAccounts.AnyAsync(f => f.CustomerID == id);
+            bool hasRds = await _context.RdAccounts.AnyAsync(r => r.CustomerID == id);
             bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => p.CustomerID == id);
             bool hasShares = linkedMemberId > 0 && await _context.ShareAccounts.AnyAsync(s => s.MemberId == linkedMemberId && s.TotalShareCount > 0);
             bool hasLockers = await _context.LockerAllotments.AnyAsync(l => (l.CustomerID == id || (linkedMemberId > 0 && l.MemberID == linkedMemberId)));
@@ -708,12 +708,12 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var fds = await _context.FdAccounts
-                .Where(f => f.CustomerID == id || (linkedMemberId != null && f.MemberID == linkedMemberId))
+                .Where(f => f.CustomerID == id)
                 .Select(f => new { f.FdAccountID, f.AccountNo, f.DepositAmount, f.MaturityAmount, f.MaturityDate, f.Status })
                 .ToListAsync();
 
             var rds = await _context.RdAccounts
-                .Where(r => r.CustomerID == id || (linkedMemberId != null && r.MemberID == linkedMemberId))
+                .Where(r => r.CustomerID == id)
                 .Select(r => new { r.RdAccountID, r.AccountNo, r.InstallmentAmount, r.TotalDepositedAmount, r.Status })
                 .ToListAsync();
 

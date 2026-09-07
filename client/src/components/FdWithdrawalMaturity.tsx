@@ -172,16 +172,16 @@ const FdWithdrawalMaturity: React.FC = () => {
         matched = activeList.find((a: any) => a.fdAccountID === accId);
       } else if (entityIdStr) {
         const eId = parseInt(entityIdStr);
-        matched = activeList.find((a: any) => a.fdAccountID === eId || a.memberID === eId);
+        matched = activeList.find((a: any) => a.fdAccountID === eId || a.customerID === eId || a.memberID === eId);
       } else if (memberIdStr) {
         const mId = parseInt(memberIdStr);
-        matched = activeList.find((a: any) => a.memberID === mId);
+        matched = activeList.find((a: any) => a.customerID === mId || a.memberID === mId);
       }
 
       if (matched) {
         setSelectedAccId(matched.fdAccountID);
         setSelectedAccount(matched);
-        fetchMemberSavingsAccounts(matched.memberID, (matched as any).customerID || (matched.member as any)?.customerID);
+        fetchMemberSavingsAccounts(matched.memberID || 0, (matched as any).customerID);
       }
     } catch (err) {
       console.error('Error fetching accounts', err);

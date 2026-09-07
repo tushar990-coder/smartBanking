@@ -474,20 +474,21 @@ export default function Daybook() {
                       {/* Receipts Groups */}
                       {pageData.receipts.map((group, gIdx) => (
                         <React.Fragment key={gIdx}>
-                          <div className={`grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-800 font-bold ${reportViewType === 'ledger-wise' ? (gIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50') : 'bg-slate-100/80'} print:bg-gray-100`}>
-                            <div className="border-r border-gray-800 px-1 py-1 text-center font-mono font-bold text-gray-800">
+                          {/* Head Ledger Row - Solid Top & Bottom Borders */}
+                          <div className={`grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-t border-b border-gray-800 font-bold ${reportViewType === 'ledger-wise' ? (gIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50') : 'bg-gray-100'} print:bg-gray-100`}>
+                            <div className="border-r border-gray-800 px-1 py-1 text-center font-mono font-bold text-gray-900">
                               {group.ledgerId}
                             </div>
-                            <div className="border-r border-gray-800 px-1.5 py-1 font-bold text-gray-900">
+                            <div className="border-r border-gray-800 px-2 py-1 font-bold text-gray-900">
                               {group.ledgerName}
                             </div>
-                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono">
+                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono font-bold">
                               {group.totalCash > 0 ? formatAmount(group.totalCash) : '-'}
                             </div>
-                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono">
+                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono font-bold">
                               {group.totalTransfer > 0 ? formatAmount(group.totalTransfer) : '-'}
                             </div>
-                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono font-bold bg-gray-200/50 print:bg-gray-100">
+                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono font-bold bg-gray-200/60 print:bg-gray-100">
                               {formatAmount(group.totalCash + group.totalTransfer)}
                             </div>
                             <div className="px-1 py-1"></div>
@@ -495,19 +496,19 @@ export default function Daybook() {
 
                           {/* Individual Entries Sub-rows: Only shown in Detailed mode */}
                           {reportViewType === 'detailed' && group.entries.map((entry, eIdx) => (
-                            <div key={eIdx} className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-dashed border-gray-400 print:border-gray-400 text-gray-800">
-                              <div className="border-r border-gray-400 px-1 py-0.5"></div>
-                              <div className="border-r border-gray-400 px-1.5 py-0.5 pl-3 text-[10px]">
-                                {entry.voucherNo && <span className="font-bold text-primary print:text-black mr-1">[{entry.voucherNo}]</span>}
-                                <span>{entry.narration}</span>
+                            <div key={eIdx} className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-200 print:border-gray-200 text-gray-800">
+                              <div className="border-r border-gray-300 px-1 py-0.5"></div>
+                              <div className="border-r border-gray-300 px-1.5 py-0.5 pl-6 text-[10px]">
+                                {entry.voucherNo && <span className="font-semibold text-primary print:text-black mr-1.5 font-mono">[{entry.voucherNo}]</span>}
+                                <span className="text-gray-700">{entry.narration}</span>
                               </div>
-                              <div className="border-r border-gray-400 px-1.5 py-0.5 text-right font-mono">
+                              <div className="border-r border-gray-300 px-1.5 py-0.5 text-right font-mono text-[10px]">
                                 {entry.cashAmount > 0 ? formatAmount(entry.cashAmount) : '-'}
                               </div>
-                              <div className="border-r border-gray-400 px-1.5 py-0.5 text-right font-mono">
+                              <div className="border-r border-gray-300 px-1.5 py-0.5 text-right font-mono text-[10px]">
                                 {entry.transferAmount > 0 ? formatAmount(entry.transferAmount) : '-'}
                               </div>
-                              <div className="border-r border-gray-400 px-1.5 py-0.5 text-right font-mono text-gray-600">
+                              <div className="border-r border-gray-300 px-1.5 py-0.5 text-right font-mono text-[10px] text-gray-600">
                                 {formatAmount(entry.cashAmount + entry.transferAmount)}
                               </div>
                               <div className="px-1 py-0.5"></div>
@@ -538,22 +539,24 @@ export default function Daybook() {
 
                     {/* Table Body */}
                     <div className="flex-1 pb-0">
+                      {/* Payments Groups */}
                       {pageData.payments.map((group, gIdx) => (
                         <React.Fragment key={gIdx}>
-                          <div className={`grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-800 font-bold ${reportViewType === 'ledger-wise' ? (gIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50') : 'bg-slate-100/80'} print:bg-gray-100`}>
-                            <div className="border-r border-gray-800 px-1 py-1 text-center font-mono font-bold text-gray-800">
+                          {/* Head Ledger Row - Solid Top & Bottom Borders */}
+                          <div className={`grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-t border-b border-gray-800 font-bold ${reportViewType === 'ledger-wise' ? (gIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50') : 'bg-gray-100'} print:bg-gray-100`}>
+                            <div className="border-r border-gray-800 px-1 py-1 text-center font-mono font-bold text-gray-900">
                               {group.ledgerId}
                             </div>
-                            <div className="border-r border-gray-800 px-1.5 py-1 font-bold text-gray-900">
+                            <div className="border-r border-gray-800 px-2 py-1 font-bold text-gray-900">
                               {group.ledgerName}
                             </div>
-                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono">
+                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono font-bold">
                               {group.totalCash > 0 ? formatAmount(group.totalCash) : '-'}
                             </div>
-                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono">
+                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono font-bold">
                               {group.totalTransfer > 0 ? formatAmount(group.totalTransfer) : '-'}
                             </div>
-                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono font-bold bg-gray-200/50 print:bg-gray-100">
+                            <div className="border-r border-gray-800 px-1.5 py-1 text-right font-mono font-bold bg-gray-200/60 print:bg-gray-100">
                               {formatAmount(group.totalCash + group.totalTransfer)}
                             </div>
                             <div className="px-1 py-1"></div>
@@ -561,19 +564,19 @@ export default function Daybook() {
 
                           {/* Individual Entries Sub-rows: Only shown in Detailed mode */}
                           {reportViewType === 'detailed' && group.entries.map((entry, eIdx) => (
-                            <div key={eIdx} className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-dashed border-gray-400 print:border-gray-400 text-gray-800">
-                              <div className="border-r border-gray-400 px-1 py-0.5"></div>
-                              <div className="border-r border-gray-400 px-1.5 py-0.5 pl-3 text-[10px]">
-                                {entry.voucherNo && <span className="font-bold text-rose-700 print:text-black mr-1">[{entry.voucherNo}]</span>}
-                                <span>{entry.narration}</span>
+                            <div key={eIdx} className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-200 print:border-gray-200 text-gray-800">
+                              <div className="border-r border-gray-300 px-1 py-0.5"></div>
+                              <div className="border-r border-gray-300 px-1.5 py-0.5 pl-6 text-[10px]">
+                                {entry.voucherNo && <span className="font-semibold text-rose-700 print:text-black mr-1.5 font-mono">[{entry.voucherNo}]</span>}
+                                <span className="text-gray-700">{entry.narration}</span>
                               </div>
-                              <div className="border-r border-gray-400 px-1.5 py-0.5 text-right font-mono">
+                              <div className="border-r border-gray-300 px-1.5 py-0.5 text-right font-mono text-[10px]">
                                 {entry.cashAmount > 0 ? formatAmount(entry.cashAmount) : '-'}
                               </div>
-                              <div className="border-r border-gray-400 px-1.5 py-0.5 text-right font-mono">
+                              <div className="border-r border-gray-300 px-1.5 py-0.5 text-right font-mono text-[10px]">
                                 {entry.transferAmount > 0 ? formatAmount(entry.transferAmount) : '-'}
                               </div>
-                              <div className="border-r border-gray-400 px-1.5 py-0.5 text-right font-mono text-gray-600">
+                              <div className="border-r border-gray-300 px-1.5 py-0.5 text-right font-mono text-[10px] text-gray-600">
                                 {formatAmount(entry.cashAmount + entry.transferAmount)}
                               </div>
                               <div className="px-1 py-0.5"></div>

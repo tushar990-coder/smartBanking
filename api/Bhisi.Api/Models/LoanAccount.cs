@@ -21,6 +21,7 @@ namespace Bhisi.Api.Models
 
         public int? CustomerID { get; set; }
         [ForeignKey("CustomerID")]
+        [InverseProperty("LoanAccounts")]
         public Customer? Customer { get; set; }
 
         public int? MemberID { get; set; }

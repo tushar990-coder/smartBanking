@@ -96,12 +96,12 @@ namespace Bhisi.Api.Controllers
 
             var accounts = await query
                 .Include(s => s.Customer)
-                    .ThenInclude(c => c.MemberProfile)
+                    .ThenInclude(c => c!.MemberProfile)
                 .Include(s => s.Branch)
                 .Include(s => s.Ledger)
                 .Include(s => s.JointHolders)
                     .ThenInclude(jh => jh.Customer)
-                        .ThenInclude(c => c.MemberProfile)
+                        .ThenInclude(c => c!.MemberProfile)
                 .Select(s => new {
                     s.SavingAccountID,
                     s.BranchID,
@@ -118,6 +118,9 @@ namespace Bhisi.Api.Controllers
                     MemberNameEng = s.Customer != null 
                         ? (s.Customer.FirstNameEng + (string.IsNullOrWhiteSpace(s.Customer.MiddleNameEng) ? "" : " " + s.Customer.MiddleNameEng) + " " + s.Customer.LastNameEng).Trim()
                         : "",
+                    MobileNo = s.Customer != null ? (s.Customer.MobileNo ?? "") : "",
+                    AadhaarNo = s.Customer != null ? (s.Customer.AadhaarNo ?? "") : "",
+                    PANNo = s.Customer != null ? (s.Customer.PANNo ?? "") : "",
                     s.AccountType,
                     s.OpeningDate,
                     s.IsLegacyAccount,
@@ -141,10 +144,12 @@ namespace Bhisi.Api.Controllers
                         jh.JointHolderID,
                         MemberID = jh.Customer != null && jh.Customer.MemberProfile != null ? (int?)jh.Customer.MemberProfile.MemberID : null,
                         jh.CustomerID,
+                        CIFNo = jh.Customer != null ? (jh.Customer.CIFNo ?? "") : "",
                         MemberName = jh.Customer != null 
                             ? (jh.Customer.FirstName + (string.IsNullOrWhiteSpace(jh.Customer.MiddleName) ? "" : " " + jh.Customer.MiddleName) + " " + jh.Customer.LastName).Trim()
                             : "",
-                        MemberCode = jh.Customer != null && jh.Customer.MemberProfile != null ? jh.Customer.MemberProfile.MemberCode : ""
+                        MemberCode = jh.Customer != null && jh.Customer.MemberProfile != null ? (jh.Customer.MemberProfile.MemberCode ?? "") : "",
+                        MobileNo = jh.Customer != null ? (jh.Customer.MobileNo ?? "") : ""
                     }).ToList()
                 })
                 .ToListAsync();
@@ -165,11 +170,11 @@ namespace Bhisi.Api.Controllers
         {
             var s = await _context.SavingAccountMasters
                 .Include(sa => sa.Customer)
-                    .ThenInclude(c => c.MemberProfile)
+                    .ThenInclude(c => c!.MemberProfile)
                 .Include(sa => sa.Branch)
                 .Include(sa => sa.JointHolders)
                     .ThenInclude(jh => jh.Customer)
-                        .ThenInclude(c => c.MemberProfile)
+                        .ThenInclude(c => c!.MemberProfile)
                 .FirstOrDefaultAsync(m => m.SavingAccountID == id);
 
             if (s == null)
@@ -189,6 +194,12 @@ namespace Bhisi.Api.Controllers
                 MemberName = s.Customer != null 
                     ? $"{s.Customer.FirstName} {s.Customer.LastName}".Trim()
                     : "",
+                MemberNameEng = s.Customer != null 
+                    ? $"{s.Customer.FirstNameEng} {s.Customer.LastNameEng}".Trim()
+                    : "",
+                MobileNo = s.Customer != null ? (s.Customer.MobileNo ?? "") : "",
+                AadhaarNo = s.Customer != null ? (s.Customer.AadhaarNo ?? "") : "",
+                PANNo = s.Customer != null ? (s.Customer.PANNo ?? "") : "",
                 MemberCode = s.Customer != null && s.Customer.MemberProfile != null ? s.Customer.MemberProfile.MemberCode : "",
                 s.AccountType,
                 s.OpeningDate,
@@ -213,10 +224,12 @@ namespace Bhisi.Api.Controllers
                     jh.JointHolderID,
                     MemberID = jh.Customer != null && jh.Customer.MemberProfile != null ? (int?)jh.Customer.MemberProfile.MemberID : null,
                     jh.CustomerID,
+                    CIFNo = jh.Customer != null ? (jh.Customer.CIFNo ?? "") : "",
                     MemberName = jh.Customer != null 
                         ? $"{jh.Customer.FirstName} {jh.Customer.LastName}".Trim() 
                         : "",
-                    MemberCode = jh.Customer != null && jh.Customer.MemberProfile != null ? jh.Customer.MemberProfile.MemberCode : ""
+                    MemberCode = jh.Customer != null && jh.Customer.MemberProfile != null ? (jh.Customer.MemberProfile.MemberCode ?? "") : "",
+                    MobileNo = jh.Customer != null ? (jh.Customer.MobileNo ?? "") : ""
                 }).ToList()
             };
         }

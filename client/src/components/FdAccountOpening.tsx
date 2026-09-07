@@ -366,14 +366,16 @@ const FdAccountOpening: React.FC = () => {
 
     setLoading(true);
     try {
+      const selectedMem = members.find((m: any) => (m.customerID || m.memberID) === Number(formData.memberID));
+      const resolvedCustId = Number(selectedMem?.customerID || selectedMem?.id || formData.memberID);
+
       if (entryMode === 'single') {
         const depAmt = parseFloat(formData.depositAmount as any) || 0;
         if (depAmt <= 0) { setError('ठेव रक्कम ० पेक्षा जास्त असावी.'); setLoading(false); return; }
 
         const payload = {
           ...formData,
-          customerID: Number(formData.memberID),
-          memberID: Number(formData.memberID),
+          customerID: resolvedCustId,
           depositAmount: depAmt,
           accountNo: 'AUTO',
           interestRate: calcData.interestRate,
@@ -402,8 +404,7 @@ const FdAccountOpening: React.FC = () => {
 
         const bulkPayload = {
           branchID: formData.branchID,
-          customerID: Number(formData.memberID),
-          memberID: Number(formData.memberID),
+          customerID: resolvedCustId,
           fdSchemeID: formData.fdSchemeID,
           openingDate: formData.openingDate,
           totalAmount: totalAmt,

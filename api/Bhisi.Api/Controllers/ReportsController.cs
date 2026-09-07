@@ -2597,7 +2597,7 @@ namespace Bhisi.Api.Controllers
                 {
                     LoanCollectionID = c.LoanCollectionID,
                     CollectionDate = c.CollectionDate,
-                    ReceiptNo = c.ReceiptNo,
+                    ReceiptNo = c.ReceiptNo ?? "",
                     LoanAccountNo = acc?.LoanAccountNo ?? "",
                     CifNo = cif,
                     MemberCode = mCode,
@@ -2643,7 +2643,7 @@ namespace Bhisi.Api.Controllers
                 {
                     SansthaInfo = sanstha,
                     LoanType = !string.IsNullOrWhiteSpace(loanAccount.LoanRate?.ShortName) ? loanAccount.LoanRate.ShortName : (loanAccount.LoanRate?.LoanType ?? ""),
-                    LoanAccountNo = loanAccount.LoanAccountNo,
+                    LoanAccountNo = loanAccount.LoanAccountNo ?? "",
                     Status = loanAccount.Status,
                     SanctionedAmount = loanAccount.SanctionedAmount,
                     MemberName = bName,
@@ -2749,7 +2749,7 @@ namespace Bhisi.Api.Controllers
                     transactions.Add(new LoanLedgerTransactionDto
                     {
                         Date = c.CollectionDate,
-                        ReceiptNo = c.ReceiptNo,
+                        ReceiptNo = c.ReceiptNo ?? "",
                         Particulars = "Loan Collection",
                         PrincipalDeposit = c.PrincipalCollected,
                         Interest = c.InterestCollected,
@@ -3087,11 +3087,11 @@ namespace Bhisi.Api.Controllers
                     .ToListAsync();
 
                 var fdAccs = await _context.FdAccounts
-                    .Where(f => (targetCustId != null && f.CustomerID == targetCustId) || (targetMemId != null && f.MemberID == targetMemId))
+                    .Where(f => targetCustId != null && f.CustomerID == targetCustId)
                     .ToListAsync();
 
                 var rdAccs = await _context.RdAccounts
-                    .Where(r => (targetCustId != null && r.CustomerID == targetCustId) || (targetMemId != null && r.MemberID == targetMemId))
+                    .Where(r => targetCustId != null && r.CustomerID == targetCustId)
                     .ToListAsync();
 
                 var pigmyAccs = await _context.PigmyAccounts
@@ -3480,7 +3480,7 @@ namespace Bhisi.Api.Controllers
                 rows.Add(new OverdueLoanRowDto
                 {
                     LoanAccountID = la.LoanAccountID,
-                    LoanAccountNo = la.LoanAccountNo,
+                    LoanAccountNo = la.LoanAccountNo ?? "",
                     LoanType = la.LoanRate?.ShortName ?? la.LoanRate?.LoanType ?? "",
                     CustomerID = la.CustomerID,
                     CifNo = cif,
@@ -4277,7 +4277,7 @@ namespace Bhisi.Api.Controllers
         {
             var account = await _context.SavingAccountMasters
                 .Include(a => a.Customer)
-                    .ThenInclude(c => c.MemberProfile)
+                    .ThenInclude(c => c!.MemberProfile)
                 .Include(a => a.Ledger)
                 .FirstOrDefaultAsync(a => a.SavingAccountID == accountId);
 

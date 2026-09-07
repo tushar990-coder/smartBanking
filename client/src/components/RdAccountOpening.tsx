@@ -376,9 +376,8 @@ export default function RdAccountOpening() {
         accountNo: 'AUTO',
         branchID: parseInt(formData.branchID as any, 10) || 1,
         customerID: parseInt(formData.memberID, 10),
-        memberID: parseInt(formData.memberID, 10),
         rdSchemeID: parseInt(formData.rdSchemeID, 10),
-        jointMemberID: formData.accountType === 'Joint' && formData.jointMemberID ? parseInt(formData.jointMemberID, 10) : null,
+        jointCustomerID: formData.accountType === 'Joint' && formData.jointMemberID ? parseInt(formData.jointMemberID, 10) : null,
         savingAccountID: formData.paymentMode === 'AutoDebit_Saving' && formData.savingAccountID ? parseInt(formData.savingAccountID, 10) : null,
         agentID: formData.agentID ? parseInt(formData.agentID, 10) : null,
         installmentAmount: parseFloat(formData.installmentAmount as any) || 0,
@@ -572,17 +571,12 @@ export default function RdAccountOpening() {
               {/* Conditional Joint Member Selector */}
               {formData.accountType === 'Joint' && (
                 <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-lg space-y-2">
-                  <label className={labelClass}>संयुक्त खातेदार निवडा (Select Joint Member) <span className="text-red-500">*</span></label>
-                  <SearchableSelect
-                    options={members
-                      .filter((m) => m.memberID.toString() !== formData.memberID)
-                      .map((m) => ({
-                        value: m.memberID,
-                        label: `${m.memberCode ? m.memberCode + ' - ' : ''}${m.firstName} ${m.lastName}`,
-                      }))}
-                    value={formData.jointMemberID}
-                    onChange={(val: any) => setFormData((prev) => ({ ...prev, jointMemberID: val?.target?.value ?? val }))}
-                    placeholder="दुसरा सभासद शोधा..."
+                  <label className={labelClass}>संयुक्त खातेदार निवडा (Select Joint Customer) <span className="text-red-500">*</span></label>
+                  <CustomerSearchSelect
+                    customers={members.filter((m: any) => (m.customerID || m.memberID)?.toString() !== formData.memberID)}
+                    value={formData.jointMemberID ? Number(formData.jointMemberID) : ''}
+                    onChange={(val) => setFormData((prev) => ({ ...prev, jointMemberID: val ? String(val) : '' }))}
+                    placeholder="-- दुसरा खातेदार (CIF / नाव / मोबाईलने शोधा) --"
                   />
                 </div>
               )}

@@ -348,7 +348,7 @@ export default function RdOpeningBalanceMigration() {
     try {
       const payload = {
         branchID: parseInt(formData.branchID.toString(), 10),
-        memberID: parseInt(formData.memberID, 10),
+        customerID: parseInt(formData.memberID, 10),
         rdSchemeID: parseInt(formData.rdSchemeID, 10),
         accountNo: formData.accountNo === 'AUTO' ? nextAccountNo : formData.accountNo,
         legacyAccountNumber: formData.legacyAccountNumber || null,

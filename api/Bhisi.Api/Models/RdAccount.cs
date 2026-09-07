@@ -24,15 +24,12 @@ namespace Bhisi.Api.Models
         [ForeignKey("FinancialYearID")]
         public virtual FinancialYear? FinancialYear { get; set; }
 
-        public int? CustomerID { get; set; }
+        [Required]
+        public int CustomerID { get; set; }
 
         [ForeignKey("CustomerID")]
+        [InverseProperty("RdAccounts")]
         public virtual Customer? Customer { get; set; }
-
-        public int? MemberID { get; set; }
-
-        [ForeignKey("MemberID")]
-        public virtual Member? Member { get; set; }
 
         [Required]
         public int RdSchemeID { get; set; }
@@ -40,7 +37,6 @@ namespace Bhisi.Api.Models
         [ForeignKey("RdSchemeID")]
         public virtual RdScheme? RdScheme { get; set; }
 
-        [Required]
         [StringLength(30)]
         public string AccountNo { get; set; } = string.Empty;
 
@@ -89,10 +85,10 @@ namespace Bhisi.Api.Models
         [StringLength(20)]
         public string AccountType { get; set; } = "Single"; // Single, Joint, Minor
 
-        public int? JointMemberID { get; set; }
+        public int? JointCustomerID { get; set; }
 
-        [ForeignKey("JointMemberID")]
-        public virtual Member? JointMember { get; set; }
+        [ForeignKey("JointCustomerID")]
+        public virtual Customer? JointCustomer { get; set; }
 
         [StringLength(100)]
         public string? GuardianName { get; set; }

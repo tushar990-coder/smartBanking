@@ -1890,8 +1890,8 @@ namespace Bhisi.Api.Controllers
                     bool hasLoans = await _context.LoanAccounts.AnyAsync(l => l.MemberID == targetMemberId || l.CoMemberID == targetMemberId || l.CoMember2ID == targetMemberId || l.Guarantor1MemberID == targetMemberId || l.Guarantor2MemberID == targetMemberId);
                     bool hasLoanApps = await _context.LoanApplications.AnyAsync(l => l.MemberID == targetMemberId || l.CoMemberID == targetMemberId || l.Guarantor1MemberID == targetMemberId || l.Guarantor2MemberID == targetMemberId);
                     bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID);
-                    bool hasFds = await _context.FdAccounts.AnyAsync(f => f.MemberID == targetMemberId);
-                    bool hasRds = await _context.RdAccounts.AnyAsync(r => r.MemberID == targetMemberId);
+                    bool hasFds = await _context.FdAccounts.AnyAsync(f => member.CustomerID != null && f.CustomerID == member.CustomerID);
+                    bool hasRds = await _context.RdAccounts.AnyAsync(r => member.CustomerID != null && r.CustomerID == member.CustomerID);
                     bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => member.CustomerID != null && p.CustomerID == member.CustomerID);
                     bool hasLockers = await _context.LockerAllotments.AnyAsync(l => l.MemberID == targetMemberId);
                     bool hasJoint = await _context.JointMembers.AnyAsync(j => j.PrimaryMemberID == targetMemberId);

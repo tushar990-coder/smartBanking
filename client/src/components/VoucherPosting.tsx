@@ -287,9 +287,9 @@ const VoucherPosting: React.FC = () => {
   const selectedTotalAmount = selectedVouchersList.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
 
   return (
-    <div className="p-2 max-w-full h-full flex flex-col bg-gray-50 text-[11px] font-sans relative overflow-y-auto">
+    <div className="p-2 sm:p-3 max-w-full min-h-full flex flex-col bg-gray-50 text-[11px] font-sans relative pb-28">
       {/* Outer Container */}
-      <div className="bg-white rounded-md shadow-sm border border-gray-300 overflow-hidden flex flex-col">
+      <div className="bg-white rounded-md shadow-sm border border-gray-300 flex flex-col">
         {/* Hero Header Banner */}
         <div className="bg-gradient-to-r from-slate-900 via-[#0E8A5A] to-emerald-950 text-white px-3 py-2 flex flex-wrap items-center justify-between gap-2 shadow-sm">
           <div className="flex items-center gap-2">
@@ -400,7 +400,7 @@ const VoucherPosting: React.FC = () => {
           )}
 
           {/* Master Table Container */}
-          <div className="bg-white rounded-sm shadow-2xs border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-sm shadow-2xs border border-gray-200">
             {/* Controls Header */}
             <div className="p-2 bg-gray-100 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-2">
               <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -457,7 +457,7 @@ const VoucherPosting: React.FC = () => {
             </div>
 
             {/* Master Table Body */}
-            <div className="overflow-x-auto min-h-[350px] max-h-[580px]">
+            <div className="overflow-x-auto min-h-[350px]">
               <table className="min-w-full divide-y divide-gray-200 text-xs text-center border-collapse">
                 <thead className="bg-slate-800 text-white sticky top-0 z-10 shadow-xs">
                   <tr>
@@ -581,50 +581,97 @@ const VoucherPosting: React.FC = () => {
 
                           {/* Expandable Voucher Details Breakdown */}
                           {isExpanded && (
-                            <tr className="bg-slate-50 border-b-2 border-primary/30">
-                              <td colSpan={9} className="p-2.5 text-left">
-                                <div className="bg-white p-2.5 rounded-sm border border-gray-300 shadow-2xs space-y-1.5">
-                                  <div className="flex justify-between items-center border-b border-gray-200 pb-1">
-                                    <h4 className="font-bold text-primary text-xs flex items-center gap-1.5">
-                                      <Layers className="w-3.5 h-3.5" />
-                                      <span>खाती तपशील (Ledger Breakdown for {v.voucherNo})</span>
-                                    </h4>
-                                    <span className="text-[10px] text-gray-500 font-bold">
-                                      तारीख: {new Date(v.voucherDate).toLocaleDateString('en-GB')} | स्क्रॉल क्र.: {v.scrollNo ? `#${v.scrollNo}` : 'मंजुरीनंतर'} | एकूण: ₹{v.totalAmount.toFixed(2)}
-                                    </span>
+                            <tr
+                              ref={(el) => {
+                                if (el) {
+                                  setTimeout(() => {
+                                    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                  }, 60);
+                                }
+                              }}
+                              className="bg-slate-50 border-b-2 border-primary/30"
+                            >
+                              <td colSpan={9} className="p-2.5 sm:p-3 text-left">
+                                <div className="bg-white p-3 rounded-md border-2 border-primary/20 shadow-md space-y-2">
+                                  <div className="flex flex-wrap justify-between items-center border-b border-gray-200 pb-2 gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <div className="p-1 bg-primary/10 rounded text-primary">
+                                        <Layers className="w-4 h-4" />
+                                      </div>
+                                      <div>
+                                        <h4 className="font-extrabold text-primary text-xs flex items-center gap-1.5">
+                                          <span>खाती तपशील (Ledger Breakdown for {v.voucherNo})</span>
+                                        </h4>
+                                        <p className="text-[10px] text-gray-500">
+                                          तारीख: <span className="font-bold text-gray-700">{new Date(v.voucherDate).toLocaleDateString('en-GB')}</span> | 
+                                          स्क्रॉल क्र.: <span className="font-bold text-amber-700">{v.scrollNo ? `#${v.scrollNo}` : 'मंजुरीनंतर'}</span> | 
+                                          प्रकार: <span className="font-bold text-gray-700">{v.voucherType}</span>
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] font-black bg-emerald-50 text-emerald-800 px-2.5 py-0.5 rounded border border-emerald-300">
+                                        एकूण रक्कम: ₹{v.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedVoucherId(null);
+                                        }}
+                                        className="text-gray-400 hover:text-rose-600 px-2 py-1 rounded text-[10px] font-bold border border-gray-200 hover:border-rose-300 hover:bg-rose-50 transition-colors cursor-pointer flex items-center gap-1"
+                                        title="तपशील बंद करा"
+                                      >
+                                        <X className="w-3 h-3" />
+                                        <span>बंद करा</span>
+                                      </button>
+                                    </div>
                                   </div>
 
                                   <div className="overflow-x-auto border border-gray-200 rounded-sm">
                                     <table className="min-w-full divide-y divide-gray-200 text-[11px]">
-                                      <thead className="bg-slate-700 text-white font-semibold">
+                                      <thead className="bg-slate-800 text-white font-semibold">
                                         <tr>
-                                          <th className="px-2 py-1 text-left border-r border-slate-600">खाते (Ledger Name)</th>
-                                          <th className="px-2 py-1 text-left border-r border-slate-600 w-48">सभासद (Member)</th>
-                                          <th className="px-2 py-1 text-right border-r border-slate-600 w-32">नावे (Debit Dr ₹)</th>
-                                          <th className="px-2 py-1 text-right w-32">जमा (Credit Cr ₹)</th>
+                                          <th className="px-3 py-1.5 text-left border-r border-slate-700">खाते (Ledger Name)</th>
+                                          <th className="px-3 py-1.5 text-left border-r border-slate-700 w-52">सभासद (Member)</th>
+                                          <th className="px-3 py-1.5 text-right border-r border-slate-700 w-36">नावे (Debit Dr ₹)</th>
+                                          <th className="px-3 py-1.5 text-right w-36">जमा (Credit Cr ₹)</th>
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-gray-100 bg-white">
                                         {v.voucherDetails?.map((vd, idx) => (
-                                          <tr key={idx} className="hover:bg-gray-50">
-                                            <td className="px-2 py-1 text-gray-800 font-bold border-r border-gray-200">
-                                              {vd.ledger?.ledgerName || 'Unknown Ledger'}
+                                          <tr key={idx} className="hover:bg-blue-50/40 transition-colors">
+                                            <td className="px-3 py-1.5 text-gray-900 font-bold border-r border-gray-200">
+                                              <span>{vd.ledger?.ledgerName || 'Unknown Ledger'}</span>
                                               {vd.narration ? (
-                                                <span className="text-gray-500 font-normal italic ml-1.5">({vd.narration})</span>
+                                                <span className="text-gray-500 font-normal italic ml-2 text-[10.5px]">({vd.narration})</span>
                                               ) : null}
                                             </td>
-                                            <td className="px-2 py-1 text-gray-600 border-r border-gray-200 font-medium">
-                                              {vd.member ? `${vd.member.MemberCode || ''} ${vd.member.FirstName || ''} ${vd.member.LastName || ''}`.trim() : '-'}
+                                            <td className="px-3 py-1.5 text-gray-700 border-r border-gray-200 font-medium">
+                                              {vd.member ? `${vd.member.MemberCode || vd.member.memberCode || ''} ${vd.member.FirstName || vd.member.firstName || ''} ${vd.member.LastName || vd.member.lastName || ''}`.trim() : '-'}
                                             </td>
-                                            <td className="px-2 py-1 text-right text-rose-600 font-mono font-bold border-r border-gray-200">
-                                              {vd.drCr === 'Dr' ? vd.amount.toFixed(2) : '-'}
+                                            <td className="px-3 py-1.5 text-right text-rose-600 font-mono font-bold border-r border-gray-200">
+                                              {vd.drCr === 'Dr' ? `₹${vd.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                                             </td>
-                                            <td className="px-2 py-1 text-right text-emerald-700 font-mono font-bold">
-                                              {vd.drCr === 'Cr' ? vd.amount.toFixed(2) : '-'}
+                                            <td className="px-3 py-1.5 text-right text-emerald-700 font-mono font-bold">
+                                              {vd.drCr === 'Cr' ? `₹${vd.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                                             </td>
                                           </tr>
                                         ))}
                                       </tbody>
+                                      <tfoot className="bg-slate-100 font-bold text-[11px] border-t-2 border-slate-300">
+                                        <tr>
+                                          <td colSpan={2} className="px-3 py-1.5 text-right font-bold text-gray-800 border-r border-gray-200">
+                                            एकूण बेरजा (Total Dr / Cr):
+                                          </td>
+                                          <td className="px-3 py-1.5 text-right text-rose-700 font-mono font-black border-r border-gray-200">
+                                            ₹{(v.voucherDetails?.filter(d => d.drCr === 'Dr').reduce((s, d) => s + (d.amount || 0), 0) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                          </td>
+                                          <td className="px-3 py-1.5 text-right text-emerald-800 font-mono font-black">
+                                            ₹{(v.voucherDetails?.filter(d => d.drCr === 'Cr').reduce((s, d) => s + (d.amount || 0), 0) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                          </td>
+                                        </tr>
+                                      </tfoot>
                                     </table>
                                   </div>
                                 </div>

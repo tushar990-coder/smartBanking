@@ -24,15 +24,11 @@ namespace Bhisi.Api.Models
         [ForeignKey("FinancialYearID")]
         public virtual FinancialYear? FinancialYear { get; set; }
 
-        public int? CustomerID { get; set; }
+        [Required]
+        public int CustomerID { get; set; }
 
         [ForeignKey("CustomerID")]
         public virtual Customer? Customer { get; set; }
-
-        public int? MemberID { get; set; }
-
-        [ForeignKey("MemberID")]
-        public virtual Member? Member { get; set; }
 
         [Required]
         public int FdSchemeID { get; set; }
@@ -40,7 +36,6 @@ namespace Bhisi.Api.Models
         [ForeignKey("FdSchemeID")]
         public virtual FdScheme? FdScheme { get; set; }
 
-        [Required]
         [StringLength(30)]
         public string AccountNo { get; set; } = string.Empty;
 

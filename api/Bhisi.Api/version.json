@@ -1,15 +1,15 @@
 {
-  "version": "2.4.4",
-  "releaseDate": "2026-09-07",
-  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.4.4",
+  "version": "2.4.5",
+  "releaseDate": "2026-09-08",
+  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.4.5",
   "changelog": [
-    "🔐 लॉगिन फॉर्म सुरक्षा सुधारणा: लॉगिन फॉर्म उघडल्यावर पासवर्ड रिकामा (Clear) ठेवला, ब्राउझर व पासवर्ड मॅनेजर ऑटो-फिल प्रतिबंध लागू.",
-    "🛡️ बँकिंग सेशन व्यवस्थापन (Session Security Policy): ब्राऊझर बंद होताच युझरचे सत्र (Session) तात्काळ संपुष्टात येणे (sessionStorage स्थलांतर) व क्रॉस-टॅब सिंक्रोनायझेशन.",
-    "⭐ ग्राहक नोंदणी मास्टर (Customer / CIF Master): CIF000000 व CustomerID #0 त्रुटी कायमस्वरूपी निवारण.",
-    "⭐ ऑटो-रिपेअर आणि सेल्फ-हीलिंग: CustomerID 0 असलेल्या नोंदी स्वयंचलितपणे valid क्र. 1 (किंवा पुढील सलग क्र.) व CIF000001 वर स्थलांतरित.",
-    "⭐ संपादन (Edit) 400 Bad Request फिक्स: CustomerMaster व MemberMaster मध्ये संपादन करताना अचूक PUT API कॉल आणि हेडरमधील '0' अंक निराकरण.",
-    "⭐ डेटाबेस रिसेट व ट्रिगर सुधारणा: clean_database_keep_masters व auto-reseed ट्रिगर्समध्ये रिकाम्या टेबलसाठी RESEED 1 ची सुरक्षितता.",
-    "⭐ सर्व संस्थांसाठी युनिव्हर्सल पॅच: सर्व पतसंस्था/बँकांसाठी 1-क्लिक मल्टि-ॲप पॅच आणि ऑटो-रिपेअर सपोर्ट."
+    "⭐ [2026-09-08] मुदत ठेव (Fixed Deposit - FD) 100% Pure CIF-First: FdAccounts मधून MemberID कायमस्वरूपी वगळला, CustomerID अनिवार्य (NOT NULL), खाते उघडणे, मुदत समाप्ती, नूतनीकरण व मुदतपूर्व बंद सर्व व्हाउचर्समध्ये CustomerID सब-लेजर टॅगिंग व परिपूर्ण Dr == Cr संतुलन.",
+    "⭐ [2026-09-08] आवर्ती ठेव (Recurring Deposit - RD) 100% Pure CIF-First: RdAccounts मधून MemberID ड्रॉप, CustomerID NOT NULL व संयुक्त खातेदारासाठी JointCustomerID लागू. हप्ता संकलन, व्याज तरतूद (Accrual), मुदतपूर्व बंद व FD नूतनीकरण सर्व ठिकाणी संतुलित व्हाउचर्स.",
+    "⭐ [2026-09-08] ऑडिट व सीबीएस मानके (Audit & CBS Compliance): सर्व व्हाउचर्समध्ये CustomerID अनिवार्य व सभासद लिंक असल्यास MemberID सब-लेजर नोंद. Customer 360 अहवाल व ३४ स्वयंचलित QA टेस्ट १००% यशस्वी (0 Errors).",
+    "⭐ [2026-09-07] पिग्मी (Pigmy/Daily Collection) 100% Pure CIF-First: सभासद टेबलवरील अवलंबित्व हटवले; PigmyAccounts, व्हाउचर्स व मोबाईल ऑनबोर्डिंग थेट CustomerID वर आधारित.",
+    "🔐 [2026-09-07] लॉगिन व सेशन सुरक्षा (Security Policy): ऑटो-फिल प्रतिबंध, ब्राऊझर बंद होताच सेशन तात्काळ संपुष्टात येणे (sessionStorage) व क्रॉस-टॅब सुरक्षा.",
+    "⭐ [2026-09-05] शेअर्स व सभासद रोलबॅक: शेअर्स ओपनिंग डिलीशनवर अणू (Atomic) MemberID/MemberCode रोलबॅक, शुद्ध ग्राहकांसाठी MemberCode NULL राखणे.",
+    "⭐ [2026-09-04] युनिव्हर्सल मल्टी-ॲप पॅच: सर्व पतसंस्था व बँकांसाठी 1-क्लिक ऑटो-रिपेअर आणि झिरो डेटा लॉस पॅच इन्स्टॉलर."
   ],
   "hasDatabaseMigration": true,
   "isCritical": true

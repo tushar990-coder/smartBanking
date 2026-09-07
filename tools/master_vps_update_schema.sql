@@ -3430,34 +3430,41 @@ IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAccounts')
 BEGIN
     IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'MemberID')
     BEGIN
-        DECLARE @fdFkName nvarchar(200);
-        SELECT @fdFkName = f.name FROM sys.foreign_keys f 
-        JOIN sys.foreign_key_columns fkc ON f.object_id = fkc.constraint_object_id
-        JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
-        WHERE f.parent_object_id = OBJECT_ID(N'[FdAccounts]') AND c.name = 'MemberID';
-        IF @fdFkName IS NOT NULL EXEC('ALTER TABLE [FdAccounts] DROP CONSTRAINT [' + @fdFkName + ']');
+        EXEC('
+            DECLARE @fdFkName nvarchar(200);
+            SELECT @fdFkName = f.name FROM sys.foreign_keys f 
+            JOIN sys.foreign_key_columns fkc ON f.object_id = fkc.constraint_object_id
+            JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+            WHERE f.parent_object_id = OBJECT_ID(N''[FdAccounts]'') AND c.name = ''MemberID'';
+            IF @fdFkName IS NOT NULL EXEC(''ALTER TABLE [FdAccounts] DROP CONSTRAINT ['' + @fdFkName + '']'');
 
-        IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'IX_FdAccounts_MemberID')
-            DROP INDEX [IX_FdAccounts_MemberID] ON [FdAccounts];
+            IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N''[FdAccounts]'') AND name = ''IX_FdAccounts_MemberID'')
+                DROP INDEX [IX_FdAccounts_MemberID] ON [FdAccounts];
 
-        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'CustomerID')
-        BEGIN
-            UPDATE fd
-            SET fd.CustomerID = ISNULL(m.CustomerID, 1)
-            FROM [FdAccounts] fd
-            LEFT JOIN [Members] m ON fd.MemberID = m.MemberID
-            WHERE fd.CustomerID IS NULL OR fd.CustomerID = 0;
-        END
+            IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N''[FdAccounts]'') AND name = ''CustomerID'')
+            BEGIN
+                UPDATE fd
+                SET fd.CustomerID = ISNULL(m.CustomerID, 1)
+                FROM [FdAccounts] fd
+                LEFT JOIN [Members] m ON fd.MemberID = m.MemberID
+                WHERE fd.CustomerID IS NULL OR fd.CustomerID = 0;
+            END
 
-        ALTER TABLE [FdAccounts] DROP COLUMN [MemberID];
-        PRINT '  -> FdAccounts: MemberID safely dropped and CustomerID backfilled.';
+            ALTER TABLE [FdAccounts] DROP COLUMN [MemberID];
+            PRINT ''  -> FdAccounts: MemberID safely dropped and CustomerID backfilled.'';
+        ');
     END
 
-    IF COL_LENGTH('FdAccounts', 'CustomerID') IS NOT NULL
-        ALTER TABLE [FdAccounts] ALTER COLUMN [CustomerID] int NOT NULL;
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'CustomerID' AND is_nullable = 1)
+    BEGIN
+        IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'IX_FdAccounts_CustomerID')
+            EXEC('DROP INDEX [IX_FdAccounts_CustomerID] ON [FdAccounts];');
+
+        EXEC('ALTER TABLE [FdAccounts] ALTER COLUMN [CustomerID] int NOT NULL;');
+    END
 
     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'IX_FdAccounts_CustomerID')
-        CREATE NONCLUSTERED INDEX [IX_FdAccounts_CustomerID] ON [FdAccounts]([CustomerID]);
+        EXEC('CREATE NONCLUSTERED INDEX [IX_FdAccounts_CustomerID] ON [FdAccounts]([CustomerID]);');
 END
 GO
 
@@ -3466,40 +3473,47 @@ IF EXISTS (SELECT * FROM sys.tables WHERE name = 'RdAccounts')
 BEGIN
     IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[RdAccounts]') AND name = 'MemberID')
     BEGIN
-        DECLARE @rdFkName nvarchar(200);
-        SELECT @rdFkName = f.name FROM sys.foreign_keys f 
-        JOIN sys.foreign_key_columns fkc ON f.object_id = fkc.constraint_object_id
-        JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
-        WHERE f.parent_object_id = OBJECT_ID(N'[RdAccounts]') AND c.name = 'MemberID';
-        IF @rdFkName IS NOT NULL EXEC('ALTER TABLE [RdAccounts] DROP CONSTRAINT [' + @rdFkName + ']');
+        EXEC('
+            DECLARE @rdFkName nvarchar(200);
+            SELECT @rdFkName = f.name FROM sys.foreign_keys f 
+            JOIN sys.foreign_key_columns fkc ON f.object_id = fkc.constraint_object_id
+            JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+            WHERE f.parent_object_id = OBJECT_ID(N''[RdAccounts]'') AND c.name = ''MemberID'';
+            IF @rdFkName IS NOT NULL EXEC(''ALTER TABLE [RdAccounts] DROP CONSTRAINT ['' + @rdFkName + '']'');
 
-        IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[RdAccounts]') AND name = 'IX_RdAccounts_MemberID')
-            DROP INDEX [IX_RdAccounts_MemberID] ON [RdAccounts];
+            IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N''[RdAccounts]'') AND name = ''IX_RdAccounts_MemberID'')
+                DROP INDEX [IX_RdAccounts_MemberID] ON [RdAccounts];
 
-        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[RdAccounts]') AND name = 'CustomerID')
-        BEGIN
-            UPDATE rd
-            SET rd.CustomerID = ISNULL(m.CustomerID, 1)
-            FROM [RdAccounts] rd
-            LEFT JOIN [Members] m ON rd.MemberID = m.MemberID
-            WHERE rd.CustomerID IS NULL OR rd.CustomerID = 0;
-        END
+            IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N''[RdAccounts]'') AND name = ''CustomerID'')
+            BEGIN
+                UPDATE rd
+                SET rd.CustomerID = ISNULL(m.CustomerID, 1)
+                FROM [RdAccounts] rd
+                LEFT JOIN [Members] m ON rd.MemberID = m.MemberID
+                WHERE rd.CustomerID IS NULL OR rd.CustomerID = 0;
+            END
 
-        ALTER TABLE [RdAccounts] DROP COLUMN [MemberID];
-        PRINT '  -> RdAccounts: MemberID safely dropped and CustomerID backfilled.';
+            ALTER TABLE [RdAccounts] DROP COLUMN [MemberID];
+            PRINT ''  -> RdAccounts: MemberID safely dropped and CustomerID backfilled.'';
+        ');
     END
 
-    IF COL_LENGTH('RdAccounts', 'CustomerID') IS NOT NULL
-        ALTER TABLE [RdAccounts] ALTER COLUMN [CustomerID] int NOT NULL;
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[RdAccounts]') AND name = 'CustomerID' AND is_nullable = 1)
+    BEGIN
+        IF EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[RdAccounts]') AND name = 'IX_RdAccounts_CustomerID')
+            EXEC('DROP INDEX [IX_RdAccounts_CustomerID] ON [RdAccounts];');
+
+        EXEC('ALTER TABLE [RdAccounts] ALTER COLUMN [CustomerID] int NOT NULL;');
+    END
 
     IF COL_LENGTH('RdAccounts', 'JointCustomerID') IS NULL
-        ALTER TABLE [RdAccounts] ADD [JointCustomerID] int NULL;
+        EXEC('ALTER TABLE [RdAccounts] ADD [JointCustomerID] int NULL;');
 
     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[RdAccounts]') AND name = 'IX_RdAccounts_CustomerID')
-        CREATE NONCLUSTERED INDEX [IX_RdAccounts_CustomerID] ON [RdAccounts]([CustomerID]);
+        EXEC('CREATE NONCLUSTERED INDEX [IX_RdAccounts_CustomerID] ON [RdAccounts]([CustomerID]);');
 
     IF NOT EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[RdAccounts]') AND name = 'IX_RdAccounts_JointCustomerID')
-        CREATE NONCLUSTERED INDEX [IX_RdAccounts_JointCustomerID] ON [RdAccounts]([JointCustomerID]);
+        EXEC('CREATE NONCLUSTERED INDEX [IX_RdAccounts_JointCustomerID] ON [RdAccounts]([JointCustomerID]);');
 END
 GO
 

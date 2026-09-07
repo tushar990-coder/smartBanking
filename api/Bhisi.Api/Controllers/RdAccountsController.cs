@@ -47,7 +47,7 @@ namespace Bhisi.Api.Controllers
         {
             var query = _context.RdAccounts
                 .Include(r => r.Customer)
-                    .ThenInclude(c => c.MemberProfile)
+                    .ThenInclude(c => c!.MemberProfile)
                 .Include(r => r.RdScheme)
                 .Include(r => r.Branch)
                 .AsQueryable();
@@ -120,7 +120,7 @@ namespace Bhisi.Api.Controllers
         {
             var r = await _context.RdAccounts
                 .Include(x => x.Customer)
-                    .ThenInclude(c => c.MemberProfile)
+                    .ThenInclude(c => c!.MemberProfile)
                 .Include(x => x.RdScheme)
                 .Include(x => x.Branch)
                 .FirstOrDefaultAsync(x => x.RdAccountID == id);

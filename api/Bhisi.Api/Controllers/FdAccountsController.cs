@@ -455,6 +455,13 @@ namespace Bhisi.Api.Controllers
             int? resolvedCustomerId = customer?.CustomerID ?? (member?.CustomerID > 0 ? member.CustomerID : null);
             int? resolvedMemberId = member?.MemberID;
 
+            if (!resolvedCustomerId.HasValue || resolvedCustomerId.Value <= 0)
+            {
+                return BadRequest("खातेदाराचा ग्राहक आयडी (Customer ID) उपलब्ध नाही.");
+            }
+
+            int finalCustomerId = resolvedCustomerId.Value;
+
             if (req.FdSchemeID <= 0) return BadRequest("कृपया ठेव योजना निवडा.");
             if (req.SplitCount <= 0) return BadRequest("पावत्यांची संख्या १ किंवा अधिक असावी.");
 
@@ -591,7 +598,7 @@ namespace Bhisi.Api.Controllers
                         var acc = new FdAccount
                         {
                             BranchID = req.BranchID,
-                            CustomerID = resolvedCustomerId.Value,
+                            CustomerID = finalCustomerId,
                             FdSchemeID = req.FdSchemeID,
                             AccountNo = accNo,
                             OpeningDate = req.OpeningDate,
@@ -659,8 +666,8 @@ namespace Bhisi.Api.Controllers
                             _context.Vouchers.Add(voucher);
                             await _context.SaveChangesAsync();
 
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitLedger.LedgerID, DrCr = "Dr", Amount = perReceiptAmount, CustomerID = resolvedCustomerId.Value, MemberID = resolvedMemberId });
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = perReceiptAmount, CustomerID = resolvedCustomerId.Value, MemberID = resolvedMemberId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitLedger.LedgerID, DrCr = "Dr", Amount = perReceiptAmount, CustomerID = finalCustomerId, MemberID = resolvedMemberId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = perReceiptAmount, CustomerID = finalCustomerId, MemberID = resolvedMemberId });
 
                             // Transaction log
                             var tx = new FdTransaction

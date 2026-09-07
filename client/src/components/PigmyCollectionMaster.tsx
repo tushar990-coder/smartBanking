@@ -15,10 +15,10 @@ import {
   ClockIcon
 } from '@heroicons/react/24/outline';
 
-interface Member {
-  memberID: number;
-  memberCode?: string;
-  memberName?: string;
+interface Customer {
+  customerID: number;
+  cifNo?: string;
+  customerName?: string;
   firstName?: string;
   middleName?: string;
   lastName?: string;
@@ -37,11 +37,11 @@ interface Agent {
 interface PigmyAccount {
   pigmyAccountID: number;
   accountNo: string;
-  memberID: number;
+  customerID: number;
   pigmyAgentID: number;
   totalDepositedAmount: number;
   status: string;
-  member?: Member;
+  customer?: Customer;
   pigmyAgent?: Agent;
   agent?: Agent;
 }
@@ -140,12 +140,12 @@ export default function PigmyCollectionMaster() {
     return typeof id === 'number' ? id : parseInt(id) || 0;
   };
 
-  const getMemberFullName = (m: any): string => {
-    if (!m) return '-';
-    if (m.memberName) return m.memberName;
-    const fn = m.firstName || m.FirstName || '';
-    const mn = m.middleName || m.MiddleName || '';
-    const ln = m.lastName || m.LastName || '';
+  const getCustomerFullName = (c: any): string => {
+    if (!c) return '-';
+    if (c.customerName) return c.customerName;
+    const fn = c.firstName || c.FirstName || '';
+    const mn = c.middleName || c.MiddleName || '';
+    const ln = c.lastName || c.LastName || '';
     const name = `${fn} ${mn} ${ln}`.replace(/\s+/g, ' ').trim();
     return name || '-';
   };
@@ -162,9 +162,9 @@ export default function PigmyCollectionMaster() {
     if (!sheetSearchTerm) return true;
     const query = sheetSearchTerm.toLowerCase();
     const accNo = (acc.accountNo || '').toLowerCase();
-    const memberName = getMemberFullName(acc.member).toLowerCase();
-    const mob = (acc.member?.mobileNo || '').toLowerCase();
-    return accNo.includes(query) || memberName.includes(query) || mob.includes(query);
+    const customerName = getCustomerFullName(acc.customer).toLowerCase();
+    const mob = (acc.customer?.mobileNo || '').toLowerCase();
+    return accNo.includes(query) || customerName.includes(query) || mob.includes(query);
   });
 
   // Calculate Sheet Totals
@@ -476,7 +476,7 @@ export default function PigmyCollectionMaster() {
                     <tr className="bg-gray-100 text-gray-700 text-[11px] font-bold uppercase tracking-wider border-b border-gray-200">
                       <th className="py-2 px-2.5 text-center w-10 border-r border-gray-200">#</th>
                       <th className="py-2 px-2.5 border-r border-gray-200">खाते क्रमांक (Account No)</th>
-                      <th className="py-2 px-2.5 border-r border-gray-200">सभासदाचे नाव (Member Name)</th>
+                      <th className="py-2 px-2.5 border-r border-gray-200">ग्राहकाचे नाव (Customer Name)</th>
                       <th className="py-2 px-2.5 border-r border-gray-200">मोबाईल नंबर (Mobile)</th>
                       <th className="py-2 px-2.5 text-right border-r border-gray-200">सध्याची जमा ठेव (Current ₹)</th>
                       <th className="py-2 px-3 text-right bg-emerald-100/70 text-emerald-900 font-extrabold">
@@ -487,7 +487,7 @@ export default function PigmyCollectionMaster() {
                   <tbody className="divide-y divide-gray-200 text-xs">
                     {filteredAgentAccounts.map((acc, index) => {
                       const accId = acc.pigmyAccountID;
-                      const memberName = getMemberFullName(acc.member);
+                      const customerName = getCustomerFullName(acc.customer);
                       const currentBal = acc.totalDepositedAmount || 0;
                       const hasEntered = Boolean(bulkAmounts[accId] && parseFloat(bulkAmounts[accId]) > 0);
 
@@ -505,10 +505,10 @@ export default function PigmyCollectionMaster() {
                             {acc.accountNo}
                           </td>
                           <td className="py-1.5 px-2.5 font-bold text-gray-900 border-r border-gray-200">
-                            {memberName}
+                            {customerName}
                           </td>
                           <td className="py-1.5 px-2.5 font-mono text-gray-600 border-r border-gray-200">
-                            {acc.member?.mobileNo || '-'}
+                            {acc.customer?.mobileNo || '-'}
                           </td>
                           <td className="py-1.5 px-2.5 text-right font-mono font-bold text-gray-700 border-r border-gray-200">
                             ₹ {currentBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -599,7 +599,7 @@ export default function PigmyCollectionMaster() {
                   <option value="">-- पिग्मी खाते क्र. किंवा नाव शोधा --</option>
                   {accounts.filter(a => a.status === 'Active').map(acc => (
                     <option key={acc.pigmyAccountID} value={acc.pigmyAccountID}>
-                      {acc.accountNo} - {getMemberFullName(acc.member)} (एजंट: {acc.agent?.agentName || acc.pigmyAgent?.agentName || '-'})
+                      {acc.accountNo} - {getCustomerFullName(acc.customer)} (एजंट: {acc.agent?.agentName || acc.pigmyAgent?.agentName || '-'})
                     </option>
                   ))}
                 </select>
@@ -614,7 +614,7 @@ export default function PigmyCollectionMaster() {
                     </p>
                   </div>
                   <div className="text-right space-y-0.5 text-[11px]">
-                    <p className="text-gray-700 font-bold">सभासद: <span className="text-gray-900">{getMemberFullName(selectedSingleAccount.member)}</span></p>
+                    <p className="text-gray-700 font-bold">ग्राहक: <span className="text-gray-900">{getCustomerFullName(selectedSingleAccount.customer)}</span></p>
                     <p className="text-gray-600">एजंट: <span className="text-gray-800">{selectedSingleAccount.agent?.agentName || selectedSingleAccount.pigmyAgent?.agentName || '-'}</span></p>
                   </div>
                 </div>

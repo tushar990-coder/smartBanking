@@ -39,7 +39,7 @@ interface Branch {
 }
 
 export default function PigmyAccountOpening() {
-  const [members, setMembers] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [schemes, setSchemes] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
@@ -64,7 +64,7 @@ export default function PigmyAccountOpening() {
 
   const [formData, setFormData] = useState({
     accountNo: '',
-    memberID: '',
+    customerID: '',
     branchID: '1',
     pigmySchemeID: '',
     pigmyAgentID: '',
@@ -74,7 +74,7 @@ export default function PigmyAccountOpening() {
 
   const [autoAccountNo, setAutoAccountNo] = useState<string>('लोड होत आहे...');
   const [loadingAccountNo, setLoadingAccountNo] = useState<boolean>(false);
-  const [selectedMember, setSelectedMember] = useState<any>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [selectedScheme, setSelectedScheme] = useState<any>(null);
 
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -82,52 +82,47 @@ export default function PigmyAccountOpening() {
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   // Safe Property Resolvers
-  const getMemberId = (m: any): string => {
-    if (!m) return '';
-    const id = m.memberID ?? m.memberId ?? m.MemberID ?? m.id;
+  const getCustomerId = (c: any): string => {
+    if (!c) return '';
+    const id = c.customerID ?? c.customerId ?? c.CustomerID ?? c.id;
     return id !== undefined && id !== null ? id.toString() : '';
   };
 
-  const getMemberFullName = (m: any): string => {
-    if (!m) return '';
-    const fn = m.firstName || m.FirstName || '';
-    const mn = m.middleName || m.MiddleName || '';
-    const ln = m.lastName || m.LastName || '';
+  const getCustomerFullName = (c: any): string => {
+    if (!c) return '';
+    const fn = c.firstName || c.FirstName || '';
+    const mn = c.middleName || c.MiddleName || '';
+    const ln = c.lastName || c.LastName || '';
     const name = `${fn} ${mn} ${ln}`.replace(/\s+/g, ' ').trim();
-    return name || 'अज्ञात सभासद';
+    return name || 'अज्ञात ग्राहक';
   };
 
-  const getMemberCodeStr = (m: any): string => {
-    if (!m) return '-';
-    return m.memberCode || m.MemberCode || m.oldMemberCode || getMemberId(m) || '-';
+  const getCustomerCif = (c: any): string => {
+    if (!c) return '-';
+    return c.cifNo || c.CIFNo || c.cifno || '-';
   };
 
-  const getMemberCif = (m: any): string => {
-    if (!m) return '-';
-    return m.cifNo || m.CIFNo || m.cifno || m.cifNo || '-';
+  const getCustomerMobile = (c: any): string => {
+    if (!c) return '-';
+    return c.mobileNo || c.MobileNo || c.phoneNo || '-';
   };
 
-  const getMemberMobile = (m: any): string => {
-    if (!m) return '-';
-    return m.mobileNo || m.MobileNo || m.phoneNo || '-';
+  const getCustomerAadhaar = (c: any): string => {
+    if (!c) return '-';
+    return c.aadhaarNo || c.AadhaarNo || c.aadhaarCardNo || '-';
   };
 
-  const getMemberAadhaar = (m: any): string => {
-    if (!m) return '-';
-    return m.aadhaarNo || m.AadhaarNo || m.aadhaarCardNo || '-';
+  const getCustomerPan = (c: any): string => {
+    if (!c) return '-';
+    return c.panNo || c.PANNo || c.panCardNo || '-';
   };
 
-  const getMemberPan = (m: any): string => {
-    if (!m) return '-';
-    return m.panNo || m.PANNo || m.panCardNo || '-';
-  };
-
-  const getMemberAddressStr = (m: any): string => {
-    if (!m) return '';
-    const addr = m.address || m.Address || '';
-    const village = m.village || m.Village || '';
-    const taluka = m.taluka || m.Taluka || '';
-    const dist = m.district || m.District || '';
+  const getCustomerAddressStr = (c: any): string => {
+    if (!c) return '';
+    const addr = c.address || c.Address || '';
+    const village = c.village || c.Village || '';
+    const taluka = c.taluka || c.Taluka || '';
+    const dist = c.district || c.District || '';
     const parts = [addr, village, taluka, dist].filter(Boolean);
     return parts.join(', ');
   };
@@ -155,15 +150,16 @@ export default function PigmyAccountOpening() {
     fetchSavedAccounts();
   }, []);
 
+  // Sync Selected Customer on form change
   useEffect(() => {
-    if (formData.memberID && members.length > 0) {
-      const targetIdStr = formData.memberID.toString();
-      const matched = members.find(m => getMemberId(m) === targetIdStr);
-      setSelectedMember(matched || null);
-    } else if (!formData.memberID) {
-      setSelectedMember(null);
+    if (formData.customerID && customers.length > 0) {
+      const targetIdStr = formData.customerID.toString();
+      const matched = customers.find(c => getCustomerId(c) === targetIdStr);
+      setSelectedCustomer(matched || null);
+    } else if (!formData.customerID) {
+      setSelectedCustomer(null);
     }
-  }, [formData.memberID, members]);
+  }, [formData.customerID, customers]);
 
   useEffect(() => {
     if (formData.branchID) {
@@ -180,7 +176,7 @@ export default function PigmyAccountOpening() {
         axios.get('/api/PigmyAgents')
       ]);
 
-      if (customersRes.data) setMembers(customersRes.data);
+      if (customersRes.data) setCustomers(customersRes.data);
       if (branchesRes.data) setBranches(branchesRes.data);
       if (schemesRes.data) setSchemes(schemesRes.data);
       if (agentsRes.data) setAgents(agentsRes.data);
@@ -264,12 +260,12 @@ export default function PigmyAccountOpening() {
     setAutoAccountNo(val);
   };
 
-  const handleMemberChange = (e: any) => {
-    const memberId = e && e.target ? e.target.value : e;
-    const strMemberId = memberId !== undefined && memberId !== null ? memberId.toString() : '';
-    setFormData(prev => ({ ...prev, memberID: strMemberId }));
-    const member = members.find(m => getMemberId(m) === strMemberId);
-    setSelectedMember(member || null);
+  const handleCustomerChange = (e: any) => {
+    const custId = e && e.target ? e.target.value : e;
+    const strCustId = custId !== undefined && custId !== null ? custId.toString() : '';
+    setFormData(prev => ({ ...prev, customerID: strCustId }));
+    const customer = customers.find(c => getCustomerId(c) === strCustId);
+    setSelectedCustomer(customer || null);
   };
 
   const handleSchemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -283,9 +279,9 @@ export default function PigmyAccountOpening() {
     e.preventDefault();
     setErrorMessage('');
 
-    if (!formData.memberID) {
-      setErrorMessage('कृपया सभासद निवडा.');
-      toast.error('कृपया सभासद निवडा.');
+    if (!formData.customerID) {
+      setErrorMessage('कृपया ग्राहक निवडा.');
+      toast.error('कृपया ग्राहक निवडा.');
       return;
     }
     if (!formData.pigmySchemeID) {
@@ -307,8 +303,8 @@ export default function PigmyAccountOpening() {
       : null;
 
     if (existingAccount) {
-      const existingMemberName = existingAccount.member ? `${existingAccount.member.firstName || ''} ${existingAccount.member.lastName || ''}`.trim() : '';
-      setErrorMessage(`पिग्मी खाते क्रमांक '${activeAccountNo}' आधीच ${existingMemberName ? `(${existingMemberName}) च्या नावे ` : ''}नोंदणीकृत आहे. कृपया दुसरा क्रमांक निवडा किंवा (+) ने पुढील क्रमांक घ्या.`);
+      const existingCustomerName = existingAccount.customer ? `${existingAccount.customer.firstName || ''} ${existingAccount.customer.lastName || ''}`.trim() : '';
+      setErrorMessage(`पिग्मी खाते क्रमांक '${activeAccountNo}' आधीच ${existingCustomerName ? `(${existingCustomerName}) च्या नावे ` : ''}नोंदणीकृत आहे. कृपया दुसरा क्रमांक निवडा किंवा (+) ने पुढील क्रमांक घ्या.`);
       toast.error(`पिग्मी खाते क्रमांक '${activeAccountNo}' आधीच अस्तित्वात आहे.`);
       return;
     }
@@ -317,8 +313,7 @@ export default function PigmyAccountOpening() {
       setSubmitting(true);
       const payload = {
         accountNo: activeAccountNo,
-        customerID: parseInt(formData.memberID),
-        memberID: selectedMember?.memberID ? parseInt(selectedMember.memberID) : undefined,
+        customerID: parseInt(formData.customerID),
         branchID: parseInt(formData.branchID),
         pigmySchemeID: parseInt(formData.pigmySchemeID),
         pigmyAgentID: parseInt(formData.pigmyAgentID),
@@ -333,7 +328,7 @@ export default function PigmyAccountOpening() {
         const createdNo = data.accountNo || activeAccountNo;
         setCreatedAccountResult({
           accountNo: createdNo,
-          memberName: selectedMember ? `${selectedMember.firstName} ${selectedMember.lastName}` : '',
+          customerName: selectedCustomer ? `${selectedCustomer.firstName} ${selectedCustomer.lastName}` : '',
           schemeName: selectedScheme ? selectedScheme.schemeName : '',
           openingDate: formData.openingDate,
           maturityDate: getMaturityDate()
@@ -343,10 +338,10 @@ export default function PigmyAccountOpening() {
         fetchNextAccountNo(parseInt(formData.branchID || '1'), formData.pigmySchemeID ? parseInt(formData.pigmySchemeID) : 1);
         setFormData(prev => ({
           ...prev,
-          memberID: '',
+          customerID: '',
           openingBalance: '0'
         }));
-        setSelectedMember(null);
+        setSelectedCustomer(null);
       }
     } catch (error: any) {
       console.error('Error opening account', error);
@@ -474,13 +469,13 @@ export default function PigmyAccountOpening() {
 
   const filteredSavedAccounts = savedAccounts.filter(acc => {
     const accountNo = (acc.accountNo || acc.AccountNo || '').toString().toLowerCase();
-    const memberName = acc.member 
-      ? `${acc.member.firstName || ''} ${acc.member.middleName || ''} ${acc.member.lastName || ''}`.toLowerCase()
+    const customerName = acc.customer 
+      ? `${acc.customer.firstName || ''} ${acc.customer.middleName || ''} ${acc.customer.lastName || ''}`.toLowerCase()
       : '';
     const agentName = acc.pigmyAgent ? (acc.pigmyAgent.agentName || '').toLowerCase() : '';
     const query = searchTerm.toLowerCase();
 
-    return accountNo.includes(query) || memberName.includes(query) || agentName.includes(query);
+    return accountNo.includes(query) || customerName.includes(query) || agentName.includes(query);
   });
 
   return (
@@ -522,11 +517,11 @@ export default function PigmyAccountOpening() {
       {/* Main Form */}
       <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-5">
         
-        {/* Section 1: Member & Account Info */}
+        {/* Section 1: Customer & Account Info */}
         <div>
           <div className="text-xs font-bold text-slate-800 pb-2 mb-3 border-b border-slate-100 flex items-center gap-1.5">
             <User className="w-4 h-4 text-primary" />
-            <span>१. सभासद व खाते क्रमांक माहिती (Member & Account Info)</span>
+            <span>१. ग्राहक व खाते क्रमांक माहिती (Customer & Account Info)</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -612,23 +607,23 @@ export default function PigmyAccountOpening() {
             <div className="md:col-span-2">
               <label className="block font-semibold text-slate-700 mb-1 flex items-center justify-between text-xs">
                 <span>खातेदार निवडा (Select Customer / CIF) <span className="text-rose-500">*</span></span>
-                {members.length > 0 && (
+                {customers.length > 0 && (
                   <span className="text-[10px] text-slate-400 font-normal">
-                    एकूण खातेदार: {members.length}
+                    एकूण खातेदार: {customers.length}
                   </span>
                 )}
               </label>
               <CustomerSearchSelect
-                customers={members}
-                value={formData.memberID ? Number(formData.memberID) : ''}
-                onChange={(val) => handleMemberChange({ target: { name: 'memberID', value: val ? String(val) : '' } })}
+                customers={customers}
+                value={formData.customerID ? Number(formData.customerID) : ''}
+                onChange={(val) => handleCustomerChange({ target: { name: 'customerID', value: val ? String(val) : '' } })}
                 placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
               />
             </div>
           </div>
 
-          {/* RICH SELECTED MEMBER PROFILE CARD */}
-          {selectedMember && (
+          {/* RICH SELECTED CUSTOMER PROFILE CARD */}
+          {selectedCustomer && (
             <div className="mt-3.5 p-3.5 bg-gradient-to-r from-blue-50/80 via-slate-50 to-indigo-50/60 border border-blue-200 rounded-2xl shadow-xs space-y-2.5">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-blue-100 pb-2">
                 <div className="flex items-center gap-2.5">
@@ -637,14 +632,14 @@ export default function PigmyAccountOpening() {
                   </div>
                   <div>
                     <h4 className="font-extrabold text-slate-900 text-xs tracking-tight flex items-center gap-2 flex-wrap">
-                      <span className="text-sm text-slate-900">{getMemberFullName(selectedMember)}</span>
+                      <span className="text-sm text-slate-900">{getCustomerFullName(selectedCustomer)}</span>
                       <span className="px-2 py-0.5 bg-primary/10 text-primary font-mono text-[11px] rounded-md font-bold">
-                        कोड: #{getMemberCodeStr(selectedMember)}
+                        CIF: {getCustomerCif(selectedCustomer)}
                       </span>
                     </h4>
-                    {getMemberAddressStr(selectedMember) ? (
+                    {getCustomerAddressStr(selectedCustomer) ? (
                       <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                        📍 {getMemberAddressStr(selectedMember)}
+                        📍 {getCustomerAddressStr(selectedCustomer)}
                       </p>
                     ) : (
                       <p className="text-[11px] text-slate-400 italic mt-0.5">
@@ -656,29 +651,29 @@ export default function PigmyAccountOpening() {
 
                 <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-xl text-[10px] flex items-center gap-1 shrink-0">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>निवडलेला सभासद (Active Customer)</span>
+                  <span>निवडलेला ग्राहक (Active Customer)</span>
                 </span>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] pt-0.5">
                 <div className="bg-white p-2 rounded-xl border border-slate-200/80">
                   <span className="text-slate-400 block text-[10px] font-semibold">CIF नंबर:</span>
-                  <span className="font-mono font-bold text-slate-800">{getMemberCif(selectedMember)}</span>
+                  <span className="font-mono font-bold text-slate-800">{getCustomerCif(selectedCustomer)}</span>
                 </div>
 
                 <div className="bg-white p-2 rounded-xl border border-slate-200/80">
                   <span className="text-slate-400 block text-[10px] font-semibold">मोबाईल नंबर:</span>
-                  <span className="font-mono font-bold text-slate-800">{getMemberMobile(selectedMember)}</span>
+                  <span className="font-mono font-bold text-slate-800">{getCustomerMobile(selectedCustomer)}</span>
                 </div>
 
                 <div className="bg-white p-2 rounded-xl border border-slate-200/80">
                   <span className="text-slate-400 block text-[10px] font-semibold">आधार कार्ड नंबर:</span>
-                  <span className="font-mono font-bold text-slate-800">{getMemberAadhaar(selectedMember)}</span>
+                  <span className="font-mono font-bold text-slate-800">{getCustomerAadhaar(selectedCustomer)}</span>
                 </div>
 
                 <div className="bg-white p-2 rounded-xl border border-slate-200/80">
                   <span className="text-slate-400 block text-[10px] font-semibold">पॅन नंबर (PAN):</span>
-                  <span className="font-mono font-bold text-slate-800">{getMemberPan(selectedMember)}</span>
+                  <span className="font-mono font-bold text-slate-800">{getCustomerPan(selectedCustomer)}</span>
                 </div>
               </div>
             </div>
@@ -888,7 +883,7 @@ export default function PigmyAccountOpening() {
                 <thead className="bg-primary text-white font-semibold sticky top-0 z-10">
                   <tr>
                     <th className="px-3 py-2.5">खाते क्रमांक (Account No)</th>
-                    <th className="px-3 py-2.5">सभासदाचे नाव (Member Name)</th>
+                    <th className="px-3 py-2.5">ग्राहकाचे नाव (Customer Name)</th>
                     <th className="px-3 py-2.5">पिग्मी योजना (Scheme)</th>
                     <th className="px-3 py-2.5">नियुक्त एजंट (Agent)</th>
                     <th className="px-3 py-2.5 text-right">जमा रक्कम (Balance ₹)</th>
@@ -915,8 +910,8 @@ export default function PigmyAccountOpening() {
                     filteredSavedAccounts.map((acc, idx) => {
                       const accId = getAccountId(acc) || idx;
                       const accNo = acc.accountNo || acc.AccountNo || '-';
-                      const memberName = acc.member 
-                        ? `${acc.member.firstName || ''} ${acc.member.middleName ? acc.member.middleName + ' ' : ''}${acc.member.lastName || ''}`
+                      const customerName = acc.customer 
+                        ? `${acc.customer.firstName || ''} ${acc.customer.middleName ? acc.customer.middleName + ' ' : ''}${acc.customer.lastName || ''}`
                         : '-';
                       const schemeName = acc.pigmyScheme ? acc.pigmyScheme.schemeName : '-';
                       const agentName = acc.pigmyAgent ? acc.pigmyAgent.agentName : '-';
@@ -929,7 +924,7 @@ export default function PigmyAccountOpening() {
                             {accNo}
                           </td>
                           <td className="px-3 py-2.5 font-bold text-slate-900">
-                            👤 {memberName}
+                            👤 {customerName}
                           </td>
                           <td className="px-3 py-2.5 text-slate-700 font-medium">
                             {schemeName}
@@ -1052,16 +1047,16 @@ export default function PigmyAccountOpening() {
                 </div>
 
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                  <span className="text-slate-500 font-medium">सभासदाचे नाव (Member Name):</span>
+                  <span className="text-slate-500 font-medium">ग्राहकाचे नाव (Customer Name):</span>
                   <span className="font-bold text-slate-900">
-                    👤 {selectedAccountModal.member ? `${selectedAccountModal.member.firstName} ${selectedAccountModal.member.middleName ? selectedAccountModal.member.middleName + ' ' : ''}${selectedAccountModal.member.lastName}` : '-'}
+                    👤 {selectedAccountModal.customer ? `${selectedAccountModal.customer.firstName} ${selectedAccountModal.customer.middleName ? selectedAccountModal.customer.middleName + ' ' : ''}${selectedAccountModal.customer.lastName}` : '-'}
                   </span>
                 </div>
 
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                   <span className="text-slate-500 font-medium">मोबाईल / आधार नंबर:</span>
                   <span className="font-semibold text-slate-700 font-mono">
-                    {selectedAccountModal.member ? (selectedAccountModal.member.mobileNo || selectedAccountModal.member.aadhaarNo || '-') : '-'}
+                    {selectedAccountModal.customer ? (selectedAccountModal.customer.mobileNo || selectedAccountModal.customer.aadhaarNo || '-') : '-'}
                   </span>
                 </div>
 
@@ -1258,8 +1253,8 @@ export default function PigmyAccountOpening() {
                 </div>
 
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-medium">सभासदाचे नाव:</span>
-                  <span className="font-bold text-slate-900">{createdAccountResult.memberName}</span>
+                  <span className="text-slate-500 font-medium">ग्राहकाचे नाव:</span>
+                  <span className="font-bold text-slate-900">{createdAccountResult.customerName}</span>
                 </div>
 
                 <div className="flex justify-between items-center">

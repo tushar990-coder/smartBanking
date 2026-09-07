@@ -954,7 +954,7 @@ namespace Bhisi.Api.Controllers
             bool hasActiveSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID && s.Status != "Closed");
             bool hasActiveFds = await _context.FdAccounts.AnyAsync(f => f.MemberID == id && f.Status == "Active");
             bool hasActiveRds = await _context.RdAccounts.AnyAsync(r => r.MemberID == id && r.Status == "Active");
-            bool hasActivePigmies = await _context.PigmyAccounts.AnyAsync(p => p.MemberID == id && p.Status == "Active");
+            bool hasActivePigmies = member.CustomerID != null && await _context.PigmyAccounts.AnyAsync(p => p.CustomerID == member.CustomerID && p.Status == "Active");
             bool hasActiveShares = await _context.ShareAccounts.AnyAsync(s => s.MemberId == id && s.TotalShareCount > 0);
             bool hasActiveLockers = await _context.LockerAllotments.AnyAsync(l => l.MemberID == id && l.Status == "Allotted");
             bool isCommitteeMember = await _context.CommitteeMembers.AnyAsync(c => c.MemberID == id && c.Status == "Active");
@@ -1062,9 +1062,11 @@ namespace Bhisi.Api.Controllers
                 .Where(r => r.MemberID == id && r.Status == "Active")
                 .SumAsync(r => r.TotalDepositedAmount);
 
-            var pigmyBalance = await _context.PigmyAccounts
-                .Where(p => p.MemberID == id && p.Status == "Active")
-                .SumAsync(p => p.TotalDepositedAmount);
+            var pigmyBalance = member.CustomerID != null
+                ? await _context.PigmyAccounts
+                    .Where(p => p.CustomerID == member.CustomerID && p.Status == "Active")
+                    .SumAsync(p => p.TotalDepositedAmount)
+                : 0m;
 
             var shareAccount = await _context.ShareAccounts.FirstOrDefaultAsync(s => s.MemberId == id);
             var shareBalance = shareAccount?.TotalShareAmount ?? 0;
@@ -1144,7 +1146,7 @@ namespace Bhisi.Api.Controllers
                 var hasActiveSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID && s.Status != "Closed" && s.CurrentBalance > 0);
                 var hasActiveFds = await _context.FdAccounts.AnyAsync(f => f.MemberID == id && f.Status == "Active");
                 var hasActiveRds = await _context.RdAccounts.AnyAsync(r => r.MemberID == id && r.Status == "Active");
-                var hasActivePigmies = await _context.PigmyAccounts.AnyAsync(p => p.MemberID == id && p.Status == "Active");
+                var hasActivePigmies = member.CustomerID != null && await _context.PigmyAccounts.AnyAsync(p => p.CustomerID == member.CustomerID && p.Status == "Active");
 
                 // Check Guarantor Liability
                 var hasGuarantorLiability = await _context.LoanAccounts
@@ -1250,9 +1252,11 @@ namespace Bhisi.Api.Controllers
                 .Where(r => r.MemberID == id && r.Status == "Active")
                 .SumAsync(r => r.TotalDepositedAmount);
 
-            var pigmyBalance = await _context.PigmyAccounts
-                .Where(p => p.MemberID == id && p.Status == "Active")
-                .SumAsync(p => p.TotalDepositedAmount);
+            var pigmyBalance = member.CustomerID != null
+                ? await _context.PigmyAccounts
+                    .Where(p => p.CustomerID == member.CustomerID && p.Status == "Active")
+                    .SumAsync(p => p.TotalDepositedAmount)
+                : 0m;
 
             var shareAccount = await _context.ShareAccounts.FirstOrDefaultAsync(s => s.MemberId == id);
             var shareAmount = shareAccount?.TotalShareAmount ?? 0;
@@ -1346,9 +1350,11 @@ namespace Bhisi.Api.Controllers
                     .Where(r => r.MemberID == id && r.Status == "Active")
                     .SumAsync(r => r.TotalDepositedAmount);
 
-                var pigmyBalance = await _context.PigmyAccounts
-                    .Where(p => p.MemberID == id && p.Status == "Active")
-                    .SumAsync(p => p.TotalDepositedAmount);
+                var pigmyBalance = member.CustomerID != null
+                    ? await _context.PigmyAccounts
+                        .Where(p => p.CustomerID == member.CustomerID && p.Status == "Active")
+                        .SumAsync(p => p.TotalDepositedAmount)
+                    : 0m;
 
                 var shareAccount = await _context.ShareAccounts.FirstOrDefaultAsync(s => s.MemberId == id);
                 decimal shareAmount = shareAccount?.TotalShareAmount ?? 0;
@@ -1372,7 +1378,9 @@ namespace Bhisi.Api.Controllers
                 var rds = await _context.RdAccounts.Where(r => r.MemberID == id && r.Status == "Active").ToListAsync();
                 foreach (var r in rds) r.Status = "Closed";
 
-                var pigmies = await _context.PigmyAccounts.Where(p => p.MemberID == id && p.Status == "Active").ToListAsync();
+                var pigmies = member.CustomerID != null
+                    ? await _context.PigmyAccounts.Where(p => p.CustomerID == member.CustomerID && p.Status == "Active").ToListAsync()
+                    : new List<PigmyAccount>();
                 foreach (var p in pigmies) p.Status = "Closed";
 
                 // Close Share account

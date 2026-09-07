@@ -20,6 +20,7 @@ namespace Bhisi.Api.Controllers
         {
             public int PigmyAccountId { get; set; }
             public string AccountNo { get; set; } = string.Empty;
+            public string CustomerName { get; set; } = string.Empty;
             public string MemberName { get; set; } = string.Empty;
             public decimal CurrentBalance { get; set; }
             public decimal CalculatedInterest { get; set; }
@@ -29,7 +30,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<InterestPreviewResult>>> CalculatePreview(DateTime startDate, DateTime endDate)
         {
             var activeAccounts = await _context.PigmyAccounts
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
                 .Include(a => a.PigmyScheme)
                 .Where(a => a.Status == "Active")
                 .ToListAsync();
@@ -79,11 +80,13 @@ namespace Bhisi.Api.Controllers
 
                 if (totalInterest > 0)
                 {
+                    string custName = account.Customer != null ? (account.Customer.FirstName + " " + (account.Customer.LastName ?? "")).Trim() : "";
                     results.Add(new InterestPreviewResult
                     {
                         PigmyAccountId = account.PigmyAccountID,
                         AccountNo = account.AccountNo,
-                        MemberName = account.Member != null ? (account.Member.FirstName + " " + (account.Member.LastName ?? "")).Trim() : "",
+                        CustomerName = custName,
+                        MemberName = custName,
                         CurrentBalance = account.TotalDepositedAmount,
                         CalculatedInterest = Math.Round(totalInterest, 2)
                     });

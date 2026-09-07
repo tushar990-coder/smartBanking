@@ -199,6 +199,7 @@ namespace Bhisi.Api.Controllers
             request.ApprovalDate = DateTime.Now;
             request.ApprovedByUserID = dto.ApprovedByUserID;
             request.CreatedMemberID = dto.CreatedMemberID;
+            request.CreatedCustomerID = dto.CreatedCustomerID;
             request.CreatedPigmyAccountID = dto.CreatedPigmyAccountID;
 
             await _context.SaveChangesAsync();
@@ -244,7 +245,8 @@ namespace Bhisi.Api.Controllers
     public class ApproveRequestDto
     {
         public int? ApprovedByUserID { get; set; }
-        public int CreatedMemberID { get; set; }
+        public int? CreatedMemberID { get; set; }
+        public int? CreatedCustomerID { get; set; }
         public int? CreatedPigmyAccountID { get; set; }
     }
 

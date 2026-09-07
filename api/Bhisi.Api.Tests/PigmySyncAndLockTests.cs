@@ -128,21 +128,21 @@ namespace Bhisi.Api.Tests
             };
             context.PigmyAgents.Add(agent);
 
-            var member = new Member
+            var customer = new Customer
             {
-                MemberID = 100,
+                CustomerID = 100,
                 FirstName = "Rajesh",
                 LastName = "Kadam",
                 MobileNo = "9922334455",
                 BranchID = 1
             };
-            context.Members.Add(member);
+            context.Customers.Add(customer);
 
             var account = new PigmyAccount
             {
                 PigmyAccountID = 50,
                 AccountNo = "PGM-1-20260827-0100",
-                MemberID = 100,
+                CustomerID = 100,
                 BranchID = 1,
                 PigmySchemeID = 1,
                 PigmyAgentID = 10,
@@ -233,7 +233,7 @@ namespace Bhisi.Api.Tests
             {
                 PigmyAccountID = 60,
                 AccountNo = "PGM-1-20260827-0200",
-                MemberID = 1,
+                CustomerID = 1,
                 BranchID = 1,
                 PigmyAgentID = 20,
                 OpeningDate = DateTime.Today,
@@ -283,9 +283,9 @@ namespace Bhisi.Api.Tests
 
             for (int i = 1; i <= 3; i++)
             {
-                context.Members.Add(new Member
+                context.Customers.Add(new Customer
                 {
-                    MemberID = i,
+                    CustomerID = i,
                     BranchID = 1,
                     FirstName = $"Customer{i}",
                     LastName = "Test",
@@ -296,7 +296,7 @@ namespace Bhisi.Api.Tests
                 {
                     PigmyAccountID = 100 + i,
                     AccountNo = $"PGM-1-20260827-{100 + i}",
-                    MemberID = i,
+                    CustomerID = i,
                     BranchID = 1,
                     PigmyAgentID = 30,
                     OpeningDate = DateTime.Today,

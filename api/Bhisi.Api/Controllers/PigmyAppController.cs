@@ -92,14 +92,15 @@ namespace Bhisi.Api.Controllers
             if (agentId <= 0) return Unauthorized("Missing X-Agent-Id header");
 
             var accounts = await _context.PigmyAccounts
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
                 .Where(a => a.PigmyAgentID == agentId && a.Status == "Active")
                 .Select(a => new
                 {
                     a.PigmyAccountID,
                     a.AccountNo,
-                    MemberName = a.Member != null ? (a.Member.FirstName + (string.IsNullOrWhiteSpace(a.Member.MiddleName) ? "" : " " + a.Member.MiddleName) + (string.IsNullOrWhiteSpace(a.Member.LastName) ? "" : " " + a.Member.LastName)).Trim() : "",
-                    MobileNo = a.Member != null ? a.Member.MobileNo : "",
+                    CustomerName = a.Customer != null ? (a.Customer.FirstName + (string.IsNullOrWhiteSpace(a.Customer.MiddleName) ? "" : " " + a.Customer.MiddleName) + (string.IsNullOrWhiteSpace(a.Customer.LastName) ? "" : " " + a.Customer.LastName)).Trim() : "",
+                    MemberName = a.Customer != null ? (a.Customer.FirstName + (string.IsNullOrWhiteSpace(a.Customer.MiddleName) ? "" : " " + a.Customer.MiddleName) + (string.IsNullOrWhiteSpace(a.Customer.LastName) ? "" : " " + a.Customer.LastName)).Trim() : "",
+                    MobileNo = a.Customer != null ? a.Customer.MobileNo : "",
                     CurrentBalance = a.TotalDepositedAmount
                 })
                 .ToListAsync();
@@ -142,8 +143,8 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Create Member record
-                var member = new Member
+                // Create Customer record
+                var customer = new Customer
                 {
                     BranchID = branchId,
                     FirstName = dto.FirstName.Trim(),
@@ -153,13 +154,16 @@ namespace Bhisi.Api.Controllers
                     AadhaarNo = !string.IsNullOrWhiteSpace(dto.AadhaarNo) ? dto.AadhaarNo.Trim() : "000000000000",
                     Address = dto.Address?.Trim(),
                     Gender = dto.Gender ?? "Male",
-                    JoiningDate = DateTime.Today,
-                    Status = "Active",
                     CreatedBy = agentId,
-                    CreatedOn = DateTime.UtcNow
+                    CreatedOn = DateTime.UtcNow,
+                    Status = "Active"
                 };
 
-                _context.Members.Add(member);
+                _context.Customers.Add(customer);
+                await _context.SaveChangesAsync();
+
+                // Assign CIF
+                customer.CIFNo = $"CIF-{branchId:D2}-{customer.CustomerID:D6}";
                 await _context.SaveChangesAsync();
 
                 // Get Default Pigmy Scheme
@@ -168,13 +172,13 @@ namespace Bhisi.Api.Controllers
 
                 // Generate Account Number
                 var todayStr = DateTime.Now.ToString("yyyyMMdd");
-                var accountNo = $"PGM-{branchId}-{todayStr}-{member.MemberID:D4}";
+                var accountNo = $"PGM-{branchId}-{todayStr}-{customer.CustomerID:D4}";
 
                 // Create Pigmy Account
                 var pigmyAccount = new PigmyAccount
                 {
                     AccountNo = accountNo,
-                    MemberID = member.MemberID,
+                    CustomerID = customer.CustomerID,
                     BranchID = branchId,
                     PigmySchemeID = scheme.PigmySchemeID,
                     PigmyAgentID = agentId,
@@ -195,11 +199,13 @@ namespace Bhisi.Api.Controllers
                 {
                     success = true,
                     message = "नवीन पिग्मी ग्राहक व खाते यशस्वीरीत्या उघडले गेले!",
-                    memberId = member.MemberID,
+                    customerId = customer.CustomerID,
+                    memberId = customer.CustomerID,
                     pigmyAccountId = pigmyAccount.PigmyAccountID,
                     accountNo = pigmyAccount.AccountNo,
-                    memberName = $"{member.FirstName} {member.LastName}".Trim(),
-                    mobileNo = member.MobileNo,
+                    customerName = $"{customer.FirstName} {customer.LastName}".Trim(),
+                    memberName = $"{customer.FirstName} {customer.LastName}".Trim(),
+                    mobileNo = customer.MobileNo,
                     status = pigmyAccount.Status
                 });
             }
@@ -420,7 +426,7 @@ namespace Bhisi.Api.Controllers
                     appVoucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = appDrLedgerId,
-                        MemberID = null,
+                        CustomerID = account.CustomerID,
                         DrCr = "Dr",
                         Amount = addedAmount
                     });
@@ -428,7 +434,7 @@ namespace Bhisi.Api.Controllers
                     appVoucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = appCrLedgerId,
-                        MemberID = account.MemberID,
+                        CustomerID = account.CustomerID,
                         DrCr = "Cr",
                         Amount = addedAmount
                     });
@@ -478,7 +484,7 @@ namespace Bhisi.Api.Controllers
             if (pigmyAccountId <= 0) return BadRequest("वैध pigmyAccountId पुरवा.");
 
             var account = await _context.PigmyAccounts
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
                 .Include(a => a.PigmyAgent)
                 .FirstOrDefaultAsync(a => a.PigmyAccountID == pigmyAccountId);
 
@@ -530,7 +536,8 @@ namespace Bhisi.Api.Controllers
             {
                 pigmyAccountId = account.PigmyAccountID,
                 accountNo = account.AccountNo,
-                memberName = account.Member != null ? $"{account.Member.FirstName} {account.Member.LastName}".Trim() : "",
+                customerName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() : "",
+                memberName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() : "",
                 agentName = account.PigmyAgent?.AgentName ?? "",
                 openingDate = account.OpeningDate.ToString("yyyy-MM-dd"),
                 fromDate = fDate.ToString("yyyy-MM-dd"),
@@ -561,7 +568,7 @@ namespace Bhisi.Api.Controllers
 
             var query = _context.PigmyCollections
                 .Include(c => c.PigmyAccount)
-                    .ThenInclude(a => a!.Member)
+                    .ThenInclude(a => a!.Customer)
                 .Where(c => c.AgentId == targetAgentId && c.CollectionDate >= fDate && c.CollectionDate < nextTDate)
                 .OrderByDescending(c => c.CollectionDate)
                 .AsQueryable();
@@ -583,7 +590,8 @@ namespace Bhisi.Api.Controllers
                     date = c.CollectionDate.ToString("yyyy-MM-dd"),
                     c.PigmyAccountId,
                     accountNo = c.PigmyAccount?.AccountNo ?? "",
-                    memberName = c.PigmyAccount?.Member != null ? $"{c.PigmyAccount.Member.FirstName} {c.PigmyAccount.Member.LastName}".Trim() : "",
+                    customerName = c.PigmyAccount?.Customer != null ? $"{c.PigmyAccount.Customer.FirstName} {c.PigmyAccount.Customer.LastName}".Trim() : "",
+                    memberName = c.PigmyAccount?.Customer != null ? $"{c.PigmyAccount.Customer.FirstName} {c.PigmyAccount.Customer.LastName}".Trim() : "",
                     amount = c.CollectionAmount,
                     source = c.CollectionSource
                 })

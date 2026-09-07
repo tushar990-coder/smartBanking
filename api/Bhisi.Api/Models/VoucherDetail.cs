@@ -25,6 +25,11 @@ namespace Bhisi.Api.Models
         [ForeignKey("MemberID")]
         public virtual Member? Member { get; set; }
 
+        public int? CustomerID { get; set; }
+
+        [ForeignKey("CustomerID")]
+        public virtual Customer? Customer { get; set; }
+
         [Required]
         [StringLength(2)]
         public required string DrCr { get; set; } // "Dr" or "Cr"

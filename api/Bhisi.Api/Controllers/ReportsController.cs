@@ -3095,7 +3095,7 @@ namespace Bhisi.Api.Controllers
                     .ToListAsync();
 
                 var pigmyAccs = await _context.PigmyAccounts
-                    .Where(p => (targetCustId != null && p.CustomerID == targetCustId) || (targetMemId != null && p.MemberID == targetMemId))
+                    .Where(p => targetCustId != null && p.CustomerID == targetCustId)
                     .ToListAsync();
 
                 // Calculate share capital accurately from ShareAccounts and MemberOpeningBalances

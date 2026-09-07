@@ -1892,7 +1892,7 @@ namespace Bhisi.Api.Controllers
                     bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID);
                     bool hasFds = await _context.FdAccounts.AnyAsync(f => f.MemberID == targetMemberId);
                     bool hasRds = await _context.RdAccounts.AnyAsync(r => r.MemberID == targetMemberId);
-                    bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => p.MemberID == targetMemberId);
+                    bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => member.CustomerID != null && p.CustomerID == member.CustomerID);
                     bool hasLockers = await _context.LockerAllotments.AnyAsync(l => l.MemberID == targetMemberId);
                     bool hasJoint = await _context.JointMembers.AnyAsync(j => j.PrimaryMemberID == targetMemberId);
                     bool hasCommittee = await _context.CommitteeMembers.AnyAsync(c => c.MemberID == targetMemberId);

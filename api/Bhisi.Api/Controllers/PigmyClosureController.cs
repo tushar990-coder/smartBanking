@@ -33,7 +33,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<ClosurePreviewResult>> PreviewClosure(string accountNo)
         {
             var account = await _context.PigmyAccounts
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
                 .FirstOrDefaultAsync(a => a.AccountNo == accountNo);
 
             if (account == null) return NotFound("Account not found.");
@@ -44,15 +44,11 @@ namespace Bhisi.Api.Controllers
             // Standard policy: pay out exactly what is in TotalDepositedAmount (Principal + previously posted Interest)
             decimal netPayable = account.TotalDepositedAmount;
 
-            // In a more complex scenario, we would calculate partial-month interest here
-            // or deduct 2% penalty if isPremature is true.
-            // As per instructions, assuming 0% penalty for now.
-
             return Ok(new ClosurePreviewResult
             {
                 PigmyAccountId = account.PigmyAccountID,
                 AccountNo = account.AccountNo,
-                MemberName = account.Member != null ? account.Member.FirstName + " " + account.Member.LastName : "",
+                MemberName = account.Customer != null ? (account.Customer.FirstName + " " + (account.Customer.LastName ?? "")).Trim() : "",
                 OpeningDate = account.OpeningDate,
                 MaturityDate = account.MaturityDate,
                 TotalDepositedAmount = account.TotalDepositedAmount,
@@ -73,7 +69,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> CloseAccount([FromBody] ClosureRequest request)
         {
             var account = await _context.PigmyAccounts
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
                 .Include(a => a.PigmyScheme)
                 .FirstOrDefaultAsync(a => a.AccountNo == request.AccountNo);
 
@@ -125,14 +121,14 @@ namespace Bhisi.Api.Controllers
                     VoucherDate = DateTime.Today,
                     VoucherType = "Payment",
                     TotalAmount = netPayable,
-                    Narration = $"{typeLabel}Pigmy Closure Payout for A/c {account.AccountNo} - {account.Member?.FirstName}. {request.Narration}",
+                    Narration = $"{typeLabel}Pigmy Closure Payout for A/c {account.AccountNo} - {account.Customer?.FirstName}. {request.Narration}",
                     CreatedBy = 1,
                     VoucherDetails = new List<VoucherDetail>
                     {
                         // Liability reduced -> Debit
-                        new VoucherDetail { LedgerID = liabilityLedger.LedgerID, DrCr = "Dr", Amount = netPayable },
+                        new VoucherDetail { LedgerID = liabilityLedger.LedgerID, CustomerID = account.CustomerID, DrCr = "Dr", Amount = netPayable },
                         // Cash goes out -> Credit
-                        new VoucherDetail { LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = netPayable }
+                        new VoucherDetail { LedgerID = cashLedger.LedgerID, CustomerID = account.CustomerID, DrCr = "Cr", Amount = netPayable }
                     }
                 };
 

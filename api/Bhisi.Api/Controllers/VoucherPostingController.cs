@@ -58,7 +58,7 @@ namespace Bhisi.Api.Controllers
                         voucher.VoucherDetails.Add(new VoucherDetail
                         {
                             LedgerID = defaultDrLedgerId,
-                            MemberID = null,
+                            CustomerID = coll.PigmyAccount?.CustomerID,
                             DrCr = "Dr",
                             Amount = coll.CollectionAmount
                         });
@@ -66,7 +66,7 @@ namespace Bhisi.Api.Controllers
                         voucher.VoucherDetails.Add(new VoucherDetail
                         {
                             LedgerID = defaultCrLedgerId,
-                            MemberID = coll.PigmyAccount?.MemberID,
+                            CustomerID = coll.PigmyAccount?.CustomerID,
                             DrCr = "Cr",
                             Amount = coll.CollectionAmount
                         });

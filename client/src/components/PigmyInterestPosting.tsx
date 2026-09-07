@@ -5,7 +5,8 @@ import { toast } from 'react-hot-toast';
 interface InterestPreviewResult {
   pigmyAccountId: number;
   accountNo: string;
-  memberName: string;
+  customerName?: string;
+  memberName?: string;
   currentBalance: number;
   calculatedInterest: number;
 }
@@ -133,7 +134,7 @@ const PigmyInterestPosting: React.FC = () => {
                   <thead className="bg-gray-100 text-gray-700 uppercase border-b border-gray-200 font-bold">
                     <tr>
                       <th className="p-2 border-r border-gray-200">खाते क्र (Account No)</th>
-                      <th className="p-2 border-r border-gray-200">सभासदाचे नाव (Member Name)</th>
+                      <th className="p-2 border-r border-gray-200">ग्राहकाचे नाव (Customer Name)</th>
                       <th className="p-2 border-r border-gray-200 text-right">चालू शिल्लक (Balance ₹)</th>
                       <th className="p-2 text-right text-emerald-800">कॅल्क्युलेटेड व्याज (Interest ₹)</th>
                     </tr>
@@ -142,7 +143,7 @@ const PigmyInterestPosting: React.FC = () => {
                     {previews.map(p => (
                       <tr key={p.pigmyAccountId} className="border-b border-gray-200 hover:bg-blue-50/40 transition-colors">
                         <td className="p-2 border-r border-gray-200 font-mono font-bold text-blue-900">{p.accountNo}</td>
-                        <td className="p-2 border-r border-gray-200 font-medium">{p.memberName}</td>
+                        <td className="p-2 border-r border-gray-200 font-medium">{p.customerName || p.memberName}</td>
                         <td className="p-2 border-r border-gray-200 text-right font-mono font-semibold">₹ {p.currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td className="p-2 text-right font-mono font-extrabold text-emerald-700">₹ {p.calculatedInterest.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                       </tr>

@@ -47,13 +47,13 @@ namespace Bhisi.Api.Services
             // 1. Idempotency Check
             var existingCollection = await _context.PigmyCollections
                 .Include(c => c.PigmyAccount)
-                    .ThenInclude(a => a!.Member)
+                    .ThenInclude(a => a!.Customer)
                 .FirstOrDefaultAsync(c => c.TransactionId == cleanTxId || c.SyncReferenceId == cleanTxId);
 
             if (existingCollection != null)
             {
-                var memberName = existingCollection.PigmyAccount?.Member != null
-                    ? $"{existingCollection.PigmyAccount.Member.FirstName} {existingCollection.PigmyAccount.Member.LastName}".Trim()
+                var customerName = existingCollection.PigmyAccount?.Customer != null
+                    ? $"{existingCollection.PigmyAccount.Customer.FirstName} {existingCollection.PigmyAccount.Customer.LastName}".Trim()
                     : "";
 
                 return new SingleCollectionResponseDto
@@ -64,7 +64,8 @@ namespace Bhisi.Api.Services
                     TransactionId = cleanTxId,
                     AccountId = existingCollection.PigmyAccountId,
                     AccountNo = existingCollection.PigmyAccount?.AccountNo ?? "",
-                    MemberName = memberName,
+                    CustomerName = customerName,
+                    MemberName = customerName,
                     ReceiptNo = existingCollection.ReceiptNo,
                     Amount = existingCollection.CollectionAmount,
                     CurrentBalance = existingCollection.ClosingBalance,
@@ -96,7 +97,7 @@ namespace Bhisi.Api.Services
             try
             {
                 var account = await _context.PigmyAccounts
-                    .Include(a => a.Member)
+                    .Include(a => a.Customer)
                     .FirstOrDefaultAsync(a => a.PigmyAccountID == dto.AccountId);
 
                 if (account == null)
@@ -198,7 +199,7 @@ namespace Bhisi.Api.Services
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = drLedgerId,
-                        MemberID = null,
+                        CustomerID = account.CustomerID,
                         DrCr = "Dr",
                         Amount = addedAmount
                     });
@@ -206,7 +207,7 @@ namespace Bhisi.Api.Services
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = crLedgerId,
-                        MemberID = account.MemberID,
+                        CustomerID = account.CustomerID,
                         DrCr = "Cr",
                         Amount = addedAmount
                     });
@@ -221,8 +222,8 @@ namespace Bhisi.Api.Services
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                var customerName = account.Member != null
-                    ? $"{account.Member.FirstName} {account.Member.LastName}".Trim()
+                var customerName = account.Customer != null
+                    ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim()
                     : "";
 
                 return new SingleCollectionResponseDto
@@ -233,6 +234,7 @@ namespace Bhisi.Api.Services
                     TransactionId = cleanTxId,
                     AccountId = account.PigmyAccountID,
                     AccountNo = account.AccountNo,
+                    CustomerName = customerName,
                     MemberName = customerName,
                     ReceiptNo = receiptNo,
                     Amount = addedAmount,

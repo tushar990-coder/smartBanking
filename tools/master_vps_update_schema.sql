@@ -283,6 +283,14 @@ BEGIN
 END
 GO
 
+-- Ensure CIFNo column exists on Members
+IF COL_LENGTH('Members', 'CIFNo') IS NULL
+BEGIN
+    ALTER TABLE [Members] ADD [CIFNo] NVARCHAR(20) NULL;
+    PRINT 'Added CIFNo column to Members';
+END
+GO
+
 -- Ensure no existing member has NULL IsDeleted or blank MembershipType
 UPDATE [Members] SET [IsDeleted] = 0 WHERE [IsDeleted] IS NULL;
 UPDATE [Members] SET [MembershipType] = 'Regular' WHERE [MembershipType] IS NULL OR [MembershipType] = '';
@@ -1780,7 +1788,6 @@ GO
 DELETE FROM [Members]
 WHERE ([IsDeleted] = 1 OR [Status] = 'Closed')
   AND [MemberID] NOT IN (SELECT DISTINCT [MemberID] FROM [SavingAccountMasters] WHERE [MemberID] IS NOT NULL)
-  AND [MemberID] NOT IN (SELECT DISTINCT [MemberID] FROM [PigmyAccounts] WHERE [MemberID] IS NOT NULL)
   AND [MemberID] NOT IN (SELECT DISTINCT [MemberID] FROM [LoanAccounts] WHERE [MemberID] IS NOT NULL)
   AND [MemberID] NOT IN (SELECT DISTINCT [MemberId] FROM [ShareAccounts] WHERE [MemberId] IS NOT NULL)
   AND [MemberID] NOT IN (SELECT DISTINCT [MemberId] FROM [ShareCertificates] WHERE [MemberId] IS NOT NULL);
@@ -1913,9 +1920,10 @@ BEGIN
 END
 GO
 
--- Auto-Migrate existing Members into Customers if Customers is empty
-IF EXISTS (SELECT 1 FROM [Members]) AND NOT EXISTS (SELECT 1 FROM [Customers])
+-- Auto-Migrate existing Members into Customers if Customers is empty and Members still has customer profile columns
+IF EXISTS (SELECT 1 FROM [Members]) AND NOT EXISTS (SELECT 1 FROM [Customers]) AND COL_LENGTH('Members', 'FirstName') IS NOT NULL
 BEGIN
+    EXEC(N'
     SET IDENTITY_INSERT [Customers] ON;
 
     INSERT INTO [Customers] (
@@ -1932,10 +1940,10 @@ BEGIN
     SELECT 
         [MemberID], 
         ISNULL([BranchID], 1),
-        ISNULL(NULLIF([CIFNo], ''), 'CIF' + RIGHT('000000' + CAST([MemberID] AS NVARCHAR(10)), 6)),
-        ISNULL([FirstName], ''),
+        ISNULL(NULLIF([CIFNo], ''''), ''CIF'' + RIGHT(''000000'' + CAST([MemberID] AS NVARCHAR(10)), 6)),
+        ISNULL([FirstName], ''''),
         [MiddleName],
-        ISNULL([LastName], ''),
+        ISNULL([LastName], ''''),
         [NickName],
         [FirstNameEng],
         [MiddleNameEng],
@@ -1973,7 +1981,7 @@ BEGIN
         [GuardianAadhaarNo],
         [GuardianMobileNo],
         [GuardianAddress],
-        ISNULL([Status], 'Active'),
+        ISNULL([Status], ''Active''),
         [EmployerId],
         ISNULL([IsDeleted], 0),
         ISNULL([CreatedBy], 1),
@@ -1983,7 +1991,8 @@ BEGIN
     FROM [Members];
 
     SET IDENTITY_INSERT [Customers] OFF;
-    PRINT 'Migrated existing Members into Customers table with preserved IDs.';
+    PRINT ''Migrated existing Members into Customers table with preserved IDs.'';
+    ');
 END
 GO
 
@@ -2113,7 +2122,26 @@ BEGIN
     PRINT 'Added CustomerID to PigmyAccounts';
 END
 GO
-UPDATE [PigmyAccounts] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;
+IF COL_LENGTH('PigmyAccounts', 'MemberID') IS NOT NULL
+BEGIN
+    EXEC(N'UPDATE p
+    SET p.CustomerID = m.CustomerID
+    FROM [PigmyAccounts] p
+    INNER JOIN [Members] m ON p.MemberID = m.MemberID
+    WHERE (p.CustomerID IS NULL OR p.CustomerID = 0) AND m.CustomerID IS NOT NULL;');
+END
+GO
+IF COL_LENGTH('VoucherDetails', 'CustomerID') IS NULL
+BEGIN
+    ALTER TABLE [VoucherDetails] ADD [CustomerID] INT NULL;
+    PRINT 'Added CustomerID to VoucherDetails';
+END
+GO
+IF COL_LENGTH('AgentCustomerRequests', 'CreatedCustomerID') IS NULL
+BEGIN
+    ALTER TABLE [AgentCustomerRequests] ADD [CreatedCustomerID] INT NULL;
+    PRINT 'Added CreatedCustomerID to AgentCustomerRequests';
+END
 GO
 
 IF COL_LENGTH('LockerAllotments', 'CustomerID') IS NULL
@@ -2802,13 +2830,131 @@ BEGIN
 END
 GO
 
--- 50.6 PigmyAccounts: Ensure MemberID is nullable for Non-Member accounts
+-- 50.6 PigmyAccounts: Enforce 100% Pure Customer-First (Zero Fallback, Drop MemberID, CustomerID NOT NULL)
 IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'PigmyAccounts')
 BEGIN
-    IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('PigmyAccounts') AND name = 'MemberID' AND is_nullable = 0)
+    -- 1. Ensure CustomerID column exists
+    IF COL_LENGTH('PigmyAccounts', 'CustomerID') IS NULL
     BEGIN
-        ALTER TABLE [PigmyAccounts] ALTER COLUMN [MemberID] INT NULL;
-        PRINT 'Altered MemberID to INT NULL on PigmyAccounts';
+        ALTER TABLE [PigmyAccounts] ADD [CustomerID] INT NULL;
+        PRINT 'Added CustomerID column to PigmyAccounts';
+    END
+
+    -- 2. Backfill CustomerID from Members.CustomerID if MemberID column exists
+    IF COL_LENGTH('PigmyAccounts', 'MemberID') IS NOT NULL
+    BEGIN
+        EXEC(N'UPDATE p
+        SET p.CustomerID = m.CustomerID
+        FROM [PigmyAccounts] p
+        INNER JOIN [Members] m ON p.MemberID = m.MemberID
+        WHERE (p.CustomerID IS NULL OR p.CustomerID = 0) AND m.CustomerID IS NOT NULL;');
+        PRINT 'Backfilled PigmyAccounts.CustomerID from Members.';
+    END
+
+    -- 3. Resolve any orphan PigmyAccounts without valid CustomerID by creating real Customer records
+    DECLARE @OrphanCount INT = 0;
+    SELECT @OrphanCount = COUNT(*) FROM [PigmyAccounts] WHERE [CustomerID] IS NULL OR [CustomerID] = 0;
+
+    IF @OrphanCount > 0
+    BEGIN
+        PRINT 'Found ' + CAST(@OrphanCount AS VARCHAR(10)) + ' orphan PigmyAccounts. Auto-creating Customer profiles...';
+        DECLARE @AccID INT, @AccNo NVARCHAR(30), @BranchID INT, @NewCustID INT;
+        DECLARE orphan_cur CURSOR LOCAL FAST_FORWARD FOR
+            SELECT [PigmyAccountID], [AccountNo], [BranchID]
+            FROM [PigmyAccounts]
+            WHERE [CustomerID] IS NULL OR [CustomerID] = 0;
+
+        OPEN orphan_cur;
+        FETCH NEXT FROM orphan_cur INTO @AccID, @AccNo, @BranchID;
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            INSERT INTO [Customers] ([BranchID], [FirstName], [LastName], [Status], [CreatedOn], [CreatedBy])
+            VALUES (@BranchID, 'Pigmy', 'Customer ' + @AccNo, 'Active', GETDATE(), 1);
+            SET @NewCustID = SCOPE_IDENTITY();
+
+            UPDATE [PigmyAccounts] SET [CustomerID] = @NewCustID WHERE [PigmyAccountID] = @AccID;
+            FETCH NEXT FROM orphan_cur INTO @AccID, @AccNo, @BranchID;
+        END
+        CLOSE orphan_cur;
+        DEALLOCATE orphan_cur;
+        PRINT 'All orphan PigmyAccounts successfully mapped to Customer records.';
+    END
+
+    -- 4. Drop Foreign Key and Index on MemberID
+    IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_PigmyAccounts_Members_MemberID')
+    BEGIN
+        ALTER TABLE [PigmyAccounts] DROP CONSTRAINT [FK_PigmyAccounts_Members_MemberID];
+        PRINT 'Dropped FK_PigmyAccounts_Members_MemberID';
+    END
+
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_PigmyAccounts_MemberID' AND object_id = OBJECT_ID('PigmyAccounts'))
+    BEGIN
+        DROP INDEX [IX_PigmyAccounts_MemberID] ON [PigmyAccounts];
+        PRINT 'Dropped IX_PigmyAccounts_MemberID';
+    END
+
+    -- 5. Enforce CustomerID INT NOT NULL
+    ALTER TABLE [PigmyAccounts] ALTER COLUMN [CustomerID] INT NOT NULL;
+    PRINT 'Enforced PigmyAccounts.CustomerID INT NOT NULL';
+
+    -- 6. Add Foreign Key and Index on PigmyAccounts.CustomerID
+    IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_PigmyAccounts_Customers_CustomerID')
+    BEGIN
+        ALTER TABLE [PigmyAccounts] WITH CHECK ADD CONSTRAINT [FK_PigmyAccounts_Customers_CustomerID]
+        FOREIGN KEY ([CustomerID]) REFERENCES [Customers] ([CustomerID]);
+        PRINT 'Created FK_PigmyAccounts_Customers_CustomerID';
+    END
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_PigmyAccounts_CustomerID' AND object_id = OBJECT_ID('PigmyAccounts'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_PigmyAccounts_CustomerID] ON [PigmyAccounts] ([CustomerID]);
+        PRINT 'Created IX_PigmyAccounts_CustomerID';
+    END
+
+    -- 7. Drop MemberID Column Completely
+    IF COL_LENGTH('PigmyAccounts', 'MemberID') IS NOT NULL
+    BEGIN
+        DECLARE @dfName NVARCHAR(128);
+        SELECT @dfName = d.name 
+        FROM sys.default_constraints d 
+        JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+        WHERE d.parent_object_id = OBJECT_ID('PigmyAccounts') AND c.name = 'MemberID';
+        
+        IF @dfName IS NOT NULL
+            EXEC('ALTER TABLE [PigmyAccounts] DROP CONSTRAINT [' + @dfName + '];');
+
+        ALTER TABLE [PigmyAccounts] DROP COLUMN [MemberID];
+        PRINT 'Permanently dropped MemberID from PigmyAccounts';
+    END
+END
+GO
+
+-- Ensure FK and Index on VoucherDetails.CustomerID
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'VoucherDetails') AND COL_LENGTH('VoucherDetails', 'CustomerID') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_VoucherDetails_Customers_CustomerID')
+    BEGIN
+        ALTER TABLE [VoucherDetails] WITH CHECK ADD CONSTRAINT [FK_VoucherDetails_Customers_CustomerID]
+        FOREIGN KEY ([CustomerID]) REFERENCES [Customers] ([CustomerID]);
+        PRINT 'Created FK_VoucherDetails_Customers_CustomerID';
+    END
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_VoucherDetails_CustomerID' AND object_id = OBJECT_ID('VoucherDetails'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_VoucherDetails_CustomerID] ON [VoucherDetails] ([CustomerID]);
+        PRINT 'Created IX_VoucherDetails_CustomerID';
+    END
+END
+GO
+
+-- Ensure FK on AgentCustomerRequests.CreatedCustomerID
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'AgentCustomerRequests') AND COL_LENGTH('AgentCustomerRequests', 'CreatedCustomerID') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_AgentCustomerRequests_Customers_CreatedCustomerID')
+    BEGIN
+        ALTER TABLE [AgentCustomerRequests] WITH CHECK ADD CONSTRAINT [FK_AgentCustomerRequests_Customers_CreatedCustomerID]
+        FOREIGN KEY ([CreatedCustomerID]) REFERENCES [Customers] ([CustomerID]);
+        PRINT 'Created FK_AgentCustomerRequests_Customers_CreatedCustomerID';
     END
 END
 GO
@@ -2944,7 +3090,7 @@ BEGIN
     -- Sync demographic data from Members to Customers before dropping columns
     IF COL_LENGTH('Members', 'FirstName') IS NOT NULL
     BEGIN
-        UPDATE c
+        EXEC(N'UPDATE c
         SET 
             c.FirstName = CASE WHEN c.FirstName IS NULL OR LEN(c.FirstName) = 0 THEN m.FirstName ELSE c.FirstName END,
             c.MiddleName = ISNULL(c.MiddleName, m.MiddleName),
@@ -2987,7 +3133,7 @@ BEGIN
             c.GuardianAddress = ISNULL(c.GuardianAddress, m.GuardianAddress),
             c.EmployerId = ISNULL(c.EmployerId, m.EmployerId)
         FROM [dbo].[Customers] c
-        INNER JOIN [dbo].[Members] m ON m.CustomerID = c.CustomerID;
+        INNER JOIN [dbo].[Members] m ON m.CustomerID = c.CustomerID;');
         PRINT 'Synchronized demographic and KYC data from Members to Customers.';
     END
 END

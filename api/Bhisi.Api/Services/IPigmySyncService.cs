@@ -33,6 +33,7 @@ namespace Bhisi.Api.Services
         public string TransactionId { get; set; } = string.Empty;
         public int AccountId { get; set; }
         public string AccountNo { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
         public string MemberName { get; set; } = string.Empty;
         public string ReceiptNo { get; set; } = string.Empty;
         public decimal Amount { get; set; }

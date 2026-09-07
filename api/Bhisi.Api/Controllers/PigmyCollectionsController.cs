@@ -59,7 +59,7 @@ namespace Bhisi.Api.Controllers
         {
             var query = _context.PigmyCollections
                 .Include(c => c.PigmyAccount)
-                    .ThenInclude(a => a!.Member)
+                    .ThenInclude(a => a!.Customer)
                 .Include(c => c.Agent)
                 .AsQueryable();
 
@@ -104,9 +104,12 @@ namespace Bhisi.Api.Controllers
                     c.ClosingBalance,
                     c.PigmyAccountId,
                     PigmyAccountNo = c.PigmyAccount != null ? c.PigmyAccount.AccountNo : "",
-                    MemberName = c.PigmyAccount != null && c.PigmyAccount.Member != null ? 
-                        (c.PigmyAccount.Member.FirstName + " " + (c.PigmyAccount.Member.LastName ?? "")) : "",
-                    MemberCode = c.PigmyAccount != null && c.PigmyAccount.Member != null ? c.PigmyAccount.Member.MemberCode : "",
+                    CustomerName = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? 
+                        (c.PigmyAccount.Customer.FirstName + " " + (c.PigmyAccount.Customer.LastName ?? "")).Trim() : "",
+                    MemberName = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? 
+                        (c.PigmyAccount.Customer.FirstName + " " + (c.PigmyAccount.Customer.LastName ?? "")).Trim() : "",
+                    CIFNo = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? c.PigmyAccount.Customer.CIFNo : "",
+                    CustomerNo = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? (c.PigmyAccount.Customer.CIFNo ?? c.PigmyAccount.Customer.LegacyCustomerNo ?? "") : "",
                     AgentId = c.AgentId,
                     AgentName = c.Agent != null ? c.Agent.AgentName : ""
                 })
@@ -209,7 +212,7 @@ namespace Bhisi.Api.Controllers
                 voucher.VoucherDetails.Add(new VoucherDetail
                 {
                     LedgerID = drLedgerId,
-                    MemberID = null,
+                    CustomerID = account.CustomerID,
                     DrCr = "Dr",
                     Amount = dto.CollectionAmount
                 });
@@ -217,7 +220,7 @@ namespace Bhisi.Api.Controllers
                 voucher.VoucherDetails.Add(new VoucherDetail
                 {
                     LedgerID = crLedgerId,
-                    MemberID = account.MemberID,
+                    CustomerID = account.CustomerID,
                     DrCr = "Cr",
                     Amount = dto.CollectionAmount
                 });
@@ -329,7 +332,7 @@ namespace Bhisi.Api.Controllers
                         voucher.VoucherDetails.Add(new VoucherDetail
                         {
                             LedgerID = mapping.DebitLedgerId,
-                            MemberID = null,
+                            CustomerID = account.CustomerID,
                             DrCr = "Dr",
                             Amount = dto.CollectionAmount
                         });
@@ -337,7 +340,7 @@ namespace Bhisi.Api.Controllers
                         voucher.VoucherDetails.Add(new VoucherDetail
                         {
                             LedgerID = mapping.CreditLedgerId,
-                            MemberID = account.MemberID,
+                            CustomerID = account.CustomerID,
                             DrCr = "Cr",
                             Amount = dto.CollectionAmount
                         });
@@ -478,7 +481,7 @@ namespace Bhisi.Api.Controllers
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = drLedgerId,
-                        MemberID = null,
+                        CustomerID = account.CustomerID,
                         DrCr = "Dr",
                         Amount = item.CollectionAmount
                     });
@@ -486,7 +489,7 @@ namespace Bhisi.Api.Controllers
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = crLedgerId,
-                        MemberID = account.MemberID,
+                        CustomerID = account.CustomerID,
                         DrCr = "Cr",
                         Amount = item.CollectionAmount
                     });

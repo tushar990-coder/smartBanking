@@ -91,13 +91,13 @@ New-Item -Path (Join-Path $patchFolder "database") -ItemType Directory -Force | 
 New-Item -Path (Join-Path $patchFolder "backend") -ItemType Directory -Force | Out-Null
 New-Item -Path (Join-Path $patchFolder "frontend") -ItemType Directory -Force | Out-Null
 
-# 3.1 Copy Database SQL
+# 3.1 Copy Database SQL (UTF-8 WITH BOM for perfect sqlcmd Unicode preservation)
 $sqlSource = Join-Path $workspaceRoot "tools\master_vps_update_schema.sql"
 $sqlDest = Join-Path $patchFolder "database\update_schema.sql"
 $sqlContent = [System.IO.File]::ReadAllText($sqlSource, [System.Text.Encoding]::UTF8)
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($sqlDest, $sqlContent, $utf8NoBom)
-Write-Host "  -> Database update schema copied with clean UTF-8 encoding." -ForegroundColor White
+$utf8WithBom = New-Object System.Text.UTF8Encoding($true)
+[System.IO.File]::WriteAllText($sqlDest, $sqlContent, $utf8WithBom)
+Write-Host "  -> Database update schema copied with UTF-8 BOM encoding." -ForegroundColor White
 
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
@@ -235,7 +235,15 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             $backupPath = "$($config.BackupFolder)\$($target.TargetDatabase)_PrePatch_$timestamp.bak"
             $backupSql = "BACKUP DATABASE [$($target.TargetDatabase)] TO DISK = N'$backupPath' WITH FORMAT, INIT, NAME = N'$($target.TargetDatabase)-PrePatch-Backup', SKIP, NOREWIND, NOUNLOAD, STATS = 10;"
             try {
-                sqlcmd -S $config.SqlServerInstance -E -Q $backupSql
+                if ($config.SqlUser -and $config.SqlPassword) {
+                    try {
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -Q $backupSql
+                    } catch {
+                        sqlcmd -S $config.SqlServerInstance -E -Q $backupSql
+                    }
+                } else {
+                    sqlcmd -S $config.SqlServerInstance -E -Q $backupSql
+                }
                 Write-Host "  -> Backup Success: $backupPath" -ForegroundColor Green
                 $statusObj.Backup = "OK"
             } catch {
@@ -248,9 +256,25 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
         Write-Host " [Step 2] Applying Database Update Schema via Native sqlcmd Engine..." -ForegroundColor Yellow
         if (Test-Path $sqlFile) {
             try {
-                sqlcmd -S $config.SqlServerInstance -d $target.TargetDatabase -E -i $sqlFile -f 65001
-                Write-Host "  -> Database Schema Synced 100% OK via sqlcmd!" -ForegroundColor Green
-                $statusObj.SqlSchema = "OK"
+                $sqlOk = $false
+                if ($config.SqlUser -and $config.SqlPassword) {
+                    try {
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d $target.TargetDatabase -i $sqlFile -f 65001 -b
+                        if ($LASTEXITCODE -eq 0) { $sqlOk = $true }
+                    } catch {}
+                }
+                if (-not $sqlOk) {
+                    sqlcmd -S $config.SqlServerInstance -d $target.TargetDatabase -E -i $sqlFile -f 65001 -b
+                    if ($LASTEXITCODE -eq 0) { $sqlOk = $true }
+                }
+
+                if ($sqlOk) {
+                    Write-Host "  -> Database Schema Synced 100% OK via sqlcmd!" -ForegroundColor Green
+                    $statusObj.SqlSchema = "OK"
+                } else {
+                    Write-Host "  -> Database Schema Notice (Check logs). Continuing deployment..." -ForegroundColor DarkYellow
+                    $statusObj.SqlSchema = "Notice"
+                }
             } catch {
                 Write-Host "  -> SQL Note: $($_.Exception.Message). Continuing deployment..." -ForegroundColor DarkYellow
                 $statusObj.SqlSchema = "Notice (Bypassed)"
@@ -318,7 +342,7 @@ Write-Host "`n[OK] Patch execution completed." -ForegroundColor Green
 Read-Host "Press ENTER to exit"
 '@
 
-[System.IO.File]::WriteAllText((Join-Path $patchFolder "apply_patch.ps1"), $applyPs1Content, $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $patchFolder "apply_patch.ps1"), $applyPs1Content, $utf8WithBom)
 
 # 1. 1_Click_Update_Padawalwadi.bat
 $batPadawalwadi = @"

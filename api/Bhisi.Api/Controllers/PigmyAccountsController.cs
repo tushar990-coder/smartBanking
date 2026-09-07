@@ -13,8 +13,7 @@ namespace Bhisi.Api.Controllers
     public class PigmyOpenAccountDto
     {
         public string? AccountNo { get; set; }
-        public int? CustomerID { get; set; }
-        public int? MemberID { get; set; }
+        public int CustomerID { get; set; }
         public int BranchID { get; set; }
         public int PigmySchemeID { get; set; }
         public int PigmyAgentID { get; set; }
@@ -73,13 +72,11 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<PigmyAccount>>> GetPigmyAccounts(
             [FromQuery] int? agentId,
             [FromQuery] int? branchId,
-            [FromQuery] int? memberId,
             [FromQuery] int? customerId,
             [FromQuery] string? status)
         {
             var query = _context.PigmyAccounts
                 .Include(p => p.Customer)
-                .Include(p => p.Member)
                 .Include(p => p.PigmyScheme)
                 .Include(p => p.PigmyAgent)
                 .AsQueryable();
@@ -98,10 +95,6 @@ namespace Bhisi.Api.Controllers
             {
                 query = query.Where(p => p.CustomerID == customerId.Value);
             }
-            else if (memberId.HasValue && memberId.Value > 0)
-            {
-                query = query.Where(p => p.MemberID == memberId.Value);
-            }
 
             if (!string.IsNullOrWhiteSpace(status))
             {
@@ -117,7 +110,6 @@ namespace Bhisi.Api.Controllers
         {
             var accounts = await _context.PigmyAccounts
                 .Include(p => p.Customer)
-                .Include(p => p.Member)
                 .Include(p => p.PigmyScheme)
                 .Where(p => p.PigmyAgentID == agentId && (string.IsNullOrEmpty(status) || p.Status == status))
                 .OrderBy(p => p.AccountNo)
@@ -126,14 +118,16 @@ namespace Bhisi.Api.Controllers
                     p.PigmyAccountID,
                     p.AccountNo,
                     p.CustomerID,
-                    p.MemberID,
-                    CIFNo = p.Customer != null ? p.Customer.CIFNo : (p.Member != null ? p.Member.CIFNo : ""),
+                    CIFNo = p.Customer != null ? p.Customer.CIFNo : "",
+                    CustomerName = p.Customer != null 
+                        ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
+                        : "",
                     MemberName = p.Customer != null 
                         ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
-                        : (p.Member != null ? (p.Member.FirstName + (string.IsNullOrWhiteSpace(p.Member.MiddleName) ? "" : " " + p.Member.MiddleName) + (string.IsNullOrWhiteSpace(p.Member.LastName) ? "" : " " + p.Member.LastName)).Trim() : ""),
-                    MemberCode = p.Member != null ? p.Member.MemberCode : "",
-                    MobileNo = p.Customer != null ? p.Customer.MobileNo : (p.Member != null ? p.Member.MobileNo : ""),
-                    Address = p.Customer != null ? p.Customer.Address : (p.Member != null ? p.Member.Address : ""),
+                        : "",
+                    CustomerNo = p.Customer != null ? (p.Customer.CIFNo ?? p.Customer.LegacyCustomerNo ?? "") : "",
+                    MobileNo = p.Customer != null ? p.Customer.MobileNo : "",
+                    Address = p.Customer != null ? p.Customer.Address : "",
                     SchemeName = p.PigmyScheme != null ? p.PigmyScheme.SchemeName : "",
                     InterestRate = p.InterestRate,
                     CurrentBalance = p.TotalDepositedAmount,
@@ -147,15 +141,15 @@ namespace Bhisi.Api.Controllers
             return Ok(accounts);
         }
 
-        // GET: api/PigmyAccounts/Member/{memberId}
-        [HttpGet("Member/{memberId}")]
-        public async Task<ActionResult<IEnumerable<PigmyAccount>>> GetAccountsByMember(int memberId)
+        // GET: api/PigmyAccounts/Customer/{customerId}
+        [HttpGet("Customer/{customerId}")]
+        public async Task<ActionResult<IEnumerable<PigmyAccount>>> GetAccountsByCustomer(int customerId)
         {
             return await _context.PigmyAccounts
-                .Include(p => p.Member)
+                .Include(p => p.Customer)
                 .Include(p => p.PigmyScheme)
                 .Include(p => p.PigmyAgent)
-                .Where(p => p.MemberID == memberId)
+                .Where(p => p.CustomerID == customerId)
                 .OrderByDescending(p => p.PigmyAccountID)
                 .ToListAsync();
         }
@@ -165,7 +159,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<PigmyAccount>> GetPigmyAccount(int id)
         {
             var pigmyAccount = await _context.PigmyAccounts
-                .Include(p => p.Member)
+                .Include(p => p.Customer)
                 .Include(p => p.PigmyScheme)
                 .Include(p => p.PigmyAgent)
                 .FirstOrDefaultAsync(p => p.PigmyAccountID == id);
@@ -186,39 +180,17 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // 1. Resolve Customer and Member
-                Customer? customer = null;
-                Member? member = null;
-
-                if (request.CustomerID.HasValue && request.CustomerID.Value > 0)
+                // 1. Resolve Customer
+                if (request.CustomerID <= 0)
                 {
-                    customer = await _context.Customers.FindAsync(request.CustomerID.Value);
-                    if (customer == null) return BadRequest("निवडलेला ग्राहक सिस्टीममध्ये अस्तित्वात नाही.");
-                    if (customer.Status != "Active") return BadRequest($"या ग्राहकाचे स्टेटस '{customer.Status}' असल्यामुळे नवीन पिग्मी खाते उघडता येत नाही. केवळ सक्रिय (Active) ग्राहकांचीच ठेव स्वीकारली जाऊ शकते.");
-
-                    member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
-                }
-                else if (request.MemberID.HasValue && request.MemberID.Value > 0)
-                {
-                    member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == request.MemberID.Value);
-                    if (member == null) return BadRequest("निवडलेला सभासद सिस्टीममध्ये अस्तित्वात नाही.");
-                    if (member.Status != "Active") return BadRequest($"या सभासदाचे स्टेटस '{member.Status}' असल्यामुळे नवीन पिग्मी खाते उघडता येत नाही. केवळ सक्रिय (Active) सभासदांचीच ठेव स्वीकारली जाऊ शकते.");
-
-                    if (member.CustomerID > 0)
-                    {
-                        customer = await _context.Customers.FindAsync(member.CustomerID);
-                    }
-                }
-                else
-                {
-                    return BadRequest("कृपया खातेदाराची (Customer / Member) निवड करा.");
+                    return BadRequest("कृपया ग्राहकाची (Customer) निवड करा.");
                 }
 
-                int? resolvedCustomerId = customer?.CustomerID ?? (member?.CustomerID > 0 ? member.CustomerID : null);
-                int? resolvedMemberId = member?.MemberID;
-                string accountHolderName = customer != null
-                    ? $"{customer.FirstName} {customer.LastName}".Trim()
-                    : (member != null ? $"{member.FirstName} {member.LastName}".Trim() : "Account Holder");
+                var customer = await _context.Customers.FindAsync(request.CustomerID);
+                if (customer == null) return BadRequest("निवडलेला ग्राहक सिस्टीममध्ये अस्तित्वात नाही.");
+                if (customer.Status != "Active") return BadRequest($"या ग्राहकाचे स्टेटस '{customer.Status}' असल्यामुळे नवीन पिग्मी खाते उघडता येत नाही. केवळ सक्रिय (Active) ग्राहकांचीच ठेव स्वीकारली जाऊ शकते.");
+
+                string accountHolderName = $"{customer.FirstName} {customer.LastName}".Trim();
 
                 var scheme = await _context.PigmySchemes.FindAsync(request.PigmySchemeID);
                 if (scheme == null || scheme.Status != "Active") return BadRequest("Invalid or inactive Scheme.");
@@ -279,14 +251,13 @@ namespace Bhisi.Api.Controllers
                 var pigmyAccount = new PigmyAccount
                 {
                     AccountNo = accountNo,
-                    CustomerID = resolvedCustomerId,
-                    MemberID = resolvedMemberId,
+                    CustomerID = customer.CustomerID,
                     BranchID = request.BranchID,
                     PigmySchemeID = request.PigmySchemeID,
                     PigmyAgentID = request.PigmyAgentID,
                     OpeningDate = request.OpeningDate,
                     InterestRate = scheme.InterestRate,
-                    MaturityDate = request.OpeningDate.AddMonths(scheme.DurationMonths),
+                    MaturityDate = request.OpeningDate.AddMonths(scheme.DurationMonths > 0 ? scheme.DurationMonths : 12),
                     TotalDepositedAmount = request.OpeningBalance,
                     Status = "Active",
                     CreatedDate = DateTime.Now,
@@ -334,7 +305,7 @@ namespace Bhisi.Api.Controllers
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = cashLedgerId,
-                        MemberID = null,
+                        CustomerID = customer.CustomerID,
                         DrCr = "Dr",
                         Amount = request.OpeningBalance
                     });
@@ -342,7 +313,7 @@ namespace Bhisi.Api.Controllers
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = liabilityLedgerId,
-                        MemberID = resolvedMemberId,
+                        CustomerID = customer.CustomerID,
                         DrCr = "Cr",
                         Amount = request.OpeningBalance
                     });
@@ -370,28 +341,13 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                Customer? customer = null;
-                Member? member = null;
-
-                if (request.CustomerID.HasValue && request.CustomerID.Value > 0)
+                if (request.CustomerID <= 0)
                 {
-                    customer = await _context.Customers.FindAsync(request.CustomerID.Value);
-                    if (customer == null) return BadRequest("Invalid Customer.");
-                    member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
-                }
-                else if (request.MemberID.HasValue && request.MemberID.Value > 0)
-                {
-                    member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == request.MemberID.Value);
-                    if (member == null) return BadRequest("Invalid Member.");
-                    if (member.CustomerID > 0) customer = await _context.Customers.FindAsync(member.CustomerID);
-                }
-                else
-                {
-                    return BadRequest("Invalid Customer or Member.");
+                    return BadRequest("कृपया ग्राहकाची (Customer) निवड करा.");
                 }
 
-                int? resolvedCustomerId = customer?.CustomerID ?? (member?.CustomerID > 0 ? member.CustomerID : null);
-                int? resolvedMemberId = member?.MemberID;
+                var customer = await _context.Customers.FindAsync(request.CustomerID);
+                if (customer == null) return BadRequest("निवडलेला ग्राहक सिस्टीममध्ये अस्तित्वात नाही.");
 
                 var scheme = await _context.PigmySchemes.FindAsync(request.PigmySchemeID);
                 if (scheme == null || scheme.Status != "Active") return BadRequest("Invalid or inactive Scheme.");
@@ -415,14 +371,13 @@ namespace Bhisi.Api.Controllers
                 var pigmyAccount = new PigmyAccount
                 {
                     AccountNo = accountNo,
-                    CustomerID = resolvedCustomerId,
-                    MemberID = resolvedMemberId,
+                    CustomerID = customer.CustomerID,
                     BranchID = request.BranchID,
                     PigmySchemeID = request.PigmySchemeID,
                     PigmyAgentID = request.PigmyAgentID,
                     OpeningDate = request.OpeningDate,
                     InterestRate = scheme.InterestRate,
-                    MaturityDate = request.OpeningDate.AddMonths(scheme.DurationMonths),
+                    MaturityDate = request.OpeningDate.AddMonths(scheme.DurationMonths > 0 ? scheme.DurationMonths : 12),
                     TotalDepositedAmount = request.OpeningBalance,
                     Status = "Active",
                     CreatedDate = DateTime.Now,

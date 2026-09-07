@@ -13,15 +13,11 @@ namespace Bhisi.Api.Models
         [StringLength(30)]
         public string AccountNo { get; set; } = string.Empty;
 
-        public int? CustomerID { get; set; }
+        [Required]
+        public int CustomerID { get; set; }
 
         [ForeignKey("CustomerID")]
-        public virtual Customer? Customer { get; set; }
-
-        public int? MemberID { get; set; }
-
-        [ForeignKey("MemberID")]
-        public virtual Member? Member { get; set; }
+        public virtual Customer Customer { get; set; } = null!;
 
         [Required]
         public int BranchID { get; set; }

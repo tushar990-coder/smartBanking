@@ -37,6 +37,11 @@ namespace Bhisi.Api.Models
 
         // Linked created entity IDs
         public int? CreatedMemberID { get; set; }
+        public int? CreatedCustomerID { get; set; }
+
+        [ForeignKey("CreatedCustomerID")]
+        public virtual Customer? CreatedCustomer { get; set; }
+
         public int? CreatedPigmyAccountID { get; set; }
 
         // Personal Details

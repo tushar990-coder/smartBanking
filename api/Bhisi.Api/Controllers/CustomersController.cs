@@ -627,7 +627,7 @@ namespace Bhisi.Api.Controllers
             bool hasLoans = await _context.LoanAccounts.AnyAsync(l => (l.CustomerID == id || (linkedMemberId > 0 && (l.MemberID == linkedMemberId || l.CoMemberID == linkedMemberId || l.CoMember2ID == linkedMemberId || l.Guarantor1MemberID == linkedMemberId || l.Guarantor2MemberID == linkedMemberId))));
             bool hasFds = await _context.FdAccounts.AnyAsync(f => (f.CustomerID == id || (linkedMemberId > 0 && f.MemberID == linkedMemberId)));
             bool hasRds = await _context.RdAccounts.AnyAsync(r => (r.CustomerID == id || (linkedMemberId > 0 && r.MemberID == linkedMemberId)));
-            bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => (p.CustomerID == id || (linkedMemberId > 0 && p.MemberID == linkedMemberId)));
+            bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => p.CustomerID == id);
             bool hasShares = linkedMemberId > 0 && await _context.ShareAccounts.AnyAsync(s => s.MemberId == linkedMemberId && s.TotalShareCount > 0);
             bool hasLockers = await _context.LockerAllotments.AnyAsync(l => (l.CustomerID == id || (linkedMemberId > 0 && l.MemberID == linkedMemberId)));
             bool hasCustomerOpeningBalances = await _context.CustomerOpeningBalances.AnyAsync(o => o.CustomerID == id);
@@ -703,7 +703,7 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var pigmy = await _context.PigmyAccounts
-                .Where(p => p.CustomerID == id || (linkedMemberId != null && p.MemberID == linkedMemberId))
+                .Where(p => p.CustomerID == id)
                 .Select(p => new { p.PigmyAccountID, p.AccountNo, p.TotalDepositedAmount, p.Status, p.OpeningDate })
                 .ToListAsync();
 

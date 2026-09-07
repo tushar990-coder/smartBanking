@@ -27,11 +27,11 @@ import {
   ArrowRight
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
-import MemberSearchSelect from './common/MemberSearchSelect';
+import CustomerSearchSelect from './common/CustomerSearchSelect';
 import * as XLSX from 'xlsx';
 
 export default function PigmyOpeningBalance() {
-  const [members, setMembers] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [schemes, setSchemes] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [financialYears, setFinancialYears] = useState<any[]>([]);
@@ -45,7 +45,7 @@ export default function PigmyOpeningBalance() {
   const balanceInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState({
-    memberID: '',
+    customerID: '',
     branchID: '1',
     pigmySchemeID: '',
     pigmyAgentID: '',
@@ -79,14 +79,14 @@ export default function PigmyOpeningBalance() {
 
   const fetchMasters = async () => {
     try {
-      const [membersRes, schemesRes, agentsRes, yearsRes] = await Promise.all([
+      const [customersRes, schemesRes, agentsRes, yearsRes] = await Promise.all([
         axios.get('/api/Customers'),
         axios.get('/api/PigmySchemes'),
         axios.get('/api/PigmyAgents'),
         axios.get('/api/FinancialYears')
       ]);
 
-      if (membersRes.data) setMembers(membersRes.data);
+      if (customersRes.data) setCustomers(customersRes.data);
       if (schemesRes.data) setSchemes(schemesRes.data);
       if (agentsRes.data) setAgents(agentsRes.data);
       if (yearsRes.data && Array.isArray(yearsRes.data) && yearsRes.data.length > 0) {
@@ -142,7 +142,7 @@ export default function PigmyOpeningBalance() {
     const computedAsOfDate = initialYear ? computeAsOfDateFromStartDate(initialYear.startDate) : new Date().toISOString().split('T')[0];
 
     setFormData({
-      memberID: '',
+      customerID: '',
       branchID: '1',
       pigmySchemeID: '',
       pigmyAgentID: '',
@@ -156,7 +156,7 @@ export default function PigmyOpeningBalance() {
   const handleEdit = (acc: any) => {
     setEditingAccountId(acc.pigmyAccountID);
     setFormData({
-      memberID: String(acc.memberID || ''),
+      customerID: String(acc.customerID || ''),
       branchID: String(acc.branchID || '1'),
       pigmySchemeID: String(acc.pigmySchemeID || ''),
       pigmyAgentID: String(acc.pigmyAgentID || ''),
@@ -200,14 +200,14 @@ export default function PigmyOpeningBalance() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.memberID) return toast.error('कृपया सभासद निवडा.');
+    if (!formData.customerID) return toast.error('कृपया ग्राहक निवडा.');
     if (!formData.pigmySchemeID) return toast.error('कृपया पिग्मी योजना निवडा.');
     if (!formData.pigmyAgentID) return toast.error('कृपया एजंट निवडा.');
 
     setLoading(true);
     try {
       const payload = {
-        memberID: parseInt(formData.memberID),
+        customerID: parseInt(formData.customerID),
         branchID: parseInt(formData.branchID),
         pigmySchemeID: parseInt(formData.pigmySchemeID),
         pigmyAgentID: parseInt(formData.pigmyAgentID),
@@ -216,7 +216,7 @@ export default function PigmyOpeningBalance() {
         asOfDate: formData.asOfDate || null
       };
 
-      const memberObj = members.find(m => String(m.memberID || m.id) === String(formData.memberID));
+      const customerObj = customers.find(c => String(c.customerID || c.id) === String(formData.customerID));
       const schemeObj = schemes.find(s => String(s.pigmySchemeID || s.id) === String(formData.pigmySchemeID));
       const agentObj = agents.find(a => String(a.pigmyAgentID || a.id) === String(formData.pigmyAgentID));
 
@@ -230,10 +230,9 @@ export default function PigmyOpeningBalance() {
         setSuccessModalData({
           isEdit: true,
           accountNo: accNo,
-          memberName: memberObj ? `${memberObj.firstName || ''} ${memberObj.middleName ? memberObj.middleName + ' ' : ''}${memberObj.lastName || ''}`.trim() : 'सभासद',
-          memberCode: memberObj?.memberCode || '-',
-          cifNo: memberObj?.cifNo || '-',
-          mobileNo: memberObj?.mobileNo || '-',
+          customerName: customerObj ? `${customerObj.firstName || ''} ${customerObj.middleName ? customerObj.middleName + ' ' : ''}${customerObj.lastName || ''}`.trim() : 'ग्राहक',
+          cifNo: customerObj?.cifNo || '-',
+          mobileNo: customerObj?.mobileNo || '-',
           schemeName: schemeObj?.schemeName || 'पिग्मी योजना',
           interestRate: schemeObj?.interestRate || 0,
           agentName: agentObj?.agentName || 'एजंट',
@@ -249,10 +248,9 @@ export default function PigmyOpeningBalance() {
         setSuccessModalData({
           isEdit: false,
           accountNo: createdAccountNo,
-          memberName: memberObj ? `${memberObj.firstName || ''} ${memberObj.middleName ? memberObj.middleName + ' ' : ''}${memberObj.lastName || ''}`.trim() : 'सभासद',
-          memberCode: memberObj?.memberCode || '-',
-          cifNo: memberObj?.cifNo || '-',
-          mobileNo: memberObj?.mobileNo || '-',
+          customerName: customerObj ? `${customerObj.firstName || ''} ${customerObj.middleName ? customerObj.middleName + ' ' : ''}${customerObj.lastName || ''}`.trim() : 'ग्राहक',
+          cifNo: customerObj?.cifNo || '-',
+          mobileNo: customerObj?.mobileNo || '-',
           schemeName: schemeObj?.schemeName || 'पिग्मी योजना',
           interestRate: schemeObj?.interestRate || 0,
           agentName: agentObj?.agentName || 'एजंट',
@@ -280,8 +278,8 @@ export default function PigmyOpeningBalance() {
     const rows = filteredAccounts.map((acc, i) => ({
       'अ.क्र.': i + 1,
       'खाते क्र.': acc.accountNo,
-      'सभासद कोड': acc.member?.memberCode || '-',
-      'सभासदाचे नाव': acc.member ? `${acc.member.firstName} ${acc.member.lastName}` : '-',
+      'ग्राहक CIF': acc.customer?.cifNo || '-',
+      'ग्राहकाचे नाव': acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : '-',
       'पिग्मी योजना': acc.pigmyScheme?.schemeName || '-',
       'एजंटचे नाव': acc.pigmyAgent?.agentName || '-',
       'आरंभिक शिल्लक (₹)': acc.totalDepositedAmount || acc.openingBalance || 0,
@@ -295,20 +293,19 @@ export default function PigmyOpeningBalance() {
     XLSX.writeFile(wb, `Pigmy_Opening_Balances_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const formatMemberLabel = (m: any) => {
-    const cifPart = m.cifNo ? `[CIF: ${m.cifNo}] ` : '';
-    const codePart = m.memberCode ? `[${m.memberCode}] ` : '';
-    return `${cifPart}${codePart}${m.firstName} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName}`;
+  const formatCustomerLabel = (c: any) => {
+    const cifPart = c.cifNo ? `[CIF: ${c.cifNo}] ` : '';
+    return `${cifPart}${c.firstName} ${c.middleName ? c.middleName + ' ' : ''}${c.lastName}`;
   };
 
   const filteredAccounts = migratedAccounts.filter(acc => {
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
-    const memName = acc.member ? `${acc.member.firstName} ${acc.member.lastName}`.toLowerCase() : '';
-    const memCode = acc.member?.memberCode ? acc.member.memberCode.toLowerCase() : '';
+    const custName = acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}`.toLowerCase() : '';
+    const cifNo = acc.customer?.cifNo ? acc.customer.cifNo.toLowerCase() : '';
     const accNo = acc.accountNo ? acc.accountNo.toLowerCase() : '';
     const agentName = acc.pigmyAgent?.agentName ? acc.pigmyAgent.agentName.toLowerCase() : '';
-    return accNo.includes(term) || memName.includes(term) || memCode.includes(term) || agentName.includes(term);
+    return accNo.includes(term) || custName.includes(term) || cifNo.includes(term) || agentName.includes(term);
   });
 
   // KPI Calculations
@@ -447,13 +444,13 @@ export default function PigmyOpeningBalance() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <div>
                 <label className={labelClass}>
-                  सभासद निवडा (Member) <span className="text-red-500">*</span>
+                  ग्राहक निवडा (Customer) <span className="text-red-500">*</span>
                 </label>
-                <MemberSearchSelect
-                  members={members}
-                  value={formData.memberID ? Number(formData.memberID) : ''}
-                  onChange={(val) => setFormData(prev => ({ ...prev, memberID: val ? String(val) : '' }))}
-                  placeholder="-- सभासद नाव, कोड किंवा मोबाईलने शोधा --"
+                <CustomerSearchSelect
+                  customers={customers}
+                  value={formData.customerID ? Number(formData.customerID) : ''}
+                  onChange={(val) => setFormData(prev => ({ ...prev, customerID: val ? String(val) : '' }))}
+                  placeholder="-- ग्राहक नाव, CIF किंवा मोबाईलने शोधा --"
                 />
               </div>
 
@@ -698,8 +695,8 @@ export default function PigmyOpeningBalance() {
                           {acc.accountNo}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
-                          <div className="font-bold text-gray-900">{acc.member ? `${acc.member.firstName} ${acc.member.lastName}` : `सभासद ID: ${acc.memberID}`}</div>
-                          <div className="text-[10px] text-gray-500 font-mono">कोड: {acc.member?.memberCode || '-'}</div>
+                          <div className="font-bold text-gray-900">{acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : `ग्राहक ID: ${acc.customerID}`}</div>
+                          <div className="text-[10px] text-gray-500 font-mono">CIF: {acc.customer?.cifNo || '-'}</div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-800">
                           {acc.pigmyScheme?.schemeName || '-'}
@@ -800,16 +797,16 @@ export default function PigmyOpeningBalance() {
               {/* 2-Column Information Grid */}
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-2.5">
                 
-                {/* Row 1: Member Name */}
+                {/* Row 1: Customer Name */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <span className="text-slate-500 font-semibold flex items-center gap-1.5">
                     <User className="w-3.5 h-3.5 text-primary" />
-                    <span>सभासदाचे नाव:</span>
+                    <span>ग्राहकाचे नाव:</span>
                   </span>
                   <div className="text-right">
-                    <span className="font-extrabold text-slate-900 text-xs">{successModalData.memberName}</span>
+                    <span className="font-extrabold text-slate-900 text-xs">{successModalData.customerName}</span>
                     <span className="ml-1.5 px-1.5 py-0.5 bg-primary/10 text-primary font-mono text-[10px] font-bold rounded">
-                      [#{successModalData.memberCode}]
+                      [CIF: {successModalData.cifNo}]
                     </span>
                   </div>
                 </div>

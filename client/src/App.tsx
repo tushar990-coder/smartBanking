@@ -1467,10 +1467,10 @@ function App() {
         {activeTab === 'customers' && <CustomerMaster />}
         {activeTab === 'customer-opening' && <CustomerOpeningBalance />}
         {activeTab === 'shares' && <SharesDashboard onNavigate={handleNavigate} />}
-        {activeTab === 'members' && <MemberMaster />}
+        {activeTab === 'members' && <MemberMaster onNavigate={handleNavigate} />}
         {activeTab === 'member-opening' && <MemberOpeningBalance />}
         {activeTab === 'member-closure' && <MemberClosure />}
-        {activeTab === 'share-master' && <ShareMaster />}
+        {activeTab === 'share-master' && <ShareMaster initialMemberId={lastMemberId} onNavigate={handleNavigate} />}
         {activeTab === 'share-transfer' && <ShareTransferMaster />}
         {activeTab === 'share-withdrawal' && <ShareWithdrawal />}
 

@@ -73,7 +73,14 @@ namespace Bhisi.Api.Controllers
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.CoMember)
+                .Include(l => l.CoMember2)
+                .Include(l => l.CoCustomer)
+                .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
+                .Include(l => l.Guarantor1Member)
+                .Include(l => l.Guarantor2Member)
+                .Include(l => l.Guarantor1Customer)
+                .Include(l => l.Guarantor2Customer)
                 .Include(l => l.Branch)
                 .AsQueryable();
 
@@ -95,11 +102,26 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
         }
 
+        // GET: api/LoanAccounts/Customer/5
+        [HttpGet("Customer/{customerId}")]
+        public async Task<ActionResult<IEnumerable<LoanAccount>>> GetLoanAccountsByCustomer(int customerId)
+        {
+            return await _context.LoanAccounts
+                .Include(l => l.Customer)
+                .Include(l => l.Member)
+                .Include(l => l.LoanRate)
+                .Include(l => l.Branch)
+                .Where(l => l.CustomerID == customerId && l.Status == "Active")
+                .OrderByDescending(l => l.OpeningDate)
+                .ToListAsync();
+        }
+
         // GET: api/LoanAccounts/Member/5
         [HttpGet("Member/{memberId}")]
         public async Task<ActionResult<IEnumerable<LoanAccount>>> GetLoanAccountsByMember(int memberId)
         {
             return await _context.LoanAccounts
+                .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.LoanRate)
                 .Include(l => l.Branch)
@@ -113,9 +135,17 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<LoanAccount>> GetLoanAccount(int id)
         {
             var loanAccount = await _context.LoanAccounts
+                .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.CoMember)
+                .Include(l => l.CoMember2)
+                .Include(l => l.CoCustomer)
+                .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
+                .Include(l => l.Guarantor1Member)
+                .Include(l => l.Guarantor2Member)
+                .Include(l => l.Guarantor1Customer)
+                .Include(l => l.Guarantor2Customer)
                 .Include(l => l.Branch)
                 .FirstOrDefaultAsync(l => l.LoanAccountID == id);
 
@@ -320,6 +350,16 @@ namespace Bhisi.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<LoanAccount>> PostLoanAccount(LoanAccount loanAccount)
         {
+            // Sanitize 0 values for nullable FKs
+            if (loanAccount.CoMemberID.HasValue && loanAccount.CoMemberID.Value <= 0) loanAccount.CoMemberID = null;
+            if (loanAccount.CoMember2ID.HasValue && loanAccount.CoMember2ID.Value <= 0) loanAccount.CoMember2ID = null;
+            if (loanAccount.CoCustomerID.HasValue && loanAccount.CoCustomerID.Value <= 0) loanAccount.CoCustomerID = null;
+            if (loanAccount.CoCustomer2ID.HasValue && loanAccount.CoCustomer2ID.Value <= 0) loanAccount.CoCustomer2ID = null;
+            if (loanAccount.Guarantor1MemberID.HasValue && loanAccount.Guarantor1MemberID.Value <= 0) loanAccount.Guarantor1MemberID = null;
+            if (loanAccount.Guarantor2MemberID.HasValue && loanAccount.Guarantor2MemberID.Value <= 0) loanAccount.Guarantor2MemberID = null;
+            if (loanAccount.Guarantor1CustomerID.HasValue && loanAccount.Guarantor1CustomerID.Value <= 0) loanAccount.Guarantor1CustomerID = null;
+            if (loanAccount.Guarantor2CustomerID.HasValue && loanAccount.Guarantor2CustomerID.Value <= 0) loanAccount.Guarantor2CustomerID = null;
+
             // Resolve Customer & Member
             Customer? customer = null;
             Member? borrower = null;
@@ -334,7 +374,7 @@ namespace Bhisi.Api.Controllers
             }
             else if (loanAccount.MemberID.HasValue && loanAccount.MemberID.Value > 0)
             {
-                borrower = await _context.Members.FindAsync(loanAccount.MemberID.Value);
+                borrower = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == loanAccount.MemberID.Value);
                 if (borrower != null && borrower.CustomerID > 0)
                 {
                     customer = await _context.Customers.FindAsync(borrower.CustomerID);
@@ -343,6 +383,42 @@ namespace Bhisi.Api.Controllers
 
             loanAccount.CustomerID = customer?.CustomerID ?? (borrower?.CustomerID > 0 ? borrower.CustomerID : null);
             loanAccount.MemberID = borrower?.MemberID;
+
+            // Auto-generate LoanAccountNo if empty
+            if (string.IsNullOrWhiteSpace(loanAccount.LoanAccountNo))
+            {
+                int targetBranchId = loanAccount.BranchID > 0 ? loanAccount.BranchID : 1;
+                var branch = await _context.Branches.FindAsync(targetBranchId);
+                string branchCode = branch?.BranchCode ?? "01";
+                string prefix = $"{branchCode}02";
+
+                var existingAccNos = await _context.LoanAccounts
+                    .Where(a => a.BranchID == targetBranchId && a.LoanAccountNo != null && a.LoanAccountNo.StartsWith(prefix))
+                    .Select(l => l.LoanAccountNo!)
+                    .ToListAsync();
+
+                int maxSeq = 0;
+                foreach (var accNo in existingAccNos)
+                {
+                    if (accNo.Length > prefix.Length)
+                    {
+                        var suffix = accNo.Substring(prefix.Length);
+                        if (int.TryParse(suffix, out int val) && val > maxSeq)
+                        {
+                            maxSeq = val;
+                        }
+                    }
+                }
+                if (maxSeq == 0 && existingAccNos.Any()) maxSeq = existingAccNos.Count;
+                int nextSeq = maxSeq + 1;
+                string nextAccNo = $"{prefix}{nextSeq:D5}";
+                while (existingAccNos.Contains(nextAccNo))
+                {
+                    nextSeq++;
+                    nextAccNo = $"{prefix}{nextSeq:D5}";
+                }
+                loanAccount.LoanAccountNo = nextAccNo;
+            }
 
             _context.LoanAccounts.Add(loanAccount);
             await _context.SaveChangesAsync();
@@ -359,10 +435,26 @@ namespace Bhisi.Api.Controllers
             {
                 var loanRate = await _context.LoanRates.FindAsync(dto.LoanRateID);
 
+                // Resolve Customer & Member
+                Customer? customer = null;
+                Member? borrower = null;
+
+                if (dto.CustomerID.HasValue && dto.CustomerID.Value > 0)
+                {
+                    customer = await _context.Customers.FindAsync(dto.CustomerID.Value);
+                    if (customer != null) borrower = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                }
+                else if (dto.MemberID.HasValue && dto.MemberID.Value > 0)
+                {
+                    borrower = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == dto.MemberID.Value);
+                    if (borrower != null && borrower.CustomerID > 0) customer = await _context.Customers.FindAsync(borrower.CustomerID);
+                }
+
                 var loanAccount = new LoanAccount
                 {
                     BranchID = dto.BranchID,
-                    MemberID = dto.MemberID,
+                    CustomerID = customer?.CustomerID ?? (borrower?.CustomerID > 0 ? borrower.CustomerID : null),
+                    MemberID = borrower?.MemberID,
                     LoanRateID = dto.LoanRateID,
                     LoanAccountNo = dto.LoanAccountNo,
                     PrincipalBalance = dto.PrincipalBalance,
@@ -378,8 +470,14 @@ namespace Bhisi.Api.Controllers
                     MaturityDate = dto.MaturityDate,
                     InstallmentFrequency = dto.InstallmentFrequency,
                     LastInstallmentPaidDate = dto.LastInstallmentPaidDate,
-                    Guarantor1MemberID = dto.Guarantor1MemberID,
-                    Guarantor2MemberID = dto.Guarantor2MemberID,
+                    Guarantor1MemberID = dto.Guarantor1MemberID > 0 ? dto.Guarantor1MemberID : null,
+                    Guarantor2MemberID = dto.Guarantor2MemberID > 0 ? dto.Guarantor2MemberID : null,
+                    Guarantor1CustomerID = dto.Guarantor1CustomerID > 0 ? dto.Guarantor1CustomerID : null,
+                    Guarantor2CustomerID = dto.Guarantor2CustomerID > 0 ? dto.Guarantor2CustomerID : null,
+                    CoCustomerID = dto.CoCustomerID > 0 ? dto.CoCustomerID : null,
+                    CoCustomer2ID = dto.CoCustomer2ID > 0 ? dto.CoCustomer2ID : null,
+                    CoMemberID = dto.CoMemberID > 0 ? dto.CoMemberID : null,
+                    CoMember2ID = dto.CoMember2ID > 0 ? dto.CoMember2ID : null,
                     SecurityDetails = dto.SecurityDetails,
                     SecurityValue = dto.SecurityValue,
                     NoOfInstallments = dto.NoOfInstallments,
@@ -945,7 +1043,8 @@ namespace Bhisi.Api.Controllers
                 foreach (var row in rows)
                 {
                     // 1. Map Member by CIFNo
-                    var member = await _context.Members.FirstOrDefaultAsync(m => m.CIFNo == row.CIFNo);
+                    var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CIFNo == row.CIFNo);
+                    var member = customer != null ? await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID) : null;
                     if (member == null)
                     {
                         errors.Add($"Row with Loan {row.LoanAccountNo}: Member not found for CIFNo '{row.CIFNo}'.");
@@ -1040,6 +1139,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> PreviewInterestPosting([FromBody] LoanInterestPostingRequestDto request)
         {
             var query = _context.LoanAccounts
+                .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.LoanRate)
                 .Where(l => l.BranchID == request.BranchID && l.Status == "Active" && l.PrincipalBalance > 0)
@@ -1067,11 +1167,15 @@ namespace Bhisi.Api.Controllers
                 decimal newPrincipal = request.CapitalizeToPrincipal ? acc.PrincipalBalance + calculatedInterest : acc.PrincipalBalance;
                 decimal newInterest = request.CapitalizeToPrincipal ? acc.InterestBalance : acc.InterestBalance + calculatedInterest;
 
+                string borrowerName = acc.Customer != null 
+                    ? $"{acc.Customer.FirstName} {acc.Customer.LastName}".Trim() 
+                    : (acc.Member != null ? $"{acc.Member.FirstName} {acc.Member.LastName}".Trim() : "N/A");
+
                 items.Add(new LoanInterestPostingItemDto
                 {
                     LoanAccountID = acc.LoanAccountID,
                     LoanAccountNo = acc.LoanAccountNo,
-                    MemberName = acc.Member != null ? $"{acc.Member.FirstName} {acc.Member.LastName}" : "N/A",
+                    MemberName = borrowerName,
                     LoanSchemeName = acc.LoanRate?.LoanType ?? "कर्ज",
                     CurrentPrincipal = acc.PrincipalBalance,
                     CurrentInterest = acc.InterestBalance,
@@ -1086,9 +1190,10 @@ namespace Bhisi.Api.Controllers
 
             return Ok(new
             {
-                TotalAccounts = items.Count,
-                TotalCalculatedInterest = items.Sum(i => i.CalculatedInterest),
-                Items = items
+                postingDate = request.PostingDate,
+                totalAccounts = items.Count,
+                totalCalculatedInterest = items.Sum(i => i.CalculatedInterest),
+                items
             });
         }
 

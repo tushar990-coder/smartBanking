@@ -128,16 +128,19 @@ const FdWithdrawalMaturity: React.FC = () => {
     }
   };
 
-  const fetchMemberSavingsAccounts = async (memberId: number) => {
-    if (!memberId || memberId <= 0) {
+  const fetchMemberSavingsAccounts = async (memberId: number, customerId?: number) => {
+    if ((!memberId || memberId <= 0) && (!customerId || customerId <= 0)) {
       setMemberSavingAccounts([]);
       setSelectedSavingAccountId('');
       return;
     }
     try {
-      const res = await axios.get(`${API_URL}/SavingAccounts?memberId=${memberId}`);
+      const url = customerId 
+        ? `${API_URL}/SavingAccounts?customerId=${customerId}&memberId=${memberId || ''}`
+        : `${API_URL}/SavingAccounts?memberId=${memberId}`;
+      const res = await axios.get(url);
       const list: SavingAccount[] = Array.isArray(res.data)
-        ? res.data.filter((a: any) => a.status === 'Active' && a.memberID === memberId)
+        ? res.data.filter((a: any) => a.status === 'Active' || !a.status)
         : [];
       setMemberSavingAccounts(list);
       if (list.length > 0) {
@@ -178,7 +181,7 @@ const FdWithdrawalMaturity: React.FC = () => {
       if (matched) {
         setSelectedAccId(matched.fdAccountID);
         setSelectedAccount(matched);
-        fetchMemberSavingsAccounts(matched.memberID);
+        fetchMemberSavingsAccounts(matched.memberID, (matched as any).customerID || (matched.member as any)?.customerID);
       }
     } catch (err) {
       console.error('Error fetching accounts', err);
@@ -206,7 +209,7 @@ const FdWithdrawalMaturity: React.FC = () => {
     setError('');
     setSuccess('');
     if (selected) {
-      fetchMemberSavingsAccounts(selected.memberID);
+      fetchMemberSavingsAccounts(selected.memberID, (selected as any).customerID || (selected.member as any)?.customerID);
     } else {
       setMemberSavingAccounts([]);
       setSelectedSavingAccountId('');

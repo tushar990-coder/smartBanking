@@ -16,9 +16,8 @@ namespace Bhisi.Api.Models
         [ForeignKey("BranchID")]
         public virtual Branch? Branch { get; set; }
 
-        [Required]
         [MaxLength(20)]
-        public string CIFNo { get; set; } = string.Empty;
+        public string? CIFNo { get; set; } = string.Empty;
 
         [MaxLength(50)]
         public string? LegacyCustomerNo { get; set; }
@@ -169,6 +168,7 @@ namespace Bhisi.Api.Models
         public virtual ICollection<PigmyAccount> PigmyAccounts { get; set; } = new List<PigmyAccount>();
         public virtual ICollection<FdAccount> FdAccounts { get; set; } = new List<FdAccount>();
         public virtual ICollection<RdAccount> RdAccounts { get; set; } = new List<RdAccount>();
+        [InverseProperty("Customer")]
         public virtual ICollection<LoanAccount> LoanAccounts { get; set; } = new List<LoanAccount>();
         public virtual ICollection<CustomerOpeningBalance> OpeningBalances { get; set; } = new List<CustomerOpeningBalance>();
     }

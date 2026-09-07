@@ -200,7 +200,7 @@ namespace Bhisi.Api.Controllers
                 }
                 else if (request.MemberID.HasValue && request.MemberID.Value > 0)
                 {
-                    member = await _context.Members.FindAsync(request.MemberID.Value);
+                    member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == request.MemberID.Value);
                     if (member == null) return BadRequest("निवडलेला सभासद सिस्टीममध्ये अस्तित्वात नाही.");
                     if (member.Status != "Active") return BadRequest($"या सभासदाचे स्टेटस '{member.Status}' असल्यामुळे नवीन पिग्मी खाते उघडता येत नाही. केवळ सक्रिय (Active) सभासदांचीच ठेव स्वीकारली जाऊ शकते.");
 
@@ -381,7 +381,7 @@ namespace Bhisi.Api.Controllers
                 }
                 else if (request.MemberID.HasValue && request.MemberID.Value > 0)
                 {
-                    member = await _context.Members.FindAsync(request.MemberID.Value);
+                    member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == request.MemberID.Value);
                     if (member == null) return BadRequest("Invalid Member.");
                     if (member.CustomerID > 0) customer = await _context.Customers.FindAsync(member.CustomerID);
                 }

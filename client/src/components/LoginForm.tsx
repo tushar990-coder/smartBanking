@@ -10,7 +10,7 @@ export default function LoginForm() {
   
   const [formData, setFormData] = useState({
     username: 'admin',
-    password: 'admin123',
+    password: '',
     branchID: '',
     financialYearID: ''
   });
@@ -259,7 +259,8 @@ export default function LoginForm() {
                   className="block w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md text-xs font-semibold text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 focus:bg-white outline-none transition-all"
                   required
                   placeholder="••••••••"
-                  autoComplete="current-password"
+                  autoComplete="new-password"
+                  data-lpignore="true"
                 />
               </div>
             </div>

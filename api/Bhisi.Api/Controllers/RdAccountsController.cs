@@ -255,7 +255,7 @@ namespace Bhisi.Api.Controllers
             }
             else if (account.MemberID.HasValue && account.MemberID.Value > 0)
             {
-                member = await _context.Members.FindAsync(account.MemberID.Value);
+                member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == account.MemberID.Value);
                 if (member == null) return BadRequest("निवडलेला सभासद सिस्टीममध्ये अस्तित्वात नाही.");
                 if (member.Status != "Active") return BadRequest($"या सभासदाचे स्टेटस '{member.Status}' असल्यामुळे नवीन आवर्ती ठेव (RD) खाते उघडता येत नाही. केवळ सक्रिय (Active) सभासदांचीच ठेव स्वीकारली जाऊ शकते.");
 

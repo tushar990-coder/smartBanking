@@ -264,10 +264,10 @@ namespace Bhisi.Api.Controllers
         [HttpPost("FixCIFs")]
         public async Task<IActionResult> FixCIFs()
         {
-            var members = _context.Members.Where(m => string.IsNullOrEmpty(m.CIFNo)).ToList();
+            var members = _context.Members.Include(m => m.Customer).Where(m => m.Customer != null && string.IsNullOrEmpty(m.Customer.CIFNo)).ToList();
             foreach(var member in members)
             {
-                member.CIFNo = "CIF" + member.MemberID.ToString("D6");
+                if (member.Customer != null) member.Customer.CIFNo = "CIF" + member.MemberID.ToString("D6");
             }
             await _context.SaveChangesAsync();
             return Ok($"Fixed {members.Count} members.");

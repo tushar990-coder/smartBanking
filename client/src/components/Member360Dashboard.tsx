@@ -291,7 +291,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
             setLoading(true);
             setError('');
             try {
-                const res = await axios.get(`/api/Reports/Member360/${selectedMemberId}`);
+                const res = await axios.get(`/api/Reports/Customer360/${selectedMemberId}`);
                 setData(res.data);
             } catch (err) {
                 console.error("Failed to load 360 summary", err);

@@ -15,6 +15,11 @@ namespace Bhisi.Api.Models
         [ForeignKey("MemberID")]
         public virtual Member? Member { get; set; }
 
+        public int? CustomerID { get; set; }
+
+        [ForeignKey("CustomerID")]
+        public virtual Customer? Customer { get; set; }
+
         [Required]
         public int LedgerID { get; set; }
 

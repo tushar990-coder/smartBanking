@@ -32,6 +32,8 @@ import * as XLSX from 'xlsx';
 
 interface Member extends MemberOption {
   customerID?: number;
+  id?: number;
+  memberProfile?: any;
 }
 
 const SavingOpeningBalance: React.FC = () => {
@@ -334,11 +336,12 @@ const SavingOpeningBalance: React.FC = () => {
     setError('');
     setSuccess('');
 
-    const selected = members.find(m => 
-      (Number(formData.customerID) > 0 && m.customerID === Number(formData.customerID)) ||
-      (Number(formData.memberID) > 0 && (m.memberID === Number(formData.memberID) || m.customerID === Number(formData.memberID))) ||
-      (m.id === Number(formData.customerID || formData.memberID))
-    );
+    const selected = (Number(formData.customerID) > 0 
+      ? members.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID)) 
+      : null) ||
+      (Number(formData.memberID) > 0 
+        ? members.find(m => m.memberID === Number(formData.memberID) || m.memberProfile?.memberID === Number(formData.memberID)) 
+        : null);
 
     const resolvedCustomerId = selected?.customerID || Number(formData.customerID) || (selected?.id ? Number(selected.id) : 0);
     const rawMemId = selected?.memberProfile?.memberID || selected?.memberID;
@@ -388,11 +391,12 @@ const SavingOpeningBalance: React.FC = () => {
   const executeSave = async (finalJointHolders?: number[], customCustomerId?: number, customMemberId?: number | null) => {
     setLoading(true);
     try {
-      const selected = members.find(m => 
-        (Number(formData.customerID) > 0 && m.customerID === Number(formData.customerID)) ||
-        (Number(formData.memberID) > 0 && (m.memberID === Number(formData.memberID) || m.customerID === Number(formData.memberID))) ||
-        (m.id === Number(formData.customerID || formData.memberID))
-      );
+      const selected = (Number(formData.customerID) > 0 
+        ? members.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID)) 
+        : null) ||
+        (Number(formData.memberID) > 0 
+          ? members.find(m => m.memberID === Number(formData.memberID) || m.memberProfile?.memberID === Number(formData.memberID)) 
+          : null);
 
       const resolvedCustomerId = customCustomerId !== undefined ? customCustomerId : (selected?.customerID || Number(formData.customerID) || (selected?.id ? Number(selected.id) : 0));
       const rawMemId = customMemberId !== undefined ? customMemberId : (selected?.memberProfile?.memberID || selected?.memberID);
@@ -504,11 +508,17 @@ const SavingOpeningBalance: React.FC = () => {
     return `${cifPart}${m.memberCode} - ${m.firstName} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName}${oldCodePart}`;
   };
 
-  const selectedMember = members.find(m => 
-    (Number(formData.customerID) > 0 && m.customerID === Number(formData.customerID)) ||
-    (Number(formData.memberID) > 0 && (m.memberID === Number(formData.memberID) || m.customerID === Number(formData.memberID))) ||
-    (m.id === Number(formData.customerID || formData.memberID))
-  );
+  const selectedMember = React.useMemo(() => {
+    if (Number(formData.customerID) > 0) {
+      const matchCust = members.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
+      if (matchCust) return matchCust;
+    }
+    if (Number(formData.memberID) > 0) {
+      const matchMem = members.find(m => m.memberID === Number(formData.memberID) || m.memberProfile?.memberID === Number(formData.memberID));
+      if (matchMem) return matchMem;
+    }
+    return null;
+  }, [formData.customerID, formData.memberID, members]);
 
   const existingMemberAccounts = allSavingAccounts.filter((a: any) => {
     if (a.savingAccountID === editAccountId) return false;
@@ -735,14 +745,14 @@ const SavingOpeningBalance: React.FC = () => {
                 <MemberSearchSelect
                   members={members}
                   value={formData.customerID || formData.memberID || ''}
-                  onChange={(val) => {
+                  onChange={(val, selectedItem) => {
                     if (!val) {
                       setFormData((prev) => ({ ...prev, customerID: 0, memberID: 0 }));
                       return;
                     }
-                    const selected = members.find(m => (m.customerID === Number(val) || m.memberID === Number(val) || m.id === Number(val)));
-                    const custId = selected?.customerID || Number(val);
-                    const memId = selected?.memberProfile?.memberID || selected?.memberID || 0;
+                    const custId = selectedItem?.customerID || Number(val);
+                    const rawMemId = selectedItem?.memberProfile?.memberID || selectedItem?.memberIdOnly || selectedItem?.memberID;
+                    const memId = rawMemId && Number(rawMemId) > 0 ? Number(rawMemId) : 0;
                     setFormData((prev) => ({
                       ...prev,
                       customerID: custId,

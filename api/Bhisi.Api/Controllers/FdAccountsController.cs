@@ -413,7 +413,7 @@ namespace Bhisi.Api.Controllers
             }
             else if (req.MemberID.HasValue && req.MemberID.Value > 0)
             {
-                member = await _context.Members.FindAsync(req.MemberID.Value);
+                member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == req.MemberID.Value);
                 if (member == null) return BadRequest("निवडलेला सभासद सिस्टीममध्ये अस्तित्वात नाही.");
                 if (member.Status != "Active") return BadRequest($"या सभासदाचे स्टेटस '{member.Status}' असल्यामुळे नवीन मुदत ठेव खाते उघडता येत नाही. केवळ सक्रिय (Active) सभासदांचीच ठेव स्वीकारली जाऊ शकते.");
 
@@ -1815,21 +1815,35 @@ namespace Bhisi.Api.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> GetMemberFdLedger(int? memberId, int? customerId)
         {
-            int lookupId = memberId ?? customerId ?? 0;
-            if (lookupId <= 0) return BadRequest("वैध सभासद किंवा ग्राहक आयडी आवश्यक आहे.");
-
-            var member = await _context.Members
-                .Include(m => m.Branch)
-                .FirstOrDefaultAsync(m => m.MemberID == lookupId || (m.CustomerID.HasValue && m.CustomerID.Value == lookupId));
-
             Customer? customer = null;
-            if (member?.CustomerID != null)
+            Member? member = null;
+
+            if (customerId.HasValue && customerId.Value > 0)
             {
-                customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == member.CustomerID.Value);
+                customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
+                if (customer != null)
+                {
+                    member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                }
             }
             else
             {
+                int lookupId = memberId ?? customerId ?? 0;
+                if (lookupId <= 0) return BadRequest("वैध सभासद किंवा ग्राहक आयडी आवश्यक आहे.");
+
                 customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == lookupId);
+                if (customer != null)
+                {
+                    member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                }
+                else
+                {
+                    member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == lookupId);
+                    if (member?.CustomerID != null)
+                    {
+                        customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == member.CustomerID.Value);
+                    }
+                }
             }
 
             if (member == null && customer == null) return NotFound("सभासद किंवा ग्राहक सापडला नाही.");

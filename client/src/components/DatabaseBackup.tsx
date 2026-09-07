@@ -13,7 +13,7 @@ const DatabaseBackup: React.FC = () => {
             // Extract token safely from local storage
             let token = localStorage.getItem('token');
             if (!token) {
-                const savedUser = localStorage.getItem('bhisi_user');
+                const savedUser = sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user');
                 if (savedUser) {
                     try {
                         const parsed = JSON.parse(savedUser);

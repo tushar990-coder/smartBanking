@@ -27,13 +27,18 @@ namespace Bhisi.Api.Controllers
         {
             var closings = await _context.SavingAccountClosings
                 .Include(c => c.SavingAccount)
-                .ThenInclude(a => a!.Member)
+                    .ThenInclude(a => a!.Customer)
+                .Include(c => c.SavingAccount)
+                    .ThenInclude(a => a!.Member)
                 .OrderByDescending(c => c.ClosureDate)
                 .Select(c => new {
                     c.ClosingID,
                     AccountNo = c.SavingAccount != null ? c.SavingAccount.AccountNo : "",
-                    MemberName = c.SavingAccount != null && c.SavingAccount.Member != null ? 
-                                 $"{c.SavingAccount.Member.FirstName} {c.SavingAccount.Member.LastName}" : "",
+                    MemberName = c.SavingAccount != null 
+                        ? (c.SavingAccount.Customer != null 
+                            ? $"{c.SavingAccount.Customer.FirstName} {c.SavingAccount.Customer.LastName}".Trim() 
+                            : (c.SavingAccount.Member != null ? $"{c.SavingAccount.Member.FirstName} {c.SavingAccount.Member.LastName}".Trim() : ""))
+                        : "",
                     c.ClosureDate,
                     c.GrossBalance,
                     c.ClosingCharges,
@@ -128,8 +133,11 @@ namespace Bhisi.Api.Controllers
                     int nextSeq = (lastVoucher?.VoucherID ?? 0) + 1;
                     voucherNo = $"VCH-SAV-CLS-{branchCode}-{todayStr}-{nextSeq:D4}";
 
-                    var member = await _context.Members.FindAsync(account.MemberID);
-                    string memberName = member != null ? $"{member.FirstName} {member.LastName}" : "";
+                    var customer = account.CustomerID > 0 ? await _context.Customers.FindAsync(account.CustomerID) : null;
+                    var member = account.MemberID.HasValue ? await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == account.MemberID.Value) : null;
+                    string memberName = customer != null 
+                        ? $"{customer.FirstName} {customer.LastName}".Trim() 
+                        : (member != null ? $"{member.FirstName} {member.LastName}".Trim() : "");
 
                     var voucher = new Voucher
                     {

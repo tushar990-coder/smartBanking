@@ -15,16 +15,23 @@ namespace Bhisi.Api.Models
         [ForeignKey("SavingAccountID")]
         public virtual SavingAccountMaster? SavingAccount { get; set; }
 
-        [Required]
-        public int MemberID { get; set; }
-
-        [ForeignKey("MemberID")]
-        public virtual Member? Member { get; set; }
-
         public int? CustomerID { get; set; }
 
         [ForeignKey("CustomerID")]
         public virtual Customer? Customer { get; set; }
+
+        [NotMapped]
+        public int? MemberID
+        {
+            get => Customer?.MemberProfile?.MemberID;
+            set { /* backward compatibility no-op */ }
+        }
+
+        [NotMapped]
+        public virtual Member? Member => Customer?.MemberProfile;
+
+        [NotMapped]
+        public int? ResolvedMemberID => Customer?.MemberProfile?.MemberID;
 
         public DateTime CreatedOn { get; set; } = DateTime.UtcNow;
     }

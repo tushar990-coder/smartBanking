@@ -58,7 +58,7 @@ axios.interceptors.request.use((config) => {
     }
   }
 
-  const savedUser = localStorage.getItem('bhisi_user');
+  const savedUser = sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user');
   if (savedUser) {
     try {
       const user = JSON.parse(savedUser);
@@ -81,8 +81,9 @@ axios.interceptors.response.use(
   (error) => {
     if (error.response && error.response.status === 401) {
       const isLoginRequest = error.config && error.config.url && error.config.url.includes('/api/Auth/login');
-      if (!isLoginRequest && localStorage.getItem('bhisi_user')) {
+      if (!isLoginRequest && (sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user'))) {
         console.warn("Session expired or unauthorized. Clearing user session.");
+        sessionStorage.removeItem('bhisi_user');
         localStorage.removeItem('bhisi_user');
         window.location.reload();
       }
@@ -129,7 +130,7 @@ window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
     }
   }
 
-  const savedUser = localStorage.getItem('bhisi_user');
+  const savedUser = sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user');
   if (savedUser) {
     try {
       const user = JSON.parse(savedUser);

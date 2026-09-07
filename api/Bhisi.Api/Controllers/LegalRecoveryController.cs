@@ -176,9 +176,12 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetEligibleOverdueLoans([FromQuery] int? branchId = null)
         {
             var query = _context.LoanAccounts
+                .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.CoMember)
                 .Include(l => l.CoMember2)
+                .Include(l => l.CoCustomer)
+                .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
                 .Include(l => l.Branch)
                 .Where(l => l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0)
@@ -198,13 +201,26 @@ namespace Bhisi.Api.Controllers
                     l.BranchID,
                     BranchName = l.Branch != null ? l.Branch.BranchName : "",
                     l.LoanAccountNo,
+                    l.CustomerID,
                     l.MemberID,
-                    MemberName = l.Member != null ? $"{l.Member.FirstName} {l.Member.MiddleName} {l.Member.LastName}".Trim() : "",
-                    MemberCode = l.Member != null ? l.Member.MemberCode : "",
-                    MobileNo = l.Member != null ? l.Member.MobileNo : "",
-                    Address = l.Member != null ? $"{l.Member.Address}, {l.Member.Village}, {l.Member.Taluka}, {l.Member.District}" : "",
-                    CoMemberName = l.CoMember != null ? $"{l.CoMember.FirstName} {l.CoMember.LastName}".Trim() : "",
-                    CoMember2Name = l.CoMember2 != null ? $"{l.CoMember2.FirstName} {l.CoMember2.LastName}".Trim() : "",
+                    MemberName = l.Customer != null 
+                        ? $"{l.Customer.FirstName} {l.Customer.MiddleName} {l.Customer.LastName}".Trim() 
+                        : (l.Member != null ? $"{l.Member.FirstName} {l.Member.MiddleName} {l.Member.LastName}".Trim() : ""),
+                    MemberCode = l.Member != null && !string.IsNullOrWhiteSpace(l.Member.MemberCode) 
+                        ? l.Member.MemberCode 
+                        : (l.Customer != null ? l.Customer.CIFNo : ""),
+                    MobileNo = l.Customer != null && !string.IsNullOrWhiteSpace(l.Customer.MobileNo) 
+                        ? l.Customer.MobileNo 
+                        : (l.Member != null ? l.Member.MobileNo : ""),
+                    Address = l.Customer != null 
+                        ? $"{l.Customer.Address}, {l.Customer.Village}, {l.Customer.Taluka}, {l.Customer.District}" 
+                        : (l.Member != null ? $"{l.Member.Address}, {l.Member.Village}, {l.Member.Taluka}, {l.Member.District}" : ""),
+                    CoMemberName = l.CoCustomer != null 
+                        ? $"{l.CoCustomer.FirstName} {l.CoCustomer.LastName}".Trim() 
+                        : (l.CoMember != null ? $"{l.CoMember.FirstName} {l.CoMember.LastName}".Trim() : ""),
+                    CoMember2Name = l.CoCustomer2 != null 
+                        ? $"{l.CoCustomer2.FirstName} {l.CoCustomer2.LastName}".Trim() 
+                        : (l.CoMember2 != null ? $"{l.CoMember2.FirstName} {l.CoMember2.LastName}".Trim() : ""),
                     LoanScheme = l.LoanRate != null ? l.LoanRate.LoanType : "",
                     l.PrincipalBalance,
                     l.InterestBalance,
@@ -225,9 +241,16 @@ namespace Bhisi.Api.Controllers
             var targetDate = asOnDate ?? DateTime.Today;
 
             var loan = await _context.LoanAccounts
+                .Include(l => l.Customer)
                 .Include(l => l.Member)
+                .Include(l => l.CoCustomer)
+                .Include(l => l.CoCustomer2)
                 .Include(l => l.CoMember)
                 .Include(l => l.CoMember2)
+                .Include(l => l.Guarantor1Customer)
+                .Include(l => l.Guarantor2Customer)
+                .Include(l => l.Guarantor1Member)
+                .Include(l => l.Guarantor2Member)
                 .Include(l => l.LoanRate)
                 .Include(l => l.Branch)
                 .FirstOrDefaultAsync(l => l.LoanAccountID == loanAccountId);
@@ -256,29 +279,53 @@ namespace Bhisi.Api.Controllers
                 AsOnDate = targetDate.ToString("yyyy-MM-dd"),
                 Borrower = new
                 {
+                    CustomerID = loan.CustomerID,
                     MemberID = loan.MemberID,
-                    FullName = $"{loan.Member?.FirstName} {loan.Member?.MiddleName} {loan.Member?.LastName}".Trim(),
-                    MemberCode = loan.Member?.MemberCode,
-                    Address = $"{loan.Member?.Address}, {loan.Member?.Village}, {loan.Member?.Taluka}, {loan.Member?.District}".Trim(),
-                    MobileNo = loan.Member?.MobileNo,
-                    AadhaarNo = loan.Member?.AadhaarNo,
-                    PanNo = loan.Member?.PANNo
+                    FullName = loan.Customer != null 
+                        ? $"{loan.Customer.FirstName} {loan.Customer.MiddleName} {loan.Customer.LastName}".Trim() 
+                        : ($"{loan.Member?.FirstName} {loan.Member?.MiddleName} {loan.Member?.LastName}".Trim()),
+                    MemberCode = loan.Member?.MemberCode ?? loan.Customer?.CIFNo,
+                    CIFNo = loan.Customer?.CIFNo ?? loan.Member?.CIFNo,
+                    Address = loan.Customer != null 
+                        ? $"{loan.Customer.Address}, {loan.Customer.Village}, {loan.Customer.Taluka}, {loan.Customer.District}".Trim() 
+                        : ($"{loan.Member?.Address}, {loan.Member?.Village}, {loan.Member?.Taluka}, {loan.Member?.District}".Trim()),
+                    MobileNo = loan.Customer?.MobileNo ?? loan.Member?.MobileNo,
+                    AadhaarNo = loan.Customer?.AadhaarNo ?? loan.Member?.AadhaarNo,
+                    PanNo = loan.Customer?.PANNo ?? loan.Member?.PANNo
                 },
-                Guarantor1 = loan.CoMember != null ? new
+                Guarantor1 = (loan.Guarantor1Customer != null || loan.Guarantor1Member != null || loan.CoCustomer != null || loan.CoMember != null) ? new
                 {
-                    MemberID = loan.CoMember.MemberID,
-                    FullName = $"{loan.CoMember.FirstName} {loan.CoMember.MiddleName} {loan.CoMember.LastName}".Trim(),
-                    MemberCode = loan.CoMember.MemberCode,
-                    Address = $"{loan.CoMember.Address}, {loan.CoMember.Village}, {loan.CoMember.Taluka}, {loan.CoMember.District}",
-                    MobileNo = loan.CoMember.MobileNo
+                    MemberID = loan.Guarantor1Member?.MemberID ?? loan.CoMember?.MemberID,
+                    CustomerID = loan.Guarantor1Customer?.CustomerID ?? loan.CoCustomer?.CustomerID,
+                    FullName = loan.Guarantor1Customer != null 
+                        ? $"{loan.Guarantor1Customer.FirstName} {loan.Guarantor1Customer.MiddleName} {loan.Guarantor1Customer.LastName}".Trim()
+                        : (loan.Guarantor1Member != null 
+                            ? $"{loan.Guarantor1Member.FirstName} {loan.Guarantor1Member.MiddleName} {loan.Guarantor1Member.LastName}".Trim()
+                            : (loan.CoCustomer != null 
+                                ? $"{loan.CoCustomer.FirstName} {loan.CoCustomer.LastName}".Trim() 
+                                : $"{loan.CoMember?.FirstName} {loan.CoMember?.LastName}".Trim())),
+                    MemberCode = loan.Guarantor1Member?.MemberCode ?? loan.Guarantor1Customer?.CIFNo ?? loan.CoMember?.MemberCode ?? loan.CoCustomer?.CIFNo,
+                    Address = loan.Guarantor1Customer != null 
+                        ? $"{loan.Guarantor1Customer.Address}, {loan.Guarantor1Customer.Village}, {loan.Guarantor1Customer.Taluka}, {loan.Guarantor1Customer.District}"
+                        : $"{loan.Guarantor1Member?.Address}, {loan.Guarantor1Member?.Village}, {loan.Guarantor1Member?.Taluka}, {loan.Guarantor1Member?.District}",
+                    MobileNo = loan.Guarantor1Customer?.MobileNo ?? loan.Guarantor1Member?.MobileNo ?? loan.CoCustomer?.MobileNo ?? loan.CoMember?.MobileNo
                 } : null,
-                Guarantor2 = loan.CoMember2 != null ? new
+                Guarantor2 = (loan.Guarantor2Customer != null || loan.Guarantor2Member != null || loan.CoCustomer2 != null || loan.CoMember2 != null) ? new
                 {
-                    MemberID = loan.CoMember2.MemberID,
-                    FullName = $"{loan.CoMember2.FirstName} {loan.CoMember2.MiddleName} {loan.CoMember2.LastName}".Trim(),
-                    MemberCode = loan.CoMember2.MemberCode,
-                    Address = $"{loan.CoMember2.Address}, {loan.CoMember2.Village}, {loan.CoMember2.Taluka}, {loan.CoMember2.District}",
-                    MobileNo = loan.CoMember2.MobileNo
+                    MemberID = loan.Guarantor2Member?.MemberID ?? loan.CoMember2?.MemberID,
+                    CustomerID = loan.Guarantor2Customer?.CustomerID ?? loan.CoCustomer2?.CustomerID,
+                    FullName = loan.Guarantor2Customer != null 
+                        ? $"{loan.Guarantor2Customer.FirstName} {loan.Guarantor2Customer.MiddleName} {loan.Guarantor2Customer.LastName}".Trim()
+                        : (loan.Guarantor2Member != null 
+                            ? $"{loan.Guarantor2Member.FirstName} {loan.Guarantor2Member.MiddleName} {loan.Guarantor2Member.LastName}".Trim()
+                            : (loan.CoCustomer2 != null 
+                                ? $"{loan.CoCustomer2.FirstName} {loan.CoCustomer2.LastName}".Trim() 
+                                : $"{loan.CoMember2?.FirstName} {loan.CoMember2?.LastName}".Trim())),
+                    MemberCode = loan.Guarantor2Member?.MemberCode ?? loan.Guarantor2Customer?.CIFNo ?? loan.CoMember2?.MemberCode ?? loan.CoCustomer2?.CIFNo,
+                    Address = loan.Guarantor2Customer != null 
+                        ? $"{loan.Guarantor2Customer.Address}, {loan.Guarantor2Customer.Village}, {loan.Guarantor2Customer.Taluka}, {loan.Guarantor2Customer.District}"
+                        : $"{loan.Guarantor2Member?.Address}, {loan.Guarantor2Member?.Village}, {loan.Guarantor2Member?.Taluka}, {loan.Guarantor2Member?.District}",
+                    MobileNo = loan.Guarantor2Customer?.MobileNo ?? loan.Guarantor2Member?.MobileNo ?? loan.CoCustomer2?.MobileNo ?? loan.CoMember2?.MobileNo
                 } : null,
                 LoanDetails = new
                 {

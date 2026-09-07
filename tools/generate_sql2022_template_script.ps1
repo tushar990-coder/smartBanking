@@ -239,7 +239,7 @@ Write-Host "Exporting preserved master seed data..."
 [void]$sb.AppendLine("GO")
 
 # Helper function to script table data
-function Script-TableData($tblName, $hasIdentity = $true) {
+function Export-TableData($tblName, $hasIdentity = $true) {
     $cmd = $conn.CreateCommand()
     $cmd.CommandText = "SELECT * FROM dbo.[$tblName]"
     $r = $cmd.ExecuteReader()
@@ -319,7 +319,7 @@ $tablesToSeed = @(
 )
 
 foreach ($item in $tablesToSeed) {
-    $script = Script-TableData -tblName $item.Name -hasIdentity $item.HasIdentity
+    $script = Export-TableData -tblName $item.Name -hasIdentity $item.HasIdentity
     if ($script -ne "") {
         [void]$sb.AppendLine($script)
     }

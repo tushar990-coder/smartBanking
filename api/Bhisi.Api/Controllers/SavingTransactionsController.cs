@@ -27,7 +27,8 @@ namespace Bhisi.Api.Controllers
         {
             var query = _context.SavingTransactions
                 .Include(t => t.SavingAccount)
-                .ThenInclude(a => a!.Member)
+                    .ThenInclude(a => a!.Customer)
+                        .ThenInclude(c => c!.MemberProfile)
                 .OrderByDescending(t => t.TransactionDate)
                 .Select(t => new {
                     t.TransactionID,
@@ -39,8 +40,11 @@ namespace Bhisi.Api.Controllers
                     t.Narration,
                     t.VoucherNo,
                     AccountNo = t.SavingAccount != null ? t.SavingAccount.AccountNo : "",
-                    MemberName = t.SavingAccount != null && t.SavingAccount.Member != null ? 
-                                 t.SavingAccount.Member.FirstName + " " + t.SavingAccount.Member.LastName : ""
+                    MemberName = t.SavingAccount != null 
+                        ? (t.SavingAccount.Customer != null 
+                            ? (t.SavingAccount.Customer.FirstName + (string.IsNullOrWhiteSpace(t.SavingAccount.Customer.MiddleName) ? "" : " " + t.SavingAccount.Customer.MiddleName) + " " + t.SavingAccount.Customer.LastName).Trim()
+                            : (t.SavingAccount.Member != null ? (t.SavingAccount.Member.FirstName + (string.IsNullOrWhiteSpace(t.SavingAccount.Member.MiddleName) ? "" : " " + t.SavingAccount.Member.MiddleName) + " " + t.SavingAccount.Member.LastName).Trim() : ""))
+                        : ""
                 });
 
             if (page.HasValue || pageSize.HasValue)
@@ -57,6 +61,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpGet("account/{accountId}")]
+        [HttpGet("ByAccount/{accountId}")]
         public async Task<ActionResult<IEnumerable<SavingTransaction>>> GetTransactionsByAccount(int accountId)
         {
             return await _context.SavingTransactions
@@ -190,11 +195,17 @@ namespace Bhisi.Api.Controllers
                 // === Auto Voucher Generation ===
                 int savingControlLedgerID = account.LedgerID;
                 
-                // Get member info and BranchID for narration, branch routing and numbering
+                // Get member/customer info and BranchID for narration, branch routing and numbering
                 var memberInfo = await _context.SavingAccountMasters
-                    .Include(s => s.Member)
+                    .Include(s => s.Customer)
                     .Where(s => s.SavingAccountID == txn.SavingAccountID)
-                    .Select(s => new { s.AccountNo, s.BranchID, MemberName = s.Member != null ? s.Member.FirstName + " " + s.Member.LastName : "" })
+                    .Select(s => new { 
+                        s.AccountNo, 
+                        s.BranchID, 
+                        MemberName = s.Customer != null 
+                            ? (s.Customer.FirstName + " " + s.Customer.LastName).Trim() 
+                            : "" 
+                    })
                     .FirstOrDefaultAsync();
 
                 int targetBranchId = memberInfo?.BranchID ?? 1;

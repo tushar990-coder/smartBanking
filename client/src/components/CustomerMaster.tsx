@@ -593,7 +593,7 @@ export default function CustomerMaster() {
 
     try {
       let response;
-      if (editingId) {
+      if (editingId !== null) {
         response = await fetch(`${API_URL}/${editingId}`, {
           method: 'PUT',
           headers: {
@@ -620,7 +620,7 @@ export default function CustomerMaster() {
         } catch {
           savedCustomer = {};
         }
-        const targetCustomerId = editingId || savedCustomer.customerID;
+        const targetCustomerId = (editingId !== null) ? editingId : savedCustomer.customerID;
 
         // If agent request was loaded, approve it
         if (selectedRequestId) {
@@ -660,7 +660,7 @@ export default function CustomerMaster() {
           }
         }
 
-        alert(editingId ? "खातेदार माहिती यशस्वीरित्या अपडेट झाली!" : "नवीन खातेदार (CIF) यशस्वीरित्या सेव्ह झाला!");
+        alert(editingId !== null ? "खातेदार माहिती यशस्वीरित्या अपडेट झाली!" : "नवीन खातेदार (CIF) यशस्वीरित्या सेव्ह झाला!");
         resetForm();
         fetchCustomers();
         fetchPendingAgentRequests();
@@ -994,7 +994,7 @@ export default function CustomerMaster() {
             <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
               <span>ग्राहक / खातेदार नोंदणी मास्टर</span>
               <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Customer / CIF Master)</span>
-              {editingId && (
+              {editingId !== null && (
                 <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
                   ✏️ संपादन चालू (#{editingId})
                 </span>
@@ -1008,7 +1008,7 @@ export default function CustomerMaster() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
-          {editingId && (
+          {editingId !== null && (
             <button
               type="button"
               onClick={resetForm}
@@ -1137,7 +1137,7 @@ export default function CustomerMaster() {
       <div 
         ref={formContainerRef}
         className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-          editingId ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+          editingId !== null ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -1225,7 +1225,7 @@ export default function CustomerMaster() {
                   value={formData.firstName} 
                   onChange={handleChange} 
                   required
-                  className={`${inputClass} ${editingId ? 'bg-amber-50/60 font-semibold' : ''}`} 
+                  className={`${inputClass} ${editingId !== null ? 'bg-amber-50/60 font-semibold' : ''}`} 
                   placeholder="पहिले नाव" 
                 />
               </div>
@@ -2121,10 +2121,10 @@ export default function CustomerMaster() {
               className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>{editingId ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
+              <span>{editingId !== null ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
             </button>
 
-            {editingId && (
+            {editingId !== null && (
               <button
                 type="button"
                 onClick={() => handleDelete(Number(editingId))}
@@ -2139,11 +2139,11 @@ export default function CustomerMaster() {
             <button
               type="submit"
               className={`px-6 py-2 ${
-                editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary hover:opacity-90'
+                editingId !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary hover:opacity-90'
               } text-white font-bold rounded-sm text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition-all`}
             >
               <CheckSquare className="w-4 h-4" />
-              <span>{editingId ? '✏️ खातेदार अपडेट करा' : '💾 नवीन खातेदार (CIF) सेव्ह करा'}</span>
+              <span>{editingId !== null ? '✏️ खातेदार अपडेट करा' : '💾 नवीन खातेदार (CIF) सेव्ह करा'}</span>
             </button>
           </div>
 

@@ -26,10 +26,18 @@ namespace Bhisi.Api.Models
         [ForeignKey("CustomerID")]
         public virtual Customer? Customer { get; set; }
 
-        public int? MemberID { get; set; }
-        
-        [ForeignKey("MemberID")]
-        public virtual Member? Member { get; set; }
+        [NotMapped]
+        public int? MemberID
+        {
+            get => Customer?.MemberProfile?.MemberID;
+            set { /* backward compatibility no-op */ }
+        }
+
+        [NotMapped]
+        public virtual Member? Member => Customer?.MemberProfile;
+
+        [NotMapped]
+        public int? ResolvedMemberID => Customer?.MemberProfile?.MemberID;
 
         // खाते प्रकार - Personal / Joint
         [MaxLength(20)]

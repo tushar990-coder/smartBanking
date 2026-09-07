@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
+import { MemberOption } from './common/MemberSearchSelect';
 import FdReceiptPrintModal from './FdReceiptPrintModal';
 
 interface Member extends MemberOption {}
@@ -127,7 +128,11 @@ const FdAccountOpening: React.FC = () => {
 
   const fetchMemberSavingsAccounts = async (mId: number) => {
     try {
-      const response = await axios.get(`${API_URL}/SavingAccounts?memberId=${mId}`);
+      const selected = members.find((m: any) => (m.customerID || m.memberID) === mId);
+      const cId = selected?.customerID || mId;
+      const memId = selected?.memberProfile?.memberID || selected?.memberID || mId;
+
+      const response = await axios.get(`${API_URL}/SavingAccounts?customerId=${cId}&memberId=${memId}`);
       const accs = response.data || [];
       setMemberSavingsAccounts(accs);
       if (accs.length > 0) {

@@ -55,7 +55,10 @@ export interface LoanApplication {
   loanApplicationID: number;
   applicationNo: string;
   applicationDate: string;
-  memberID: number;
+  customerID?: number;
+  memberID?: number;
+  coCustomerID?: number;
+  coCustomer2ID?: number;
   coMemberID?: number;
   coMember2ID?: number;
   loanRateID: number;
@@ -69,11 +72,14 @@ export interface LoanApplication {
   firstInstallmentDate?: string;
   maturityDate?: string;
   recommendedByDirectorID?: number;
+  guarantor1CustomerID?: number;
+  guarantor2CustomerID?: number;
   guarantor1MemberID?: number;
   guarantor2MemberID?: number;
   securityDetails?: string;
   securityValue?: number;
   purpose?: string;
+  customer?: any;
   member?: Member;
   loanRate?: LoanRate;
 }
@@ -231,9 +237,14 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
   const initialFormState: Partial<LoanApplication> = {
     applicationNo: "AUTO",
     applicationDate: new Date().toISOString().split('T')[0],
+    customerID: 0,
     memberID: 0,
+    coCustomerID: 0,
+    coCustomer2ID: 0,
     coMemberID: 0,
     coMember2ID: 0,
+    guarantor1CustomerID: 0,
+    guarantor2CustomerID: 0,
     loanRateID: 0,
     requestedAmount: 0,
     interestRate: 0,
@@ -552,8 +563,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     setError('');
     setSuccess('');
 
-    if (!formData.memberID) {
-      setError('कृपया अर्जदार सभासद निवडा! (Please select Applicant Member)');
+    if (!formData.memberID && !formData.customerID) {
+      setError('कृपया अर्जदार ग्राहक किंवा सभासद निवडा! (Please select Applicant)');
       return;
     }
 
@@ -565,10 +576,22 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     setLoading(true);
     try {
       let savedData: any = null;
+      // Resolve applicant customer and member ID
+      const selApp = members.find((m: any) => 
+        (formData.customerID && (m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID))) ||
+        (formData.memberID && (m.memberID === Number(formData.memberID) || m.memberProfile?.memberID === Number(formData.memberID)))
+      );
+      const resolvedCustId = formData.customerID || selApp?.customerID || selApp?.id || selApp?.memberProfile?.customerID || null;
+      const resolvedMemId = formData.memberID || selApp?.memberProfile?.memberID || selApp?.memberID || null;
+
       const payload: any = {
         ...formData,
-        customerID: Number(formData.memberID),
-        memberID: Number(formData.memberID),
+        customerID: resolvedCustId ? Number(resolvedCustId) : null,
+        memberID: resolvedMemId ? Number(resolvedMemId) : null,
+        coCustomerID: formData.coCustomerID && Number(formData.coCustomerID) > 0 ? Number(formData.coCustomerID) : null,
+        coCustomer2ID: (formData as any).coCustomer2ID && Number((formData as any).coCustomer2ID) > 0 ? Number((formData as any).coCustomer2ID) : null,
+        guarantor1CustomerID: (formData as any).guarantor1CustomerID && Number((formData as any).guarantor1CustomerID) > 0 ? Number((formData as any).guarantor1CustomerID) : null,
+        guarantor2CustomerID: (formData as any).guarantor2CustomerID && Number((formData as any).guarantor2CustomerID) > 0 ? Number((formData as any).guarantor2CustomerID) : null,
         loanRateID: Number(formData.loanRateID),
         requestedAmount: parseFloat(String(formData.requestedAmount || '0')),
         interestRate: parseFloat(String(formData.interestRate || '0')),
@@ -584,10 +607,15 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
         firstInstallmentDate: formData.firstInstallmentDate ? formData.firstInstallmentDate : null,
         maturityDate: formData.maturityDate ? formData.maturityDate : null,
       };
+      delete payload.customer;
       delete payload.member;
+      delete payload.coCustomer;
+      delete payload.coCustomer2;
       delete payload.coMember;
       delete payload.coMember2;
       delete payload.loanRate;
+      delete payload.guarantor1Customer;
+      delete payload.guarantor2Customer;
       delete payload.guarantor1Member;
       delete payload.guarantor2Member;
       delete payload.recommendedByDirector;
@@ -874,15 +902,22 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     XLSX.writeFile(wb, `Loan_Applications_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const selectedMember = members.find(m => m.memberID === Number(formData.memberID));
+  const selectedMember = members.find((m: any) => 
+    (formData.customerID && (m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID))) ||
+    (formData.memberID && (m.memberID === Number(formData.memberID) || m.memberProfile?.memberID === Number(formData.memberID)))
+  );
 
   const filteredApps = applications.filter(a => {
     const q = searchTerm.toLowerCase();
+    const custName = a.customer ? `${a.customer.firstName || ''} ${a.customer.lastName || ''}`.toLowerCase() : '';
+    const custCif = a.customer?.cifNo ? a.customer.cifNo.toLowerCase() : '';
     return (
       (a.applicationNo && a.applicationNo.toLowerCase().includes(q)) ||
       (a.member?.firstName && a.member.firstName.toLowerCase().includes(q)) ||
       (a.member?.lastName && a.member.lastName.toLowerCase().includes(q)) ||
       (a.member?.memberCode && a.member.memberCode.toLowerCase().includes(q)) ||
+      custName.includes(q) ||
+      custCif.includes(q) ||
       (a.loanRate?.loanType && a.loanRate.loanType.toLowerCase().includes(q))
     );
   });
@@ -1079,14 +1114,22 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
 
                 <div className="sm:col-span-2">
                   <label className={labelClass}>
-                    अर्जदार सभासद निवडा (Select Member) <span className="text-red-500">*</span>
+                    अर्जदार ग्राहक / सभासद निवडा (Select Customer / Member) <span className="text-red-500">*</span>
                   </label>
                   <div className={isEditing ? 'opacity-90' : ''}>
                     <MemberSearchSelect
                       members={members}
-                      value={formData.memberID ? Number(formData.memberID) : ''}
-                      onChange={(val) => setFormData(p => ({ ...p, memberID: val ? Number(val) : 0 }))}
-                      placeholder="-- सभासद नाव, कोड किंवा मोबाईलने शोधा --"
+                      value={formData.memberID ? Number(formData.memberID) : (formData.customerID ? Number(formData.customerID) : '')}
+                      onChange={(val, selected) => {
+                        const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
+                        const memId = selected?.memberIdOnly || selected?.memberProfile?.memberID || (selected?.memberCode ? selected.memberID : 0) || 0;
+                        setFormData(p => ({
+                          ...p,
+                          customerID: custId ? Number(custId) : (val ? Number(val) : 0),
+                          memberID: memId ? Number(memId) : (selected?.memberCode ? Number(val) : 0)
+                        }));
+                      }}
+                      placeholder="-- सभासद/ग्राहक नाव, CIF, कोड किंवा मोबाईलने शोधा --"
                     />
                   </div>
                 </div>
@@ -1096,12 +1139,12 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
               {selectedMember && (
                 <div className="p-2 bg-primary/5 border border-primary/20 rounded-sm text-[10px] space-y-1 text-gray-800 font-medium">
                   <div className="flex flex-wrap justify-between items-center gap-1 border-b border-primary/10 pb-1">
-                    <span><b>CIF No:</b> <span className="font-mono">{selectedMember.cifNo || '-'}</span></span>
+                    <span><b>CIF No:</b> <span className="font-mono">{selectedMember.cifNo || (selectedMember as any).cif || '-'}</span></span>
                     <span><b>मोबाईल:</b> <span className="font-mono">{selectedMember.mobileNo || '-'}</span></span>
-                    <span><b>सभासद कोड:</b> <span className="font-mono">{selectedMember.memberCode}</span></span>
+                    <span><b>सभासद कोड:</b> <span className="font-mono">{(selectedMember as any).memberCode || (selectedMember as any).memberProfile?.memberCode || 'बिगर-सभासद (Customer Only)'}</span></span>
                   </div>
                   <div className="text-center pt-0.5 text-xs font-bold text-gray-900">
-                    <span className="text-gray-600 font-medium">अर्जदार सभासद नाव: </span>
+                    <span className="text-gray-600 font-medium">अर्जदार नाव: </span>
                     <span className="text-primary font-black text-sm">
                       {selectedMember.firstName} {selectedMember.middleName ? selectedMember.middleName + ' ' : ''}{selectedMember.lastName}
                     </span>
@@ -1114,9 +1157,22 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                 <div>
                   <label className={labelClass}>सह-कर्जदार १ (Co-Borrower 1)</label>
                   <MemberSearchSelect
-                    members={members.filter(m => m.memberID !== formData.memberID)}
-                    value={formData.coMemberID ? Number(formData.coMemberID) : ''}
-                    onChange={(val) => setFormData(p => ({ ...p, coMemberID: val ? Number(val) : 0 }))}
+                    members={members.filter((m: any) => {
+                      const mCustId = m.customerID || m.id || m.memberProfile?.customerID;
+                      const mMemId = m.memberID || m.memberProfile?.memberID;
+                      return (formData.customerID ? mCustId !== formData.customerID : true) &&
+                             (formData.memberID ? mMemId !== formData.memberID : true);
+                    })}
+                    value={formData.coMemberID ? Number(formData.coMemberID) : (formData.coCustomerID ? Number(formData.coCustomerID) : '')}
+                    onChange={(val, selected) => {
+                      const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
+                      const memId = selected?.memberIdOnly || selected?.memberProfile?.memberID || 0;
+                      setFormData(p => ({
+                        ...p,
+                        coCustomerID: custId ? Number(custId) : 0,
+                        coMemberID: memId ? Number(memId) : 0
+                      }));
+                    }}
                     placeholder="-- सह-कर्जदार १ शोधा --"
                   />
                 </div>
@@ -1124,9 +1180,23 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                 <div>
                   <label className={labelClass}>सह-कर्जदार २ (Co-Borrower 2)</label>
                   <MemberSearchSelect
-                    members={members.filter(m => m.memberID !== formData.memberID && m.memberID !== formData.coMemberID)}
-                    value={(formData as any).coMember2ID ? Number((formData as any).coMember2ID) : ''}
-                    onChange={(val) => setFormData(p => ({ ...p, coMember2ID: val ? Number(val) : 0 }))}
+                    members={members.filter((m: any) => {
+                      const mCustId = m.customerID || m.id || m.memberProfile?.customerID;
+                      const mMemId = m.memberID || m.memberProfile?.memberID;
+                      return (formData.customerID ? mCustId !== formData.customerID : true) &&
+                             (formData.memberID ? mMemId !== formData.memberID : true) &&
+                             (formData.coCustomerID ? mCustId !== formData.coCustomerID : true);
+                    })}
+                    value={(formData as any).coMember2ID ? Number((formData as any).coMember2ID) : ((formData as any).coCustomer2ID ? Number((formData as any).coCustomer2ID) : '')}
+                    onChange={(val, selected) => {
+                      const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
+                      const memId = selected?.memberIdOnly || selected?.memberProfile?.memberID || 0;
+                      setFormData(p => ({
+                        ...p,
+                        coCustomer2ID: custId ? Number(custId) : 0,
+                        coMember2ID: memId ? Number(memId) : 0
+                      }));
+                    }}
                     placeholder="-- सह-कर्जदार २ शोधा --"
                   />
                 </div>
@@ -1344,9 +1414,22 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                 <div>
                   <label className={labelClass}>जामीनदार १ (Guarantor 1)</label>
                   <MemberSearchSelect
-                    members={members.filter(m => m.memberID !== formData.memberID)}
-                    value={formData.guarantor1MemberID ? Number(formData.guarantor1MemberID) : ''}
-                    onChange={(val) => setFormData(p => ({ ...p, guarantor1MemberID: val ? Number(val) : 0 }))}
+                    members={members.filter((m: any) => {
+                      const mCustId = m.customerID || m.id || m.memberProfile?.customerID;
+                      const mMemId = m.memberID || m.memberProfile?.memberID;
+                      return (formData.customerID ? mCustId !== formData.customerID : true) &&
+                             (formData.memberID ? mMemId !== formData.memberID : true);
+                    })}
+                    value={formData.guarantor1MemberID ? Number(formData.guarantor1MemberID) : ((formData as any).guarantor1CustomerID ? Number((formData as any).guarantor1CustomerID) : '')}
+                    onChange={(val, selected) => {
+                      const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
+                      const memId = selected?.memberIdOnly || selected?.memberProfile?.memberID || 0;
+                      setFormData(p => ({
+                        ...p,
+                        guarantor1CustomerID: custId ? Number(custId) : 0,
+                        guarantor1MemberID: memId ? Number(memId) : 0
+                      }));
+                    }}
                     placeholder="-- जामीनदार १ शोधा --"
                   />
                   {guarantor1Summary && (
@@ -1370,9 +1453,24 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                 <div>
                   <label className={labelClass}>जामीनदार २ (Guarantor 2)</label>
                   <MemberSearchSelect
-                    members={members.filter(m => m.memberID !== formData.memberID && m.memberID !== formData.guarantor1MemberID)}
-                    value={formData.guarantor2MemberID ? Number(formData.guarantor2MemberID) : ''}
-                    onChange={(val) => setFormData(p => ({ ...p, guarantor2MemberID: val ? Number(val) : 0 }))}
+                    members={members.filter((m: any) => {
+                      const mCustId = m.customerID || m.id || m.memberProfile?.customerID;
+                      const mMemId = m.memberID || m.memberProfile?.memberID;
+                      return (formData.customerID ? mCustId !== formData.customerID : true) &&
+                             (formData.memberID ? mMemId !== formData.memberID : true) &&
+                             ((formData as any).guarantor1CustomerID ? mCustId !== (formData as any).guarantor1CustomerID : true) &&
+                             (formData.guarantor1MemberID ? mMemId !== formData.guarantor1MemberID : true);
+                    })}
+                    value={formData.guarantor2MemberID ? Number(formData.guarantor2MemberID) : ((formData as any).guarantor2CustomerID ? Number((formData as any).guarantor2CustomerID) : '')}
+                    onChange={(val, selected) => {
+                      const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
+                      const memId = selected?.memberIdOnly || selected?.memberProfile?.memberID || 0;
+                      setFormData(p => ({
+                        ...p,
+                        guarantor2CustomerID: custId ? Number(custId) : 0,
+                        guarantor2MemberID: memId ? Number(memId) : 0
+                      }));
+                    }}
                     placeholder="-- जामीनदार २ शोधा --"
                   />
                   {guarantor2Summary && (
@@ -1715,8 +1813,12 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                           {app.applicationNo}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
-                          <div className="font-bold text-gray-900">{app.member?.firstName} {app.member?.lastName}</div>
-                          <div className="text-[10px] text-gray-500 font-mono">कोड: {app.member?.memberCode || '-'} {app.member?.cifNo ? `| CIF: ${app.member.cifNo}` : ''}</div>
+                          <div className="font-bold text-gray-900">
+                            {app.customer ? `${app.customer.firstName || ''} ${app.customer.lastName || ''}`.trim() : `${app.member?.firstName || ''} ${app.member?.lastName || ''}`.trim()}
+                          </div>
+                          <div className="text-[10px] text-gray-500 font-mono">
+                            {app.member?.memberCode ? `कोड: ${app.member.memberCode}` : 'बिगर-सभासद'} {app.customer?.cifNo || app.member?.cifNo ? `| CIF: ${app.customer?.cifNo || app.member?.cifNo}` : ''}
+                          </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-800">
                           {app.loanRate?.shortName || app.loanRate?.loanType || app.loanType || '-'}

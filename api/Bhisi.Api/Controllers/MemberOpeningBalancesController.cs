@@ -28,6 +28,7 @@ namespace Bhisi.Api.Controllers
         {
             return await _context.MemberOpeningBalances
                                  .Include(m => m.Member)
+                                 .Include(m => m.Customer)
                                  .Include(m => m.Ledger)
                                  .ToListAsync();
         }
@@ -38,6 +39,7 @@ namespace Bhisi.Api.Controllers
         {
             var memberOpeningBalance = await _context.MemberOpeningBalances
                                                      .Include(m => m.Member)
+                                                     .Include(m => m.Customer)
                                                      .Include(m => m.Ledger)
                                                      .FirstOrDefaultAsync(m => m.MemberOpeningBalanceID == id);
 
@@ -59,7 +61,6 @@ namespace Bhisi.Api.Controllers
                 return BadRequest();
             }
 
-            // Optional: you can manually update only required fields instead of whole entity
             var existingRecord = await _context.MemberOpeningBalances.FindAsync(id);
             if (existingRecord == null)
             {
@@ -67,6 +68,18 @@ namespace Bhisi.Api.Controllers
             }
 
             existingRecord.MemberID = memberOpeningBalance.MemberID;
+            if (memberOpeningBalance.CustomerID.HasValue && memberOpeningBalance.CustomerID.Value > 0)
+            {
+                existingRecord.CustomerID = memberOpeningBalance.CustomerID.Value;
+            }
+            else
+            {
+                var mem = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberOpeningBalance.MemberID);
+                if (mem != null && mem.CustomerID.HasValue)
+                {
+                    existingRecord.CustomerID = mem.CustomerID.Value;
+                }
+            }
             existingRecord.LedgerID = memberOpeningBalance.LedgerID;
             existingRecord.Amount = memberOpeningBalance.Amount;
             existingRecord.BalanceType = memberOpeningBalance.BalanceType;
@@ -98,6 +111,14 @@ namespace Bhisi.Api.Controllers
         [MigrationLockFilter]
         public async Task<ActionResult<MemberOpeningBalance>> PostMemberOpeningBalance(MemberOpeningBalance memberOpeningBalance)
         {
+            if (!memberOpeningBalance.CustomerID.HasValue || memberOpeningBalance.CustomerID.Value <= 0)
+            {
+                var mem = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberOpeningBalance.MemberID);
+                if (mem != null && mem.CustomerID.HasValue)
+                {
+                    memberOpeningBalance.CustomerID = mem.CustomerID.Value;
+                }
+            }
             memberOpeningBalance.CreatedOn = DateTime.Now;
             _context.MemberOpeningBalances.Add(memberOpeningBalance);
             await _context.SaveChangesAsync();

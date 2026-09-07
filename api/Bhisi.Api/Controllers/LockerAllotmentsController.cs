@@ -212,7 +212,7 @@ namespace Bhisi.Api.Controllers
             }
             else if (dto.MemberID.HasValue && dto.MemberID.Value > 0)
             {
-                member = await _context.Members.FindAsync(dto.MemberID.Value);
+                member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == dto.MemberID.Value);
                 if (member == null) return BadRequest(new { message = "निवडलेला सभासद सिस्टीममध्ये अस्तित्वात नाही." });
                 if (member.Status != "Active") return BadRequest(new { message = $"सभासदाचे स्टेटस '{member.Status}' असल्यामुळे लॉकर वाटप करता येत नाही." });
 

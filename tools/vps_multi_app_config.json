@@ -1,5 +1,7 @@
 {
   "SqlServerInstance": ".",
+  "SqlUser": "Admin",
+  "SqlPassword": "Mindspace@",
   "TakeDbBackup": true,
   "BackupFolder": "D:\\Backups",
   "Targets": [
@@ -30,6 +32,20 @@
       "IISAppPoolName": "apigurudev",
       "BackendFolderPath": "D:\\WebApps\\Gurudev\\api.gurudev.hellomindspace.in",
       "FrontendFolderPath": "D:\\WebApps\\Gurudev\\gurudev.hellomindspace.in"
+    },
+    {
+      "SansthaName": "Shree Maharshi Shamrao Patil Yadravkar gramin BigarshetiSahakari Patsanstha Maryadit Yadrav",
+      "TargetDatabase": "SmartBanking_maharshiyadravkar",
+      "IISAppPoolName": "maharshiyadravkar-backend",
+      "BackendFolderPath": "D:\\WebApps\\maharshiyadravkar\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\maharshiyadravkar\\frontend"
+    },
+    {
+      "SansthaName": "Abhiyantriki Tantraniketan Sevkanchi Sahakari Karmachari Patsanstha Maryadit Rajaramnagar,Sakharale",
+      "TargetDatabase": "SmartBanking_ritemp",
+      "IISAppPoolName": "ritemp-backend",
+      "BackendFolderPath": "D:\\WebApps\\ritemp\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\ritemp\\frontend"
     }
   ]
 }

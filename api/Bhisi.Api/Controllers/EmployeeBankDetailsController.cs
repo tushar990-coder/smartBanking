@@ -38,7 +38,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<EmployeeBankDetailDto>>> GetEmployeeBankDetails()
         {
-            var members = await _context.Members.Where(m => m.Status == "Active").OrderBy(m => m.MemberID).ToListAsync();
+            var members = await _context.Members.Include(m => m.Customer).Where(m => m.Status == "Active").OrderBy(m => m.MemberID).ToListAsync();
             var bankDetails = await _context.EmployeeBankDetails.ToListAsync();
 
             // Find current max valid CIF number <= 600 (last valid ID before 678 jump was 107)
@@ -145,7 +145,7 @@ namespace Bhisi.Api.Controllers
                     // Ensure CIFNo is assigned
                     if (string.IsNullOrEmpty(item.CIFNo))
                     {
-                        var member = await _context.Members.FindAsync(item.MemberID);
+                        var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == item.MemberID);
                         if (member != null)
                         {
                             item.CIFNo = MembersController.GenerateCifNo(member);

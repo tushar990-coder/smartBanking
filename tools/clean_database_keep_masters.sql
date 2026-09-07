@@ -191,10 +191,17 @@ BEGIN TRY
         IF OBJECT_ID('dbo.' + @tName, 'U') IS NOT NULL AND OBJECTPROPERTY(OBJECT_ID('dbo.' + @tName), 'TableHasIdentity') = 1
         BEGIN
             BEGIN TRY
-                EXEC('DBCC CHECKIDENT (''dbo.' + @tName + ''', RESEED, 0)');
+                IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID('dbo.' + @tName) AND last_value IS NOT NULL)
+                BEGIN
+                    EXEC('DBCC CHECKIDENT (''dbo.' + @tName + ''', RESEED, 0)');
+                END
+                ELSE
+                BEGIN
+                    EXEC('DBCC CHECKIDENT (''dbo.' + @tName + ''', RESEED, 1)');
+                END
             END TRY
             BEGIN CATCH
-                -- Ignore if table is empty or has issues reseeding
+                -- Ignore if table has issues reseeding
             END CATCH
         END
         FETCH NEXT FROM table_cursor INTO @tName;

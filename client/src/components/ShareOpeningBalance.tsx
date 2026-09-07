@@ -240,14 +240,15 @@ const ShareOpeningBalance: React.FC = () => {
 
     if (name === 'memberId') {
       const sel = Array.isArray(members) ? members.find(m => m && (
-        String(m.memberID ?? '') === value || 
         String((m as any).customerID ?? '') === value ||
+        String(m.memberID ?? '') === value || 
         String((m as any).memberProfile?.memberID ?? '') === value
       )) : undefined;
 
       const existingBal = Array.isArray(balances) ? balances.find(b => b && (
-        String(b.memberId ?? '') === value || 
-        String(b.customerId ?? '') === value
+        (b.customerId && String(b.customerId) === value) ||
+        (sel && b.cifNo && sel.cifNo && b.cifNo.trim().toLowerCase() === sel.cifNo.trim().toLowerCase()) ||
+        (b.memberId && String(b.memberId) === value && (!b.customerId || String(b.customerId) === value))
       )) : undefined;
 
       if (existingBal && !isEditMode) {
@@ -257,7 +258,7 @@ const ShareOpeningBalance: React.FC = () => {
       setFormData(prev => ({ 
         ...prev, 
         memberId: value,
-        legacyMemberNo: sel?.legacyMemberNo ? String(sel.legacyMemberNo).trim() : '' 
+        legacyMemberNo: existingBal?.legacyMemberNo || (sel as any)?.memberProfile?.legacyMemberNo || (sel as any)?.memberProfile?.oldMemberCode || sel?.legacyMemberNo || '' 
       }));
     } else if (name === 'shareQuantity') {
       const qty = parseInt(value, 10);
@@ -403,13 +404,19 @@ const ShareOpeningBalance: React.FC = () => {
       const certNo = formData.certificateNo || nextShareConfig.nextCertificateNo || '';
 
       const selMember = Array.isArray(members) ? members.find(m => m && (
-        String(m.memberID ?? '') === String(formData.memberId) || 
         String((m as any).customerID ?? '') === String(formData.memberId) ||
+        String(m.memberID ?? '') === String(formData.memberId) || 
         String((m as any).memberProfile?.memberID ?? '') === String(formData.memberId)
       )) : undefined;
 
-      const resolvedMemberId = selMember?.memberProfile?.memberID || selMember?.memberID || parseInt(formData.memberId);
       const resolvedCustomerId = (selMember as any)?.customerID || (selMember as any)?.id || parseInt(formData.memberId);
+
+      const existingBalForMember = Array.isArray(balances) ? balances.find(b => b && (
+        (b.customerId && b.customerId === resolvedCustomerId) ||
+        (selMember?.cifNo && b.cifNo && b.cifNo.trim().toLowerCase() === selMember.cifNo.trim().toLowerCase())
+      )) : undefined;
+
+      const resolvedMemberId = existingBalForMember?.memberId || selMember?.memberProfile?.memberID || (selMember as any)?.memberID || (selMember as any)?.customerID || parseInt(formData.memberId);
 
       const payload = {
         certificateId: editCertificateId,
@@ -567,10 +574,39 @@ const ShareOpeningBalance: React.FC = () => {
   };
 
   const selectedMember = Array.isArray(members) ? members.find(m => m && (
-    String(m.memberID ?? '') === String(formData.memberId) ||
     String((m as any).customerID ?? '') === String(formData.memberId) ||
+    String(m.memberID ?? '') === String(formData.memberId) ||
     String((m as any).memberProfile?.memberID ?? '') === String(formData.memberId)
   )) : undefined;
+
+  const currentMemberCodeDisplay = React.useMemo(() => {
+    if (!formData.memberId) return '';
+    
+    // 1. Check from existing balances in share accounts
+    const existingBal = Array.isArray(balances) ? balances.find(b => b && (
+      (b.customerId && String(b.customerId) === String(formData.memberId)) ||
+      (selectedMember && b.cifNo && selectedMember.cifNo && b.cifNo.trim().toLowerCase() === selectedMember.cifNo.trim().toLowerCase()) ||
+      (b.memberId && String(b.memberId) === String(formData.memberId))
+    )) : undefined;
+
+    if (existingBal?.memberNo && existingBal.memberNo.trim().toUpperCase().startsWith('MEM')) {
+      return existingBal.memberNo.trim().toUpperCase();
+    }
+
+    // 2. Check from selectedMember.memberProfile.memberCode or selectedMember.memberCode
+    const rawCode = (selectedMember as any)?.memberProfile?.memberCode || (selectedMember as any)?.memberCode;
+    if (rawCode && String(rawCode).trim().toUpperCase().startsWith('MEM')) {
+      return String(rawCode).trim().toUpperCase();
+    }
+
+    // 3. Fallback to existing balance memberNo if available
+    if (existingBal?.memberNo) {
+      return existingBal.memberNo.trim();
+    }
+
+    // 4. For new member allocation, show next member code
+    return nextMemberCode || '';
+  }, [formData.memberId, balances, selectedMember, nextMemberCode]);
 
   const selectedScheme = Array.isArray(schemes) ? schemes.find(s => s && String(s.shareSchemeId ?? '') === String(formData.shareSchemeId)) : undefined;
 
@@ -892,12 +928,12 @@ const ShareOpeningBalance: React.FC = () => {
           {/* Row 2: Select Member & IDs */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
             <div className="sm:col-span-6">
-              <label className={labelClass}>सभासद निवडा (Select Member) <span className="text-red-500">*</span></label>
+              <label className={labelClass}>खातेदार / ग्राहक निवडा (Select Customer / CIF) <span className="text-red-500">*</span></label>
               <MemberSearchSelect 
                 members={members} 
                 value={formData.memberId ? Number(formData.memberId) : ''} 
                 onChange={(val) => handleChange({ target: { name: 'memberId', value: val ? String(val) : '' } })} 
-                placeholder="-- सभासद नाव, कोड किंवा मोबाईलने शोधा --"
+                placeholder="-- ग्राहक शोधा (CIF No / नाव / मोबाईल) --"
               />
             </div>
 
@@ -906,13 +942,7 @@ const ShareOpeningBalance: React.FC = () => {
               <input 
                 type="text" 
                 readOnly
-                value={
-                  selectedMember 
-                    ? (selectedMember.memberCode && selectedMember.memberCode.trim().toUpperCase().startsWith('MEM') 
-                        ? selectedMember.memberCode.trim().toUpperCase() 
-                        : (nextMemberCode || ''))
-                    : ''
-                }
+                value={currentMemberCodeDisplay}
                 placeholder="-- सभासद निवडल्यावर दिसेल --"
                 className={`${inputClass} bg-slate-100 font-bold text-primary cursor-not-allowed`}
               />

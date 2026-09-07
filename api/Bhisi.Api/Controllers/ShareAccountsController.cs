@@ -42,6 +42,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetMemberShareAccount(int memberId)
         {
             var account = await _context.ShareAccounts
+                .Include(s => s.Certificates)
                 .Where(s => s.MemberId == memberId)
                 .Select(s => new
                 {
@@ -52,7 +53,17 @@ namespace Bhisi.Api.Controllers
                     s.TotalShareAmount,
                     s.OpeningDate,
                     s.DividendPayableBalance,
-                    s.Status
+                    s.Status,
+                    Certificates = s.Certificates!.Select(c => new
+                    {
+                        c.CertificateId,
+                        c.CertificateNo,
+                        c.FromShareNo,
+                        c.ToShareNo,
+                        c.NumberOfShares,
+                        c.FaceValue,
+                        c.Status
+                    }).ToList()
                 })
                 .FirstOrDefaultAsync();
 
@@ -70,6 +81,8 @@ namespace Bhisi.Api.Controllers
         {
             var query = _context.ShareAccounts
                 .Include(s => s.Member)
+                    .ThenInclude(m => m!.Customer)
+                .Include(s => s.Customer)
                 .Include(s => s.Certificates)
                 .Where(s => s.TotalShareCount > 0);
 
@@ -86,15 +99,17 @@ namespace Bhisi.Api.Controllers
                     s.AccountNo,
                     s.MemberId,
                     MemberCode = s.Member != null ? s.Member.MemberCode : "",
-                    CIFNo = s.Member != null ? s.Member.CIFNo : "",
+                    CIFNo = (s.Member != null && s.Member.Customer != null) ? s.Member.Customer.CIFNo : (s.Customer != null ? s.Customer.CIFNo : ""),
                     LegacyMemberNo = s.Member != null ? s.Member.LegacyMemberNo : "",
-                    FirstName = s.Member != null ? s.Member.FirstName : "",
-                    MiddleName = s.Member != null ? s.Member.MiddleName : "",
-                    LastName = s.Member != null ? s.Member.LastName : "",
-                    FullName = s.Member != null ? $"{s.Member.FirstName} {s.Member.MiddleName} {s.Member.LastName}".Replace("  ", " ").Trim() : "",
-                    MobileNo = s.Member != null ? s.Member.MobileNo : "",
-                    Village = s.Member != null ? s.Member.Village : "",
-                    Address = s.Member != null ? s.Member.Address : "",
+                    FirstName = (s.Member != null && s.Member.Customer != null) ? s.Member.Customer.FirstName : (s.Customer != null ? s.Customer.FirstName : ""),
+                    MiddleName = (s.Member != null && s.Member.Customer != null) ? s.Member.Customer.MiddleName : (s.Customer != null ? s.Customer.MiddleName : ""),
+                    LastName = (s.Member != null && s.Member.Customer != null) ? s.Member.Customer.LastName : (s.Customer != null ? s.Customer.LastName : ""),
+                    FullName = (s.Member != null && s.Member.Customer != null) 
+                        ? $"{s.Member.Customer.FirstName} {s.Member.Customer.MiddleName} {s.Member.Customer.LastName}".Replace("  ", " ").Trim() 
+                        : (s.Customer != null ? $"{s.Customer.FirstName} {s.Customer.MiddleName} {s.Customer.LastName}".Replace("  ", " ").Trim() : ""),
+                    MobileNo = (s.Member != null && s.Member.Customer != null) ? s.Member.Customer.MobileNo : (s.Customer != null ? s.Customer.MobileNo : ""),
+                    Village = (s.Member != null && s.Member.Customer != null) ? s.Member.Customer.Village : (s.Customer != null ? s.Customer.Village : ""),
+                    Address = (s.Member != null && s.Member.Customer != null) ? s.Member.Customer.Address : (s.Customer != null ? s.Customer.Address : ""),
                     s.TotalShareCount,
                     s.TotalShareAmount,
                     s.OpeningDate,
@@ -126,6 +141,9 @@ namespace Bhisi.Api.Controllers
             public int? CashLedgerId { get; set; }
             public string? ChequeNo { get; set; }
             public int? ShareSchemeId { get; set; }
+            public long? FromShareNo { get; set; }
+            public long? ToShareNo { get; set; }
+            public string? CertificateNo { get; set; }
         }
 
         // POST: api/ShareAccounts/Allot
@@ -144,7 +162,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 // Ensure member exists
-                var member = await _context.Members.FindAsync(request.MemberId);
+                var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == request.MemberId);
                 if (member == null) return NotFound("Member not found.");
 
                 // Update Old ID (LegacyMemberNo) if entered by user
@@ -209,11 +227,17 @@ namespace Bhisi.Api.Controllers
 
                 // 2. Determine Share Range
                 int maxShareNo = await _context.ShareCertificates.MaxAsync(c => (int?)c.ToShareNo) ?? 0;
-                int startShareNo = maxShareNo + 1;
-                int endShareNo = maxShareNo + request.NumberOfShares;
+                long startShareNo = (request.FromShareNo.HasValue && request.FromShareNo.Value > 0)
+                    ? request.FromShareNo.Value
+                    : (maxShareNo + 1);
+                long endShareNo = (request.ToShareNo.HasValue && request.ToShareNo.Value >= startShareNo)
+                    ? request.ToShareNo.Value
+                    : (startShareNo + request.NumberOfShares - 1);
 
                 int certCount = await _context.ShareCertificates.CountAsync() + 1;
-                string certNo = $"CERT-{DateTime.Today.Year}-{certCount:D5}";
+                string certNo = !string.IsNullOrWhiteSpace(request.CertificateNo)
+                    ? request.CertificateNo.Trim()
+                    : $"CERT-{DateTime.Today.Year}-{certCount:D5}";
 
                 // 3. Create ShareCertificate
                 var certificate = new ShareCertificate
@@ -402,7 +426,7 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var member = await _context.Members.FindAsync(request.MemberId);
+                var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == request.MemberId);
                 if (member == null) return NotFound("Member not found.");
 
                 var account = await _context.ShareAccounts
@@ -577,6 +601,8 @@ namespace Bhisi.Api.Controllers
             {
                 var accounts = await _context.ShareAccounts
                     .Include(s => s.Member)
+                        .ThenInclude(m => m!.Customer)
+                    .Include(s => s.Customer)
                     .Include(s => s.Certificates)
                     .Include(s => s.Transactions)
                     .Where(s => s.TotalShareCount > 0)
@@ -591,6 +617,13 @@ namespace Bhisi.Api.Controllers
                         : $"MEM{s.MemberId:D4}";
 
                     int resolvedCustId = s.CustomerID > 0 ? s.CustomerID : (s.Member?.CustomerID ?? 0);
+                    var cust = s.Member?.Customer ?? s.Customer;
+                    string memberName = $"{cust?.FirstName} {cust?.MiddleName} {cust?.LastName}".Replace("  ", " ").Trim();
+                    if (string.IsNullOrWhiteSpace(memberName))
+                    {
+                        memberName = $"{s.Member?.FirstName} {s.Member?.MiddleName} {s.Member?.LastName}".Replace("  ", " ").Trim();
+                    }
+                    string cifNo = cust?.CIFNo ?? s.Member?.CIFNo ?? "";
 
                     var opCerts = s.Certificates?
                         .Where(c => c.Status == "OpeningBalance" || string.IsNullOrEmpty(c.Status) || c.Status == "Active")
@@ -622,8 +655,8 @@ namespace Bhisi.Api.Controllers
                                 AccountNo = s.AccountNo,
                                 MemberNo = memberNo,
                                 LegacyMemberNo = s.Member?.LegacyMemberNo,
-                                MemberName = $"{s.Member?.FirstName} {s.Member?.LastName}".Trim(),
-                                CIFNo = s.Member?.CIFNo ?? "",
+                                MemberName = memberName,
+                                CIFNo = cifNo,
                                 OpeningDate = openingDate,
                                 ShareQuantity = shareQuantity,
                                 FaceValue = faceValue,
@@ -663,8 +696,8 @@ namespace Bhisi.Api.Controllers
                                     AccountNo = s.AccountNo,
                                     MemberNo = memberNo,
                                     LegacyMemberNo = s.Member?.LegacyMemberNo,
-                                    MemberName = $"{s.Member?.FirstName} {s.Member?.LastName}".Trim(),
-                                    CIFNo = s.Member?.CIFNo ?? "",
+                                    MemberName = memberName,
+                                    CIFNo = cifNo,
                                     OpeningDate = openingDate,
                                     ShareQuantity = shareQuantity,
                                     FaceValue = faceValue,
@@ -687,8 +720,8 @@ namespace Bhisi.Api.Controllers
                                 AccountNo = s.AccountNo,
                                 MemberNo = memberNo,
                                 LegacyMemberNo = s.Member?.LegacyMemberNo,
-                                MemberName = $"{s.Member?.FirstName} {s.Member?.LastName}".Trim(),
-                                CIFNo = s.Member?.CIFNo ?? "",
+                                MemberName = memberName,
+                                CIFNo = cifNo,
                                 OpeningDate = s.OpeningDate,
                                 ShareQuantity = s.TotalShareCount,
                                 FaceValue = s.TotalShareCount > 0 ? s.TotalShareAmount / s.TotalShareCount : 100M,
@@ -704,7 +737,7 @@ namespace Bhisi.Api.Controllers
 
                 return Ok(balances);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // Return empty list safely on initial/empty database state rather than throwing 500 error
                 return Ok(new List<ShareOpeningBalanceDto>());
@@ -731,6 +764,7 @@ namespace Bhisi.Api.Controllers
 
         [AllowAnonymous]
         [HttpGet("NextShareConfig")]
+        [HttpGet("NextRange")]
         public async Task<IActionResult> GetNextShareConfig()
         {
             try
@@ -787,15 +821,21 @@ namespace Bhisi.Api.Controllers
                 {
                     nextCertificateNo = nextCertStr,
                     nextFromShareNo = nextFromShareNo,
+                    fromShareNo = nextFromShareNo,
+                    nextShareNo = nextFromShareNo,
+                    lastToShareNo = maxToShareNo,
                     nextMemberCode = nextMemberCode
                 });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return Ok(new
                 {
                     nextCertificateNo = "CERT-0001",
                     nextFromShareNo = 1,
+                    fromShareNo = 1,
+                    nextShareNo = 1,
+                    lastToShareNo = 0,
                     nextMemberCode = "MEM0001"
                 });
             }
@@ -832,54 +872,41 @@ namespace Bhisi.Api.Controllers
                     cust = await _context.Customers.FindAsync(inputId);
                     if (cust != null)
                     {
-                        member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == cust.CustomerID);
+                        member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.CustomerID == cust.CustomerID);
                     }
                 }
 
                 // 2. If not found via CustomerID, check if request.MemberId matches MemberID in Members table
                 if (member == null && request.MemberId > 0)
                 {
-                    member = await _context.Members.FindAsync(request.MemberId);
-                    if (member != null && member.CustomerID.HasValue)
+                    member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == request.MemberId);
+                    if (member != null)
                     {
-                        cust = await _context.Customers.FindAsync(member.CustomerID.Value);
+                        if (member.CustomerID.HasValue && member.CustomerID.Value > 0)
+                        {
+                            cust = await _context.Customers.FindAsync(member.CustomerID.Value);
+                        }
+                        if (cust == null && member.CustomerID.HasValue)
+                        {
+                            cust = await _context.Customers.FindAsync(member.CustomerID.Value);
+                        }
                     }
                 }
 
-                // 3. If customer exists but does not have a Member record yet, create Member record for this customer
+                // 3. If customer exists but does not have a Member record yet, enroll this existing Customer as a Member
                 if (member == null && cust != null)
                 {
                     member = new Member
                     {
                         BranchID = cust.BranchID,
                         CustomerID = cust.CustomerID,
-                        CIFNo = cust.CIFNo,
-                        OldMemberCode = !string.IsNullOrWhiteSpace(request.LegacyMemberNo) ? request.LegacyMemberNo.Trim() : null,
+                        Customer = cust,
                         LegacyMemberNo = !string.IsNullOrWhiteSpace(request.LegacyMemberNo) ? request.LegacyMemberNo.Trim() : null,
-                        FirstName = cust.FirstName,
-                        MiddleName = cust.MiddleName,
-                        LastName = cust.LastName,
-                        NickName = cust.NickName,
-                        FirstNameEng = cust.FirstNameEng,
-                        MiddleNameEng = cust.MiddleNameEng,
-                        LastNameEng = cust.LastNameEng,
-                        Address = cust.Address,
-                        AddressEng = cust.AddressEng,
-                        Village = cust.Village,
-                        Taluka = cust.Taluka,
-                        District = cust.District,
-                        MobileNo = cust.MobileNo,
-                        AadhaarNo = cust.AadhaarNo,
-                        PANNo = cust.PANNo,
-                        Gender = cust.Gender,
-                        BirthDate = cust.BirthDate,
-                        Occupation = cust.Occupation,
-                        CasteCategory = cust.CasteCategory,
-                        Caste = cust.Caste,
-                        Email = cust.Email,
                         JoiningDate = request.OpeningDate,
                         MembershipType = "Regular",
-                        Status = "Active"
+                        Status = "Active",
+                        CreatedBy = 1,
+                        CreatedOn = DateTime.UtcNow
                     };
                     _context.Members.Add(member);
                     await _context.SaveChangesAsync();
@@ -895,13 +922,12 @@ namespace Bhisi.Api.Controllers
                     var existingLegacyMember = await _context.Members
                         .AsNoTracking()
                         .FirstOrDefaultAsync(m => m.MemberID != member.MemberID && !m.IsDeleted &&
-                            (m.LegacyMemberNo == trimmedLegacyNo || m.OldMemberCode == trimmedLegacyNo));
+                            m.LegacyMemberNo == trimmedLegacyNo);
                     if (existingLegacyMember != null)
                     {
                         return BadRequest($"हा जुना सभासद आयडी ({trimmedLegacyNo}) आधीच सभासद '{existingLegacyMember.FirstName} {existingLegacyMember.LastName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे.");
                     }
                     member.LegacyMemberNo = trimmedLegacyNo;
-                    member.OldMemberCode = trimmedLegacyNo;
                     _context.Entry(member).State = EntityState.Modified;
                 }
 
@@ -1063,10 +1089,12 @@ namespace Bhisi.Api.Controllers
                     shareCapitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context, request.ShareSchemeId);
                 }
 
+                int? targetCustId = member.CustomerID ?? (account.CustomerID > 0 ? account.CustomerID : (int?)null);
+
                 if (shareCapitalLedger != null)
                 {
                     var shareMobs = await _context.MemberOpeningBalances
-                        .Where(m => m.MemberID == request.MemberId && m.LedgerID == shareCapitalLedger.LedgerID)
+                        .Where(m => (m.MemberID == request.MemberId || (targetCustId.HasValue && m.CustomerID == targetCustId.Value)) && m.LedgerID == shareCapitalLedger.LedgerID)
                         .ToListAsync();
 
                     if (!shareMobs.Any())
@@ -1074,6 +1102,7 @@ namespace Bhisi.Api.Controllers
                         _context.MemberOpeningBalances.Add(new MemberOpeningBalance
                         {
                             MemberID = request.MemberId,
+                            CustomerID = targetCustId,
                             LedgerID = shareCapitalLedger.LedgerID,
                             Amount = account.TotalShareAmount,
                             BalanceType = "Cr",
@@ -1083,6 +1112,8 @@ namespace Bhisi.Api.Controllers
                     else
                     {
                         var primaryMob = shareMobs.First();
+                        primaryMob.MemberID = request.MemberId;
+                        if (targetCustId.HasValue) primaryMob.CustomerID = targetCustId.Value;
                         primaryMob.Amount = account.TotalShareAmount;
                         primaryMob.BalanceType = "Cr";
                         _context.MemberOpeningBalances.Update(primaryMob);
@@ -1117,7 +1148,7 @@ namespace Bhisi.Api.Controllers
                 if (dividendLedger != null)
                 {
                     var divMobs = await _context.MemberOpeningBalances
-                        .Where(m => m.MemberID == request.MemberId && m.LedgerID == dividendLedger.LedgerID)
+                        .Where(m => (m.MemberID == request.MemberId || (targetCustId.HasValue && m.CustomerID == targetCustId.Value)) && m.LedgerID == dividendLedger.LedgerID)
                         .ToListAsync();
 
                     if (request.DividendPayable > 0)
@@ -1127,6 +1158,7 @@ namespace Bhisi.Api.Controllers
                             _context.MemberOpeningBalances.Add(new MemberOpeningBalance
                             {
                                 MemberID = request.MemberId,
+                                CustomerID = targetCustId,
                                 LedgerID = dividendLedger.LedgerID,
                                 Amount = request.DividendPayable,
                                 BalanceType = "Cr",
@@ -1136,6 +1168,8 @@ namespace Bhisi.Api.Controllers
                         else
                         {
                             var primaryDivMob = divMobs.First();
+                            primaryDivMob.MemberID = request.MemberId;
+                            if (targetCustId.HasValue) primaryDivMob.CustomerID = targetCustId.Value;
                             primaryDivMob.Amount = request.DividendPayable;
                             primaryDivMob.BalanceType = "Cr";
                             _context.MemberOpeningBalances.Update(primaryDivMob);
@@ -1227,16 +1261,23 @@ namespace Bhisi.Api.Controllers
                         cust = await _context.Customers.FindAsync(inputId);
                         if (cust != null)
                         {
-                            member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == cust.CustomerID);
+                            member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.CustomerID == cust.CustomerID);
                         }
                     }
 
                     if (member == null && request.MemberId > 0)
                     {
-                        member = await _context.Members.FindAsync(request.MemberId);
-                        if (member != null && member.CustomerID.HasValue)
+                        member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == request.MemberId);
+                        if (member != null)
                         {
-                            cust = await _context.Customers.FindAsync(member.CustomerID.Value);
+                            if (member.CustomerID.HasValue && member.CustomerID.Value > 0)
+                            {
+                                cust = await _context.Customers.FindAsync(member.CustomerID.Value);
+                            }
+                            if (cust == null && member.CustomerID.HasValue)
+                            {
+                                cust = await _context.Customers.FindAsync(member.CustomerID.Value);
+                            }
                         }
                     }
 
@@ -1247,7 +1288,6 @@ namespace Bhisi.Api.Controllers
                             BranchID = cust.BranchID,
                             CustomerID = cust.CustomerID,
                             CIFNo = cust.CIFNo,
-                            OldMemberCode = !string.IsNullOrWhiteSpace(request.LegacyMemberNo) ? request.LegacyMemberNo.Trim() : null,
                             LegacyMemberNo = !string.IsNullOrWhiteSpace(request.LegacyMemberNo) ? request.LegacyMemberNo.Trim() : null,
                             FirstName = cust.FirstName,
                             MiddleName = cust.MiddleName,
@@ -1286,7 +1326,6 @@ namespace Bhisi.Api.Controllers
                     {
                         var trimmedLegacy = request.LegacyMemberNo.Trim();
                         member.LegacyMemberNo = trimmedLegacy;
-                        member.OldMemberCode = trimmedLegacy;
                         _context.Members.Update(member);
                     }
 
@@ -1390,8 +1429,9 @@ namespace Bhisi.Api.Controllers
                     // Reconcile MemberOpeningBalances for Share Capital
                     if (shareCapitalLedger != null)
                     {
+                        int? targetCustId = (resolvedCustomerId > 0 ? resolvedCustomerId : (member.CustomerID ?? (account.CustomerID > 0 ? account.CustomerID : (int?)null)));
                         var shareMobs = await _context.MemberOpeningBalances
-                            .Where(m => m.MemberID == member.MemberID && m.LedgerID == shareCapitalLedger.LedgerID)
+                            .Where(m => (m.MemberID == member.MemberID || (targetCustId.HasValue && m.CustomerID == targetCustId.Value)) && m.LedgerID == shareCapitalLedger.LedgerID)
                             .ToListAsync();
 
                         var primaryMob = shareMobs.FirstOrDefault();
@@ -1400,6 +1440,7 @@ namespace Bhisi.Api.Controllers
                             _context.MemberOpeningBalances.Add(new MemberOpeningBalance
                             {
                                 MemberID = member.MemberID,
+                                CustomerID = targetCustId,
                                 LedgerID = shareCapitalLedger.LedgerID,
                                 Amount = account.TotalShareAmount,
                                 BalanceType = "Cr",
@@ -1409,6 +1450,8 @@ namespace Bhisi.Api.Controllers
                         }
                         else
                         {
+                            primaryMob.MemberID = member.MemberID;
+                            if (targetCustId.HasValue) primaryMob.CustomerID = targetCustId.Value;
                             primaryMob.Amount = account.TotalShareAmount;
                             primaryMob.BalanceType = "Cr";
                             _context.MemberOpeningBalances.Update(primaryMob);
@@ -1470,18 +1513,48 @@ namespace Bhisi.Api.Controllers
 
                 if (account == null) return NotFound("Share account not found.");
 
-                var member = await _context.Members.FindAsync(account.MemberId);
-                if (member == null && account.CustomerID > 0)
+                // Resolve target member and customer accurately
+                int inputId = request.CustomerId.HasValue && request.CustomerId.Value > 0 
+                    ? request.CustomerId.Value 
+                    : request.MemberId;
+
+                Member? member = null;
+                Customer? cust = null;
+
+                if (inputId > 0)
                 {
-                    member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
+                    cust = await _context.Customers.FindAsync(inputId);
+                    if (cust != null)
+                    {
+                        member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.CustomerID == cust.CustomerID);
+                    }
                 }
 
-                if (member != null && !string.IsNullOrWhiteSpace(request.LegacyMemberNo))
+                if (member == null && request.MemberId > 0)
                 {
-                    var trimmedLegacy = request.LegacyMemberNo.Trim();
-                    member.LegacyMemberNo = trimmedLegacy;
-                    member.OldMemberCode = trimmedLegacy;
-                    _context.Entry(member).State = EntityState.Modified;
+                    member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == request.MemberId);
+                    if (member != null && member.CustomerID.HasValue && member.CustomerID.Value > 0)
+                    {
+                        cust = await _context.Customers.FindAsync(member.CustomerID.Value);
+                    }
+                }
+
+                if (member == null)
+                {
+                    member = await _context.Members.FindAsync(account.MemberId);
+                }
+
+                if (member != null)
+                {
+                    account.MemberId = member.MemberID;
+                    account.CustomerID = cust?.CustomerID ?? member.CustomerID ?? account.CustomerID;
+
+                    if (!string.IsNullOrWhiteSpace(request.LegacyMemberNo))
+                    {
+                        var trimmedLegacy = request.LegacyMemberNo.Trim();
+                        member.LegacyMemberNo = trimmedLegacy;
+                        _context.Entry(member).State = EntityState.Modified;
+                    }
                 }
 
                 // Find certificate to update
@@ -1541,10 +1614,12 @@ namespace Bhisi.Api.Controllers
                     shareCapitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context, request.ShareSchemeId);
                 }
 
+                int? targetCustId = cust?.CustomerID ?? member?.CustomerID ?? (account.CustomerID > 0 ? account.CustomerID : (int?)null);
+
                 if (shareCapitalLedger != null)
                 {
                     var mobs = await _context.MemberOpeningBalances
-                        .Where(m => m.MemberID == account.MemberId && m.LedgerID == shareCapitalLedger.LedgerID)
+                        .Where(m => (m.MemberID == account.MemberId || (targetCustId.HasValue && m.CustomerID == targetCustId.Value)) && m.LedgerID == shareCapitalLedger.LedgerID)
                         .ToListAsync();
 
                     if (!mobs.Any())
@@ -1552,6 +1627,7 @@ namespace Bhisi.Api.Controllers
                         _context.MemberOpeningBalances.Add(new MemberOpeningBalance
                         {
                             MemberID = account.MemberId,
+                            CustomerID = targetCustId,
                             LedgerID = shareCapitalLedger.LedgerID,
                             Amount = account.TotalShareAmount,
                             BalanceType = "Cr",
@@ -1561,6 +1637,8 @@ namespace Bhisi.Api.Controllers
                     else
                     {
                         var primaryMob = mobs.First();
+                        primaryMob.MemberID = account.MemberId;
+                        if (targetCustId.HasValue) primaryMob.CustomerID = targetCustId.Value;
                         primaryMob.Amount = account.TotalShareAmount;
                         primaryMob.BalanceType = "Cr";
                         _context.MemberOpeningBalances.Update(primaryMob);
@@ -1594,7 +1672,7 @@ namespace Bhisi.Api.Controllers
                 if (dividendLedger != null)
                 {
                     var divMobs = await _context.MemberOpeningBalances
-                        .Where(m => m.MemberID == account.MemberId && m.LedgerID == dividendLedger.LedgerID)
+                        .Where(m => (m.MemberID == account.MemberId || (targetCustId.HasValue && m.CustomerID == targetCustId.Value)) && m.LedgerID == dividendLedger.LedgerID)
                         .ToListAsync();
 
                     if (request.DividendPayable > 0)
@@ -1604,6 +1682,7 @@ namespace Bhisi.Api.Controllers
                             _context.MemberOpeningBalances.Add(new MemberOpeningBalance
                             {
                                 MemberID = account.MemberId,
+                                CustomerID = targetCustId,
                                 LedgerID = dividendLedger.LedgerID,
                                 Amount = request.DividendPayable,
                                 BalanceType = "Cr",
@@ -1613,6 +1692,8 @@ namespace Bhisi.Api.Controllers
                         else
                         {
                             var primaryDivMob = divMobs.First();
+                            primaryDivMob.MemberID = account.MemberId;
+                            if (targetCustId.HasValue) primaryDivMob.CustomerID = targetCustId.Value;
                             primaryDivMob.Amount = request.DividendPayable;
                             primaryDivMob.BalanceType = "Cr";
                             _context.MemberOpeningBalances.Update(primaryDivMob);
@@ -1808,7 +1889,7 @@ namespace Bhisi.Api.Controllers
                     bool hasOtherShares = await _context.ShareAccounts.AnyAsync(s => s.ShareAccountId != account.ShareAccountId && s.MemberId == targetMemberId);
                     bool hasLoans = await _context.LoanAccounts.AnyAsync(l => l.MemberID == targetMemberId || l.CoMemberID == targetMemberId || l.CoMember2ID == targetMemberId || l.Guarantor1MemberID == targetMemberId || l.Guarantor2MemberID == targetMemberId);
                     bool hasLoanApps = await _context.LoanApplications.AnyAsync(l => l.MemberID == targetMemberId || l.CoMemberID == targetMemberId || l.Guarantor1MemberID == targetMemberId || l.Guarantor2MemberID == targetMemberId);
-                    bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => s.MemberID == targetMemberId);
+                    bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID);
                     bool hasFds = await _context.FdAccounts.AnyAsync(f => f.MemberID == targetMemberId);
                     bool hasRds = await _context.RdAccounts.AnyAsync(r => r.MemberID == targetMemberId);
                     bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => p.MemberID == targetMemberId);
@@ -1828,7 +1909,6 @@ namespace Bhisi.Api.Controllers
                         member.MemberCode = null;
                         member.MembershipType = "Nominal";
                         member.LegacyMemberNo = null;
-                        member.OldMemberCode = null;
                         _context.Members.Update(member);
                     }
 
@@ -2610,7 +2690,10 @@ namespace Bhisi.Api.Controllers
         [HttpGet("TransactionsByMember/{memberId}")]
         public async Task<IActionResult> GetMemberTransactions(int memberId)
         {
-            var account = await _context.ShareAccounts.FirstOrDefaultAsync(s => s.MemberId == memberId);
+            var account = await _context.ShareAccounts
+                .Include(s => s.Customer)
+                .Include(s => s.Member)
+                .FirstOrDefaultAsync(s => s.MemberId == memberId);
             if (account == null)
             {
                 return Ok(new List<object>());
@@ -2627,6 +2710,11 @@ namespace Bhisi.Api.Controllers
                 {
                     t.TransactionId,
                     t.ShareAccountId,
+                    MemberId = account.MemberId,
+                    MemberCode = account.Member != null ? account.Member.MemberCode : "",
+                    MemberName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.LastName}" :
+                        (account.Member != null ? $"{account.Member.FirstName} {account.Member.LastName}" : ""),
+                    AccountNo = account.AccountNo,
                     t.TransactionDate,
                     t.TransactionType,
                     t.NumberOfShares,
@@ -2652,6 +2740,9 @@ namespace Bhisi.Api.Controllers
             var query = _context.ShareTransactions
                 .Include(t => t.ShareAccount)
                     .ThenInclude(s => s!.Member)
+                .Include(t => t.ShareAccount)
+                    .ThenInclude(s => s!.Customer)
+                .Include(t => t.Customer)
                 .Include(t => t.Voucher)
                 .Where(t => t.TransactionType != "OpeningBalance")
                 .AsQueryable();
@@ -2686,7 +2777,9 @@ namespace Bhisi.Api.Controllers
                     t.ShareAccountId,
                     MemberId = t.ShareAccount != null ? t.ShareAccount.MemberId : 0,
                     MemberCode = t.ShareAccount != null && t.ShareAccount.Member != null ? t.ShareAccount.Member.MemberCode : "",
-                    MemberName = t.ShareAccount != null && t.ShareAccount.Member != null ? $"{t.ShareAccount.Member.FirstName} {t.ShareAccount.Member.LastName}" : "अज्ञात",
+                    MemberName = t.Customer != null ? $"{t.Customer.FirstName} {t.Customer.LastName}" :
+                        (t.ShareAccount != null && t.ShareAccount.Customer != null ? $"{t.ShareAccount.Customer.FirstName} {t.ShareAccount.Customer.LastName}" :
+                        (t.ShareAccount != null && t.ShareAccount.Member != null ? $"{t.ShareAccount.Member.FirstName} {t.ShareAccount.Member.LastName}" : "अज्ञात")),
                     AccountNo = t.ShareAccount != null ? t.ShareAccount.AccountNo : "",
                     t.TransactionDate,
                     t.TransactionType,
@@ -2709,6 +2802,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/ShareAccounts/CancelAllotment/5
         [HttpPost("CancelAllotment/{transactionId}")]
+        [HttpPost("Transactions/{transactionId:int}/Cancel")]
         public async Task<IActionResult> CancelAllotment(int transactionId, [FromBody] CancelAllotmentRequest request)
         {
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
@@ -2827,10 +2921,12 @@ namespace Bhisi.Api.Controllers
         {
             public DateTime? TransactionDate { get; set; }
             public string? Narration { get; set; }
+            public string? EditReason { get; set; }
         }
 
         // PUT: api/ShareAccounts/UpdateTransaction/5
         [HttpPut("UpdateTransaction/{transactionId}")]
+        [HttpPut("Transactions/{transactionId:int}")]
         public async Task<IActionResult> UpdateTransaction(int transactionId, [FromBody] UpdateTransactionRequest request)
         {
             try
@@ -2848,7 +2944,16 @@ namespace Bhisi.Api.Controllers
 
                 if (!string.IsNullOrWhiteSpace(request.Narration))
                 {
-                    txn.Narration = request.Narration.Trim();
+                    var baseNarration = request.Narration.Trim();
+                    if (!string.IsNullOrWhiteSpace(request.EditReason))
+                    {
+                        baseNarration = $"{baseNarration} (दुरुस्ती: {request.EditReason.Trim()})";
+                    }
+                    txn.Narration = baseNarration;
+                }
+                else if (!string.IsNullOrWhiteSpace(request.EditReason))
+                {
+                    txn.Narration = $"{txn.Narration} (दुरुस्ती: {request.EditReason.Trim()})";
                 }
 
                 if (txn.Voucher != null)
@@ -2860,7 +2965,12 @@ namespace Bhisi.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(request.Narration))
                     {
                         var currentNarration = txn.Voucher.Narration ?? "";
-                        txn.Voucher.Narration = $"{currentNarration.Split(" - Edited:")[0]} - Edited: {request.Narration}".Trim();
+                        var reasonPart = !string.IsNullOrWhiteSpace(request.EditReason) ? $" [कारण: {request.EditReason.Trim()}]" : "";
+                        txn.Voucher.Narration = $"{currentNarration.Split(" - Edited:")[0]} - Edited: {request.Narration}{reasonPart}".Trim();
+                    }
+                    else if (!string.IsNullOrWhiteSpace(request.EditReason))
+                    {
+                        txn.Voucher.Narration = $"{txn.Voucher.Narration} [कारण: {request.EditReason.Trim()}]";
                     }
                     _context.Entry(txn.Voucher).State = EntityState.Modified;
                 }

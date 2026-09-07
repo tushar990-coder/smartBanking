@@ -90,6 +90,12 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
+                // Self-healing check: automatically fix any legacy or errant CustomerID = 0 records
+                if (await _context.Customers.AnyAsync(c => c.CustomerID == 0))
+                {
+                    await HarmonizeCifs();
+                }
+
                 var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
                 var query = _context.Customers
                     .AsNoTracking()
@@ -196,7 +202,6 @@ namespace Bhisi.Api.Controllers
                             MemberID = c.MemberProfile.MemberID,
                             MemberCode = c.MemberProfile.MemberCode,
                             LegacyMemberNo = c.MemberProfile.LegacyMemberNo,
-                            OldMemberCode = c.MemberProfile.OldMemberCode,
                             MembershipType = c.MemberProfile.MembershipType
                         } : null
                     })
@@ -243,14 +248,25 @@ namespace Bhisi.Api.Controllers
                     .AsNoTracking()
                     .MaxAsync(c => (int?)c.CustomerID) ?? 0;
 
-                int candidateNum = maxCustomerId + 1;
-                string candidateCif = $"CIF{candidateNum:D6}";
-
                 var allCifsInDb = await _context.Customers
                     .AsNoTracking()
                     .Where(c => c.CIFNo != null && c.CIFNo != "")
                     .Select(c => c.CIFNo!)
                     .ToListAsync();
+
+                int maxNumericCif = 0;
+                foreach (var cif in allCifsInDb)
+                {
+                    if (cif.StartsWith("CIF", StringComparison.OrdinalIgnoreCase) &&
+                        int.TryParse(cif.Substring(3), out int parsed) && parsed > maxNumericCif)
+                    {
+                        maxNumericCif = parsed;
+                    }
+                }
+
+                int candidateNum = Math.Max(maxCustomerId, maxNumericCif) + 1;
+                if (candidateNum < 1) candidateNum = 1;
+                string candidateCif = $"CIF{candidateNum:D6}";
 
                 var cifSet = new HashSet<string>(allCifsInDb, StringComparer.OrdinalIgnoreCase);
                 while (cifSet.Contains(candidateCif))
@@ -289,6 +305,64 @@ namespace Bhisi.Api.Controllers
             {
                 // Execute direct atomic SQL update for high performance and zero timeout
                 string sql = @"
+                    IF EXISTS (SELECT 1 FROM [Customers] WHERE [CustomerID] = 0)
+                    BEGIN
+                        DECLARE @TargetCustId INT = 1;
+                        IF EXISTS (SELECT 1 FROM [Customers] WHERE [CustomerID] = 1)
+                            SET @TargetCustId = (SELECT ISNULL(MAX([CustomerID]), 1) + 1 FROM [Customers]);
+
+                        DECLARE @CorrectedCif NVARCHAR(20) = 'CIF' + RIGHT('000000' + CAST(@TargetCustId AS VARCHAR(10)), 6);
+
+                        SET IDENTITY_INSERT [Customers] ON;
+                        INSERT INTO [Customers] (
+                            [CustomerID], [BranchID], [CIFNo], [LegacyCustomerNo], [FirstName], [MiddleName], [LastName],
+                            [NickName], [FirstNameEng], [MiddleNameEng], [LastNameEng], [Address], [AddressEng], [Village],
+                            [Taluka], [District], [MobileNo], [AadhaarNo], [PANNo], [RegistrationDate], [NomineeName],
+                            [NomineeNameEng], [NomineeRelation], [NomineeAddress], [NomineeBirthDate], [NomineeIsMinor],
+                            [NomineeGuardianName], [PhotoPath], [SignaturePath], [AadhaarDocPath], [PanDocPath], [Gender],
+                            [BirthDate], [Occupation], [CasteCategory], [Caste], [Email], [IsMinor], [GuardianName],
+                            [GuardianNameEng], [GuardianRelation], [GuardianAadhaarNo], [GuardianMobileNo], [GuardianAddress],
+                            [Status], [EmployerId], [IsDeleted], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn]
+                        )
+                        SELECT 
+                            @TargetCustId, [BranchID], @CorrectedCif, [LegacyCustomerNo],
+                            [FirstName], [MiddleName], [LastName], [NickName], [FirstNameEng], [MiddleNameEng], [LastNameEng],
+                            [Address], [AddressEng], [Village], [Taluka], [District], [MobileNo], [AadhaarNo], [PANNo],
+                            [RegistrationDate], [NomineeName], [NomineeNameEng], [NomineeRelation], [NomineeAddress],
+                            [NomineeBirthDate], [NomineeIsMinor], [NomineeGuardianName], [PhotoPath], [SignaturePath],
+                            [AadhaarDocPath], [PanDocPath], [Gender], [BirthDate], [Occupation], [CasteCategory], [Caste],
+                            [Email], [IsMinor], [GuardianName], [GuardianNameEng], [GuardianRelation], [GuardianAadhaarNo],
+                            [GuardianMobileNo], [GuardianAddress], [Status], [EmployerId], [IsDeleted], [CreatedBy],
+                            [CreatedOn], [UpdatedBy], [UpdatedOn]
+                        FROM [Customers]
+                        WHERE [CustomerID] = 0;
+                        SET IDENTITY_INSERT [Customers] OFF;
+
+                        IF OBJECT_ID(N'[Members]', N'U') IS NOT NULL
+                            UPDATE [Members] SET [CustomerID] = @TargetCustId, [CIFNo] = @CorrectedCif WHERE [CustomerID] = 0 OR [CIFNo] = 'CIF000000';
+                        IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
+                            UPDATE [SavingAccountMasters] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                        IF OBJECT_ID(N'[LoanAccounts]', N'U') IS NOT NULL
+                            UPDATE [LoanAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                        IF OBJECT_ID(N'[FdAccounts]', N'U') IS NOT NULL
+                            UPDATE [FdAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                        IF OBJECT_ID(N'[RdAccounts]', N'U') IS NOT NULL
+                            UPDATE [RdAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                        IF OBJECT_ID(N'[PigmyAccounts]', N'U') IS NOT NULL
+                            UPDATE [PigmyAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                        IF OBJECT_ID(N'[CustomerOpeningBalances]', N'U') IS NOT NULL
+                            UPDATE [CustomerOpeningBalances] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                        IF OBJECT_ID(N'[LockerAllotments]', N'U') IS NOT NULL
+                            UPDATE [LockerAllotments] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                        IF OBJECT_ID(N'[ShareAccounts]', N'U') IS NOT NULL
+                            UPDATE [ShareAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+
+                        DELETE FROM [Customers] WHERE [CustomerID] = 0;
+
+                        DECLARE @MaxIdNow INT = (SELECT ISNULL(MAX([CustomerID]), 1) FROM [Customers]);
+                        DBCC CHECKIDENT ('Customers', RESEED, @MaxIdNow);
+                    END;
+
                     UPDATE c
                     SET c.[CIFNo] = 'CIF' + RIGHT('000000' + CAST(c.[CustomerID] AS VARCHAR(10)), 6)
                     FROM [Customers] c;
@@ -502,52 +576,13 @@ namespace Bhisi.Api.Controllers
             existingCustomer.UpdatedBy = userId;
             existingCustomer.UpdatedOn = DateTime.Now;
 
-            // Sync with linked Member record if exists (preserve existing Member.OldMemberCode / LegacyMemberNo)
+            // Sync with linked Member record if exists — only membership-specific fields need updating
+            // since demographic data now lives exclusively on the Customer record
             var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == id);
             if (linkedMember != null)
             {
-                linkedMember.JoiningDate = customer.RegistrationDate;
-                linkedMember.FirstName = customer.FirstName;
-                linkedMember.MiddleName = customer.MiddleName;
-                linkedMember.LastName = customer.LastName;
-                linkedMember.NickName = customer.NickName;
-                linkedMember.FirstNameEng = customer.FirstNameEng;
-                linkedMember.MiddleNameEng = customer.MiddleNameEng;
-                linkedMember.LastNameEng = customer.LastNameEng;
-                linkedMember.Address = customer.Address;
-                linkedMember.AddressEng = customer.AddressEng;
-                linkedMember.Village = customer.Village;
-                linkedMember.Taluka = customer.Taluka;
-                linkedMember.District = customer.District;
-                linkedMember.MobileNo = existingCustomer.MobileNo;
-                linkedMember.AadhaarNo = existingCustomer.AadhaarNo;
-                linkedMember.PANNo = existingCustomer.PANNo;
-                linkedMember.PhotoPath = customer.PhotoPath;
-                linkedMember.SignaturePath = customer.SignaturePath;
-                linkedMember.AadhaarDocPath = customer.AadhaarDocPath;
-                linkedMember.PanDocPath = customer.PanDocPath;
-                linkedMember.Gender = customer.Gender ?? string.Empty;
-                linkedMember.BirthDate = customer.BirthDate;
-                linkedMember.Occupation = customer.Occupation;
-                linkedMember.CasteCategory = customer.CasteCategory;
-                linkedMember.Caste = customer.Caste;
-                linkedMember.Email = customer.Email;
-                linkedMember.IsMinor = customer.IsMinor;
-                linkedMember.GuardianName = customer.GuardianName;
-                linkedMember.GuardianNameEng = customer.GuardianNameEng;
-                linkedMember.GuardianRelation = customer.GuardianRelation;
-                linkedMember.GuardianAadhaarNo = customer.GuardianAadhaarNo;
-                linkedMember.GuardianMobileNo = customer.GuardianMobileNo;
-                linkedMember.GuardianAddress = customer.GuardianAddress;
-                linkedMember.NomineeName = customer.NomineeName;
-                linkedMember.NomineeNameEng = customer.NomineeNameEng;
-                linkedMember.NomineeRelation = customer.NomineeRelation;
-                linkedMember.NomineeAddress = customer.NomineeAddress;
-                linkedMember.NomineeBirthDate = customer.NomineeBirthDate;
-                linkedMember.NomineeIsMinor = customer.NomineeIsMinor;
-                linkedMember.NomineeGuardianName = customer.NomineeGuardianName;
+                if (linkedMember.CustomerID != id) linkedMember.CustomerID = id;
                 linkedMember.Status = customer.Status;
-                linkedMember.EmployerId = customer.EmployerId;
                 linkedMember.UpdatedBy = userId;
                 linkedMember.UpdatedOn = DateTime.Now;
             }
@@ -588,7 +623,7 @@ namespace Bhisi.Api.Controllers
             int linkedMemberId = linkedMember?.MemberID ?? 0;
 
             // Check if there are active loans, savings, FDs, RDs, Pigmies, Shares, Lockers, Opening Balances
-            bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => (s.CustomerID == id || (linkedMemberId > 0 && s.MemberID == linkedMemberId)));
+            bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => s.CustomerID == id);
             bool hasLoans = await _context.LoanAccounts.AnyAsync(l => (l.CustomerID == id || (linkedMemberId > 0 && (l.MemberID == linkedMemberId || l.CoMemberID == linkedMemberId || l.CoMember2ID == linkedMemberId || l.Guarantor1MemberID == linkedMemberId || l.Guarantor2MemberID == linkedMemberId))));
             bool hasFds = await _context.FdAccounts.AnyAsync(f => (f.CustomerID == id || (linkedMemberId > 0 && f.MemberID == linkedMemberId)));
             bool hasRds = await _context.RdAccounts.AnyAsync(r => (r.CustomerID == id || (linkedMemberId > 0 && r.MemberID == linkedMemberId)));
@@ -629,7 +664,8 @@ namespace Bhisi.Api.Controllers
                     var maxRemainingId = await _context.Customers.MaxAsync(c => (int?)c.CustomerID) ?? 0;
                     if (id > maxRemainingId)
                     {
-                        await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('Customers', RESEED, {maxRemainingId});");
+                        int reseedVal = maxRemainingId > 0 ? maxRemainingId : 1;
+                        await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('Customers', RESEED, {reseedVal});");
                     }
                 }
                 catch (Exception reseedEx)
@@ -659,35 +695,37 @@ namespace Bhisi.Api.Controllers
 
             if (customer == null) return NotFound("ग्राहक सापडला नाही.");
 
+            int? linkedMemberId = customer.MemberProfile?.MemberID;
+
             var savings = await _context.SavingAccountMasters
-                .Where(s => s.MemberID == id)
+                .Where(s => s.CustomerID == id)
                 .Select(s => new { s.SavingAccountID, s.AccountNo, s.CurrentBalance, s.Status, s.OpeningDate })
                 .ToListAsync();
 
             var pigmy = await _context.PigmyAccounts
-                .Where(p => p.MemberID == id)
+                .Where(p => p.CustomerID == id || (linkedMemberId != null && p.MemberID == linkedMemberId))
                 .Select(p => new { p.PigmyAccountID, p.AccountNo, p.TotalDepositedAmount, p.Status, p.OpeningDate })
                 .ToListAsync();
 
             var fds = await _context.FdAccounts
-                .Where(f => f.MemberID == id)
+                .Where(f => f.CustomerID == id || (linkedMemberId != null && f.MemberID == linkedMemberId))
                 .Select(f => new { f.FdAccountID, f.AccountNo, f.DepositAmount, f.MaturityAmount, f.MaturityDate, f.Status })
                 .ToListAsync();
 
             var rds = await _context.RdAccounts
-                .Where(r => r.MemberID == id)
+                .Where(r => r.CustomerID == id || (linkedMemberId != null && r.MemberID == linkedMemberId))
                 .Select(r => new { r.RdAccountID, r.AccountNo, r.InstallmentAmount, r.TotalDepositedAmount, r.Status })
                 .ToListAsync();
 
             var loans = await _context.LoanAccounts
-                .Where(l => l.MemberID == id)
+                .Where(l => l.CustomerID == id || (linkedMemberId != null && (l.MemberID == linkedMemberId || l.CoMemberID == linkedMemberId || l.CoMember2ID == linkedMemberId)))
                 .Select(l => new { l.LoanAccountID, l.LoanAccountNo, l.SanctionedAmount, l.PrincipalBalance, l.InterestBalance, l.Status })
                 .ToListAsync();
 
-            var shares = await _context.ShareAccounts
-                .Where(s => s.MemberId == id)
+            var shares = linkedMemberId != null ? await _context.ShareAccounts
+                .Where(s => s.MemberId == linkedMemberId)
                 .Select(s => new { s.ShareAccountId, s.AccountNo, s.TotalShareCount, s.TotalShareAmount, s.Status })
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync() : null;
 
             return Ok(new
             {

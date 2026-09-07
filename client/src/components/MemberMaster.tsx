@@ -95,7 +95,11 @@ interface Branch {
   branchName: string;
 }
 
-export default function MemberMaster() {
+interface MemberMasterProps {
+  onNavigate?: (tab: string, params?: any) => void;
+}
+
+export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
   const { user } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -107,6 +111,13 @@ export default function MemberMaster() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Prompt modal after saving new member to navigate to ShareMaster
+  const [newRegisteredMember, setNewRegisteredMember] = useState<{
+    memberId: number;
+    memberCode: string;
+    memberName: string;
+  } | null>(null);
+
   // List Modal Filter States
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('All');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('All');
@@ -115,17 +126,11 @@ export default function MemberMaster() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | ''>('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
-  // Share Application & Allotment Fields
-  const [shareConfig, setShareConfig] = useState({
-    numberOfShares: 10,
-    faceValue: 100,
+  // Admission Fees & Payment Mode
+  const [feesConfig, setFeesConfig] = useState({
     admissionFee: 10,
     buildingFund: 0,
-    paymentMode: 'Cash', // Cash or Transfer
-    savingAccountId: '',
-    fromShareNo: 1,
-    toShareNo: 10,
-    certificateNo: ''
+    paymentMode: 'Cash' // Cash or Transfer
   });
 
   // Board Approval & Resolution Details (MCS Act Compliance)
@@ -142,7 +147,6 @@ export default function MemberMaster() {
   const [formData, setFormData] = useState({
     branchID: user?.branchID || 1,
     memberCode: '',
-    oldMemberCode: '',
     legacyMemberNo: '',
     cifNo: '',
     membershipType: 'Regular', // Regular, Associate, Nominal, Sympathizer
@@ -202,7 +206,6 @@ export default function MemberMaster() {
   useEffect(() => {
     isMountedRef.current = true;
     fetchNextMemberCode();
-    fetchNextShareRange();
     fetchCustomers();
     fetchMembers();
     fetchBranches();
@@ -224,34 +227,6 @@ export default function MemberMaster() {
       }
     } catch (e) {
       console.error("Error fetching next member code:", e);
-    }
-  };
-
-  const fetchNextShareRange = async () => {
-    try {
-      const res = await fetch('/api/ShareAccounts/NextRange', { headers: getAuthHeaders() });
-      if (res.ok && isMountedRef.current) {
-        const data = await res.json();
-        if (data && isMountedRef.current) {
-          const fromNo = Number(data.fromShareNo || data.nextShareNo || 1);
-          const certNo = data.nextCertificateNo || `CERT-${new Date().getFullYear()}-${String(fromNo).padStart(5, '0')}`;
-          setShareConfig(prev => ({
-            ...prev,
-            fromShareNo: fromNo,
-            toShareNo: fromNo + (prev.numberOfShares > 0 ? prev.numberOfShares - 1 : 0),
-            certificateNo: certNo
-          }));
-        }
-      }
-    } catch (e) {
-      if (isMountedRef.current) {
-        setShareConfig(prev => ({
-          ...prev,
-          fromShareNo: 1,
-          toShareNo: prev.numberOfShares,
-          certificateNo: `CERT-${new Date().getFullYear()}-00001`
-        }));
-      }
     }
   };
 
@@ -342,60 +317,92 @@ export default function MemberMaster() {
   };
 
   // When Customer is selected from CustomerSearchSelect
-  const handleCustomerSelect = (customerId: number | '') => {
+  const handleCustomerSelect = async (customerId: number | '') => {
     setSelectedCustomerId(customerId);
     if (!customerId) {
       setSelectedCustomer(null);
+      fetchNextMemberCode();
       return;
     }
 
     const cust = customers.find(c => c.customerID === customerId);
     if (cust) {
       setSelectedCustomer(cust);
+
+      // Find if this customer is already a registered member
+      const matchedMember = members.find(m => 
+        (m.customerID && m.customerID === customerId) || 
+        (m.cifNo && cust.cifNo && m.cifNo.trim().toLowerCase() === cust.cifNo.trim().toLowerCase()) ||
+        (cust.memberCode && m.memberCode === cust.memberCode)
+      );
+
+      const isRegistered = Boolean(
+        (cust.memberCode && !cust.memberCode.startsWith('TEMP')) ||
+        (matchedMember && matchedMember.memberCode && !matchedMember.memberCode.startsWith('TEMP'))
+      );
+
+      const memCode = matchedMember?.memberCode || cust.memberCode || '';
+
       setFormData(prev => ({
         ...prev,
-        cifNo: cust.cifNo || '',
-        firstName: cust.firstName || '',
-        middleName: cust.middleName || '',
-        lastName: cust.lastName || '',
-        nickName: cust.nickName || '',
-        firstNameEng: cust.firstNameEng || '',
-        middleNameEng: cust.middleNameEng || '',
-        lastNameEng: cust.lastNameEng || '',
-        address: cust.address || '',
-        village: cust.village || '',
-        taluka: cust.taluka || '',
-        district: cust.district || '',
-        mobileNo: cust.mobileNo || '',
-        email: cust.email || '',
-        aadhaarNo: cust.aadhaarNo || '',
-        panNo: cust.panNo || '',
-        gender: cust.gender || 'Male',
-        birthDate: cust.birthDate ? cust.birthDate.split('T')[0] : '',
-        occupation: cust.occupation || '',
-        casteCategory: cust.casteCategory || '',
-        caste: cust.caste || '',
-        nomineeName: cust.nomineeName || '',
-        nomineeRelation: cust.nomineeRelation || '',
-        nomineeAddress: cust.nomineeAddress || '',
-        photoPath: cust.photoPath || '',
-        signaturePath: cust.signaturePath || ''
+        branchID: matchedMember?.branchID || cust.branchID || prev.branchID,
+        memberCode: isRegistered ? memCode : prev.memberCode,
+        legacyMemberNo: matchedMember?.legacyMemberNo || (matchedMember as any)?.oldMemberCode || '',
+        cifNo: cust.cifNo || matchedMember?.cifNo || '',
+        membershipType: matchedMember?.membershipType || 'Regular',
+        status: matchedMember?.status || 'Active',
+        firstName: cust.firstName || matchedMember?.firstName || '',
+        middleName: cust.middleName || matchedMember?.middleName || '',
+        lastName: cust.lastName || matchedMember?.lastName || '',
+        nickName: cust.nickName || matchedMember?.nickName || '',
+        firstNameEng: cust.firstNameEng || matchedMember?.firstNameEng || '',
+        middleNameEng: cust.middleNameEng || matchedMember?.middleNameEng || '',
+        lastNameEng: cust.lastNameEng || matchedMember?.lastNameEng || '',
+        address: cust.address || matchedMember?.address || '',
+        village: cust.village || matchedMember?.village || '',
+        taluka: cust.taluka || matchedMember?.taluka || '',
+        district: cust.district || matchedMember?.district || '',
+        mobileNo: cust.mobileNo || matchedMember?.mobileNo || '',
+        email: cust.email || matchedMember?.email || '',
+        aadhaarNo: cust.aadhaarNo || matchedMember?.aadhaarNo || '',
+        panNo: cust.panNo || matchedMember?.panNo || '',
+        gender: cust.gender || matchedMember?.gender || 'Male',
+        birthDate: cust.birthDate ? cust.birthDate.split('T')[0] : (matchedMember?.birthDate ? matchedMember.birthDate.split('T')[0] : ''),
+        occupation: cust.occupation || matchedMember?.occupation || '',
+        casteCategory: cust.casteCategory || matchedMember?.casteCategory || '',
+        caste: cust.caste || matchedMember?.caste || '',
+        nomineeName: cust.nomineeName || matchedMember?.nomineeName || '',
+        nomineeRelation: cust.nomineeRelation || matchedMember?.nomineeRelation || '',
+        nomineeAddress: cust.nomineeAddress || matchedMember?.nomineeAddress || '',
+        photoPath: cust.photoPath || matchedMember?.photoPath || '',
+        signaturePath: cust.signaturePath || matchedMember?.signaturePath || ''
       }));
+
+      if (isRegistered && matchedMember) {
+        // Populate existing member resolution details
+        setResolutionData(prev => ({
+          ...prev,
+          applicationDate: (matchedMember as any).applicationDate ? (matchedMember as any).applicationDate.split('T')[0] : (matchedMember.joiningDate ? matchedMember.joiningDate.split('T')[0] : prev.applicationDate),
+          resolutionNo: (matchedMember as any).resolutionNo || '',
+          resolutionDate: (matchedMember as any).resolutionDate ? (matchedMember as any).resolutionDate.split('T')[0] : (matchedMember.joiningDate ? matchedMember.joiningDate.split('T')[0] : prev.resolutionDate),
+          joiningDate: matchedMember.joiningDate ? matchedMember.joiningDate.split('T')[0] : prev.joiningDate,
+          proposerMemberID: (matchedMember as any).proposerMemberID ? String((matchedMember as any).proposerMemberID) : '',
+          seconderMemberID: (matchedMember as any).seconderMemberID ? String((matchedMember as any).seconderMemberID) : ''
+        }));
+      } else {
+        // If not already a member, ensure fresh next codes are active
+        fetchNextMemberCode();
+      }
     }
   };
 
-  // Share calculation adjustments
-  const handleShareCountChange = (shares: number) => {
-    const validShares = Math.max(1, shares || 1);
-    setShareConfig(prev => ({
-      ...prev,
-      numberOfShares: validShares,
-      toShareNo: prev.fromShareNo + validShares - 1
-    }));
-  };
+  const isExistingMember = !editingId && Boolean(
+    selectedCustomer?.memberCode && 
+    selectedCustomer.memberCode.trim() !== '' && 
+    !selectedCustomer.memberCode.startsWith('TEMP')
+  );
 
-  const totalShareCapital = (shareConfig.numberOfShares || 0) * (shareConfig.faceValue || 0);
-  const totalPayable = totalShareCapital + (shareConfig.admissionFee || 0) + (shareConfig.buildingFund || 0);
+  const totalPayable = (feesConfig.admissionFee || 0) + (feesConfig.buildingFund || 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -421,8 +428,8 @@ export default function MemberMaster() {
     try {
       const payload: any = {
         ...formData,
-        memberID: editingId ? Number(editingId) : 0,
-        customerID: selectedCustomerId ? Number(selectedCustomerId) : (editingId ? formData.cifNo : null),
+        memberID: editingId !== null ? Number(editingId) : 0,
+        customerID: selectedCustomerId ? Number(selectedCustomerId) : (editingId !== null ? formData.cifNo : null),
         branchID: Number(formData.branchID),
         joiningDate: resolutionData.joiningDate ? new Date(resolutionData.joiningDate).toISOString() : new Date().toISOString(),
         birthDate: formData.birthDate ? new Date(formData.birthDate).toISOString() : null,
@@ -431,7 +438,7 @@ export default function MemberMaster() {
       };
 
       let response;
-      if (editingId) {
+      if (editingId !== null) {
         response = await fetch(`${API_URL}/${editingId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -452,32 +459,20 @@ export default function MemberMaster() {
         } catch {
           savedMember = {};
         }
-        const targetMemberId = editingId || savedMember.memberID;
+        const targetMemberId = (editingId !== null) ? editingId : savedMember.memberID;
+        const targetMemberCode = savedMember.memberCode || formData.memberCode;
 
-        // If new member with shares, allot shares via ShareAccountsController
-        if (!editingId && shareConfig.numberOfShares > 0) {
-          try {
-            const allotPayload = {
-              memberId: targetMemberId,
-              numberOfShares: shareConfig.numberOfShares,
-              faceValue: shareConfig.faceValue,
-              admissionFee: shareConfig.admissionFee,
-              buildingFund: shareConfig.buildingFund,
-              paymentMode: shareConfig.paymentMode,
-              resolutionNo: resolutionData.resolutionNo,
-              resolutionDate: resolutionData.resolutionDate
-            };
-            await fetch('/api/ShareAccounts/Allot', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-              body: JSON.stringify(allotPayload)
-            });
-          } catch (shareErr) {
-            console.error("Error auto-allotting shares", shareErr);
-          }
+        if (editingId === null) {
+          setNewRegisteredMember({
+            memberId: targetMemberId,
+            memberCode: targetMemberCode,
+            memberName: `${formData.firstName} ${formData.lastName}`
+          });
+          setSuccess("नवीन सभासद नोंदणी अर्ज यशस्वीरित्या जतन झाला! आता भाग भांडवल व्यवस्थापनात जाऊन शेअर्स वाटप करा.");
+        } else {
+          setSuccess("सभासद माहिती यशस्वीरित्या अद्ययावत केली!");
         }
 
-        setSuccess(editingId ? "सभासद माहिती यशस्वीरित्या अद्ययावत केली!" : "नवीन सभासद अर्ज मंजूर होऊन शेअर्स यशस्वीरित्या वाटप झाले!");
         resetForm();
         fetchMembers();
       } else {
@@ -509,8 +504,7 @@ export default function MemberMaster() {
     setFormData({
       branchID: member.branchID || 1,
       memberCode: member.memberCode || '',
-      oldMemberCode: member.oldMemberCode || '',
-      legacyMemberNo: member.legacyMemberNo || '',
+      legacyMemberNo: member.legacyMemberNo || (member as any).oldMemberCode || '',
       cifNo: member.cifNo || '',
       membershipType: member.membershipType || 'Regular',
       status: member.status || 'Active',
@@ -594,7 +588,6 @@ export default function MemberMaster() {
     setFormData({
       branchID: user?.branchID || 1,
       memberCode: '',
-      oldMemberCode: '',
       legacyMemberNo: '',
       cifNo: '',
       membershipType: 'Regular',
@@ -626,7 +619,6 @@ export default function MemberMaster() {
       signaturePath: ''
     });
     fetchNextMemberCode();
-    fetchNextShareRange();
     setError('');
     setSuccess('');
   };
@@ -677,23 +669,23 @@ export default function MemberMaster() {
           </div>
           <div>
             <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
-              <span>सभासदत्व अर्ज व भाग वाटप</span>
-              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Member Application & Share Allotment)</span>
-              {editingId && (
+              <span>सभासदत्व नोंदणी अर्ज</span>
+              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Member Registration Application)</span>
+              {editingId !== null && (
                 <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
                   ✏️ संपादन चालू (#{formData.memberCode})
                 </span>
               )}
             </h1>
             <p className="text-[11px] text-gray-500 font-medium">
-              महाराष्ट्र सहकारी संस्था अधिनियम, १९६० (MCS Act Sec 24 / Form I) नुसार नवीन सभासद नोंदणी व भाग भांडवल वाटप व्यवस्थापन
+              महाराष्ट्र सहकारी संस्था अधिनियम, १९६० (MCS Act Sec 24 / Form I) नुसार नवीन सभासद अर्ज नोंदणी व संचालक मंडळ ठराव व्यवस्थापन
             </p>
           </div>
         </div>
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
-          {editingId && (
+          {editingId !== null && (
             <button
               type="button"
               onClick={resetForm}
@@ -879,7 +871,27 @@ export default function MemberMaster() {
                 </div>
               </div>
             )}
+
+            {/* Existing Member Alert Banner */}
+            {isExistingMember && (
+              <div className="mt-2.5 p-3 bg-amber-50 border-2 border-amber-400 rounded-sm flex items-start gap-2.5 shadow-2xs animate-in fade-in">
+                <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="text-xs font-bold text-amber-900 flex items-center gap-2">
+                    <span>सदर खातेदार आधीच अधिकृत नोंदणीकृत सभासद आहेत (सभासद क्र.: {selectedCustomer?.memberCode})</span>
+                    <span className="bg-amber-200 text-amber-900 px-2 py-0.5 rounded text-[10px] font-black border border-amber-400">
+                      👑 विद्यमान सभासद (Existing Member)
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-amber-800 mt-1">
+                    या खातेदाराचे सभासदत्व आणि भाग भांडवल वाटप (Share Allotment) आधीच मंजूर व पूर्ण झालेले आहे. खाली त्यांची विद्यमान नोंद केवळ पाहण्यासाठी (Read-only) दर्शविली आहे. नवीन सभासद अर्ज भरण्याची किंवा शेअर्स वाटप करण्याची आवश्यकता नाही.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
+
+          <fieldset disabled={isExistingMember} className="space-y-3 disabled:opacity-85 border-0 p-0 m-0 min-w-0">
 
           {/* Section 2: Membership Classification */}
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
@@ -954,82 +966,12 @@ export default function MemberMaster() {
             </div>
           </div>
 
-          {/* Section 3: Share Capital & Allotment */}
-          <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
-            <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
-              <div className="flex items-center gap-1.5">
-                <Coins className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">३. भाग भांडवल व शेअर्स वाटप (Share Capital & Subscription)</h2>
-              </div>
-              <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold px-2 py-0.5 rounded">
-                शेअर्स एकूण: {shareConfig.numberOfShares} भाग = ₹{totalShareCapital.toLocaleString('en-IN')}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
-              <div>
-                <label className={labelClass}>भागांची संख्या (No. of Shares) <span className="text-red-500">*</span></label>
-                <input
-                  type="number"
-                  min="1"
-                  value={shareConfig.numberOfShares}
-                  onChange={e => handleShareCountChange(parseInt(e.target.value) || 1)}
-                  required
-                  className={`${inputClass} font-mono font-bold text-emerald-700 text-right`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>दर्शनी मूल्य (Face Value ₹) <span className="text-red-500">*</span></label>
-                <input
-                  type="number"
-                  min="1"
-                  value={shareConfig.faceValue}
-                  onChange={e => setShareConfig(prev => ({ ...prev, faceValue: parseFloat(e.target.value) || 100 }))}
-                  required
-                  className={`${inputClass} font-mono text-right`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>एकूण भाग भांडवल (Capital ₹)</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={`₹ ${totalShareCapital.toLocaleString('en-IN')}`}
-                  className={`${inputClass} font-mono font-bold text-emerald-800 bg-emerald-50/60 text-right cursor-not-allowed border-emerald-300`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>शेअर अनुक्रमांक (Range)</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={`${shareConfig.fromShareNo} ते ${shareConfig.toShareNo}`}
-                  className={`${inputClass} font-mono font-bold text-slate-700 bg-slate-100 text-center cursor-not-allowed`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>भाग दाखला क्र. (Cert No)</label>
-                <input
-                  type="text"
-                  value={shareConfig.certificateNo}
-                  onChange={e => setShareConfig(prev => ({ ...prev, certificateNo: e.target.value }))}
-                  placeholder="CERT-2026-00001"
-                  className={`${inputClass} font-mono font-bold text-primary`}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 4: Fees & Payment Method */}
+          {/* Section 3: Fees & Payment Method */}
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
             <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
               <div className="flex items-center gap-1.5">
                 <IndianRupee className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">४. प्रवेश शुल्क व भरणा तपशील (Fees & Payment Method)</h2>
+                <h2 className="text-xs font-bold text-primary">३. प्रवेश शुल्क व भरणा तपशील (Admission Fees & Payment Method)</h2>
               </div>
             </div>
 
@@ -1039,8 +981,8 @@ export default function MemberMaster() {
                 <input
                   type="number"
                   min="0"
-                  value={shareConfig.admissionFee}
-                  onChange={e => setShareConfig(prev => ({ ...prev, admissionFee: parseFloat(e.target.value) || 0 }))}
+                  value={feesConfig.admissionFee}
+                  onChange={e => setFeesConfig(prev => ({ ...prev, admissionFee: parseFloat(e.target.value) || 0 }))}
                   className={`${inputClass} font-mono text-right`}
                 />
               </div>
@@ -1050,8 +992,8 @@ export default function MemberMaster() {
                 <input
                   type="number"
                   min="0"
-                  value={shareConfig.buildingFund}
-                  onChange={e => setShareConfig(prev => ({ ...prev, buildingFund: parseFloat(e.target.value) || 0 }))}
+                  value={feesConfig.buildingFund}
+                  onChange={e => setFeesConfig(prev => ({ ...prev, buildingFund: parseFloat(e.target.value) || 0 }))}
                   className={`${inputClass} font-mono text-right`}
                 />
               </div>
@@ -1069,8 +1011,8 @@ export default function MemberMaster() {
               <div>
                 <label className={labelClass}>भरणा प्रकार (Payment Mode) <span className="text-red-500">*</span></label>
                 <select
-                  value={shareConfig.paymentMode}
-                  onChange={e => setShareConfig(prev => ({ ...prev, paymentMode: e.target.value }))}
+                  value={feesConfig.paymentMode}
+                  onChange={e => setFeesConfig(prev => ({ ...prev, paymentMode: e.target.value }))}
                   className={`${inputClass} font-bold`}
                 >
                   <option value="Cash">💵 रोख भरणा (Cash Deposit)</option>
@@ -1080,12 +1022,12 @@ export default function MemberMaster() {
             </div>
           </div>
 
-          {/* Section 5: Board Resolution & Approval */}
+          {/* Section 4: Board Resolution & Approval */}
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
             <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
               <div className="flex items-center gap-1.5">
                 <Building2 className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">५. संचालक मंडळ ठराव व मंजुरी (Board Resolution Details - MCS Act Compliance)</h2>
+                <h2 className="text-xs font-bold text-primary">४. संचालक मंडळ ठराव व मंजुरी (Board Resolution Details - MCS Act Compliance)</h2>
               </div>
             </div>
 
@@ -1136,12 +1078,12 @@ export default function MemberMaster() {
             </div>
           </div>
 
-          {/* Section 6: Proposer & Seconder */}
+          {/* Section 5: Proposer & Seconder */}
           <div className="bg-primary/5 p-3.5 rounded-sm border border-primary/20 space-y-2.5">
             <div className="flex items-center justify-between border-b border-primary/20 pb-1.5">
               <div className="flex items-center gap-1.5">
                 <BookOpen className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">६. सुचक व अनुमोदक सभासद (Proposer & Seconder)</h2>
+                <h2 className="text-xs font-bold text-primary">५. सुचक व अनुमोदक सभासद (Proposer & Seconder)</h2>
               </div>
             </div>
 
@@ -1180,6 +1122,8 @@ export default function MemberMaster() {
             </div>
           </div>
 
+          </fieldset>
+
           {/* Form Action Buttons (Matching CBS Layout) */}
           <div className="pt-2 flex justify-end gap-2 border-t border-gray-200">
             <button
@@ -1188,19 +1132,26 @@ export default function MemberMaster() {
               className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>{editingId ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
+              <span>{editingId !== null ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
             </button>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className={`px-6 py-2 ${
-                editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary hover:opacity-90'
-              } text-white font-bold rounded-sm text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition-all`}
-            >
-              <CheckSquare className="w-4 h-4" />
-              <span>{saving ? 'जतन होत आहे...' : (editingId ? '✏️ सभासद माहिती अपडेट करा' : '💾 सभासद अर्ज व भाग वाटप मंजूर करा')}</span>
-            </button>
+            {isExistingMember ? (
+              <div className="px-4 py-2 bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-sm font-bold text-xs flex items-center gap-1.5 shadow-2xs">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                <span>👑 विद्यमान सभासद - अर्ज व भाग वाटप आधीच मंजूर आहे</span>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                disabled={saving}
+                className={`px-6 py-2 ${
+                  editingId !== null ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary hover:opacity-90'
+                } text-white font-bold rounded-sm text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition-all`}
+              >
+                <CheckSquare className="w-4 h-4" />
+                <span>{saving ? 'जतन होत आहे...' : (editingId !== null ? '✏️ सभासद माहिती अपडेट करा' : '💾 सभासदत्व अर्ज जतन करा')}</span>
+              </button>
+            )}
           </div>
 
         </form>
@@ -1450,6 +1401,75 @@ export default function MemberMaster() {
             fetchMembers();
           }}
         />
+      )}
+
+      {/* 🌟 NEW MEMBER REGISTRATION SUCCESS MODAL WITH DIRECT SHARE ALLOTMENT ACTION */}
+      {newRegisteredMember && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-md shadow-2xl max-w-md w-full overflow-hidden border border-slate-300 animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-emerald-600 text-white px-4 py-3 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-white" />
+                <span className="font-bold text-sm">सभासद नोंदणी अर्ज यशस्वी!</span>
+              </div>
+              <button
+                onClick={() => setNewRegisteredMember(null)}
+                className="text-white/80 hover:text-white cursor-pointer font-bold text-base"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3.5">
+              <div className="bg-emerald-50 border border-emerald-200 rounded p-3 text-xs space-y-1.5 text-emerald-950">
+                <p className="font-bold text-emerald-900">
+                  नवीन सभासद नोंदणी अर्ज व संचालक मंडळ ठराव तपशील यशस्वीरित्या जतन झाले आहेत.
+                </p>
+                <div className="pt-2 border-t border-emerald-200/60 font-mono text-[11px] grid grid-cols-2 gap-1.5">
+                  <div>सभासद कोड: <strong className="text-primary font-bold">{newRegisteredMember.memberCode}</strong></div>
+                  <div>ID: <strong>#{newRegisteredMember.memberId}</strong></div>
+                  <div className="col-span-2">नाव: <strong>{newRegisteredMember.memberName}</strong></div>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900 flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block mb-0.5">पुढील पायरी: भाग भांडवल वाटप (Share Allotment)</strong>
+                  <p className="text-[11px] text-amber-800">
+                    या नवीन सभासदासाठी आता 'भाग भांडवल व्यवस्थापन' फॉर्ममध्ये जाऊन शेअर्स वाटप पूर्ण करा.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const mId = newRegisteredMember.memberId;
+                    setNewRegisteredMember(null);
+                    if (onNavigate) {
+                      onNavigate('share-master', { memberId: mId });
+                    } else {
+                      window.location.href = `/shares/allocation?memberId=${mId}`;
+                    }
+                  }}
+                  className="flex-1 px-4 py-2 bg-primary hover:opacity-95 text-white rounded font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <span>➡️ थेट भाग भांडवल वाटप करा</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setNewRegisteredMember(null)}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-semibold text-xs border border-slate-300 cursor-pointer text-center"
+                >
+                  नवीन अर्ज भरा
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

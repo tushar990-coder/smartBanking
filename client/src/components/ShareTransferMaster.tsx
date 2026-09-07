@@ -106,9 +106,15 @@ export default function ShareTransferMaster() {
 
   const loadFromMemberDetails = async (memberId: string) => {
     try {
+      const fromMem = fromMembers.find((m: any) => m.memberID?.toString() === memberId.toString());
+      const cId = fromMem?.customerID;
+      const savingUrl = cId
+        ? `/api/SavingAccounts?customerId=${cId}&memberId=${memberId}`
+        : `/api/SavingAccounts?memberId=${memberId}`;
+
       const [resShare, resSaving] = await Promise.all([
         fetch(`/api/ShareAccounts/Member/${memberId}`),
-        fetch('/api/SavingAccounts')
+        fetch(savingUrl)
       ]);
 
       if (resShare.ok) {
@@ -121,8 +127,11 @@ export default function ShareTransferMaster() {
         const allSaving = await resSaving.json();
         const memberSaving = allSaving.filter((s: any) => {
           const mId = s.memberID !== undefined ? s.memberID : s.memberId;
+          const custId = s.customerID !== undefined ? s.customerID : s.customerId;
+          const resMemId = s.resolvedMemberID;
           const stat = (s.status || '').toLowerCase();
-          return mId === parseInt(memberId) && (stat === 'active' || stat === 'चालू' || stat === '');
+          const isOwner = (cId && custId === cId) || (mId === parseInt(memberId)) || (resMemId && resMemId === parseInt(memberId));
+          return isOwner && (stat === 'active' || stat === 'चालू' || stat === '');
         });
         setFromSavingAccounts(memberSaving);
         if (memberSaving.length > 0) {

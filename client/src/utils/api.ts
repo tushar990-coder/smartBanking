@@ -7,9 +7,20 @@ export const getApiBaseUrl = (): string => {
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const host = window.location.hostname;
     if (host !== 'localhost' && host !== '127.0.0.1') {
-      if (!host.startsWith('api.')) {
+      if (host.startsWith('api.') || host.startsWith('api-')) {
+        return '';
+      }
+
+      // Legacy applications using dot notation (api.<sanstha>...)
+      const legacyDotApps = ['bambavade', 'jotirlingpdw', 'gurudev', 'testing'];
+      const subdomain = host.split('.')[0].toLowerCase();
+
+      if (legacyDotApps.includes(subdomain)) {
         return `${window.location.protocol}//api.${host}`;
       }
+
+      // New and template dynamic applications using hyphen notation (api-<sanstha>...)
+      return `${window.location.protocol}//api-${host}`;
     }
   }
   return '';
@@ -56,7 +67,7 @@ api.interceptors.request.use((config) => {
     }
 
     // 3. Attach Auth token & Branch ID
-    const savedUser = localStorage.getItem('bhisi_user');
+    const savedUser = sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user');
     if (savedUser) {
       const user = JSON.parse(savedUser);
       if (user?.token) {
@@ -77,9 +88,10 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Force instant logout across application
+      sessionStorage.removeItem('bhisi_user');
+      sessionStorage.removeItem('globalBranchId');
       localStorage.removeItem('bhisi_user');
       localStorage.removeItem('globalBranchId');
-      sessionStorage.removeItem('just_logged_in');
       window.dispatchEvent(new CustomEvent('auth-unauthorized'));
     }
     if (error.response?.status === 423) {

@@ -81,7 +81,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<JointMember>>> GetJointMembersByPrimaryMember(int primaryMemberId)
         {
             var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-            var primaryMember = await _context.Members.FindAsync(primaryMemberId);
+            var primaryMember = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == primaryMemberId);
             if (primaryMember == null) return NotFound("Member not found.");
 
             if (!isHeadOfficeAdmin && primaryMember.BranchID != userBranchId)
@@ -120,7 +120,7 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "प्राथमिक सभासद निवडणे आवश्यक आहे." });
             }
 
-            var primaryMember = await _context.Members.FindAsync(jointMember.PrimaryMemberID);
+            var primaryMember = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == jointMember.PrimaryMemberID);
             if (primaryMember == null)
             {
                 return BadRequest(new { message = "प्राथमिक सभासद अस्तित्वात नाही." });
@@ -186,7 +186,7 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
-            var primaryMember = await _context.Members.FindAsync(existing.PrimaryMemberID);
+            var primaryMember = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == existing.PrimaryMemberID);
             if (!isHeadOfficeAdmin && primaryMember != null && primaryMember.BranchID != userBranchId)
             {
                 return StatusCode(403, new { message = "आपण केवळ आपल्या शाखेतील सह-सभासदांची माहिती बदलू शकता." });
@@ -249,7 +249,7 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
-            var primaryMember = await _context.Members.FindAsync(jointMember.PrimaryMemberID);
+            var primaryMember = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == jointMember.PrimaryMemberID);
             if (!isHeadOfficeAdmin && primaryMember != null && primaryMember.BranchID != userBranchId)
             {
                 return StatusCode(403, new { message = "आपण केवळ आपल्या शाखेतील सह-सभासद हटवू शकता." });

@@ -244,7 +244,8 @@ namespace Bhisi.Api.Controllers
                             var mobile = reader["Mobile_no"].ToString() ?? "";
                             var aadhaar = reader["Adhar_no"].ToString() ?? "";
 
-                            var existing = await _context.Members.FirstOrDefaultAsync(m => m.LegacyMemberId == legacyId);
+                            var legacyStr = legacyId.ToString();
+                            var existing = await _context.Members.FirstOrDefaultAsync(m => m.LegacyMemberNo == legacyStr || (empCode != null && m.LegacyMemberNo == empCode));
                             if (existing == null)
                             {
                                 var mappedEmployerId = 0;
@@ -255,8 +256,7 @@ namespace Bhisi.Api.Controllers
                                 }
                                 _context.Members.Add(new Member
                                 {
-                                    LegacyMemberId = legacyId,
-                                    LegacyMemberNo = empCode,
+                                    LegacyMemberNo = !string.IsNullOrWhiteSpace(empCode) ? empCode : legacyStr,
                                     MemberCode = "M" + legacyId,
                                     FirstName = fNameUni,
                                     MiddleName = mNameUni,
@@ -277,7 +277,13 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     // Load Maps
-                    var memberMap = await _context.Members.Where(m => m.LegacyMemberId != null).ToDictionaryAsync(m => m.LegacyMemberId!.Value, m => new { m.MemberID, m.CustomerID });
+                    var memberMap = (await _context.Members
+                        .Where(m => m.LegacyMemberNo != null)
+                        .Select(m => new { m.LegacyMemberNo, m.MemberID, m.CustomerID })
+                        .ToListAsync())
+                        .Where(m => int.TryParse(m.LegacyMemberNo, out _))
+                        .GroupBy(m => int.Parse(m.LegacyMemberNo!))
+                        .ToDictionary(g => g.Key, g => new { g.First().MemberID, g.First().CustomerID });
                     var ledgerMap = await _context.Ledgers.Where(l => l.LegacyLedgerId != null).ToDictionaryAsync(l => l.LegacyLedgerId!.Value, l => l.LedgerID);
                     
                     var firstLedger = await _context.Ledgers.FirstOrDefaultAsync();
@@ -327,7 +333,7 @@ namespace Bhisi.Api.Controllers
                             if (!memberMap.ContainsKey(legacyCustId)) continue;
                             
                             var memberInfo = memberMap[legacyCustId];
-                            var existing = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == accNo && s.MemberID == memberInfo.MemberID);
+                            var existing = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == accNo && ((memberInfo.CustomerID.HasValue && s.CustomerID == memberInfo.CustomerID.Value) || s.MemberID == memberInfo.MemberID));
                             
                             if (existing == null)
                             {
@@ -580,9 +586,13 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync(); // To get VoucherIDs
 
                     // Now import details
-                    var memberMap = await _context.Members
-                        .Where(m => m.LegacyMemberId != null)
-                        .ToDictionaryAsync(m => m.LegacyMemberId!.Value, m => m.MemberID);
+                    var memberMap = (await _context.Members
+                        .Where(m => m.LegacyMemberNo != null)
+                        .Select(m => new { m.LegacyMemberNo, m.MemberID })
+                        .ToListAsync())
+                        .Where(m => int.TryParse(m.LegacyMemberNo, out _))
+                        .GroupBy(m => int.Parse(m.LegacyMemberNo!))
+                        .ToDictionary(g => g.Key, g => g.First().MemberID);
 
                     var cmdDetails = new SqlCommand("SELECT Trans_id, L_id, Cust_id, Amount, Crdr FROM TRANS_DETAILS", conn);
                     using (var reader = await cmdDetails.ExecuteReaderAsync())

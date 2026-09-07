@@ -18,9 +18,8 @@ namespace Bhisi.Api.Models
         [Required]
         public DateTime CollectionDate { get; set; } = DateTime.Today;
 
-        [Required]
         [StringLength(50)]
-        public string ReceiptNo { get; set; } = string.Empty;
+        public string? ReceiptNo { get; set; } = string.Empty;
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]

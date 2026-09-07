@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MemberSearchSelect from './common/MemberSearchSelect';
 import ShareCertificatePreview from './ShareCertificatePreview';
+import VoucherPrint from './VoucherPrint';
 import SearchableSelect from './SearchableSelect';
 import { 
   PlusCircle, 
@@ -30,7 +31,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Hash,
-  UserPlus
+  UserPlus,
+  Sparkles
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -94,7 +96,12 @@ interface ShareTransactionData {
   accountNo?: string;
 }
 
-export default function ShareMaster() {
+interface ShareMasterProps {
+  initialMemberId?: string | number | null;
+  onNavigate?: (tab: string, params?: any) => void;
+}
+
+export default function ShareMaster({ initialMemberId, onNavigate }: ShareMasterProps = {}) {
   // Master Data
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<number | ''>('');
@@ -105,6 +112,11 @@ export default function ShareMaster() {
   const [certificates, setCertificates] = useState<CertificateData[]>([]);
   const [memberTransactions, setMemberTransactions] = useState<ShareTransactionData[]>([]);
   const [allTransactions, setAllTransactions] = useState<ShareTransactionData[]>([]);
+
+  // Pending Membership Applications Awaiting Share Allotment
+  const [pendingMembers, setPendingMembers] = useState<any[]>([]);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [pendingSearch, setPendingSearch] = useState('');
 
   // Pop-up Modal for All Transactions
   const [showAllTxnModal, setShowAllTxnModal] = useState(false);
@@ -134,9 +146,11 @@ export default function ShareMaster() {
 
   // Modals for Actions
   const [previewCertificate, setPreviewCertificate] = useState<CertificateData | null>(null);
+  const [printingVoucherId, setPrintingVoucherId] = useState<number | null>(null);
   const [editTxnModal, setEditTxnModal] = useState<{ open: boolean; txn: ShareTransactionData | null }>({ open: false, txn: null });
   const [editTxnDate, setEditTxnDate] = useState('');
   const [editTxnNarration, setEditTxnNarration] = useState('');
+  const [editTxnReason, setEditTxnReason] = useState('');
 
   const [cancelAllotModal, setCancelAllotModal] = useState<{ open: boolean; txn: ShareTransactionData | null }>({ open: false, txn: null });
   const [cancellationReason, setCancellationReason] = useState('');
@@ -195,9 +209,25 @@ export default function ShareMaster() {
     };
   }, []);
 
+  const fetchPendingMembers = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/Members/pending-allotment', {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      if (res.ok && isMountedRef.current) {
+        const data = await res.json();
+        setPendingMembers(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      if (isMountedRef.current) console.error('Error fetching pending members', e);
+    }
+  };
+
   const fetchInitialData = async () => {
     await Promise.all([
       fetchMembers(),
+      fetchPendingMembers(),
       fetchNextShareConfig(),
       fetchLedgers(),
       fetchAllTransactions()
@@ -279,9 +309,9 @@ export default function ShareMaster() {
 
         if (safeList.length > 0) {
           const urlParams = new URLSearchParams(window.location.search);
-          const memberIdParam = urlParams.get('memberId');
+          const memberIdParam = initialMemberId || urlParams.get('memberId');
           if (memberIdParam) {
-            const mId = parseInt(memberIdParam);
+            const mId = parseInt(String(memberIdParam));
             const target = safeList.find(m => m.memberID === mId);
             if (target) {
               selectMemberById(mId, safeList);
@@ -293,6 +323,15 @@ export default function ShareMaster() {
       if (isMountedRef.current) console.error(e);
     }
   };
+
+  useEffect(() => {
+    if (initialMemberId && members.length > 0) {
+      const mId = parseInt(String(initialMemberId));
+      if (!isNaN(mId) && mId !== selectedMemberId) {
+        selectMemberById(mId, members);
+      }
+    }
+  }, [initialMemberId, members]);
 
   const fetchAllTransactions = async () => {
     try {
@@ -307,9 +346,14 @@ export default function ShareMaster() {
     }
   };
 
-  const fetchMemberSavingAccounts = async (memberId: number) => {
+  const fetchMemberSavingAccounts = async (memberId: number, customerId?: number) => {
     try {
-      const res = await fetch(`/api/SavingAccounts?memberId=${memberId}`);
+      const selected = members.find((m: any) => m.memberID === memberId);
+      const cId = customerId || selected?.customerID;
+      const url = cId 
+        ? `/api/SavingAccounts?customerId=${cId}&memberId=${memberId}`
+        : `/api/SavingAccounts?memberId=${memberId}`;
+      const res = await fetch(url);
       if (res.ok) {
         const contentType = res.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
@@ -335,7 +379,8 @@ export default function ShareMaster() {
     setCertificates([]);
     setMemberTransactions([]);
     setMessage(null);
-    fetchMemberSavingAccounts(memberId);
+    const selected = members.find((m: any) => m.memberID === memberId);
+    fetchMemberSavingAccounts(memberId, selected?.customerID);
     try {
       const [accRes, certRes, txnRes] = await Promise.all([
         fetch(`/api/ShareAccounts/ByMember/${memberId}`),
@@ -442,6 +487,7 @@ export default function ShareMaster() {
         loadShareData(selectedMemberId as number);
         fetchNextShareConfig();
         fetchMembers();
+        fetchPendingMembers();
         fetchAllTransactions();
       } else {
         setMessage({ text: `❌ त्रुटी: ${data.message || 'वाटप अयशस्वी.'}`, type: 'error' });
@@ -458,6 +504,7 @@ export default function ShareMaster() {
     setEditTxnModal({ open: true, txn });
     setEditTxnDate(txn.transactionDate ? txn.transactionDate.split('T')[0] : '');
     setEditTxnNarration(txn.narration || '');
+    setEditTxnReason('');
   };
 
   const handleSaveEditTxn = async () => {
@@ -469,7 +516,8 @@ export default function ShareMaster() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transactionDate: editTxnDate,
-          narration: editTxnNarration
+          narration: editTxnNarration,
+          editReason: editTxnReason
         })
       });
 
@@ -598,6 +646,26 @@ export default function ShareMaster() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {/* PENDING MEMBERS BUTTON */}
+          <button
+            type="button"
+            onClick={() => {
+              fetchPendingMembers();
+              setShowPendingModal(true);
+            }}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-sm text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer relative"
+            title="सभासदत्व अर्ज भरलेले व शेअर्स वाटपासाठी प्रलंबित असलेले नवीन सभासद"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>📋 नवीन सभासद अर्ज ({pendingMembers.length})</span>
+            {pendingMembers.length > 0 && (
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-300 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-400"></span>
+              </span>
+            )}
+          </button>
+
           <button
             type="button"
             onClick={resetForm}
@@ -619,7 +687,7 @@ export default function ShareMaster() {
             title="संस्थेतील सर्व शेअर वाटप व व्यवहार नोंदी पहा"
           >
             <BookOpen className="w-4 h-4" />
-            <span>📋 नोंदवलेले शेअर्स व्यवहार पहा ({allTransactions.length})</span>
+            <span>📋 सर्व शेअर्स व्यवहार ({allTransactions.length})</span>
           </button>
         </div>
       </div>
@@ -710,9 +778,19 @@ export default function ShareMaster() {
                 <h2 className="text-xs font-bold text-primary">१. सभासद व शेअर्स वाटप माहिती (Member & Share Details)</h2>
               </div>
               {selectedMember && (
-                <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-300">
-                  {shareAccount ? `सध्याचे शेअर्स: ${shareAccount.totalShareCount}` : 'नवीन खातेदार'}
-                </span>
+                <div>
+                  {(!shareAccount || shareAccount.totalShareCount === 0) ? (
+                    <span className="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded shadow-2xs flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-600" />
+                      🆕 प्रथम भाग वाटप (Initial Allotment)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold bg-indigo-50 text-indigo-900 border border-indigo-200 px-2 py-0.5 rounded shadow-2xs flex items-center gap-1">
+                      <Coins className="w-3 h-3 text-indigo-600" />
+                      ➕ अतिरिक्त शेअर्स वाटप (विद्यमान शेअर्स: {shareAccount.totalShareCount})
+                    </span>
+                  )}
+                </div>
               )}
             </div>
 
@@ -934,7 +1012,13 @@ export default function ShareMaster() {
               className="px-6 py-2 bg-primary hover:opacity-90 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
             >
               <Save className="w-4 h-4" />
-              <span>{loading ? 'प्रक्रिया सुरू आहे...' : 'शेअर्स वाटप करा व व्हाउचर तयार करा (Allot Shares)'}</span>
+              <span>
+                {loading 
+                  ? 'प्रक्रिया सुरू आहे...' 
+                  : (!shareAccount || shareAccount.totalShareCount === 0)
+                  ? '💾 प्रथम शेअर्स वाटप करा व व्हाऊचर तयार करा (Initial Allotment)'
+                  : '➕ अतिरिक्त शेअर्स वाटप करा व व्हाऊचर तयार करा (Allot Additional Shares)'}
+              </span>
             </button>
           </div>
 
@@ -1078,16 +1162,26 @@ export default function ShareMaster() {
                             <button
                               type="button"
                               onClick={() => handleOpenEditTxn(t)}
-                              className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded text-[10px] font-bold border border-amber-300 cursor-pointer"
-                              title="शेरा संपादित करा"
+                              className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded text-[10px] font-bold border border-amber-300 cursor-pointer transition-colors"
+                              title="शेरा व तारीख संपादन करा"
                             >
                               ✏️
                             </button>
+                            {t.voucherId && (
+                              <button
+                                type="button"
+                                onClick={() => setPrintingVoucherId(t.voucherId)}
+                                className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded text-[10px] font-bold border border-indigo-300 cursor-pointer transition-colors"
+                                title="जमा पावती / व्हाउचर प्रिंट करा"
+                              >
+                                🖨️
+                              </button>
+                            )}
                             {isAllotment && (
                               <button
                                 type="button"
                                 onClick={() => handleOpenCancelAllot(t)}
-                                className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded text-[10px] font-bold border border-rose-300 cursor-pointer"
+                                className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded text-[10px] font-bold border border-rose-300 cursor-pointer transition-colors"
                                 title="वाटप रद्द व रिव्हर्स करा"
                               >
                                 ❌
@@ -1212,16 +1306,26 @@ export default function ShareMaster() {
                           <button
                             type="button"
                             onClick={() => handleOpenEditTxn(t)}
-                            className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded text-[10px] font-bold border border-amber-300 cursor-pointer"
-                            title="शेरा संपादित करा"
+                            className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded text-[10px] font-bold border border-amber-300 cursor-pointer transition-colors"
+                            title="शेरा व तारीख संपादन करा"
                           >
                             ✏️
                           </button>
+                          {t.voucherId && (
+                            <button
+                              type="button"
+                              onClick={() => setPrintingVoucherId(t.voucherId)}
+                              className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded text-[10px] font-bold border border-indigo-300 cursor-pointer transition-colors"
+                              title="जमा पावती / व्हाउचर प्रिंट करा"
+                            >
+                              🖨️
+                            </button>
+                          )}
                           {t.transactionType === 'Allotment' && (
                             <button
                               type="button"
                               onClick={() => handleOpenCancelAllot(t)}
-                              className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded text-[10px] font-bold border border-rose-300 cursor-pointer"
+                              className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded text-[10px] font-bold border border-rose-300 cursor-pointer transition-colors"
                               title="वाटप रद्द व रिव्हर्स करा"
                             >
                               ❌
@@ -1257,14 +1361,14 @@ export default function ShareMaster() {
         </div>
       )}
 
-      {/* ✏️ ACTION MODAL 1: EDIT TRANSACTION */}
+      {/* ✏️ ACTION MODAL 1: EDIT TRANSACTION REMARKS & DATE */}
       {editTxnModal.open && editTxnModal.txn && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 w-full max-w-md overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 w-full max-w-lg overflow-hidden">
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center">
               <h3 className="text-xs font-bold flex items-center gap-1.5">
                 <Edit2 className="w-4 h-4" />
-                <span>व्यवहार तपशील संपादन (Edit Transaction)</span>
+                <span>व्यवहार शेरा व तारीख संपादन (Edit Narration & Date)</span>
               </h3>
               <button 
                 onClick={() => setEditTxnModal({ open: false, txn: null })}
@@ -1274,32 +1378,90 @@ export default function ShareMaster() {
               </button>
             </div>
 
-            <div className="p-4 space-y-3">
-              <div>
-                <label className={labelClass}>तारीख (Date)</label>
-                <input
-                  type="date"
-                  value={editTxnDate}
-                  onChange={(e) => setEditTxnDate(e.target.value)}
-                  className={inputClass}
-                />
+            <div className="p-4 space-y-3.5">
+              {/* Context Summary Card (Read-Only) */}
+              <div className="bg-slate-50 border border-slate-200 rounded-sm p-3 text-xs space-y-2">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                  <span className="font-bold text-gray-900 flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-primary" />
+                    {editTxnModal.txn.memberName || (selectedMember ? `${selectedMember.firstName} ${selectedMember.lastName}` : 'खातेदार')}
+                  </span>
+                  <span className="font-mono text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded">
+                    {editTxnModal.txn.memberCode || selectedMember?.memberCode || editTxnModal.txn.accountNo || `Acc #${editTxnModal.txn.shareAccountId}`}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-[11px]">
+                  <div>
+                    <div className="text-[10px] text-gray-500 font-semibold">व्यवहार प्रकार</div>
+                    <div className="font-bold text-primary">{editTxnModal.txn.transactionType}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-gray-500 font-semibold">शेअर्स संख्या</div>
+                    <div className="font-mono font-bold text-emerald-800">+{editTxnModal.txn.numberOfShares} शेअर्स</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-gray-500 font-semibold">रक्कम</div>
+                    <div className="font-mono font-bold text-gray-900">₹{editTxnModal.txn.amount.toFixed(2)}</div>
+                  </div>
+                </div>
+
+                {editTxnModal.txn.voucherNo && (
+                  <div className="text-[10px] text-gray-600 font-mono bg-white px-2 py-1 rounded border border-slate-200 flex items-center justify-between">
+                    <span>व्हाउचर क्र.: <b>{editTxnModal.txn.voucherNo}</b></span>
+                    <span className="text-emerald-700 font-bold">लेखा व्हाउचर लिंक आहे</span>
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className={labelClass}>शेरा (Narration)</label>
-                <textarea
-                  rows={2}
-                  value={editTxnNarration}
-                  onChange={(e) => setEditTxnNarration(e.target.value)}
-                  className="w-full border border-gray-300 p-2 rounded-sm text-xs font-medium focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none"
-                />
+              <div className="p-2 bg-amber-50 text-amber-900 border border-amber-200 rounded-sm text-[10.5px] leading-tight flex items-start gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <b>लेखा सुरक्षा सूचना:</b> बँकिंग नियमांनुसार शेअर्स संख्या व रक्कम अपरिवर्तनीय आहेत. येथे बदललेली तारीख आणि शेरा संबंधित लेजर व्हाउचरवरही आपोआप अद्ययावत होईल.
+                </span>
               </div>
 
-              <div className="pt-2 flex justify-end gap-2 border-t border-gray-200">
+              <div className="grid grid-cols-1 gap-2.5">
+                <div>
+                  <label className={labelClass}>व्यवहार तारीख (Date) <span className="text-red-500">*</span></label>
+                  <input
+                    type="date"
+                    value={editTxnDate}
+                    onChange={(e) => setEditTxnDate(e.target.value)}
+                    className={inputClass}
+                  />
+                  <p className="text-[9.5px] text-gray-400 mt-0.5">व्हाउचरची तारीखही यानुसार अद्ययावत केली जाईल.</p>
+                </div>
+
+                <div>
+                  <label className={labelClass}>शेरा / तपशील (Narration)</label>
+                  <textarea
+                    rows={2}
+                    value={editTxnNarration}
+                    onChange={(e) => setEditTxnNarration(e.target.value)}
+                    placeholder="उदा. भाग भांडवल वाटप, ठराव क्र. १५ नुसार..."
+                    className="w-full border border-gray-300 p-2 rounded-sm text-xs font-medium focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className={labelClass}>दुरुस्तीचे कारण (Reason for Edit - Audit Trail)</label>
+                  <input
+                    type="text"
+                    value={editTxnReason}
+                    onChange={(e) => setEditTxnReason(e.target.value)}
+                    placeholder="उदा. पावतीनुसार तारीख दुरुस्ती / संचालक मंडळ ठराव नोंद..."
+                    className={inputClass}
+                  />
+                  <p className="text-[9.5px] text-gray-400 mt-0.5">ऑडिट पडताळणीसाठी दुरुस्तीचे कारण नोंदवले जाईल.</p>
+                </div>
+              </div>
+
+              <div className="pt-2.5 flex justify-end gap-2 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={() => setEditTxnModal({ open: false, txn: null })}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-sm text-xs font-bold cursor-pointer"
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-sm text-xs font-bold cursor-pointer transition-colors"
                 >
                   रद्द करा
                 </button>
@@ -1307,9 +1469,9 @@ export default function ShareMaster() {
                   type="button"
                   disabled={loading}
                   onClick={handleSaveEditTxn}
-                  className="px-4 py-1.5 bg-primary hover:opacity-90 text-white rounded-sm text-xs font-bold cursor-pointer shadow-xs"
+                  className="px-4 py-1.5 bg-primary hover:opacity-90 text-white rounded-sm text-xs font-bold cursor-pointer shadow-xs transition-opacity"
                 >
-                  {loading ? 'जतन होत आहे...' : 'जतन करा'}
+                  {loading ? 'जतन होत आहे...' : '💾 बदल जतन करा'}
                 </button>
               </div>
             </div>
@@ -1384,6 +1546,170 @@ export default function ShareMaster() {
             if (selectedMemberId) loadShareData(selectedMemberId as number);
           }} 
         />
+      )}
+
+      {/* 🖨️ MODAL 4: VOUCHER / RECEIPT PRINT */}
+      {printingVoucherId && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-4xl w-full max-h-[92vh] overflow-y-auto relative">
+            <VoucherPrint voucherId={printingVoucherId} onBack={() => setPrintingVoucherId(null)} />
+          </div>
+        </div>
+      )}
+
+      {/* 📋 MODAL 4: PENDING MEMBERSHIP APPLICATIONS LIST FOR 1-CLICK ALLOTMENT */}
+      {showPendingModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded shadow-2xl max-w-5xl w-full h-[85vh] flex flex-col overflow-hidden border border-slate-300">
+            {/* Top Ribbon */}
+            <div className="px-4 py-2.5 bg-amber-600 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-amber-200" />
+                <div>
+                  <h3 className="font-bold text-sm">
+                    नवीन सभासद अर्ज यादी - शेअर्स वाटपासाठी प्रलंबित ({pendingMembers.length})
+                  </h3>
+                  <p className="text-[10px] text-amber-100 font-normal">
+                    सभासदत्व अर्ज नोंदणी पूर्ण झालेले, परंतु अद्याप भाग भांडवल (Share Allotment) वाटप न झालेले नवीन सभासद
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowPendingModal(false)}
+                className="text-white/80 hover:text-white font-bold p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search & Actions Bar */}
+            <div className="p-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 shrink-0">
+              <div className="relative flex-1 min-w-[260px] max-w-md">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                <input
+                  type="text"
+                  value={pendingSearch}
+                  onChange={(e) => setPendingSearch(e.target.value)}
+                  placeholder="सभासद कोड, नाव, CIF, मोबाईल किंवा गावाने शोधा..."
+                  className="w-full pl-8 pr-3 py-1 border border-slate-300 rounded text-[11px] focus:ring-1 focus:ring-primary focus:border-primary outline-none h-[28px] bg-white"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={fetchPendingMembers}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded text-[11px] font-bold text-slate-700 flex items-center gap-1 cursor-pointer shadow-2xs"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>रिफ्रेश करा</span>
+                </button>
+                <span className="font-bold text-slate-600">
+                  प्रलंबित अर्ज: <span className="text-amber-700 font-black">{pendingMembers.length}</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Applicants Table */}
+            <div className="flex-1 overflow-auto p-2">
+              {(() => {
+                const q = pendingSearch.toLowerCase().trim();
+                const filtered = pendingMembers.filter(m => {
+                  if (!q) return true;
+                  const name = (m.fullName || `${m.firstName} ${m.lastName}`).toLowerCase();
+                  const code = (m.memberCode || '').toLowerCase();
+                  const cif = (m.cifNo || '').toLowerCase();
+                  const mob = (m.mobileNo || '').toLowerCase();
+                  const vil = (m.village || '').toLowerCase();
+                  return name.includes(q) || code.includes(q) || cif.includes(q) || mob.includes(q) || vil.includes(q);
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-16 text-center text-slate-400">
+                      <CheckCircle className="w-10 h-10 mx-auto mb-2 text-emerald-500 opacity-60" />
+                      <p className="font-bold text-slate-700 text-xs">
+                        {pendingMembers.length === 0 
+                          ? 'अभिनंदन! शेअर्स वाटपासाठी कोणताही प्रलंबित सभासद अर्ज नाही.'
+                          : 'शोध निकषांनुसार कोणताही अर्ज सापडला नाही.'}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        सर्व नोंदणीकृत सभासदांना शेअर्स वाटप पूर्ण झालेले आहे.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <table className="w-full text-left border-collapse text-[11px]">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 sticky top-0 font-bold z-10">
+                        <th className="p-2">सभासद क्र.</th>
+                        <th className="p-2">CIF कोड</th>
+                        <th className="p-2">सभासदाचे पूर्ण नाव</th>
+                        <th className="p-2">शाखा</th>
+                        <th className="p-2">मोबाईल व गाव</th>
+                        <th className="p-2">अर्ज / नोंदणी दिनांक</th>
+                        <th className="p-2 text-center">कृती</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filtered.map((m) => (
+                        <tr key={m.memberID} className="hover:bg-amber-50/50 transition-colors">
+                          <td className="p-2 font-mono font-bold text-primary flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-amber-500" />
+                            <span>{m.memberCode}</span>
+                          </td>
+                          <td className="p-2 font-mono font-semibold text-slate-600">{m.cifNo || '-'}</td>
+                          <td className="p-2 font-bold text-slate-900">{m.fullName || `${m.firstName} ${m.lastName}`}</td>
+                          <td className="p-2 text-slate-600">{m.branchName || '-'}</td>
+                          <td className="p-2 text-slate-600">
+                            <div className="font-medium text-slate-800">{m.mobileNo || '-'}</div>
+                            <div className="text-[10px] text-slate-400">{m.village || '-'}</div>
+                          </td>
+                          <td className="p-2 font-mono text-slate-600">
+                            {m.joiningDate ? m.joiningDate.split('T')[0] : '-'}
+                          </td>
+                          <td className="p-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                selectMemberById(m.memberID);
+                                setNumberOfShares(10);
+                                setShowPendingModal(false);
+                                if (formContainerRef.current) {
+                                  formContainerRef.current.scrollIntoView({ behavior: 'smooth' });
+                                }
+                              }}
+                              className="px-3 py-1 bg-primary hover:opacity-90 text-white rounded font-bold text-[11px] shadow-2xs cursor-pointer flex items-center justify-center gap-1 mx-auto transition-all"
+                            >
+                              <span>👉 शेअर्स वाटप करा</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-2.5 bg-slate-100 border-t border-slate-200 flex justify-between items-center text-xs text-slate-600 shrink-0">
+              <span className="font-medium">
+                टीप: कोणत्याही अर्जावर 'शेअर्स वाटप करा' क्लिक केल्यास ती नोंद फॉर्ममध्ये आपोआप लोड होईल.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowPendingModal(false)}
+                className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-bold cursor-pointer text-xs"
+              >
+                बंद करा
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
 
     </div>

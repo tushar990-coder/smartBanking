@@ -28,6 +28,8 @@ namespace Bhisi.Api.Controllers
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Member)
                 .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.Customer)
+                .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.LoanRate)
                 .Include(c => c.Fees)
                     .ThenInclude(f => f.Ledger)
@@ -352,7 +354,7 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 // Get LoanRate to fetch Ledger IDs
-                var loanAccFetched = await _context.LoanAccounts.Include(l => l.Member).FirstOrDefaultAsync(l => l.LoanAccountID == collection.LoanAccountID);
+                var loanAccFetched = await _context.LoanAccounts.Include(l => l.Member).Include(l => l.Customer).FirstOrDefaultAsync(l => l.LoanAccountID == collection.LoanAccountID);
                 loanRate = await _context.LoanRates.FindAsync(loanAccFetched?.LoanRateID ?? 0);
 
                 int loanLedgerId = loanRate?.LoanLedgerID ?? 0;
@@ -449,13 +451,17 @@ namespace Bhisi.Api.Controllers
                 decimal totalVoucherAmt = totalReceiptAmount + totalWaiverAmount;
                 string vStatus = (autoPost && totalVoucherAmt <= autoPostLimit) ? "Approved" : "Pending";
 
+                string borrowerName = loanAccFetched?.Customer != null 
+                    ? $"{loanAccFetched.Customer.FirstName} {loanAccFetched.Customer.LastName}".Trim() 
+                    : $"{loanAccFetched?.Member?.FirstName} {loanAccFetched?.Member?.LastName}".Trim();
+
                 var voucher = new Voucher
                 {
                     BranchID = targetBranchId,
                     VoucherNo = voucherNo,
                     VoucherDate = collection.CollectionDate,
                     VoucherType = voucherType,
-                    Narration = $"Loan Collection (Rect No: {collection.ReceiptNo}) from {loanAccFetched?.Member?.FirstName} {loanAccFetched?.Member?.LastName} (A/C: {loanAccFetched?.LoanAccountNo}){(collection.IsOTS ? " [OTS / One Time Settlement]" : "")}",
+                    Narration = $"Loan Collection (Rect No: {collection.ReceiptNo}) from {borrowerName} (A/C: {loanAccFetched?.LoanAccountNo}){(collection.IsOTS ? " [OTS / One Time Settlement]" : "")}",
                     TotalAmount = totalVoucherAmt,
                     Status = vStatus,
                     ApprovedBy = vStatus == "Approved" ? (collection.ApprovedByUserID ?? 1) : null,
@@ -576,6 +582,11 @@ namespace Bhisi.Api.Controllers
         {
             var collection = await _context.LoanCollections
                 .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.Member)
+                .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.Customer)
+                .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.LoanRate)
                 .Include(c => c.Fees)
                 .ThenInclude(f => f.Ledger)
                 .FirstOrDefaultAsync(c => c.LoanCollectionID == id);

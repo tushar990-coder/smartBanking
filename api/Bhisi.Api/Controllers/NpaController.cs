@@ -438,7 +438,7 @@ namespace Bhisi.Api.Controllers
                 {
                     LoanAccountID = s.LoanAccountID,
                     AccountNo = loan.LoanAccountNo,
-                    MemberCode = loan.Member?.MemberCode ?? loan.Member?.OldMemberCode ?? (loan.MemberID > 0 ? loan.MemberID.ToString() : "-"),
+                    MemberCode = loan.Member?.MemberCode ?? loan.Member?.LegacyMemberNo ?? (loan.MemberID > 0 ? loan.MemberID.ToString() : "-"),
                     Name = loan.Member != null ? $"{loan.Member.FirstName} {loan.Member.LastName}".Trim() : "Unknown",
                     LoanType = loan.LoanRate?.ShortName ?? loan.LoanRate?.LoanType ?? "सामान्य कर्ज",
                     SanctionedAmount = Math.Round(loan.SanctionedAmount, 2),

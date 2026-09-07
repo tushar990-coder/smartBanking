@@ -61,6 +61,7 @@ namespace Bhisi.Api.Services
                 // 4. Fetch all data
                 var activeLoans = await _context.LoanAccounts
                     .Include(l => l.LoanRate)
+                    .Include(l => l.Customer)
                     .Include(l => l.Member)
                     .Where(l => l.Status == "Active")
                     .ToListAsync();
@@ -178,28 +179,54 @@ namespace Bhisi.Api.Services
                 // 7. Step 2: Group Downgrade Rule (Single-Borrower-Multiple-Loans)
                 var finalStatuses = new Dictionary<int, (string Category, DateTime? OverdueDate, DateTime? OutOfOrderDate, decimal CompliantCollateral, string SecurityType)>();
                 
-                // Build adjacency list for borrower grouping
-                var memberToGroup = new Dictionary<int, HashSet<int>>();
+                // Helper function to derive canonical borrower key
+                string GetBorrowerKey(LoanAccount l)
+                {
+                    if (l.CustomerID.HasValue && l.CustomerID.Value > 0) return $"C_{l.CustomerID.Value}";
+                    if (l.Member?.CustomerID > 0) return $"C_{l.Member.CustomerID}";
+                    if (l.MemberID.HasValue && l.MemberID.Value > 0) return $"M_{l.MemberID.Value}";
+                    return $"L_{l.LoanAccountID}";
+                }
+
+                // Helper map of MemberID to CustomerID
+                var memberCustMap = activeLoans
+                    .Where(l => l.MemberID.HasValue && l.Member != null && l.Member.CustomerID.HasValue && l.Member.CustomerID.Value > 0)
+                    .GroupBy(l => l.MemberID!.Value)
+                    .ToDictionary(g => g.Key, g => g.First().Member!.CustomerID!.Value);
+
+                // Build adjacency list for borrower grouping using string keys
+                var borrowerToGroup = new Dictionary<string, HashSet<string>>();
                 foreach (var loan in activeLoans)
                 {
-                    int mId = loan.MemberID ?? loan.CustomerID ?? 0;
-                    if (!memberToGroup.ContainsKey(mId))
-                        memberToGroup[mId] = new HashSet<int> { mId };
+                    string bKey = GetBorrowerKey(loan);
+                    if (!borrowerToGroup.ContainsKey(bKey))
+                        borrowerToGroup[bKey] = new HashSet<string> { bKey };
+
+                    // Also link member key to customer key if both present
+                    if (loan.MemberID.HasValue && loan.CustomerID.HasValue)
+                    {
+                        string mKey = $"M_{loan.MemberID.Value}";
+                        string cKey = $"C_{loan.CustomerID.Value}";
+                        if (!borrowerToGroup.ContainsKey(mKey)) borrowerToGroup[mKey] = new HashSet<string> { mKey };
+                        if (!borrowerToGroup.ContainsKey(cKey)) borrowerToGroup[cKey] = new HashSet<string> { cKey };
+                        var mergedMC = new HashSet<string>(borrowerToGroup[mKey].Concat(borrowerToGroup[cKey]));
+                        foreach (var k in mergedMC) borrowerToGroup[k] = mergedMC;
+                    }
                 }
 
                 foreach (var link in linkedAccounts)
                 {
-                    int parent = link.ParentMemberID;
-                    int linked = link.LinkedMemberID;
+                    string parent = memberCustMap.TryGetValue(link.ParentMemberID, out int pcId) ? $"C_{pcId}" : $"M_{link.ParentMemberID}";
+                    string linked = memberCustMap.TryGetValue(link.LinkedMemberID, out int lcId) ? $"C_{lcId}" : $"M_{link.LinkedMemberID}";
 
-                    if (!memberToGroup.ContainsKey(parent)) memberToGroup[parent] = new HashSet<int> { parent };
-                    if (!memberToGroup.ContainsKey(linked)) memberToGroup[linked] = new HashSet<int> { linked };
+                    if (!borrowerToGroup.ContainsKey(parent)) borrowerToGroup[parent] = new HashSet<string> { parent };
+                    if (!borrowerToGroup.ContainsKey(linked)) borrowerToGroup[linked] = new HashSet<string> { linked };
 
                     // Merge groups
-                    var merged = new HashSet<int>(memberToGroup[parent].Concat(memberToGroup[linked]));
-                    foreach (var memberId in merged)
+                    var merged = new HashSet<string>(borrowerToGroup[parent].Concat(borrowerToGroup[linked]));
+                    foreach (var bKey in merged)
                     {
-                        memberToGroup[memberId] = merged;
+                        borrowerToGroup[bKey] = merged;
                     }
                 }
 
@@ -211,9 +238,9 @@ namespace Bhisi.Api.Services
                 {
                     if (processedLoans.Contains(loan.LoanAccountID)) continue;
 
-                    int mId = loan.MemberID ?? loan.CustomerID ?? 0;
-                    var memberGroup = memberToGroup.ContainsKey(mId) ? memberToGroup[mId] : new HashSet<int> { mId };
-                    var loanGroup = activeLoans.Where(l => memberGroup.Contains(l.MemberID ?? l.CustomerID ?? 0)).ToList();
+                    string bKey = GetBorrowerKey(loan);
+                    var groupKeys = borrowerToGroup.ContainsKey(bKey) ? borrowerToGroup[bKey] : new HashSet<string> { bKey };
+                    var loanGroup = activeLoans.Where(l => groupKeys.Contains(GetBorrowerKey(l)) || (l.MemberID.HasValue && groupKeys.Contains($"M_{l.MemberID.Value}"))).ToList();
                     
                     loanGroups.Add(loanGroup);
                     foreach (var gl in loanGroup)

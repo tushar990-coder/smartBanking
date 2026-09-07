@@ -49,13 +49,21 @@ const ShareWithdrawal: React.FC = () => {
 
   const fetchMemberSavingAccounts = async (memberId: string) => {
     try {
-      const res = await fetch('/api/SavingAccounts');
+      const targetMember = members.find((m: any) => m.memberID?.toString() === memberId.toString());
+      const targetCustId = targetMember?.customerID;
+      const url = targetCustId 
+        ? `/api/SavingAccounts?customerId=${targetCustId}&memberId=${memberId}`
+        : `/api/SavingAccounts?memberId=${memberId}`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         const memberAccs = data.filter((a: any) => {
           const mId = a.memberID !== undefined ? a.memberID : a.memberId;
+          const cId = a.customerID !== undefined ? a.customerID : a.customerId;
+          const resMemId = a.resolvedMemberID;
           const stat = (a.status || '').toLowerCase();
-          return mId === parseInt(memberId) && (stat === 'active' || stat === 'चालू' || stat === '');
+          const isOwner = (targetCustId && cId === targetCustId) || (mId === parseInt(memberId)) || (resMemId && resMemId === parseInt(memberId));
+          return isOwner && (stat === 'active' || stat === 'चालू' || stat === '');
         });
         setMemberSavingAccounts(memberAccs);
         if (memberAccs.length > 0) {

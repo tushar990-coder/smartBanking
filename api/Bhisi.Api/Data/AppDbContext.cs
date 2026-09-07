@@ -220,11 +220,7 @@ namespace Bhisi.Api.Data
             modelBuilder.Entity<Member>(entity =>
             {
                 entity.HasIndex(m => m.MemberCode).IsUnique().HasFilter("[MemberCode] IS NOT NULL AND [MemberCode] <> ''");
-                entity.HasIndex(m => m.CIFNo).IsUnique().HasFilter("[CIFNo] IS NOT NULL AND [CIFNo] <> ''");
-                entity.HasIndex(m => m.AadhaarNo).IsUnique().HasFilter("[AadhaarNo] IS NOT NULL AND [AadhaarNo] <> ''");
-                entity.HasIndex(m => m.PANNo).IsUnique().HasFilter("[PANNo] IS NOT NULL AND [PANNo] <> ''");
-                entity.HasIndex(m => m.Village);
-                entity.HasIndex(m => m.MobileNo);
+                entity.HasIndex(m => m.CustomerID).IsUnique().HasFilter("[CustomerID] IS NOT NULL");
 
                 entity.HasOne(m => m.Branch)
                       .WithMany()

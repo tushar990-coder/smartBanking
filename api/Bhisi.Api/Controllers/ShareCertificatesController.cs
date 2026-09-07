@@ -108,7 +108,7 @@ namespace Bhisi.Api.Controllers
                     MemberNo = member?.MemberCode ?? "",
                     AccountNo = c.ShareAccount?.AccountNo ?? "",
                     CIFNo = member?.CIFNo ?? "",
-                    LegacyMemberNo = member?.LegacyMemberNo ?? member?.OldMemberCode ?? "",
+                    LegacyMemberNo = member?.LegacyMemberNo ?? "",
                     c.FromShareNo,
                     c.ToShareNo,
                     c.NumberOfShares,
@@ -177,7 +177,7 @@ namespace Bhisi.Api.Controllers
                     MemberNo = c.ShareAccount.Member.MemberCode ?? "",
                     AccountNo = c.ShareAccount.AccountNo,
                     CIFNo = c.ShareAccount.Member.CIFNo ?? "",
-                    LegacyMemberNo = c.ShareAccount.Member.LegacyMemberNo ?? c.ShareAccount.Member.OldMemberCode ?? "",
+                    LegacyMemberNo = c.ShareAccount.Member.LegacyMemberNo ?? "",
                     c.FromShareNo,
                     c.ToShareNo,
                     c.NumberOfShares,
@@ -319,7 +319,7 @@ namespace Bhisi.Api.Controllers
                 MemberNo = member?.MemberCode ?? "",
                 AccountNo = shareAcc.AccountNo,
                 CIFNo = member?.CIFNo ?? "",
-                LegacyMemberNo = member?.LegacyMemberNo ?? member?.OldMemberCode ?? "",
+                LegacyMemberNo = member?.LegacyMemberNo ?? "",
                 cert.FromShareNo,
                 cert.ToShareNo,
                 cert.NumberOfShares,
@@ -375,7 +375,7 @@ namespace Bhisi.Api.Controllers
                 var member = account.Member;
                 if (member == null)
                 {
-                    member = await _context.Members.FindAsync(account.MemberId);
+                    member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == account.MemberId);
                 }
 
                 decimal totalAmount = certificate.NumberOfShares * certificate.FaceValue;

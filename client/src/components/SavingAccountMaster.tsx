@@ -437,7 +437,7 @@ const SavingAccountMaster: React.FC = () => {
 
     setFormData({
       branchID: acc.branchID || 1,
-      memberID: acc.memberID || 0,
+      memberID: acc.customerID || acc.memberID || 0,
       ledgerID: acc.ledgerID || 7,
       accountType: acc.accountType || 'Personal',
       isLegacyAccount: acc.isLegacyAccount || false,
@@ -455,7 +455,7 @@ const SavingAccountMaster: React.FC = () => {
     });
     // Set joint holders if any
     if (acc.jointHolders && Array.isArray(acc.jointHolders)) {
-      setJointHolderMemberIDs(acc.jointHolders.map((jh: any) => jh.memberID));
+      setJointHolderMemberIDs(acc.jointHolders.map((jh: any) => jh.customerID || jh.memberID));
     } else {
       setJointHolderMemberIDs([]);
     }
@@ -508,17 +508,22 @@ const SavingAccountMaster: React.FC = () => {
     setError('');
     
     try {
+      const selectedObj = members.find(m => (m.customerID === Number(formData.memberID) || m.memberID === Number(formData.memberID)));
+      const resolvedCustId = selectedObj?.customerID || Number(formData.memberID);
+      const resolvedMemId = selectedObj?.memberID && Number(selectedObj.memberID) > 0 ? Number(selectedObj.memberID) : null;
+
       const payload = {
         savingAccountID: isEditMode ? editAccountId : 0,
         ...formData,
-        customerID: Number(formData.memberID),
-        memberID: Number(formData.memberID),
+        customerID: resolvedCustId,
+        memberID: resolvedMemId,
         openingBalance: (formData.openingBalance as any) === '' ? 0 : parseFloat(formData.openingBalance as any) || 0,
         minimumBalance: (formData.minimumBalance as any) === '' ? 0 : parseFloat(formData.minimumBalance as any) || 0,
         lienAmount: (formData.lienAmount as any) === '' ? 0 : parseFloat(formData.lienAmount as any) || 0,
         interestRate: (formData.interestRate as any) === '' ? 0 : parseFloat(formData.interestRate as any) || 0,
         accountNo: formData.accountNo || 'AUTO',
         jointHolderMemberIDs: formData.accountType === 'Joint' ? jointHolderMemberIDs : [],
+        jointHolderCustomerIDs: formData.accountType === 'Joint' ? jointHolderMemberIDs : [],
       };
       
       if (isEditMode) {
@@ -553,7 +558,10 @@ const SavingAccountMaster: React.FC = () => {
     }
     
     if (!isEditMode) {
-      const existingMemberAccounts = accounts.filter(a => a.memberID === Number(formData.memberID));
+      const selectedObj = members.find(m => (m.customerID === Number(formData.memberID) || m.memberID === Number(formData.memberID)));
+      const targetCustId = selectedObj?.customerID || Number(formData.memberID);
+      const targetMemId = selectedObj?.memberID;
+      const existingMemberAccounts = accounts.filter(a => (targetCustId && a.customerID === targetCustId) || (targetMemId && (a.memberID === targetMemId || a.resolvedMemberID === targetMemId)));
       if (existingMemberAccounts.length > 0 && confirmedMemberID !== Number(formData.memberID)) {
         setShowDuplicateConfirmModal(true);
         return;
@@ -591,8 +599,13 @@ const SavingAccountMaster: React.FC = () => {
   // Nominee relation options
   const relationOptions = ['स्वतः', 'पती', 'पत्नी', 'मुलगा', 'मुलगी', 'भाऊ', 'बहीण', 'आई', 'वडील', 'इतर'];
 
-  const selectedMember = members.find(m => (m.memberID || m.customerID) === Number(formData.memberID));
-  const existingMemberAccounts = accounts.filter(a => a.memberID === Number(formData.memberID) && a.savingAccountID !== editAccountId);
+  const selectedMember = members.find(m => (m.customerID === Number(formData.memberID) || m.memberID === Number(formData.memberID)));
+  const targetCustId = selectedMember?.customerID || Number(formData.memberID);
+  const targetMemId = selectedMember?.memberID;
+  const existingMemberAccounts = accounts.filter(a => 
+    ((targetCustId && a.customerID === targetCustId) || (targetMemId && (a.memberID === targetMemId || a.resolvedMemberID === targetMemId))) && 
+    a.savingAccountID !== editAccountId
+  );
 
   return (
     <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
@@ -902,7 +915,7 @@ const SavingAccountMaster: React.FC = () => {
               <div className="flex items-center gap-2 mb-1.5">
                 <div className="flex-1">
                   <CustomerSearchSelect
-                    customers={members.filter(m => (m.customerID || m.memberID) !== formData.memberID && !jointHolderMemberIDs.includes(m.customerID || m.memberID))}
+                    customers={members.filter(m => (m.customerID || m.memberID) !== formData.memberID && !jointHolderMemberIDs.includes(m.customerID || m.memberID || 0))}
                     value={selectedJointMemberID ? Number(selectedJointMemberID) : ''}
                     onChange={(val) => setSelectedJointMemberID(val ? Number(val) : 0)}
                     placeholder="-- सह-खातेदार शोधा व निवडा --"

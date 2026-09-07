@@ -199,6 +199,7 @@ const LoanCollectionMaster: React.FC = () => {
 
     const [selectedAccount, setSelectedAccount] = useState<LoanAccount | null>(null);
     const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
+    const [selectedBorrowerKey, setSelectedBorrowerKey] = useState<string | null>(null);
     const [accountDetails, setAccountDetails] = useState<AccountDetailsAndSchedule | null>(null);
     const [npaStatus, setNpaStatus] = useState<{ category: string, overdueDays: number, categoryMarathi: string } | null>(null);
     const [todayTotalCash, setTodayTotalCash] = useState(0);
@@ -216,25 +217,44 @@ const LoanCollectionMaster: React.FC = () => {
         }
     };
 
-    // Extract unique members from active loan accounts
-    const memberOptions = useMemo(() => {
-        const map = new Map<number, any>();
+    // Extract unique borrowers (Customers & Members) from active loan accounts
+    const borrowerOptions = useMemo(() => {
+        const map = new Map<string, any>();
         accounts.forEach((a: any) => {
-            if (a.member && !map.has(a.memberID)) {
-                map.set(a.memberID, {
-                    value: a.memberID.toString(),
-                    label: `${a.member.memberCode ? `${a.member.memberCode} - ` : ''}${a.member.firstName} ${a.member.lastName}`
+            const key = a.customerID ? `C_${a.customerID}` : `M_${a.memberID}`;
+            if (!map.has(key)) {
+                let name = '';
+                let prefix = '';
+                if (a.customer) {
+                    name = `${a.customer.firstName || ''} ${a.customer.middleName ? a.customer.middleName + ' ' : ''}${a.customer.lastName || ''}`.trim();
+                    prefix = a.customer.cifNo ? `[${a.customer.cifNo}] ` : (a.member?.memberCode ? `[${a.member.memberCode}] ` : '');
+                } else if (a.member) {
+                    name = `${a.member.firstName || ''} ${a.member.middleName ? a.member.middleName + ' ' : ''}${a.member.lastName || ''}`.trim();
+                    prefix = a.member.memberCode ? `[${a.member.memberCode}] ` : '';
+                }
+                if (!name && a.loanAccountNo) name = `खाते #${a.loanAccountNo}`;
+                map.set(key, {
+                    value: key,
+                    label: `${prefix}${name}`.trim(),
+                    customerID: a.customerID,
+                    memberID: a.memberID
                 });
             }
         });
         return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
     }, [accounts]);
+    const memberOptions = borrowerOptions;
 
-    // Loans of selected member
-    const memberLoans = useMemo(() => {
-        if (!selectedMemberId) return [];
-        return accounts.filter((a: any) => a.memberID === selectedMemberId);
-    }, [accounts, selectedMemberId]);
+    // Loans of selected borrower
+    const borrowerLoans = useMemo(() => {
+        if (!selectedBorrowerKey && !selectedMemberId) return [];
+        return accounts.filter((a: any) => {
+            const key = a.customerID ? `C_${a.customerID}` : `M_${a.memberID}`;
+            return (selectedBorrowerKey && (key === selectedBorrowerKey || `M_${a.memberID}` === selectedBorrowerKey || `C_${a.customerID}` === selectedBorrowerKey || String(a.memberID) === selectedBorrowerKey)) ||
+                   (selectedMemberId && a.memberID === selectedMemberId);
+        });
+    }, [accounts, selectedBorrowerKey, selectedMemberId]);
+    const memberLoans = borrowerLoans;
 
     const bankLedgers = ledgers.filter((l: any) => 
         l.accountGroup?.groupName?.toLowerCase().includes('bank') || 
@@ -338,12 +358,19 @@ const LoanCollectionMaster: React.FC = () => {
 
             const params = new URLSearchParams(window.location.search);
             const memberIdStr = params.get('memberId');
-            if (memberIdStr) {
-                const mId = parseInt(memberIdStr);
+            const customerIdStr = params.get('customerId');
+            const loanAccNo = params.get('loanAccountNo');
+            if (loanAccNo) {
+                const matchedAcc = activeAccs.find((a: any) => a.loanAccountNo === loanAccNo);
+                if (matchedAcc) selectLoanAccountById(matchedAcc.loanAccountID);
+            } else if (customerIdStr) {
+                const cId = parseInt(customerIdStr, 10);
+                const matchedAcc = activeAccs.find((a: any) => a.customerID === cId);
+                if (matchedAcc) selectLoanAccountById(matchedAcc.loanAccountID);
+            } else if (memberIdStr) {
+                const mId = parseInt(memberIdStr, 10);
                 const matchedAcc = activeAccs.find((a: any) => a.memberID === mId);
-                if (matchedAcc) {
-                    selectLoanAccountById(matchedAcc.loanAccountID);
-                }
+                if (matchedAcc) selectLoanAccountById(matchedAcc.loanAccountID);
             }
         } catch (err) {
             console.error(err);
@@ -364,7 +391,9 @@ const LoanCollectionMaster: React.FC = () => {
         if (!acc) return;
 
         setSelectedAccount(acc);
-        setSelectedMemberId(acc.memberID);
+        const bKey = acc.customerID ? `C_${acc.customerID}` : `M_${acc.memberID}`;
+        setSelectedBorrowerKey(bKey);
+        setSelectedMemberId(acc.memberID || null);
         (window as any).selectedLoanMemberId = acc.memberID;
         setFormData(p => ({ ...p, loanAccountID: acc.loanAccountID }));
         setAccountDetails(null);
@@ -411,6 +440,7 @@ const LoanCollectionMaster: React.FC = () => {
     const handleMemberChange = (e: any) => {
         const val = e.target.value;
         if (!val) {
+            setSelectedBorrowerKey(null);
             setSelectedMemberId(null);
             setSelectedAccount(null);
             setAccountDetails(null);
@@ -420,10 +450,21 @@ const LoanCollectionMaster: React.FC = () => {
             return;
         }
 
-        const mId = parseInt(val);
-        setSelectedMemberId(mId);
+        setSelectedBorrowerKey(val);
+        const matched = borrowerOptions.find(o => o.value === val);
+        if (matched?.memberID) {
+            setSelectedMemberId(matched.memberID);
+            (window as any).selectedLoanMemberId = matched.memberID;
+        } else {
+            setSelectedMemberId(null);
+            (window as any).selectedLoanMemberId = undefined;
+        }
 
-        const loans = accounts.filter((a: any) => a.memberID === mId);
+        const loans = accounts.filter((a: any) => {
+            const key = a.customerID ? `C_${a.customerID}` : `M_${a.memberID}`;
+            return key === val || (a.memberID && `M_${a.memberID}` === val) || (a.customerID && `C_${a.customerID}` === val);
+        });
+
         if (loans.length === 1) {
             selectLoanAccountById(loans[0].loanAccountID);
         } else {
@@ -700,6 +741,7 @@ const LoanCollectionMaster: React.FC = () => {
                 principalCollected: 0,
                 fees: []
             });
+            setSelectedBorrowerKey(null);
             setSelectedMemberId(null);
             setSelectedAccount(null);
             setAccountDetails(null);
@@ -716,8 +758,9 @@ const LoanCollectionMaster: React.FC = () => {
     const handleDirectWhatsAppShare = (c: any) => {
         if (!c) return;
         const sansthaName = sanstha?.sansthaName || 'स्मार्ट मल्टीस्टेट पतसंस्था लि.';
-        const memberName = `${c.loanAccount?.member?.firstName || ''} ${c.loanAccount?.member?.lastName || ''}`.trim();
-        const mobileNo = c.loanAccount?.member?.mobileNo || '';
+        const borrower = c.loanAccount?.customer || c.loanAccount?.member;
+        const memberName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'खातेदार';
+        const mobileNo = borrower?.mobileNo || '';
 
         const totalFees = c.fees?.reduce((acc: number, f: any) => acc + (f.amount || 0), 0) || 0;
         const totalAmount = (c.totalAmountReceived || 0) + totalFees;
@@ -891,12 +934,12 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 </div>
                                 
                                 <div className="md:col-span-2">
-                                    <label className={labelClass}>खातेदार (Member)</label>
+                                    <label className={labelClass}>खातेदार / सभासद (Borrower / Member)</label>
                                     <SearchableSelect 
-                                        options={memberOptions}
-                                        value={selectedMemberId?.toString() || ''} 
+                                        options={borrowerOptions}
+                                        value={selectedBorrowerKey || (selectedMemberId ? `M_${selectedMemberId}` : '')} 
                                         onChange={handleMemberChange} 
-                                        placeholder="खातेदार निवडा..." required />
+                                        placeholder="खातेदार, ग्राहक किंवा सभासद निवडा..." required />
                                 </div>
                                 
                                 <div>
@@ -919,11 +962,11 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         <select 
                                             value={formData.loanAccountID?.toString() || ''} 
                                             onChange={handleLoanAccountSelect}
-                                            disabled={!selectedMemberId || memberLoans.length === 0}
-                                            className={`${inputClass} font-bold text-xs ${!selectedMemberId ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-primary/5 text-primary border-primary/30 shadow-2xs'}`}
+                                            disabled={(!selectedBorrowerKey && !selectedMemberId) || borrowerLoans.length === 0}
+                                            className={`${inputClass} font-bold text-xs ${(!selectedBorrowerKey && !selectedMemberId) ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-primary/5 text-primary border-primary/30 shadow-2xs'}`}
                                             required>
-                                            <option value="">{selectedMemberId ? (memberLoans.length === 0 ? "कर्ज उपलब्ध नाही" : "-- कर्ज प्रकार व खाते निवडा --") : "आधी खातेदार निवडा..."}</option>
-                                            {memberLoans.map((a: any) => (
+                                            <option value="">{selectedBorrowerKey || selectedMemberId ? (borrowerLoans.length === 0 ? "कर्ज उपलब्ध नाही" : "-- कर्ज प्रकार व खाते निवडा --") : "आधी खातेदार निवडा..."}</option>
+                                            {borrowerLoans.map((a: any) => (
                                                 <option key={a.loanAccountID} value={a.loanAccountID}>
                                                     {a.loanAccountNo} - {a.loanRate?.shortName || a.loanRate?.loanType || 'कर्ज'} (मंजूर: ₹{a.sanctionedAmount?.toLocaleString('en-IN') || 0} | शिल्लक: ₹{a.principalBalance?.toLocaleString('en-IN') || 0})
                                                 </option>
@@ -1835,7 +1878,12 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                     ) : new Date(c.collectionDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                                                 </td>
                                                 <td className="p-1 border-r font-semibold">{c.receiptNo}</td>
-                                                <td className="p-1 border-r">{c.loanAccount?.member?.firstName} {c.loanAccount?.member?.lastName}</td>
+                                                <td className="p-1 border-r">
+                                                    <div>{c.loanAccount?.customer ? `${c.loanAccount.customer.firstName || ''} ${c.loanAccount.customer.lastName || ''}`.trim() : `${c.loanAccount?.member?.firstName || ''} ${c.loanAccount?.member?.lastName || ''}`.trim()}</div>
+                                                    <span className="text-[10px] text-gray-500 font-mono block">
+                                                        {c.loanAccount?.loanAccountNo} {c.loanAccount?.customer?.cifNo ? `| CIF: ${c.loanAccount.customer.cifNo}` : (c.loanAccount?.member?.memberCode ? `| ${c.loanAccount.member.memberCode}` : '')}
+                                                    </span>
+                                                </td>
                                                 <td className="p-1 border-r text-right font-bold text-green-700">₹{c.totalAmountReceived.toFixed(2)}</td>
                                                 <td className="p-1 border-r">
                                                     {isEditing ? (

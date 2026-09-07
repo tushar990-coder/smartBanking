@@ -262,7 +262,8 @@ namespace Bhisi.Api.Models
     public class LoanOpeningBalanceDto
     {
         public int BranchID { get; set; } = 1;
-        public int MemberID { get; set; }
+        public int? CustomerID { get; set; }
+        public int? MemberID { get; set; }
         public int LoanRateID { get; set; }
         public string LoanAccountNo { get; set; } = string.Empty;
         public string? LegacyAccountNumber { get; set; }
@@ -283,6 +284,12 @@ namespace Bhisi.Api.Models
         public string Guarantor2 { get; set; } = string.Empty;
         public int? Guarantor1MemberID { get; set; }
         public int? Guarantor2MemberID { get; set; }
+        public int? Guarantor1CustomerID { get; set; }
+        public int? Guarantor2CustomerID { get; set; }
+        public int? CoCustomerID { get; set; }
+        public int? CoCustomer2ID { get; set; }
+        public int? CoMemberID { get; set; }
+        public int? CoMember2ID { get; set; }
         public string SecurityDetails { get; set; } = string.Empty;
         public decimal SecurityValue { get; set; }
         public int NoOfInstallments { get; set; }

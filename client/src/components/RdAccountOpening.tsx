@@ -156,13 +156,17 @@ export default function RdAccountOpening() {
     }
   };
 
-  const fetchMemberSavingAccounts = async (memberId: string) => {
-    if (!memberId) {
+  const fetchMemberSavingAccounts = async (mIdStr: string) => {
+    if (!mIdStr) {
       setSavingAccounts([]);
       return;
     }
     try {
-      const res = await axios.get(`/api/SavingAccountMasters?memberId=${memberId}`);
+      const selected = members.find((m: any) => (m.customerID || m.memberID)?.toString() === mIdStr.toString());
+      const cId = selected?.customerID || mIdStr;
+      const mId = selected?.memberProfile?.memberID || selected?.memberID || mIdStr;
+
+      const res = await axios.get(`/api/SavingAccounts?customerId=${cId}&memberId=${mId}`);
       const dataList = Array.isArray(res.data) ? res.data : [];
       setSavingAccounts(dataList);
       if (dataList.length > 0) {

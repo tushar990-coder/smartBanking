@@ -63,8 +63,13 @@ interface LoanApplication {
 interface LoanAccount {
     loanAccountID: number;
     loanAccountNo: string;
-    memberID: number;
+    customerID?: number;
+    memberID?: number;
     loanApplicationID?: number;
+    coCustomerID?: number;
+    coCustomer2ID?: number;
+    guarantor1CustomerID?: number;
+    guarantor2CustomerID?: number;
     guarantor1MemberID?: number;
     guarantor2MemberID?: number;
     securityDetails?: string;
@@ -75,6 +80,7 @@ interface LoanAccount {
     installmentFrequency: string;
     coMemberID?: number;
     loanRateID?: number;
+    customer?: any;
     member?: Member;
     guarantor1Member?: Member;
     guarantor2Member?: Member;
@@ -243,11 +249,17 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     netAmountPaid: draftApplication.requestedAmount
                 }));
                 
-                fetchMemberShareBalance(draftApplication.memberID);
+                fetchMemberShareBalance(draftApplication.memberID, draftApplication.customerID);
 
                 setNewAccountData({
+                    customerID: draftApplication.customerID || (draftApplication as any).customer?.customerID || null,
                     memberID: draftApplication.memberID,
+                    coCustomerID: draftApplication.coCustomerID || null,
+                    coCustomer2ID: (draftApplication as any).coCustomer2ID || null,
                     coMemberID: draftApplication.coMemberID,
+                    coMember2ID: (draftApplication as any).coMember2ID,
+                    guarantor1CustomerID: (draftApplication as any).guarantor1CustomerID || null,
+                    guarantor2CustomerID: (draftApplication as any).guarantor2CustomerID || null,
                     guarantor1MemberID: draftApplication.guarantor1MemberID,
                     guarantor2MemberID: draftApplication.guarantor2MemberID,
                     securityDetails: draftApplication.securityDetails,
@@ -291,12 +303,20 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 })) || [];
                 setDeductions(deds);
 
-                fetchMemberShareBalance(draftApplication.memberID);
+                fetchMemberShareBalance(draftApplication.memberID, draftApplication.customerID);
 
                 setNewAccountData({
                     loanAccountID: editingDisbursement.loanAccountID,
+                    customerID: draftApplication.customerID || (draftApplication as any).customer?.customerID || null,
                     memberID: draftApplication.memberID,
+                    coCustomerID: draftApplication.coCustomerID || null,
+                    coCustomer2ID: (draftApplication as any).coCustomer2ID || null,
                     coMemberID: draftApplication.coMemberID,
+                    coMember2ID: (draftApplication as any).coMember2ID,
+                    guarantor1CustomerID: (draftApplication as any).guarantor1CustomerID || null,
+                    guarantor2CustomerID: (draftApplication as any).guarantor2CustomerID || null,
+                    guarantor1MemberID: draftApplication.guarantor1MemberID,
+                    guarantor2MemberID: draftApplication.guarantor2MemberID,
                     loanRateID: draftApplication.loanRateID,
                     sanctionedAmount: draftApplication.requestedAmount,
                     interestRate: draftApplication.interestRate,
@@ -376,10 +396,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         }
     };
 
-    const fetchMemberShareBalance = async (memberId: number) => {
-        if (!memberId) return;
+    const fetchMemberShareBalance = async (memberId?: number, customerId?: number) => {
+        if (!memberId && !customerId) return;
         try {
-            const res = await axios.get(`/api/Reports/Member360/${memberId}`);
+            const url = memberId ? `/api/Reports/Member360/${memberId}` : `/api/Reports/Customer360/${customerId}`;
+            const res = await axios.get(url);
             if (res.data && res.data.profile && res.data.profile.shareCapital !== undefined) {
                 setMemberShareBalance(res.data.profile.shareCapital);
             } else if (res.data && res.data.portfolio && res.data.portfolio.shares) {
@@ -444,11 +465,28 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         return 0;
     };
 
+    const getCurrentApplicantCustomerId = () => {
+        if (draftApplication) return draftApplication.customerID || draftApplication.member?.customerID || 0;
+        if (sourceType === 'Application' && selectedSourceId) {
+            const app = applications.find(a => a.loanApplicationID === selectedSourceId);
+            if (app) return app.customerID || app.member?.customerID || 0;
+        }
+        if (sourceType === 'ExistingAccount' && selectedSourceId) {
+            const acc = accounts.find(a => a.loanAccountID === selectedSourceId);
+            if (acc) return acc.customerID || acc.member?.customerID || 0;
+        }
+        return 0;
+    };
+
     // Auto-select applicant's primary saving account when payment mode is Saving Transfer
     useEffect(() => {
         const applicantId = getCurrentApplicantMemberId();
-        if (formData.paymentMode === 'Saving Transfer' && applicantId && savingAccounts.length > 0) {
-            const appAcc = savingAccounts.find(s => s.memberID === applicantId && (s.status === 'Active' || !s.status));
+        const applicantCustId = getCurrentApplicantCustomerId();
+        if (formData.paymentMode === 'Saving Transfer' && (applicantId || applicantCustId) && savingAccounts.length > 0) {
+            const appAcc = savingAccounts.find(s => 
+                ((applicantCustId && s.customerID === applicantCustId) || (applicantId && (s.memberID === applicantId || s.resolvedMemberID === applicantId))) && 
+                (s.status === 'Active' || !s.status)
+            );
             if (appAcc && (!formData.transferToSavingAccountNo || !savingAccounts.some(s => s.accountNo === formData.transferToSavingAccountNo))) {
                 setFormData(prev => ({ ...prev, transferToSavingAccountNo: appAcc.accountNo }));
             }
@@ -806,39 +844,55 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     const currentApplicantMemberId = getCurrentApplicantMemberId();
 
     if (draftApplication) {
-        selectedName = `${draftApplication.member?.firstName || ''} ${draftApplication.member?.lastName || ''}`.trim();
-        selectedCif = draftApplication.member?.cifNo || '';
+        const borrower = draftApplication.customer || draftApplication.member;
+        selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'अर्जदार';
+        selectedCif = draftApplication.customer?.cifNo || draftApplication.member?.cifNo || '';
         selectedAccountNo = draftApplication.applicationNo || 'DRAFT';
         selectedLoanType = draftApplication.loanRate?.loanType || 'General Loan';
-        selectedGuarantor1 = draftApplication.guarantor1Member ? `${draftApplication.guarantor1Member.firstName} ${draftApplication.guarantor1Member.lastName}` : '-';
-        selectedGuarantor2 = draftApplication.guarantor2Member ? `${draftApplication.guarantor2Member.firstName} ${draftApplication.guarantor2Member.lastName}` : '-';
+        const g1 = draftApplication.guarantor1Customer || draftApplication.guarantor1Member;
+        selectedGuarantor1 = g1 ? `${g1.firstName || ''} ${g1.lastName || ''}`.trim() : '-';
+        const g2 = draftApplication.guarantor2Customer || draftApplication.guarantor2Member;
+        selectedGuarantor2 = g2 ? `${g2.firstName || ''} ${g2.lastName || ''}`.trim() : '-';
         selectedSecurity = draftApplication.securityDetails || '-';
     } else if (sourceType === 'Application' && selectedSourceId) {
         const app = applications.find(a => a.loanApplicationID === selectedSourceId);
         if (app) {
-            selectedName = `${app.member?.firstName || ''} ${app.member?.lastName || ''}`.trim();
-            selectedCif = app.member?.cifNo || '';
+            const borrower = app.customer || app.member;
+            selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'अर्जदार';
+            selectedCif = app.customer?.cifNo || app.member?.cifNo || '';
             selectedAccountNo = app.applicationNo || '';
             selectedLoanType = app.loanRate?.loanType || '';
-            selectedGuarantor1 = app.guarantor1Member ? `${app.guarantor1Member.firstName} ${app.guarantor1Member.lastName}` : '-';
-            selectedGuarantor2 = app.guarantor2Member ? `${app.guarantor2Member.firstName} ${app.guarantor2Member.lastName}` : '-';
+            const g1 = app.guarantor1Customer || app.guarantor1Member;
+            selectedGuarantor1 = g1 ? `${g1.firstName || ''} ${g1.lastName || ''}`.trim() : '-';
+            const g2 = app.guarantor2Customer || app.guarantor2Member;
+            selectedGuarantor2 = g2 ? `${g2.firstName || ''} ${g2.lastName || ''}`.trim() : '-';
             selectedSecurity = app.securityDetails || '-';
         }
     } else if (sourceType === 'ExistingAccount' && selectedSourceId) {
         const acc = accounts.find(a => a.loanAccountID === selectedSourceId);
         if (acc) {
-            selectedName = `${acc.member?.firstName || ''} ${acc.member?.lastName || ''}`.trim();
-            selectedCif = acc.member?.cifNo || '';
+            const borrower = acc.customer || acc.member;
+            selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'खातेदार';
+            selectedCif = acc.customer?.cifNo || acc.member?.cifNo || '';
             selectedAccountNo = acc.loanAccountNo || '';
             selectedLoanType = acc.loanRate?.loanType || '';
-            selectedGuarantor1 = acc.guarantor1Member ? `${acc.guarantor1Member.firstName} ${acc.guarantor1Member.lastName}` : '-';
-            selectedGuarantor2 = acc.guarantor2Member ? `${acc.guarantor2Member.firstName} ${acc.guarantor2Member.lastName}` : '-';
+            const g1 = acc.guarantor1Customer || acc.guarantor1Member;
+            selectedGuarantor1 = g1 ? `${g1.firstName || ''} ${g1.lastName || ''}`.trim() : '-';
+            const g2 = acc.guarantor2Customer || acc.guarantor2Member;
+            selectedGuarantor2 = g2 ? `${g2.firstName || ''} ${g2.lastName || ''}`.trim() : '-';
             selectedSecurity = acc.securityDetails || '-';
         }
     }
 
-    const applicantSavingAccounts = savingAccounts.filter(s => s.memberID === currentApplicantMemberId && (s.status === 'Active' || !s.status));
-    const otherSavingAccounts = savingAccounts.filter(s => s.memberID !== currentApplicantMemberId && (s.status === 'Active' || !s.status));
+    const currentApplicantCustomerId = getCurrentApplicantCustomerId();
+    const isApplicantSaving = (s: any) => {
+        if (currentApplicantCustomerId && s.customerID === currentApplicantCustomerId) return true;
+        if (currentApplicantMemberId && (s.memberID === currentApplicantMemberId || s.resolvedMemberID === currentApplicantMemberId)) return true;
+        return false;
+    };
+
+    const applicantSavingAccounts = savingAccounts.filter(s => isApplicantSaving(s) && (s.status === 'Active' || !s.status));
+    const otherSavingAccounts = savingAccounts.filter(s => !isApplicantSaving(s) && (s.status === 'Active' || !s.status));
 
     const totalDeductionsAmount = deductions.reduce((sum, d) => sum + (parseFloat(d.amount as any) || 0), 0);
     const isExceedingPendingLimit = Boolean((formData.disbursementAmount || 0) > (pendingSanctionedLimit > 0 ? pendingSanctionedLimit : (formData.sanctionedAmount || 0)));

@@ -3,22 +3,33 @@ import Select from 'react-select';
 
 export interface MemberOption {
   memberID: number;
-  memberCode: string;
+  memberId?: number;
+  memberCode?: string;
   legacyMemberNo?: string;
   oldMemberCode?: string;
-  firstName: string;
+  legacyCustomerNo?: string;
+  firstName?: string;
   middleName?: string;
-  lastName: string;
+  lastName?: string;
+  firstNameEng?: string;
+  middleNameEng?: string;
+  lastNameEng?: string;
+  fullName?: string;
   mobileNo?: string;
   aadhaarNo?: string;
   cifNo?: string;
   status?: string;
+  customerID?: number;
+  customerId?: number;
+  id?: number;
+  memberProfile?: any;
+  memberIdOnly?: number;
 }
 
 interface Props {
   members: (MemberOption | any)[];
   value: number | string | '' | undefined;
-  onChange: (memberId: number | '') => void;
+  onChange: (memberId: number | '', selectedMember?: any) => void;
   placeholder?: string;
   className?: string;
   isDisabled?: boolean;
@@ -45,7 +56,10 @@ export default function MemberSearchSelect({
       const custId = Number(m.customerID || m.customerId || m.CustomerID || m.id || 0) || (memId > 0 ? memId : 0);
       const primaryValueId = Number(m.memberID || m.memberId || m.MemberID || m.customerID || m.customerId || m.CustomerID || m.id || 0);
 
-      const code = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.code || m.MemberCode || '').trim();
+      const rawCode = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.code || m.MemberCode || '').trim();
+      const isNullOrEmpty = !rawCode || rawCode.toLowerCase() === 'null' || rawCode.toLowerCase() === 'undefined';
+      const cleanMemCode = isNullOrEmpty ? '' : rawCode;
+
       const rawLegacyMember = String(rawMemProfile?.legacyMemberNo || rawMemProfile?.LegacyMemberNo || m.legacyMemberNo || m.oldMemberCode || m.oldMemberNo || m.LegacyMemberNo || '').trim();
       const rawLegacyCust = String(m.legacyCustomerNo || m.LegacyCustomerNo || (m as any)?.customerProfile?.legacyCustomerNo || '').trim();
       const cif = String(m.cifNo || m.cif || m.CifNo || m.CIFNo || '').trim();
@@ -65,22 +79,10 @@ export default function MemberSearchSelect({
         fullName = `सभासद / खातेदार #${primaryValueId}`;
       }
 
-      const hasAllottedCode = Boolean(code && !code.startsWith('TEMP'));
-      const hasMemberId = Boolean(memId > 0 && hasAllottedCode);
-
-      let codeDisplay = hasAllottedCode ? code : (cif || `ID:${primaryValueId}`);
-      if (hasMemberId && memId > 0) {
-        codeDisplay += ` (सभासद ID: #${memId})`;
-      }
-      
-      const legacyTags: string[] = [];
-      if (rawLegacyCust) legacyTags.push(`जुना CIF:${rawLegacyCust}`);
-      if (rawLegacyMember) legacyTags.push(`जुना सभासद:${rawLegacyMember}`);
-      if (legacyTags.length > 0) {
-        codeDisplay += ` [${legacyTags.join(' | ')}]`;
-      }
-
-      const label = `[${codeDisplay}] ${fullName}${nick ? ` (${nick})` : ''}${mobile ? ` - ${mobile}` : ''}`;
+      // If customer has a Member Code, display [CIF | MEMxxxx], otherwise display strictly [CIF]
+      const cleanCif = cif || (rawLegacyCust ? `CIF:${rawLegacyCust}` : `CIF00${custId || primaryValueId}`);
+      const prefix = cleanMemCode ? `[${cleanCif} | ${cleanMemCode}]` : `[${cleanCif}]`;
+      const label = `${prefix} ${fullName}${nick ? ` (${nick})` : ''}${mobile ? ` - 📱 ${mobile}` : ''}`;
 
       return {
         value: primaryValueId,
@@ -90,7 +92,7 @@ export default function MemberSearchSelect({
           memberID: primaryValueId,
           memberIdOnly: memId,
           customerID: custId,
-          memberCode: code,
+          memberCode: cleanMemCode,
           legacyMemberNo: rawLegacyMember,
           legacyCustomerNo: rawLegacyCust,
           cifNo: cif,
@@ -110,20 +112,30 @@ export default function MemberSearchSelect({
 
   const selectedOption = React.useMemo(() => {
     if (numericValue === '' || isNaN(numericValue as number)) return null;
-    return options.find(o => 
-      o.value === numericValue || 
-      (o.member?.customerID && o.member.customerID === numericValue) || 
-      (o.member?.memberID && o.member.memberID === numericValue) || 
-      (o.member?.memberIdOnly && o.member.memberIdOnly === numericValue)
-    ) || null;
+    
+    // Priority 1: Exact match on primary option value (e.g. CustomerID when passed from Customer list)
+    const exactMatch = options.find(o => o.value === numericValue);
+    if (exactMatch) return exactMatch;
+
+    // Priority 2: Direct CustomerID match
+    const custMatch = options.find(o => o.member?.customerID === numericValue);
+    if (custMatch) return custMatch;
+
+    // Priority 3: Direct MemberID match
+    const memMatch = options.find(o => o.member?.memberID === numericValue);
+    if (memMatch) return memMatch;
+
+    // Priority 4: Secondary fallback to memberIdOnly
+    return options.find(o => o.member?.memberIdOnly === numericValue) || null;
   }, [numericValue, options]);
 
-  // Custom filter logic to search by name, mobile, aadhaar, cif, code, and legacy number
+  // Pure Customer / CIF filter logic (Searches by CIF Number, Member Code, Name, Mobile, Legacy IDs)
   const filterOption = (option: any, rawInput: string) => {
     const input = rawInput.toLowerCase().trim();
     if (!input) return true;
     
     const { label, member } = option.data;
+    
     const searchString = `
       ${label}
       ${member.fullName || ''}
@@ -132,60 +144,55 @@ export default function MemberSearchSelect({
       ${member.lastName || ''}
       ${member.nickName || ''}
       ${member.mobileNo || ''}
-      ${member.aadhaarNo || ''}
       ${member.cifNo || ''}
       ${member.memberCode || ''}
+      ${member.legacyCustomerNo || ''}
       ${member.legacyMemberNo || ''}
-      ${member.memberID || ''}
-      ${member.memberIdOnly || ''}
       ${member.customerID || ''}
+      ${member.memberID || ''}
     `.toLowerCase();
     
-    // Also support searching numeric parts of member code or CIF (e.g. searching '1069' matches CIF 'CIF001069' or ID 1069)
-    const codeNum = (member.memberCode || '').replace(/\D/g, '');
     const cifNum = (member.cifNo || '').replace(/\D/g, '');
+    const memCodeStr = (member.memberCode || '').toLowerCase();
+    const memCodeNum = memCodeStr.replace(/\D/g, '');
     const cleanInput = input.replace(/\D/g, '');
     if (cleanInput) {
-      if (codeNum && (codeNum.includes(cleanInput) || parseInt(codeNum) === parseInt(cleanInput))) return true;
       if (cifNum && (cifNum.includes(cleanInput) || parseInt(cifNum) === parseInt(cleanInput))) return true;
-      if (member.memberIdOnly && member.memberIdOnly.toString().includes(cleanInput)) return true;
-      if (member.memberID && member.memberID.toString().includes(cleanInput)) return true;
-      if (member.customerID && member.customerID.toString().includes(cleanInput)) return true;
+      if (memCodeNum && (memCodeNum.includes(cleanInput) || parseInt(memCodeNum) === parseInt(cleanInput))) return true;
+      if (member.customerID && (member.customerID.toString().includes(cleanInput) || member.customerID === parseInt(cleanInput))) return true;
+      if (member.memberID && (member.memberID.toString().includes(cleanInput) || member.memberID === parseInt(cleanInput))) return true;
+      if (member.legacyCustomerNo && member.legacyCustomerNo.toString().includes(cleanInput)) return true;
+      if (member.legacyMemberNo && member.legacyMemberNo.toString().includes(cleanInput)) return true;
     }
+
+    if (memCodeStr && memCodeStr.includes(input)) return true;
 
     return searchString.includes(input);
   };
 
   const formatOptionLabel = (data: any, { context }: any) => {
     const m = data.member;
-    const fullName = m.fullName || `${m.firstName || ''} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName || ''}`.trim() || `सभासद #${m.memberID}`;
-    const isMemberAllotted = Boolean(m.memberCode && !m.memberCode.startsWith('TEMP'));
-    const code = isMemberAllotted ? m.memberCode : (m.cifNo || `Cust#${m.customerID}`);
+    const fullName = m.fullName || `${m.firstName || ''} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName || ''}`.trim() || `ग्राहक #${m.customerID || m.memberID}`;
+    const cifCode = m.cifNo || (m.legacyCustomerNo ? `CIF:${m.legacyCustomerNo}` : `CIF00${m.customerID || m.memberID}`);
+    const memCode = m.memberCode || '';
 
     if (context === 'value') {
       return (
-        <div className="flex items-center gap-1.5 overflow-hidden text-[11px] py-0.5 w-full">
-          <span className={`text-[10px] font-mono font-black shrink-0 px-1 py-0.2 rounded border ${
-            isMemberAllotted ? 'bg-emerald-100 text-emerald-950 border-emerald-300' : 'bg-sky-100 text-sky-950 border-sky-300'
-          }`}>
-            {code}
+        <div className="flex items-center gap-1.5 overflow-hidden text-xs py-0.5 w-full">
+          <span className="text-[11px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-sky-100 text-sky-950 border border-sky-300">
+            {cifCode}
           </span>
-          {m.memberIdOnly > 0 && isMemberAllotted && (
-            <span className="text-[9.5px] bg-indigo-100 text-indigo-950 border border-indigo-300 px-1 py-0.2 rounded font-mono font-black shrink-0">
-              सभासद ID: #{m.memberIdOnly}
+          {memCode && (
+            <span className="text-[11px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-950 border border-emerald-300">
+              {memCode}
             </span>
           )}
-          <span className="font-black text-slate-900 truncate">
+          <span className="font-bold text-slate-900 truncate text-xs ml-1">
             {fullName}
           </span>
-          {m.cifNo && m.cifNo !== code && (
-            <span className="text-[9.5px] text-sky-900 font-mono font-bold shrink-0 bg-sky-50 border border-sky-200 px-1 py-0.2 rounded hidden sm:inline">
-              CIF: {m.cifNo}
-            </span>
-          )}
-          {m.legacyMemberNo && (
-            <span className="text-[9.5px] text-amber-900 font-mono font-bold shrink-0 bg-amber-100 border border-amber-300 px-1 py-0.2 rounded hidden sm:inline">
-              (जुना: {m.legacyMemberNo})
+          {m.mobileNo && (
+            <span className="text-[11px] text-slate-500 font-mono shrink-0 ml-auto hidden sm:inline">
+              📱 {m.mobileNo}
             </span>
           )}
         </div>
@@ -193,48 +200,29 @@ export default function MemberSearchSelect({
     }
 
     return (
-      <div className="flex items-center justify-between py-1 px-1 w-full gap-3 hover:bg-transparent">
+      <div className="flex items-center justify-between py-1.5 px-1 w-full gap-3 hover:bg-transparent">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className={`px-1.5 py-0.5 rounded font-mono font-black text-[10px] shrink-0 border ${
-            isMemberAllotted ? 'bg-emerald-100 text-emerald-950 border-emerald-300' : 'bg-sky-100 text-sky-950 border-sky-300'
-          }`}>
-            {code}
+          <span className="px-2 py-0.5 rounded font-mono font-bold text-[11px] shrink-0 bg-sky-100 text-sky-950 border border-sky-300">
+            {cifCode}
           </span>
-          <span className="font-black text-slate-900 text-xs leading-tight">
+          {memCode && (
+            <span className="px-2 py-0.5 rounded font-mono font-bold text-[11px] shrink-0 bg-emerald-100 text-emerald-950 border border-emerald-300">
+              {memCode}
+            </span>
+          )}
+          <span className="font-bold text-slate-900 text-xs sm:text-sm leading-tight truncate">
             {fullName}
           </span>
           {m.nickName && (
-            <span className="text-[10px] text-slate-500 italic shrink-0">
+            <span className="text-[11px] text-slate-500 italic shrink-0">
               ({m.nickName})
             </span>
           )}
-          {m.mobileNo && (
-            <span className="text-[10px] text-slate-500 font-mono shrink-0 ml-1">
-              📱 {m.mobileNo}
-            </span>
-          )}
         </div>
-        <div className="flex items-center gap-1.5 shrink-0 text-[10px]">
-          {m.memberIdOnly > 0 && isMemberAllotted ? (
-            <span className="bg-indigo-100 text-indigo-950 border border-indigo-300 px-1.5 py-0.5 rounded font-black font-mono">
-              सभासद ID: #{m.memberIdOnly}
-            </span>
-          ) : (
-            <span className="bg-purple-100 text-purple-900 border border-purple-300 px-1.5 py-0.5 rounded font-bold font-mono">
-              (नवीन सभासद)
-            </span>
-          )}
-          <span className="bg-sky-50 text-sky-900 border border-sky-200 px-1.5 py-0.5 rounded font-bold font-mono">
-            Cust ID: #{m.customerID}
-          </span>
-          {m.cifNo && m.cifNo.trim() !== '' && code !== m.cifNo && (
-            <span className="bg-slate-100 text-slate-700 border border-slate-300 px-1.5 py-0.5 rounded font-mono text-[9.5px]">
-              CIF: {m.cifNo.trim()}
-            </span>
-          )}
-          {m.legacyMemberNo && m.legacyMemberNo.trim() !== '' && (
-            <span className="bg-amber-100 text-amber-950 border border-amber-300 px-1.5 py-0.5 rounded font-bold font-mono">
-              जुना: {m.legacyMemberNo.trim()}
+        <div className="flex items-center gap-2 shrink-0 text-xs">
+          {m.mobileNo && (
+            <span className="text-[11px] text-slate-600 font-mono shrink-0 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+              📱 {m.mobileNo}
             </span>
           )}
         </div>
@@ -249,7 +237,7 @@ export default function MemberSearchSelect({
         value={selectedOption}
         isDisabled={isDisabled}
         onChange={(selected: any) => {
-          onChange(selected ? selected.value : '');
+          onChange(selected ? selected.value : '', selected ? selected.member : undefined);
         }}
         isClearable={isClearable}
         filterOption={filterOption}

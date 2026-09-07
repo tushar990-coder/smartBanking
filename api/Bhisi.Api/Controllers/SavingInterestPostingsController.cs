@@ -53,6 +53,7 @@ namespace Bhisi.Api.Controllers
 
             var activeAccounts = await _context.SavingAccountMasters
                 .Where(a => a.Status == "Active")
+                .Include(a => a.Customer)
                 .Include(a => a.Member)
                 .ToListAsync();
 
@@ -67,7 +68,9 @@ namespace Bhisi.Api.Controllers
                     {
                         SavingAccountID = account.SavingAccountID,
                         AccountNo = account.AccountNo,
-                        MemberName = account.Member != null ? $"{account.Member.FirstName} {account.Member.LastName}" : "",
+                        MemberName = account.Customer != null 
+                            ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() 
+                            : (account.Member != null ? $"{account.Member.FirstName} {account.Member.LastName}".Trim() : ""),
                         CurrentBalance = account.CurrentBalance,
                         InterestRate = account.InterestRate,
                         CalculatedInterest = Math.Round(interest, 2)

@@ -16,13 +16,20 @@ import {
   Calendar,
   Layers,
   UploadCloud,
-  Check
+  Check,
+  Building2,
+  HardDrive
 } from 'lucide-react';
 
 interface VersionInfo {
   currentVersion: string;
   buildDate: string;
   databaseName: string;
+  serverInstance?: string;
+  sansthaName?: string;
+  branchName?: string;
+  isConnected?: boolean;
+  totalTables?: number;
   lastUpdatedOn?: string | null;
   lastAppliedPatch?: string;
   changelog?: string[];
@@ -152,16 +159,23 @@ export default function SystemUpdateMaster() {
     }
 
     setIsUploading(true);
+    setStagedPatch(null);
+
     const formData = new FormData();
-    formData.append('patchFile', selectedFile);
+    formData.append('patchZip', selectedFile);
 
     try {
-      const res = await axios.post('/api/SystemUpdate/upload-patch', formData, {
+      const res = await axios.post('/api/SystemUpdate/stage-offline', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      setStagedPatch(res.data);
+
+      if (res.data.isValid) {
+        setStagedPatch(res.data);
+      } else {
+        alert(res.data.errorMessage || 'पॅच फाईल अवैध आहे.');
+      }
     } catch (err: any) {
-      console.error('Upload failed', err);
+      console.error('Offline staging failed', err);
       alert(err.response?.data?.message || 'पॅच फाईल अपलोड करताना त्रुटी आली.');
     } finally {
       setIsUploading(false);
@@ -169,79 +183,99 @@ export default function SystemUpdateMaster() {
   };
 
   const handleApplyUpdate = async () => {
-    if (!window.confirm('तुम्ही खात्रीशीरपणे सॉफ्टवेअर अपडेट करू इच्छिता का? सिस्टीम आपोआप बॅकअप घेऊन रीस्टार्ट होईल.')) {
+    if (!stagedPatch && !onlineResult) {
+      alert('कोणतीही वैध पॅच फाईल निवडलेली नाही.');
       return;
     }
 
+    const confirmMsg = `लक्ष द्या! आपण प्रणाली v${stagedPatch?.version || onlineResult?.latestVersion} वर अपडेट करत आहात.\n\n` +
+      `१. सिस्टीम स्वयंचलित सुरक्षित बॅकअप घेईल.\n` +
+      `२. डेटाबेस स्कीमा अपडेट केली जाईल.\n` +
+      `३. नवीन सॉफ्टवेअर फाईल्स लागू केल्या जातील.\n\n` +
+      `आपण पुढे सुरू ठेवू इच्छिता का?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
     setIsApplying(true);
     setApplyStep(1);
-    setApplyStatusText('डेटाबेसचा स्वयंचलित बॅकअप घेतला जात आहे (Zero Data Loss)...');
+    setApplyStatusText('डेटाबेस व सॉफ्टवेअरचा स्वयंचलित सुरक्षा बॅकअप तयार होत आहे...');
 
     try {
-      // Small visual delay for step 1
-      await new Promise(r => setTimeout(r, 1000));
-      setApplyStep(2);
-      setApplyStatusText('संचयी डेटाबेस मायग्रेशन आणि स्कीमा सिंक केले जात आहे...');
+      // Small simulated smooth progress for user feedback
+      setTimeout(() => {
+        setApplyStep(2);
+        setApplyStatusText('नवीन स्कीमा व मायग्रेशन स्क्रिप्ट्स डेटाबेसवर लागू होत आहेत...');
+      }, 1500);
 
-      const res = await axios.post('/api/SystemUpdate/apply');
+      setTimeout(() => {
+        setApplyStep(3);
+        setApplyStatusText('नवीन सॉफ्टवेअर फाईल्स व कंपोनंट्स डिप्लॉय होत आहेत...');
+      }, 3500);
 
-      setApplyStep(3);
-      setApplyStatusText('सिस्टीम फाइल्स अपडेट होत आहेत...');
+      const res = await axios.post('/api/SystemUpdate/apply-staged');
 
-      await new Promise(r => setTimeout(r, 1200));
-      setApplyStep(4);
-      setApplyStatusText('सर्व्हर रीस्टार्ट होत आहे, कृपया ५-१० सेकंद थांबा...');
-      setIsReconnecting(true);
-
-      // Start polling for server revival
-      pollForReboot();
+      if (res.data.success) {
+        setApplyStep(4);
+        setApplyStatusText('सर्व्हर रीस्टार्ट व सिस्टीम व्हेरिफिकेशन होत आहे...');
+        
+        // Wait and poll for server restart
+        setTimeout(() => {
+          setIsReconnecting(true);
+          pollForServerRestart();
+        }, 3000);
+      } else {
+        alert('अपडेट अयशस्वी: ' + res.data.message);
+        setIsApplying(false);
+        setApplyStep(0);
+      }
     } catch (err: any) {
       console.error('Apply update failed', err);
-      setIsApplying(false);
-      setIsReconnecting(false);
       alert(err.response?.data?.message || 'अपडेट लागू करताना त्रुटी आली.');
+      setIsApplying(false);
+      setApplyStep(0);
     }
   };
 
-  const pollForReboot = () => {
+  const pollForServerRestart = async () => {
     let attempts = 0;
     const maxAttempts = 30;
 
     const interval = setInterval(async () => {
       attempts++;
       try {
-        const check = await axios.get('/api/SystemUpdate/current-version', { timeout: 2500 });
-        if (check.status === 200) {
+        const res = await axios.get('/api/SystemUpdate/current-version', { timeout: 3000 });
+        if (res.status === 200) {
           clearInterval(interval);
-          setApplyStep(5);
-          setApplyStatusText('अपडेट यशस्वी! नवीन व्हर्जन लोड होत आहे...');
+          setIsReconnecting(false);
           setUpdateSuccess(true);
+          setVersionInfo(res.data);
           setTimeout(() => {
             window.location.reload();
-          }, 2000);
+          }, 2500);
         }
-      } catch {
-        // Still rebooting
-      }
-
-      if (attempts >= maxAttempts) {
-        clearInterval(interval);
-        setApplyStatusText('सर्व्हर रीस्टार्ट होण्यास वेळ लागत आहे. कृपया १ मिनिटानंतर पेज रीफ्रेश करा.');
+      } catch (err) {
+        console.log(`Waiting for server restart... attempt ${attempts}/${maxAttempts}`);
+        if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          setIsReconnecting(false);
+          alert('सर्व्हर रीस्टार्ट होण्यास वेळ लागत आहे. कृपया पृष्ठ मॅन्युअली रीफ्रेश करा.');
+          setIsApplying(false);
+        }
       }
     }, 2000);
   };
 
   return (
-    <div className="p-3 sm:p-5 max-w-5xl mx-auto space-y-4 font-sans text-slate-800">
+    <div className="space-y-4 max-w-7xl mx-auto pb-10">
       
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-primary/95 to-slate-900 text-white p-4 sm:p-5 rounded-lg shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      {/* Top Header Banner */}
+      <div className="bg-gradient-to-r from-slate-900 via-primary to-slate-900 text-white rounded-lg p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border border-slate-700">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center text-amber-300 shadow-inner shrink-0">
             <Rocket size={22} className="animate-pulse" />
           </div>
           <div>
-            <h1 className="text-base sm:text-lg font-bold tracking-tight flex items-center gap-2">
+            <h1 className="text-base sm:text-lg font-bold tracking-tight flex items-center gap-2 flex-wrap">
               <span>सिस्टीम अपडेट व आवृत्ती व्यवस्थापन</span>
               <span className="text-[11px] bg-amber-400/20 text-amber-300 border border-amber-400/30 px-2 py-0.5 rounded-full font-mono font-semibold">
                 1-Click Update
@@ -253,58 +287,89 @@ export default function SystemUpdateMaster() {
           </div>
         </div>
 
-        <button
-          onClick={fetchCurrentVersionInfo}
-          disabled={isLoadingInfo}
-          className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded text-xs font-semibold flex items-center gap-1.5 transition-colors border border-white/20 cursor-pointer self-end sm:self-auto shrink-0"
-          title="माहिती रीफ्रेश करा"
-        >
-          <RefreshCw size={13} className={isLoadingInfo ? 'animate-spin' : ''} />
-          <span>रीफ्रेश</span>
-        </button>
+        <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+          <button
+            onClick={fetchCurrentVersionInfo}
+            disabled={isLoadingInfo}
+            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded text-xs font-semibold flex items-center gap-1.5 transition-colors border border-white/20 cursor-pointer"
+            title="माहिती रीफ्रेश करा"
+          >
+            <RefreshCw size={13} className={isLoadingInfo ? 'animate-spin' : ''} />
+            <span>रीफ्रेश</span>
+          </button>
+        </div>
       </div>
 
-      {/* Current Version & System Status Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* Current Version & System Status Cards (4 Cards Grid) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         
+        {/* Card 1: Current Software Version */}
         <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-md bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
-            <Layers size={18} />
+          <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
+            <Layers size={20} />
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">सध्याची आवृत्ती (Current Version)</span>
-            <span className="text-sm font-extrabold text-blue-700 font-mono">
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">सध्याची आवृत्ती (Version)</span>
+            <span className="text-sm font-extrabold text-blue-700 font-mono tracking-tight block">
               v{versionInfo?.currentVersion || '1.0.0'}
             </span>
-            {versionInfo?.buildDate && (
-              <span className="text-[10px] text-slate-400 block">रिलीज: {versionInfo.buildDate}</span>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-md bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
-            <Database size={18} />
-          </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">डेटाबेस स्थिती (Database)</span>
-            <span className="text-xs font-bold text-emerald-700 truncate block">
-              {versionInfo?.databaseName || 'SmartBanking'} [सक्रिय]
+            <span className="text-[10px] text-slate-400 block truncate">
+              {versionInfo?.buildDate ? `रिलीज: ${versionInfo.buildDate}` : 'नवीनतम स्टेबल रिलीज'}
             </span>
-            <span className="text-[10px] text-slate-400 block">ऑटो-मायग्रेशन सक्षम</span>
           </div>
         </div>
 
+        {/* Card 2: Connected Database */}
         <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-md bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600 shrink-0">
-            <ShieldCheck size={18} />
+          <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
+            <Database size={20} />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">सक्रिय डेटाबेस (Active DB)</span>
+              <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-100/90 px-1.5 py-0.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                सक्रिय
+              </span>
+            </div>
+            <span className="text-xs font-black text-emerald-800 font-mono truncate block" title={versionInfo?.databaseName || 'SmartBanking'}>
+              {versionInfo?.databaseName || 'SmartBanking'}
+            </span>
+            <span className="text-[10px] text-slate-500 block truncate">
+              सर्व्हर: {versionInfo?.serverInstance || 'स्थानिक'} {versionInfo?.totalTables ? `(${versionInfo.totalTables} टेबल्स)` : ''}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 3: Sanstha / Branch Profile */}
+        <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0">
+            <Building2 size={20} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">संस्था व शाखा नाव</span>
+            <span className="text-xs font-bold text-indigo-950 truncate block" title={versionInfo?.sansthaName || 'स्मार्ट बँकिंग प्रणाली'}>
+              {versionInfo?.sansthaName || 'स्मार्ट बँकिंग प्रणाली'}
+            </span>
+            <span className="text-[10px] text-slate-500 block truncate">
+              {versionInfo?.branchName ? `शाखा: ${versionInfo.branchName}` : 'मुख्य प्रशासकीय प्रणाली'}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 4: Data Protection */}
+        <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600 shrink-0">
+            <ShieldCheck size={20} />
+          </div>
+          <div className="min-w-0 flex-1">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">डेटा सुरक्षा हमी</span>
             <span className="text-xs font-bold text-purple-700 block">
               Zero Data Loss Protection
             </span>
-            <span className="text-[10px] text-slate-400 block">अपडेटपूर्वी ऑटो बॅकअप</span>
+            <span className="text-[10px] text-slate-400 block truncate">
+              अपडेटपूर्वी ऑटो बॅकअप सक्षम
+            </span>
           </div>
         </div>
 

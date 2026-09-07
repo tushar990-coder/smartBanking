@@ -228,12 +228,17 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
     }
 
     const loadedRows: GridRow[] = existingBalances.map(b => {
-      const m = members.find(mem => mem.memberID === b.memberId);
+      const m = members.find(mem => (
+        (b.customerId && (mem as any).customerID === b.customerId) ||
+        (b.cifNo && mem.cifNo && mem.cifNo.trim().toLowerCase() === b.cifNo.trim().toLowerCase()) ||
+        mem.memberID === b.memberId
+      ));
+      const targetMemberId = (b.customerId && b.customerId > 0) ? b.customerId : b.memberId;
       const qty = b.shareQuantity || 0;
       const fv = b.faceValue || 100;
       return {
         id: Math.random().toString(36).substring(2, 9),
-        memberId: b.memberId,
+        memberId: targetMemberId,
         memberName: m ? `${m.firstName || ''} ${m.lastName || ''}`.trim() : (b.memberName || ''),
         memberCode: m ? (m.memberCode || '') : '',
         cifNo: m ? (m.cifNo || '') : '',
@@ -324,7 +329,11 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
             updated.legacyMemberNo = selMember.legacyMemberNo ? String(selMember.legacyMemberNo).trim() : '';
 
             // 🔍 Check if member already has an existing opening balance
-            const existing = existingBalances.find(b => b.memberId === value);
+            const existing = existingBalances.find(b => (
+              (b.customerId && b.customerId === value) ||
+              (selMember?.cifNo && b.cifNo && b.cifNo.trim().toLowerCase() === selMember.cifNo.trim().toLowerCase()) ||
+              (b.memberId === value && (!b.customerId || b.customerId === value))
+            ));
             if (existing) {
               updated.shareQuantity = existing.shareQuantity || '';
               updated.faceValue = existing.faceValue || 100;
@@ -655,8 +664,11 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       const certNo = cols[5] || '';
       const divPay = cols[6] ? parseFloat(cols[6].replace(/[^\d.]/g, '')) : '';
 
-      const mId = matchedMember ? matchedMember.memberID : '';
-      const existing = mId ? existingBalances.find(b => b.memberId === mId) : null;
+      const mId = matchedMember ? ((matchedMember as any).customerID || matchedMember.memberID) : '';
+      const existing = mId ? existingBalances.find(b => (
+        (b.customerId && b.customerId === mId) ||
+        (b.memberId === mId && (!b.customerId || b.customerId === mId))
+      )) : null;
 
       newRows.push({
         id: Math.random().toString(36).substring(2, 9),

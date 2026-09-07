@@ -112,17 +112,69 @@ namespace Bhisi.Api.Services
             }
 
             string dbName = string.Empty;
+            string serverInstance = string.Empty;
+            string sansthaName = string.Empty;
+            string branchName = string.Empty;
+            bool isConnected = true;
+            int totalTables = 0;
+
             try
             {
-                dbName = _context.Database.GetDbConnection().Database;
+                var conn = _context.Database.GetDbConnection();
+                dbName = conn.Database ?? string.Empty;
+                serverInstance = conn.DataSource ?? string.Empty;
+
+                // Try fetching Sanstha Name
+                var sanstha = await _context.SansthaDetails.AsNoTracking().FirstOrDefaultAsync();
+                if (sanstha != null && !string.IsNullOrWhiteSpace(sanstha.SansthaName))
+                {
+                    sansthaName = sanstha.SansthaName;
+                }
+
+                // Try fetching Branch Name
+                var branch = await _context.Branches.AsNoTracking().FirstOrDefaultAsync();
+                if (branch != null && !string.IsNullOrWhiteSpace(branch.BranchName))
+                {
+                    branchName = branch.BranchName;
+                    if (string.IsNullOrWhiteSpace(sansthaName))
+                    {
+                        sansthaName = branch.BranchName;
+                    }
+                }
+
+                // Quick table count
+                try
+                {
+                    using var cmd = conn.CreateCommand();
+                    if (conn.State != System.Data.ConnectionState.Open)
+                    {
+                        await conn.OpenAsync();
+                    }
+                    cmd.CommandText = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE';";
+                    var tableCountObj = await cmd.ExecuteScalarAsync();
+                    if (tableCountObj != null && int.TryParse(tableCountObj.ToString(), out int tc))
+                    {
+                        totalTables = tc;
+                    }
+                }
+                catch { }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not extract active database connection metadata.");
+                isConnected = false;
+            }
 
             return new SystemVersionInfo
             {
                 CurrentVersion = currentVersion,
                 BuildDate = buildDate,
-                DatabaseName = dbName,
+                DatabaseName = !string.IsNullOrWhiteSpace(dbName) ? dbName : "SmartBanking",
+                ServerInstance = !string.IsNullOrWhiteSpace(serverInstance) ? serverInstance : ".",
+                SansthaName = sansthaName,
+                BranchName = branchName,
+                IsConnected = isConnected,
+                TotalTables = totalTables,
                 LastUpdatedOn = latestEntry?.AppliedOn,
                 LastAppliedPatch = latestEntry?.PatchName ?? "Initial Setup",
                 Changelog = changelog,

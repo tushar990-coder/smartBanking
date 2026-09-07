@@ -65,11 +65,13 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// Configure Entity Framework with Smart SQL Server Auto-Discovery
-// Hybrid Database Configuration
-var activeDb = builder.Configuration["ActiveDatabase"] ?? "LocalDB";
-var rawConnStr = builder.Configuration.GetConnectionString(activeDb) 
-    ?? "Server=.;Database=SmartBanking_Gurudev;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true;Connect Timeout=60;";
+// Configure Entity Framework with Standard Enterprise Core Banking Connection
+var rawConnStr = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? builder.Configuration.GetConnectionString("MainConnection")
+    ?? builder.Configuration.GetConnectionString("LocalDB")
+    ?? builder.Configuration.GetConnectionString("OnlineDB")
+    ?? (builder.Configuration["ActiveDatabase"] != null ? builder.Configuration.GetConnectionString(builder.Configuration["ActiveDatabase"]!) : null)
+    ?? "Server=.;Database=SmartBanking_Bambawade;User Id=Admin;Password=Mindspace@;Trusted_Connection=False;TrustServerCertificate=True;MultipleActiveResultSets=true;Connect Timeout=60;";
 
 var resolvedConnStr = ResolveWorkingConnectionString(rawConnStr);
 
@@ -205,37 +207,17 @@ using (var scope = app.Services.CreateScope())
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Members')
             BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'AadhaarDocPath')
-                BEGIN
-                    ALTER TABLE [Members] ADD [AadhaarDocPath] nvarchar(max) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'PanDocPath')
-                BEGIN
-                    ALTER TABLE [Members] ADD [PanDocPath] nvarchar(max) NULL;
-                END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'IsDeleted')
                 BEGIN
                     ALTER TABLE [Members] ADD [IsDeleted] bit NOT NULL DEFAULT 0;
                 END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'NomineeAddress')
-                BEGIN
-                    ALTER TABLE [Members] ADD [NomineeAddress] nvarchar(500) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'NomineeBirthDate')
-                BEGIN
-                    ALTER TABLE [Members] ADD [NomineeBirthDate] datetime2 NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'NomineeIsMinor')
-                BEGIN
-                    ALTER TABLE [Members] ADD [NomineeIsMinor] bit NOT NULL DEFAULT 0;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'NomineeGuardianName')
-                BEGIN
-                    ALTER TABLE [Members] ADD [NomineeGuardianName] nvarchar(150) NULL;
-                END
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'MembershipType')
                 BEGIN
                     ALTER TABLE [Members] ADD [MembershipType] nvarchar(30) NOT NULL DEFAULT 'Regular';
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'CustomerID')
+                BEGIN
+                    ALTER TABLE [Members] ADD [CustomerID] int NULL;
                 END
 
                 -- Drop redundant MembershipType from Customers table if it exists
@@ -257,22 +239,6 @@ using (var scope = app.Services.CreateScope())
 
                 UPDATE [Members] SET [IsDeleted] = 0 WHERE [IsDeleted] IS NULL;
                 UPDATE [Members] SET [MembershipType] = 'Regular' WHERE [MembershipType] IS NULL OR [MembershipType] = '';
-
-                -- Ensure all existing members have valid, unique CIF numbers
-                UPDATE [Members] 
-                SET [CIFNo] = 'CIF' + RIGHT('000000' + CAST([MemberID] AS VARCHAR(10)), 6)
-                WHERE [CIFNo] IS NULL OR [CIFNo] = '';
-
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_CIFNo' AND object_id = OBJECT_ID('Members'))
-                BEGIN
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_CIFNo] ON [Members]([CIFNo])
-                    WHERE [CIFNo] IS NOT NULL AND [CIFNo] <> '';
-                END
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_PANNo' AND object_id = OBJECT_ID('Members'))
-                BEGIN
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_PANNo] ON [Members]([PANNo])
-                    WHERE [PANNo] IS NOT NULL AND [PANNo] <> '';
-                END
 
                 -- Allow NULL MemberCode and ensure non-members without shares don't hold invalid/temporary MemberCodes
                 IF EXISTS (SELECT * FROM sys.tables WHERE name = 'ShareAccounts')
@@ -658,13 +624,72 @@ using (var scope = app.Services.CreateScope())
                 );
             END
 
-            -- Harmonize Customer & Member CIF numbers strictly 1-to-1 with CustomerID
+            -- Auto-heal any invalid CustomerID = 0 and CIF000000 permanently
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Customers')
             BEGIN
+                IF EXISTS (SELECT 1 FROM [Customers] WHERE [CustomerID] = 0)
+                BEGIN
+                    DECLARE @TargetCustId INT = 1;
+                    IF EXISTS (SELECT 1 FROM [Customers] WHERE [CustomerID] = 1)
+                        SET @TargetCustId = (SELECT ISNULL(MAX([CustomerID]), 1) + 1 FROM [Customers]);
+
+                    DECLARE @CorrectedCif NVARCHAR(20) = 'CIF' + RIGHT('000000' + CAST(@TargetCustId AS VARCHAR(10)), 6);
+
+                    SET IDENTITY_INSERT [Customers] ON;
+                    INSERT INTO [Customers] (
+                        [CustomerID], [BranchID], [CIFNo], [LegacyCustomerNo], [FirstName], [MiddleName], [LastName],
+                        [NickName], [FirstNameEng], [MiddleNameEng], [LastNameEng], [Address], [AddressEng], [Village],
+                        [Taluka], [District], [MobileNo], [AadhaarNo], [PANNo], [RegistrationDate], [NomineeName],
+                        [NomineeNameEng], [NomineeRelation], [NomineeAddress], [NomineeBirthDate], [NomineeIsMinor],
+                        [NomineeGuardianName], [PhotoPath], [SignaturePath], [AadhaarDocPath], [PanDocPath], [Gender],
+                        [BirthDate], [Occupation], [CasteCategory], [Caste], [Email], [IsMinor], [GuardianName],
+                        [GuardianNameEng], [GuardianRelation], [GuardianAadhaarNo], [GuardianMobileNo], [GuardianAddress],
+                        [Status], [EmployerId], [IsDeleted], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn]
+                    )
+                    SELECT 
+                        @TargetCustId, [BranchID], @CorrectedCif, [LegacyCustomerNo],
+                        [FirstName], [MiddleName], [LastName], [NickName], [FirstNameEng], [MiddleNameEng], [LastNameEng],
+                        [Address], [AddressEng], [Village], [Taluka], [District], [MobileNo], [AadhaarNo], [PANNo],
+                        [RegistrationDate], [NomineeName], [NomineeNameEng], [NomineeRelation], [NomineeAddress],
+                        [NomineeBirthDate], [NomineeIsMinor], [NomineeGuardianName], [PhotoPath], [SignaturePath],
+                        [AadhaarDocPath], [PanDocPath], [Gender], [BirthDate], [Occupation], [CasteCategory], [Caste],
+                        [Email], [IsMinor], [GuardianName], [GuardianNameEng], [GuardianRelation], [GuardianAadhaarNo],
+                        [GuardianMobileNo], [GuardianAddress], [Status], [EmployerId], [IsDeleted], [CreatedBy],
+                        [CreatedOn], [UpdatedBy], [UpdatedOn]
+                    FROM [Customers]
+                    WHERE [CustomerID] = 0;
+                    SET IDENTITY_INSERT [Customers] OFF;
+
+                    IF OBJECT_ID(N'[Members]', N'U') IS NOT NULL
+                        UPDATE [Members] SET [CustomerID] = @TargetCustId, [CIFNo] = @CorrectedCif WHERE [CustomerID] = 0 OR [CIFNo] = 'CIF000000';
+                    IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
+                        UPDATE [SavingAccountMasters] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                    IF OBJECT_ID(N'[LoanAccounts]', N'U') IS NOT NULL
+                        UPDATE [LoanAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                    IF OBJECT_ID(N'[FdAccounts]', N'U') IS NOT NULL
+                        UPDATE [FdAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                    IF OBJECT_ID(N'[RdAccounts]', N'U') IS NOT NULL
+                        UPDATE [RdAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                    IF OBJECT_ID(N'[PigmyAccounts]', N'U') IS NOT NULL
+                        UPDATE [PigmyAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                    IF OBJECT_ID(N'[CustomerOpeningBalances]', N'U') IS NOT NULL
+                        UPDATE [CustomerOpeningBalances] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                    IF OBJECT_ID(N'[LockerAllotments]', N'U') IS NOT NULL
+                        UPDATE [LockerAllotments] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                    IF OBJECT_ID(N'[ShareAccounts]', N'U') IS NOT NULL
+                        UPDATE [ShareAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+
+                    DELETE FROM [Customers] WHERE [CustomerID] = 0;
+
+                    DECLARE @MaxIdNow INT = (SELECT ISNULL(MAX([CustomerID]), 1) FROM [Customers]);
+                    DBCC CHECKIDENT ('Customers', RESEED, @MaxIdNow);
+                END
+
+                -- Harmonize Customer & Member CIF numbers strictly 1-to-1 with CustomerID
                 UPDATE c
                 SET c.[CIFNo] = 'CIF' + RIGHT('000000' + CAST(c.[CustomerID] AS VARCHAR(10)), 6)
                 FROM [Customers] c
-                WHERE c.[CIFNo] IS NULL OR c.[CIFNo] = '' OR c.[CIFNo] LIKE 'TEMP%';
+                WHERE c.[CIFNo] IS NULL OR c.[CIFNo] = '' OR c.[CIFNo] LIKE 'TEMP%' OR c.[CIFNo] = 'CIF000000';
 
                 IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Members')
                 BEGIN
@@ -672,7 +697,7 @@ using (var scope = app.Services.CreateScope())
                     SET m.[CIFNo] = ISNULL(c.[CIFNo], 'CIF' + RIGHT('000000' + CAST(m.[MemberID] AS VARCHAR(10)), 6))
                     FROM [Members] m
                     LEFT JOIN [Customers] c ON (m.[CustomerID] = c.[CustomerID] OR m.[MemberID] = c.[CustomerID])
-                    WHERE m.[CIFNo] IS NULL OR m.[CIFNo] = '';
+                    WHERE m.[CIFNo] IS NULL OR m.[CIFNo] = '' OR m.[CIFNo] = 'CIF000000';
                 END
             END
 
@@ -1772,6 +1797,17 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         Log.Warning(ex, "Failed to create AgentCustomerRequests table");
+    }
+
+    try
+    {
+        // Auto-heal database identity gaps and synchronize triggers across all tables
+        db.Database.ExecuteSqlRaw("IF OBJECT_ID('[dbo].[sp_SyncDatabaseIdentities]', 'P') IS NOT NULL EXEC [dbo].[sp_SyncDatabaseIdentities];");
+        Log.Information("Database identity synchronization and self-healing triggers verified.");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Failed to run sp_SyncDatabaseIdentities");
     }
 
     try

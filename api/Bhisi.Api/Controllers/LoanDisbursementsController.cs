@@ -45,12 +45,19 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<LoanDisbursement>>> GetLoanDisbursements()
         {
             return await _context.LoanDisbursements
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Member)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Guarantor1Member)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Guarantor2Member)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.Guarantor1Customer)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.Guarantor2Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanRate)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Customer)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Member)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor1Member)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor2Member)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor1Customer)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor2Customer)
                 .Include(d => d.Deductions).ThenInclude(d => d.Ledger)
                 .Include(d => d.BankAccountLedger)
                 .OrderByDescending(d => d.DisbursementDate)
@@ -192,6 +199,30 @@ namespace Bhisi.Api.Controllers
 
                     if (app != null)
                     {
+                        if (!disbursement.LoanAccount.CustomerID.HasValue && app.CustomerID.HasValue)
+                            disbursement.LoanAccount.CustomerID = app.CustomerID;
+
+                        if (!disbursement.LoanAccount.MemberID.HasValue && app.MemberID.HasValue)
+                            disbursement.LoanAccount.MemberID = app.MemberID;
+
+                        if (!disbursement.LoanAccount.CoCustomerID.HasValue && app.CoCustomerID.HasValue)
+                            disbursement.LoanAccount.CoCustomerID = app.CoCustomerID;
+
+                        if (!disbursement.LoanAccount.CoCustomer2ID.HasValue && app.CoCustomer2ID.HasValue)
+                            disbursement.LoanAccount.CoCustomer2ID = app.CoCustomer2ID;
+
+                        if (!disbursement.LoanAccount.CoMemberID.HasValue && app.CoMemberID.HasValue)
+                            disbursement.LoanAccount.CoMemberID = app.CoMemberID;
+
+                        if (!disbursement.LoanAccount.CoMember2ID.HasValue && app.CoMember2ID.HasValue)
+                            disbursement.LoanAccount.CoMember2ID = app.CoMember2ID;
+
+                        if (!disbursement.LoanAccount.Guarantor1CustomerID.HasValue && app.Guarantor1CustomerID.HasValue)
+                            disbursement.LoanAccount.Guarantor1CustomerID = app.Guarantor1CustomerID;
+
+                        if (!disbursement.LoanAccount.Guarantor2CustomerID.HasValue && app.Guarantor2CustomerID.HasValue)
+                            disbursement.LoanAccount.Guarantor2CustomerID = app.Guarantor2CustomerID;
+
                         if (!disbursement.LoanAccount.Guarantor1MemberID.HasValue && app.Guarantor1MemberID.HasValue)
                             disbursement.LoanAccount.Guarantor1MemberID = app.Guarantor1MemberID;
 
@@ -204,6 +235,18 @@ namespace Bhisi.Api.Controllers
                         if (disbursement.LoanAccount.SecurityValue == 0 && app.SecurityValue > 0)
                             disbursement.LoanAccount.SecurityValue = app.SecurityValue;
                     }
+
+                    // Sanitize 0 values to null for nullable foreign keys
+                    if (disbursement.LoanAccount.CustomerID.HasValue && disbursement.LoanAccount.CustomerID.Value <= 0) disbursement.LoanAccount.CustomerID = null;
+                    if (disbursement.LoanAccount.MemberID.HasValue && disbursement.LoanAccount.MemberID.Value <= 0) disbursement.LoanAccount.MemberID = null;
+                    if (disbursement.LoanAccount.CoCustomerID.HasValue && disbursement.LoanAccount.CoCustomerID.Value <= 0) disbursement.LoanAccount.CoCustomerID = null;
+                    if (disbursement.LoanAccount.CoCustomer2ID.HasValue && disbursement.LoanAccount.CoCustomer2ID.Value <= 0) disbursement.LoanAccount.CoCustomer2ID = null;
+                    if (disbursement.LoanAccount.CoMemberID.HasValue && disbursement.LoanAccount.CoMemberID.Value <= 0) disbursement.LoanAccount.CoMemberID = null;
+                    if (disbursement.LoanAccount.CoMember2ID.HasValue && disbursement.LoanAccount.CoMember2ID.Value <= 0) disbursement.LoanAccount.CoMember2ID = null;
+                    if (disbursement.LoanAccount.Guarantor1CustomerID.HasValue && disbursement.LoanAccount.Guarantor1CustomerID.Value <= 0) disbursement.LoanAccount.Guarantor1CustomerID = null;
+                    if (disbursement.LoanAccount.Guarantor2CustomerID.HasValue && disbursement.LoanAccount.Guarantor2CustomerID.Value <= 0) disbursement.LoanAccount.Guarantor2CustomerID = null;
+                    if (disbursement.LoanAccount.Guarantor1MemberID.HasValue && disbursement.LoanAccount.Guarantor1MemberID.Value <= 0) disbursement.LoanAccount.Guarantor1MemberID = null;
+                    if (disbursement.LoanAccount.Guarantor2MemberID.HasValue && disbursement.LoanAccount.Guarantor2MemberID.Value <= 0) disbursement.LoanAccount.Guarantor2MemberID = null;
 
                     // Generate Account number: [BranchCode]02[5-digit sequence]
                     string prefix = $"{branch.BranchCode}02";
@@ -272,7 +315,10 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 // Get LoanRate to fetch Ledger IDs
-                var loanAccFetched = await _context.LoanAccounts.Include(l => l.Member).FirstOrDefaultAsync(l => l.LoanAccountID == disbursement.LoanAccountID);
+                var loanAccFetched = await _context.LoanAccounts
+                    .Include(l => l.Customer)
+                    .Include(l => l.Member)
+                    .FirstOrDefaultAsync(l => l.LoanAccountID == disbursement.LoanAccountID);
                 var loanRate = await _context.LoanRates.FindAsync(loanAccFetched?.LoanRateID ?? 0);
                 int targetBranchId = loanAccFetched?.BranchID ?? 1;
 
@@ -337,13 +383,17 @@ namespace Bhisi.Api.Controllers
                 decimal autoPostLimit = sanstha?.AutoPostVoucherLimit ?? 50000m;
                 string vStatus = (autoPost && disbursement.DisbursementAmount <= autoPostLimit) ? "Approved" : "Pending";
 
+                string borrowerName = loanAccFetched?.Customer != null 
+                    ? $"{loanAccFetched.Customer.FirstName} {loanAccFetched.Customer.LastName}".Trim() 
+                    : (loanAccFetched?.Member != null ? $"{loanAccFetched.Member.FirstName} {loanAccFetched.Member.LastName}".Trim() : "N/A");
+
                 var voucher = new Voucher
                 {
                     BranchID = targetBranchId,
                     VoucherNo = voucherNo,
                     VoucherDate = disbursement.DisbursementDate,
                     VoucherType = voucherType,
-                    Narration = $"Loan Disbursed to {loanAccFetched?.Member?.FirstName} {loanAccFetched?.Member?.LastName} (A/C: {loanAccFetched?.LoanAccountNo})",
+                    Narration = $"Loan Disbursed to {borrowerName} (A/C: {loanAccFetched?.LoanAccountNo})",
                     TotalAmount = disbursement.DisbursementAmount,
                     Status = vStatus,
                     ApprovedBy = vStatus == "Approved" ? GetCurrentUserContext().userId : null,
@@ -383,15 +433,54 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 // Auto-allocate shares in Share Module if Share Deduction is present
-                if (disbursement.ShareDeduction > 0 && memberId.HasValue && memberId.Value > 0)
+                if (disbursement.ShareDeduction > 0)
                 {
+                    Member? targetMember = null;
+                    if (memberId.HasValue && memberId.Value > 0)
+                    {
+                        targetMember = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberId.Value);
+                    }
+                    else if (loanAccFetched?.CustomerID.HasValue == true && loanAccFetched.CustomerID.Value > 0)
+                    {
+                        targetMember = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.CustomerID == loanAccFetched.CustomerID.Value);
+                        if (targetMember == null)
+                        {
+                            var cust = await _context.Customers.FindAsync(loanAccFetched.CustomerID.Value);
+                            if (cust != null)
+                            {
+                                int maxMemId = await _context.Members.MaxAsync(m => (int?)m.MemberID) ?? 0;
+                                int nextNum = maxMemId + 1;
+                                targetMember = new Member
+                                {
+                                    CustomerID = cust.CustomerID,
+                                    BranchID = loanAccFetched.BranchID,
+                                    MemberCode = $"MEM{nextNum:D4}",
+                                    MembershipType = "Nominal",
+                                    JoiningDate = DateTime.Today,
+                                    Status = "Active"
+                                };
+                                _context.Members.Add(targetMember);
+                                await _context.SaveChangesAsync();
+
+                                loanAccFetched.MemberID = targetMember.MemberID;
+                                memberId = targetMember.MemberID;
+                                _context.Entry(loanAccFetched).State = EntityState.Modified;
+                                await _context.SaveChangesAsync();
+                            }
+                        }
+                        else
+                        {
+                            loanAccFetched.MemberID = targetMember.MemberID;
+                            memberId = targetMember.MemberID;
+                            _context.Entry(loanAccFetched).State = EntityState.Modified;
+                            await _context.SaveChangesAsync();
+                        }
+                    }
+
                     decimal shareDeductionAmt = disbursement.ShareDeduction;
                     int numShares = (int)Math.Floor(shareDeductionAmt / 100m);
-                    if (numShares > 0)
+                    if (numShares > 0 && targetMember != null && memberId.HasValue && memberId.Value > 0)
                     {
-                        var targetMember = await _context.Members.FindAsync(memberId.Value);
-                        if (targetMember != null)
-                        {
                             // Assign official Member Code (MEM0001 format) upon Loan Share Deduction if missing
                             if (string.IsNullOrWhiteSpace(targetMember.MemberCode) || targetMember.MemberCode.StartsWith("TEMP"))
                             {
@@ -481,7 +570,6 @@ namespace Bhisi.Api.Controllers
                             await _context.SaveChangesAsync();
                         }
                     }
-                }
 
                 // If PaymentMode is Saving Transfer, auto-credit member's Saving Account
                 if (disbursement.PaymentMode == "Saving Transfer" || disbursement.PaymentMode == "Saving")

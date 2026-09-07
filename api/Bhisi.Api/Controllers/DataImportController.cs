@@ -80,8 +80,8 @@ namespace Bhisi.Api.Controllers
             // Load existing codes from database for fast duplicate check
             var existingCodes = new HashSet<string>(
                 await _context.Members
-                    .Where(m => m.OldMemberCode != null || m.MemberCode != null)
-                    .Select(m => (m.OldMemberCode ?? m.MemberCode)!)
+                    .Where(m => m.LegacyMemberNo != null || m.MemberCode != null)
+                    .Select(m => (m.LegacyMemberNo ?? m.MemberCode)!)
                     .ToListAsync(), 
                 StringComparer.OrdinalIgnoreCase
             );
@@ -174,7 +174,6 @@ namespace Bhisi.Api.Controllers
 
                 var member = new Member
                 {
-                    OldMemberCode = oldMemberCode,
                     MemberCode = autoMemberCode,
                     LegacyMemberNo = legacyMemberNo,
                     CIFNo = string.IsNullOrWhiteSpace(row.CIFNo) ? null : (row.CIFNo.Length > 20 ? row.CIFNo.Substring(0, 20) : row.CIFNo),
@@ -295,7 +294,7 @@ namespace Bhisi.Api.Controllers
                     accountNo = "AUTO"; // Or handle your custom auto-generation here later
                 }
 
-                var member = await _context.Members.FirstOrDefaultAsync(m => m.OldMemberCode == row.MemberCode || m.MemberCode == row.MemberCode);
+                var member = await _context.Members.FirstOrDefaultAsync(m => m.LegacyMemberNo == row.MemberCode || m.MemberCode == row.MemberCode);
                 if (member == null)
                 {
                     errors.Add($"Row {rowNum}: Member with Code or Old Code '{row.MemberCode}' not found.");
@@ -444,7 +443,7 @@ namespace Bhisi.Api.Controllers
                     accountNo = "AUTO"; 
                 }
 
-                var member = await _context.Members.FirstOrDefaultAsync(m => m.OldMemberCode == row.MemberCode || m.MemberCode == row.MemberCode);
+                var member = await _context.Members.FirstOrDefaultAsync(m => m.LegacyMemberNo == row.MemberCode || m.MemberCode == row.MemberCode);
                 if (member == null)
                 {
                     errors.Add($"Row {rowNum}: Member with Code or Old Code '{row.MemberCode}' not found.");

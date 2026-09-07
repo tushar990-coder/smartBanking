@@ -43,9 +43,13 @@ interface LockerOption {
 }
 
 interface SavingAccount {
-  accountID: number;
-  accountNumber: string;
-  memberID: number;
+  accountID?: number;
+  savingAccountID?: number;
+  accountNumber?: string;
+  accountNo?: string;
+  memberID?: number;
+  customerID?: number;
+  resolvedMemberID?: number;
   currentBalance: number;
 }
 
@@ -190,7 +194,7 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
 
   const fetchSavingAccounts = async (mId?: string) => {
     try {
-      const res = await fetch('/api/SavingAccountMaster');
+      const res = await fetch('/api/SavingAccounts');
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) setSavingAccounts(data);
@@ -338,17 +342,29 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
     }))
   ];
 
+  // Selected member object to get customerID
+  const selectedMember = members.find(m => m.memberID?.toString() === formData.memberID.toString());
+  const selectedCustomerId = selectedMember?.customerID;
+
   // Member's linked saving accounts
-  const memberSavingAccounts = safeSavings.filter(s => 
-    formData.memberID && s.memberID?.toString() === formData.memberID.toString()
-  );
+  const memberSavingAccounts = safeSavings.filter(s => {
+    if (!formData.memberID) return false;
+    if (selectedCustomerId && (s as any).customerID === selectedCustomerId) return true;
+    if (s.memberID && s.memberID.toString() === formData.memberID.toString()) return true;
+    if ((s as any).resolvedMemberID && (s as any).resolvedMemberID.toString() === formData.memberID.toString()) return true;
+    return false;
+  });
 
   const savingAccountOptions = [
     { value: '', label: '-- बचत खाते निवडा (ऐच्छिक) --' },
-    ...memberSavingAccounts.map(s => ({
-      value: s.accountID.toString(),
-      label: `खाते क्र.: ${s.accountNumber} (शिल्लक: ₹${s.currentBalance})`
-    }))
+    ...memberSavingAccounts.map(s => {
+      const accId = s.savingAccountID || s.accountID || (s as any).savingAccountId || '';
+      const accNum = s.accountNo || s.accountNumber || '';
+      return {
+        value: accId.toString(),
+        label: `खाते क्र.: ${accNum} (शिल्लक: ₹${s.currentBalance})`
+      };
+    })
   ];
 
   // Filtered Allotments

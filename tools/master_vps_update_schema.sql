@@ -46,6 +46,33 @@ END
 GO
 
 -- -----------------------------------------------------------------------------------------
+-- 0.1 LOAN ACCOUNTS & APPLICATIONS CUSTOMER-FIRST LINKAGE (MATCHING TESTING BASELINE)
+-- -----------------------------------------------------------------------------------------
+IF OBJECT_ID(N'LoanAccounts', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('LoanAccounts', 'CoCustomerID') IS NULL ALTER TABLE [LoanAccounts] ADD [CoCustomerID] INT NULL;
+    IF COL_LENGTH('LoanAccounts', 'CoCustomer2ID') IS NULL ALTER TABLE [LoanAccounts] ADD [CoCustomer2ID] INT NULL;
+    IF COL_LENGTH('LoanAccounts', 'Guarantor1CustomerID') IS NULL ALTER TABLE [LoanAccounts] ADD [Guarantor1CustomerID] INT NULL;
+    IF COL_LENGTH('LoanAccounts', 'Guarantor2CustomerID') IS NULL ALTER TABLE [LoanAccounts] ADD [Guarantor2CustomerID] INT NULL;
+END
+GO
+
+IF OBJECT_ID(N'LoanApplications', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('LoanApplications', 'CoCustomerID') IS NULL ALTER TABLE [LoanApplications] ADD [CoCustomerID] INT NULL;
+    IF COL_LENGTH('LoanApplications', 'CoCustomer2ID') IS NULL ALTER TABLE [LoanApplications] ADD [CoCustomer2ID] INT NULL;
+    IF COL_LENGTH('LoanApplications', 'Guarantor1CustomerID') IS NULL ALTER TABLE [LoanApplications] ADD [Guarantor1CustomerID] INT NULL;
+    IF COL_LENGTH('LoanApplications', 'Guarantor2CustomerID') IS NULL ALTER TABLE [LoanApplications] ADD [Guarantor2CustomerID] INT NULL;
+END
+GO
+
+IF OBJECT_ID(N'MemberOpeningBalances', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('MemberOpeningBalances', 'CustomerID') IS NULL ALTER TABLE [MemberOpeningBalances] ADD [CustomerID] INT NULL;
+END
+GO
+
+-- -----------------------------------------------------------------------------------------
 -- 1. ACCOUNT GROUPS & LEDGERS
 -- -----------------------------------------------------------------------------------------
 IF COL_LENGTH('AccountGroups', 'DisplayOrder') IS NULL
@@ -262,31 +289,31 @@ UPDATE [Members] SET [MembershipType] = 'Regular' WHERE [MembershipType] IS NULL
 GO
 
 -- Ensure unique filtered indices on Members exclude soft-deleted records ([IsDeleted] = 0)
-IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_CIFNo' AND object_id = OBJECT_ID('Members'))
+IF COL_LENGTH('Members', 'CIFNo') IS NOT NULL
 BEGIN
-    DROP INDEX [IX_Members_CIFNo] ON [Members];
+    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_CIFNo' AND object_id = OBJECT_ID('Members'))
+        DROP INDEX [IX_Members_CIFNo] ON [Members];
+    EXEC('CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_CIFNo] ON [Members]([CIFNo]) WHERE [CIFNo] IS NOT NULL AND [CIFNo] <> '''' AND [IsDeleted] = 0;');
+    PRINT 'Recreated unique index IX_Members_CIFNo with [IsDeleted] = 0 filter';
 END
-CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_CIFNo] ON [Members]([CIFNo])
-WHERE [CIFNo] IS NOT NULL AND [CIFNo] <> '' AND [IsDeleted] = 0;
-PRINT 'Recreated unique index IX_Members_CIFNo with [IsDeleted] = 0 filter';
 GO
 
-IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_PANNo' AND object_id = OBJECT_ID('Members'))
+IF COL_LENGTH('Members', 'PANNo') IS NOT NULL
 BEGIN
-    DROP INDEX [IX_Members_PANNo] ON [Members];
+    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_PANNo' AND object_id = OBJECT_ID('Members'))
+        DROP INDEX [IX_Members_PANNo] ON [Members];
+    EXEC('CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_PANNo] ON [Members]([PANNo]) WHERE [PANNo] IS NOT NULL AND [PANNo] <> '''' AND [IsDeleted] = 0;');
+    PRINT 'Recreated unique index IX_Members_PANNo with [IsDeleted] = 0 filter';
 END
-CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_PANNo] ON [Members]([PANNo])
-WHERE [PANNo] IS NOT NULL AND [PANNo] <> '' AND [IsDeleted] = 0;
-PRINT 'Recreated unique index IX_Members_PANNo with [IsDeleted] = 0 filter';
 GO
 
-IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_AadhaarNo' AND object_id = OBJECT_ID('Members'))
+IF COL_LENGTH('Members', 'AadhaarNo') IS NOT NULL
 BEGIN
-    DROP INDEX [IX_Members_AadhaarNo] ON [Members];
+    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_AadhaarNo' AND object_id = OBJECT_ID('Members'))
+        DROP INDEX [IX_Members_AadhaarNo] ON [Members];
+    EXEC('CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_AadhaarNo] ON [Members]([AadhaarNo]) WHERE [AadhaarNo] IS NOT NULL AND [AadhaarNo] <> '''' AND [IsDeleted] = 0;');
+    PRINT 'Recreated unique index IX_Members_AadhaarNo with [IsDeleted] = 0 filter';
 END
-CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_AadhaarNo] ON [Members]([AadhaarNo])
-WHERE [AadhaarNo] IS NOT NULL AND [AadhaarNo] <> '' AND [IsDeleted] = 0;
-PRINT 'Recreated unique index IX_Members_AadhaarNo with [IsDeleted] = 0 filter';
 GO
 
 IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_MemberCode' AND object_id = OBJECT_ID('Members'))
@@ -1520,16 +1547,16 @@ BEGIN
     IF COL_LENGTH('SystemVersionHistories', 'Status') IS NULL ALTER TABLE [SystemVersionHistories] ADD [Status] NVARCHAR(20) NOT NULL DEFAULT 'SUCCESS';
     IF COL_LENGTH('SystemVersionHistories', 'PatchName') IS NULL ALTER TABLE [SystemVersionHistories] ADD [PatchName] NVARCHAR(200) NOT NULL DEFAULT 'SmartBanking Patch';
 
-    INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+    EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
     VALUES (
-        '2.2.0', 
+        ''2.4.2'', 
         GETUTCDATE(), 
-        'SmartBanking VPS All-in-One Master Patch v2.2.0', 
-        'SUCCESS', 
-        'Full schema sync applied successfully with 0 data loss. Modules: Dynamic Customer Resequencing 1..N, Share Accounts, Balance Sheet Display Orders, NPA, Lockers, Sec101 Legal, Unicode Support.', 
-        'VPS Administrator',
-        '2026-09-03'
-    );
+        ''SmartBanking VPS All-in-One Master Patch v2.4.2'', 
+        ''SUCCESS'', 
+        ''Full schema sync applied successfully with 0 data loss. Aligned Members schema to 13 canonical columns, added Customer-First Loan linkage, and universal CIF architecture.'', 
+        ''VPS Administrator'',
+        ''2026-09-07''
+    );');
 END
 GO
 
@@ -1969,6 +1996,69 @@ END
 GO
 
 UPDATE [Members] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL;
+GO
+
+-- -----------------------------------------------------------------------------------------
+-- Universal Auto-Repair for CustomerID = 0 and CIF000000 across all Sanstha Databases
+-- -----------------------------------------------------------------------------------------
+IF EXISTS (SELECT 1 FROM [Customers] WHERE [CustomerID] = 0)
+BEGIN
+    DECLARE @TargetCustId INT = 1;
+    IF EXISTS (SELECT 1 FROM [Customers] WHERE [CustomerID] = 1)
+        SET @TargetCustId = (SELECT ISNULL(MAX([CustomerID]), 1) + 1 FROM [Customers]);
+
+    DECLARE @CorrectedCif NVARCHAR(20) = 'CIF' + RIGHT('000000' + CAST(@TargetCustId AS VARCHAR(10)), 6);
+
+    SET IDENTITY_INSERT [Customers] ON;
+    INSERT INTO [Customers] (
+        [CustomerID], [BranchID], [CIFNo], [LegacyCustomerNo], [FirstName], [MiddleName], [LastName],
+        [NickName], [FirstNameEng], [MiddleNameEng], [LastNameEng], [Address], [AddressEng], [Village],
+        [Taluka], [District], [MobileNo], [AadhaarNo], [PANNo], [RegistrationDate], [NomineeName],
+        [NomineeNameEng], [NomineeRelation], [NomineeAddress], [NomineeBirthDate], [NomineeIsMinor],
+        [NomineeGuardianName], [PhotoPath], [SignaturePath], [AadhaarDocPath], [PanDocPath], [Gender],
+        [BirthDate], [Occupation], [CasteCategory], [Caste], [Email], [IsMinor], [GuardianName],
+        [GuardianNameEng], [GuardianRelation], [GuardianAadhaarNo], [GuardianMobileNo], [GuardianAddress],
+        [Status], [EmployerId], [IsDeleted], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn]
+    )
+    SELECT 
+        @TargetCustId, [BranchID], @CorrectedCif, [LegacyCustomerNo],
+        [FirstName], [MiddleName], [LastName], [NickName], [FirstNameEng], [MiddleNameEng], [LastNameEng],
+        [Address], [AddressEng], [Village], [Taluka], [District], [MobileNo], [AadhaarNo], [PANNo],
+        [RegistrationDate], [NomineeName], [NomineeNameEng], [NomineeRelation], [NomineeAddress],
+        [NomineeBirthDate], [NomineeIsMinor], [NomineeGuardianName], [PhotoPath], [SignaturePath],
+        [AadhaarDocPath], [PanDocPath], [Gender], [BirthDate], [Occupation], [CasteCategory], [Caste],
+        [Email], [IsMinor], [GuardianName], [GuardianNameEng], [GuardianRelation], [GuardianAadhaarNo],
+        [GuardianMobileNo], [GuardianAddress], [Status], [EmployerId], [IsDeleted], [CreatedBy],
+        [CreatedOn], [UpdatedBy], [UpdatedOn]
+    FROM [Customers]
+    WHERE [CustomerID] = 0;
+    SET IDENTITY_INSERT [Customers] OFF;
+
+    IF OBJECT_ID(N'[Members]', N'U') IS NOT NULL
+        UPDATE [Members] SET [CustomerID] = @TargetCustId, [CIFNo] = @CorrectedCif WHERE [CustomerID] = 0 OR [CIFNo] = 'CIF000000';
+    IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
+        UPDATE [SavingAccountMasters] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+    IF OBJECT_ID(N'[LoanAccounts]', N'U') IS NOT NULL
+        UPDATE [LoanAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+    IF OBJECT_ID(N'[FdAccounts]', N'U') IS NOT NULL
+        UPDATE [FdAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+    IF OBJECT_ID(N'[RdAccounts]', N'U') IS NOT NULL
+        UPDATE [RdAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+    IF OBJECT_ID(N'[PigmyAccounts]', N'U') IS NOT NULL
+        UPDATE [PigmyAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+    IF OBJECT_ID(N'[CustomerOpeningBalances]', N'U') IS NOT NULL
+        UPDATE [CustomerOpeningBalances] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+    IF OBJECT_ID(N'[LockerAllotments]', N'U') IS NOT NULL
+        UPDATE [LockerAllotments] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+    IF OBJECT_ID(N'[ShareAccounts]', N'U') IS NOT NULL
+        UPDATE [ShareAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+
+    DELETE FROM [Customers] WHERE [CustomerID] = 0;
+
+    DECLARE @MaxCIdNow INT = (SELECT ISNULL(MAX([CustomerID]), 1) FROM [Customers]);
+    DBCC CHECKIDENT ('Customers', RESEED, @MaxCIdNow);
+    PRINT 'Universal repair: Migrated CustomerID 0 to ' + CAST(@TargetCustId AS VARCHAR(10)) + ' (' + @CorrectedCif + ').';
+END
 GO
 
 -- Add CustomerID to all Product Tables with safe backfill
@@ -2586,33 +2676,51 @@ BEGIN
         LEFT JOIN Members m ON c.CustomerID = m.CustomerID
         WHERE m.MemberID IS NULL
     )
-    INSERT INTO Members (
-        BranchID, CustomerID, CIFNo, MemberCode, OldMemberCode, LegacyMemberNo,
-        FirstName, MiddleName, LastName, NickName, FirstNameEng, MiddleNameEng, LastNameEng,
-        Address, AddressEng, Village, Taluka, District, MobileNo, AadhaarNo, PANNo,
-        Gender, BirthDate, Occupation, CasteCategory, Caste, Email,
-        PhotoPath, SignaturePath, AadhaarDocPath, PanDocPath,
-        NomineeName, NomineeRelation, NomineeAddress, NomineeBirthDate, NomineeIsMinor, NomineeGuardianName,
-        IsMinor, GuardianName, GuardianRelation, GuardianMobileNo, GuardianAadhaarNo, GuardianAddress, GuardianNameEng, NomineeNameEng,
-        EmployerId, MembershipType, JoiningDate, Status, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, IsDeleted
-    )
-    SELECT 
-        BranchID, CustomerID, CIFNo,
-        NULL, -- Pure Customer has NO MemberCode until Shares are allotted!
-        LegacyCustomerNo, LegacyCustomerNo,
-        FirstName, MiddleName, LastName, NickName, FirstNameEng, MiddleNameEng, LastNameEng,
-        Address, AddressEng, Village, Taluka, District, MobileNo, AadhaarNo, PANNo,
-        Gender, BirthDate, Occupation, CasteCategory, Caste, Email,
-        PhotoPath, SignaturePath, AadhaarDocPath, PanDocPath,
-        NomineeName, NomineeRelation, NomineeAddress, NomineeBirthDate, NomineeIsMinor, NomineeGuardianName,
-        IsMinor, GuardianName, GuardianRelation, GuardianMobileNo, GuardianAadhaarNo, GuardianAddress, GuardianNameEng, NomineeNameEng,
-        EmployerId, 'Nominal', ISNULL(CreatedOn, GETDATE()), Status, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, IsDeleted
-    FROM MissingCustList;
+    SELECT * INTO #TempMissingCust FROM MissingCustList;
 
-    IF @@ROWCOUNT > 0
+    IF EXISTS (SELECT 1 FROM #TempMissingCust)
     BEGIN
+        IF COL_LENGTH('Members', 'FirstName') IS NOT NULL
+        BEGIN
+            EXEC('INSERT INTO Members (
+                BranchID, CustomerID, CIFNo, MemberCode, LegacyMemberNo,
+                FirstName, MiddleName, LastName, NickName, FirstNameEng, MiddleNameEng, LastNameEng,
+                Address, AddressEng, Village, Taluka, District, MobileNo, AadhaarNo, PANNo,
+                Gender, BirthDate, Occupation, CasteCategory, Caste, Email,
+                PhotoPath, SignaturePath, AadhaarDocPath, PanDocPath,
+                NomineeName, NomineeRelation, NomineeAddress, NomineeBirthDate, NomineeIsMinor, NomineeGuardianName,
+                IsMinor, GuardianName, GuardianRelation, GuardianMobileNo, GuardianAadhaarNo, GuardianAddress, GuardianNameEng, NomineeNameEng,
+                EmployerId, MembershipType, JoiningDate, Status, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, IsDeleted
+            )
+            SELECT 
+                BranchID, CustomerID, CIFNo,
+                NULL,
+                LegacyCustomerNo,
+                FirstName, MiddleName, LastName, NickName, FirstNameEng, MiddleNameEng, LastNameEng,
+                Address, AddressEng, Village, Taluka, District, MobileNo, AadhaarNo, PANNo,
+                Gender, BirthDate, Occupation, CasteCategory, Caste, Email,
+                PhotoPath, SignaturePath, AadhaarDocPath, PanDocPath,
+                NomineeName, NomineeRelation, NomineeAddress, NomineeBirthDate, NomineeIsMinor, NomineeGuardianName,
+                IsMinor, GuardianName, GuardianRelation, GuardianMobileNo, GuardianAadhaarNo, GuardianAddress, GuardianNameEng, NomineeNameEng,
+                EmployerId, ''Nominal'', ISNULL(CreatedOn, GETDATE()), Status, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, IsDeleted
+            FROM #TempMissingCust;');
+        END
+        ELSE
+        BEGIN
+            INSERT INTO Members (
+                BranchID, CustomerID, MemberCode, LegacyMemberNo,
+                MembershipType, JoiningDate, Status, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, IsDeleted
+            )
+            SELECT 
+                BranchID, CustomerID, NULL, LegacyCustomerNo,
+                'Nominal', ISNULL(CreatedOn, GETDATE()), Status, CreatedBy, CreatedOn, UpdatedBy, UpdatedOn, IsDeleted
+            FROM #TempMissingCust;
+        END
+
         PRINT 'Automatically synchronized missing Customers into Members table with NULL MemberCode (Nominal).';
     END
+
+    IF OBJECT_ID('tempdb..#TempMissingCust') IS NOT NULL DROP TABLE #TempMissingCust;
 
     -- CRITICAL REPAIR: Reset MemberCode to NULL and MembershipType to Nominal for any Member who has NO active Share Account!
     UPDATE m
@@ -2811,10 +2919,367 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- 99. AUTOMATIC CORE BANKING HEALING & MEMBERS TABLE NORMALIZATION
+-- -----------------------------------------------------------------------------------------
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Members') AND EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Customers')
+BEGIN
+    IF COL_LENGTH('Members', 'CustomerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[Members] ADD [CustomerID] INT NULL;
+        PRINT 'Added CustomerID column to Members table.';
+    END
+
+    -- Map Members.CustomerID to Customers.CustomerID
+    IF COL_LENGTH('Members', 'CIFNo') IS NOT NULL
+    BEGIN
+        UPDATE m
+        SET m.CustomerID = c.CustomerID
+        FROM dbo.Members m
+        INNER JOIN dbo.Customers c ON m.CIFNo = c.CIFNo
+        WHERE m.CustomerID <> c.CustomerID OR m.CustomerID IS NULL;
+        PRINT 'Healed and verified Members.CustomerID foreign keys to Customers.CustomerID based on CIFNo.';
+    END
+
+    -- Sync demographic data from Members to Customers before dropping columns
+    IF COL_LENGTH('Members', 'FirstName') IS NOT NULL
+    BEGIN
+        UPDATE c
+        SET 
+            c.FirstName = CASE WHEN c.FirstName IS NULL OR LEN(c.FirstName) = 0 THEN m.FirstName ELSE c.FirstName END,
+            c.MiddleName = ISNULL(c.MiddleName, m.MiddleName),
+            c.LastName = CASE WHEN c.LastName IS NULL OR LEN(c.LastName) = 0 THEN m.LastName ELSE c.LastName END,
+            c.NickName = ISNULL(c.NickName, m.NickName),
+            c.FirstNameEng = ISNULL(c.FirstNameEng, m.FirstNameEng),
+            c.MiddleNameEng = ISNULL(c.MiddleNameEng, m.MiddleNameEng),
+            c.LastNameEng = ISNULL(c.LastNameEng, m.LastNameEng),
+            c.Address = ISNULL(c.Address, m.Address),
+            c.AddressEng = ISNULL(c.AddressEng, m.AddressEng),
+            c.Village = ISNULL(c.Village, m.Village),
+            c.Taluka = ISNULL(c.Taluka, m.Taluka),
+            c.District = ISNULL(c.District, m.District),
+            c.MobileNo = ISNULL(c.MobileNo, m.MobileNo),
+            c.AadhaarNo = ISNULL(c.AadhaarNo, m.AadhaarNo),
+            c.PANNo = ISNULL(c.PANNo, m.PANNo),
+            c.Gender = ISNULL(c.Gender, m.Gender),
+            c.BirthDate = ISNULL(c.BirthDate, m.BirthDate),
+            c.Occupation = ISNULL(c.Occupation, m.Occupation),
+            c.CasteCategory = ISNULL(c.CasteCategory, m.CasteCategory),
+            c.Caste = ISNULL(c.Caste, m.Caste),
+            c.Email = ISNULL(c.Email, m.Email),
+            c.PhotoPath = ISNULL(c.PhotoPath, m.PhotoPath),
+            c.SignaturePath = ISNULL(c.SignaturePath, m.SignaturePath),
+            c.AadhaarDocPath = ISNULL(c.AadhaarDocPath, m.AadhaarDocPath),
+            c.PanDocPath = ISNULL(c.PanDocPath, m.PanDocPath),
+            c.NomineeName = ISNULL(c.NomineeName, m.NomineeName),
+            c.NomineeNameEng = ISNULL(c.NomineeNameEng, m.NomineeNameEng),
+            c.NomineeRelation = ISNULL(c.NomineeRelation, m.NomineeRelation),
+            c.NomineeAddress = ISNULL(c.NomineeAddress, m.NomineeAddress),
+            c.NomineeBirthDate = ISNULL(c.NomineeBirthDate, m.NomineeBirthDate),
+            c.NomineeIsMinor = ISNULL(c.NomineeIsMinor, m.NomineeIsMinor),
+            c.NomineeGuardianName = ISNULL(c.NomineeGuardianName, m.NomineeGuardianName),
+            c.IsMinor = ISNULL(c.IsMinor, m.IsMinor),
+            c.GuardianName = ISNULL(c.GuardianName, m.GuardianName),
+            c.GuardianNameEng = ISNULL(c.GuardianNameEng, m.GuardianNameEng),
+            c.GuardianRelation = ISNULL(c.GuardianRelation, m.GuardianRelation),
+            c.GuardianAadhaarNo = ISNULL(c.GuardianAadhaarNo, m.GuardianAadhaarNo),
+            c.GuardianMobileNo = ISNULL(c.GuardianMobileNo, m.GuardianMobileNo),
+            c.GuardianAddress = ISNULL(c.GuardianAddress, m.GuardianAddress),
+            c.EmployerId = ISNULL(c.EmployerId, m.EmployerId)
+        FROM [dbo].[Customers] c
+        INNER JOIN [dbo].[Members] m ON m.CustomerID = c.CustomerID;
+        PRINT 'Synchronized demographic and KYC data from Members to Customers.';
+    END
+END
+GO
+
+-- Create or Alter dbo.vw_Members View
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Members') AND EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Customers')
+BEGIN
+    EXEC('CREATE OR ALTER VIEW [dbo].[vw_Members]
+    AS
+    SELECT 
+        m.MemberID,
+        m.CustomerID,
+        m.BranchID,
+        m.MemberCode,
+        m.LegacyMemberNo,
+        m.MembershipType,
+        m.JoiningDate,
+        m.Status,
+        m.IsDeleted,
+        m.CreatedBy,
+        m.CreatedOn,
+        m.UpdatedBy,
+        m.UpdatedOn,
+        c.CIFNo,
+        c.FirstName,
+        c.MiddleName,
+        c.LastName,
+        c.NickName,
+        c.FirstNameEng,
+        c.MiddleNameEng,
+        c.LastNameEng,
+        c.Address,
+        c.AddressEng,
+        c.Village,
+        c.Taluka,
+        c.District,
+        c.MobileNo,
+        c.AadhaarNo,
+        c.PANNo,
+        c.PhotoPath,
+        c.SignaturePath,
+        c.AadhaarDocPath,
+        c.PanDocPath,
+        c.Gender,
+        c.BirthDate,
+        c.Occupation,
+        c.CasteCategory,
+        c.Caste,
+        c.Email,
+        c.EmployerId,
+        c.IsMinor,
+        c.GuardianName,
+        c.GuardianNameEng,
+        c.GuardianRelation,
+        c.GuardianAadhaarNo,
+        c.GuardianMobileNo,
+        c.GuardianAddress,
+        c.NomineeName,
+        c.NomineeNameEng,
+        c.NomineeRelation,
+        c.NomineeAddress,
+        c.NomineeBirthDate,
+        c.NomineeIsMinor,
+        c.NomineeGuardianName
+    FROM [dbo].[Members] m
+    INNER JOIN [dbo].[Customers] c ON m.CustomerID = c.CustomerID;');
+    PRINT 'Created or altered [dbo].[vw_Members] view.';
+END
+GO
+
+-- Drop redundant columns from Members table if they exist
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Members')
+BEGIN
+    -- 0. Safely consolidate legacy codes into LegacyMemberNo before dropping
+    IF COL_LENGTH('Members', 'OldMemberCode') IS NOT NULL
+    BEGIN
+        EXEC('UPDATE [dbo].[Members]
+        SET [LegacyMemberNo] = [OldMemberCode]
+        WHERE ([LegacyMemberNo] IS NULL OR [LegacyMemberNo] = '''') AND [OldMemberCode] IS NOT NULL;');
+    END
+
+    -- Drop indexes on redundant columns
+    DECLARE @IdxDrop NVARCHAR(MAX) = '';
+    SELECT @IdxDrop = @IdxDrop + 'DROP INDEX [' + i.name + '] ON [dbo].[Members];' + CHAR(13)
+    FROM sys.indexes i
+    JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+    WHERE i.object_id = OBJECT_ID(N'[dbo].[Members]')
+      AND i.is_primary_key = 0
+      AND c.name IN (
+          'CIFNo', 'FirstName', 'MiddleName', 'LastName', 'NickName', 'FirstNameEng', 'MiddleNameEng', 'LastNameEng',
+          'Address', 'AddressEng', 'Village', 'Taluka', 'District',
+          'MobileNo', 'AadhaarNo', 'PANNo',
+          'PhotoPath', 'SignaturePath', 'AadhaarDocPath', 'PanDocPath',
+          'Gender', 'BirthDate', 'Occupation', 'CasteCategory', 'Caste', 'Email', 'EmployerId',
+          'IsMinor', 'GuardianName', 'GuardianNameEng', 'GuardianRelation', 'GuardianAadhaarNo', 'GuardianMobileNo', 'GuardianAddress',
+          'NomineeName', 'NomineeNameEng', 'NomineeRelation', 'NomineeAddress', 'NomineeBirthDate', 'NomineeIsMinor', 'NomineeGuardianName',
+          'OldMemberCode', 'LegacyMemberId'
+      );
+    IF LEN(@IdxDrop) > 0 EXEC sp_executesql @IdxDrop;
+
+    -- Drop default constraints on redundant columns
+    DECLARE @DfDrop NVARCHAR(MAX) = '';
+    SELECT @DfDrop = @DfDrop + 'ALTER TABLE [dbo].[Members] DROP CONSTRAINT [' + d.name + '];' + CHAR(13)
+    FROM sys.default_constraints d
+    JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+    WHERE d.parent_object_id = OBJECT_ID(N'[dbo].[Members]')
+      AND c.name IN (
+          'CIFNo', 'FirstName', 'MiddleName', 'LastName', 'NickName', 'FirstNameEng', 'MiddleNameEng', 'LastNameEng',
+          'Address', 'AddressEng', 'Village', 'Taluka', 'District',
+          'MobileNo', 'AadhaarNo', 'PANNo',
+          'PhotoPath', 'SignaturePath', 'AadhaarDocPath', 'PanDocPath',
+          'Gender', 'BirthDate', 'Occupation', 'CasteCategory', 'Caste', 'Email', 'EmployerId',
+          'IsMinor', 'GuardianName', 'GuardianNameEng', 'GuardianRelation', 'GuardianAadhaarNo', 'GuardianMobileNo', 'GuardianAddress',
+          'NomineeName', 'NomineeNameEng', 'NomineeRelation', 'NomineeAddress', 'NomineeBirthDate', 'NomineeIsMinor', 'NomineeGuardianName',
+          'OldMemberCode', 'LegacyMemberId'
+      );
+    IF LEN(@DfDrop) > 0 EXEC sp_executesql @DfDrop;
+
+    -- Drop foreign keys on EmployerId from Members
+    DECLARE @FkDrop NVARCHAR(MAX) = '';
+    SELECT @FkDrop = @FkDrop + 'ALTER TABLE [dbo].[Members] DROP CONSTRAINT [' + fk.name + '];' + CHAR(13)
+    FROM sys.foreign_keys fk
+    JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+    JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+    WHERE fk.parent_object_id = OBJECT_ID(N'[dbo].[Members]') AND c.name = 'EmployerId';
+    IF LEN(@FkDrop) > 0 EXEC sp_executesql @FkDrop;
+
+    -- Drop redundant columns
+    DECLARE @Cols TABLE (ColName NVARCHAR(128));
+    INSERT INTO @Cols VALUES
+        ('FirstName'), ('MiddleName'), ('LastName'), ('NickName'),
+        ('FirstNameEng'), ('MiddleNameEng'), ('LastNameEng'),
+        ('Address'), ('AddressEng'), ('Village'), ('Taluka'), ('District'),
+        ('MobileNo'), ('AadhaarNo'), ('PANNo'),
+        ('PhotoPath'), ('SignaturePath'), ('AadhaarDocPath'), ('PanDocPath'),
+        ('Gender'), ('BirthDate'), ('Occupation'), ('CasteCategory'), ('Caste'), ('Email'), ('EmployerId'),
+        ('IsMinor'), ('GuardianName'), ('GuardianNameEng'), ('GuardianRelation'),
+        ('GuardianAadhaarNo'), ('GuardianMobileNo'), ('GuardianAddress'),
+        ('NomineeName'), ('NomineeNameEng'), ('NomineeRelation'), ('NomineeAddress'),
+        ('NomineeBirthDate'), ('NomineeIsMinor'), ('NomineeGuardianName'),
+        ('CIFNo'), ('OldMemberCode'), ('LegacyMemberId');
+
+    DECLARE @SqlDrop NVARCHAR(MAX) = '';
+    SELECT @SqlDrop = @SqlDrop + 'ALTER TABLE [dbo].[Members] DROP COLUMN [' + c.ColName + '];' + CHAR(13)
+    FROM @Cols c
+    WHERE COL_LENGTH('Members', c.ColName) IS NOT NULL;
+
+    IF LEN(@SqlDrop) > 0
+    BEGIN
+        EXEC sp_executesql @SqlDrop;
+        PRINT 'Dropped redundant demographic and legacy columns from dbo.Members (Aligned to 13 canonical columns).';
+    END
+END
+GO
+
+-- -----------------------------------------------------------------------------------------
+-- 100. DEPLOY DATABASE SELF-HEALING ARCHITECTURE: AUTOMATIC IDENTITY RE-SEED & GAP PREVENTER
+-- -----------------------------------------------------------------------------------------
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[sp_SyncDatabaseIdentities]
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET ANSI_NULLS ON;
+    SET QUOTED_IDENTIFIER ON;
+
+    DECLARE @tbl NVARCHAR(256), @col NVARCHAR(256);
+    DECLARE @sql NVARCHAR(MAX);
+    DECLARE @reseededCount INT = 0;
+    DECLARE @triggerCount INT = 0;
+
+    -- Cursor across all user tables that contain an identity column
+    DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
+    SELECT t.name, c.name
+    FROM sys.tables t
+    INNER JOIN sys.identity_columns c ON t.object_id = c.object_id
+    WHERE t.is_ms_shipped = 0
+    ORDER BY t.name;
+
+    OPEN cur;
+    FETCH NEXT FROM cur INTO @tbl, @col;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        -- A. Create / Alter AFTER DELETE self-healing trigger
+        SET @sql = '
+        CREATE OR ALTER TRIGGER [dbo].[trg_AutoReseed_' + REPLACE(@tbl, ' ', '_') + ']
+        ON [dbo].[' + @tbl + ']
+        AFTER DELETE
+        AS
+        BEGIN
+            SET NOCOUNT ON;
+            BEGIN TRY
+                DECLARE @maxId BIGINT;
+                SELECT @maxId = MAX([' + @col + ']) FROM [dbo].[' + @tbl + '];
+                
+                IF @maxId IS NOT NULL
+                BEGIN
+                    DECLARE @currId BIGINT = CAST(IDENT_CURRENT(''[dbo].[' + @tbl + ']'') AS BIGINT);
+                    IF @currId > @maxId
+                    BEGIN
+                        DBCC CHECKIDENT (''[dbo].[' + @tbl + ']'', RESEED, @maxId) WITH NO_INFOMSGS;
+                    END
+                END
+                ELSE
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID(''[dbo].[' + @tbl + ']'') AND last_value IS NOT NULL)
+                    BEGIN
+                        DBCC CHECKIDENT (''[dbo].[' + @tbl + ']'', RESEED, 0) WITH NO_INFOMSGS;
+                    END
+                    ELSE
+                    BEGIN
+                        DBCC CHECKIDENT (''[dbo].[' + @tbl + ']'', RESEED, 1) WITH NO_INFOMSGS;
+                    END
+                END
+            END TRY
+            BEGIN CATCH
+                -- Prevent blocking application deletes
+            END CATCH
+        END;';
+
+        BEGIN TRY
+            EXEC sp_executesql @sql;
+            SET @triggerCount = @triggerCount + 1;
+        END TRY
+        BEGIN CATCH
+            PRINT 'Failed creating trigger for ' + @tbl + ': ' + ERROR_MESSAGE();
+        END CATCH
+
+        -- B. Check if table is currently desynchronized (IDENT_CURRENT > MAX)
+        BEGIN TRY
+            DECLARE @actualMax BIGINT = NULL;
+            DECLARE @maxQuery NVARCHAR(MAX) = 'SELECT @m = MAX([' + @col + ']) FROM [' + @tbl + ']';
+            EXEC sp_executesql @maxQuery, N'@m BIGINT OUTPUT', @m = @actualMax OUTPUT;
+
+            DECLARE @currentIdent BIGINT = CAST(IDENT_CURRENT(@tbl) AS BIGINT);
+
+            IF @actualMax IS NOT NULL
+            BEGIN
+                IF @currentIdent > @actualMax
+                BEGIN
+                    DBCC CHECKIDENT (@tbl, RESEED, @actualMax) WITH NO_INFOMSGS;
+                    PRINT 'Reseeded ' + @tbl + ' from ' + CAST(@currentIdent AS NVARCHAR) + ' to ' + CAST(@actualMax AS NVARCHAR);
+                    SET @reseededCount = @reseededCount + 1;
+                END
+            END
+            ELSE
+            BEGIN
+                -- Table is empty. If last_value is null, reseed to 1; if already inserted then reseed to 0
+                IF EXISTS (SELECT 1 FROM sys.identity_columns WHERE object_id = OBJECT_ID(@tbl) AND last_value IS NOT NULL)
+                BEGIN
+                    DBCC CHECKIDENT (@tbl, RESEED, 0) WITH NO_INFOMSGS;
+                    PRINT 'Reseeded empty table ' + @tbl + ' to 0';
+                    SET @reseededCount = @reseededCount + 1;
+                END
+                ELSE
+                BEGIN
+                    DBCC CHECKIDENT (@tbl, RESEED, 1) WITH NO_INFOMSGS;
+                    PRINT 'Reseeded fresh empty table ' + @tbl + ' to 1';
+                    SET @reseededCount = @reseededCount + 1;
+                END
+            END
+        END TRY
+        BEGIN CATCH
+            PRINT 'Failed checking ident for ' + @tbl + ': ' + ERROR_MESSAGE();
+        END CATCH
+
+        FETCH NEXT FROM cur INTO @tbl, @col;
+    END
+
+    CLOSE cur;
+    DEALLOCATE cur;
+
+    PRINT 'Completed self-healing setup: ' + CAST(@triggerCount AS NVARCHAR) + ' triggers ensured, ' + CAST(@reseededCount AS NVARCHAR) + ' tables reseeded.';
+END;
+GO
+
+-- Execute once to ensure all triggers exist and any existing gaps are reseeded immediately
+EXEC [dbo].[sp_SyncDatabaseIdentities];
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO
+
+
 
 
 

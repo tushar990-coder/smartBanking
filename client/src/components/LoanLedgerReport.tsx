@@ -81,11 +81,17 @@ interface LoanAccount {
   loanAccountID: number;
   loanAccountNo: string;
   loanRateID: number;
-  memberID: number;
-  member: {
+  memberID?: number;
+  customerID?: number;
+  member?: {
     firstName: string;
     lastName: string;
     memberCode?: string;
+  };
+  customer?: {
+    firstName: string;
+    lastName: string;
+    cifNo?: string;
   };
 }
 
@@ -127,14 +133,16 @@ const LoanLedgerReport: React.FC = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const memberIdStr = params.get('memberId');
-    if (!memberIdStr || loanRates.length === 0) return;
+    const customerIdStr = params.get('customerId');
+    if ((!memberIdStr && !customerIdStr) || loanRates.length === 0) return;
 
-    const mId = parseInt(memberIdStr, 10);
+    const mId = memberIdStr ? parseInt(memberIdStr, 10) : null;
+    const cId = customerIdStr ? parseInt(customerIdStr, 10) : null;
     const autoLoad = async () => {
       try {
         const res = await fetch(`/api/LoanAccounts`);
         const data = await res.json();
-        const matchedAcc = data.find((a: any) => a.memberID === mId);
+        const matchedAcc = data.find((a: any) => (mId && a.memberID === mId) || (cId && a.customerID === cId));
         if (matchedAcc) {
           const rateOption = {
             value: matchedAcc.loanRateID,
@@ -144,10 +152,16 @@ const LoanLedgerReport: React.FC = () => {
 
           const accOptions = data
             .filter((a: any) => a.loanRateID === matchedAcc.loanRateID)
-            .map((a: any) => ({
-              value: a.loanAccountID,
-              label: `${a.loanAccountNo} - ${a.member?.firstName || ''} ${a.member?.lastName || ''}`
-            }));
+            .map((a: any) => {
+              const name = a.customer
+                ? `${a.customer.firstName || ''} ${a.customer.lastName || ''}`.trim()
+                : `${a.member?.firstName || ''} ${a.member?.lastName || ''}`.trim();
+              const code = a.customer?.cifNo ? `(CIF: ${a.customer.cifNo})` : (a.member?.memberCode ? `(सभासद: ${a.member.memberCode})` : '');
+              return {
+                value: a.loanAccountID,
+                label: `${a.loanAccountNo} - ${name} ${code}`.trim()
+              };
+            });
 
           const matchedAccOpt = accOptions.find((o: any) => o.value === matchedAcc.loanAccountID);
           setSelectedLoanAccount(matchedAccOpt || null);
@@ -436,10 +450,16 @@ const LoanLedgerReport: React.FC = () => {
     label: lr.shortName || lr.loanType
   }));
 
-  const loanAccountOptions = loanAccounts.map(la => ({
-    value: la.loanAccountID,
-    label: `${la.loanAccountNo} - ${la.member?.firstName || ''} ${la.member?.lastName || ''}`
-  }));
+  const loanAccountOptions = loanAccounts.map(la => {
+    const name = la.customer
+      ? `${la.customer.firstName || ''} ${la.customer.lastName || ''}`.trim()
+      : `${la.member?.firstName || ''} ${la.member?.lastName || ''}`.trim();
+    const code = la.customer?.cifNo ? `(CIF: ${la.customer.cifNo})` : (la.member?.memberCode ? `(सभासद: ${la.member.memberCode})` : '');
+    return {
+      value: la.loanAccountID,
+      label: `${la.loanAccountNo} - ${name} ${code}`.trim()
+    };
+  });
 
   return (
     <div className="p-2 sm:p-4 md:p-6 bg-slate-50 min-h-screen font-sans text-slate-800">

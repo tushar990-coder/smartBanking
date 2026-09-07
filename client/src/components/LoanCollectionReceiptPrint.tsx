@@ -51,8 +51,9 @@ export default function LoanCollectionReceiptPrint({ collectionId, onBack }: Loa
   const handleWhatsAppShare = () => {
     if (!collection) return;
     const sansthaName = sanstha?.sansthaName || 'स्मार्ट मल्टीस्टेट पतसंस्था लि.';
-    const memberName = `${collection.loanAccount?.member?.firstName || ''} ${collection.loanAccount?.member?.lastName || ''}`.trim();
-    const mobileNo = collection.loanAccount?.member?.mobileNo || '';
+    const borrower = collection.loanAccount?.customer || collection.loanAccount?.member;
+    const memberName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'खातेदार';
+    const mobileNo = borrower?.mobileNo || '';
 
     const totalCollected = (collection.totalAmountReceived || 0) + (collection.fees?.reduce((acc: number, f: any) => acc + f.amount, 0) || 0);
 
@@ -149,9 +150,10 @@ ${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: �
         {/* Info Grid Section */}
         <div className="grid grid-cols-2 gap-4 mb-4 text-xs bg-slate-50 p-3 rounded border border-slate-200">
           <div className="space-y-1.5 border-r border-slate-200 pr-2">
-            <p className="text-gray-600">खातेदार नाव (Member Name):</p>
+            <p className="text-gray-600">खातेदार नाव (Borrower Name):</p>
             <p className="text-sm font-bold text-slate-900">
-              {collection.loanAccount?.member?.firstName} {collection.loanAccount?.member?.lastName}
+              {collection.loanAccount?.customer ? `${collection.loanAccount.customer.firstName || ''} ${collection.loanAccount.customer.lastName || ''}`.trim() : `${collection.loanAccount?.member?.firstName || ''} ${collection.loanAccount?.member?.lastName || ''}`.trim()}
+              {collection.loanAccount?.customer?.cifNo ? ` (CIF: ${collection.loanAccount.customer.cifNo})` : (collection.loanAccount?.member?.memberCode ? ` (कोड: ${collection.loanAccount.member.memberCode})` : '')}
             </p>
             <p className="text-gray-600 mt-1">कर्ज खाते क्र. (Loan Account No): <span className="font-bold text-slate-900 ml-1">{collection.loanAccount?.loanAccountNo}</span></p>
             <p className="text-gray-600">कर्ज प्रकार (Loan Type): <span className="font-bold text-slate-900 ml-1">{collection.loanAccount?.loanRate?.shortName || collection.loanAccount?.loanRate?.loanType || 'N/A'}</span></p>

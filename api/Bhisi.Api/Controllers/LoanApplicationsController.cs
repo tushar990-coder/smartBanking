@@ -79,9 +79,13 @@ namespace Bhisi.Api.Controllers
                     .Include(a => a.Member)
                     .Include(a => a.CoMember)
                     .Include(a => a.CoMember2)
+                    .Include(a => a.CoCustomer)
+                    .Include(a => a.CoCustomer2)
                     .Include(a => a.LoanRate)
                     .Include(a => a.Guarantor1Member)
                     .Include(a => a.Guarantor2Member)
+                    .Include(a => a.Guarantor1Customer)
+                    .Include(a => a.Guarantor2Customer)
                     .Include(a => a.RecommendedByDirector)
                     .OrderByDescending(a => a.ApplicationDate)
                     .ToListAsync();
@@ -107,9 +111,13 @@ namespace Bhisi.Api.Controllers
                     .Include(a => a.Member)
                     .Include(a => a.CoMember)
                     .Include(a => a.CoMember2)
+                    .Include(a => a.CoCustomer)
+                    .Include(a => a.CoCustomer2)
                     .Include(a => a.LoanRate)
                     .Include(a => a.Guarantor1Member)
                     .Include(a => a.Guarantor2Member)
+                    .Include(a => a.Guarantor1Customer)
+                    .Include(a => a.Guarantor2Customer)
                     .Include(a => a.RecommendedByDirector)
                     .OrderByDescending(a => a.ApplicationDate)
                     .ToListAsync();
@@ -134,9 +142,13 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.Member)
                 .Include(a => a.CoMember)
                 .Include(a => a.CoMember2)
+                .Include(a => a.CoCustomer)
+                .Include(a => a.CoCustomer2)
                 .Include(a => a.LoanRate)
                 .Include(a => a.Guarantor1Member)
                 .Include(a => a.Guarantor2Member)
+                .Include(a => a.Guarantor1Customer)
+                .Include(a => a.Guarantor2Customer)
                 .Include(a => a.RecommendedByDirector)
                 .FirstOrDefaultAsync(m => m.LoanApplicationID == id);
 
@@ -223,9 +235,13 @@ namespace Bhisi.Api.Controllers
                 // Sanitize 0 values to null for nullable foreign keys
                 if (loanApplication.CoMemberID.HasValue && loanApplication.CoMemberID.Value <= 0) loanApplication.CoMemberID = null;
                 if (loanApplication.CoMember2ID.HasValue && loanApplication.CoMember2ID.Value <= 0) loanApplication.CoMember2ID = null;
+                if (loanApplication.CoCustomerID.HasValue && loanApplication.CoCustomerID.Value <= 0) loanApplication.CoCustomerID = null;
+                if (loanApplication.CoCustomer2ID.HasValue && loanApplication.CoCustomer2ID.Value <= 0) loanApplication.CoCustomer2ID = null;
                 if (loanApplication.RecommendedByDirectorID.HasValue && loanApplication.RecommendedByDirectorID.Value <= 0) loanApplication.RecommendedByDirectorID = null;
                 if (loanApplication.Guarantor1MemberID.HasValue && loanApplication.Guarantor1MemberID.Value <= 0) loanApplication.Guarantor1MemberID = null;
                 if (loanApplication.Guarantor2MemberID.HasValue && loanApplication.Guarantor2MemberID.Value <= 0) loanApplication.Guarantor2MemberID = null;
+                if (loanApplication.Guarantor1CustomerID.HasValue && loanApplication.Guarantor1CustomerID.Value <= 0) loanApplication.Guarantor1CustomerID = null;
+                if (loanApplication.Guarantor2CustomerID.HasValue && loanApplication.Guarantor2CustomerID.Value <= 0) loanApplication.Guarantor2CustomerID = null;
 
                 // 1. Verify Primary Borrower Customer & Member Status
                 Customer? customer = null;
@@ -241,7 +257,7 @@ namespace Bhisi.Api.Controllers
                 }
                 else if (loanApplication.MemberID.HasValue && loanApplication.MemberID.Value > 0)
                 {
-                    borrower = await _context.Members.FindAsync(loanApplication.MemberID.Value);
+                    borrower = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == loanApplication.MemberID.Value);
                     if (borrower == null) return BadRequest(new { message = "निवडलेला कर्जदार सभासद सिस्टीममध्ये अस्तित्वात नाही." });
                     if (borrower.Status != "Active") return BadRequest(new { message = $"कर्जदार सभासदाचे स्टेटस '{borrower.Status}' असल्यामुळे नवीन कर्ज अर्ज करता येत नाही. केवळ सक्रिय (Active) सभासदांनाच कर्ज मंजूर करता येते." });
 
@@ -255,23 +271,70 @@ namespace Bhisi.Api.Controllers
                 loanApplication.CustomerID = customer?.CustomerID ?? (borrower?.CustomerID > 0 ? borrower.CustomerID : null);
                 loanApplication.MemberID = borrower?.MemberID;
 
+                int targetBorrowerCustId = loanApplication.CustomerID ?? 0;
+                int targetBorrowerMemId = loanApplication.MemberID ?? 0;
+
                 // 2. Prevent Self-Guarantee & Duplicate Guarantors
-                if (loanApplication.Guarantor1MemberID.HasValue && loanApplication.Guarantor1MemberID.Value > 0)
+                // Check Guarantor 1
+                if (loanApplication.Guarantor1CustomerID.HasValue && loanApplication.Guarantor1CustomerID.Value > 0)
                 {
-                    if (loanApplication.Guarantor1MemberID.Value == loanApplication.MemberID)
+                    if (targetBorrowerCustId > 0 && loanApplication.Guarantor1CustomerID.Value == targetBorrowerCustId)
                     {
                         return BadRequest(new { message = "कर्जदार स्वतःच स्वतःचा जामीनदार (Guarantor 1) असू शकत नाही." });
                     }
-                    var g1 = await _context.Members.FindAsync(loanApplication.Guarantor1MemberID.Value);
+                    var gCust1 = await _context.Customers.FindAsync(loanApplication.Guarantor1CustomerID.Value);
+                    if (gCust1 == null || gCust1.Status != "Active")
+                    {
+                        return BadRequest(new { message = "जामीनदार १ हा सक्रिय ग्राहक असणे आवश्यक आहे." });
+                    }
+                    if (!loanApplication.Guarantor1MemberID.HasValue || loanApplication.Guarantor1MemberID.Value <= 0)
+                    {
+                        var gm1 = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == gCust1.CustomerID);
+                        if (gm1 != null) loanApplication.Guarantor1MemberID = gm1.MemberID;
+                    }
+                }
+                else if (loanApplication.Guarantor1MemberID.HasValue && loanApplication.Guarantor1MemberID.Value > 0)
+                {
+                    if (targetBorrowerMemId > 0 && loanApplication.Guarantor1MemberID.Value == targetBorrowerMemId)
+                    {
+                        return BadRequest(new { message = "कर्जदार स्वतःच स्वतःचा जामीनदार (Guarantor 1) असू शकत नाही." });
+                    }
+                    var g1 = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == loanApplication.Guarantor1MemberID.Value);
                     if (g1 == null || g1.Status != "Active")
                     {
-                        return BadRequest(new { message = "जामीनदार १ हा सक्रिय (Active) सभासद असणे आवश्यक आहे." });
+                        return BadRequest(new { message = "जामीनदार १ हा सक्रिय सभासद असणे आवश्यक आहे." });
+                    }
+                    if (g1.CustomerID > 0 && (!loanApplication.Guarantor1CustomerID.HasValue || loanApplication.Guarantor1CustomerID.Value <= 0))
+                    {
+                        loanApplication.Guarantor1CustomerID = g1.CustomerID;
                     }
                 }
 
-                if (loanApplication.Guarantor2MemberID.HasValue && loanApplication.Guarantor2MemberID.Value > 0)
+                // Check Guarantor 2
+                if (loanApplication.Guarantor2CustomerID.HasValue && loanApplication.Guarantor2CustomerID.Value > 0)
                 {
-                    if (loanApplication.Guarantor2MemberID.Value == loanApplication.MemberID)
+                    if (targetBorrowerCustId > 0 && loanApplication.Guarantor2CustomerID.Value == targetBorrowerCustId)
+                    {
+                        return BadRequest(new { message = "कर्जदार स्वतःच स्वतःचा जामीनदार (Guarantor 2) असू शकत नाही." });
+                    }
+                    if (loanApplication.Guarantor1CustomerID.HasValue && loanApplication.Guarantor2CustomerID.Value == loanApplication.Guarantor1CustomerID.Value)
+                    {
+                        return BadRequest(new { message = "जामीनदार १ आणि जामीनदार २ एकच व्यक्ती असू शकत नाहीत." });
+                    }
+                    var gCust2 = await _context.Customers.FindAsync(loanApplication.Guarantor2CustomerID.Value);
+                    if (gCust2 == null || gCust2.Status != "Active")
+                    {
+                        return BadRequest(new { message = "जामीनदार २ हा सक्रिय ग्राहक असणे आवश्यक आहे." });
+                    }
+                    if (!loanApplication.Guarantor2MemberID.HasValue || loanApplication.Guarantor2MemberID.Value <= 0)
+                    {
+                        var gm2 = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == gCust2.CustomerID);
+                        if (gm2 != null) loanApplication.Guarantor2MemberID = gm2.MemberID;
+                    }
+                }
+                else if (loanApplication.Guarantor2MemberID.HasValue && loanApplication.Guarantor2MemberID.Value > 0)
+                {
+                    if (targetBorrowerMemId > 0 && loanApplication.Guarantor2MemberID.Value == targetBorrowerMemId)
                     {
                         return BadRequest(new { message = "कर्जदार स्वतःच स्वतःचा जामीनदार (Guarantor 2) असू शकत नाही." });
                     }
@@ -279,10 +342,14 @@ namespace Bhisi.Api.Controllers
                     {
                         return BadRequest(new { message = "जामीनदार १ आणि जामीनदार २ एकच सभासद असू शकत नाहीत." });
                     }
-                    var g2 = await _context.Members.FindAsync(loanApplication.Guarantor2MemberID.Value);
+                    var g2 = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == loanApplication.Guarantor2MemberID.Value);
                     if (g2 == null || g2.Status != "Active")
                     {
-                        return BadRequest(new { message = "जामीनदार २ हा सक्रिय (Active) सभासद असणे आवश्यक आहे." });
+                        return BadRequest(new { message = "जामीनदार २ हा सक्रिय सभासद असणे आवश्यक आहे." });
+                    }
+                    if (g2.CustomerID > 0 && (!loanApplication.Guarantor2CustomerID.HasValue || loanApplication.Guarantor2CustomerID.Value <= 0))
+                    {
+                        loanApplication.Guarantor2CustomerID = g2.CustomerID;
                     }
                 }
 
@@ -335,9 +402,13 @@ namespace Bhisi.Api.Controllers
                 // Sanitize 0 values to null for nullable foreign keys
                 if (loanApplication.CoMemberID.HasValue && loanApplication.CoMemberID.Value <= 0) loanApplication.CoMemberID = null;
                 if (loanApplication.CoMember2ID.HasValue && loanApplication.CoMember2ID.Value <= 0) loanApplication.CoMember2ID = null;
+                if (loanApplication.CoCustomerID.HasValue && loanApplication.CoCustomerID.Value <= 0) loanApplication.CoCustomerID = null;
+                if (loanApplication.CoCustomer2ID.HasValue && loanApplication.CoCustomer2ID.Value <= 0) loanApplication.CoCustomer2ID = null;
                 if (loanApplication.RecommendedByDirectorID.HasValue && loanApplication.RecommendedByDirectorID.Value <= 0) loanApplication.RecommendedByDirectorID = null;
                 if (loanApplication.Guarantor1MemberID.HasValue && loanApplication.Guarantor1MemberID.Value <= 0) loanApplication.Guarantor1MemberID = null;
                 if (loanApplication.Guarantor2MemberID.HasValue && loanApplication.Guarantor2MemberID.Value <= 0) loanApplication.Guarantor2MemberID = null;
+                if (loanApplication.Guarantor1CustomerID.HasValue && loanApplication.Guarantor1CustomerID.Value <= 0) loanApplication.Guarantor1CustomerID = null;
+                if (loanApplication.Guarantor2CustomerID.HasValue && loanApplication.Guarantor2CustomerID.Value <= 0) loanApplication.Guarantor2CustomerID = null;
 
                 _context.Entry(loanApplication).State = EntityState.Modified;
                 await _context.SaveChangesAsync();

@@ -11,6 +11,11 @@ namespace Bhisi.Api.Services
         public string CurrentVersion { get; set; } = "1.0.0";
         public string BuildDate { get; set; } = string.Empty;
         public string DatabaseName { get; set; } = string.Empty;
+        public string ServerInstance { get; set; } = string.Empty;
+        public string SansthaName { get; set; } = string.Empty;
+        public string BranchName { get; set; } = string.Empty;
+        public bool IsConnected { get; set; } = true;
+        public int TotalTables { get; set; }
         public DateTime? LastUpdatedOn { get; set; }
         public string LastAppliedPatch { get; set; } = string.Empty;
         public List<string> Changelog { get; set; } = new();

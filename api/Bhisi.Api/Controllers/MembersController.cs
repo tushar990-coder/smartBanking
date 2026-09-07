@@ -92,7 +92,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-                var query = _context.Members.AsNoTracking().Include(m => m.Branch).OrderBy(m => m.MemberID).AsQueryable();
+                var query = _context.Members.AsNoTracking().Include(m => m.Customer).Include(m => m.Branch).OrderBy(m => m.MemberID).AsQueryable();
 
                 // Multi-Branch Isolation Barrier: Non-admin users are strictly forced to their assigned branch
                 if (!isHeadOfficeAdmin)
@@ -160,7 +160,7 @@ namespace Bhisi.Api.Controllers
                     member.Occupation = member.Occupation ?? string.Empty;
                     member.CasteCategory = member.CasteCategory ?? string.Empty;
                     member.Caste = member.Caste ?? string.Empty;
-                    member.OldMemberCode = member.OldMemberCode ?? string.Empty;
+                    member.LegacyMemberNo = member.LegacyMemberNo ?? string.Empty;
                     member.FirstNameEng = member.FirstNameEng ?? string.Empty;
                     member.MiddleNameEng = member.MiddleNameEng ?? string.Empty;
                     member.LastNameEng = member.LastNameEng ?? string.Empty;
@@ -255,11 +255,11 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/Members/5
-        [HttpGet("{id}")]
+        [HttpGet("{id:int}")]
         public async Task<ActionResult<Member>> GetMember(int id)
         {
             var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-            var member = await _context.Members.Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == id);
+            var member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == id);
 
             if (member == null)
             {
@@ -339,11 +339,11 @@ namespace Bhisi.Api.Controllers
                 int candidateNum = Math.Max(maxMemberId, maxCustomerId) + 1;
                 string candidateCif = $"CIF{candidateNum:D6}";
 
-                var allCifsInDb = await _context.Members
+                var allCifsInDb = await _context.Customers
                     .IgnoreQueryFilters()
                     .AsNoTracking()
-                    .Where(m => m.CIFNo != null && m.CIFNo != "")
-                    .Select(m => m.CIFNo!)
+                    .Where(c => c.CIFNo != null && c.CIFNo != "")
+                    .Select(c => c.CIFNo!)
                     .ToListAsync();
 
                 var cifSet = new HashSet<string>(allCifsInDb, StringComparer.OrdinalIgnoreCase);
@@ -368,6 +368,56 @@ namespace Bhisi.Api.Controllers
         {
             string candidateCif = await GenerateUniqueCifAsync();
             return Content(candidateCif, "text/plain");
+        }
+
+        // GET: api/Members/pending-allotment
+        [AllowAnonymous]
+        [HttpGet("pending-allotment")]
+        public async Task<IActionResult> GetPendingAllotmentMembers([FromQuery] int? branchId = null)
+        {
+            try
+            {
+                var query = _context.Members
+                    .AsNoTracking()
+                    .Include(m => m.Customer)
+                    .Include(m => m.Branch)
+                    .Where(m => !m.IsDeleted &&
+                                !_context.ShareAccounts.Any(s => s.MemberId == m.MemberID && s.TotalShareCount > 0));
+
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    query = query.Where(m => m.BranchID == branchId.Value);
+                }
+
+                var list = await query
+                    .OrderByDescending(m => m.MemberID)
+                    .Select(m => new
+                    {
+                        m.MemberID,
+                        m.MemberCode,
+                        m.CustomerID,
+                        CIFNo = m.Customer != null ? m.Customer.CIFNo : "",
+                        FullName = m.Customer != null
+                            ? $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Replace("  ", " ").Trim()
+                            : $"{m.FirstName} {m.MiddleName} {m.LastName}".Replace("  ", " ").Trim(),
+                        FirstName = m.Customer != null ? m.Customer.FirstName : m.FirstName,
+                        MiddleName = m.Customer != null ? m.Customer.MiddleName : m.MiddleName,
+                        LastName = m.Customer != null ? m.Customer.LastName : m.LastName,
+                        MobileNo = m.Customer != null ? m.Customer.MobileNo : m.MobileNo,
+                        Village = m.Customer != null ? m.Customer.Village : m.Village,
+                        m.JoiningDate,
+                        m.MembershipType,
+                        m.LegacyMemberNo,
+                        BranchName = m.Branch != null ? m.Branch.BranchName : ""
+                    })
+                    .ToListAsync();
+
+                return Ok(list);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "प्रलंबित अर्ज आणताना एरर आली.", error = ex.Message });
+            }
         }
 
         // POST: api/Members/clean-unallotted-codes
@@ -478,6 +528,41 @@ namespace Bhisi.Api.Controllers
 
             var (userId, username, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
 
+            var existingMember = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
+            if (existingMember == null)
+            {
+                return NotFound();
+            }
+
+            if (existingMember.Customer == null)
+            {
+                if (existingMember.CustomerID.HasValue && existingMember.CustomerID.Value > 0)
+                {
+                    existingMember.Customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == existingMember.CustomerID.Value);
+                }
+                if (existingMember.Customer == null)
+                {
+                    return BadRequest(new { message = "या सभासदासाठी लिंक केलेला खातेदार (Customer) सिस्टीममध्ये आढळला नाही. कृपया प्रथम ग्राहक नोंदणी करा." });
+                }
+            }
+
+            if (!isHeadOfficeAdmin)
+            {
+                if (existingMember.BranchID != userBranchId || member.BranchID != userBranchId)
+                {
+                    return StatusCode(403, new { message = "आपण केवळ आपल्या शाखेतील सभासदांची माहिती अद्ययावत करू शकता (Cross-Branch Edit Denied)." });
+                }
+                member.BranchID = userBranchId;
+            }
+
+            // Fill any missing KYC fields from existing customer
+            if (string.IsNullOrWhiteSpace(member.FirstName)) member.FirstName = existingMember.FirstName;
+            if (string.IsNullOrWhiteSpace(member.LastName)) member.LastName = existingMember.LastName;
+            if (string.IsNullOrWhiteSpace(member.MobileNo)) member.MobileNo = existingMember.MobileNo;
+            if (string.IsNullOrWhiteSpace(member.AadhaarNo)) member.AadhaarNo = existingMember.AadhaarNo;
+            if (string.IsNullOrWhiteSpace(member.PANNo)) member.PANNo = existingMember.PANNo;
+            if (string.IsNullOrWhiteSpace(member.CIFNo)) member.CIFNo = existingMember.CIFNo;
+
             // Validate required fields before saving
             var validationErrors = new List<string>();
             if (string.IsNullOrWhiteSpace(member.FirstName))
@@ -500,24 +585,24 @@ namespace Bhisi.Api.Controllers
 
             // Duplicate checks for other members
             member.LegacyMemberNo = string.IsNullOrWhiteSpace(member.LegacyMemberNo) ? null : member.LegacyMemberNo.Trim();
-            member.OldMemberCode = string.IsNullOrWhiteSpace(member.OldMemberCode) ? null : member.OldMemberCode.Trim();
 
-            var checkLegacyNo = member.LegacyMemberNo ?? member.OldMemberCode;
-            if (!string.IsNullOrWhiteSpace(checkLegacyNo))
+            if (!string.IsNullOrWhiteSpace(member.LegacyMemberNo))
             {
                 var existingLegacyMember = await _context.Members
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(m => m.MemberID != id && !m.IsDeleted && 
-                        (m.LegacyMemberNo == checkLegacyNo || m.OldMemberCode == checkLegacyNo));
+                    .FirstOrDefaultAsync(m => m.MemberID != id && !m.IsDeleted && m.LegacyMemberNo == member.LegacyMemberNo);
                 if (existingLegacyMember != null)
                 {
-                    return BadRequest(new { message = $"हा जुना सभासद आयडी ({checkLegacyNo}) आधीच सभासद '{existingLegacyMember.FirstName} {existingLegacyMember.LastName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा जुना सभासद आयडी ({member.LegacyMemberNo}) आधीच सभासद '{existingLegacyMember.FirstName} {existingLegacyMember.LastName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे." });
                 }
             }
 
+            // Exclude the current member's linked customer from duplicate checks
+            var currentCustomerIds = await _context.Members.Include(m => m.Customer).Where(m => m.MemberID == id && m.CustomerID.HasValue).Select(m => m.CustomerID!.Value).ToListAsync();
+
             if (!string.IsNullOrWhiteSpace(member.AadhaarNo))
             {
-                bool aadhaarExists = await _context.Members.AnyAsync(m => m.MemberID != id && m.AadhaarNo == member.AadhaarNo);
+                bool aadhaarExists = await _context.Customers.AnyAsync(c => !currentCustomerIds.Contains(c.CustomerID) && c.AadhaarNo == member.AadhaarNo);
                 if (aadhaarExists)
                 {
                     return BadRequest(new { message = $"हा आधार नंबर ({member.AadhaarNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
@@ -526,7 +611,7 @@ namespace Bhisi.Api.Controllers
 
             if (!string.IsNullOrWhiteSpace(member.PANNo))
             {
-                bool panExists = await _context.Members.AnyAsync(m => m.MemberID != id && m.PANNo == member.PANNo);
+                bool panExists = await _context.Customers.AnyAsync(c => !currentCustomerIds.Contains(c.CustomerID) && c.PANNo == member.PANNo);
                 if (panExists)
                 {
                     return BadRequest(new { message = $"हा पॅन नंबर ({member.PANNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
@@ -535,7 +620,7 @@ namespace Bhisi.Api.Controllers
 
             if (!string.IsNullOrWhiteSpace(member.MobileNo))
             {
-                bool mobileExists = await _context.Members.AnyAsync(m => m.MemberID != id && m.MobileNo == member.MobileNo);
+                bool mobileExists = await _context.Customers.AnyAsync(c => !currentCustomerIds.Contains(c.CustomerID) && c.MobileNo == member.MobileNo);
                 if (mobileExists)
                 {
                     return BadRequest(new { message = $"हा मोबाईल नंबर ({member.MobileNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
@@ -567,24 +652,8 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            var existingMember = await _context.Members.FindAsync(id);
-            if (existingMember == null)
-            {
-                return NotFound();
-            }
-
-            if (!isHeadOfficeAdmin)
-            {
-                if (existingMember.BranchID != userBranchId || member.BranchID != userBranchId)
-                {
-                    return StatusCode(403, new { message = "आपण केवळ आपल्या शाखेतील सभासदांची माहिती अद्ययावत करू शकता (Cross-Branch Edit Denied)." });
-                }
-                member.BranchID = userBranchId;
-            }
-
             existingMember.BranchID = member.BranchID;
-            existingMember.OldMemberCode = member.OldMemberCode ?? member.LegacyMemberNo;
-            existingMember.LegacyMemberNo = member.LegacyMemberNo ?? member.OldMemberCode;
+            existingMember.LegacyMemberNo = member.LegacyMemberNo;
             existingMember.FirstName = member.FirstName;
             existingMember.MiddleName = member.MiddleName;
             existingMember.LastName = member.LastName;
@@ -612,7 +681,7 @@ namespace Bhisi.Api.Controllers
             existingMember.SignaturePath = member.SignaturePath;
             if (!string.IsNullOrWhiteSpace(member.CIFNo) && member.CIFNo != existingMember.CIFNo)
             {
-                bool cifExists = await _context.Members.IgnoreQueryFilters().AnyAsync(m => m.MemberID != id && m.CIFNo == member.CIFNo);
+                bool cifExists = await _context.Customers.IgnoreQueryFilters().AnyAsync(c => !currentCustomerIds.Contains(c.CustomerID) && c.CIFNo == member.CIFNo);
                 if (cifExists)
                 {
                     return BadRequest(new { message = $"हा CIF क्रमांक ({member.CIFNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
@@ -694,6 +763,40 @@ namespace Bhisi.Api.Controllers
                 member.BranchID = userBranchId;
             }
 
+            // Disconnect navigation entities to prevent EF Core from attempting cascading insertions
+            member.Branch = null;
+            member.Employer = null;
+            member.BranchID = member.BranchID > 0 ? member.BranchID : (userBranchId > 0 ? userBranchId : 1);
+
+            Customer? customer = null;
+            if (member.CustomerID.HasValue && member.CustomerID.Value > 0)
+            {
+                customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == member.CustomerID.Value);
+                if (customer == null)
+                {
+                    return BadRequest(new { message = $"दिलेला खातेदार आयडी ({member.CustomerID}) आढळला नाही." });
+                }
+
+                var existingMemberForCust = await _context.Members
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(m => !m.IsDeleted && m.CustomerID == customer.CustomerID);
+                if (existingMemberForCust != null)
+                {
+                    return BadRequest(new { message = $"हा खातेदार ({customer.FirstName} {customer.LastName}) आधीच सभासद कोड '{existingMemberForCust.MemberCode ?? existingMemberForCust.MemberID.ToString()}' ला जोडलेला आहे." });
+                }
+
+                // Auto-fill KYC fields from customer if omitted in member payload
+                if (string.IsNullOrWhiteSpace(member.FirstName)) member.FirstName = customer.FirstName;
+                if (string.IsNullOrWhiteSpace(member.LastName)) member.LastName = customer.LastName;
+                if (string.IsNullOrWhiteSpace(member.MiddleName)) member.MiddleName = customer.MiddleName;
+                if (string.IsNullOrWhiteSpace(member.MobileNo)) member.MobileNo = customer.MobileNo;
+                if (string.IsNullOrWhiteSpace(member.AadhaarNo)) member.AadhaarNo = customer.AadhaarNo;
+                if (string.IsNullOrWhiteSpace(member.PANNo)) member.PANNo = customer.PANNo;
+                if (string.IsNullOrWhiteSpace(member.CIFNo)) member.CIFNo = customer.CIFNo;
+                if (string.IsNullOrWhiteSpace(member.Address)) member.Address = customer.Address;
+                if (string.IsNullOrWhiteSpace(member.Village)) member.Village = customer.Village;
+            }
+
             // Validate required fields before saving
             var validationErrors = new List<string>();
             if (string.IsNullOrWhiteSpace(member.FirstName))
@@ -716,24 +819,23 @@ namespace Bhisi.Api.Controllers
 
             // Duplicate checks for Member
             member.LegacyMemberNo = string.IsNullOrWhiteSpace(member.LegacyMemberNo) ? null : member.LegacyMemberNo.Trim();
-            member.OldMemberCode = string.IsNullOrWhiteSpace(member.OldMemberCode) ? null : member.OldMemberCode.Trim();
 
-            var checkLegacyNo = member.LegacyMemberNo ?? member.OldMemberCode;
-            if (!string.IsNullOrWhiteSpace(checkLegacyNo))
+            if (!string.IsNullOrWhiteSpace(member.LegacyMemberNo))
             {
                 var existingLegacyMember = await _context.Members
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(m => !m.IsDeleted && 
-                        (m.LegacyMemberNo == checkLegacyNo || m.OldMemberCode == checkLegacyNo));
+                    .FirstOrDefaultAsync(m => !m.IsDeleted && m.LegacyMemberNo == member.LegacyMemberNo);
                 if (existingLegacyMember != null)
                 {
-                    return BadRequest(new { message = $"हा जुना सभासद आयडी ({checkLegacyNo}) आधीच सभासद '{existingLegacyMember.FirstName} {existingLegacyMember.LastName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा जुना सभासद आयडी ({member.LegacyMemberNo}) आधीच सभासद '{existingLegacyMember.FirstName} {existingLegacyMember.LastName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे." });
                 }
             }
 
+            int currentCustId = customer?.CustomerID ?? 0;
+
             if (!string.IsNullOrWhiteSpace(member.AadhaarNo))
             {
-                bool aadhaarExists = await _context.Members.AnyAsync(m => m.AadhaarNo == member.AadhaarNo);
+                bool aadhaarExists = await _context.Customers.AnyAsync(c => c.CustomerID != currentCustId && c.AadhaarNo == member.AadhaarNo);
                 if (aadhaarExists)
                 {
                     return BadRequest(new { message = $"हा आधार नंबर ({member.AadhaarNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
@@ -742,7 +844,7 @@ namespace Bhisi.Api.Controllers
 
             if (!string.IsNullOrWhiteSpace(member.PANNo))
             {
-                bool panExists = await _context.Members.AnyAsync(m => m.PANNo == member.PANNo);
+                bool panExists = await _context.Customers.AnyAsync(c => c.CustomerID != currentCustId && c.PANNo == member.PANNo);
                 if (panExists)
                 {
                     return BadRequest(new { message = $"हा पॅन नंबर ({member.PANNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
@@ -751,7 +853,7 @@ namespace Bhisi.Api.Controllers
 
             if (!string.IsNullOrWhiteSpace(member.MobileNo))
             {
-                bool mobileExists = await _context.Members.AnyAsync(m => m.MobileNo == member.MobileNo);
+                bool mobileExists = await _context.Customers.AnyAsync(c => c.CustomerID != currentCustId && c.MobileNo == member.MobileNo);
                 if (mobileExists)
                 {
                     return BadRequest(new { message = $"हा मोबाईल नंबर ({member.MobileNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
@@ -783,16 +885,13 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // Disconnect navigation entities to prevent EF Core from attempting cascading insertions
-            member.Branch = null;
-            member.Employer = null;
-            member.BranchID = member.BranchID > 0 ? member.BranchID : (userBranchId > 0 ? userBranchId : 1);
-
-            // Check CIF Uniqueness across entire database & Auto-Resolve Collisions
-            if (string.IsNullOrWhiteSpace(member.CIFNo) || await _context.Members.IgnoreQueryFilters().AnyAsync(m => m.CIFNo == member.CIFNo))
+            if (customer == null)
             {
-                member.CIFNo = await GenerateUniqueCifAsync();
+                return BadRequest(new { message = "सभासद नोंदणीसाठी प्रथम खातेदार निवडणे बंधनकारक आहे. नवीन खातेदार फक्त 'ग्राहक / खातेदार नोंदणी मास्टर' फॉर्ममधूनच नोंदवता येतो." });
             }
+
+            member.CustomerID = customer.CustomerID;
+            member.Customer = null;
 
             if (string.IsNullOrWhiteSpace(member.MemberCode))
             {
@@ -814,44 +913,21 @@ namespace Bhisi.Api.Controllers
             try
             {
                 await _context.SaveChangesAsync();
-                await LogAuditAsync("MEMBER_CREATE", member.MemberID.ToString(), $"नवीन सभासद नोंदणी: {member.FirstName} {member.LastName}, CIF: {member.CIFNo}");
+                member.Customer = customer;
+                await LogAuditAsync("MEMBER_CREATE", member.MemberID.ToString(), $"नवीन सभासद नोंदणी: {customer.FirstName} {customer.LastName}, CIF: {customer.CIFNo}");
             }
             catch (DbUpdateException ex)
             {
                 string detailedError = ex.InnerException?.Message ?? ex.Message;
-                if (detailedError.Contains("IX_Members_CIFNo"))
-                {
-                    try
-                    {
-                        _context.Entry(member).State = EntityState.Detached;
-                        member.CIFNo = await GenerateUniqueCifAsync();
-                        _context.Members.Add(member);
-                        await _context.SaveChangesAsync();
-                        await LogAuditAsync("MEMBER_CREATE", member.MemberID.ToString(), $"नवीन सभासद नोंदणी: {member.FirstName} {member.LastName}, CIF: {member.CIFNo}");
-                        return CreatedAtAction("GetMember", new { id = member.MemberID }, member);
-                    }
-                    catch (Exception retryEx)
-                    {
-                        return BadRequest(new { message = "खातेदार सेव्ह करताना डेटाबेस त्रुटी आली: " + (retryEx.InnerException?.Message ?? retryEx.Message) });
-                    }
-                }
                 if (detailedError.Contains("IX_Members_MemberCode"))
                 {
                     return BadRequest(new { message = "हा सभासद नंबर (MemberCode) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
-                }
-                if (detailedError.Contains("IX_Members_AadhaarNo"))
-                {
-                    return BadRequest(new { message = "हा आधार नंबर आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
-                }
-                if (detailedError.Contains("IX_Members_PANNo"))
-                {
-                    return BadRequest(new { message = "हा पॅन नंबर आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
                 if (detailedError.Contains("truncated") || detailedError.Contains("String or binary data"))
                 {
                     return BadRequest(new { message = "माहितीची लांबी डेटाबेसच्या मर्यादेपेक्षा जास्त आहे (Data truncation error).", error = detailedError });
                 }
-                return BadRequest(new { message = "खातेदार सेव्ह करताना त्रुटी आली: " + detailedError });
+                return BadRequest(new { message = "सभासद सेव्ह करताना त्रुटी आली: " + detailedError });
             }
 
             return CreatedAtAction("GetMember", new { id = member.MemberID }, member);
@@ -862,7 +938,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> DeleteMember(int id)
         {
             var (userId, username, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-            var member = await _context.Members.FindAsync(id);
+            var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
             if (member == null)
             {
                 return NotFound();
@@ -875,7 +951,7 @@ namespace Bhisi.Api.Controllers
 
             // Comprehensive active accounts & dependency check
             bool hasActiveLoans = await _context.LoanAccounts.AnyAsync(l => (l.MemberID == id || l.CoMemberID == id || l.CoMember2ID == id || l.Guarantor1MemberID == id || l.Guarantor2MemberID == id) && l.Status != "Closed");
-            bool hasActiveSavings = await _context.SavingAccountMasters.AnyAsync(s => s.MemberID == id && s.Status != "Closed");
+            bool hasActiveSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID && s.Status != "Closed");
             bool hasActiveFds = await _context.FdAccounts.AnyAsync(f => f.MemberID == id && f.Status == "Active");
             bool hasActiveRds = await _context.RdAccounts.AnyAsync(r => r.MemberID == id && r.Status == "Active");
             bool hasActivePigmies = await _context.PigmyAccounts.AnyAsync(p => p.MemberID == id && p.Status == "Active");
@@ -967,16 +1043,16 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}/ClosureInfo")]
         public async Task<IActionResult> GetClosureInfo(int id)
         {
-            var member = await _context.Members.FindAsync(id);
+            var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
             if (member == null) return NotFound("Member not found.");
 
             var loanBalance = await _context.LoanAccounts
                 .Where(l => l.MemberID == id && l.Status != "Closed")
                 .SumAsync(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
 
-            var savingBalance = await _context.SavingAccountMasters
-                .Where(s => s.MemberID == id && s.Status != "Closed")
-                .SumAsync(s => s.CurrentBalance);
+            var savingBalance = member.CustomerID != null
+                ? await _context.SavingAccountMasters.Where(s => s.CustomerID == member.CustomerID && s.Status != "Closed").SumAsync(s => (decimal?)s.CurrentBalance) ?? 0
+                : 0;
 
             var fdBalance = await _context.FdAccounts
                 .Where(f => f.MemberID == id && f.Status == "Active")
@@ -1054,7 +1130,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 var (userId, username, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-                var member = await _context.Members.FindAsync(id);
+                var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
                 if (member == null) return NotFound("Member not found.");
                 if (member.Status == "Closed") return BadRequest("Member is already closed.");
 
@@ -1065,7 +1141,7 @@ namespace Bhisi.Api.Controllers
 
                 // Re-verify balances
                 var hasActiveLoans = await _context.LoanAccounts.AnyAsync(l => l.MemberID == id && l.Status != "Closed" && (l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance) > 0);
-                var hasActiveSavings = await _context.SavingAccountMasters.AnyAsync(s => s.MemberID == id && s.Status != "Closed" && s.CurrentBalance > 0);
+                var hasActiveSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID && s.Status != "Closed" && s.CurrentBalance > 0);
                 var hasActiveFds = await _context.FdAccounts.AnyAsync(f => f.MemberID == id && f.Status == "Active");
                 var hasActiveRds = await _context.RdAccounts.AnyAsync(r => r.MemberID == id && r.Status == "Active");
                 var hasActivePigmies = await _context.PigmyAccounts.AnyAsync(p => p.MemberID == id && p.Status == "Active");
@@ -1154,7 +1230,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetDeceasedClaimInfo(int id)
         {
             var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-            var member = await _context.Members.FindAsync(id);
+            var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
             if (member == null) return NotFound("Member not found.");
 
             if (!isHeadOfficeAdmin && member.BranchID != userBranchId)
@@ -1162,9 +1238,9 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(403, new { message = "आपल्याला इतर शाखेतील मयत सभासदाची माहिती पाहण्याची परवानगी नाही." });
             }
 
-            var savingsBalance = await _context.SavingAccountMasters
-                .Where(s => s.MemberID == id && s.Status != "Closed")
-                .SumAsync(s => s.CurrentBalance);
+            var savingsBalance = member.CustomerID != null
+                ? await _context.SavingAccountMasters.Where(s => s.CustomerID == member.CustomerID && s.Status != "Closed").SumAsync(s => (decimal?)s.CurrentBalance) ?? 0
+                : 0;
 
             var fdBalance = await _context.FdAccounts
                 .Where(f => f.MemberID == id && f.Status == "Active")
@@ -1245,7 +1321,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 var (userId, username, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
-                var member = await _context.Members.FindAsync(id);
+                var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
                 if (member == null) return NotFound("Member not found.");
 
                 if (!isHeadOfficeAdmin && member.BranchID != userBranchId)
@@ -1258,9 +1334,9 @@ namespace Bhisi.Api.Controllers
                     .Where(l => l.MemberID == id && l.Status != "Closed")
                     .SumAsync(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
 
-                var savingsBalance = await _context.SavingAccountMasters
-                    .Where(s => s.MemberID == id && s.Status != "Closed")
-                    .SumAsync(s => s.CurrentBalance);
+                var savingsBalance = member.CustomerID != null
+                    ? await _context.SavingAccountMasters.Where(s => s.CustomerID == member.CustomerID && s.Status != "Closed").SumAsync(s => (decimal?)s.CurrentBalance) ?? 0
+                    : 0;
 
                 var fdBalance = await _context.FdAccounts
                     .Where(f => f.MemberID == id && f.Status == "Active")
@@ -1281,7 +1357,9 @@ namespace Bhisi.Api.Controllers
                 decimal netAmount = grossAmount - loanBalance;
 
                 // Close deposit accounts
-                var savings = await _context.SavingAccountMasters.Where(s => s.MemberID == id && s.Status != "Closed").ToListAsync();
+                var savings = member.CustomerID != null 
+                    ? await _context.SavingAccountMasters.Where(s => s.CustomerID == member.CustomerID && s.Status != "Closed").ToListAsync()
+                    : new List<SavingAccountMaster>();
                 foreach (var s in savings)
                 {
                     s.Status = "Closed";
@@ -1390,9 +1468,10 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Members/5/guarantor-summary
         [HttpGet("{id}/guarantor-summary")]
+        [HttpGet("{id}/summary")]
         public async Task<IActionResult> GetGuarantorSummary(int id)
         {
-            var member = await _context.Members.FindAsync(id);
+            var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
             if (member == null)
             {
                 return NotFound();
@@ -1427,7 +1506,9 @@ namespace Bhisi.Api.Controllers
 
             var sharesCount = await _context.ShareAccounts.Where(s => s.MemberId == id).SumAsync(s => (int?)s.TotalShareCount) ?? 0;
             var sharesBalance = await _context.ShareAccounts.Where(s => s.MemberId == id).SumAsync(s => (decimal?)s.TotalShareAmount) ?? 0;
-            var savingsBalance = await _context.SavingAccountMasters.Where(s => s.MemberID == id && s.Status == "Active").SumAsync(s => (decimal?)s.CurrentBalance) ?? 0;
+            var savingsBalance = member.CustomerID != null
+                ? await _context.SavingAccountMasters.Where(s => s.CustomerID == member.CustomerID && s.Status == "Active").SumAsync(s => (decimal?)s.CurrentBalance) ?? 0
+                : 0;
 
             var ownActiveLoans = await _context.LoanAccounts
                 .Include(l => l.Member)
@@ -1544,7 +1625,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}/director-recommendation-summary")]
         public async Task<IActionResult> GetDirectorRecommendationSummary(int id)
         {
-            var director = await _context.Members.FindAsync(id);
+            var director = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
             if (director == null)
             {
                 return NotFound();

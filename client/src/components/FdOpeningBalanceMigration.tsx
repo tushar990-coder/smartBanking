@@ -29,6 +29,9 @@ interface FdScheme {
   fdSchemeID: number;
   schemeName: string;
   interestRate: number;
+  durationMonths?: number;
+  interestType?: string;
+  interestCompoundingFrequency?: string;
 }
 
 interface FdAccountRecord {
@@ -48,6 +51,7 @@ interface FdAccountRecord {
   maturityAmount: number;
   isLegacyAccount: boolean;
   legacyAccruedInt: number;
+  lastInterestPostingDate?: string;
   status: string;
   nomineeName?: string;
   nomineeRelation?: string;
@@ -65,6 +69,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isManualMaturityEdited, setIsManualMaturityEdited] = useState(false);
+  const [isManualMaturityDateEdited, setIsManualMaturityDateEdited] = useState(false);
   const formContainerRef = useRef<HTMLDivElement>(null);
   const depositAmountInputRef = useRef<HTMLInputElement>(null);
 
@@ -81,6 +87,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     maturityDate: '',
     maturityAmount: 0,
     legacyAccruedInt: 0,
+    lastInterestPostingDate: '',
     nomineeName: '',
     nomineeRelation: '',
     remarks: '३१/०३/२०२६ पूर्वीचे चालू मुदत ठेव स्थलांतर',
@@ -98,11 +105,15 @@ const FdOpeningBalanceMigration: React.FC = () => {
     try {
       const response = await axios.get(`${API_URL}/FdAccounts/next-account-no/${bId}`);
       if (response.data) {
-        const nextNo = typeof response.data === 'string' ? response.data : response.data.toString();
-        setFormData((prev) => ({
-          ...prev,
-          accountNo: nextNo
-        }));
+        const nextNo = typeof response.data === 'string'
+          ? response.data
+          : (response.data.accountNo || response.data.nextAccountNo || response.data.receiptNo || '');
+        if (nextNo) {
+          setFormData((prev) => ({
+            ...prev,
+            accountNo: nextNo
+          }));
+        }
       }
     } catch (err) {
       console.error('Error fetching next receipt number', err);
@@ -153,13 +164,108 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
   const getSchemeId = (s: any) => s?.fdSchemeID ?? s?.fdSchemeId ?? s?.FdSchemeID ?? 0;
 
+  // [RULE-FD-010] Calendar and leap-year safe maturity date calculation (Timezone-safe)
+  const calculateMaturityDate = (opDateStr: string, months: number): string => {
+    if (!opDateStr || !months || months <= 0) return '';
+    const parts = opDateStr.split('-');
+    if (parts.length !== 3) return '';
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10); // 1 to 12
+    const day = parseInt(parts[2], 10);
+
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return '';
+
+    const totalMonths = year * 12 + (month - 1) + months;
+    const targetYear = Math.floor(totalMonths / 12);
+    const targetMonth = (totalMonths % 12) + 1; // 1 to 12
+
+    // Find last day of target month to prevent overflow (e.g., Jan 31 + 1 month -> Feb 28 or 29)
+    const maxDaysInTargetMonth = new Date(targetYear, targetMonth, 0).getDate();
+    const targetDay = Math.min(day, maxDaysInTargetMonth);
+
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    return `${targetYear}-${pad(targetMonth)}-${pad(targetDay)}`;
+  };
+
+  // [RULE-FD-009] Scheme-specific maturity amount auto-calculation
+  const calculateMaturityAmount = (
+    p: number,
+    r: number,
+    opDateStr: string,
+    matDateStr: string,
+    scheme?: FdScheme
+  ): number => {
+    if (!p || p <= 0) return 0;
+    if (!r || r <= 0) return Math.round(p);
+
+    let months = 0;
+    if (opDateStr && matDateStr) {
+      const d1 = new Date(opDateStr);
+      const d2 = new Date(matDateStr);
+      if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 > d1) {
+        const yearsDiff = d2.getFullYear() - d1.getFullYear();
+        months = yearsDiff * 12 + (d2.getMonth() - d1.getMonth());
+        const dayDiff = d2.getDate() - d1.getDate();
+        if (dayDiff !== 0) {
+          months += dayDiff / 30;
+        }
+      }
+    }
+
+    if (months <= 0 && scheme?.durationMonths) {
+      months = Number(scheme.durationMonths);
+    }
+
+    if (months <= 0) return Math.round(p);
+
+    const type = (scheme?.interestType || '').toLowerCase();
+
+    // 1. MIS / Monthly Interest: Maturity Amount = Principal (Interest already disbursed monthly)
+    if (type.includes('mis') || type.includes('monthly')) {
+      return Math.round(p);
+    }
+
+    const t = months / 12;
+
+    // 2. Cumulative / Damduppat / Reinvestment: Quarterly (or configured frequency) compounding
+    if (type.includes('cumulative') || type.includes('damduppat') || type.includes('चक्रवाढ') || (scheme?.schemeName || '').toLowerCase().includes('दाम')) {
+      let n = 4; // default Quarterly
+      const freq = (scheme?.interestCompoundingFrequency || '').toLowerCase();
+      if (freq.includes('half') || freq.includes('2')) n = 2;
+      if (freq.includes('year') || freq.includes('1')) n = 1;
+      if (freq.includes('month') || freq.includes('12')) n = 12;
+
+      const matAmt = p * Math.pow(1 + r / (n * 100), n * t);
+      return Math.round(matAmt);
+    }
+
+    // 3. Simple Interest / General Payout
+    const matAmt = p * (1 + (r * t) / 100);
+    return Math.round(matAmt);
+  };
+
   const handleSchemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const sId = parseInt(e.target.value, 10) || 0;
     const selected = schemes.find((s: any) => getSchemeId(s) === sId);
+    const newRate = selected ? Number(selected.interestRate) || 0 : 0;
+    const months = selected ? Number(selected.durationMonths) || 0 : 0;
+
+    let newMatDate = formData.maturityDate;
+    // [RULE-FD-010] If scheme has durationMonths and openingDate is present, auto-calculate maturity date
+    if (months > 0 && formData.openingDate && (!isManualMaturityDateEdited || !formData.maturityDate)) {
+      newMatDate = calculateMaturityDate(formData.openingDate, months);
+    }
+
+    const autoMat = !isManualMaturityEdited
+      ? calculateMaturityAmount(formData.depositAmount, newRate, formData.openingDate, newMatDate, selected)
+      : formData.maturityAmount;
+
     setFormData((prev) => ({
       ...prev,
       fdSchemeID: sId,
-      interestRate: selected ? selected.interestRate : 0,
+      interestRate: newRate,
+      maturityDate: newMatDate,
+      maturityAmount: autoMat,
     }));
   };
 
@@ -173,14 +279,118 @@ const FdOpeningBalanceMigration: React.FC = () => {
       fetchNextAccountNo(parsedVal as number);
     }
 
+    if (name === 'maturityAmount') {
+      setIsManualMaturityEdited(true);
+      setFormData((prev) => ({
+        ...prev,
+        maturityAmount: parsedVal as number
+      }));
+      return;
+    }
+
+    if (name === 'maturityDate') {
+      setIsManualMaturityDateEdited(true);
+      setFormData((prev) => {
+        const updated = {
+          ...prev,
+          maturityDate: value
+        };
+        // [RULE-FD-009] If user has not manually overridden maturityAmount, auto-calculate with new maturityDate
+        if (!isManualMaturityEdited) {
+          const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
+          updated.maturityAmount = calculateMaturityAmount(
+            Number(updated.depositAmount) || 0,
+            Number(updated.interestRate) || 0,
+            updated.openingDate,
+            value,
+            selected
+          );
+        }
+        return updated;
+      });
+      return;
+    }
+
+    setFormData((prev) => {
+      const updated = {
+        ...prev,
+        [name]: parsedVal,
+      };
+
+      // [RULE-FD-010] Auto-suggest maturityDate if openingDate entered/changed and scheme has durationMonths
+      if (name === 'openingDate' && parsedVal) {
+        const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
+        if (selected?.durationMonths) {
+          updated.maturityDate = calculateMaturityDate(parsedVal as string, selected.durationMonths);
+          setIsManualMaturityDateEdited(false);
+        }
+        // [RULE-FD-011] Auto-suggest lastInterestPostingDate to 31/03/2026 if opening date is before 01/04/2026
+        if (!updated.lastInterestPostingDate && (parsedVal as string) < '2026-04-01') {
+          updated.lastInterestPostingDate = '2026-03-31';
+        }
+      }
+
+      // If user has not manually overridden maturityAmount, auto-calculate
+      if (!isManualMaturityEdited && ['depositAmount', 'interestRate', 'openingDate', 'maturityDate'].includes(name)) {
+        const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
+        updated.maturityAmount = calculateMaturityAmount(
+          Number(updated.depositAmount) || 0,
+          Number(updated.interestRate) || 0,
+          updated.openingDate,
+          updated.maturityDate,
+          selected
+        );
+      }
+
+      return updated;
+    });
+  };
+
+  const handleRecalculateMaturity = () => {
+    const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
+    const autoMat = calculateMaturityAmount(
+      Number(formData.depositAmount) || 0,
+      Number(formData.interestRate) || 0,
+      formData.openingDate,
+      formData.maturityDate,
+      selected
+    );
     setFormData((prev) => ({
       ...prev,
-      [name]: parsedVal,
+      maturityAmount: autoMat
     }));
+    setIsManualMaturityEdited(false);
+  };
+
+  // [RULE-FD-010] Recalculate maturity date based on scheme duration
+  const handleRecalculateMaturityDate = () => {
+    const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
+    if (selected?.durationMonths && formData.openingDate) {
+      const autoMatDate = calculateMaturityDate(formData.openingDate, selected.durationMonths);
+      setFormData((prev) => {
+        const updated = {
+          ...prev,
+          maturityDate: autoMatDate
+        };
+        if (!isManualMaturityEdited) {
+          updated.maturityAmount = calculateMaturityAmount(
+            Number(updated.depositAmount) || 0,
+            Number(updated.interestRate) || 0,
+            updated.openingDate,
+            autoMatDate,
+            selected
+          );
+        }
+        return updated;
+      });
+      setIsManualMaturityDateEdited(false);
+    }
   };
 
   const resetForm = () => {
     setEditingAccountId(null);
+    setIsManualMaturityEdited(false);
+    setIsManualMaturityDateEdited(false);
     const bId = formData.branchID || 1;
     setFormData({
       branchID: bId,
@@ -193,6 +403,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       maturityDate: '',
       maturityAmount: 0,
       legacyAccruedInt: 0,
+      lastInterestPostingDate: '',
       nomineeName: '',
       nomineeRelation: '',
       remarks: '३१/०३/२०२६ पूर्वीचे चालू मुदत ठेव स्थलांतर',
@@ -204,6 +415,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
   const handleEdit = (acc: FdAccountRecord) => {
     setEditingAccountId(acc.fdAccountID);
+    setIsManualMaturityEdited(true); // Preserve recorded value from database
+    setIsManualMaturityDateEdited(true); // Preserve recorded maturity date from database
     setFormData({
       branchID: acc.branchID || 1,
       memberID: acc.memberID || 0,
@@ -215,6 +428,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       maturityDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : '',
       maturityAmount: acc.maturityAmount || 0,
       legacyAccruedInt: acc.legacyAccruedInt || 0,
+      lastInterestPostingDate: acc.lastInterestPostingDate ? acc.lastInterestPostingDate.split('T')[0] : '',
       nomineeName: acc.nomineeName || '',
       nomineeRelation: acc.nomineeRelation || '',
       remarks: acc.remarks || '३१/०३/२०२६ पूर्वीचे चालू मुदत ठेव स्थलांतर',
@@ -268,20 +482,69 @@ const FdOpeningBalanceMigration: React.FC = () => {
       setError('कृपया ठेव योजना निवडा.');
       return;
     }
+    if (!formData.openingDate) {
+      setError('कृपया ठेव तारीख (Opening Date) टाका.');
+      return;
+    }
+    if (!formData.maturityDate) {
+      setError('कृपया मुदतपूर्ती तारीख (Maturity Date) टाका.');
+      return;
+    }
+    if (new Date(formData.maturityDate) <= new Date(formData.openingDate)) {
+      setError('[RULE-FD-010] मुदतपूर्ती तारीख (Maturity Date) ही ठेव तारखेपेक्षा (Opening Date) पुढील असणे आवश्यक आहे.');
+      return;
+    }
+
+    const depAmt = Number(formData.depositAmount) || 0;
+    if (depAmt <= 0) {
+      setError('ठेव मुद्दल रक्कम ० पेक्षा जास्त असणे आवश्यक आहे.');
+      return;
+    }
+
+    const selectedScheme = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
+    let matAmt = Number(formData.maturityAmount) || 0;
+
+    // Fallback to auto-calculated if 0 or empty
+    if (matAmt <= 0) {
+      matAmt = calculateMaturityAmount(
+        depAmt,
+        Number(formData.interestRate) || 0,
+        formData.openingDate,
+        formData.maturityDate,
+        selectedScheme
+      );
+    }
+
+    // [RULE-FD-009] Validation: Maturity Amount cannot be less than Principal
+    const isMis = (selectedScheme?.interestType || '').toLowerCase().includes('mis');
+    if (!isMis && matAmt < depAmt) {
+      setError(`[RULE-FD-009] मुदतपूर्ती रक्कम (₹${matAmt}) ठेव मुद्दलापेक्षा (₹${depAmt}) कमी असू शकत नाही.`);
+      return;
+    }
+
+    // [RULE-FD-001] Customer-First: resolve CustomerID
+    const selectedCust = members.find((m: any) => (m.customerID || m.memberID) === Number(formData.memberID));
+    const resolvedCustId = Number(selectedCust?.customerID || selectedCust?.id || formData.memberID);
 
     setLoading(true);
     try {
+      const payload = {
+        ...formData,
+        customerID: resolvedCustId,
+        depositAmount: depAmt,
+        maturityAmount: matAmt,
+        isLegacyAccount: true,
+        status: 'Active'
+      };
+
       if (editingAccountId) {
-        const payload = {
+        await axios.put(`${API_URL}/FdAccounts/${editingAccountId}`, {
           fdAccountID: editingAccountId,
-          ...formData,
-          isLegacyAccount: true,
-          status: 'Active'
-        };
-        await axios.put(`${API_URL}/FdAccounts/${editingAccountId}`, payload);
+          ...payload
+        });
         setSuccess('मुदत ठेव खात्याची माहिती यशस्वीरित्या अपडेट झाली!');
       } else {
-        await axios.post(`${API_URL}/FdAccounts/Migrate`, formData);
+        await axios.post(`${API_URL}/FdAccounts/Migrate`, payload);
         setSuccess('जुन्या मुदत ठेव खात्याचे स्थलांतर यशस्वीरित्या झाले!');
       }
       resetForm();
@@ -304,6 +567,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       'ठेव मुद्दल (₹)': acc.depositAmount || 0,
       'व्याजदर (%)': `${acc.interestRate || 0}%`,
       'मुदतपूर्ती रक्कम (₹)': acc.maturityAmount || 0,
+      'शेवटची व्याज तारीख': acc.lastInterestPostingDate ? acc.lastInterestPostingDate.split('T')[0] : '-',
       'साचलेले जुने व्याज (₹)': acc.legacyAccruedInt || 0,
       'उघडल्याचा दिनांक': acc.openingDate ? acc.openingDate.split('T')[0] : '-',
       'मुदतपूर्ती दिनांक': acc.maturityDate ? acc.maturityDate.split('T')[0] : '-',
@@ -586,18 +850,57 @@ const FdOpeningBalanceMigration: React.FC = () => {
               </div>
 
               <div>
-                <label className={labelClass}>मुदतपूर्ती रक्कम (Maturity Amount ₹)</label>
-                <input
-                  type="number"
-                  name="maturityAmount"
-                  value={formData.maturityAmount}
-                  onChange={handleChange}
-                  className={`${inputClass} font-mono`}
-                />
+                <div className="flex justify-between items-center mb-0.5">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    मुदतपूर्ती रक्कम (Maturity ₹) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {isManualMaturityEdited ? (
+                      <span className="text-[9px] bg-amber-100 text-amber-900 px-1 py-0.2 rounded font-bold border border-amber-300" title="जुन्या छापील पावतीप्रमाणे मॅन्युअली बदललेले">
+                        ✏️ मॅन्युअल
+                      </span>
+                    ) : (
+                      <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold border border-emerald-300" title="सिस्टीमने आपोआप मोजलेले">
+                        ⚡ ऑटो
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleRecalculateMaturity}
+                      className="text-[10px] text-primary hover:text-primary-dark font-bold underline cursor-pointer flex items-center gap-0.5"
+                      title="सूत्राप्रमाणे पुन्हा स्वयं-गणना करा"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      <span>री-कॅल्क</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    name="maturityAmount"
+                    value={formData.maturityAmount || ''}
+                    onChange={handleChange}
+                    onFocus={(e) => e.target.select()}
+                    className={`${inputClass} font-mono font-bold ${
+                      isManualMaturityEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-blue-50/20'
+                    }`}
+                    placeholder="उदा. 65000"
+                    required
+                  />
+                </div>
+                {formData.maturityAmount > 0 && formData.depositAmount > 0 && (
+                  <p className="text-[9px] text-gray-500 mt-0.5 flex justify-between font-medium">
+                    <span>एकूण अंदाजित व्याज:</span>
+                    <span className="font-bold text-emerald-700 font-mono">
+                      +₹{Math.max(0, formData.maturityAmount - formData.depositAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </p>
+                )}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 border-t border-gray-200">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1.5 border-t border-gray-200">
               <div>
                 <label className={labelClass}>ठेव तारीख (Opening Date) <span className="text-red-500">*</span></label>
                 <input
@@ -611,14 +914,61 @@ const FdOpeningBalanceMigration: React.FC = () => {
               </div>
 
               <div>
-                <label className={labelClass}>मुदतपूर्ती तारीख (Maturity Date) <span className="text-red-500">*</span></label>
+                <div className="flex justify-between items-center mb-0.5">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    मुदतपूर्ती तारीख (Maturity Date) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {isManualMaturityDateEdited ? (
+                      <span className="text-[9px] bg-amber-100 text-amber-900 px-1 py-0.2 rounded font-bold border border-amber-300" title="मॅन्युअली बदललेली तारीख">
+                        ✏️ मॅन्युअल
+                      </span>
+                    ) : (
+                      <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold border border-emerald-300" title="योजनेनुसार आलेली तारीख">
+                        ⚡ योजनेनुसार {schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID)?.durationMonths ? `(${schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID)?.durationMonths} म.)` : ''}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleRecalculateMaturityDate}
+                      className="text-[10px] text-primary hover:text-primary-dark font-bold underline cursor-pointer flex items-center gap-0.5"
+                      title="योजनेच्या कालावधीप्रमाणे पुन्हा तारीख आणा"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      <span>री-कॅल्क</span>
+                    </button>
+                  </div>
+                </div>
                 <input
                   type="date"
                   name="maturityDate"
                   value={formData.maturityDate}
                   onChange={handleChange}
-                  className={inputClass}
+                  className={`${inputClass} font-mono font-bold ${
+                    isManualMaturityDateEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-blue-50/20'
+                  }`}
                   required
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-0.5">
+                  <label className={labelClass}>
+                    शेवटची व्याज तारीख (Last Int. Date)
+                  </label>
+                  {formData.lastInterestPostingDate && (
+                    <span className="text-[9px] bg-blue-100 text-blue-800 px-1 py-0.2 rounded font-bold border border-blue-300" title="नवीन वर्षात व्याज मोजण्याचा कट-ऑफ">
+                      कट-ऑफ
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="date"
+                  name="lastInterestPostingDate"
+                  value={formData.lastInterestPostingDate}
+                  onChange={handleChange}
+                  className={inputClass}
+                  title="जुन्या सॉफ्टवेअरमध्ये ज्या तारखेपर्यंत व्याज झाले होते ती तारीख (उदा. 31/03/2026)"
                 />
               </div>
 
@@ -781,6 +1131,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना नाव</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">ठेव मुद्दल (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर (%)</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">शेवटची व्याज तारीख</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">मुदतपूर्ती दिनांक</th>
                       <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
                     </tr>
@@ -825,6 +1176,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono">
                           {acc.interestRate}%
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-blue-700">
+                          {acc.lastInterestPostingDate ? acc.lastInterestPostingDate.split('T')[0] : '-'}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-gray-600">
                           {acc.maturityDate ? acc.maturityDate.split('T')[0] : '-'}

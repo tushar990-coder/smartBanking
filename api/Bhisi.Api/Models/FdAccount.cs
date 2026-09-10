@@ -62,6 +62,8 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal LegacyAccruedInt { get; set; } = 0;
 
+        public DateTime? LastInterestPostingDate { get; set; }
+
         // Legacy Mapping Fields for Migration
         public int? LegacyAccountId { get; set; }
 

@@ -366,14 +366,19 @@ namespace Bhisi.Api.Controllers
                         int? linkedMemberId = linkedMember?.MemberID;
 
                         // Debit Cash / Bank / SB Savings
+                        bool isDebitCustomerPersonal = (account.PaymentMode == "Transfer" || account.PaymentMode == "Savings") 
+                            && debitLedger.AccountType != "Cash In Hand" 
+                            && !debitLedger.LedgerName.Contains("रोख")
+                            && !debitLedger.LedgerName.ToLower().Contains("cash");
+
                         var debitDetail = new VoucherDetail
                         {
                             VoucherID = voucher.VoucherID,
                             LedgerID = debitLedger.LedgerID,
                             DrCr = "Dr",
                             Amount = account.DepositAmount,
-                            CustomerID = account.CustomerID,
-                            MemberID = linkedMemberId
+                            CustomerID = isDebitCustomerPersonal ? account.CustomerID : null,
+                            MemberID = isDebitCustomerPersonal ? linkedMemberId : null
                         };
 
                         // Credit FD Liability (Mapped Scheme Ledger)
@@ -421,6 +426,132 @@ namespace Bhisi.Api.Controllers
                 }
             }
         }
+
+        // DELETE: api/FdAccounts/5
+        [HttpDelete("{id}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> DeleteFdAccount(int id)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var account = await _context.FdAccounts
+                    .Include(a => a.Customer)
+                    .FirstOrDefaultAsync(a => a.FdAccountID == id);
+
+                if (account == null)
+                {
+                    return NotFound(new { message = "मुदत ठेव खाते सापडले नाही." });
+                }
+
+                string accountNo = account.AccountNo;
+                int branchId = account.BranchID;
+                decimal depositAmount = account.DepositAmount;
+                string customerName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() : "";
+
+                // 1. Delete linked Voucher and VoucherDetails (removes it completely from Voucher Passing)
+                string expectedVoucherNo = $"REC-FD-OP-{accountNo}";
+                var linkedVouchers = await _context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                    .Where(v => v.VoucherNo == expectedVoucherNo || (v.Narration != null && v.Narration.Contains(accountNo)))
+                    .ToListAsync();
+
+                foreach (var vch in linkedVouchers)
+                {
+                    if (vch.VoucherDetails != null && vch.VoucherDetails.Any())
+                    {
+                        _context.VoucherDetails.RemoveRange(vch.VoucherDetails);
+                    }
+                    _context.Vouchers.Remove(vch);
+                }
+
+                // 2. Refund Savings Account if PaymentMode was Transfer
+                if (account.PaymentMode == "Transfer" && account.SavingAccountID.HasValue && account.SavingAccountID.Value > 0)
+                {
+                    var sbAcc = await _context.SavingAccountMasters.FindAsync(account.SavingAccountID.Value);
+                    if (sbAcc != null)
+                    {
+                        sbAcc.CurrentBalance += depositAmount;
+
+                        var sbTx = await _context.SavingTransactions
+                            .Where(st => st.SavingAccountID == sbAcc.SavingAccountID && st.Narration != null && st.Narration.Contains(accountNo))
+                            .FirstOrDefaultAsync();
+
+                        if (sbTx != null)
+                        {
+                            _context.SavingTransactions.Remove(sbTx);
+                        }
+                    }
+                }
+
+                // 3. Remove all FdTransactions and FdInterestAccruals
+                var fdTxs = await _context.FdTransactions.Where(t => t.FdAccountID == id).ToListAsync();
+                if (fdTxs.Any()) _context.FdTransactions.RemoveRange(fdTxs);
+
+                var fdAccruals = await _context.FdInterestAccruals.Where(a => a.FdAccountID == id).ToListAsync();
+                if (fdAccruals.Any()) _context.FdInterestAccruals.RemoveRange(fdAccruals);
+
+                // 4. Remove FdAccount itself
+                _context.FdAccounts.Remove(account);
+                await _context.SaveChangesAsync();
+
+                // 5. Rollback FdAccountSequences by -1 (Sync to max remaining sequence in this branch)
+                var branchSeq = await _context.FdAccountSequences
+                    .FirstOrDefaultAsync(s => s.BranchID == branchId && s.ProductType == "FD");
+
+                int remainingMaxSeq = 0;
+                var remainingAccounts = await _context.FdAccounts
+                    .Where(f => f.BranchID == branchId)
+                    .Select(f => f.AccountNo)
+                    .ToListAsync();
+
+                foreach (var accStr in remainingAccounts)
+                {
+                    // Pattern: {Prefix}-{BranchID:D3}-FD-{SeqNo:D6}
+                    var lastDash = accStr.LastIndexOf('-');
+                    if (lastDash >= 0 && lastDash < accStr.Length - 1)
+                    {
+                        if (int.TryParse(accStr.Substring(lastDash + 1), out int parsedSeq))
+                        {
+                            if (parsedSeq > remainingMaxSeq) remainingMaxSeq = parsedSeq;
+                        }
+                    }
+                }
+
+                if (branchSeq != null)
+                {
+                    branchSeq.CurrentValue = remainingMaxSeq;
+                    await _context.SaveChangesAsync();
+                }
+
+                // 6. Record Audit Log
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    Action = "FD_OPENING_DIRECT_DELETED",
+                    EntityName = "FdAccount",
+                    EntityID = accountNo,
+                    Details = $"मुदत ठेव खाते {accountNo} (रक्कम: ₹{depositAmount:N2}, खातेदार: {customerName}) नवीन खाते फॉर्मवरून थेट डिलीट केले. व्हाउचर पासिंगमधून व्हाउचर हटवले आणि पावती अनुक्रमांक रोलबॅक करून {remainingMaxSeq} केला.",
+                    Timestamp = DateTime.Now,
+                    Status = "Success"
+                });
+                await _context.SaveChangesAsync();
+
+                await transaction.CommitAsync();
+
+                return Ok(new
+                {
+                    message = $"मुदत ठेव खाते '{accountNo}' आणि त्याचे पासिंग व्हाउचर यशस्वीरीत्या डिलीट झाले. पावती क्र. रोलबॅक झाला.",
+                    accountNo = accountNo,
+                    rolledBackSequence = remainingMaxSeq
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { message = $"खाते डिलीट करताना त्रुटी आली: {ex.Message}" });
+            }
+        }
+
 
         // POST: api/FdAccounts/BulkCreate (Create multiple split FD receipts sequentially)
         [HttpPost("BulkCreate")]
@@ -853,7 +984,9 @@ namespace Bhisi.Api.Controllers
                             .OrderByDescending(a => a.AccrualDate)
                             .FirstOrDefaultAsync();
 
-                        DateTime fromDate = lastAccrual?.AccrualDate ?? acc.OpeningDate;
+                        DateTime fromDate = lastAccrual?.AccrualDate 
+                            ?? acc.LastInterestPostingDate 
+                            ?? acc.OpeningDate;
                         int days = (accrualDate - fromDate).Days;
 
                         if (days <= 0) continue;
@@ -905,6 +1038,7 @@ namespace Bhisi.Api.Controllers
                                 IsPosted = true
                             };
                             _context.FdInterestAccruals.Add(log);
+                            acc.LastInterestPostingDate = accrualDate;
 
                             // Log Transaction Details
                             var tx = new FdTransaction
@@ -1525,6 +1659,7 @@ namespace Bhisi.Api.Controllers
             existing.MaturityDate = account.MaturityDate;
             existing.MaturityAmount = account.MaturityAmount;
             existing.LegacyAccruedInt = account.LegacyAccruedInt;
+            existing.LastInterestPostingDate = account.LastInterestPostingDate;
             if (account.NomineeName != null) existing.NomineeName = account.NomineeName;
             if (account.NomineeRelation != null) existing.NomineeRelation = account.NomineeRelation;
             if (account.Remarks != null) existing.Remarks = account.Remarks;
@@ -1540,97 +1675,8 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        // DELETE: api/FdAccounts/{id}
-        // फक्त Active आणि transaction नसलेले खाते delete करता येते (Only Active accounts with no transactions)
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteFdAccount(int id)
-        {
-            using (var transaction = await _context.Database.BeginTransactionAsync())
-            {
-                try
-                {
-                    var account = await _context.FdAccounts
-                        .FirstOrDefaultAsync(f => f.FdAccountID == id);
 
-                    if (account == null)
-                        return NotFound("मुदत ठेव खाते सापडले नाही.");
 
-                    // Safety: Only allow deletion of Active accounts
-                    if (account.Status != "Active")
-                        return BadRequest($"फक्त 'Active' स्थितीतील खाते delete करता येते. सध्याची स्थिती: {account.Status}");
-
-                    // Check transactions
-                    var transactions = await _context.FdTransactions.Where(t => t.FdAccountID == id).ToListAsync();
-                    if (account.IsLegacyAccount)
-                    {
-                        bool hasOtherTx = transactions.Any(t => t.TransactionType != "Opening" && t.TransactionType != "Accrual");
-                        if (hasOtherTx)
-                        {
-                            return BadRequest("या खात्यावर पुढील व्यवहार नोंद आहेत. खाते delete करता येत नाही.");
-                        }
-                        _context.FdTransactions.RemoveRange(transactions);
-                    }
-                    else
-                    {
-                        if (transactions.Any())
-                            return BadRequest("या खात्यावर व्यवहार (transactions) नोंद आहेत. खाते delete करता येत नाही.");
-                    }
-
-                    // Delete related opening voucher if it exists (JV-FD-OP-{AccountNo})
-                    var openingVoucherNo = $"JV-FD-OP-{account.AccountNo}";
-                    var openingVoucher = await _context.Vouchers
-                        .Include(v => v.VoucherDetails)
-                        .FirstOrDefaultAsync(v => v.VoucherNo == openingVoucherNo);
-
-                    if (openingVoucher != null)
-                    {
-                        _context.VoucherDetails.RemoveRange(openingVoucher.VoucherDetails);
-                        _context.Vouchers.Remove(openingVoucher);
-                    }
-
-                    // Delete related interest accruals
-                    var accruals = await _context.FdInterestAccruals
-                        .Where(a => a.FdAccountID == id)
-                        .ToListAsync();
-                    if (accruals.Any())
-                        _context.FdInterestAccruals.RemoveRange(accruals);
-
-                    // Recalculate remaining max sequence counter
-                    var seq = await _context.FdAccountSequences
-                        .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "FD");
-                    if (seq != null)
-                    {
-                        var remainingMaxSeq = await _context.FdAccounts
-                            .Where(a => a.BranchID == account.BranchID && a.FdAccountID != id)
-                            .Select(a => a.AccountNo)
-                            .ToListAsync();
-
-                        int maxNum = 0;
-                        foreach (var accNo in remainingMaxSeq)
-                        {
-                            var parts = accNo.Split('-');
-                            if (parts.Length > 0 && int.TryParse(parts.Last(), out int parsed))
-                            {
-                                if (parsed > maxNum) maxNum = parsed;
-                            }
-                        }
-                        seq.CurrentValue = maxNum;
-                        _context.FdAccountSequences.Update(seq);
-                    }
-
-                    _context.FdAccounts.Remove(account);
-                    await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
-
-                    return Ok(new { Message = $"मुदत ठेव खाते '{account.AccountNo}' यशस्वीरित्या delete केले." });
-                }
-                catch (Exception ex)
-                {
-                    await transaction.RollbackAsync();
-                    return BadRequest("Delete करताना त्रुटी आली: " + ex.Message);
-                }
-            }
-        }
 
         // DELETE: api/FdAccounts/ClearData (Clear all test FD records & reset sequences)
         [HttpDelete("ClearData")]
@@ -1708,7 +1754,9 @@ namespace Bhisi.Api.Controllers
                     .OrderByDescending(a => a.AccrualDate)
                     .FirstOrDefaultAsync();
 
-                DateTime fromDate = lastAccrual?.AccrualDate ?? acc.OpeningDate;
+                DateTime fromDate = lastAccrual?.AccrualDate 
+                    ?? acc.LastInterestPostingDate 
+                    ?? acc.OpeningDate;
                 int days = (req.AccrualDate - fromDate).Days;
                 if (days <= 0) days = 0;
 
@@ -1744,6 +1792,8 @@ namespace Bhisi.Api.Controllers
                     MemberCode = acc.Customer?.MemberProfile?.MemberCode ?? acc.Customer?.CIFNo ?? "",
                     SchemeName = acc.FdScheme?.SchemeName ?? "Standard Scheme",
                     OpeningDate = acc.OpeningDate,
+                    FromDate = fromDate,
+                    LastInterestPostingDate = acc.LastInterestPostingDate,
                     DepositAmount = acc.DepositAmount,
                     EffectivePrincipal = effectivePrincipal,
                     AlreadyAccruedInterest = alreadyAccrued,
@@ -1831,6 +1881,7 @@ namespace Bhisi.Api.Controllers
                             Amount = item.CalculatedInterest
                         };
                         _context.FdTransactions.Add(tx);
+                        acc.LastInterestPostingDate = req.AccrualDate;
                         postedCount++;
                     }
 
@@ -1995,6 +2046,8 @@ namespace Bhisi.Api.Controllers
         public string MemberCode { get; set; } = string.Empty;
         public string SchemeName { get; set; } = string.Empty;
         public DateTime OpeningDate { get; set; }
+        public DateTime FromDate { get; set; }
+        public DateTime? LastInterestPostingDate { get; set; }
         public decimal DepositAmount { get; set; }
         public decimal EffectivePrincipal { get; set; }
         public decimal AlreadyAccruedInterest { get; set; }

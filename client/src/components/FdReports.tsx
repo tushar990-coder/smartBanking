@@ -25,9 +25,42 @@ interface FdAccountReportRow {
   depositAmount: number;
   interestRate: number;
   maturityDate: string;
-  maturityAmount: number;
-  legacyAccruedInt: number;
+  maturityAmount?: number;
+  legacyAccruedInt?: number;
   status: string;
+}
+
+interface FdVoucherPassingRow {
+  voucherID: number;
+  voucherNo: string;
+  voucherDate: string;
+  branchName: string;
+  accountNo: string;
+  customerName: string;
+  customerCode: string;
+  transactionType: string;
+  typeBadge: string;
+  voucherType: string;
+  totalAmount: number;
+  status: string;
+  scrollNo?: number;
+  narration: string;
+  createdBy: string;
+  approvedBy: string;
+  approvedOn: string;
+}
+
+interface FdDeletedEntryRow {
+  logID: number;
+  deletedDate: string;
+  accountNo: string;
+  voucherNo: string;
+  deleteType: string;
+  typeBadge: string;
+  amount: number;
+  deletedBy: string;
+  rollbackInfo: string;
+  reasonOrDetails: string;
 }
 
 interface MemberOption {
@@ -131,6 +164,15 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
   const [branchID, setBranchID] = useState<number>(initialBranchId);
 
   const [data, setData] = useState<FdAccountReportRow[]>([]);
+  const [voucherPassingData, setVoucherPassingData] = useState<FdVoucherPassingRow[]>([]);
+  const [deletedEntriesData, setDeletedEntriesData] = useState<FdDeletedEntryRow[]>([]);
+  const [fromDate, setFromDate] = useState<string>(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+  });
+  const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [voucherPassingStatus, setVoucherPassingStatus] = useState<string>('ALL');
+
   const [memberLedger, setMemberLedger] = useState<MemberLedgerData | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -183,19 +225,44 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
     } else if (reportType !== 'AccrualProvision') {
       fetchReportData();
     }
-  }, [reportType, branchID, selectedMemberID]);
+  }, [reportType, branchID, selectedMemberID, fromDate, toDate, voucherPassingStatus]);
 
   const fetchReportData = async () => {
     setLoading(true);
     try {
-      let endpoint = '/api/Reports/fd-register';
-      if (reportType === 'Outstanding') endpoint = '/api/Reports/fd-outstanding';
-      if (reportType === 'MaturityDue') endpoint = '/api/Reports/fd-maturity-due';
+      if (reportType === 'VoucherPassing') {
+        const res = await axios.get('/api/Reports/fd-voucher-passing', {
+          params: {
+            branchId: branchID > 0 ? branchID : undefined,
+            fromDate: fromDate || undefined,
+            toDate: toDate || undefined,
+            status: voucherPassingStatus !== 'ALL' ? voucherPassingStatus : undefined
+          }
+        });
+        setVoucherPassingData(res.data || []);
+      } else if (reportType === 'DeletedEntries') {
+        const res = await axios.get('/api/Reports/fd-deleted-entries', {
+          params: {
+            branchId: branchID > 0 ? branchID : undefined,
+            fromDate: fromDate || undefined,
+            toDate: toDate || undefined
+          }
+        });
+        setDeletedEntriesData(res.data || []);
+      } else {
+        let endpoint = '/api/Reports/fd-register';
+        if (reportType === 'Outstanding') endpoint = '/api/Reports/fd-outstanding';
+        if (reportType === 'MaturityDue') endpoint = '/api/Reports/fd-maturity-due';
 
-      const res = await axios.get(endpoint, {
-        params: { branchID: branchID > 0 ? branchID : undefined }
-      });
-      setData(res.data || []);
+        const res = await axios.get(endpoint, {
+          params: { 
+            branchID: branchID > 0 ? branchID : undefined,
+            fromDate: reportType === 'MaturityDue' ? fromDate : undefined,
+            toDate: reportType === 'MaturityDue' ? toDate : undefined
+          }
+        });
+        setData(res.data || []);
+      }
     } catch (err) {
       console.error('Error fetching FD report data', err);
     } finally {
@@ -231,8 +298,35 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
     );
   });
 
+  const filteredVoucherPassing = voucherPassingData.filter((r) => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase().trim();
+    return (
+      (r.voucherNo && r.voucherNo.toLowerCase().includes(term)) ||
+      (r.accountNo && r.accountNo.toLowerCase().includes(term)) ||
+      (r.customerName && r.customerName.toLowerCase().includes(term)) ||
+      (r.customerCode && r.customerCode.toLowerCase().includes(term)) ||
+      (r.transactionType && r.transactionType.toLowerCase().includes(term)) ||
+      (r.scrollNo && r.scrollNo.toString().includes(term))
+    );
+  });
+
+  const filteredDeletedEntries = deletedEntriesData.filter((r) => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase().trim();
+    return (
+      (r.accountNo && r.accountNo.toLowerCase().includes(term)) ||
+      (r.voucherNo && r.voucherNo.toLowerCase().includes(term)) ||
+      (r.deleteType && r.deleteType.toLowerCase().includes(term)) ||
+      (r.deletedBy && r.deletedBy.toLowerCase().includes(term)) ||
+      (r.reasonOrDetails && r.reasonOrDetails.toLowerCase().includes(term))
+    );
+  });
+
   const totalDepositSum = filteredData.reduce((s, r) => s + (r.depositAmount || 0), 0);
   const totalMaturitySum = filteredData.reduce((s, r) => s + (r.maturityAmount || 0), 0);
+  const totalVoucherPassingSum = filteredVoucherPassing.reduce((s, r) => s + (r.totalAmount || 0), 0);
+  const totalDeletedSum = filteredDeletedEntries.reduce((s, r) => s + (r.amount || 0), 0);
 
   const getReportTitle = () => {
     switch (reportType) {
@@ -240,11 +334,77 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
       case 'Outstanding': return 'मुदत ठेव बाकी अहवाल (FD Outstanding Report)';
       case 'MaturityDue': return 'मुदतपूर्ती देय अहवाल (FD Maturity Due Report)';
       case 'MemberLedger': return 'मुदत ठेव खातावणी विवरणपत्र (Member FD Ledger)';
+      case 'VoucherPassing': return 'मुदत ठेव व्हाउचर पासिंग अहवाल (FD Voucher Passing Report)';
+      case 'DeletedEntries': return 'मुदत ठेव थेट रद्द नोंदी व रोलबॅक अहवाल (FD Deleted Entries & Rollback Report)';
       default: return 'मुदत ठेव अहवाल (FD Report)';
     }
   };
 
   const handleExportExcel = () => {
+    if (reportType === 'VoucherPassing') {
+      if (filteredVoucherPassing.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
+      const rows = filteredVoucherPassing.map((r, i) => ({
+        'अ.क्र.': i + 1,
+        'व्हाउचर क्र.': r.voucherNo,
+        'दिनांक': formatDisplayDate(r.voucherDate),
+        'व्यवहार प्रकार': r.transactionType,
+        'FD पावती क्र.': r.accountNo || '-',
+        'खातेदाराचे नाव': r.customerName || '-',
+        'रक्कम (₹)': r.totalAmount,
+        'स्थिती': r.status === 'Approved' ? 'पास / मंजूर' : (r.status === 'Pending' ? 'प्रलंबित' : r.status),
+        'स्क्रॉल क्र.': r.scrollNo || '-',
+        'तपशील': r.narration
+      }));
+      rows.push({
+        'अ.क्र.': '' as any,
+        'व्हाउचर क्र.': '',
+        'दिनांक': '',
+        'व्यवहार प्रकार': '',
+        'FD पावती क्र.': '',
+        'खातेदाराचे नाव': 'एकूण बेरीज (Total):',
+        'रक्कम (₹)': totalVoucherPassingSum,
+        'स्थिती': '',
+        'स्क्रॉल क्र.': '',
+        'तपशील': ''
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'FD Voucher Passing');
+      XLSX.writeFile(wb, `FD_Voucher_Passing_${new Date().toISOString().split('T')[0]}.xlsx`);
+      return;
+    }
+
+    if (reportType === 'DeletedEntries') {
+      if (filteredDeletedEntries.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
+      const rows = filteredDeletedEntries.map((r, i) => ({
+        'अ.क्र.': i + 1,
+        'रद्द दिनांक & वेळ': r.deletedDate,
+        'रद्द नोंद प्रकार': r.deleteType,
+        'FD पावती क्र.': r.accountNo || '-',
+        'व्हाउचर क्र.': r.voucherNo || '-',
+        'रक्कम (₹)': r.amount,
+        'रद्दकर्ता': r.deletedBy,
+        'पावती क्र. रोलबॅक स्थिती': r.rollbackInfo,
+        'तपशील व कारण': r.reasonOrDetails
+      }));
+      rows.push({
+        'अ.क्र.': '' as any,
+        'रद्द दिनांक & वेळ': '',
+        'रद्द नोंद प्रकार': '',
+        'FD पावती क्र.': '',
+        'व्हाउचर क्र.': 'एकूण रक्कम बेरीज:',
+        'रक्कम (₹)': totalDeletedSum,
+        'रद्दकर्ता': '',
+        'पावती क्र. रोलबॅक स्थिती': '',
+        'तपशील व कारण': ''
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'FD Deleted Entries');
+      XLSX.writeFile(wb, `FD_Deleted_Entries_${new Date().toISOString().split('T')[0]}.xlsx`);
+      return;
+    }
+
     if (filteredData.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
     const excelRows = filteredData.map((row, i) => ({
       'अ.क्र.': i + 1,
@@ -350,7 +510,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
           <div className="flex flex-wrap items-center gap-1.5 flex-1 justify-end sm:justify-center">
             
             {/* Report Type */}
-            <div className="w-48 sm:w-56">
+            <div className="w-52 sm:w-60">
               <select
                 value={reportType}
                 onChange={(e) => setReportType(e.target.value)}
@@ -361,8 +521,48 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                 <option value="MaturityDue">३. मुदतपूर्ती देय अहवाल (Maturity Due)</option>
                 <option value="MemberLedger">४. मुदत ठेव खातावणी (Member Ledger)</option>
                 <option value="AccrualProvision">५. व्याज तरतूद (Interest Provision)</option>
+                <option value="VoucherPassing">६. मुदत ठेव व्हाउचर पासिंग अहवाल (Voucher Passing)</option>
+                <option value="DeletedEntries">७. मुदत ठेव रद्द नोंदी व रोलबॅक अहवाल (Deleted & Rollback)</option>
               </select>
             </div>
+
+            {/* Date Range for VoucherPassing, DeletedEntries, MaturityDue */}
+            {(reportType === 'VoucherPassing' || reportType === 'DeletedEntries' || reportType === 'MaturityDue') && (
+              <div className="flex items-center gap-1">
+                <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">तारीख:</label>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-medium bg-white focus:outline-none focus:border-primary w-28"
+                  title="या तारखेपासून"
+                />
+                <span className="text-gray-400 text-xs">-</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-medium bg-white focus:outline-none focus:border-primary w-28"
+                  title="या तारखेपर्यंत"
+                />
+              </div>
+            )}
+
+            {/* Status filter for VoucherPassing */}
+            {reportType === 'VoucherPassing' && (
+              <div className="flex items-center gap-1">
+                <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">स्थिती:</label>
+                <select
+                  value={voucherPassingStatus}
+                  onChange={(e) => setVoucherPassingStatus(e.target.value)}
+                  className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-medium bg-white focus:outline-none focus:border-primary w-24 sm:w-28"
+                >
+                  <option value="ALL">सर्व (All)</option>
+                  <option value="Pending">प्रलंबित (Pending)</option>
+                  <option value="Approved">मंजूर / पास (Passed)</option>
+                </select>
+              </div>
+            )}
 
             {/* Branch or Member selector */}
             {reportType === 'MemberLedger' ? (
@@ -414,8 +614,14 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 onClick={handleExportExcel}
-                disabled={filteredData.length === 0}
-                className={`h-6 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${filteredData.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={
+                  reportType === 'VoucherPassing'
+                    ? filteredVoucherPassing.length === 0
+                    : reportType === 'DeletedEntries'
+                    ? filteredDeletedEntries.length === 0
+                    : filteredData.length === 0
+                }
+                className={`h-6 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${(reportType === 'VoucherPassing' ? filteredVoucherPassing.length === 0 : (reportType === 'DeletedEntries' ? filteredDeletedEntries.length === 0 : filteredData.length === 0)) ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title="एक्सेल फाइल डाउनलोड करा"
               >
                 <FileSpreadsheet size={12} />
@@ -424,8 +630,14 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
 
               <button
                 onClick={handlePrint}
-                disabled={filteredData.length === 0 && !memberLedger}
-                className={`h-6 bg-slate-800 hover:bg-slate-900 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${(filteredData.length === 0 && !memberLedger) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={
+                  reportType === 'VoucherPassing'
+                    ? filteredVoucherPassing.length === 0
+                    : reportType === 'DeletedEntries'
+                    ? filteredDeletedEntries.length === 0
+                    : (filteredData.length === 0 && !memberLedger)
+                }
+                className={`h-6 bg-slate-800 hover:bg-slate-900 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${(reportType === 'VoucherPassing' ? filteredVoucherPassing.length === 0 : (reportType === 'DeletedEntries' ? filteredDeletedEntries.length === 0 : (filteredData.length === 0 && !memberLedger))) ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title="A4 प्रिंट काढा"
               >
                 <Printer size={12} />
@@ -443,7 +655,13 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
               <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="नाव, खाते क्र. किंवा योजना शोधा..."
+                placeholder={
+                  reportType === 'VoucherPassing'
+                    ? 'व्हाउचर नं, खाते क्र, नाव किंवा स्क्रॉल शोधा...'
+                    : reportType === 'DeletedEntries'
+                    ? 'खाते क्र, व्हाउचर नं, वापरकर्ता किंवा कारण शोधा...'
+                    : 'नाव, खाते क्र. किंवा योजना शोधा...'
+                }
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-6 pr-2 py-0.5 h-6 border border-gray-300 rounded-sm text-[11px] focus:outline-none focus:border-primary bg-gray-50/50 focus:bg-white"
@@ -451,12 +669,43 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
             </div>
 
             <div className="flex items-center gap-2 text-[11px] text-gray-600">
-              <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
-                एकूण खाती: <strong className="text-primary font-bold">{filteredData.length}</strong>
-              </span>
-              <span className="bg-emerald-50 px-2 py-0.5 rounded text-emerald-800 border border-emerald-200">
-                एकूण मुदत ठेव: <strong className="text-emerald-700 font-bold">₹ {fmtCurrency(totalDepositSum)}</strong>
-              </span>
+              {reportType === 'VoucherPassing' ? (
+                <>
+                  <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
+                    एकूण व्हाउचर्स: <strong className="text-primary font-bold">{filteredVoucherPassing.length}</strong>
+                  </span>
+                  <span className="bg-amber-50 px-2 py-0.5 rounded text-amber-800 border border-amber-200">
+                    प्रलंबित: <strong className="text-amber-700 font-bold">{filteredVoucherPassing.filter(v => v.status === 'Pending').length}</strong>
+                  </span>
+                  <span className="bg-emerald-50 px-2 py-0.5 rounded text-emerald-800 border border-emerald-200">
+                    एकूण उलाढाल: <strong className="text-emerald-700 font-bold">₹ {fmtCurrency(totalVoucherPassingSum)}</strong>
+                  </span>
+                </>
+              ) : reportType === 'DeletedEntries' ? (
+                <>
+                  <span className="bg-rose-50 px-2 py-0.5 rounded text-rose-800 border border-rose-200">
+                    एकूण रद्द नोंदी: <strong className="text-rose-700 font-bold">{filteredDeletedEntries.length}</strong>
+                  </span>
+                  <span className="bg-amber-50 px-2 py-0.5 rounded text-amber-800 border border-amber-200">
+                    ठेव अर्ज रद्द: <strong className="text-amber-700 font-bold">{filteredDeletedEntries.filter(d => d.typeBadge === 'ठेव अर्ज रद्द').length}</strong>
+                  </span>
+                  <span className="bg-purple-50 px-2 py-0.5 rounded text-purple-800 border border-purple-200">
+                    परतफेड रद्द: <strong className="text-purple-700 font-bold">{filteredDeletedEntries.filter(d => d.typeBadge === 'परतफेड रद्द').length}</strong>
+                  </span>
+                  <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
+                    रद्द रक्कम: <strong className="text-rose-700 font-bold">₹ {fmtCurrency(totalDeletedSum)}</strong>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
+                    एकूण खाती: <strong className="text-primary font-bold">{filteredData.length}</strong>
+                  </span>
+                  <span className="bg-emerald-50 px-2 py-0.5 rounded text-emerald-800 border border-emerald-200">
+                    एकूण मुदत ठेव: <strong className="text-emerald-700 font-bold">₹ {fmtCurrency(totalDepositSum)}</strong>
+                  </span>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -573,8 +822,151 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
               </div>
             )}
 
+            {/* FD Voucher Passing Table */}
+            {reportType === 'VoucherPassing' && (
+              <div className="overflow-x-auto mt-2">
+                <table className="w-full border-collapse border border-gray-900 text-xs">
+                  <thead>
+                    <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
+                      <th className="border border-gray-900 py-1.5 px-1 w-[4%] text-center">#</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-center font-mono">व्हाउचर क्र.</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[10%] text-center">तारीख</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-left">व्यवहार प्रकार</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[12%] text-center font-mono">FD पावती क्र.</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-left">खातेदाराचे नाव</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[13%] text-right font-extrabold">रक्कम (₹)</th>
+                      <th className="border border-gray-900 py-1.5 px-1 w-[6%] text-center font-mono">स्क्रॉल</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[9%] text-center">स्थिती</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={9} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                          व्हाउचर पासिंग माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
+                        </td>
+                      </tr>
+                    ) : filteredVoucherPassing.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                          निवडलेल्या फिल्टरनुसार कोणतेही मुदत ठेव व्हाउचर सापडले नाही.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredVoucherPassing.map((v, idx) => (
+                        <tr key={v.voucherID || idx} className="hover:bg-slate-50 text-gray-900 text-[11px]">
+                          <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-blue-900">{v.voucherNo}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(v.voucherDate)}</td>
+                          <td className="border border-gray-900 py-1 px-2">
+                            <span className="font-semibold">{v.transactionType}</span>
+                            {v.narration && <span className="block text-[10px] text-gray-500 truncate max-w-[200px]" title={v.narration}>{v.narration}</span>}
+                          </td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-800">{v.accountNo || '-'}</td>
+                          <td className="border border-gray-900 py-1 px-2 font-medium">{v.customerName || '-'}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-emerald-800">{fmtCurrency(v.totalAmount)}</td>
+                          <td className="border border-gray-900 py-1 px-1 text-center font-mono">{v.scrollNo || '-'}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center">
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${v.status === 'Approved' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300'}`}>
+                              {v.status === 'Approved' ? 'मंजूर' : (v.status === 'Pending' ? 'प्रलंबित' : v.status)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  {filteredVoucherPassing.length > 0 && (
+                    <tfoot>
+                      <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
+                        <td colSpan={6} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                          एकूण व्हाउचर रक्कम बेरीज (Total):
+                        </td>
+                        <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
+                          ₹ {fmtCurrency(totalVoucherPassingSum)}
+                        </td>
+                        <td colSpan={2} className="border border-gray-900 py-1.5 px-2 text-center"></td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            )}
+
+            {/* FD Deleted Entries & Rollback Table */}
+            {reportType === 'DeletedEntries' && (
+              <div className="overflow-x-auto mt-2">
+                <table className="w-full border-collapse border border-gray-900 text-xs">
+                  <thead>
+                    <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
+                      <th className="border border-gray-900 py-1.5 px-1 w-[4%] text-center">#</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[13%] text-center">रद्द दिनांक & वेळ</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-left">रद्द नोंद प्रकार</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[13%] text-center font-mono">FD पावती क्र.</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[13%] text-center font-mono">व्हाउचर क्र.</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[11%] text-right font-extrabold">रक्कम (₹)</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[9%] text-center">रद्दकर्ता</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[11%] text-center">पावती रोलबॅक</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[10%] text-left">तपशील / शेरा</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={9} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                          रद्द नोंदी माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
+                        </td>
+                      </tr>
+                    ) : filteredDeletedEntries.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                          कोणतीही थेट रद्द केलेली नोंद आढळली नाही.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredDeletedEntries.map((d, idx) => (
+                        <tr key={d.logID || idx} className="hover:bg-slate-50 text-gray-900 text-[11px]">
+                          <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono text-[10px]">{d.deletedDate}</td>
+                          <td className="border border-gray-900 py-1 px-2 font-semibold">
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${d.typeBadge === 'ठेव अर्ज रद्द' ? 'bg-rose-100 text-rose-800' : 'bg-purple-100 text-purple-800'}`}>
+                              {d.deleteType}
+                            </span>
+                          </td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-900">{d.accountNo || '-'}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-blue-900">{d.voucherNo || '-'}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-rose-800">{fmtCurrency(d.amount)}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-medium">{d.deletedBy}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center text-[10px]">
+                            <span className={`inline-block px-1.5 py-0.5 rounded font-bold ${d.rollbackInfo.includes('-१') ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-gray-100 text-gray-700'}`}>
+                              {d.rollbackInfo}
+                            </span>
+                          </td>
+                          <td className="border border-gray-900 py-1 px-2 text-[10px] text-gray-600 truncate max-w-[160px]" title={d.reasonOrDetails}>
+                            {d.reasonOrDetails}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  {filteredDeletedEntries.length > 0 && (
+                    <tfoot>
+                      <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
+                        <td colSpan={5} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                          एकूण रद्द रक्कम बेरीज (Total):
+                        </td>
+                        <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-rose-900 bg-rose-100/50">
+                          ₹ {fmtCurrency(totalDeletedSum)}
+                        </td>
+                        <td colSpan={3} className="border border-gray-900 py-1.5 px-2 text-center"></td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            )}
+
             {/* Standard FD Table (Register, Outstanding, Maturity Due) */}
-            {reportType !== 'MemberLedger' && (
+            {reportType !== 'MemberLedger' && reportType !== 'VoucherPassing' && reportType !== 'DeletedEntries' && (
               <div className="overflow-x-auto mt-2">
                 <table className="w-full border-collapse border border-gray-900 text-xs">
                   <thead>

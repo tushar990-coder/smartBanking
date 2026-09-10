@@ -950,7 +950,7 @@ const FdAccountOpening: React.FC = () => {
                     <th className="px-3 py-2 text-right">मुदतपूर्ती रक्कम (₹)</th>
                     <th className="px-3 py-2 text-center">तारीख</th>
                     <th className="px-3 py-2 text-center">स्थिती</th>
-                    <th className="px-3 py-2 text-center w-20">कारवाई</th>
+                    <th className="px-3 py-2 text-center w-32">कारवाई</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -975,13 +975,24 @@ const FdAccountOpening: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-3 py-1.5 text-center">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedPrintAccount(fd)}
-                            className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors"
-                          >
-                            🖨️ प्रिंट
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPrintAccount(fd)}
+                              className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors"
+                              title="पावती प्रिंट करा"
+                            >
+                              🖨️ प्रिंट
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirm({ id: fd.fdAccountID, accountNo: fd.accountNo })}
+                              className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer transition-colors shadow-xs"
+                              title="खाते व पासिंग व्हाउचर थेट डिलीट करा"
+                            >
+                              🗑️ डिलीट
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -996,19 +1007,22 @@ const FdAccountOpening: React.FC = () => {
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-5 max-w-sm w-full space-y-4 shadow-xl border border-gray-200">
-            <div className="flex items-center gap-3 text-red-600">
+          <div className="bg-white rounded-lg p-5 max-w-sm w-full space-y-3 shadow-xl border border-gray-200">
+            <div className="flex items-center gap-2.5 text-rose-600">
               <span className="text-2xl">⚠️</span>
-              <h3 className="font-bold text-base">खाते डिलीट करण्याची खात्री</h3>
+              <h3 className="font-bold text-sm">मुदत ठेव खाते थेट डिलीट करा</h3>
             </div>
-            <p className="text-xs text-gray-600 leading-relaxed">
-              तुम्हाला खरोखर मुदत ठेव खाते <strong>'{deleteConfirm.accountNo}'</strong> डिलीट करायचे आहे का?
+            <p className="text-xs text-gray-700 leading-relaxed">
+              तुम्हाला खरोखर मुदत ठेव खाते <strong className="font-mono text-rose-700">'{deleteConfirm.accountNo}'</strong> थेट डेटाबेसमधून डिलीट करायचे आहे का?
             </p>
-            <div className="flex justify-end gap-2 pt-2 border-t">
+            <div className="bg-amber-50 border border-amber-200 p-2 rounded text-[11px] text-amber-900 leading-relaxed">
+              ⚡ <strong>स्वयंचलित कृती:</strong> हे खाते डिलीट केल्यास <strong>व्हाउचर पासिंगमधून व्हाउचर हटवले जाईल</strong> आणि <strong>आरंभिक ठेव पावती क्र. -१ रोलबॅक</strong> होईल.
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-200">
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(null)}
-                className="px-3 py-1.5 text-xs font-bold border rounded text-gray-600 hover:bg-gray-100 cursor-pointer"
+                className="px-3 py-1.5 text-xs font-bold border border-gray-300 rounded text-gray-600 hover:bg-gray-100 cursor-pointer"
               >
                 रद्द करा
               </button>
@@ -1016,9 +1030,9 @@ const FdAccountOpening: React.FC = () => {
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="px-4 py-1.5 text-xs font-bold bg-red-600 text-white rounded hover:bg-red-700 shadow-sm cursor-pointer disabled:opacity-50"
+                className="px-4 py-1.5 text-xs font-bold bg-rose-600 text-white rounded hover:bg-rose-700 shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-1"
               >
-                {deleting ? 'डिलीट होत आहे...' : 'होय, डिलीट करा'}
+                {deleting ? 'डिलीट होत आहे...' : '🗑️ होय, थेट डिलीट करा'}
               </button>
             </div>
           </div>

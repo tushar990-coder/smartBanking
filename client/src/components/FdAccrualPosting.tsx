@@ -10,6 +10,8 @@ interface PreviewItem {
   memberCode: string;
   schemeName: string;
   openingDate: string;
+  fromDate?: string;
+  lastInterestPostingDate?: string;
   depositAmount: number;
   effectivePrincipal: number;
   alreadyAccruedInterest: number;
@@ -321,6 +323,7 @@ const FdAccrualPosting: React.FC = () => {
                   <th className="px-2.5 py-1.5 border-r border-gray-200 text-left">खातेदाराचे नाव & कोड</th>
                   <th className="px-2.5 py-1.5 border-r border-gray-200 text-left">ठेव योजना</th>
                   <th className="px-2 py-1.5 border-r border-gray-200 text-center">ठेव दि.</th>
+                  <th className="px-2 py-1.5 border-r border-gray-200 text-center" title="या तारखेपासून चालू व्याज मोजले जात आहे">व्याज सुरु दि.</th>
                   <th className="px-2.5 py-1.5 border-r border-gray-200 text-right">ठेव मुद्दल (₹)</th>
                   <th className="px-2.5 py-1.5 border-r border-gray-200 text-right">पूर्वी जमा व्याज (₹)</th>
                   <th className="px-2.5 py-1.5 border-r border-gray-200 text-right">मोजणी मुद्दल (₹)</th>
@@ -333,7 +336,7 @@ const FdAccrualPosting: React.FC = () => {
               <tbody className="divide-y divide-gray-200 bg-white text-xs">
                 {filteredItems.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="px-4 py-8 text-center text-gray-500 font-medium">
+                    <td colSpan={13} className="px-4 py-8 text-center text-gray-500 font-medium">
                       कोणतीही मुदत ठेव खाती सापडली नाहीत.
                     </td>
                   </tr>
@@ -366,6 +369,16 @@ const FdAccrualPosting: React.FC = () => {
                       </td>
                       <td className="px-2 py-1.5 border-r border-gray-100 text-center text-gray-600 text-[11px]">
                         {formatDate(item.openingDate)}
+                      </td>
+                      <td className="px-2 py-1.5 border-r border-gray-100 text-center text-[11px]">
+                        <span className="font-semibold text-blue-700">
+                          {formatDate(item.fromDate || item.openingDate)}
+                        </span>
+                        {item.lastInterestPostingDate && (
+                          <span className="block text-[9px] text-amber-700 font-bold bg-amber-50 rounded px-1 mt-0.5" title="मायग्रेशन शेवटची व्याज तारीख कट-ऑफ">
+                            मायग्रेशन कट-ऑफ
+                          </span>
+                        )}
                       </td>
                       <td className="px-2.5 py-1.5 border-r border-gray-100 text-right font-semibold text-gray-800">
                         ₹ {Math.round(item.depositAmount).toLocaleString('en-IN')}

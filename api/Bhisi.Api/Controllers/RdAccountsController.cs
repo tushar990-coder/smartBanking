@@ -558,6 +558,22 @@ namespace Bhisi.Api.Controllers
 
                 _context.RdAccounts.Remove(account);
                 await _context.SaveChangesAsync();
+
+                // If the deleted record was the highest/only RdAccountID, automatically decrement/reseed identity counter
+                try
+                {
+                    var maxRemainingId = await _context.RdAccounts.MaxAsync(r => (int?)r.RdAccountID) ?? 0;
+                    if (id >= maxRemainingId)
+                    {
+                        int reseedVal = maxRemainingId;
+                        await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('RdAccounts', RESEED, {reseedVal});");
+                    }
+                }
+                catch (Exception reseedEx)
+                {
+                    Console.WriteLine($"[WARNING] RdAccount reseed error: {reseedEx.Message}");
+                }
+
                 await transaction.CommitAsync();
 
                 return Ok(new { message = "आरडी खाते यशस्वीरीत्या डिलीट केले." });

@@ -38,6 +38,7 @@ import * as XLSX from 'xlsx';
 
 interface Member {
   memberID: number;
+  customerID?: number;
   firstName: string;
   middleName?: string;
   lastName: string;
@@ -134,8 +135,16 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
 
   // Form Inputs
   const [numberOfShares, setNumberOfShares] = useState<number | ''>('');
+  const [faceValue, setFaceValue] = useState<number>(100);
   const [transactionDate, setTransactionDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [narration, setNarration] = useState('');
+
+  // Live Auto-Calculations matching MemberMaster layout
+  const shareCapitalAmount = (Number(numberOfShares) || 0) * (faceValue || 100);
+  const hasShares = numberOfShares !== '' && Number(numberOfShares) > 0;
+  const autoFromShareNo = nextFromShareNo || 1;
+  const autoToShareNo = hasShares ? autoFromShareNo + Number(numberOfShares) - 1 : 0;
+  const autoCertificateNo = hasShares ? (nextCertNo || `CERT-${new Date().getFullYear()}-00001`) : '-';
 
   // Status & Feedback
   const [loading, setLoading] = useState(false);
@@ -280,6 +289,7 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
         if (!isMountedRef.current) return;
         if (data.nextCertificateNo) setNextCertNo(data.nextCertificateNo);
         if (data.nextFromShareNo) setNextFromShareNo(data.nextFromShareNo);
+        if (data.faceValue) setFaceValue(data.faceValue);
       }
     } catch (e) {
       if (isMountedRef.current) console.error(e);
@@ -461,6 +471,10 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
       memberId: selectedMemberId,
       numberOfShares: Number(numberOfShares),
       transactionDate: transactionDate,
+      faceValue: faceValue,
+      fromShareNo: autoFromShareNo,
+      toShareNo: autoToShareNo,
+      certificateNo: autoCertificateNo !== '-' ? autoCertificateNo : null,
       paymentMode: paymentMode,
       savingAccountId: paymentMode === 'Transfer' ? selectedSavingAccountId : null,
       bankLedgerId: paymentMode === 'Bank' ? selectedBankLedgerId : null,
@@ -856,12 +870,13 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 border-t border-gray-200">
+            {/* Row 1: Share Basic Allotment */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1.5 border-t border-gray-200">
               <div>
                 <label className={labelClass}>वाटप तारीख (Date) <span className="text-red-500">*</span></label>
                 <input 
                   type="date" 
-                  className={inputClass}
+                  className={`${inputClass} font-bold`}
                   value={transactionDate}
                   onChange={(e) => setTransactionDate(e.target.value)}
                   required
@@ -875,28 +890,79 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
                   type="number" 
                   min="1"
                   placeholder="उदा. 10"
-                  className={`${inputClass} font-bold font-mono text-primary`}
+                  className={`${inputClass} font-bold font-mono text-right text-primary`}
                   value={numberOfShares}
-                  onChange={(e) => setNumberOfShares(e.target.value === '' ? '' : parseInt(e.target.value) || '')}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0);
+                    setNumberOfShares(val);
+                  }}
                   required
+                />
+                <span className="text-[10px] text-slate-500 font-semibold">(@ ₹{faceValue}/शेअर)</span>
+              </div>
+
+              <div>
+                <label className={labelClass}>प्रति शेअर दर (Rate ₹)</label>
+                <input
+                  type="number"
+                  readOnly
+                  value={faceValue}
+                  className={`${inputClass} font-mono text-right bg-slate-50 cursor-not-allowed`}
                 />
               </div>
 
               <div>
-                <label className={labelClass}>एकूण देय रक्कम (Total Amount ₹)</label>
-                <div className="h-[28px] px-2 py-1 bg-emerald-50 border border-emerald-300 rounded-sm font-mono font-bold text-emerald-800 text-xs flex items-center justify-between">
-                  <span>₹{((typeof numberOfShares === 'number' ? numberOfShares : 0) * 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  <span className="text-[10px] font-medium text-gray-500">(@ ₹100/शेअर)</span>
-                </div>
+                <label className={labelClass}>शेअर्स रक्कम (Share Capital ₹)</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={`₹ ${shareCapitalAmount.toLocaleString('en-IN')}`}
+                  className={`${inputClass} font-mono font-bold text-emerald-800 bg-emerald-50 text-right cursor-not-allowed border-emerald-300`}
+                />
               </div>
             </div>
 
-            {typeof numberOfShares === 'number' && numberOfShares > 0 && (
-              <div className="text-[10px] text-primary font-bold font-mono bg-primary/5 p-1.5 rounded border border-primary/20 flex justify-between">
-                <span>शेअर प्रमाणपत्र क्र.: {nextCertNo}</span>
-                <span>शेअर नंबर श्रेणी: {nextFromShareNo} ते {nextFromShareNo + numberOfShares - 1}</span>
+            {/* Row 2: Auto-Calculated Share Range & Certificate No */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+              <div>
+                <label className={labelClass}>
+                  <span>शेअर्स नं. पासून (From Share No)</span>
+                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={hasShares ? autoFromShareNo : '-'}
+                  className={`${inputClass} font-mono font-bold bg-slate-50 text-slate-800 text-center cursor-not-allowed border-slate-300`}
+                />
               </div>
-            )}
+
+              <div>
+                <label className={labelClass}>
+                  <span>शेअर्स नं. पर्यंत (To Share No)</span>
+                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={hasShares ? autoToShareNo : '-'}
+                  className={`${inputClass} font-mono font-bold bg-slate-50 text-slate-800 text-center cursor-not-allowed border-slate-300`}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className={labelClass}>
+                  <span>सर्टिफिकेट नं. (Certificate No)</span>
+                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={hasShares ? autoCertificateNo : '-'}
+                  className={`${inputClass} font-mono font-bold bg-slate-50 text-primary text-center cursor-not-allowed border-slate-300`}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Section 2: Payment Details */}
@@ -953,7 +1019,10 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
                     <SearchableSelect 
                       options={allLedgers.map(l => ({ value: l.ledgerID.toString(), label: `${l.ledgerName} (₹${(l.currentBalance || 0).toFixed(0)})` }))}
                       value={selectedBankLedgerId ? selectedBankLedgerId.toString() : ''}
-                      onChange={(val: any) => setSelectedBankLedgerId(val ? parseInt(String(val)) : '')}
+                      onChange={(e: any) => {
+                        const val = e?.target ? e.target.value : e;
+                        setSelectedBankLedgerId(val ? parseInt(String(val), 10) : '');
+                      }}
                       placeholder="बँक निवडा..."
                     />
                   </div>
@@ -974,9 +1043,15 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
                 <div>
                   <label className={labelClass}>रक्कम वर्ग करण्यासाठी लेजर <span className="text-red-500">*</span></label>
                   <SearchableSelect 
-                    options={allLedgers.map(l => ({ value: l.ledgerID.toString(), label: `${l.ledgerName}` }))}
+                    options={allLedgers.map(l => ({ 
+                      value: l.ledgerID.toString(), 
+                      label: l.ledgerCode ? `${l.ledgerName} (${l.ledgerCode})` : l.ledgerName 
+                    }))}
                     value={selectedSourceLedgerId ? selectedSourceLedgerId.toString() : ''}
-                    onChange={(val: any) => setSelectedSourceLedgerId(val ? parseInt(String(val)) : '')}
+                    onChange={(e: any) => {
+                      const val = e?.target ? e.target.value : e;
+                      setSelectedSourceLedgerId(val ? parseInt(String(val), 10) : '');
+                    }}
                     placeholder="लेजर निवडा..."
                   />
                 </div>
@@ -1170,7 +1245,7 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
                             {t.voucherId && (
                               <button
                                 type="button"
-                                onClick={() => setPrintingVoucherId(t.voucherId)}
+                                onClick={() => setPrintingVoucherId(t.voucherId ?? null)}
                                 className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded text-[10px] font-bold border border-indigo-300 cursor-pointer transition-colors"
                                 title="जमा पावती / व्हाउचर प्रिंट करा"
                               >
@@ -1314,7 +1389,7 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
                           {t.voucherId && (
                             <button
                               type="button"
-                              onClick={() => setPrintingVoucherId(t.voucherId)}
+                              onClick={() => setPrintingVoucherId(t.voucherId ?? null)}
                               className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded text-[10px] font-bold border border-indigo-300 cursor-pointer transition-colors"
                               title="जमा पावती / व्हाउचर प्रिंट करा"
                             >

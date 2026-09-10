@@ -157,11 +157,12 @@ export default function SavingKhatavaniReport() {
   const accountOptions = filteredAccounts.map(a => {
     const id = a.savingAccountID || a.savingAccountId;
     const oldAcc = (a.oldAccountNo || a.legacyAccountNumber) ? ` (जुने: ${a.oldAccountNo || a.legacyAccountNumber})` : '';
-    const code = a.memberCode ? ` [${a.memberCode}]` : '';
+    const cif = a.cifNo ? ` [CIF: ${a.cifNo}]` : (a.memberCode ? ` [${a.memberCode}]` : '');
+    const name = a.customerName || a.memberName || '';
     const bal = ` - शिल्लक: ₹${(a.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     return {
       value: id ? id.toString() : '',
-      label: `${a.accountNo}${oldAcc}${code} - ${a.memberName || ''}${bal}`
+      label: `${a.accountNo}${oldAcc}${cif} - ${name}${bal}`
     };
   }).filter(o => o.value !== '');
 
@@ -217,7 +218,7 @@ export default function SavingKhatavaniReport() {
       <div>
         <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">खातेदाराचे नाव</span>
         <strong className="text-slate-900 text-[11px] truncate block">
-          {reportData.memberName} {reportData.memberCode ? `[${reportData.memberCode}]` : ''}
+          {reportData.customerName || reportData.memberName} {reportData.cifNo ? `[CIF: ${reportData.cifNo}]` : (reportData.memberCode ? `[${reportData.memberCode}]` : '')}
         </strong>
       </div>
       <div>

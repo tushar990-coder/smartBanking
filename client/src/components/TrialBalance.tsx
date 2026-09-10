@@ -163,7 +163,7 @@ export default function TrialBalance() {
   const [loading, setLoading] = useState(false);
   const [sansthaDetail, setSansthaDetail] = useState<any>(null);
   const [branches, setBranches] = useState<any[]>([]);
-  const [filterMode, setFilterMode] = useState<'active' | 'transactionsOnly' | 'all'>('transactionsOnly');
+  const [filterMode, setFilterMode] = useState<'active' | 'transactionsOnly' | 'all'>('active');
   const [viewMode, setViewMode] = useState<'flat' | 'tree'>('flat');
   const [searchTerm, setSearchTerm] = useState('');
   const reportRef = useRef<HTMLDivElement>(null);
@@ -252,8 +252,8 @@ export default function TrialBalance() {
       .map(node => {
         let keep = true;
         if (!node.isGroup) {
-          const hasTx = (node.totalDebit > 0 || node.totalCredit > 0);
-          const hasBal = (node.openingBalance > 0 || node.closingBalance > 0);
+          const hasTx = Math.abs(node.totalDebit) >= 0.01 || Math.abs(node.totalCredit) >= 0.01;
+          const hasBal = Math.abs(node.openingBalance) >= 0.01 || Math.abs(node.closingBalance) >= 0.01;
           if (filterMode === 'transactionsOnly') keep = hasTx;
           else if (filterMode === 'active') keep = (hasTx || hasBal);
           else if (filterMode === 'all') keep = true;
@@ -473,14 +473,14 @@ export default function TrialBalance() {
             </div>
 
             {/* Filter Mode */}
-            <div className="w-36">
+            <div className="w-auto min-w-[190px]">
               <select
                 value={filterMode}
                 onChange={(e: any) => setFilterMode(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-bold bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-full text-primary"
+                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-bold bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-full text-primary"
               >
-                <option value="transactionsOnly">फक्त व्यवहार झालेली खाती</option>
-                <option value="active">सक्रिय शिल्लक खाती</option>
+                <option value="active">● सक्रिय खाती (शिल्लक / व्यवहार असलेली)</option>
+                <option value="transactionsOnly">फक्त चालू कालावधीत व्यवहार झालेली खाती</option>
                 <option value="all">सर्व खाती (शून्य शिल्लकसह)</option>
               </select>
             </div>

@@ -68,12 +68,18 @@ export default function ShareTransferMaster() {
     fetchInitialData();
   }, []);
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem('token');
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+  };
+
   const fetchInitialData = async () => {
     setLoading(true);
     try {
+      const authHeaders = getAuthHeaders();
       const [resMembers, resHistory] = await Promise.all([
-        fetch('/api/Members'),
-        fetch('/api/ShareAccounts/TransferHistory')
+        fetch('/api/Members', { headers: authHeaders }),
+        fetch('/api/ShareAccounts/TransferHistory', { headers: authHeaders })
       ]);
 
       if (resMembers.ok) setMembers(await resMembers.json());
@@ -106,15 +112,25 @@ export default function ShareTransferMaster() {
 
   const loadFromMemberDetails = async (memberId: string) => {
     try {
-      const fromMem = fromMembers.find((m: any) => m.memberID?.toString() === memberId.toString());
+      const fromMem = members.find((m: any) => 
+        m.memberID?.toString() === memberId.toString() ||
+        m.customerID?.toString() === memberId.toString()
+      );
       const cId = fromMem?.customerID;
+      const resolvedMemberId = fromMem?.memberID ? fromMem.memberID.toString() : memberId;
+      const authHeaders = getAuthHeaders();
+
+      const shareUrl = cId
+        ? `/api/ShareAccounts/Member/${resolvedMemberId}?customerId=${cId}`
+        : `/api/ShareAccounts/Member/${resolvedMemberId}`;
+
       const savingUrl = cId
-        ? `/api/SavingAccounts?customerId=${cId}&memberId=${memberId}`
-        : `/api/SavingAccounts?memberId=${memberId}`;
+        ? `/api/SavingAccounts?customerId=${cId}&memberId=${resolvedMemberId}`
+        : `/api/SavingAccounts?memberId=${resolvedMemberId}`;
 
       const [resShare, resSaving] = await Promise.all([
-        fetch(`/api/ShareAccounts/Member/${memberId}`),
-        fetch(savingUrl)
+        fetch(shareUrl, { headers: authHeaders }),
+        fetch(savingUrl, { headers: authHeaders })
       ]);
 
       if (resShare.ok) {
@@ -130,7 +146,7 @@ export default function ShareTransferMaster() {
           const custId = s.customerID !== undefined ? s.customerID : s.customerId;
           const resMemId = s.resolvedMemberID;
           const stat = (s.status || '').toLowerCase();
-          const isOwner = (cId && custId === cId) || (mId === parseInt(memberId)) || (resMemId && resMemId === parseInt(memberId));
+          const isOwner = (cId && custId === cId) || (mId === parseInt(resolvedMemberId)) || (resMemId && resMemId === parseInt(resolvedMemberId));
           return isOwner && (stat === 'active' || stat === 'चालू' || stat === '');
         });
         setFromSavingAccounts(memberSaving);
@@ -148,7 +164,19 @@ export default function ShareTransferMaster() {
 
   const loadToMemberDetails = async (memberId: string) => {
     try {
-      const resShare = await fetch(`/api/ShareAccounts/Member/${memberId}`);
+      const toMem = members.find((m: any) => 
+        m.memberID?.toString() === memberId.toString() ||
+        m.customerID?.toString() === memberId.toString()
+      );
+      const cId = toMem?.customerID;
+      const resolvedMemberId = toMem?.memberID ? toMem.memberID.toString() : memberId;
+      const authHeaders = getAuthHeaders();
+
+      const shareUrl = cId
+        ? `/api/ShareAccounts/Member/${resolvedMemberId}?customerId=${cId}`
+        : `/api/ShareAccounts/Member/${resolvedMemberId}`;
+
+      const resShare = await fetch(shareUrl, { headers: authHeaders });
       if (resShare.ok) {
         setToShareAccount(await resShare.json());
       } else {
@@ -226,9 +254,10 @@ export default function ShareTransferMaster() {
         narration: narration.trim()
       };
 
+      const authHeaders = getAuthHeaders();
       const response = await fetch('/api/ShareAccounts/Transfer', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(payload)
       });
 
@@ -249,7 +278,7 @@ export default function ShareTransferMaster() {
         loadToMemberDetails(toMemberId);
         
         // Refresh history
-        const resHist = await fetch('/api/ShareAccounts/TransferHistory');
+        const resHist = await fetch('/api/ShareAccounts/TransferHistory', { headers: authHeaders });
         if (resHist.ok) setHistory(await resHist.json());
       } else {
         setMessage({ text: `हस्तांतरण अयशस्वी: ${data.message || data}`, type: 'error' });
@@ -268,14 +297,16 @@ export default function ShareTransferMaster() {
 
     try {
       setLoading(true);
+      const authHeaders = getAuthHeaders();
       const res = await fetch(`/api/ShareAccounts/CancelTransfer/${item.transactionId}`, {
-        method: 'POST'
+        method: 'POST',
+        headers: authHeaders
       });
       const data = await res.json();
       if (res.ok) {
         setMessage({ text: `✅ ${data.message || 'हस्तांतरण यशस्वीरित्या रद्द करण्यात आले!'}`, type: 'success' });
         // Refresh history
-        const resHist = await fetch('/api/ShareAccounts/TransferHistory');
+        const resHist = await fetch('/api/ShareAccounts/TransferHistory', { headers: authHeaders });
         if (resHist.ok) setHistory(await resHist.json());
 
         // Refresh selected members if any

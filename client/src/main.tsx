@@ -40,6 +40,17 @@ if (typeof window !== 'undefined') {
       }
     }
   }, true);
+
+  // Prevent mouse wheel from unintentionally incrementing/decrementing number inputs
+  document.addEventListener('wheel', (e) => {
+    const target = e.target as HTMLElement | null;
+    if (target instanceof HTMLInputElement && target.type === 'number') {
+      target.blur();
+    }
+    if (document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'number') {
+      document.activeElement.blur();
+    }
+  }, { passive: true });
 }
 
 // Global Axios Request Interceptor (attaches Bearer Token & handles Marathi digits & URL prefix)

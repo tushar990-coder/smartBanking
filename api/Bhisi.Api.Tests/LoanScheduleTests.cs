@@ -89,5 +89,104 @@ namespace Bhisi.Api.Tests
             decimal totalPrincipal = schedule.Sum(s => s.Principal);
             Assert.Equal(120000m, totalPrincipal);
         }
+
+        [Fact]
+        public void Test_Consistency_Between_GeneratePreviewSchedule_And_GenerateSchedules()
+        {
+            var loanRate = new LoanRate
+            {
+                LoanRateID = 20,
+                LoanType = "तारणी",
+                InterestRate = 12m,
+                InterestCalculationMethod = "Reducing (घटती शिल्लक)",
+                LoanInstallmentType = "समान हप्ता",
+                IsActive = true
+            };
+
+            var previewRequest = new LoanSchedulePreviewRequest
+            {
+                LoanRateID = 20,
+                LoanAmount = 100000m,
+                InterestRate = 12m,
+                NoOfInstallments = 12,
+                DurationMonths = 12,
+                InstallmentFrequency = "मासिक",
+                LoanDisbursementDate = new DateTime(2026, 4, 1),
+                FirstInstallmentDate = new DateTime(2026, 5, 1)
+            };
+
+            var previewSchedule = Bhisi.Api.Services.LoanScheduleGenerator.GeneratePreviewSchedule(previewRequest, loanRate);
+
+            var account = new LoanAccount
+            {
+                LoanAccountID = 1,
+                LoanRateID = 20,
+                LoanRate = loanRate,
+                SanctionedAmount = 100000m,
+                PrincipalBalance = 100000m,
+                InterestRate = 12m,
+                DurationMonths = 12,
+                InstallmentFrequency = "मासिक",
+                LoanDisbursementDate = new DateTime(2026, 4, 1),
+                FirstInstallmentDate = new DateTime(2026, 5, 1)
+            };
+
+            var disbursementSchedule = Bhisi.Api.Services.LoanScheduleGenerator.GenerateSchedules(account, loanRate);
+
+            Assert.Equal(previewSchedule.Count, disbursementSchedule.Count);
+
+            for (int i = 0; i < previewSchedule.Count; i++)
+            {
+                var prev = previewSchedule[i];
+                var disb = disbursementSchedule[i];
+
+                Assert.Equal(prev.No, disb.InstallmentNo);
+                Assert.Equal(prev.Date.Date, disb.DueDate.Date);
+                Assert.Equal(prev.Principal, disb.PrincipalAmount);
+                Assert.Equal(prev.Interest, disb.InterestAmount);
+                Assert.Equal(prev.Total, disb.TotalAmount);
+                Assert.Equal(prev.Balance, disb.BalanceAmount);
+            }
+        }
+
+        [Fact]
+        public void Test_Flat_Calculation_Consistency()
+        {
+            var loanRate = new LoanRate
+            {
+                LoanRateID = 30,
+                LoanType = "पर्सनल",
+                InterestRate = 10m,
+                InterestCalculationMethod = "Flat (फ्लॅट)",
+                LoanInstallmentType = "समान हप्ता",
+                IsActive = true
+            };
+
+            var previewRequest = new LoanSchedulePreviewRequest
+            {
+                LoanRateID = 30,
+                LoanAmount = 60000m,
+                InterestRate = 10m,
+                NoOfInstallments = 12,
+                DurationMonths = 12,
+                InstallmentFrequency = "मासिक",
+                LoanDisbursementDate = new DateTime(2026, 1, 1),
+                FirstInstallmentDate = new DateTime(2026, 2, 1)
+            };
+
+            var schedule = Bhisi.Api.Services.LoanScheduleGenerator.GeneratePreviewSchedule(previewRequest, loanRate);
+
+            Assert.Equal(12, schedule.Count);
+            // Flat: Total Interest = 60000 * 10% * (12/12) = 6000. Per month interest = 500.
+            // Per month principal = 60000 / 12 = 5000.
+            // Total per month = 5500.
+            Assert.Equal(5000m, schedule[0].Principal);
+            Assert.Equal(500m, schedule[0].Interest);
+            Assert.Equal(5500m, schedule[0].Total);
+
+            Assert.Equal(60000m, schedule.Sum(s => s.Principal));
+            Assert.Equal(6000m, schedule.Sum(s => s.Interest));
+            Assert.Equal(0m, schedule.Last().Balance);
+        }
     }
 }

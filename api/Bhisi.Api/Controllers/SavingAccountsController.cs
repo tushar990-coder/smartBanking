@@ -26,8 +26,20 @@ namespace Bhisi.Api.Controllers
         private async Task<string> GenerateNextSavingAccountNo(int branchId)
         {
             var branch = await _context.Branches.FindAsync(branchId);
-            string branchCode = branch?.BranchCode ?? "01";
-            string prefix = $"{branchCode}01";
+            
+            // Ensure branch code is purely numeric (2 digits, e.g. 01, 02)
+            string branchCodeNumeric = branchId.ToString("D2");
+            if (branch != null && !string.IsNullOrWhiteSpace(branch.BranchCode))
+            {
+                var digitsOnly = new string(branch.BranchCode.Where(char.IsDigit).ToArray());
+                if (!string.IsNullOrEmpty(digitsOnly) && int.TryParse(digitsOnly, out int parsed) && parsed > 0)
+                {
+                    branchCodeNumeric = parsed.ToString("D2");
+                }
+            }
+
+            // Prefix: [2-digit numeric branch] + [2-digit numeric product '01'] => e.g. 0101
+            string prefix = $"{branchCodeNumeric}01";
 
             var existingNos = await _context.SavingAccountMasters
                 .Where(a => a.BranchID == branchId && a.AccountNo != null && a.AccountNo.StartsWith(prefix))
@@ -55,18 +67,19 @@ namespace Bhisi.Api.Controllers
             return nextAccNo;
         }
 
-        // GET: api/SavingAccounts/next-account-no?branchId=1
+        // GET: api/SavingAccounts/next-account-no?branchId=1 or api/SavingAccounts/next-account-no/1
         [HttpGet("next-account-no")]
-        public async Task<ActionResult<object>> GetNextAccountNo([FromQuery] int? branchId = null)
+        [HttpGet("next-account-no/{branchId:int?}")]
+        public async Task<ActionResult<object>> GetNextAccountNo(int? branchId = null, [FromQuery(Name = "branchId")] int? queryBranchId = null)
         {
-            int targetBranchId = branchId ?? 1;
+            int targetBranchId = branchId ?? queryBranchId ?? 1;
             string nextNo = await GenerateNextSavingAccountNo(targetBranchId);
             return Ok(new { nextAccountNo = nextNo, accountNo = nextNo });
         }
 
         // GET: api/SavingAccounts
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetSavingAccountMasters([FromQuery] int? branchId = null, [FromQuery] int? memberId = null, [FromQuery] int? customerId = null)
+        public async Task<ActionResult<IEnumerable<object>>> GetSavingAccountMasters([FromQuery] int? branchId = null, [FromQuery] int? customerId = null)
         {
             var query = _context.SavingAccountMasters.AsQueryable();
             if (branchId.HasValue && branchId.Value > 0)
@@ -77,31 +90,13 @@ namespace Bhisi.Api.Controllers
             {
                 query = query.Where(s => s.CustomerID == customerId.Value);
             }
-            else if (memberId.HasValue && memberId.Value > 0)
-            {
-                var linkedCustId = await _context.Members
-                    .Where(m => m.MemberID == memberId.Value)
-                    .Select(m => m.CustomerID)
-                    .FirstOrDefaultAsync();
-
-                if (linkedCustId.HasValue && linkedCustId.Value > 0)
-                {
-                    query = query.Where(s => s.CustomerID == linkedCustId.Value);
-                }
-                else
-                {
-                    query = query.Where(s => false);
-                }
-            }
 
             var accounts = await query
                 .Include(s => s.Customer)
-                    .ThenInclude(c => c!.MemberProfile)
                 .Include(s => s.Branch)
                 .Include(s => s.Ledger)
                 .Include(s => s.JointHolders)
                     .ThenInclude(jh => jh.Customer)
-                        .ThenInclude(c => c!.MemberProfile)
                 .Select(s => new {
                     s.SavingAccountID,
                     s.BranchID,
@@ -109,9 +104,13 @@ namespace Bhisi.Api.Controllers
                     BranchCode = s.Branch != null ? s.Branch.BranchCode : "",
                     s.AccountNo,
                     s.CustomerID,
-                    MemberID = s.Customer != null && s.Customer.MemberProfile != null ? (int?)s.Customer.MemberProfile.MemberID : null,
                     CIFNo = s.Customer != null ? s.Customer.CIFNo : "",
-                    MemberCode = s.Customer != null && s.Customer.MemberProfile != null ? s.Customer.MemberProfile.MemberCode : "",
+                    CustomerName = s.Customer != null 
+                        ? (s.Customer.FirstName + (string.IsNullOrWhiteSpace(s.Customer.MiddleName) ? "" : " " + s.Customer.MiddleName) + " " + s.Customer.LastName).Trim()
+                        : "",
+                    CustomerNameEng = s.Customer != null 
+                        ? (s.Customer.FirstNameEng + (string.IsNullOrWhiteSpace(s.Customer.MiddleNameEng) ? "" : " " + s.Customer.MiddleNameEng) + " " + s.Customer.LastNameEng).Trim()
+                        : "",
                     MemberName = s.Customer != null 
                         ? (s.Customer.FirstName + (string.IsNullOrWhiteSpace(s.Customer.MiddleName) ? "" : " " + s.Customer.MiddleName) + " " + s.Customer.LastName).Trim()
                         : "",
@@ -142,13 +141,14 @@ namespace Bhisi.Api.Controllers
                     s.LastInterestAmount,
                     JointHolders = s.JointHolders.Select(jh => new {
                         jh.JointHolderID,
-                        MemberID = jh.Customer != null && jh.Customer.MemberProfile != null ? (int?)jh.Customer.MemberProfile.MemberID : null,
                         jh.CustomerID,
                         CIFNo = jh.Customer != null ? (jh.Customer.CIFNo ?? "") : "",
+                        CustomerName = jh.Customer != null 
+                            ? (jh.Customer.FirstName + (string.IsNullOrWhiteSpace(jh.Customer.MiddleName) ? "" : " " + jh.Customer.MiddleName) + " " + jh.Customer.LastName).Trim()
+                            : "",
                         MemberName = jh.Customer != null 
                             ? (jh.Customer.FirstName + (string.IsNullOrWhiteSpace(jh.Customer.MiddleName) ? "" : " " + jh.Customer.MiddleName) + " " + jh.Customer.LastName).Trim()
                             : "",
-                        MemberCode = jh.Customer != null && jh.Customer.MemberProfile != null ? (jh.Customer.MemberProfile.MemberCode ?? "") : "",
                         MobileNo = jh.Customer != null ? (jh.Customer.MobileNo ?? "") : ""
                     }).ToList()
                 })
@@ -157,11 +157,12 @@ namespace Bhisi.Api.Controllers
             return Ok(accounts);
         }
 
-        // GET: api/SavingAccounts/ByMember/5
-        [HttpGet("ByMember/{memberId}")]
-        public async Task<ActionResult<IEnumerable<object>>> GetSavingAccountsByMember(int memberId)
+        // GET: api/SavingAccounts/ByCustomer/5
+        [HttpGet("ByCustomer/{customerId}")]
+        [HttpGet("ByMember/{customerId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetSavingAccountsByCustomer(int customerId)
         {
-            return await GetSavingAccountMasters(branchId: null, memberId: memberId);
+            return await GetSavingAccountMasters(branchId: null, customerId: customerId);
         }
 
         // GET: api/SavingAccounts/5
@@ -170,11 +171,9 @@ namespace Bhisi.Api.Controllers
         {
             var s = await _context.SavingAccountMasters
                 .Include(sa => sa.Customer)
-                    .ThenInclude(c => c!.MemberProfile)
                 .Include(sa => sa.Branch)
                 .Include(sa => sa.JointHolders)
                     .ThenInclude(jh => jh.Customer)
-                        .ThenInclude(c => c!.MemberProfile)
                 .FirstOrDefaultAsync(m => m.SavingAccountID == id);
 
             if (s == null)
@@ -189,8 +188,13 @@ namespace Bhisi.Api.Controllers
                 BranchCode = s.Branch != null ? s.Branch.BranchCode : "",
                 s.AccountNo,
                 s.CustomerID,
-                MemberID = s.Customer != null && s.Customer.MemberProfile != null ? (int?)s.Customer.MemberProfile.MemberID : null,
                 CIFNo = s.Customer != null ? s.Customer.CIFNo : "",
+                CustomerName = s.Customer != null 
+                    ? $"{s.Customer.FirstName} {s.Customer.LastName}".Trim()
+                    : "",
+                CustomerNameEng = s.Customer != null 
+                    ? $"{s.Customer.FirstNameEng} {s.Customer.LastNameEng}".Trim()
+                    : "",
                 MemberName = s.Customer != null 
                     ? $"{s.Customer.FirstName} {s.Customer.LastName}".Trim()
                     : "",
@@ -200,7 +204,6 @@ namespace Bhisi.Api.Controllers
                 MobileNo = s.Customer != null ? (s.Customer.MobileNo ?? "") : "",
                 AadhaarNo = s.Customer != null ? (s.Customer.AadhaarNo ?? "") : "",
                 PANNo = s.Customer != null ? (s.Customer.PANNo ?? "") : "",
-                MemberCode = s.Customer != null && s.Customer.MemberProfile != null ? s.Customer.MemberProfile.MemberCode : "",
                 s.AccountType,
                 s.OpeningDate,
                 s.IsLegacyAccount,
@@ -222,13 +225,14 @@ namespace Bhisi.Api.Controllers
                 s.LastInterestAmount,
                 JointHolders = s.JointHolders.Select(jh => new {
                     jh.JointHolderID,
-                    MemberID = jh.Customer != null && jh.Customer.MemberProfile != null ? (int?)jh.Customer.MemberProfile.MemberID : null,
                     jh.CustomerID,
                     CIFNo = jh.Customer != null ? (jh.Customer.CIFNo ?? "") : "",
+                    CustomerName = jh.Customer != null 
+                        ? $"{jh.Customer.FirstName} {jh.Customer.LastName}".Trim() 
+                        : "",
                     MemberName = jh.Customer != null 
                         ? $"{jh.Customer.FirstName} {jh.Customer.LastName}".Trim() 
                         : "",
-                    MemberCode = jh.Customer != null && jh.Customer.MemberProfile != null ? (jh.Customer.MemberProfile.MemberCode ?? "") : "",
                     MobileNo = jh.Customer != null ? (jh.Customer.MobileNo ?? "") : ""
                 }).ToList()
             };
@@ -239,7 +243,6 @@ namespace Bhisi.Api.Controllers
         {
             public int BranchID { get; set; } = 1;
             public int? CustomerID { get; set; }
-            public int? MemberID { get; set; }
             public string AccountType { get; set; } = "Personal";
             public DateTime OpeningDate { get; set; } = DateTime.Today;
             public bool IsLegacyAccount { get; set; } = false;
@@ -258,69 +261,23 @@ namespace Bhisi.Api.Controllers
             public int? SettingID { get; set; }
             public DateTime? LastInterestPostingDate { get; set; }
             public decimal? LastInterestAmount { get; set; }
-            public List<int>? JointHolderMemberIDs { get; set; }
             public List<int>? JointHolderCustomerIDs { get; set; }
         }
 
-        private async Task<(Customer? customer, Member? member, string? errorMessage)> ResolveEntityAsync(int? customerId, int? memberId, int branchId)
+        private async Task<(Customer? customer, string? errorMessage)> ResolveEntityAsync(int? customerId, int branchId)
         {
-            Customer? customer = null;
-            Member? member = null;
-
-            if (customerId.HasValue && customerId.Value > 0)
+            if (!customerId.HasValue || customerId.Value <= 0)
             {
-                customer = await _context.Customers.FindAsync(customerId.Value);
-                if (customer == null)
-                {
-                    // Fallback: Check if this ID was accidentally passed as a memberId
-                    member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == customerId.Value);
-                    if (member != null)
-                    {
-                        if (member.CustomerID.HasValue && member.CustomerID.Value > 0)
-                        {
-                            customer = await _context.Customers.FindAsync(member.CustomerID.Value);
-                        }
-                    }
-                }
-                else
-                {
-                    if (memberId.HasValue && memberId.Value > 0)
-                    {
-                        member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberId.Value);
-                    }
-                    else
-                    {
-                        member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
-                    }
-                }
-            }
-            else if (memberId.HasValue && memberId.Value > 0)
-            {
-                member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberId.Value);
-                if (member == null) return (null, null, "निवडलेला खातेदार सभासद सिस्टीममध्ये अस्तित्वात नाही.");
-
-                if (member.CustomerID.HasValue && member.CustomerID.Value > 0)
-                {
-                    customer = await _context.Customers.FindAsync(member.CustomerID.Value);
-                }
-            }
-            else
-            {
-                return (null, null, "कृपया खातेदाराची (Customer / Member) निवड करा.");
+                return (null, "कृपया खातेदाराची (Customer) निवड करा.");
             }
 
-            // Load Customer entity from Member if not already loaded
-            if (customer == null && member != null && member.CustomerID.HasValue)
-            {
-                customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == member.CustomerID.Value);
-            }
-
+            var customer = await _context.Customers.FindAsync(customerId.Value);
             if (customer == null)
             {
-                return (null, null, "निवडलेला खातेदार ग्राहक किंवा सभासद सापडला नाही.");
+                return (null, "निवडलेला ग्राहक अस्तित्वात नाही.");
             }
 
-            return (customer, member, null);
+            return (customer, null);
         }
 
         // POST: api/SavingAccounts
@@ -359,10 +316,10 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            var (customer, member, errorMsg) = await ResolveEntityAsync(dto.CustomerID, dto.MemberID, dto.BranchID);
+            var (customer, errorMsg) = await ResolveEntityAsync(dto.CustomerID, dto.BranchID);
             if (!string.IsNullOrEmpty(errorMsg) || customer == null)
             {
-                return BadRequest(errorMsg ?? "कृपया खातेदाराची (Customer / Member) निवड करा.");
+                return BadRequest(errorMsg ?? "कृपया खातेदाराची (Customer) निवड करा.");
             }
 
             if (customer.Status != "Active")
@@ -378,7 +335,6 @@ namespace Bhisi.Api.Controllers
                 BranchID = dto.BranchID,
                 AccountNo = generatedAccountNo,
                 CustomerID = customer.CustomerID,
-                MemberID = member?.MemberID,
                 AccountType = dto.AccountType,
                 OpeningDate = dto.OpeningDate,
                 IsLegacyAccount = dto.IsLegacyAccount,
@@ -403,11 +359,11 @@ namespace Bhisi.Api.Controllers
             _context.SavingAccountMasters.Add(savingAccount);
             await _context.SaveChangesAsync();
 
-            // Add Joint Holders with Customer / Member resolution
-            if (dto.AccountType == "Joint" && ((dto.JointHolderMemberIDs != null && dto.JointHolderMemberIDs.Count > 0) || (dto.JointHolderCustomerIDs != null && dto.JointHolderCustomerIDs.Count > 0)))
+            // Add Joint Holders with Customer
+            if (dto.AccountType == "Joint" && dto.JointHolderCustomerIDs != null && dto.JointHolderCustomerIDs.Count > 0)
             {
-                var rawIds = (dto.JointHolderCustomerIDs ?? dto.JointHolderMemberIDs ?? new List<int>())
-                    .Where(id => id > 0 && id != customer.CustomerID && id != member?.MemberID)
+                var rawIds = dto.JointHolderCustomerIDs
+                    .Where(id => id > 0 && id != customer.CustomerID)
                     .Distinct()
                     .ToList();
 
@@ -416,27 +372,12 @@ namespace Bhisi.Api.Controllers
                     foreach (var id in rawIds)
                     {
                         var jhCust = await _context.Customers.FindAsync(id);
-                        Member? jhMem = null;
                         if (jhCust != null)
-                        {
-                            jhMem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == jhCust.CustomerID);
-                        }
-                        else
-                        {
-                            jhMem = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
-                            if (jhMem != null && jhMem.CustomerID.HasValue && jhMem.CustomerID.Value > 0)
-                            {
-                                jhCust = await _context.Customers.FindAsync(jhMem.CustomerID.Value);
-                            }
-                        }
-
-                        if (jhCust != null || jhMem != null)
                         {
                             var jointHolder = new SavingAccountJointHolder
                             {
                                 SavingAccountID = savingAccount.SavingAccountID,
-                                CustomerID = jhCust?.CustomerID ?? jhMem?.CustomerID,
-                                MemberID = jhMem?.MemberID,
+                                CustomerID = jhCust.CustomerID,
                                 CreatedOn = DateTime.Now
                             };
                             _context.SavingAccountJointHolders.Add(jointHolder);
@@ -471,8 +412,8 @@ namespace Bhisi.Api.Controllers
                     CreatedBy = savingAccount.CreatedBy,
                     VoucherDetails = new List<VoucherDetail>
                     {
-                        new VoucherDetail { LedgerID = cashLedgerId, DrCr = "Dr", Amount = savingAccount.OpeningBalance },
-                        new VoucherDetail { LedgerID = savingAccount.LedgerID, DrCr = "Cr", Amount = savingAccount.OpeningBalance }
+                        new VoucherDetail { LedgerID = cashLedgerId, DrCr = "Dr", Amount = savingAccount.OpeningBalance, CustomerID = savingAccount.CustomerID },
+                        new VoucherDetail { LedgerID = savingAccount.LedgerID, DrCr = "Cr", Amount = savingAccount.OpeningBalance, CustomerID = savingAccount.CustomerID }
                     }
                 };
                 _context.Vouchers.Add(voucher);
@@ -508,7 +449,7 @@ namespace Bhisi.Api.Controllers
             var branch = await _context.Branches.FindAsync(dto.BranchID);
             if (branch == null) return BadRequest(new { message = "निवडलेली शाखा सापडली नाही." });
 
-            var (customer, member, errorMsg) = await ResolveEntityAsync(dto.CustomerID, dto.MemberID, dto.BranchID);
+            var (customer, errorMsg) = await ResolveEntityAsync(dto.CustomerID, dto.BranchID);
             if (!string.IsNullOrEmpty(errorMsg) || customer == null)
             {
                 return BadRequest(new { message = errorMsg ?? "कृपया वैध खातेदाराची निवड करा." });
@@ -535,7 +476,6 @@ namespace Bhisi.Api.Controllers
                     BranchID = dto.BranchID,
                     AccountNo = generatedAccountNo,
                     CustomerID = customer.CustomerID,
-                    MemberID = member?.MemberID, // NULL if non-member customer
                     AccountType = string.IsNullOrWhiteSpace(dto.AccountType) ? "Personal" : dto.AccountType,
                     OpeningDate = dto.OpeningDate != default ? dto.OpeningDate : DateTime.Today,
                     IsLegacyAccount = true,
@@ -561,10 +501,10 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 // Add Joint Holders for Migrated Joint Saving Account
-                if (dto.AccountType == "Joint" && dto.JointHolderMemberIDs != null && dto.JointHolderMemberIDs.Count > 0)
+                if (dto.AccountType == "Joint" && dto.JointHolderCustomerIDs != null && dto.JointHolderCustomerIDs.Count > 0)
                 {
-                    var rawIds = dto.JointHolderMemberIDs
-                        .Where(id => id > 0 && id != customer.CustomerID && id != member?.MemberID)
+                    var rawIds = dto.JointHolderCustomerIDs
+                        .Where(id => id > 0 && id != customer.CustomerID)
                         .Distinct()
                         .ToList();
 
@@ -573,27 +513,12 @@ namespace Bhisi.Api.Controllers
                         foreach (var id in rawIds)
                         {
                             var jhCust = await _context.Customers.FindAsync(id);
-                            Member? jhMem = null;
                             if (jhCust != null)
-                            {
-                                jhMem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == jhCust.CustomerID);
-                            }
-                            else
-                            {
-                                jhMem = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
-                                if (jhMem != null && jhMem.CustomerID.HasValue && jhMem.CustomerID.Value > 0)
-                                {
-                                    jhCust = await _context.Customers.FindAsync(jhMem.CustomerID.Value);
-                                }
-                            }
-
-                            if (jhCust != null || jhMem != null)
                             {
                                 var jointHolder = new SavingAccountJointHolder
                                 {
                                     SavingAccountID = savingAccount.SavingAccountID,
-                                    CustomerID = jhCust?.CustomerID ?? jhMem?.CustomerID,
-                                    MemberID = jhMem?.MemberID,
+                                    CustomerID = jhCust.CustomerID,
                                     CreatedOn = DateTime.Now
                                 };
                                 _context.SavingAccountJointHolders.Add(jointHolder);
@@ -636,22 +561,6 @@ namespace Bhisi.Api.Controllers
                 };
                 _context.CustomerOpeningBalances.Add(custOb);
 
-                // If regular member, also audit in MemberOpeningBalances
-                if (member != null && member.MemberID > 0)
-                {
-                    var memberOb = new MemberOpeningBalance
-                    {
-                        MemberID = member.MemberID,
-                        CustomerID = customer.CustomerID,
-                        LedgerID = savingAccount.LedgerID,
-                        Amount = savingAccount.OpeningBalance,
-                        BalanceType = "Cr",
-                        CreatedBy = savingAccount.CreatedBy,
-                        CreatedOn = DateTime.Now
-                    };
-                    _context.MemberOpeningBalances.Add(memberOb);
-                }
-
                 // Initial Saving Transaction (Deposit)
                 var txn = new SavingTransaction
                 {
@@ -676,7 +585,6 @@ namespace Bhisi.Api.Controllers
                     savingAccountID = savingAccount.SavingAccountID, 
                     accountNo = savingAccount.AccountNo,
                     customerID = savingAccount.CustomerID,
-                    memberID = savingAccount.MemberID,
                     message = "बचत खाते स्थलांतर यशस्वी झाले!" 
                 });
             }
@@ -697,8 +605,7 @@ namespace Bhisi.Api.Controllers
         {
             public int SavingAccountID { get; set; }
             public int BranchID { get; set; } = 1;
-            public int? CustomerID { get; set; }
-            public int? MemberID { get; set; }
+            public int CustomerID { get; set; }
             public string AccountType { get; set; } = "Personal";
             public DateTime OpeningDate { get; set; } = DateTime.Today;
             public decimal OpeningBalance { get; set; } = 0;
@@ -716,7 +623,7 @@ namespace Bhisi.Api.Controllers
             public int? SettingID { get; set; }
             public DateTime? LastInterestPostingDate { get; set; }
             public decimal? LastInterestAmount { get; set; }
-            public List<int>? JointHolderMemberIDs { get; set; }
+            public List<int>? JointHolderCustomerIDs { get; set; }
         }
 
         // PUT: api/SavingAccounts/5
@@ -744,21 +651,18 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // 1. Resolve Customer & Member if provided
+                // 1. Resolve Customer if provided
                 int oldCustomerId = existing.CustomerID;
-                int? oldMemberId = existing.MemberID;
                 int resolvedCustomerId = oldCustomerId;
-                int? resolvedMemberId = oldMemberId;
 
-                if (dto.CustomerID.HasValue || dto.MemberID.HasValue)
+                if (dto.CustomerID > 0)
                 {
-                    var (customer, member, errorMsg) = await ResolveEntityAsync(dto.CustomerID, dto.MemberID, existing.BranchID);
+                    var (customer, errorMsg) = await ResolveEntityAsync(dto.CustomerID, existing.BranchID);
                     if (!string.IsNullOrEmpty(errorMsg) || customer == null)
                     {
                         return BadRequest(new { message = errorMsg ?? "कृपया वैध खातेदाराची निवड करा." });
                     }
                     resolvedCustomerId = customer.CustomerID;
-                    resolvedMemberId = member?.MemberID;
                 }
 
                 // 2. Handle Opening Balance & Ledger changes for Legacy Accounts
@@ -935,61 +839,6 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                    // Adjust MemberOpeningBalances (if members involved)
-                    if (oldMemberId.HasValue && oldMemberId.Value > 0)
-                    {
-                        var oldMemAccounts = await _context.SavingAccountMasters
-                            .Where(a => a.SavingAccountID != id && a.CustomerID == oldCustomerId && a.LedgerID == oldLedgerId && a.IsLegacyAccount)
-                            .ToListAsync();
-                        decimal remOldMemAmount = oldMemAccounts.Sum(a => a.OpeningBalance);
-                        var oldMemObs = await _context.MemberOpeningBalances
-                            .Where(m => m.MemberID == oldMemberId.Value && m.LedgerID == oldLedgerId)
-                            .ToListAsync();
-
-                        if (remOldMemAmount <= 0)
-                        {
-                            _context.MemberOpeningBalances.RemoveRange(oldMemObs);
-                        }
-                        else if (oldMemObs.Any())
-                        {
-                            var firstOldMem = oldMemObs.First();
-                            firstOldMem.Amount = remOldMemAmount;
-                            _context.Entry(firstOldMem).State = EntityState.Modified;
-                            if (oldMemObs.Count > 1) _context.MemberOpeningBalances.RemoveRange(oldMemObs.Skip(1));
-                        }
-                    }
-
-                    if (resolvedMemberId.HasValue && resolvedMemberId.Value > 0 && newBalance > 0)
-                    {
-                        var newMemAccounts = await _context.SavingAccountMasters
-                            .Where(a => a.SavingAccountID != id && a.CustomerID == resolvedCustomerId && a.LedgerID == newLedgerId && a.IsLegacyAccount)
-                            .ToListAsync();
-                        decimal totalNewMemAmount = newMemAccounts.Sum(a => a.OpeningBalance) + newBalance;
-                        var newMemObs = await _context.MemberOpeningBalances
-                            .Where(m => m.MemberID == resolvedMemberId.Value && m.LedgerID == newLedgerId)
-                            .ToListAsync();
-
-                        if (newMemObs.Any())
-                        {
-                            var firstNewMem = newMemObs.First();
-                            firstNewMem.Amount = totalNewMemAmount;
-                            _context.Entry(firstNewMem).State = EntityState.Modified;
-                            if (newMemObs.Count > 1) _context.MemberOpeningBalances.RemoveRange(newMemObs.Skip(1));
-                        }
-                        else
-                        {
-                            _context.MemberOpeningBalances.Add(new MemberOpeningBalance
-                            {
-                                MemberID = resolvedMemberId.Value,
-                                LedgerID = newLedgerId,
-                                Amount = totalNewMemAmount,
-                                BalanceType = "Cr",
-                                CreatedBy = existing.CreatedBy,
-                                CreatedOn = DateTime.Now
-                            });
-                        }
-                    }
-
                     // Update opening balance baseline transaction
                     var obTxn = await _context.SavingTransactions.FirstOrDefaultAsync(t => t.SavingAccountID == id && t.Narration == "Opening Balance");
                     if (obTxn != null)
@@ -1008,7 +857,6 @@ namespace Bhisi.Api.Controllers
                 }
 
                 existing.CustomerID = resolvedCustomerId;
-                existing.MemberID = resolvedMemberId;
                 existing.MinimumBalance = dto.MinimumBalance;
                 existing.InterestRate = dto.InterestRate;
                 existing.LienAmount = dto.LienAmount;
@@ -1024,7 +872,7 @@ namespace Bhisi.Api.Controllers
                 existing.UpdatedOn = DateTime.Now;
 
                 // Joint Holders update
-                if (dto.AccountType == "Joint" && dto.JointHolderMemberIDs != null)
+                if (dto.AccountType == "Joint" && dto.JointHolderCustomerIDs != null)
                 {
                     existing.AccountType = "Joint";
                     existing.JointHolders ??= new List<SavingAccountJointHolder>();
@@ -1032,32 +880,17 @@ namespace Bhisi.Api.Controllers
                     {
                         _context.SavingAccountJointHolders.RemoveRange(existing.JointHolders);
                     }
-                    foreach (var jhId in dto.JointHolderMemberIDs)
+                    foreach (var jhCustId in dto.JointHolderCustomerIDs)
                     {
-                        if (jhId > 0 && jhId != existing.CustomerID && jhId != existing.MemberID)
+                        if (jhCustId > 0 && jhCustId != existing.CustomerID)
                         {
-                            var jhCust = await _context.Customers.FindAsync(jhId);
-                            Member? jhMem = null;
+                            var jhCust = await _context.Customers.FindAsync(jhCustId);
                             if (jhCust != null)
-                            {
-                                jhMem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == jhCust.CustomerID);
-                            }
-                            else
-                            {
-                                jhMem = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == jhId);
-                                if (jhMem != null && jhMem.CustomerID.HasValue && jhMem.CustomerID.Value > 0)
-                                {
-                                    jhCust = await _context.Customers.FindAsync(jhMem.CustomerID.Value);
-                                }
-                            }
-
-                            if (jhCust != null || jhMem != null)
                             {
                                 existing.JointHolders.Add(new SavingAccountJointHolder
                                 {
                                     SavingAccountID = id,
-                                    CustomerID = jhCust?.CustomerID ?? jhMem?.CustomerID,
-                                    MemberID = jhMem?.MemberID,
+                                    CustomerID = jhCust.CustomerID,
                                     CreatedOn = DateTime.Now
                                 });
                             }
@@ -1116,7 +949,7 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // If it's a legacy account, reverse the Ledger and reconcile CustomerOpeningBalances and MemberOpeningBalances safely
+                // If it's a legacy account, reverse the Ledger and reconcile CustomerOpeningBalances safely
                 if (savingAccount.IsLegacyAccount && savingAccount.OpeningBalance > 0)
                 {
                     // 1. Adjust General Ledger Opening Balance
@@ -1171,43 +1004,6 @@ namespace Bhisi.Api.Controllers
                             }
                         }
                     }
-
-                    // 3. Safe MemberOpeningBalances Reconciliation (if member was set)
-                    if (savingAccount.MemberID.HasValue && savingAccount.MemberID.Value > 0)
-                    {
-                        int memId = savingAccount.MemberID.Value;
-                        var otherMemberLegacyAccounts = await _context.SavingAccountMasters
-                            .Where(a => a.SavingAccountID != id && a.CustomerID == savingAccount.CustomerID && a.LedgerID == savingAccount.LedgerID && a.IsLegacyAccount)
-                            .ToListAsync();
-
-                        decimal requiredRemainingMemberAmount = otherMemberLegacyAccounts.Sum(a => a.OpeningBalance);
-
-                        var memberObs = await _context.MemberOpeningBalances
-                            .Where(m => m.MemberID == memId && m.LedgerID == savingAccount.LedgerID)
-                            .ToListAsync();
-
-                        if (requiredRemainingMemberAmount <= 0)
-                        {
-                            if (memberObs.Any())
-                            {
-                                _context.MemberOpeningBalances.RemoveRange(memberObs);
-                            }
-                        }
-                        else
-                        {
-                            if (memberObs.Any())
-                            {
-                                var primaryMob = memberObs.First();
-                                primaryMob.Amount = requiredRemainingMemberAmount;
-                                _context.Entry(primaryMob).State = EntityState.Modified;
-
-                                if (memberObs.Count > 1)
-                                {
-                                    _context.MemberOpeningBalances.RemoveRange(memberObs.Skip(1));
-                                }
-                            }
-                        }
-                    }
                 }
 
                 // Delete Transactions
@@ -1225,6 +1021,22 @@ namespace Bhisi.Api.Controllers
                 // Delete the account
                 _context.SavingAccountMasters.Remove(savingAccount);
                 await _context.SaveChangesAsync();
+
+                // If the deleted record was the highest/only SavingAccountID, automatically decrement/reseed identity counter
+                try
+                {
+                    var maxRemainingId = await _context.SavingAccountMasters.MaxAsync(s => (int?)s.SavingAccountID) ?? 0;
+                    if (id >= maxRemainingId)
+                    {
+                        int reseedVal = maxRemainingId;
+                        await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('SavingAccountMasters', RESEED, {reseedVal});");
+                    }
+                }
+                catch (Exception reseedEx)
+                {
+                    Console.WriteLine($"[WARNING] SavingAccount reseed error: {reseedEx.Message}");
+                }
+
                 await transaction.CommitAsync();
 
                 return Ok(new { message = "खाते यशस्वीरित्या डिलीट केले." });

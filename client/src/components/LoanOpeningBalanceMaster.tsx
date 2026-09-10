@@ -41,6 +41,7 @@ interface LoanRate {
   interestRate?: number;
   durationMonths?: number;
   installmentCount?: number;
+  installmentType?: string;
   interestCalculationMethod?: string;
   loanInstallmentType?: string;
 }
@@ -104,6 +105,7 @@ export default function LoanOpeningBalanceMaster() {
     return cutoffDate || '2025-03-31';
   };
 
+  const [isInstAmountEdited, setIsInstAmountEdited] = useState(false);
   const [formData, setFormData] = useState({
     loanOpeningBalanceID: 0,
     branchID: '1',
@@ -121,6 +123,7 @@ export default function LoanOpeningBalanceMaster() {
     sanctionedAmount: '',
     interestRate: '',
     durationMonths: '',
+    noOfInstallments: '',
     installmentFrequency: 'मासिक',
     installmentAmount: '',
     firstInstallmentDate: '',
@@ -280,13 +283,23 @@ export default function LoanOpeningBalanceMaster() {
       }
     }
 
+    if (name === 'installmentAmount') {
+      setIsInstAmountEdited(true);
+    }
+    if (name === 'sanctionedAmount' || name === 'loanRateID' || name === 'durationMonths' || name === 'installmentFrequency') {
+      setIsInstAmountEdited(false);
+    }
+
     // Auto-fill Interest Rate and Duration when Loan Type is selected
     if (name === 'loanRateID') {
       const loanRate = loanRates.find(r => r.loanRateID.toString() === value);
       if (loanRate) {
         updates.interestRate = (loanRate.interestRate || 0).toString();
-        updates.durationMonths = (loanRate.durationMonths || loanRate.installmentCount || 0).toString();
-        updates.installmentFrequency = loanRate.loanInstallmentType || formData.installmentFrequency;
+        updates.durationMonths = (loanRate.durationMonths || 12).toString();
+        updates.installmentFrequency = loanRate.installmentType || formData.installmentFrequency || 'मासिक';
+        if (loanRate.installmentCount) {
+          updates.noOfInstallments = loanRate.installmentCount.toString();
+        }
       }
     }
 
@@ -329,9 +342,38 @@ export default function LoanOpeningBalanceMaster() {
     setFormData(prev => ({ ...prev, ...updates }));
   };
 
+  // Auto-calculate noOfInstallments from durationMonths and installmentFrequency
+  useEffect(() => {
+    if (formData.durationMonths && formData.installmentFrequency) {
+      let div = 1;
+      if (formData.installmentFrequency === 'साप्ताहिक') div = 0.2307;
+      else if (formData.installmentFrequency === 'त्रैमासिक') div = 3;
+      else if (formData.installmentFrequency === 'सहामाही') div = 6;
+      else if (formData.installmentFrequency === 'वार्षिक') div = 12;
+
+      const calculatedInst = formData.installmentFrequency === 'साप्ताहिक'
+        ? Math.max(1, Math.round(Number(formData.durationMonths) * 4.33))
+        : Math.max(1, Math.floor(Number(formData.durationMonths) / div));
+
+      if (formData.noOfInstallments !== calculatedInst.toString()) {
+        setFormData(prev => ({ ...prev, noOfInstallments: calculatedInst.toString() }));
+      }
+    }
+  }, [formData.durationMonths, formData.installmentFrequency]);
+
   useEffect(() => {
     calculateEMI();
-  }, [formData.sanctionedAmount, formData.interestRate, formData.durationMonths, formData.installmentFrequency, formData.loanRateID, formData.loanDisbursementDate, formData.firstInstallmentDate]);
+  }, [
+    formData.sanctionedAmount, 
+    formData.interestRate, 
+    formData.durationMonths, 
+    formData.noOfInstallments, 
+    formData.installmentFrequency, 
+    formData.loanRateID, 
+    formData.loanDisbursementDate, 
+    formData.firstInstallmentDate,
+    formData.installmentAmount
+  ]);
 
   useEffect(() => {
     const baseDateStr = formData.loanDisbursementDate || formData.openingDate;
@@ -361,21 +403,44 @@ export default function LoanOpeningBalanceMaster() {
   }, [formData.loanDisbursementDate, formData.openingDate, formData.installmentFrequency]);
 
   useEffect(() => {
-    if (formData.firstInstallmentDate && formData.durationMonths) {
-      const date = new Date(formData.firstInstallmentDate);
-      
-      if (!isNaN(date.getTime())) {
-        const months = parseInt(formData.durationMonths) || 0;
-        if (months > 0) {
-          date.setMonth(date.getMonth() + (months - 1));
-          const formattedDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    if (formData.firstInstallmentDate && formData.installmentFrequency) {
+      const firstDate = new Date(formData.firstInstallmentDate);
+      if (!isNaN(firstDate.getTime())) {
+        let n = parseInt(formData.noOfInstallments) || 0;
+        if (n <= 0) {
+          const months = parseInt(formData.durationMonths) || 0;
+          let step = 1;
+          if (formData.installmentFrequency === 'साप्ताहिक') n = Math.max(1, Math.round(months * 4.33));
+          else {
+            if (formData.installmentFrequency === 'त्रैमासिक') step = 3;
+            else if (formData.installmentFrequency === 'सहामाही') step = 6;
+            else if (formData.installmentFrequency === 'वार्षिक') step = 12;
+            n = Math.max(1, Math.floor(months / step));
+          }
+        }
+
+        if (n > 0) {
+          const matDate = new Date(firstDate);
+          if (formData.installmentFrequency === 'साप्ताहिक') {
+            matDate.setDate(matDate.getDate() + (n - 1) * 7);
+          } else if (formData.installmentFrequency === 'मासिक') {
+            matDate.setMonth(matDate.getMonth() + (n - 1));
+          } else if (formData.installmentFrequency === 'त्रैमासिक') {
+            matDate.setMonth(matDate.getMonth() + (n - 1) * 3);
+          } else if (formData.installmentFrequency === 'सहामाही') {
+            matDate.setMonth(matDate.getMonth() + (n - 1) * 6);
+          } else if (formData.installmentFrequency === 'वार्षिक') {
+            matDate.setFullYear(matDate.getFullYear() + (n - 1));
+          }
+
+          const formattedDate = `${matDate.getFullYear()}-${String(matDate.getMonth() + 1).padStart(2, '0')}-${String(matDate.getDate()).padStart(2, '0')}`;
           if (formData.maturityDate !== formattedDate) {
             setFormData(prev => ({ ...prev, maturityDate: formattedDate }));
           }
         }
       }
     }
-  }, [formData.firstInstallmentDate, formData.durationMonths]);
+  }, [formData.firstInstallmentDate, formData.durationMonths, formData.installmentFrequency, formData.noOfInstallments]);
 
   useEffect(() => {
     if (formData.openingDate && installmentChart && installmentChart.length > 0) {
@@ -430,14 +495,21 @@ export default function LoanOpeningBalanceMaster() {
       return;
     }
 
-    let step = 1;
-    if (formData.installmentFrequency === 'त्रैमासिक') step = 3;
-    else if (formData.installmentFrequency === 'सहामाही') step = 6;
-    else if (formData.installmentFrequency === 'वार्षिक') step = 12;
-
-    const count = Math.max(1, Math.floor(months / step));
+    let count = parseInt(formData.noOfInstallments) || 0;
+    if (count <= 0) {
+      if (formData.installmentFrequency === 'साप्ताहिक') {
+        count = Math.max(1, Math.round(months * 4.33));
+      } else {
+        let step = 1;
+        if (formData.installmentFrequency === 'त्रैमासिक') step = 3;
+        else if (formData.installmentFrequency === 'सहामाही') step = 6;
+        else if (formData.installmentFrequency === 'वार्षिक') step = 12;
+        count = Math.max(1, Math.floor(months / step));
+      }
+    }
 
     try {
+      const customInst = isInstAmountEdited ? (parseFloat(formData.installmentAmount) || 0) : 0;
       const payload = {
         loanRateID: parseInt(formData.loanRateID),
         loanAmount: principal,
@@ -446,7 +518,8 @@ export default function LoanOpeningBalanceMaster() {
         durationMonths: months,
         installmentFrequency: formData.installmentFrequency || 'मासिक',
         loanDisbursementDate: formData.loanDisbursementDate || new Date().toISOString().split('T')[0],
-        firstInstallmentDate: formData.firstInstallmentDate ? formData.firstInstallmentDate : null
+        firstInstallmentDate: formData.firstInstallmentDate ? formData.firstInstallmentDate : null,
+        customInstallmentAmount: customInst > 0 ? customInst : null
       };
 
       const res = await axios.post('/api/LoanAccounts/PreviewSchedule', payload);
@@ -470,10 +543,21 @@ export default function LoanOpeningBalanceMaster() {
         };
       });
 
-      if (mappedChart.length > 0) {
-        if(!isEditing || (isEditing && !formData.installmentAmount)) {
-          const defaultAmount = Math.round(principal / count).toString();
-          setFormData(prev => ({ ...prev, installmentAmount: defaultAmount }));
+      if (mappedChart.length > 0 && !isInstAmountEdited) {
+        const firstRow = mappedChart[0];
+        const rateObj = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+        let instAmount = Math.round(parseFloat(firstRow.total) || 0);
+        
+        if (rateObj) {
+          const calcMethod = rateObj.interestCalculationMethod || "Reducing (घटती शिल्लक)";
+          const instType = rateObj.loanInstallmentType || "समान हप्ता";
+          if (calcMethod.includes("Reducing") && (instType === "समान मुद्दल" || instType === "कर्जावरती" || instType.includes("मुद्दल") || instType.includes("कर्जावर"))) {
+            instAmount = Math.round(parseFloat(firstRow.principal) || 0);
+          }
+        }
+
+        if (formData.installmentAmount !== instAmount.toString()) {
+          setFormData(prev => ({ ...prev, installmentAmount: instAmount.toString() }));
         }
       }
       setInstallmentChart(mappedChart);
@@ -483,6 +567,7 @@ export default function LoanOpeningBalanceMaster() {
   };
 
   const handleNew = () => {
+    setIsInstAmountEdited(false);
     setFormData({
       loanOpeningBalanceID: 0,
       branchID: '1',
@@ -498,6 +583,7 @@ export default function LoanOpeningBalanceMaster() {
       sanctionedAmount: '',
       interestRate: '',
       durationMonths: '',
+      noOfInstallments: '',
       installmentFrequency: 'मासिक',
       installmentAmount: '',
       firstInstallmentDate: '',
@@ -617,6 +703,7 @@ export default function LoanOpeningBalanceMaster() {
   };
 
   const handleEdit = (balance: any) => {
+    setIsInstAmountEdited(false);
     setFormData({
       loanOpeningBalanceID: balance.loanOpeningBalanceID || balance.loanAccountID,
       branchID: balance.branchID.toString(),
@@ -632,6 +719,7 @@ export default function LoanOpeningBalanceMaster() {
       sanctionedAmount: balance.sanctionedAmount.toString(),
       interestRate: balance.interestRate.toString(),
       durationMonths: balance.durationMonths.toString(),
+      noOfInstallments: (balance as any).noOfInstallments?.toString() || '',
       installmentFrequency: balance.installmentFrequency || 'मासिक',
       installmentAmount: balance.installmentAmount.toString(),
       firstInstallmentDate: balance.firstInstallmentDate ? balance.firstInstallmentDate.split('T')[0] : '',
@@ -848,7 +936,7 @@ export default function LoanOpeningBalanceMaster() {
       <div ref={formContainerRef} className="flex flex-col lg:flex-row gap-3">
         
         {/* Left Form Section */}
-        <div className="w-full lg:w-2/3">
+        <div className="w-full lg:w-7/12">
           <form onSubmit={handleSubmit} className="space-y-2.5">
             
             {/* Section 1: Basic Info */}
@@ -920,29 +1008,30 @@ export default function LoanOpeningBalanceMaster() {
                     <option value="वार्षिक">वार्षिक</option>
                   </select>
                 </div>
-                
-                {(() => {
-                  let step = 1;
-                  let count = 0;
-                  if (formData.installmentFrequency === 'साप्ताहिक') {
-                    count = Math.max(0, Math.round((parseInt(formData.durationMonths) || 0) * 4.33));
-                  } else {
-                    if (formData.installmentFrequency === 'त्रैमासिक') step = 3;
-                    else if (formData.installmentFrequency === 'सहामाही') step = 6;
-                    else if (formData.installmentFrequency === 'वार्षिक') step = 12;
-                    count = Math.max(0, Math.floor((parseInt(formData.durationMonths) || 0) / step));
-                  }
-                  return (
-                    <div>
-                      <label className={labelClass}>हप्ता संख्या (Auto)</label>
-                      <input type="text" readOnly value={count > 0 ? count : ''} className={`${inputClass} bg-slate-100 text-gray-600 font-mono`} placeholder="0" />
-                    </div>
-                  );
-                })()}
-
                 <div>
-                  <label className={labelClass}>हप्ता रक्कम (Auto)</label>
-                  <input type="number" step="0.01" name="installmentAmount" value={formData.installmentAmount} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} bg-amber-50/70 font-bold text-primary font-mono`} placeholder="0.00" />
+                  <label className={labelClass}>हप्ता संख्या</label>
+                  <input 
+                    type="number" 
+                    name="noOfInstallments" 
+                    value={formData.noOfInstallments} 
+                    onChange={handleChange} 
+                    onFocus={(e) => e.target.select()} 
+                    className={`${inputClass} font-bold text-gray-900 font-mono`} 
+                    placeholder="0" 
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>हप्ता रक्कम</label>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    name="installmentAmount" 
+                    value={formData.installmentAmount} 
+                    onChange={handleChange} 
+                    onFocus={(e) => e.target.select()} 
+                    className={`${inputClass} bg-amber-50/70 font-bold text-primary font-mono`} 
+                    placeholder="0.00" 
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>पहिली हप्ता दिनांक</label>
@@ -1050,7 +1139,7 @@ export default function LoanOpeningBalanceMaster() {
         </div>
 
         {/* Right Side: Installment Chart Preview */}
-        <div className="w-full lg:w-1/3 bg-white p-3 rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary flex flex-col h-[440px]">
+        <div className="w-full lg:w-5/12 bg-white p-3 rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary flex flex-col h-[520px]">
           <div className="flex items-center justify-between border-b border-gray-200 pb-1.5 mb-2">
             <h2 className="text-xs font-bold text-primary flex items-center gap-1.5">
               <Scale className="w-4 h-4 text-primary" />
@@ -1062,14 +1151,15 @@ export default function LoanOpeningBalanceMaster() {
           </div>
 
           <div className="flex-1 overflow-y-auto border border-gray-200 rounded-sm">
-            <table className="min-w-full divide-y divide-gray-200 text-[11px] text-center">
+            <table className="min-w-full divide-y divide-gray-200 text-[10px] text-center">
               <thead className="bg-slate-100 sticky top-0 shadow-2xs font-bold text-gray-700">
                 <tr>
-                  <th className="px-1.5 py-1.5 border-r border-gray-200">क्र.</th>
-                  <th className="px-1.5 py-1.5 border-r border-gray-200">दिनांक</th>
-                  <th className="px-1.5 py-1.5 border-r border-gray-200 text-right">मुद्दल</th>
-                  <th className="px-1.5 py-1.5 border-r border-gray-200 text-right">व्याज</th>
-                  <th className="px-1.5 py-1.5 text-right">एकूण</th>
+                  <th className="px-1 py-1.5 border-r border-gray-200 w-8">क्र.</th>
+                  <th className="px-1.5 py-1.5 border-r border-gray-200">हप्ता दिनांक</th>
+                  <th className="px-1.5 py-1.5 border-r border-gray-200 text-right">मुद्दल (₹)</th>
+                  <th className="px-1.5 py-1.5 border-r border-gray-200 text-right">व्याज (₹)</th>
+                  <th className="px-1.5 py-1.5 border-r border-gray-200 text-right">एकूण (₹)</th>
+                  <th className="px-1.5 py-1.5 text-right">बाकी शिल्लक (₹)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
@@ -1105,17 +1195,18 @@ export default function LoanOpeningBalanceMaster() {
 
                     return (
                       <tr key={row.no} className={rowClass.trim()}>
-                        <td className="px-1.5 py-1 border-r border-gray-200 font-mono">{row.no}</td>
+                        <td className="px-1 py-1 border-r border-gray-200 font-mono">{row.no}</td>
                         <td className="px-1.5 py-1 border-r border-gray-200 font-mono">{row.date}</td>
-                        <td className="px-1.5 py-1 border-r border-gray-200 text-right font-mono">{Math.round(row.principalValue || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-1.5 py-1 border-r border-gray-200 text-right font-mono text-gray-800">{Math.round(row.principalValue || 0).toLocaleString('en-IN')}</td>
                         <td className="px-1.5 py-1 border-r border-gray-200 text-right text-rose-600 font-mono">{Math.round(parseFloat(row.interest) || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-1.5 py-1 text-right font-bold text-emerald-700 font-mono">{Math.round(parseFloat(row.total) || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-1.5 py-1 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono">{Math.round(parseFloat(row.total) || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-1.5 py-1 text-right text-gray-700 font-mono">{Math.round(parseFloat(row.balance) || 0).toLocaleString('en-IN')}</td>
                       </tr>
                     );
                 })}
                 {installmentChart.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-2 py-12 text-center text-gray-400 font-medium">
+                    <td colSpan={6} className="px-2 py-12 text-center text-gray-400 font-medium">
                       कर्ज मंजूर रक्कम, मुदत आणि व्याज दर प्रविष्ट करा.
                     </td>
                   </tr>

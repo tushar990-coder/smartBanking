@@ -333,7 +333,7 @@ namespace Bhisi.Api.Controllers
                             if (!memberMap.ContainsKey(legacyCustId)) continue;
                             
                             var memberInfo = memberMap[legacyCustId];
-                            var existing = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == accNo && ((memberInfo.CustomerID.HasValue && s.CustomerID == memberInfo.CustomerID.Value) || s.MemberID == memberInfo.MemberID));
+                            var existing = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == accNo && (memberInfo.CustomerID.HasValue && s.CustomerID == memberInfo.CustomerID.Value));
                             
                             if (existing == null)
                             {
@@ -348,7 +348,6 @@ namespace Bhisi.Api.Controllers
                                 
                                 _context.SavingAccountMasters.Add(new SavingAccountMaster {
                                     AccountNo = accNo,
-                                    MemberID = memberInfo.MemberID,
                                     CustomerID = memberInfo.CustomerID ?? 1,
                                     OpeningDate = openDate,
                                     LedgerID = mappedLedgerId,

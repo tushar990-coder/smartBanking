@@ -28,7 +28,6 @@ namespace Bhisi.Api.Controllers
             var query = _context.SavingTransactions
                 .Include(t => t.SavingAccount)
                     .ThenInclude(a => a!.Customer)
-                        .ThenInclude(c => c!.MemberProfile)
                 .OrderByDescending(t => t.TransactionDate)
                 .Select(t => new {
                     t.TransactionID,
@@ -40,10 +39,11 @@ namespace Bhisi.Api.Controllers
                     t.Narration,
                     t.VoucherNo,
                     AccountNo = t.SavingAccount != null ? t.SavingAccount.AccountNo : "",
-                    MemberName = t.SavingAccount != null 
-                        ? (t.SavingAccount.Customer != null 
-                            ? (t.SavingAccount.Customer.FirstName + (string.IsNullOrWhiteSpace(t.SavingAccount.Customer.MiddleName) ? "" : " " + t.SavingAccount.Customer.MiddleName) + " " + t.SavingAccount.Customer.LastName).Trim()
-                            : (t.SavingAccount.Member != null ? (t.SavingAccount.Member.FirstName + (string.IsNullOrWhiteSpace(t.SavingAccount.Member.MiddleName) ? "" : " " + t.SavingAccount.Member.MiddleName) + " " + t.SavingAccount.Member.LastName).Trim() : ""))
+                    CustomerName = t.SavingAccount != null && t.SavingAccount.Customer != null
+                        ? (t.SavingAccount.Customer.FirstName + (string.IsNullOrWhiteSpace(t.SavingAccount.Customer.MiddleName) ? "" : " " + t.SavingAccount.Customer.MiddleName) + " " + t.SavingAccount.Customer.LastName).Trim()
+                        : "",
+                    MemberName = t.SavingAccount != null && t.SavingAccount.Customer != null
+                        ? (t.SavingAccount.Customer.FirstName + (string.IsNullOrWhiteSpace(t.SavingAccount.Customer.MiddleName) ? "" : " " + t.SavingAccount.Customer.MiddleName) + " " + t.SavingAccount.Customer.LastName).Trim()
                         : ""
                 });
 
@@ -288,14 +288,14 @@ namespace Bhisi.Api.Controllers
                         LedgerID = cashBankLedgerID,
                         DrCr = "Dr",
                         Amount = txn.Amount,
-                        MemberID = targetAccount?.MemberID ?? account.MemberID
+                        CustomerID = targetAccount?.CustomerID ?? account.CustomerID
                     });
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = savingControlLedgerID,
                         DrCr = "Cr",
                         Amount = txn.Amount,
-                        MemberID = account.MemberID
+                        CustomerID = account.CustomerID
                     });
                 }
                 else // Withdrawal or Charges
@@ -305,14 +305,14 @@ namespace Bhisi.Api.Controllers
                         LedgerID = savingControlLedgerID,
                         DrCr = "Dr",
                         Amount = txn.Amount,
-                        MemberID = account.MemberID
+                        CustomerID = account.CustomerID
                     });
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = cashBankLedgerID,
                         DrCr = "Cr",
                         Amount = txn.Amount,
-                        MemberID = targetAccount?.MemberID ?? account.MemberID
+                        CustomerID = targetAccount?.CustomerID ?? account.CustomerID
                     });
                 }
 

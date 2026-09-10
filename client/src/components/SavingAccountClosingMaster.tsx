@@ -5,7 +5,10 @@ import SearchableSelect from './SearchableSelect';
 interface SavingAccount {
   savingAccountID: number;
   accountNo: string;
-  memberID: number;
+  cifNo?: string;
+  customerID?: number;
+  customerName?: string;
+  memberID?: number;
   memberName?: string;
   currentBalance: number;
   minimumBalance: number;
@@ -15,7 +18,9 @@ interface SavingAccount {
 interface SavingAccountClosing {
   closingID: number;
   accountNo: string;
-  memberName: string;
+  cifNo?: string;
+  customerName?: string;
+  memberName?: string;
   closureDate: string;
   grossBalance: number;
   closingCharges: number;
@@ -54,14 +59,25 @@ const SavingAccountClosingMaster: React.FC = () => {
       setActiveAccounts(active);
 
       const params = new URLSearchParams(window.location.search);
+      const customerIdStr = params.get('customerId') || params.get('customerID');
       const memberIdStr = params.get('memberId');
-      if (memberIdStr) {
+      const accountIdStr = params.get('accountId') || params.get('savingAccountId');
+
+      let matchedAcc: any = null;
+      if (accountIdStr) {
+        const accId = parseInt(accountIdStr, 10);
+        matchedAcc = active.find((a: any) => a.savingAccountID === accId);
+      } else if (customerIdStr) {
+        const cId = parseInt(customerIdStr, 10);
+        matchedAcc = active.find((a: any) => a.customerID === cId);
+      } else if (memberIdStr) {
         const mId = parseInt(memberIdStr, 10);
-        const matchedAcc = active.find((a: any) => a.memberID === mId);
-        if (matchedAcc) {
-          setFormData((prev) => ({ ...prev, savingAccountID: matchedAcc.savingAccountID }));
-          setSelectedAccount(matchedAcc);
-        }
+        matchedAcc = active.find((a: any) => a.customerID === mId || a.memberID === mId);
+      }
+
+      if (matchedAcc) {
+        setFormData((prev) => ({ ...prev, savingAccountID: matchedAcc.savingAccountID }));
+        setSelectedAccount(matchedAcc);
       }
     } catch (err) {
       console.error('Error fetching accounts', err);
@@ -140,10 +156,14 @@ const SavingAccountClosingMaster: React.FC = () => {
   const closingCharges = parseFloat(formData.closingCharges || '0');
   const netPayable = Math.max(0, grossBalance - closingCharges);
 
-  const accountOptions = activeAccounts.map(a => ({
-    value: a.savingAccountID,
-    label: `${a.accountNo} - ${a.memberName} (शिल्लक: ₹${a.currentBalance.toFixed(2)})`
-  }));
+  const accountOptions = activeAccounts.map(a => {
+    const cifPart = a.cifNo ? ` [CIF: ${a.cifNo}]` : '';
+    const namePart = a.customerName || a.memberName || 'अज्ञात';
+    return {
+      value: a.savingAccountID,
+      label: `${a.accountNo}${cifPart} - ${namePart} (शिल्लक: ₹${a.currentBalance.toFixed(2)})`
+    };
+  });
 
   return (
     <div className="p-1 max-w-7xl mx-auto bg-gray-50 min-h-screen font-sans pb-4">
@@ -254,7 +274,12 @@ const SavingAccountClosingMaster: React.FC = () => {
               <div className="space-y-1.5">
                 <div>
                   <span className="font-semibold text-gray-500">खातेदार:</span>
-                  <p className="font-bold text-sm text-primary truncate">{selectedAccount.memberName}</p>
+                  <p className="font-bold text-sm text-primary truncate">{selectedAccount.customerName || selectedAccount.memberName}</p>
+                  {selectedAccount.cifNo && (
+                    <span className="text-[10px] font-bold bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 font-mono">
+                      CIF: {selectedAccount.cifNo}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <span className="font-semibold text-gray-500">खाते क्र.:</span>
@@ -282,7 +307,7 @@ const SavingAccountClosingMaster: React.FC = () => {
             <thead className="bg-primary text-white">
               <tr>
                 <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">खाते क्र. (A/c No)</th>
-                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">नाव (Member Name)</th>
+                <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">नाव (Customer Name)</th>
                 <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">बंद तारीख (Closure Date)</th>
                 <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-right">एकूण शिल्लक (Gross Bal)</th>
                 <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-right">चार्जेस (Charges)</th>
@@ -302,7 +327,7 @@ const SavingAccountClosingMaster: React.FC = () => {
                 closings.map((c) => (
                   <tr key={c.closingID} className="hover:bg-gray-50">
                     <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-red-600">{c.accountNo}</td>
-                    <td className="px-2 py-1 border-r border-gray-200 text-left">{c.memberName}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-left">{c.customerName || c.memberName}</td>
                     <td className="px-2 py-1 border-r border-gray-200 text-left">
                       {new Date(c.closureDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                     </td>

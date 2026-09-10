@@ -63,6 +63,32 @@ namespace Bhisi.Api.Models
         // ██  (Delegate to Customer navigation for backward compat) ██
         // ═══════════════════════════════════════════════════════════
 
+        // --- Admission Fee & Payment Mode (For Instant Day Book Voucher Generation) ---
+        [NotMapped]
+        public decimal? AdmissionFee { get; set; } = 0;
+
+        [NotMapped]
+        public decimal? BuildingFund { get; set; } = 0;
+
+        [NotMapped]
+        public string? PaymentMode { get; set; } = "Cash";
+
+        [NotMapped]
+        public int? SavingAccountId { get; set; }
+
+        [NotMapped]
+        public string? GeneratedVoucherNo { get; set; }
+
+        // --- Direct Share Allotment Shims (For Integrated Application Form) ---
+        [NotMapped]
+        public int? NumberOfShares { get; set; } = 0;
+
+        [NotMapped]
+        public decimal? ShareFaceValue { get; set; } = 100M;
+
+        [NotMapped]
+        public DateTime? AllotmentDate { get; set; }
+
         // --- Legacy Migration Shims ---
         [NotMapped]
         public string? OldMemberCode

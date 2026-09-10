@@ -642,7 +642,6 @@ namespace Bhisi.Api.Controllers
                         {
                             AccountNo = accNo,
                             CustomerID = member.CustomerID ?? 1,
-                            MemberID = member.MemberID,
                             BranchID = branch.BranchID,
                             LedgerID = savingLedger.LedgerID,
                             OpeningBalance = 1000,

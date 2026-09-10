@@ -54,7 +54,6 @@ namespace Bhisi.Api.Controllers
             var activeAccounts = await _context.SavingAccountMasters
                 .Where(a => a.Status == "Active")
                 .Include(a => a.Customer)
-                .Include(a => a.Member)
                 .ToListAsync();
 
             var results = new List<InterestCalculationResult>();
@@ -64,13 +63,15 @@ namespace Bhisi.Api.Controllers
                 decimal interest = CalculateAccountInterest(account, request.PeriodStart, request.PeriodEnd);
                 if (interest > 0)
                 {
+                    string custName = account.Customer != null 
+                        ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() 
+                        : "";
                     results.Add(new InterestCalculationResult
                     {
                         SavingAccountID = account.SavingAccountID,
                         AccountNo = account.AccountNo,
-                        MemberName = account.Customer != null 
-                            ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() 
-                            : (account.Member != null ? $"{account.Member.FirstName} {account.Member.LastName}".Trim() : ""),
+                        CustomerName = custName,
+                        MemberName = custName,
                         CurrentBalance = account.CurrentBalance,
                         InterestRate = account.InterestRate,
                         CalculatedInterest = Math.Round(interest, 2)
@@ -354,6 +355,7 @@ namespace Bhisi.Api.Controllers
     {
         public int SavingAccountID { get; set; }
         public string AccountNo { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
         public string MemberName { get; set; } = string.Empty;
         public decimal CurrentBalance { get; set; }
         public decimal InterestRate { get; set; }

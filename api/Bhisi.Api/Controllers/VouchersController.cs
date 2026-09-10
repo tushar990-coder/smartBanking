@@ -37,7 +37,10 @@ namespace Bhisi.Api.Controllers
                                   .Include(v => v.VoucherDetails)
                                   .ThenInclude(d => d.Ledger)
                                   .Include(v => v.VoucherDetails)
+                                  .ThenInclude(d => d.Customer)
+                                  .Include(v => v.VoucherDetails)
                                   .ThenInclude(d => d.Member)
+                                      .ThenInclude(m => m!.Customer)
                                   .OrderByDescending(v => v.VoucherDate)
                                   .ThenByDescending(v => v.VoucherID);
 
@@ -62,7 +65,10 @@ namespace Bhisi.Api.Controllers
                                         .Include(v => v.VoucherDetails)
                                         .ThenInclude(d => d.Ledger)
                                         .Include(v => v.VoucherDetails)
+                                        .ThenInclude(d => d.Customer)
+                                        .Include(v => v.VoucherDetails)
                                         .ThenInclude(d => d.Member)
+                                            .ThenInclude(m => m!.Customer)
                                         .FirstOrDefaultAsync(v => v.VoucherID == id);
 
             if (voucher == null)

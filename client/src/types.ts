@@ -9,8 +9,11 @@ export interface Member {
 export interface SavingAccount {
   savingAccountID: number;
   accountNo: string;
-  memberID: number;
+  customerID?: number;
+  customerName?: string;
+  memberID?: number;
   memberName?: string;
+  cifNo?: string;
   openingDate: string;
   openingBalance: number;
   currentBalance: number;

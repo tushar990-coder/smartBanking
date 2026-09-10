@@ -681,7 +681,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
           durationMonths: app.durationMonths || 12,
           installmentFrequency: app.installmentFrequency || 'मासिक',
           loanDisbursementDate: app.applicationDate || new Date().toISOString().split('T')[0],
-          firstInstallmentDate: app.firstInstallmentDate ? app.firstInstallmentDate : null
+          firstInstallmentDate: app.firstInstallmentDate ? app.firstInstallmentDate : null,
+          customInstallmentAmount: app.installmentAmount && app.installmentAmount > 0 ? app.installmentAmount : null
         };
         const res = await axios.post('/api/LoanAccounts/PreviewSchedule', payload);
         const mappedSchedule = res.data.map((row: any) => ({

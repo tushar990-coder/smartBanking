@@ -20,6 +20,8 @@ interface SavingAccountDto {
   oldAccountNo?: string;
   legacyAccountNumber?: string;
   customerID?: number;
+  customerName?: string;
+  customerNameEng?: string;
   memberID?: number;
   cifNo?: string;
   memberCode?: string;
@@ -137,12 +139,15 @@ export default function SavingAccountListReport() {
   };
 
   const getMemberName = (acc: SavingAccountDto) => {
-    if (acc.memberName && acc.memberName.trim() !== '') {
-      return acc.memberName.trim();
+    if (acc.customerName && acc.customerName.trim() !== '') {
+      return acc.customerName.trim();
     }
     if (acc.customer) {
       const c = acc.customer;
       return `${c.firstName || ''} ${c.middleName || ''} ${c.lastName || ''}`.trim();
+    }
+    if (acc.memberName && acc.memberName.trim() !== '') {
+      return acc.memberName.trim();
     }
     if (acc.member) {
       const m = acc.member;

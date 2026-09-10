@@ -34,7 +34,10 @@ interface SavingAccount {
   oldAccountNo?: string;
   legacyAccountNumber?: string;
   cifNo?: string;
-  memberID: number;
+  customerID?: number;
+  customerName?: string;
+  customerNameEng?: string;
+  memberID?: number;
   memberCode?: string;
   memberName?: string;
   memberNameEng?: string;
@@ -71,6 +74,7 @@ interface SavingTransaction {
   narration?: string;
   voucherNo?: string;
   accountNo?: string;
+  customerName?: string;
   memberName?: string;
 }
 
@@ -218,6 +222,7 @@ const SavingTransactionEntry: React.FC = () => {
       setLedgers(ledgerList);
 
       const params = new URLSearchParams(window.location.search);
+      const customerIdStr = params.get('customerId') || params.get('customerID');
       const memberIdStr = params.get('memberId');
       const accountIdStr = params.get('accountId') || params.get('savingAccountId');
       const typeStr = params.get('type');
@@ -235,9 +240,21 @@ const SavingTransactionEntry: React.FC = () => {
             }));
             setSelectedAccount(matchedAcc);
           }
+        } else if (customerIdStr) {
+          const cId = parseInt(customerIdStr, 10);
+          const matchedAcc = accData.find((a: any) => a.customerID === cId);
+          if (matchedAcc) {
+            setSelectedLedgerID(matchedAcc.ledgerID || 7);
+            setFormData((prev) => ({
+              ...prev,
+              savingAccountID: matchedAcc.savingAccountID,
+              transactionType: typeStr || prev.transactionType
+            }));
+            setSelectedAccount(matchedAcc);
+          }
         } else if (memberIdStr) {
           const mId = parseInt(memberIdStr, 10);
-          const matchedAcc = accData.find((a: any) => a.memberID === mId);
+          const matchedAcc = accData.find((a: any) => a.customerID === mId || a.memberID === mId);
           if (matchedAcc) {
             setSelectedLedgerID(matchedAcc.ledgerID || 7);
             setFormData((prev) => ({
@@ -388,13 +405,14 @@ const SavingTransactionEntry: React.FC = () => {
     : accounts;
 
   const accountOptions = filteredAccounts.map((acc) => {
-    const codePart = acc.memberCode ? ` [${acc.memberCode}]` : '';
+    const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : (acc.memberCode ? ` [${acc.memberCode}]` : '');
     const oldAccPart = (acc.oldAccountNo || acc.legacyAccountNumber) ? ` (जुने: ${acc.oldAccountNo || acc.legacyAccountNumber})` : '';
-    const engPart = acc.memberNameEng ? ` (${acc.memberNameEng})` : '';
+    const namePart = acc.customerName || acc.memberName || 'अज्ञात';
+    const engPart = (acc.customerNameEng || acc.memberNameEng) ? ` (${acc.customerNameEng || acc.memberNameEng})` : '';
     const balPart = ` - शिल्लक: ₹${(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     return {
       value: acc.savingAccountID,
-      label: `${acc.accountNo}${oldAccPart}${codePart} - ${acc.memberName || 'अज्ञात'}${engPart}${balPart}`
+      label: `${acc.accountNo}${oldAccPart}${cifPart} - ${namePart}${engPart}${balPart}`
     };
   });
 
@@ -404,13 +422,14 @@ const SavingTransactionEntry: React.FC = () => {
     : accounts.filter(acc => acc.savingAccountID !== formData.savingAccountID);
 
   const targetAccountOptions = filteredTargetAccounts.map((acc) => {
-    const codePart = acc.memberCode ? ` [${acc.memberCode}]` : '';
+    const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : (acc.memberCode ? ` [${acc.memberCode}]` : '');
     const oldAccPart = (acc.oldAccountNo || acc.legacyAccountNumber) ? ` (जुने: ${acc.oldAccountNo || acc.legacyAccountNumber})` : '';
-    const engPart = acc.memberNameEng ? ` (${acc.memberNameEng})` : '';
+    const namePart = acc.customerName || acc.memberName || 'अज्ञात';
+    const engPart = (acc.customerNameEng || acc.memberNameEng) ? ` (${acc.customerNameEng || acc.memberNameEng})` : '';
     const balPart = ` - शिल्लक: ₹${(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     return {
       value: acc.savingAccountID,
-      label: `${acc.accountNo}${oldAccPart}${codePart} - ${acc.memberName || 'अज्ञात'}${engPart}${balPart}`
+      label: `${acc.accountNo}${oldAccPart}${cifPart} - ${namePart}${engPart}${balPart}`
     };
   });
 
@@ -702,6 +721,8 @@ const SavingTransactionEntry: React.FC = () => {
                     min="1"
                     value={formData.amount}
                     onChange={handleInputChange}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onFocus={(e) => e.target.select()}
                     placeholder="0.00"
                     required
                     className="w-full text-[11px] border border-gray-300 pl-6 pr-2.5 py-1 rounded-sm focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-black h-[30px]"
@@ -802,7 +823,7 @@ const SavingTransactionEntry: React.FC = () => {
               </div>
             )}
 
-            {/* Selected Member Quick Info Badge */}
+            {/* Selected Customer Quick Info Badge */}
             {selectedAccount && (
               <div className="p-2.5 bg-slate-100 rounded-sm border border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs">
                 <div className="flex items-center gap-2">
@@ -810,10 +831,10 @@ const SavingTransactionEntry: React.FC = () => {
                     👤
                   </div>
                   <div>
-                    <span className="font-bold text-slate-900">{selectedAccount.memberName}</span>
-                    {selectedAccount.memberCode && (
-                      <span className="ml-1.5 bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-semibold">
-                        {selectedAccount.memberCode}
+                    <span className="font-bold text-slate-900">{selectedAccount.customerName || selectedAccount.memberName}</span>
+                    {selectedAccount.cifNo && (
+                      <span className="ml-1.5 bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[10px] font-bold font-mono">
+                        CIF: {selectedAccount.cifNo}
                       </span>
                     )}
                     <span className="ml-2 text-slate-500 font-mono">({selectedAccount.accountNo})</span>
@@ -876,7 +897,7 @@ const SavingTransactionEntry: React.FC = () => {
                   {selectedTargetAccount ? (
                     <div className="md:col-span-1 bg-emerald-50 border border-emerald-300 rounded-sm px-3 py-1.5 flex flex-col justify-center shadow-2xs">
                       <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">
-                        👤 खातेदार: {selectedTargetAccount.memberName}
+                        👤 खातेदार: {selectedTargetAccount.customerName || selectedTargetAccount.memberName}
                       </span>
                       <span className="text-xs font-black text-emerald-950">
                         💳 शिल्लक: ₹ {selectedTargetAccount.currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -933,21 +954,21 @@ const SavingTransactionEntry: React.FC = () => {
           <div className="p-3 flex-1 flex flex-col justify-between bg-slate-50/50 space-y-2.5">
             {selectedAccount ? (
               <>
-                {/* Member Details */}
+                {/* Customer Details */}
                 <div className="bg-white rounded-sm p-2.5 border border-slate-200 shadow-2xs space-y-1.5">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">खातेदार नाव</span>
-                      <p className="font-bold text-sm text-slate-900 truncate leading-tight">{selectedAccount.memberName}</p>
+                      <p className="font-bold text-sm text-slate-900 truncate leading-tight">{selectedAccount.customerName || selectedAccount.memberName}</p>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                        {selectedAccount.memberCode && (
-                          <span className="text-[10px] font-bold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
-                            कोड: {selectedAccount.memberCode}
-                          </span>
-                        )}
                         {selectedAccount.cifNo && (
                           <span className="text-[10px] font-bold bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 font-mono">
                             CIF: {selectedAccount.cifNo}
+                          </span>
+                        )}
+                        {selectedAccount.memberCode && (
+                          <span className="text-[10px] font-bold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+                            कोड: {selectedAccount.memberCode}
                           </span>
                         )}
                       </div>
@@ -1185,7 +1206,7 @@ const SavingTransactionEntry: React.FC = () => {
                     <th className="px-2 py-2 border-r border-slate-300 font-bold text-center">अ. क्र.</th>
                     <th className="px-2 py-2 border-r border-slate-300 font-bold text-left">दिनांक (Date)</th>
                     <th className="px-2 py-2 border-r border-slate-300 font-bold text-left">खाते क्र. (A/c No)</th>
-                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-left">खातेदाराचे नाव (Member Name)</th>
+                    <th className="px-2 py-2 border-r border-slate-300 font-bold text-left">खातेदाराचे नाव (Customer Name)</th>
                     <th className="px-2 py-2 border-r border-slate-300 font-bold text-center">प्रकार (Type)</th>
                     <th className="px-2 py-2 border-r border-slate-300 font-bold text-center">मोड (Mode)</th>
                     <th className="px-2 py-2 border-r border-slate-300 font-bold text-right">रक्कम (Amount ₹)</th>
@@ -1215,7 +1236,7 @@ const SavingTransactionEntry: React.FC = () => {
                           {t.accountNo}
                         </td>
                         <td className="px-2 py-1.5 border-r border-slate-200 text-left font-semibold text-slate-900 min-w-[160px]">
-                          {t.memberName}
+                          {t.customerName || t.memberName}
                         </td>
                         <td className="px-2 py-1.5 border-r border-slate-200 text-center whitespace-nowrap">
                           <span className={`px-2 py-0.5 inline-flex text-[10px] leading-3 font-bold rounded ${

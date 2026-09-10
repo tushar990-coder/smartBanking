@@ -7,43 +7,54 @@ namespace Bhisi.Api.Services
 {
     public static class LoanScheduleGenerator
     {
-        public static List<LoanInstallmentSchedule> GenerateSchedules(LoanAccount account, LoanRate? loanRate = null)
+        /// <summary>
+        /// Single source of truth for generating loan installment preview schedules across the entire application.
+        /// Used by Loan Opening Balance, Loan Application, Loan Disbursement, and Loan Ledger Reports.
+        /// </summary>
+        public static List<OpeningBalanceScheduleDto> GeneratePreviewSchedule(LoanSchedulePreviewRequest request, LoanRate loanRate)
         {
-            var schedules = new List<LoanInstallmentSchedule>();
-            if (account == null) return schedules;
+            var scheduleList = new List<OpeningBalanceScheduleDto>();
+            if (request == null || loanRate == null) return scheduleList;
 
-            var rate = loanRate ?? account.LoanRate;
-            if (rate == null) return schedules;
+            decimal P = request.LoanAmount;
+            if (P <= 0) return scheduleList;
 
-            decimal P = account.PrincipalBalance > 0 ? account.PrincipalBalance : account.SanctionedAmount;
-            int n = account.NoOfInstallments;
-            decimal ratePerYear = account.InterestRate;
-            string calcMethod = rate.InterestCalculationMethod ?? "Reducing (घटती शिल्लक)";
-            string installmentType = rate.LoanInstallmentType ?? "समान हप्ता";
+            decimal ratePerYear = request.InterestRate;
+            string calcMethod = loanRate.InterestCalculationMethod ?? "Reducing (घटती शिल्लक)";
+            string installmentType = loanRate.LoanInstallmentType ?? "समान हप्ता";
+            string frequency = request.InstallmentFrequency ?? "मासिक";
 
-            bool isWeekly = (account.InstallmentFrequency ?? "").Contains("साप्ताहिक") || (account.InstallmentFrequency ?? "").ToLower().Contains("weekly");
+            bool isWeekly = frequency.Contains("साप्ताहिक") || frequency.ToLower().Contains("weekly");
             int stepMonths = 1;
             if (isWeekly) stepMonths = 0;
-            else if (account.InstallmentFrequency == "त्रैमासिक" || account.InstallmentFrequency == "त्रैमासिक (Quarterly)") stepMonths = 3;
-            else if (account.InstallmentFrequency == "सहामाही" || account.InstallmentFrequency == "सहामाही (Half-Yearly)") stepMonths = 6;
-            else if (account.InstallmentFrequency == "वार्षिक" || account.InstallmentFrequency == "वार्षिक (Yearly)") stepMonths = 12;
+            else if (frequency.Contains("त्रैमासिक") || frequency.ToLower().Contains("quarterly")) stepMonths = 3;
+            else if (frequency.Contains("सहामाही") || frequency.ToLower().Contains("half")) stepMonths = 6;
+            else if (frequency.Contains("वार्षिक") || frequency.ToLower().Contains("yearly")) stepMonths = 12;
+
+            int n = request.NoOfInstallments;
+            if (n <= 0)
+            {
+                int duration = request.DurationMonths > 0 ? request.DurationMonths : 12;
+                n = isWeekly ? Math.Max(1, (int)Math.Round(duration * 4.33)) : Math.Max(1, duration / (stepMonths > 0 ? stepMonths : 1));
+            }
 
             decimal bal = P;
-            DateTime disbursementDate = account.LoanDisbursementDate ?? account.OpeningDate;
-            DateTime currentDueDate = account.FirstInstallmentDate ?? (isWeekly ? disbursementDate.AddDays(7) : disbursementDate.AddMonths(stepMonths));
-
-            decimal totalPrincipalPaid = (account.SanctionedAmount > account.PrincipalBalance && account.PrincipalBalance > 0)
-                ? (account.SanctionedAmount - account.PrincipalBalance)
-                : 0;
+            DateTime disbursementDate = request.LoanDisbursementDate != default ? request.LoanDisbursementDate : DateTime.Today;
+            DateTime currentDueDate = request.FirstInstallmentDate.HasValue && request.FirstInstallmentDate.Value != default
+                ? request.FirstInstallmentDate.Value
+                : (isWeekly ? disbursementDate.AddDays(7) : disbursementDate.AddMonths(stepMonths));
 
             if (calcMethod.Contains("Flat") || calcMethod.Contains("फ्लॅट"))
             {
-                int totalMonths = account.DurationMonths > 0 ? account.DurationMonths : (isWeekly ? (int)Math.Max(1, Math.Ceiling(n / 4.33)) : n * stepMonths);
+                int totalMonths = request.DurationMonths > 0 ? request.DurationMonths : (isWeekly ? (int)Math.Max(1, Math.Ceiling(n / 4.33)) : n * stepMonths);
                 decimal totalInterest = (P * ratePerYear * ((decimal)totalMonths / 12m)) / 100m;
                 decimal totalAmount = P + totalInterest;
-                decimal interestPerInstallment = n > 0 ? totalInterest / n : 0;
-                decimal emi = n > 0 ? Math.Round(totalAmount / n) : 0;
+                decimal interestPerInstallment = n > 0 ? totalInterest / (decimal)n : 0;
+                decimal emi = request.CustomInstallmentAmount.HasValue && request.CustomInstallmentAmount.Value > 0
+                    ? request.CustomInstallmentAmount.Value
+                    : (n > 0 ? Math.Round(totalAmount / (decimal)n) : 0);
                 decimal totalPaid = 0;
+                DateTime prevDueDate = disbursementDate;
 
                 for (int i = 1; i <= n; i++)
                 {
@@ -51,63 +62,56 @@ namespace Bhisi.Api.Services
                     decimal totalEmi = 0;
                     decimal principalPart = 0;
 
-                    if (i == n)
+                    if (i == n || bal <= 0)
                     {
                         totalEmi = Math.Round(totalAmount - totalPaid);
                         principalPart = totalEmi - Math.Round(interest);
+                        if (principalPart < 0) principalPart = 0;
                         bal = 0;
                     }
                     else
                     {
                         totalEmi = emi;
                         principalPart = totalEmi - Math.Round(interest);
+                        if (principalPart > bal) principalPart = bal;
                         totalPaid += totalEmi;
                         bal -= principalPart;
                     }
+                    if (bal < 0) bal = 0;
 
-                    string status = "Pending";
-                    if (totalPrincipalPaid >= principalPart)
-                    {
-                        status = "Paid";
-                        totalPrincipalPaid -= principalPart;
-                    }
-                    else
-                    {
-                        totalPrincipalPaid = 0;
-                        status = currentDueDate < DateTime.Today ? "Overdue" : "Pending";
-                    }
+                    int days = Math.Max(0, (currentDueDate - prevDueDate).Days);
 
-                    schedules.Add(new LoanInstallmentSchedule
+                    scheduleList.Add(new OpeningBalanceScheduleDto
                     {
-                        LoanAccountID = account.LoanAccountID,
-                        InstallmentNo = i,
-                        DueDate = currentDueDate,
-                        PrincipalAmount = Math.Round(principalPart),
-                        InterestAmount = Math.Round(interest),
-                        TotalAmount = Math.Round(totalEmi),
-                        BalanceAmount = Math.Max(0, Math.Round(bal)),
+                        No = i,
+                        Date = currentDueDate,
+                        Principal = Math.Round(principalPart),
+                        Interest = Math.Round(interest),
+                        Total = Math.Round(totalEmi),
+                        Balance = Math.Max(0, Math.Round(bal)),
                         OpeningBalance = Math.Max(0, Math.Round(bal + principalPart)),
                         ClosingBalance = Math.Max(0, Math.Round(bal)),
-                        Days = 0,
-                        InterestRate = ratePerYear,
-                        Status = status,
-                        PaidDate = status == "Paid" ? currentDueDate : null
+                        Days = days,
+                        InterestRate = ratePerYear
                     });
 
+                    prevDueDate = currentDueDate;
                     currentDueDate = isWeekly ? currentDueDate.AddDays(7) : currentDueDate.AddMonths(stepMonths);
                 }
             }
             else if (calcMethod.Contains("Reducing") && (installmentType == "समान मुद्दल" || installmentType == "कर्जावरती" || installmentType.Contains("मुद्दल") || installmentType.Contains("कर्जावर")))
             {
-                decimal principalPart = n > 0 ? Math.Round(P / n) : P;
+                decimal principalPart = request.CustomInstallmentAmount.HasValue && request.CustomInstallmentAmount.Value > 0
+                    ? request.CustomInstallmentAmount.Value
+                    : (n > 0 ? Math.Round(P / (decimal)n) : P);
                 DateTime prevDueDate = disbursementDate;
 
                 for (int i = 1; i <= n; i++)
                 {
                     int days = Math.Max(0, (currentDueDate - prevDueDate).Days);
-                    decimal interest = Math.Round((bal * days * ratePerYear) / 36500m);
+                    decimal interest = Math.Round((bal * (decimal)days * ratePerYear) / 36500m);
                     decimal currentPrincipal = principalPart;
-                    if (i == n)
+                    if (i == n || bal <= currentPrincipal)
                     {
                         currentPrincipal = bal;
                     }
@@ -116,33 +120,18 @@ namespace Bhisi.Api.Services
                     bal -= currentPrincipal;
                     if (bal < 0) bal = 0;
 
-                    string status = "Pending";
-                    if (totalPrincipalPaid >= currentPrincipal)
+                    scheduleList.Add(new OpeningBalanceScheduleDto
                     {
-                        status = "Paid";
-                        totalPrincipalPaid -= currentPrincipal;
-                    }
-                    else
-                    {
-                        totalPrincipalPaid = 0;
-                        status = currentDueDate < DateTime.Today ? "Overdue" : "Pending";
-                    }
-
-                    schedules.Add(new LoanInstallmentSchedule
-                    {
-                        LoanAccountID = account.LoanAccountID,
-                        InstallmentNo = i,
-                        DueDate = currentDueDate,
-                        PrincipalAmount = currentPrincipal,
-                        InterestAmount = interest,
-                        TotalAmount = totalEmi,
-                        BalanceAmount = bal,
+                        No = i,
+                        Date = currentDueDate,
+                        Principal = currentPrincipal,
+                        Interest = interest,
+                        Total = totalEmi,
+                        Balance = bal,
                         OpeningBalance = opBal,
                         ClosingBalance = bal,
                         Days = days,
-                        InterestRate = ratePerYear,
-                        Status = status,
-                        PaidDate = status == "Paid" ? currentDueDate : null
+                        InterestRate = ratePerYear
                     });
 
                     prevDueDate = currentDueDate;
@@ -151,13 +140,17 @@ namespace Bhisi.Api.Services
             }
             else
             {
-                // Standard Reducing Balance: EMI = P * r * (1+r)^n / ((1+r)^n - 1)
+                // Standard Reducing Balance: Equal Installment (EMI) / Daily Reducing
                 decimal r = 0;
                 if (isWeekly) r = (ratePerYear / 100m) / 52m;
                 else if (stepMonths > 0) r = (ratePerYear / 100m) * ((decimal)stepMonths / 12m);
 
                 decimal emi = 0;
-                if (n <= 0) emi = 0;
+                if (request.CustomInstallmentAmount.HasValue && request.CustomInstallmentAmount.Value > 0)
+                {
+                    emi = request.CustomInstallmentAmount.Value;
+                }
+                else if (n <= 0) emi = 0;
                 else if (r == 0) emi = P / (decimal)n;
                 else emi = (P * r * (decimal)Math.Pow((double)(1 + r), n)) / (decimal)(Math.Pow((double)(1 + r), n) - 1);
 
@@ -168,7 +161,7 @@ namespace Bhisi.Api.Services
                     decimal principalPart = 0;
                     decimal totalEmi = 0;
 
-                    if (i == n)
+                    if (i == n || bal <= 0)
                     {
                         principalPart = bal;
                         totalEmi = Math.Round(principalPart + interest);
@@ -178,45 +171,115 @@ namespace Bhisi.Api.Services
                     {
                         totalEmi = Math.Round(emi);
                         principalPart = totalEmi - Math.Round(interest);
+                        if (principalPart > bal) principalPart = bal;
                         bal -= principalPart;
                     }
                     if (bal < 0) bal = 0;
 
                     int days = Math.Max(0, (currentDueDate - prevDueDate).Days);
 
-                    string status = "Pending";
-                    if (totalPrincipalPaid >= principalPart)
+                    scheduleList.Add(new OpeningBalanceScheduleDto
                     {
-                        status = "Paid";
-                        totalPrincipalPaid -= principalPart;
-                    }
-                    else
-                    {
-                        totalPrincipalPaid = 0;
-                        status = currentDueDate < DateTime.Today ? "Overdue" : "Pending";
-                    }
-
-                    schedules.Add(new LoanInstallmentSchedule
-                    {
-                        LoanAccountID = account.LoanAccountID,
-                        InstallmentNo = i,
-                        DueDate = currentDueDate,
-                        PrincipalAmount = Math.Round(principalPart),
-                        InterestAmount = Math.Round(interest),
-                        TotalAmount = Math.Round(totalEmi),
-                        BalanceAmount = Math.Max(0, Math.Round(bal)),
+                        No = i,
+                        Date = currentDueDate,
+                        Principal = Math.Round(principalPart),
+                        Interest = Math.Round(interest),
+                        Total = Math.Round(totalEmi),
+                        Balance = Math.Max(0, Math.Round(bal)),
                         OpeningBalance = Math.Max(0, Math.Round(bal + principalPart)),
                         ClosingBalance = Math.Max(0, Math.Round(bal)),
                         Days = days,
-                        InterestRate = ratePerYear,
-                        Status = status,
-                        PaidDate = status == "Paid" ? currentDueDate : null
+                        InterestRate = ratePerYear
                     });
 
                     prevDueDate = currentDueDate;
                     currentDueDate = isWeekly ? currentDueDate.AddDays(7) : currentDueDate.AddMonths(stepMonths);
                 }
             }
+
+            return scheduleList;
+        }
+
+        /// <summary>
+        /// Generates entity schedule records for loan accounts upon disbursement or opening balance migration.
+        /// Utilizes the exact same calculation engine as GeneratePreviewSchedule to guarantee 100% consistency.
+        /// </summary>
+        public static List<LoanInstallmentSchedule> GenerateSchedules(LoanAccount account, LoanRate? loanRate = null)
+        {
+            var schedules = new List<LoanInstallmentSchedule>();
+            if (account == null) return schedules;
+
+            var rate = loanRate ?? account.LoanRate;
+            if (rate == null) return schedules;
+
+            decimal P = account.SanctionedAmount > 0 ? account.SanctionedAmount : (account.PrincipalBalance > 0 ? account.PrincipalBalance : 0);
+            int n = account.NoOfInstallments;
+            if (n <= 0 && account.DurationMonths > 0)
+            {
+                bool isWeekly = (account.InstallmentFrequency ?? "").Contains("साप्ताहिक") || (account.InstallmentFrequency ?? "").ToLower().Contains("weekly");
+                int step = 1;
+                if (isWeekly) step = 0;
+                else if ((account.InstallmentFrequency ?? "").Contains("त्रैमासिक")) step = 3;
+                else if ((account.InstallmentFrequency ?? "").Contains("सहामाही")) step = 6;
+                else if ((account.InstallmentFrequency ?? "").Contains("वार्षिक")) step = 12;
+
+                n = isWeekly ? Math.Max(1, (int)Math.Round(account.DurationMonths * 4.33)) : Math.Max(1, account.DurationMonths / step);
+            }
+
+            var request = new LoanSchedulePreviewRequest
+            {
+                LoanRateID = rate.LoanRateID,
+                LoanAmount = P,
+                InterestRate = account.InterestRate,
+                NoOfInstallments = n,
+                DurationMonths = account.DurationMonths > 0 ? account.DurationMonths : 12,
+                InstallmentFrequency = account.InstallmentFrequency ?? "मासिक",
+                LoanDisbursementDate = account.LoanDisbursementDate ?? account.OpeningDate,
+                FirstInstallmentDate = account.FirstInstallmentDate,
+                CustomInstallmentAmount = account.InstallmentAmount > 0 ? account.InstallmentAmount : null
+            };
+
+            var previewList = GeneratePreviewSchedule(request, rate);
+
+            decimal totalPrincipalPaid = (account.SanctionedAmount > account.PrincipalBalance && account.PrincipalBalance > 0)
+                ? (account.SanctionedAmount - account.PrincipalBalance)
+                : 0;
+
+            foreach (var p in previewList)
+            {
+                string status = "Pending";
+                DateTime? paidDate = null;
+
+                if (totalPrincipalPaid >= p.Principal && p.Principal > 0)
+                {
+                    status = "Paid";
+                    paidDate = account.OpeningDate;
+                    totalPrincipalPaid -= p.Principal;
+                }
+                else
+                {
+                    totalPrincipalPaid = 0;
+                    status = p.Date < DateTime.Today ? "Overdue" : "Pending";
+                }
+
+                schedules.Add(new LoanInstallmentSchedule
+                {
+                    LoanAccountID = account.LoanAccountID,
+                    InstallmentNo = p.No,
+                    DueDate = p.Date,
+                    PrincipalAmount = p.Principal,
+                    InterestAmount = p.Interest,
+                    TotalAmount = p.Total,
+                    BalanceAmount = p.Balance,
+                    OpeningBalance = p.OpeningBalance,
+                    ClosingBalance = p.ClosingBalance,
+                    Days = p.Days,
+                    InterestRate = p.InterestRate,
+                    Status = status,
+                    PaidDate = paidDate
+                });
+            }
+
             return schedules;
         }
 

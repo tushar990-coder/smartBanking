@@ -539,6 +539,21 @@ namespace Bhisi.Api.Controllers
 
                 _context.PigmyAccounts.Remove(pigmyAccount);
                 await _context.SaveChangesAsync();
+
+                // If the deleted record was the highest/only PigmyAccountID, automatically decrement/reseed identity counter
+                try
+                {
+                    var maxRemainingId = await _context.PigmyAccounts.MaxAsync(p => (int?)p.PigmyAccountID) ?? 0;
+                    if (id >= maxRemainingId)
+                    {
+                        int reseedVal = maxRemainingId;
+                        await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('PigmyAccounts', RESEED, {reseedVal});");
+                    }
+                }
+                catch (Exception reseedEx)
+                {
+                    Console.WriteLine($"[WARNING] PigmyAccount reseed error: {reseedEx.Message}");
+                }
                 return Ok(new { message = "पिग्मी खाते यशस्वीरीत्या डिलीट झाले." });
             }
             catch (Exception ex)

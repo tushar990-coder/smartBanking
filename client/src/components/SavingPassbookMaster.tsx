@@ -5,7 +5,10 @@ import SearchableSelect from './SearchableSelect';
 interface SavingAccount {
   savingAccountID: number;
   accountNo: string;
-  memberID: number;
+  cifNo?: string;
+  customerID?: number;
+  customerName?: string;
+  memberID?: number;
   memberName?: string;
   currentBalance: number;
 }
@@ -40,22 +43,33 @@ const SavingPassbookMaster: React.FC = () => {
       setAccounts(response.data);
 
       const params = new URLSearchParams(window.location.search);
+      const customerIdStr = params.get('customerId') || params.get('customerID');
       const memberIdStr = params.get('memberId');
-      if (memberIdStr) {
+      const accountIdStr = params.get('accountId') || params.get('savingAccountId');
+
+      let matchedAcc: any = null;
+      if (accountIdStr) {
+        const accId = parseInt(accountIdStr, 10);
+        matchedAcc = response.data.find((a: any) => a.savingAccountID === accId);
+      } else if (customerIdStr) {
+        const cId = parseInt(customerIdStr, 10);
+        matchedAcc = response.data.find((a: any) => a.customerID === cId);
+      } else if (memberIdStr) {
         const mId = parseInt(memberIdStr, 10);
-        const matchedAcc = response.data.find((a: any) => a.memberID === mId);
-        if (matchedAcc) {
-          setSelectedAccount(matchedAcc);
-          setLoading(true);
-          try {
-            const txRes = await axios.get(`${API_URL}/SavingTransactions/account/${matchedAcc.savingAccountID}`);
-            setTransactions(txRes.data);
-          } catch (err) {
-            console.error('Error fetching transactions', err);
-            setError('व्यवहार लोड करता आले नाहीत.');
-          } finally {
-            setLoading(false);
-          }
+        matchedAcc = response.data.find((a: any) => a.customerID === mId || a.memberID === mId);
+      }
+
+      if (matchedAcc) {
+        setSelectedAccount(matchedAcc);
+        setLoading(true);
+        try {
+          const txRes = await axios.get(`${API_URL}/SavingTransactions/account/${matchedAcc.savingAccountID}`);
+          setTransactions(txRes.data);
+        } catch (err) {
+          console.error('Error fetching transactions', err);
+          setError('व्यवहार लोड करता आले नाहीत.');
+        } finally {
+          setLoading(false);
         }
       }
     } catch (err) {
@@ -88,10 +102,14 @@ const SavingPassbookMaster: React.FC = () => {
     window.print();
   };
 
-  const accountOptions = accounts.map(a => ({
-    value: a.savingAccountID,
-    label: `${a.accountNo} - ${a.memberName}`
-  }));
+  const accountOptions = accounts.map(a => {
+    const cifPart = a.cifNo ? ` [CIF: ${a.cifNo}]` : '';
+    const namePart = a.customerName || a.memberName || 'अज्ञात';
+    return {
+      value: a.savingAccountID,
+      label: `${a.accountNo}${cifPart} - ${namePart}`
+    };
+  });
 
   // Empty rows to simulate spacing if the print starts on a line other than 1
   const emptyRows = Array.from({ length: startingLine - 1 });
@@ -187,7 +205,7 @@ const SavingPassbookMaster: React.FC = () => {
 
           <div id="passbook-print-area" className="border p-4 bg-yellow-50/20 max-w-3xl mx-auto rounded-sm">
             <div className="mb-2 text-center text-xs font-bold font-mono tracking-wider border-b pb-1">
-              बचत खाते पासबुक (SAVING DEPOSIT PASSBOOK) - {selectedAccount.accountNo}
+              बचत खाते पासबुक (SAVING DEPOSIT PASSBOOK) - {selectedAccount.accountNo} ({selectedAccount.customerName || selectedAccount.memberName || 'खातेदार'}{selectedAccount.cifNo ? ` | CIF: ${selectedAccount.cifNo}` : ''})
             </div>
 
             <table className="w-full text-xs font-mono border-collapse">

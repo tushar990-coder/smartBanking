@@ -4,7 +4,8 @@ import axios from 'axios';
 interface CalculatedInterest {
   savingAccountID: number;
   accountNo: string;
-  memberName: string;
+  customerName?: string;
+  memberName?: string;
   currentBalance: number;
   interestRate: number;
   calculatedInterest: number;
@@ -180,7 +181,7 @@ const SavingInterestPostingMaster: React.FC = () => {
               <thead className="bg-gray-100 text-gray-700 sticky top-0">
                 <tr>
                   <th className="px-2 py-1 border-r border-gray-300 font-medium text-left">खाते क्र. (A/c No)</th>
-                  <th className="px-2 py-1 border-r border-gray-300 font-medium text-left">नाव (Member Name)</th>
+                  <th className="px-2 py-1 border-r border-gray-300 font-medium text-left">नाव (Customer Name)</th>
                   <th className="px-2 py-1 border-r border-gray-300 font-medium text-right">सध्याची शिल्लक (Balance)</th>
                   <th className="px-2 py-1 border-r border-gray-300 font-medium text-center">व्याजदर %</th>
                   <th className="px-2 py-1 font-medium text-right">आकारलेले व्याज (Interest)</th>
@@ -190,7 +191,7 @@ const SavingInterestPostingMaster: React.FC = () => {
                 {calculationResults.map((item) => (
                   <tr key={item.savingAccountID} className="hover:bg-gray-50">
                     <td className="px-2 py-0.5 border-r border-gray-200 text-left font-medium text-primary">{item.accountNo}</td>
-                    <td className="px-2 py-0.5 border-r border-gray-200 text-left">{item.memberName}</td>
+                    <td className="px-2 py-0.5 border-r border-gray-200 text-left">{item.customerName || item.memberName}</td>
                     <td className="px-2 py-0.5 border-r border-gray-200 text-right">₹{item.currentBalance.toFixed(2)}</td>
                     <td className="px-2 py-0.5 border-r border-gray-200 text-center">{item.interestRate}%</td>
                     <td className="px-2 py-0.5 text-right font-bold text-emerald-600">₹{item.calculatedInterest.toFixed(2)}</td>

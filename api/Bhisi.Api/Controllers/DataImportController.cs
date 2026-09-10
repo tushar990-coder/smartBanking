@@ -318,7 +318,6 @@ namespace Bhisi.Api.Controllers
                 var newAccount = new SavingAccountMaster
                 {
                     CustomerID = member.CustomerID ?? 1,
-                    MemberID = member.MemberID,
                     AccountNo = accountNo,
                     AccountType = row.AccountType,
                     OpeningDate = row.OpeningDate ?? DateTime.Today,
@@ -352,14 +351,14 @@ namespace Bhisi.Api.Controllers
             _context.SavingAccountMasters.AddRange(newAccounts);
 
             decimal totalOpeningBalance = 0;
-            var memberObs = new List<MemberOpeningBalance>();
+            var custObs = new List<CustomerOpeningBalance>();
 
             foreach(var acc in newAccounts)
             {
                 totalOpeningBalance += acc.OpeningBalance;
-                memberObs.Add(new MemberOpeningBalance
+                custObs.Add(new CustomerOpeningBalance
                 {
-                    MemberID = acc.MemberID ?? acc.CustomerID,
+                    CustomerID = acc.CustomerID,
                     LedgerID = acc.LedgerID,
                     Amount = acc.OpeningBalance,
                     BalanceType = "Cr", // Savings deposits are usually Cr
@@ -368,7 +367,7 @@ namespace Bhisi.Api.Controllers
                 });
             }
 
-            _context.MemberOpeningBalances.AddRange(memberObs);
+            _context.CustomerOpeningBalances.AddRange(custObs);
 
             var ledger = await _context.Ledgers.FindAsync(defaultLedgerId);
             if (ledger != null && totalOpeningBalance > 0)

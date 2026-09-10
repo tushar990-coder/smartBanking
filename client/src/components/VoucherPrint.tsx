@@ -92,11 +92,15 @@ export function VoucherPrintTemplate({ voucher, sanstha }: { voucher: any, sanst
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
-  const partyDetail = voucher.voucherDetails?.find((d: any) => d.member != null) || 
+  const partyDetail = voucher.voucherDetails?.find((d: any) => d.customer != null || d.member != null) || 
                       voucher.voucherDetails?.find((d: any) => d.ledger?.ledgerName !== 'Cash' && !d.ledger?.ledgerName?.includes('रोख'));
 
-  const partyName = partyDetail?.member 
-    ? `${partyDetail.member.memberCode} - ${partyDetail.member.firstName} ${partyDetail.member.lastName}`
+  const partyCif = partyDetail?.customer?.cifNo || partyDetail?.customer?.CIFNo || partyDetail?.member?.customer?.cifNo || partyDetail?.member?.customer?.CIFNo;
+  const partyNameStr = `${partyDetail?.customer?.firstName || partyDetail?.customer?.FirstName || partyDetail?.member?.firstName || partyDetail?.member?.FirstName || ''} ${partyDetail?.customer?.lastName || partyDetail?.customer?.LastName || partyDetail?.member?.lastName || partyDetail?.member?.LastName || ''}`.trim();
+  const partyCode = partyCif || partyDetail?.member?.memberCode || partyDetail?.member?.MemberCode;
+
+  const partyName = partyCode || partyNameStr
+    ? `${partyCode ? `${partyCode} - ` : ''}${partyNameStr || partyDetail?.member?.firstName || ''}`.trim()
     : (partyDetail?.ledger?.ledgerName || 'Unknown');
 
   let vTypeMarathi = voucher.voucherType;
@@ -180,7 +184,15 @@ export function VoucherPrintTemplate({ voucher, sanstha }: { voucher: any, sanst
                     <td className="border-r border-gray-400 p-1 text-center text-gray-500">{index + 1}</td>
                     <td className="border-r border-gray-400 p-1">
                       <span className="font-bold text-gray-800">{d.ledger?.ledgerName}</span>
-                      {d.member && <div className="text-[10px] text-gray-500 mt-0.5">({d.member.memberCode} - {d.member.firstName} {d.member.lastName})</div>}
+                      {(() => {
+                        const cif = d.customer?.cifNo || d.customer?.CIFNo || d.member?.customer?.cifNo || d.member?.customer?.CIFNo;
+                        const name = `${d.customer?.firstName || d.customer?.FirstName || d.member?.firstName || d.member?.FirstName || ''} ${d.customer?.lastName || d.customer?.LastName || d.member?.lastName || d.member?.LastName || ''}`.trim();
+                        const code = cif || d.member?.memberCode || d.member?.MemberCode;
+                        if (code || name) {
+                          return <div className="text-[10px] text-gray-500 mt-0.5">({code ? `${code} - ` : ''}{name})</div>;
+                        }
+                        return null;
+                      })()}
                     </td>
                     <td className="border-r border-gray-400 p-1 text-right font-medium">
                       {d.drCr === 'Dr' ? d.amount.toFixed(2) : ''}

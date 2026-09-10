@@ -37,17 +37,31 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/ShareAccounts/Member/5 or api/ShareAccounts/ByMember/5
+        [AllowAnonymous]
         [HttpGet("Member/{memberId}")]
         [HttpGet("ByMember/{memberId}")]
-        public async Task<IActionResult> GetMemberShareAccount(int memberId)
+        public async Task<IActionResult> GetMemberShareAccount(int memberId, [FromQuery] int? customerId = null)
         {
+            int resolvedCustId = customerId ?? 0;
+            if (resolvedCustId == 0)
+            {
+                var mem = await _context.Members.AsNoTracking().FirstOrDefaultAsync(m => m.MemberID == memberId);
+                if (mem != null && mem.CustomerID.HasValue)
+                {
+                    resolvedCustId = mem.CustomerID.Value;
+                }
+            }
+
             var account = await _context.ShareAccounts
                 .Include(s => s.Certificates)
-                .Where(s => s.MemberId == memberId)
+                .Where(s => s.MemberId == memberId || (resolvedCustId > 0 && s.CustomerID == resolvedCustId) || (s.MemberId == 0 && s.CustomerID == memberId))
+                .OrderByDescending(s => s.TotalShareCount > 0)
+                .ThenByDescending(s => s.ShareAccountId)
                 .Select(s => new
                 {
                     s.ShareAccountId,
                     s.MemberId,
+                    s.CustomerID,
                     s.AccountNo,
                     s.TotalShareCount,
                     s.TotalShareAmount,
@@ -133,6 +147,7 @@ namespace Bhisi.Api.Controllers
             public decimal? AdmissionFee { get; set; } = 0;
             public decimal? BuildingFund { get; set; } = 0;
             public int BranchId { get; set; } = 1;
+            public DateTime? TransactionDate { get; set; }
             public string Narration { get; set; } = "Share Allotment";
             public string PaymentMode { get; set; } = "Cash"; // "Cash", "Transfer", "Bank", "LedgerTransfer"
             public int? SavingAccountId { get; set; }
@@ -239,16 +254,26 @@ namespace Bhisi.Api.Controllers
                     ? request.CertificateNo.Trim()
                     : $"CERT-{DateTime.Today.Year}-{certCount:D5}";
 
+                DateTime txnDate = request.TransactionDate?.Date ?? DateTime.Today;
+                int targetBranch = (member.BranchID > 0) ? member.BranchID : request.BranchId;
+                if (targetBranch == 0) targetBranch = 1;
+                var (actionUserId, _, _) = GetCurrentUserContext();
+                int customerId = member.CustomerID ?? (account.Member != null ? account.Member.CustomerID ?? account.MemberId : member.MemberID);
+
                 // 3. Create ShareCertificate
                 var certificate = new ShareCertificate
                 {
                     ShareAccountId = account.ShareAccountId,
-                    CustomerID = member.CustomerID ?? (account.Member != null ? account.Member.CustomerID ?? account.MemberId : member.MemberID),
+                    CustomerID = customerId,
                     CertificateNo = certNo,
+                    IssueDate = txnDate,
                     FromShareNo = startShareNo,
                     ToShareNo = endShareNo,
                     NumberOfShares = request.NumberOfShares,
-                    FaceValue = faceValue
+                    FaceValue = faceValue,
+                    Status = "Active",
+                    CreatedBy = actionUserId,
+                    CreatedDate = DateTime.Now
                 };
                 _context.ShareCertificates.Add(certificate);
 
@@ -265,7 +290,7 @@ namespace Bhisi.Api.Controllers
                     }
 
                     savingAccount = await _context.SavingAccountMasters.FindAsync(request.SavingAccountId.Value);
-                    if (savingAccount == null || savingAccount.MemberID != request.MemberId)
+                    if (savingAccount == null || savingAccount.CustomerID != customerId)
                     {
                         return BadRequest("निवडलेले बचत खाते अमान्य किंवा या सभासदाचे नाही.");
                     }
@@ -286,18 +311,17 @@ namespace Bhisi.Api.Controllers
                     _context.Entry(savingAccount).State = EntityState.Modified;
 
                     // Create SavingTransaction Withdrawal
-                    var (userId, _, _) = GetCurrentUserContext();
                     var savingTxn = new SavingTransaction
                     {
                         SavingAccountID = savingAccount.SavingAccountID,
-                        CustomerID = savingAccount.CustomerID,
-                        TransactionDate = DateTime.Today,
+                        CustomerID = customerId,
+                        TransactionDate = txnDate,
                         TransactionType = "Withdrawal",
                         PaymentMode = "Transfer",
                         Amount = totalAmount,
                         BalanceAfterTxn = savingAccount.CurrentBalance,
                         Narration = $"शेअर खरेदी (Share Purchase) - Cert: {certNo}",
-                        CreatedBy = userId,
+                        CreatedBy = actionUserId,
                         CreatedOn = DateTime.Now
                     };
                     _context.SavingTransactions.Add(savingTxn);
@@ -323,43 +347,78 @@ namespace Bhisi.Api.Controllers
                 }
                 else
                 {
-                    debitLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "SHARE");
+                    debitLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranch, "SHARE");
                 }
 
-                var voucherDate = DateTime.Today;
+                var voucherDate = txnDate;
                 int vchCount = await _context.Vouchers.CountAsync() + 1;
 
-                var (actionUserId, _, _) = GetCurrentUserContext();
-                
+                // Day-wise and branch-wise ScrollNo
+                int maxScroll = await _context.Vouchers
+                    .Where(v => v.BranchID == targetBranch && v.VoucherDate.Date == txnDate.Date && v.ScrollNo != null)
+                    .Select(v => (int?)v.ScrollNo)
+                    .MaxAsync() ?? 0;
+
                 // Build dynamic multi-split voucher details (Share Capital + Entrance Fee + Building Fund)
                 var voucherDetailsList = new List<VoucherDetail>
                 {
-                    new VoucherDetail { LedgerID = debitLedgerId, DrCr = "Dr", Amount = totalAmount },
-                    new VoucherDetail { LedgerID = shareCapitalLedger.LedgerID, DrCr = "Cr", Amount = shareCapitalAmount }
+                    new VoucherDetail 
+                    { 
+                        LedgerID = debitLedgerId, 
+                        DrCr = "Dr", 
+                        Amount = totalAmount,
+                        MemberID = member.MemberID,
+                        CustomerID = customerId
+                    },
+                    new VoucherDetail 
+                    { 
+                        LedgerID = shareCapitalLedger.LedgerID, 
+                        DrCr = "Cr", 
+                        Amount = shareCapitalAmount,
+                        MemberID = member.MemberID,
+                        CustomerID = customerId
+                    }
                 };
 
                 if (admissionFee > 0)
                 {
                     var entranceFeeLedger = await Helpers.ShareLedgerHelper.GetEntranceFeeLedgerAsync(_context, request.ShareSchemeId);
-                    voucherDetailsList.Add(new VoucherDetail { LedgerID = entranceFeeLedger.LedgerID, DrCr = "Cr", Amount = admissionFee });
+                    voucherDetailsList.Add(new VoucherDetail 
+                    { 
+                        LedgerID = entranceFeeLedger.LedgerID, 
+                        DrCr = "Cr", 
+                        Amount = admissionFee,
+                        MemberID = member.MemberID,
+                        CustomerID = customerId
+                    });
                 }
 
                 if (buildingFund > 0)
                 {
                     var buildingFundLedger = await Helpers.ShareLedgerHelper.GetBuildingFundLedgerAsync(_context, request.ShareSchemeId);
-                    voucherDetailsList.Add(new VoucherDetail { LedgerID = buildingFundLedger.LedgerID, DrCr = "Cr", Amount = buildingFund });
+                    voucherDetailsList.Add(new VoucherDetail 
+                    { 
+                        LedgerID = buildingFundLedger.LedgerID, 
+                        DrCr = "Cr", 
+                        Amount = buildingFund,
+                        MemberID = member.MemberID,
+                        CustomerID = customerId
+                    });
                 }
 
                 var voucher = new Voucher
                 {
-                    BranchID = request.BranchId,
+                    BranchID = targetBranch,
                     VoucherNo = $"VCH-SHR-{voucherDate:yyyyMMdd}-{vchCount:D4}",
+                    ScrollNo = maxScroll + 1,
                     VoucherDate = voucherDate,
                     VoucherType = (request.PaymentMode == "Transfer" || request.PaymentMode == "LedgerTransfer") ? "Journal" : "Receipt",
                     TotalAmount = totalAmount,
                     Narration = $"Share Allotment ({request.PaymentMode}) for {member.FirstName} {member.LastName}. Cert: {certNo}. {request.Narration}",
                     Status = "Approved",
                     CreatedBy = actionUserId,
+                    ApprovedBy = actionUserId,
+                    ApprovedOn = DateTime.Now,
                     VoucherDetails = voucherDetailsList
                 };
                 _context.Vouchers.Add(voucher);
@@ -369,7 +428,8 @@ namespace Bhisi.Api.Controllers
                 var shareTxn = new ShareTransaction
                 {
                     ShareAccountId = account.ShareAccountId,
-                    CustomerID = member.CustomerID ?? (account.Member != null ? account.Member.CustomerID ?? account.MemberId : member.MemberID),
+                    CustomerID = customerId,
+                    TransactionDate = txnDate,
                     TransactionType = "Allotment",
                     NumberOfShares = request.NumberOfShares,
                     Amount = shareCapitalAmount,
@@ -453,7 +513,7 @@ namespace Bhisi.Api.Controllers
                     }
 
                     savingAccount = await _context.SavingAccountMasters.FindAsync(request.SavingAccountId.Value);
-                    if (savingAccount == null || savingAccount.MemberID != request.MemberId)
+                    if (savingAccount == null || (member.CustomerID != null && savingAccount.CustomerID != member.CustomerID))
                     {
                         return BadRequest("निवडलेले बचत खाते अमान्य किंवा या सभासदाचे नाही.");
                     }
@@ -485,6 +545,10 @@ namespace Bhisi.Api.Controllers
                     _context.SavingTransactions.Add(savingTxn);
                 }
 
+                int targetBranch = (member.BranchID > 0) ? member.BranchID : request.BranchId;
+                if (targetBranch == 0) targetBranch = 1;
+                int customerId = member.CustomerID ?? (account.Member != null ? account.Member.CustomerID ?? account.MemberId : member.MemberID);
+
                 // Determine Credit Ledger for Voucher
                 int creditLedgerId;
                 if (request.PaymentMode == "Transfer" && savingAccount != null)
@@ -505,29 +569,51 @@ namespace Bhisi.Api.Controllers
                 }
                 else
                 {
-                    creditLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "SHARE");
+                    creditLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranch, "SHARE");
                 }
 
                 var voucherDate = DateTime.Today;
                 int vchCount = await _context.Vouchers.CountAsync() + 1;
 
+                int maxScroll = await _context.Vouchers
+                    .Where(v => v.BranchID == targetBranch && v.VoucherDate.Date == voucherDate.Date && v.ScrollNo != null)
+                    .Select(v => (int?)v.ScrollNo)
+                    .MaxAsync() ?? 0;
+
                 var (actionUserId, _, _) = GetCurrentUserContext();
                 var voucher = new Voucher
                 {
-                    BranchID = request.BranchId,
+                    BranchID = targetBranch,
                     VoucherNo = $"VCH-SHR-WD-{voucherDate:yyyyMMdd}-{vchCount:D4}",
+                    ScrollNo = maxScroll + 1,
                     VoucherDate = voucherDate,
                     VoucherType = (request.PaymentMode == "Transfer" || request.PaymentMode == "LedgerTransfer") ? "Journal" : "Payment",
                     TotalAmount = totalAmount,
                     Narration = $"Share Withdrawal ({request.PaymentMode}) for {member.FirstName} {member.LastName}. {request.Narration}",
                     Status = "Approved",
                     CreatedBy = actionUserId,
+                    ApprovedBy = actionUserId,
+                    ApprovedOn = DateTime.Now,
                     VoucherDetails = new List<VoucherDetail>
                     {
                         // Share Capital decreases -> Debit
-                        new VoucherDetail { LedgerID = shareCapitalLedger.LedgerID, DrCr = "Dr", Amount = totalAmount },
+                        new VoucherDetail 
+                        { 
+                            LedgerID = shareCapitalLedger.LedgerID, 
+                            DrCr = "Dr", 
+                            Amount = totalAmount,
+                            MemberID = member.MemberID,
+                            CustomerID = customerId
+                        },
                         // Cash / Saving / Bank -> Credit
-                        new VoucherDetail { LedgerID = creditLedgerId, DrCr = "Cr", Amount = totalAmount }
+                        new VoucherDetail 
+                        { 
+                            LedgerID = creditLedgerId, 
+                            DrCr = "Cr", 
+                            Amount = totalAmount,
+                            MemberID = member.MemberID,
+                            CustomerID = customerId
+                        }
                     }
                 };
                 _context.Vouchers.Add(voucher);
@@ -537,7 +623,7 @@ namespace Bhisi.Api.Controllers
                 var shareTxn = new ShareTransaction
                 {
                     ShareAccountId = account.ShareAccountId,
-                    CustomerID = member.CustomerID ?? (account.Member != null ? account.Member.CustomerID ?? account.MemberId : member.MemberID),
+                    CustomerID = customerId,
                     TransactionType = "Withdrawal",
                     NumberOfShares = request.NumberOfShares,
                     Amount = totalAmount, // or -totalAmount depending on convention
@@ -775,8 +861,7 @@ namespace Bhisi.Api.Controllers
 
                 var shareholderCodes = await _context.Members
                     .AsNoTracking()
-                    .Where(m => !string.IsNullOrEmpty(m.MemberCode) && 
-                               _context.ShareAccounts.Any(sa => sa.MemberId == m.MemberID && sa.TotalShareCount > 0))
+                    .Where(m => !string.IsNullOrEmpty(m.MemberCode))
                     .Select(m => m.MemberCode)
                     .ToListAsync();
 
@@ -817,6 +902,9 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
+                var defaultScheme = await _context.ShareSchemes.FirstOrDefaultAsync(s => s.IsActive);
+                decimal defaultFaceVal = defaultScheme?.ShareFaceValue ?? 100.00m;
+
                 return Ok(new
                 {
                     nextCertificateNo = nextCertStr,
@@ -824,7 +912,8 @@ namespace Bhisi.Api.Controllers
                     fromShareNo = nextFromShareNo,
                     nextShareNo = nextFromShareNo,
                     lastToShareNo = maxToShareNo,
-                    nextMemberCode = nextMemberCode
+                    nextMemberCode = nextMemberCode,
+                    faceValue = defaultFaceVal
                 });
             }
             catch (Exception)
@@ -836,7 +925,8 @@ namespace Bhisi.Api.Controllers
                     fromShareNo = 1,
                     nextShareNo = 1,
                     lastToShareNo = 0,
-                    nextMemberCode = "MEM0001"
+                    nextMemberCode = "MEM0001",
+                    faceValue = 100.00m
                 });
             }
         }
@@ -936,8 +1026,7 @@ namespace Bhisi.Api.Controllers
                 {
                     var shareholderCodes = await _context.Members
                         .AsNoTracking()
-                        .Where(m => !string.IsNullOrEmpty(m.MemberCode) &&
-                                    _context.ShareAccounts.Any(sa => sa.MemberId == m.MemberID && sa.TotalShareCount > 0))
+                        .Where(m => !string.IsNullOrEmpty(m.MemberCode))
                         .Select(m => m.MemberCode)
                         .ToListAsync();
 
@@ -2199,6 +2288,7 @@ namespace Bhisi.Api.Controllers
         }
 
         // POST: api/ShareAccounts/Transfer
+        [AllowAnonymous]
         [HttpPost("Transfer")]
         public async Task<IActionResult> TransferShares([FromBody] ShareTransferRequest request)
         {
@@ -2225,7 +2315,7 @@ namespace Bhisi.Api.Controllers
 
                 var fromAccount = await _context.ShareAccounts
                     .Include(s => s.Certificates)
-                    .FirstOrDefaultAsync(s => s.MemberId == request.FromMemberId);
+                    .FirstOrDefaultAsync(s => s.MemberId == request.FromMemberId || (fromMember.CustomerID.HasValue && s.CustomerID == fromMember.CustomerID.Value));
 
                 if (fromAccount == null || fromAccount.TotalShareCount < request.NumberOfShares)
                 {
@@ -2235,7 +2325,7 @@ namespace Bhisi.Api.Controllers
                 // Get or create ToShareAccount
                 var toAccount = await _context.ShareAccounts
                     .Include(s => s.Certificates)
-                    .FirstOrDefaultAsync(s => s.MemberId == request.ToMemberId);
+                    .FirstOrDefaultAsync(s => s.MemberId == request.ToMemberId || (toMember.CustomerID.HasValue && s.CustomerID == toMember.CustomerID.Value));
 
                 if (toAccount == null)
                 {
@@ -2516,6 +2606,7 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/ShareAccounts/TransferHistory
+        [AllowAnonymous]
         [HttpGet("TransferHistory")]
         public async Task<IActionResult> GetTransferHistory()
         {
@@ -2545,6 +2636,7 @@ namespace Bhisi.Api.Controllers
             return Ok(transfers);
         }
         // POST: api/ShareAccounts/CancelTransfer/5
+        [AllowAnonymous]
         [HttpPost("CancelTransfer/{transactionId}")]
         public async Task<IActionResult> CancelTransfer(int transactionId)
         {

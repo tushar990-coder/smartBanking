@@ -28,16 +28,15 @@ namespace Bhisi.Api.Controllers
             var closings = await _context.SavingAccountClosings
                 .Include(c => c.SavingAccount)
                     .ThenInclude(a => a!.Customer)
-                .Include(c => c.SavingAccount)
-                    .ThenInclude(a => a!.Member)
                 .OrderByDescending(c => c.ClosureDate)
                 .Select(c => new {
                     c.ClosingID,
                     AccountNo = c.SavingAccount != null ? c.SavingAccount.AccountNo : "",
-                    MemberName = c.SavingAccount != null 
-                        ? (c.SavingAccount.Customer != null 
-                            ? $"{c.SavingAccount.Customer.FirstName} {c.SavingAccount.Customer.LastName}".Trim() 
-                            : (c.SavingAccount.Member != null ? $"{c.SavingAccount.Member.FirstName} {c.SavingAccount.Member.LastName}".Trim() : ""))
+                    CustomerName = c.SavingAccount != null && c.SavingAccount.Customer != null
+                        ? $"{c.SavingAccount.Customer.FirstName} {c.SavingAccount.Customer.LastName}".Trim()
+                        : "",
+                    MemberName = c.SavingAccount != null && c.SavingAccount.Customer != null
+                        ? $"{c.SavingAccount.Customer.FirstName} {c.SavingAccount.Customer.LastName}".Trim()
                         : "",
                     c.ClosureDate,
                     c.GrossBalance,
@@ -134,10 +133,9 @@ namespace Bhisi.Api.Controllers
                     voucherNo = $"VCH-SAV-CLS-{branchCode}-{todayStr}-{nextSeq:D4}";
 
                     var customer = account.CustomerID > 0 ? await _context.Customers.FindAsync(account.CustomerID) : null;
-                    var member = account.MemberID.HasValue ? await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == account.MemberID.Value) : null;
-                    string memberName = customer != null 
+                    string customerName = customer != null 
                         ? $"{customer.FirstName} {customer.LastName}".Trim() 
-                        : (member != null ? $"{member.FirstName} {member.LastName}".Trim() : "");
+                        : "";
 
                     var voucher = new Voucher
                     {
@@ -146,7 +144,7 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = request.ClosureDate,
                         VoucherType = request.PaymentMode == "Cash" ? "Payment" : "Journal",
                         TotalAmount = grossBalance,
-                        Narration = $"बचत खाते बंद करणे (अंतिम हिशोब) - खाते क्र. {account.AccountNo} ({memberName}) | एकूण: ₹{grossBalance:N2}, आकार: ₹{request.ClosingCharges:N2}, दिलेली रक्कम: ₹{netPayable:N2}",
+                        Narration = $"बचत खाते बंद करणे (अंतिम हिशोब) - खाते क्र. {account.AccountNo} ({customerName}) | एकूण: ₹{grossBalance:N2}, आकार: ₹{request.ClosingCharges:N2}, दिलेली रक्कम: ₹{netPayable:N2}",
                         CreatedBy = request.CreatedBy,
                         VoucherDetails = new List<VoucherDetail>()
                     };
@@ -157,7 +155,7 @@ namespace Bhisi.Api.Controllers
                         LedgerID = savingControlLedgerID,
                         DrCr = "Dr",
                         Amount = grossBalance,
-                        MemberID = account.MemberID
+                        CustomerID = account.CustomerID
                     });
 
                     // Cr: Cash / Bank Ledger = netPayable (Payout from drawer/bank)
@@ -168,7 +166,7 @@ namespace Bhisi.Api.Controllers
                             LedgerID = cashBankLedgerID,
                             DrCr = "Cr",
                             Amount = netPayable,
-                            MemberID = account.MemberID
+                            CustomerID = account.CustomerID
                         });
                     }
 
@@ -180,7 +178,7 @@ namespace Bhisi.Api.Controllers
                             LedgerID = closingChargesLedgerID,
                             DrCr = "Cr",
                             Amount = request.ClosingCharges,
-                            MemberID = account.MemberID
+                            CustomerID = account.CustomerID
                         });
                     }
 

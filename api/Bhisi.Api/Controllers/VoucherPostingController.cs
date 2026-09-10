@@ -108,7 +108,10 @@ namespace Bhisi.Api.Controllers
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Customer)
+                .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Where(v => v.Status == "Pending")
                 .OrderBy(v => v.VoucherDate)
                 .ThenBy(v => v.VoucherID)
@@ -257,11 +260,7 @@ namespace Bhisi.Api.Controllers
                     return NotFound("प्रलंबित व्हाउचर सापडले नाही किंवा आधीच प्रक्रिया पूर्ण झाली आहे. (Pending voucher not found or already processed.)");
                 }
 
-                string reason = dto?.Reason?.Trim() ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(reason) || reason.Length < 10)
-                {
-                    return BadRequest("व्हाउचर रद्द / डिलीट करण्याचे योग्य कारण (किमान १० अक्षरे) लिहिणे बंधनकारक आहे. (Mandatory rejection reason with min 10 characters required.)");
-                }
+                string reason = !string.IsNullOrWhiteSpace(dto?.Reason) ? dto.Reason.Trim() : "नोंद थेट रद्द / डिलीट (Direct Deleted from Database)";
 
                 int userId = dto?.UserID > 0 ? dto.UserID : 1;
                 string username = !string.IsNullOrWhiteSpace(dto?.Username) ? dto.Username : "User-" + userId;
@@ -302,11 +301,7 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("रद्द करण्यासाठी कोणतेही व्हाउचर निवडलेले नाही. (No vouchers selected for rejection.)");
             }
 
-            string reason = request.Reason?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(reason) || reason.Length < 10)
-            {
-                return BadRequest("व्हाउचर्स रद्द / डिलीट करण्याचे योग्य कारण (किमान १० अक्षरे) लिहिणे बंधनकारक आहे. (Mandatory rejection reason with min 10 characters required.)");
-            }
+            string reason = !string.IsNullOrWhiteSpace(request.Reason) ? request.Reason.Trim() : "नोंद थेट रद्द / डिलीट (Direct Deleted from Database)";
 
             int userId = request.UserID > 0 ? request.UserID : 1;
             string username = !string.IsNullOrWhiteSpace(request.Username) ? request.Username : "User-" + userId;
@@ -369,68 +364,265 @@ namespace Bhisi.Api.Controllers
         {
             int id = voucher.VoucherID;
 
-            // 1. Pigmy Module Unlinking (Restore unposted state so collections are not orphaned)
-            var pigmyCollections = await _context.PigmyCollections.Where(pc => pc.VoucherId == id).ToListAsync();
-            foreach (var pc in pigmyCollections)
+            // 1. Pigmy Module Unlinking
+            try
             {
-                pc.VoucherId = null;
-                pc.IsVoucherGenerated = false;
+                var pigmyCollections = await _context.PigmyCollections.Where(pc => pc.VoucherId == id).ToListAsync();
+                foreach (var pc in pigmyCollections)
+                {
+                    pc.VoucherId = null;
+                    pc.IsVoucherGenerated = false;
+                }
+
+                var pigmyCommissions = await _context.PigmyAgentCommissions.Where(pc => pc.VoucherId == id).ToListAsync();
+                foreach (var pc in pigmyCommissions) pc.VoucherId = null;
+
+                var pigmyCashDeposits = await _context.PigmyAgentCashDeposits.Where(p => p.VoucherId == id).ToListAsync();
+                foreach (var p in pigmyCashDeposits) p.VoucherId = null;
+
+                var pigmyInterestLogs = await _context.PigmyInterestLogs.Where(p => p.VoucherId == id).ToListAsync();
+                foreach (var p in pigmyInterestLogs) p.VoucherId = null;
             }
-
-            var pigmyCommissions = await _context.PigmyAgentCommissions.Where(pc => pc.VoucherId == id).ToListAsync();
-            foreach (var pc in pigmyCommissions) pc.VoucherId = null;
-
-            var pigmyCashDeposits = await _context.PigmyAgentCashDeposits.Where(p => p.VoucherId == id).ToListAsync();
-            foreach (var p in pigmyCashDeposits) p.VoucherId = null;
-
-            var pigmyInterestLogs = await _context.PigmyInterestLogs.Where(p => p.VoucherId == id).ToListAsync();
-            foreach (var p in pigmyInterestLogs) p.VoucherId = null;
+            catch { }
 
             // 2. Shares & Dividends Module Unlinking
-            var shareTxs = await _context.ShareTransactions.Where(st => st.VoucherId == id).ToListAsync();
-            foreach (var st in shareTxs) st.VoucherId = null;
+            try
+            {
+                var shareTxs = await _context.ShareTransactions.Where(st => st.VoucherId == id).ToListAsync();
+                foreach (var st in shareTxs) st.VoucherId = null;
 
-            var dividendDists = await _context.DividendDistributions.Where(d => d.VoucherId == id).ToListAsync();
-            foreach (var d in dividendDists) d.VoucherId = null;
+                var dividendDists = await _context.DividendDistributions.Where(d => d.VoucherId == id).ToListAsync();
+                foreach (var d in dividendDists) d.VoucherId = null;
+            }
+            catch { }
 
             // 3. Loans Module Unlinking
-            var loanCollections = await _context.LoanCollections.Where(lc => lc.VoucherID == id).ToListAsync();
-            foreach (var lc in loanCollections) lc.VoucherID = null;
+            try
+            {
+                var loanCollections = await _context.LoanCollections.Where(lc => lc.VoucherID == id).ToListAsync();
+                foreach (var lc in loanCollections) lc.VoucherID = null;
 
-            var loanDisbursements = await _context.LoanDisbursements.Where(ld => ld.VoucherID == id).ToListAsync();
-            foreach (var ld in loanDisbursements) ld.VoucherID = null;
+                var loanDisbursements = await _context.LoanDisbursements.Where(ld => ld.VoucherID == id).ToListAsync();
+                foreach (var ld in loanDisbursements) ld.VoucherID = null;
 
-            var overdueRecoveries = await _context.OverdueRecoveryLedgers.Where(o => o.VoucherID == id).ToListAsync();
-            foreach (var o in overdueRecoveries) o.VoucherID = null;
+                var overdueRecoveries = await _context.OverdueRecoveryLedgers.Where(o => o.VoucherID == id).ToListAsync();
+                foreach (var o in overdueRecoveries) o.VoucherID = null;
 
-            var overdueInterests = await _context.OverdueInterestLedgers.Where(o => o.VoucherID == id).ToListAsync();
-            foreach (var o in overdueInterests) o.VoucherID = null;
+                var overdueInterests = await _context.OverdueInterestLedgers.Where(o => o.VoucherID == id).ToListAsync();
+                foreach (var o in overdueInterests) o.VoucherID = null;
+            }
+            catch { }
 
             // 4. Savings Module Unlinking
-            if (!string.IsNullOrEmpty(voucher.VoucherNo))
+            try
             {
-                var savingTxs = await _context.SavingTransactions.Where(st => st.VoucherNo == voucher.VoucherNo).ToListAsync();
-                foreach (var st in savingTxs) st.VoucherNo = null;
+                if (!string.IsNullOrEmpty(voucher.VoucherNo))
+                {
+                    var savingTxs = await _context.SavingTransactions.Where(st => st.VoucherNo == voucher.VoucherNo).ToListAsync();
+                    foreach (var st in savingTxs) st.VoucherNo = null;
 
-                var savingInterest = await _context.SavingInterestPostings.Where(s => s.VoucherNo == voucher.VoucherNo).ToListAsync();
-                foreach (var s in savingInterest) s.VoucherNo = null;
+                    var savingInterest = await _context.SavingInterestPostings.Where(s => s.VoucherNo == voucher.VoucherNo).ToListAsync();
+                    foreach (var s in savingInterest) s.VoucherNo = null;
 
-                var savingClosings = await _context.SavingAccountClosings.Where(s => s.VoucherNo == voucher.VoucherNo).ToListAsync();
-                foreach (var s in savingClosings) s.VoucherNo = null;
+                    var savingClosings = await _context.SavingAccountClosings.Where(s => s.VoucherNo == voucher.VoucherNo).ToListAsync();
+                    foreach (var s in savingClosings) s.VoucherNo = null;
+                }
             }
+            catch { }
 
-            // 5. Fixed Deposit & Recurring Deposit Module Unlinking
-            var fdTxs = await _context.FdTransactions.Where(ft => ft.VoucherID == id).ToListAsync();
-            _context.FdTransactions.RemoveRange(fdTxs);
+            // 5. Fixed Deposit & Recurring Deposit Module Handling (Opening vs Withdrawal / Closure)
+            try
+            {
+                bool isFdWithdrawal = voucher.VoucherNo.StartsWith("JV-FD-CLOSE-") || 
+                                     voucher.VoucherNo.StartsWith("JV-FD-PRECLOSE-") || 
+                                     (voucher.Narration != null && (voucher.Narration.Contains("FD Maturity Payout") || 
+                                                                    voucher.Narration.Contains("मुदत ठेव पूर्ण क्लोजर") || 
+                                                                    voucher.Narration.Contains("FD Premature") || 
+                                                                    voucher.Narration.Contains("मुदतपूर्व परतावा")));
 
-            var fdAccruals = await _context.FdInterestAccruals.Where(fa => fa.VoucherID == id).ToListAsync();
-            _context.FdInterestAccruals.RemoveRange(fdAccruals);
+                bool isFdOpening = voucher.VoucherNo.StartsWith("REC-FD-OP-") || 
+                                   voucher.VoucherNo.StartsWith("JV-FD-OP-") || 
+                                   (voucher.Narration != null && (voucher.Narration.Contains("मुदत ठेव रक्कम जमा") || 
+                                                                  voucher.Narration.Contains("नवीन मुदत ठेव खाते")));
 
-            var rdTxs = await _context.RdTransactions.Where(rt => rt.VoucherID == id).ToListAsync();
-            _context.RdTransactions.RemoveRange(rdTxs);
+                if (isFdWithdrawal)
+                {
+                    // === CASE 1: WITHDRAWAL / CLOSURE DELETE ===
+                    // Rule: Only delete the withdrawal transaction & voucher; revert FdAccount to "Active".
+                    // DO NOT delete FdAccount. DO NOT rollback receipt sequence counter!
+                    string fdAccNo = "";
+                    if (voucher.VoucherNo.StartsWith("JV-FD-CLOSE-"))
+                        fdAccNo = voucher.VoucherNo.Substring("JV-FD-CLOSE-".Length).Trim();
+                    else if (voucher.VoucherNo.StartsWith("JV-FD-PRECLOSE-"))
+                        fdAccNo = voucher.VoucherNo.Substring("JV-FD-PRECLOSE-".Length).Trim();
+                    else
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(voucher.Narration ?? "", @"[A-Za-z0-9]+-[0-9]+-FD-[0-9]+");
+                        if (match.Success) fdAccNo = match.Value;
+                    }
 
-            var rdAccruals = await _context.RdInterestAccruals.Where(ra => ra.VoucherID == id).ToListAsync();
-            _context.RdInterestAccruals.RemoveRange(rdAccruals);
+                    if (!string.IsNullOrEmpty(fdAccNo))
+                    {
+                        var fdAcc = await _context.FdAccounts.FirstOrDefaultAsync(f => f.AccountNo == fdAccNo);
+                        if (fdAcc != null)
+                        {
+                            fdAcc.Status = "Active";
+
+                            // If payout was transferred to Savings account, reverse the SB credit
+                            var sbTx = await _context.SavingTransactions
+                                .FirstOrDefaultAsync(st => st.VoucherNo == voucher.VoucherNo || (st.Narration != null && st.Narration.Contains(fdAccNo)));
+                            if (sbTx != null)
+                            {
+                                var sbAcc = await _context.SavingAccountMasters.FindAsync(sbTx.SavingAccountID);
+                                if (sbAcc != null)
+                                {
+                                    sbAcc.CurrentBalance -= sbTx.Amount;
+                                }
+                                _context.SavingTransactions.Remove(sbTx);
+                            }
+
+                            // Remove ONLY the closure/payout FdTransaction
+                            var closeTxs = await _context.FdTransactions
+                                .Where(ft => ft.VoucherID == id || (ft.FdAccountID == fdAcc.FdAccountID && (ft.TransactionType == "Payout" || ft.TransactionType == "Premature_Close")))
+                                .ToListAsync();
+                            if (closeTxs.Any()) _context.FdTransactions.RemoveRange(closeTxs);
+
+                            _context.AuditLogs.Add(new AuditLog
+                            {
+                                UserID = userId > 0 ? userId : null,
+                                Username = !string.IsNullOrWhiteSpace(username) ? username : $"User-{userId}",
+                                Action = "FD_WITHDRAWAL_VOUCHER_DELETED",
+                                EntityName = "FdAccount",
+                                EntityID = fdAccNo,
+                                Details = $"मुदत ठेव परतफेड (Withdrawal / Closure) व्हाउचर {voucher.VoucherNo} (खाते क्र. {fdAccNo}, रक्कम: ₹{voucher.TotalAmount:N2}) थेट रद्द करून हटवले. मूळ ठेव खाते पुन्हा सक्रिय (Active) केले. ठेव पावती व मूळ ठेव अबाधित ठेवली. कारण: {reason}",
+                                Timestamp = DateTime.Now,
+                                Status = "Success"
+                            });
+                        }
+                    }
+                }
+                else if (isFdOpening)
+                {
+                    // === CASE 2: OPENING / DEPOSIT DELETE ===
+                    // Rule: Hard-delete FdAccount and its transactions, refund SB if transfer, rollback receipt counter by -1.
+                    string fdAccNo = "";
+                    if (voucher.VoucherNo.StartsWith("REC-FD-OP-"))
+                        fdAccNo = voucher.VoucherNo.Substring("REC-FD-OP-".Length).Trim();
+                    else if (voucher.VoucherNo.StartsWith("JV-FD-OP-"))
+                        fdAccNo = voucher.VoucherNo.Substring("JV-FD-OP-".Length).Trim();
+                    else
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(voucher.Narration ?? "", @"[A-Za-z0-9]+-[0-9]+-FD-[0-9]+");
+                        if (match.Success) fdAccNo = match.Value;
+                    }
+
+                    if (!string.IsNullOrEmpty(fdAccNo))
+                    {
+                        var fdAcc = await _context.FdAccounts
+                            .Include(a => a.Customer)
+                            .FirstOrDefaultAsync(f => f.AccountNo == fdAccNo);
+
+                        if (fdAcc != null)
+                        {
+                            int branchId = fdAcc.BranchID;
+                            decimal depositAmount = fdAcc.DepositAmount;
+                            string custName = fdAcc.Customer != null ? $"{fdAcc.Customer.FirstName} {fdAcc.Customer.LastName}".Trim() : "";
+
+                            // Refund SB account if PaymentMode was Transfer
+                            if (fdAcc.PaymentMode == "Transfer" && fdAcc.SavingAccountID.HasValue && fdAcc.SavingAccountID.Value > 0)
+                            {
+                                var sbAcc = await _context.SavingAccountMasters.FindAsync(fdAcc.SavingAccountID.Value);
+                                if (sbAcc != null)
+                                {
+                                    sbAcc.CurrentBalance += depositAmount;
+                                    var sbTx = await _context.SavingTransactions
+                                        .Where(st => st.SavingAccountID == sbAcc.SavingAccountID && st.Narration != null && st.Narration.Contains(fdAccNo))
+                                        .FirstOrDefaultAsync();
+                                    if (sbTx != null) _context.SavingTransactions.Remove(sbTx);
+                                }
+                            }
+
+                            // Delete all FdTransactions and Accruals for this account
+                            var fdTxs = await _context.FdTransactions.Where(t => t.FdAccountID == fdAcc.FdAccountID).ToListAsync();
+                            if (fdTxs.Any()) _context.FdTransactions.RemoveRange(fdTxs);
+
+                            var fdAccruals = await _context.FdInterestAccruals.Where(a => a.FdAccountID == fdAcc.FdAccountID).ToListAsync();
+                            if (fdAccruals.Any()) _context.FdInterestAccruals.RemoveRange(fdAccruals);
+
+                            // Delete FdAccount from Database
+                            _context.FdAccounts.Remove(fdAcc);
+                            await _context.SaveChangesAsync();
+
+                            // Rollback FdAccountSequences by -1 (Sync to max remaining sequence in this branch)
+                            var branchSeq = await _context.FdAccountSequences
+                                .FirstOrDefaultAsync(s => s.BranchID == branchId && s.ProductType == "FD");
+
+                            int remainingMaxSeq = 0;
+                            var remainingAccounts = await _context.FdAccounts
+                                .Where(f => f.BranchID == branchId)
+                                .Select(f => f.AccountNo)
+                                .ToListAsync();
+
+                            foreach (var accStr in remainingAccounts)
+                            {
+                                var lastDash = accStr.LastIndexOf('-');
+                                if (lastDash >= 0 && lastDash < accStr.Length - 1)
+                                {
+                                    if (int.TryParse(accStr.Substring(lastDash + 1), out int parsedSeq))
+                                    {
+                                        if (parsedSeq > remainingMaxSeq) remainingMaxSeq = parsedSeq;
+                                    }
+                                }
+                            }
+
+                            if (branchSeq != null)
+                            {
+                                branchSeq.CurrentValue = remainingMaxSeq;
+                                await _context.SaveChangesAsync();
+                            }
+
+                            try
+                            {
+                                var maxRemainingId = await _context.FdAccounts.MaxAsync(f => (int?)f.FdAccountID) ?? 0;
+                                if (fdAcc.FdAccountID >= maxRemainingId)
+                                {
+                                    await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('FdAccounts', RESEED, {maxRemainingId});");
+                                }
+                            }
+                            catch { }
+
+                            _context.AuditLogs.Add(new AuditLog
+                            {
+                                UserID = userId > 0 ? userId : null,
+                                Username = !string.IsNullOrWhiteSpace(username) ? username : $"User-{userId}",
+                                Action = "FD_OPENING_VOUCHER_DELETED",
+                                EntityName = "FdAccount",
+                                EntityID = fdAccNo,
+                                Details = $"मुदत ठेव आरंभिक ठेव व्हाउचर {voucher.VoucherNo} (खाते क्र. {fdAccNo}, रक्कम: ₹{depositAmount:N2}, खातेदार: {custName}) थेट रद्द करून खाते डेटाबेसमधून नष्ट केले. आरंभिक ठेव पावती क्र. रोलबॅक करून {remainingMaxSeq} केला. कारण: {reason}",
+                                Timestamp = DateTime.Now,
+                                Status = "Success"
+                            });
+                        }
+                    }
+                }
+                else
+                {
+                    // Generic FD Voucher (e.g. provision or accrual)
+                    var genericFdTxs = await _context.FdTransactions.Where(ft => ft.VoucherID == id).ToListAsync();
+                    if (genericFdTxs.Any()) _context.FdTransactions.RemoveRange(genericFdTxs);
+
+                    var genericFdAccruals = await _context.FdInterestAccruals.Where(fa => fa.VoucherID == id).ToListAsync();
+                    if (genericFdAccruals.Any()) _context.FdInterestAccruals.RemoveRange(genericFdAccruals);
+                }
+
+                // Recurring Deposit Module Unlinking
+                var rdTxs = await _context.RdTransactions.Where(rt => rt.VoucherID == id).ToListAsync();
+                if (rdTxs.Any()) _context.RdTransactions.RemoveRange(rdTxs);
+
+                var rdAccruals = await _context.RdInterestAccruals.Where(ra => ra.VoucherID == id).ToListAsync();
+                if (rdAccruals.Any()) _context.RdInterestAccruals.RemoveRange(rdAccruals);
+            }
+            catch { }
 
             // 6. Investments Module Unlinking
             var investRenewals = await _context.InvestmentRenewals.Where(ir => ir.VoucherID == id).ToListAsync();

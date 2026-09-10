@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -281,15 +282,14 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
-                var shareholderCodes = await _context.Members
+                var allMemberCodes = await _context.Members
                     .AsNoTracking()
-                    .Where(m => !string.IsNullOrEmpty(m.MemberCode) &&
-                                _context.ShareAccounts.Any(sa => sa.MemberId == m.MemberID && sa.TotalShareCount > 0))
+                    .Where(m => !string.IsNullOrEmpty(m.MemberCode))
                     .Select(m => m.MemberCode)
                     .ToListAsync();
 
                 int maxNum = 0;
-                foreach (var code in shareholderCodes)
+                foreach (var code in allMemberCodes)
                 {
                     if (!string.IsNullOrWhiteSpace(code))
                     {
@@ -307,11 +307,17 @@ namespace Bhisi.Api.Controllers
 
                 if (maxNum == 0)
                 {
-                    maxNum = await _context.ShareAccounts.CountAsync(sa => sa.TotalShareCount > 0);
+                    maxNum = await _context.Members.CountAsync();
                 }
 
                 int nextNum = maxNum + 1;
                 string candidate = $"MEM{nextNum:D4}";
+
+                while (allMemberCodes.Any(c => string.Equals(c, candidate, StringComparison.OrdinalIgnoreCase)))
+                {
+                    nextNum++;
+                    candidate = $"MEM{nextNum:D4}";
+                }
 
                 return Content(candidate, "text/plain");
             }
@@ -586,6 +592,16 @@ namespace Bhisi.Api.Controllers
             // Duplicate checks for other members
             member.LegacyMemberNo = string.IsNullOrWhiteSpace(member.LegacyMemberNo) ? null : member.LegacyMemberNo.Trim();
 
+            if (!string.IsNullOrWhiteSpace(member.MemberCode))
+            {
+                bool codeExists = await _context.Members
+                    .AnyAsync(m => m.MemberID != id && !m.IsDeleted && m.MemberCode == member.MemberCode);
+                if (codeExists)
+                {
+                    return BadRequest(new { message = $"हा सभासद क्रमांक ({member.MemberCode}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(member.LegacyMemberNo))
             {
                 var existingLegacyMember = await _context.Members
@@ -820,6 +836,16 @@ namespace Bhisi.Api.Controllers
             // Duplicate checks for Member
             member.LegacyMemberNo = string.IsNullOrWhiteSpace(member.LegacyMemberNo) ? null : member.LegacyMemberNo.Trim();
 
+            if (!string.IsNullOrWhiteSpace(member.MemberCode))
+            {
+                bool codeExists = await _context.Members
+                    .AnyAsync(m => !m.IsDeleted && m.MemberCode == member.MemberCode);
+                if (codeExists)
+                {
+                    return BadRequest(new { message = $"हा सभासद क्रमांक ({member.MemberCode}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(member.LegacyMemberNo))
             {
                 var existingLegacyMember = await _context.Members
@@ -909,15 +935,241 @@ namespace Bhisi.Api.Controllers
                 ? (string.IsNullOrWhiteSpace(member.MemberCode) ? "Nominal" : "Regular") 
                 : member.MembershipType.Trim();
 
-            _context.Members.Add(member);
+            using var dbTransaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                _context.Members.Add(member);
                 await _context.SaveChangesAsync();
+
+                // --- Integrated Share Allotment + Fee Posting ---
+                int numShares = member.NumberOfShares.HasValue && member.NumberOfShares.Value > 0 ? member.NumberOfShares.Value : 0;
+                decimal faceVal = member.ShareFaceValue.HasValue && member.ShareFaceValue.Value > 0 ? member.ShareFaceValue.Value : 100M;
+                decimal shareCapitalAmount = numShares * faceVal;
+                decimal admissionFee = member.AdmissionFee.HasValue && member.AdmissionFee.Value > 0 ? member.AdmissionFee.Value : 0;
+                decimal buildingFund = member.BuildingFund.HasValue && member.BuildingFund.Value > 0 ? member.BuildingFund.Value : 0;
+                decimal totalAmount = shareCapitalAmount + admissionFee + buildingFund;
+
+                DateTime allotDate = member.AllotmentDate?.Date ?? member.JoiningDate.Date;
+                if (allotDate == default) allotDate = DateTime.Today;
+
+                ShareAccount? shareAccount = null;
+                ShareCertificate? shareCert = null;
+                ShareTransaction? shareTxn = null;
+
+                if (numShares > 0)
+                {
+                    // 1. Create ShareAccount
+                    int nextSeq = await _context.ShareAccounts.CountAsync() + 1;
+                    shareAccount = new ShareAccount
+                    {
+                        MemberId = member.MemberID,
+                        CustomerID = member.CustomerID ?? customer!.CustomerID,
+                        AccountNo = $"SH-{nextSeq:D4}",
+                        TotalShareCount = numShares,
+                        TotalShareAmount = shareCapitalAmount,
+                        Status = "Active"
+                    };
+                    _context.ShareAccounts.Add(shareAccount);
+                    await _context.SaveChangesAsync();
+
+                    // 2. Create ShareCertificate
+                    int maxShareNo = await _context.ShareCertificates.MaxAsync(c => (int?)c.ToShareNo) ?? 0;
+                    long startShareNo = maxShareNo + 1;
+                    long endShareNo = startShareNo + numShares - 1;
+                    int certCount = await _context.ShareCertificates.CountAsync() + 1;
+                    string certNo = $"CERT-{DateTime.Today.Year}-{certCount:D5}";
+
+                    shareCert = new ShareCertificate
+                    {
+                        ShareAccountId = shareAccount.ShareAccountId,
+                        CustomerID = member.CustomerID ?? customer!.CustomerID,
+                        CertificateNo = certNo,
+                        FromShareNo = startShareNo,
+                        ToShareNo = endShareNo,
+                        NumberOfShares = numShares,
+                        FaceValue = faceVal,
+                        Status = "Active",
+                        IssueDate = allotDate,
+                        CreatedDate = DateTime.Now
+                    };
+                    _context.ShareCertificates.Add(shareCert);
+                    await _context.SaveChangesAsync();
+
+                    // 3. Create ShareTransaction
+                    shareTxn = new ShareTransaction
+                    {
+                        ShareAccountId = shareAccount.ShareAccountId,
+                        TransactionDate = allotDate,
+                        TransactionType = "Allotment",
+                        NumberOfShares = numShares,
+                        Amount = shareCapitalAmount,
+                        Narration = $"भाग भांडवल वाटप : {numShares} शेअर्स. {member.MemberCode}",
+                        CustomerID = member.CustomerID ?? customer!.CustomerID
+                    };
+                    _context.ShareTransactions.Add(shareTxn);
+                    await _context.SaveChangesAsync();
+                }
+
+                if (totalAmount > 0)
+                {
+                    int debitLedgerId;
+                    string pMode = string.IsNullOrWhiteSpace(member.PaymentMode) ? "Cash" : member.PaymentMode.Trim();
+
+                    if (pMode.Equals("Transfer", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!member.SavingAccountId.HasValue || member.SavingAccountId.Value <= 0)
+                        {
+                            await dbTransaction.RollbackAsync();
+                            return BadRequest(new { message = "बचत खात्यातून वर्ग करण्यासाठी बचत खाते निवडणे आवश्यक आहे." });
+                        }
+
+                        var savingAcc = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == member.SavingAccountId.Value);
+                        if (savingAcc == null || savingAcc.CustomerID != customer!.CustomerID)
+                        {
+                            await dbTransaction.RollbackAsync();
+                            return BadRequest(new { message = "निवडलेले बचत खाते अमान्य आहे किंवा या खातेदाराचे नाही." });
+                        }
+
+                        if (savingAcc.Status == "Closed" || savingAcc.Status == "Frozen")
+                        {
+                            await dbTransaction.RollbackAsync();
+                            return BadRequest(new { message = $"बचत खाते {savingAcc.Status} असल्याने यातून हस्तांतरण करता येणार नाही." });
+                        }
+
+                        decimal availBal = savingAcc.CurrentBalance - savingAcc.LienAmount - savingAcc.MinimumBalance;
+                        if (availBal < totalAmount)
+                        {
+                            await dbTransaction.RollbackAsync();
+                            return BadRequest(new { message = $"बचत खात्यामध्ये अपुरी शिल्लक आहे. (उपलब्ध: ₹{availBal:N2}, आवश्यक: ₹{totalAmount:N2})" });
+                        }
+
+                        // Deduct from saving account
+                        savingAcc.CurrentBalance -= totalAmount;
+                        _context.Entry(savingAcc).State = EntityState.Modified;
+
+                        // Add SavingTransaction
+                        string savingNarr = numShares > 0
+                            ? $"सभासद नोंदणी व भाग वाटप ({numShares} शेअर्स) - {member.MemberCode ?? ("M-" + member.MemberID)}"
+                            : $"सभासद प्रवेश शुल्क (Admission Fee) - {member.MemberCode ?? ("M-" + member.MemberID)}";
+
+                        var savingTxn = new SavingTransaction
+                        {
+                            SavingAccountID = savingAcc.SavingAccountID,
+                            CustomerID = savingAcc.CustomerID,
+                            TransactionDate = allotDate,
+                            TransactionType = "Withdrawal",
+                            PaymentMode = "Transfer",
+                            Amount = totalAmount,
+                            BalanceAfterTxn = savingAcc.CurrentBalance,
+                            Narration = savingNarr,
+                            CreatedBy = userId,
+                            CreatedOn = DateTime.Now
+                        };
+                        _context.SavingTransactions.Add(savingTxn);
+
+                        debitLedgerId = savingAcc.LedgerID;
+                    }
+                    else
+                    {
+                        // Cash
+                        debitLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, member.BranchID, "SHARE");
+                    }
+
+                    int custId = customer!.CustomerID;
+                    var voucherDetailsList = new List<VoucherDetail>
+                    {
+                        new VoucherDetail
+                        {
+                            LedgerID = debitLedgerId,
+                            DrCr = "Dr",
+                            Amount = totalAmount,
+                            MemberID = member.MemberID,
+                            CustomerID = custId
+                        }
+                    };
+
+                    if (shareCapitalAmount > 0)
+                    {
+                        var shareCapitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context);
+                        voucherDetailsList.Add(new VoucherDetail
+                        {
+                            LedgerID = shareCapitalLedger.LedgerID,
+                            DrCr = "Cr",
+                            Amount = shareCapitalAmount,
+                            MemberID = member.MemberID,
+                            CustomerID = custId
+                        });
+                    }
+
+                    if (admissionFee > 0)
+                    {
+                        var entranceFeeLedger = await Helpers.ShareLedgerHelper.GetEntranceFeeLedgerAsync(_context);
+                        voucherDetailsList.Add(new VoucherDetail
+                        {
+                            LedgerID = entranceFeeLedger.LedgerID,
+                            DrCr = "Cr",
+                            Amount = admissionFee,
+                            MemberID = member.MemberID,
+                            CustomerID = custId
+                        });
+                    }
+
+                    if (buildingFund > 0)
+                    {
+                        var buildingFundLedger = await Helpers.ShareLedgerHelper.GetBuildingFundLedgerAsync(_context);
+                        voucherDetailsList.Add(new VoucherDetail
+                        {
+                            LedgerID = buildingFundLedger.LedgerID,
+                            DrCr = "Cr",
+                            Amount = buildingFund,
+                            MemberID = member.MemberID,
+                            CustomerID = custId
+                        });
+                    }
+
+                    int vchCount = await _context.Vouchers.CountAsync() + 1;
+                    int maxScroll = await _context.Vouchers
+                        .Where(v => v.BranchID == member.BranchID && v.VoucherDate.Date == allotDate.Date && v.ScrollNo != null)
+                        .Select(v => (int?)v.ScrollNo)
+                        .MaxAsync() ?? 0;
+
+                    string vchPrefix = numShares > 0 ? "VCH-SHR" : "VCH-ADM";
+                    string vchNarration = numShares > 0
+                        ? $"सभासद नोंदणी व भाग वाटप ({numShares} शेअर्स) - {customer!.FirstName} {customer.LastName} ({member.MemberCode ?? ("M-" + member.MemberID)}). {pMode}"
+                        : $"सभासद प्रवेश शुल्क पावती (Admission Fee) - {customer!.FirstName} {customer.LastName} ({member.MemberCode ?? ("M-" + member.MemberID)}). {pMode}";
+
+                    var voucher = new Voucher
+                    {
+                        BranchID = member.BranchID,
+                        VoucherNo = $"{vchPrefix}-{allotDate:yyyyMMdd}-{vchCount:D4}",
+                        VoucherDate = allotDate,
+                        ScrollNo = maxScroll + 1,
+                        VoucherType = pMode.Equals("Transfer", StringComparison.OrdinalIgnoreCase) ? "Journal" : "Receipt",
+                        TotalAmount = totalAmount,
+                        Narration = vchNarration,
+                        Status = "Approved",
+                        CreatedBy = userId,
+                        VoucherDetails = voucherDetailsList
+                    };
+                    _context.Vouchers.Add(voucher);
+                    await _context.SaveChangesAsync();
+
+                    if (shareTxn != null)
+                    {
+                        shareTxn.VoucherId = voucher.VoucherID;
+                    }
+
+                    member.GeneratedVoucherNo = voucher.VoucherNo;
+                }
+
+                await dbTransaction.CommitAsync();
+
                 member.Customer = customer;
-                await LogAuditAsync("MEMBER_CREATE", member.MemberID.ToString(), $"नवीन सभासद नोंदणी: {customer.FirstName} {customer.LastName}, CIF: {customer.CIFNo}");
+                await LogAuditAsync("MEMBER_CREATE", member.MemberID.ToString(), $"नवीन सभासद नोंदणी: {customer!.FirstName} {customer.LastName}, CIF: {customer.CIFNo}" + (!string.IsNullOrEmpty(member.GeneratedVoucherNo) ? $", पावती व्हाऊचर: {member.GeneratedVoucherNo}" : ""));
             }
             catch (DbUpdateException ex)
             {
+                await dbTransaction.RollbackAsync();
                 string detailedError = ex.InnerException?.Message ?? ex.Message;
                 if (detailedError.Contains("IX_Members_MemberCode"))
                 {
@@ -928,6 +1180,11 @@ namespace Bhisi.Api.Controllers
                     return BadRequest(new { message = "माहितीची लांबी डेटाबेसच्या मर्यादेपेक्षा जास्त आहे (Data truncation error).", error = detailedError });
                 }
                 return BadRequest(new { message = "सभासद सेव्ह करताना त्रुटी आली: " + detailedError });
+            }
+            catch (Exception ex)
+            {
+                await dbTransaction.RollbackAsync();
+                return StatusCode(500, new { message = "सभासद नोंदणी करताना अनपेक्षित त्रुटी आली: " + (ex.InnerException?.Message ?? ex.Message) });
             }
 
             return CreatedAtAction("GetMember", new { id = member.MemberID }, member);
@@ -981,6 +1238,21 @@ namespace Bhisi.Api.Controllers
 
                 _context.Members.Remove(member);
                 await _context.SaveChangesAsync();
+
+                // If the deleted record was the highest/only MemberID, automatically decrement/reseed identity counter
+                try
+                {
+                    var maxRemainingId = await _context.Members.MaxAsync(m => (int?)m.MemberID) ?? 0;
+                    if (id >= maxRemainingId)
+                    {
+                        int reseedVal = maxRemainingId;
+                        await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('Members', RESEED, {reseedVal});");
+                    }
+                }
+                catch (Exception reseedEx)
+                {
+                    Console.WriteLine($"[WARNING] Member reseed error: {reseedEx.Message}");
+                }
 
                 await LogAuditAsync("MEMBER_DELETE", id.ToString(), $"सभासद कायमचा डिलीट केला: {member.FirstName} {member.LastName}, CIF: {member.CIFNo}, Code: {member.MemberCode}");
 

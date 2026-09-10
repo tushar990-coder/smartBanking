@@ -26,6 +26,8 @@ namespace Bhisi.Api.Data
         public DbSet<AccountGroup> AccountGroups { get; set; }
         public DbSet<Ledger> Ledgers { get; set; }
         public DbSet<Customer> Customers { get; set; }
+        public DbSet<CifSequence> CifSequences { get; set; }
+        public DbSet<CustomerImportBatch> CustomerImportBatches { get; set; }
         public DbSet<Member> Members { get; set; }
         public DbSet<EmployerMaster> EmployerMasters { get; set; }
         public DbSet<CommitteeMember> CommitteeMembers { get; set; }
@@ -203,6 +205,7 @@ namespace Bhisi.Api.Data
                 entity.HasIndex(c => c.CIFNo).IsUnique().HasFilter("[CIFNo] IS NOT NULL AND [CIFNo] <> ''");
                 entity.HasIndex(c => c.AadhaarNo).IsUnique().HasFilter("[AadhaarNo] IS NOT NULL AND [AadhaarNo] <> ''");
                 entity.HasIndex(c => c.PANNo).IsUnique().HasFilter("[PANNo] IS NOT NULL AND [PANNo] <> ''");
+                entity.HasIndex(c => c.CKYCNo).IsUnique().HasFilter("[CKYCNo] IS NOT NULL AND [CKYCNo] <> ''");
                 entity.HasIndex(c => c.Village);
                 entity.HasIndex(c => c.MobileNo);
 
@@ -420,6 +423,17 @@ namespace Bhisi.Api.Data
             foreach (var relationship in modelBuilder.Model.GetEntityTypes().SelectMany(e => e.GetForeignKeys()))
             {
                 relationship.DeleteBehavior = DeleteBehavior.Restrict;
+            }
+
+            // Inform EF Core that tables have database triggers (e.g. trg_AutoReseed_*)
+            // This disables EF Core's default 'OUTPUT' clause on SQL Server, preventing Error 334
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            {
+                var tableName = entityType.GetTableName();
+                if (!string.IsNullOrEmpty(tableName) && entityType.ClrType != null && !entityType.IsKeyless)
+                {
+                    entityType.AddTrigger($"trg_AutoReseed_{tableName}");
+                }
             }
         }
 

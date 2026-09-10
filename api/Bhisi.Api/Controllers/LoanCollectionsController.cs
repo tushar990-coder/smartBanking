@@ -538,10 +538,10 @@ namespace Bhisi.Api.Controllers
                     {
                         savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == collection.TransferFromSavingAccountNo);
                     }
-                    int? memberId = loanAccFetched?.MemberID;
-                    if (savingAccount == null && memberId != null)
+                    int? custId = loanAccFetched?.CustomerID ?? loanAccFetched?.Customer?.CustomerID ?? loanAccFetched?.Member?.CustomerID;
+                    if (savingAccount == null && custId != null)
                     {
-                        savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.MemberID == memberId.Value && s.Status == "Active");
+                        savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.CustomerID == custId.Value && s.Status == "Active");
                     }
 
                     if (savingAccount != null && totalReceiptAmount > 0)

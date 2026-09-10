@@ -111,11 +111,18 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Prompt modal after saving new member to navigate to ShareMaster
+  // Summary modal after saving new member displaying Member & Share Details
   const [newRegisteredMember, setNewRegisteredMember] = useState<{
     memberId: number;
     memberCode: string;
     memberName: string;
+    voucherNo?: string;
+    feeAmount?: number;
+    sharesCount?: number;
+    shareAmount?: number;
+    fromShareNo?: number | string;
+    toShareNo?: number | string;
+    certNo?: string;
   } | null>(null);
 
   // List Modal Filter States
@@ -126,12 +133,35 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | ''>('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
-  // Admission Fees & Payment Mode
-  const [feesConfig, setFeesConfig] = useState({
+  // Share Allotment & Admission Fees Configuration
+  const [shareConfig, setShareConfig] = useState<{
+    allotmentDate: string;
+    numberOfShares: number | '';
+    faceValue: number;
+    admissionFee: number;
+    buildingFund: number;
+    paymentMode: 'Cash' | 'Transfer';
+    savingAccountId: number | '';
+  }>({
+    allotmentDate: new Date().toISOString().split('T')[0],
+    numberOfShares: '',
+    faceValue: 100,
     admissionFee: 10,
     buildingFund: 0,
-    paymentMode: 'Cash' // Cash or Transfer
+    paymentMode: 'Cash', // Cash or Transfer
+    savingAccountId: ''
   });
+
+  const [nextShareConfig, setNextShareConfig] = useState<{
+    nextCertificateNo: string;
+    nextFromShareNo: number;
+  }>({
+    nextCertificateNo: '',
+    nextFromShareNo: 1
+  });
+
+  const [customerSavingAccounts, setCustomerSavingAccounts] = useState<any[]>([]);
+  const [loadingSavingAccounts, setLoadingSavingAccounts] = useState(false);
 
   // Board Approval & Resolution Details (MCS Act Compliance)
   const [resolutionData, setResolutionData] = useState({
@@ -206,6 +236,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
   useEffect(() => {
     isMountedRef.current = true;
     fetchNextMemberCode();
+    fetchNextShareConfig();
     fetchCustomers();
     fetchMembers();
     fetchBranches();
@@ -214,6 +245,23 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       isMountedRef.current = false;
     };
   }, []);
+
+  const fetchNextShareConfig = async () => {
+    try {
+      const response = await fetch('/api/ShareAccounts/NextShareConfig', { headers: getAuthHeaders() });
+      if (response.ok && isMountedRef.current) {
+        const data = await response.json();
+        if (data && isMountedRef.current) {
+          setNextShareConfig({
+            nextCertificateNo: data.nextCertificateNo || '',
+            nextFromShareNo: data.nextFromShareNo || 1
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching next share config:", e);
+    }
+  };
 
   const fetchNextMemberCode = async () => {
     try {
@@ -316,14 +364,56 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     }
   };
 
-  // When Customer is selected from CustomerSearchSelect
-  const handleCustomerSelect = async (customerId: number | '') => {
+  const fetchCustomerSavingAccounts = async (customerId: number) => {
+    if (!customerId) {
+      setCustomerSavingAccounts([]);
+      setShareConfig(prev => ({ ...prev, savingAccountId: '' }));
+      return;
+    }
+    setLoadingSavingAccounts(true);
+    try {
+      const res = await fetch(`/api/SavingAccounts?customerId=${customerId}`, { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : [];
+        const activeAccounts = list.filter((a: any) => a.status !== 'Closed' && a.status !== 'Frozen');
+        setCustomerSavingAccounts(activeAccounts);
+        if (activeAccounts.length > 0) {
+          setShareConfig(prev => {
+            const exists = activeAccounts.some((a: any) => a.savingAccountID === prev.savingAccountId);
+            return {
+              ...prev,
+              savingAccountId: exists ? prev.savingAccountId : activeAccounts[0].savingAccountID
+            };
+          });
+        } else {
+          setShareConfig(prev => ({ ...prev, savingAccountId: '' }));
+        }
+      } else {
+        setCustomerSavingAccounts([]);
+        setShareConfig(prev => ({ ...prev, savingAccountId: '' }));
+      }
+    } catch (err) {
+      console.error("Error fetching customer saving accounts", err);
+      setCustomerSavingAccounts([]);
+      setShareConfig(prev => ({ ...prev, savingAccountId: '' }));
+    } finally {
+      setLoadingSavingAccounts(false);
+    }
+  };
+
+  const handleCustomerSelect = (customerId: number | '') => {
     setSelectedCustomerId(customerId);
     if (!customerId) {
       setSelectedCustomer(null);
+      setCustomerSavingAccounts([]);
+      setShareConfig(prev => ({ ...prev, savingAccountId: '' }));
       fetchNextMemberCode();
       return;
     }
+
+    // Fetch saving accounts for the selected customer
+    fetchCustomerSavingAccounts(Number(customerId));
 
     const cust = customers.find(c => c.customerID === customerId);
     if (cust) {
@@ -402,16 +492,124 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     !selectedCustomer.memberCode.startsWith('TEMP')
   );
 
-  const totalPayable = (feesConfig.admissionFee || 0) + (feesConfig.buildingFund || 0);
+  const shareCapitalAmount = (Number(shareConfig.numberOfShares) || 0) * (shareConfig.faceValue || 100);
+  const totalPayable = shareCapitalAmount + (shareConfig.admissionFee || 0) + (shareConfig.buildingFund || 0);
+
+  const autoFromShareNo = nextShareConfig.nextFromShareNo || 1;
+  const hasShares = shareConfig.numberOfShares !== '' && Number(shareConfig.numberOfShares) > 0;
+  const autoToShareNo = hasShares 
+    ? autoFromShareNo + Number(shareConfig.numberOfShares) - 1 
+    : 0;
+  const autoCertificateNo = hasShares 
+    ? (nextShareConfig.nextCertificateNo || `CERT-${new Date().getFullYear()}-00001`) 
+    : '-';
+
+  const handleApplicationDateChange = (val: string) => {
+    setResolutionData(prev => {
+      const updated = { ...prev, applicationDate: val };
+      if (prev.resolutionDate && val > prev.resolutionDate) {
+        updated.resolutionDate = val;
+      }
+      if (prev.joiningDate && val > prev.joiningDate) {
+        updated.joiningDate = val;
+      }
+      return updated;
+    });
+    setShareConfig(prev => {
+      if (prev.allotmentDate && val > prev.allotmentDate) {
+        return { ...prev, allotmentDate: val };
+      }
+      return prev;
+    });
+  };
+
+  const handleResolutionDateChange = (val: string) => {
+    if (resolutionData.applicationDate && val < resolutionData.applicationDate) {
+      setError("ठराव दिनांक (Resolution Date) हा अर्ज दिनांकापेक्षा (Application Date) आधीचा असू शकत नाही.");
+      return;
+    }
+    setError("");
+    setResolutionData(prev => {
+      const updated = { ...prev, resolutionDate: val };
+      if (prev.joiningDate && val > prev.joiningDate) {
+        updated.joiningDate = val;
+      }
+      return updated;
+    });
+    setShareConfig(prev => {
+      if (prev.allotmentDate && val > prev.allotmentDate) {
+        return { ...prev, allotmentDate: val };
+      }
+      return prev;
+    });
+  };
+
+  const handleAllotmentDateChange = (val: string) => {
+    if (resolutionData.applicationDate && val < resolutionData.applicationDate) {
+      setError("शेअर्स वाटप तारीख (Allotment Date) ही अर्ज दिनांकापेक्षा (Application Date) आधीची असू शकत नाही.");
+      return;
+    }
+    if (resolutionData.resolutionDate && val < resolutionData.resolutionDate) {
+      setError("शेअर्स वाटप तारीख (Allotment Date) ही ठराव दिनांकापेक्षा (Resolution Date) आधीची असू शकत नाही.");
+      return;
+    }
+    setError("");
+    setShareConfig(prev => ({ ...prev, allotmentDate: val }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
+    // Mandatory Share Quantity Validation
+    if (shareConfig.numberOfShares === '' || Number(shareConfig.numberOfShares) <= 0) {
+      setError("कृपया शेअर्स संख्या (Qty) भरा. शेअर्स संख्या प्रविष्ट केल्याशिवाय अर्ज जतन करता येणार नाही.");
+      return;
+    }
+
+    // Date validations (MCS Act compliance)
+    if (resolutionData.applicationDate && resolutionData.resolutionDate) {
+      if (resolutionData.resolutionDate < resolutionData.applicationDate) {
+        setError("ठराव दिनांक (Resolution Date) हा अर्ज दिनांकापेक्षा (Application Date) आधीचा असू शकत नाही.");
+        return;
+      }
+    }
+    if (hasShares && shareConfig.allotmentDate) {
+      if (resolutionData.applicationDate && shareConfig.allotmentDate < resolutionData.applicationDate) {
+        setError("शेअर्स वाटप तारीख (Allotment Date) ही अर्ज दिनांकापेक्षा (Application Date) आधीची असू शकत नाही.");
+        return;
+      }
+      if (resolutionData.resolutionDate && shareConfig.allotmentDate < resolutionData.resolutionDate) {
+        setError("शेअर्स वाटप तारीख (Allotment Date) ही ठराव दिनांकापेक्षा (Resolution Date) आधीची असू शकत नाही.");
+        return;
+      }
+    }
+
     if (!editingId && !selectedCustomerId) {
       setError("कृपया प्रथम खातेदार (Customer) निवडा किंवा ग्राहक नोंदणी करा.");
       return;
+    }
+
+    if (shareConfig.paymentMode === 'Transfer') {
+      if (!selectedCustomerId) {
+        setError("कृपया प्रथम खातेदार (Customer) निवडा.");
+        return;
+      }
+      if (customerSavingAccounts.length === 0) {
+        setError("या खातेदाराचे कोणतेही सक्रिय बचत खाते उपलब्ध नसल्याने 'बचत खात्यातून वर्ग' करता येणार नाही. कृपया 'रोख भरणा' निवडा किंवा आधी बचत खाते उघडा.");
+        return;
+      }
+      if (!shareConfig.savingAccountId) {
+        setError("कृपया भरणा करण्यासाठी खातेदाराचे बचत खाते निवडा.");
+        return;
+      }
+      const selAcc = customerSavingAccounts.find((a: any) => a.savingAccountID === Number(shareConfig.savingAccountId));
+      const availBal = selAcc ? ((selAcc.currentBalance || 0) - (selAcc.lienAmount || 0) - (selAcc.minimumBalance || 0)) : 0;
+      if (totalPayable > 0 && availBal < totalPayable) {
+        setError(`निवडलेल्या बचत खात्यामध्ये अपुरी शिल्लक आहे. (उपलब्ध: ₹${availBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}, आवश्यक: ₹${totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })})`);
+        return;
+      }
     }
 
     if (!formData.memberCode?.trim()) {
@@ -434,7 +632,14 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         joiningDate: resolutionData.joiningDate ? new Date(resolutionData.joiningDate).toISOString() : new Date().toISOString(),
         birthDate: formData.birthDate ? new Date(formData.birthDate).toISOString() : null,
         membershipType: formData.membershipType || 'Regular',
-        status: formData.status || 'Active'
+        status: formData.status || 'Active',
+        numberOfShares: Number(shareConfig.numberOfShares) || 0,
+        shareFaceValue: Number(shareConfig.faceValue) || 100,
+        allotmentDate: shareConfig.allotmentDate ? new Date(shareConfig.allotmentDate).toISOString() : null,
+        admissionFee: Number(shareConfig.admissionFee) || 0,
+        buildingFund: Number(shareConfig.buildingFund) || 0,
+        paymentMode: shareConfig.paymentMode || 'Cash',
+        savingAccountId: shareConfig.paymentMode === 'Transfer' && shareConfig.savingAccountId ? Number(shareConfig.savingAccountId) : null
       };
 
       let response;
@@ -461,14 +666,28 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         }
         const targetMemberId = (editingId !== null) ? editingId : savedMember.memberID;
         const targetMemberCode = savedMember.memberCode || formData.memberCode;
+        const vchNo = savedMember.generatedVoucherNo;
 
         if (editingId === null) {
           setNewRegisteredMember({
             memberId: targetMemberId,
             memberCode: targetMemberCode,
-            memberName: `${formData.firstName} ${formData.lastName}`
+            memberName: `${formData.firstName} ${formData.lastName}`,
+            voucherNo: vchNo,
+            feeAmount: totalPayable,
+            sharesCount: Number(shareConfig.numberOfShares) || 0,
+            shareAmount: shareCapitalAmount,
+            fromShareNo: autoFromShareNo,
+            toShareNo: autoToShareNo,
+            certNo: autoCertificateNo
           });
-          setSuccess("नवीन सभासद नोंदणी अर्ज यशस्वीरित्या जतन झाला! आता भाग भांडवल व्यवस्थापनात जाऊन शेअर्स वाटप करा.");
+          if (shareConfig.numberOfShares > 0 && vchNo) {
+            setSuccess(`नवीन सभासद नोंदणी व भाग वाटप (${shareConfig.numberOfShares} शेअर्स) यशस्वी! पावती व्हाऊचर क्र. ${vchNo} (रक्कम: ₹${totalPayable.toLocaleString('en-IN')}) रोजकीर्द (Day Book) ला जमा झाले आहे.`);
+          } else if (vchNo) {
+            setSuccess(`नवीन सभासद नोंदणी अर्ज यशस्वी! पावती व्हाऊचर क्र. ${vchNo} (रक्कम: ₹${totalPayable.toLocaleString('en-IN')}) रोजकीर्द (Day Book) ला जमा झाले आहे.`);
+          } else {
+            setSuccess("नवीन सभासद नोंदणी अर्ज यशस्वीरित्या जतन झाला!");
+          }
         } else {
           setSuccess("सभासद माहिती यशस्वीरित्या अद्ययावत केली!");
         }
@@ -501,6 +720,9 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
   const handleEdit = (member: Member) => {
     setEditingId(member.memberID);
     setSelectedCustomerId(member.customerID || '');
+    if (member.customerID) {
+      fetchCustomerSavingAccounts(member.customerID);
+    }
     setFormData({
       branchID: member.branchID || 1,
       memberCode: member.memberCode || '',
@@ -585,6 +807,15 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     setEditingId(null);
     setSelectedCustomerId('');
     setSelectedCustomer(null);
+    setShareConfig({
+      allotmentDate: new Date().toISOString().split('T')[0],
+      numberOfShares: '',
+      faceValue: 100,
+      admissionFee: 10,
+      buildingFund: 0,
+      paymentMode: 'Cash',
+      savingAccountId: ''
+    });
     setFormData({
       branchID: user?.branchID || 1,
       memberCode: '',
@@ -619,6 +850,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       signaturePath: ''
     });
     fetchNextMemberCode();
+    fetchNextShareConfig();
     setError('');
     setSuccess('');
   };
@@ -929,7 +1161,15 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 <label className={labelClass}>सभासद प्रकार (Membership Type - Sec 24) <span className="text-red-500">*</span></label>
                 <select
                   value={formData.membershipType}
-                  onChange={e => setFormData(prev => ({ ...prev, membershipType: e.target.value }))}
+                  onChange={e => {
+                    const mType = e.target.value;
+                    setFormData(prev => ({ ...prev, membershipType: mType }));
+                    if (mType === 'Nominal') {
+                      setShareConfig(prev => ({ ...prev, numberOfShares: 0 }));
+                    } else if (shareConfig.numberOfShares === 0) {
+                      setShareConfig(prev => ({ ...prev, numberOfShares: 10 }));
+                    }
+                  }}
                   required
                   className={`${inputClass} font-bold text-primary`}
                 >
@@ -966,68 +1206,12 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
             </div>
           </div>
 
-          {/* Section 3: Fees & Payment Method */}
-          <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
-            <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
-              <div className="flex items-center gap-1.5">
-                <IndianRupee className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">३. प्रवेश शुल्क व भरणा तपशील (Admission Fees & Payment Method)</h2>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
-              <div>
-                <label className={labelClass}>प्रवेश शुल्क (Admission Fee ₹) <span className="text-red-500">*</span></label>
-                <input
-                  type="number"
-                  min="0"
-                  value={feesConfig.admissionFee}
-                  onChange={e => setFeesConfig(prev => ({ ...prev, admissionFee: parseFloat(e.target.value) || 0 }))}
-                  className={`${inputClass} font-mono text-right`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>इमारत / कल्याण निधी (Fund ₹)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={feesConfig.buildingFund}
-                  onChange={e => setFeesConfig(prev => ({ ...prev, buildingFund: parseFloat(e.target.value) || 0 }))}
-                  className={`${inputClass} font-mono text-right`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>एकूण देय रक्कम (Total Payable ₹)</label>
-                <input
-                  type="text"
-                  readOnly
-                  value={`₹ ${totalPayable.toLocaleString('en-IN')}`}
-                  className={`${inputClass} font-mono font-bold text-primary bg-primary/10 text-right cursor-not-allowed border-primary/30`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>भरणा प्रकार (Payment Mode) <span className="text-red-500">*</span></label>
-                <select
-                  value={feesConfig.paymentMode}
-                  onChange={e => setFeesConfig(prev => ({ ...prev, paymentMode: e.target.value }))}
-                  className={`${inputClass} font-bold`}
-                >
-                  <option value="Cash">💵 रोख भरणा (Cash Deposit)</option>
-                  <option value="Transfer">🏦 बचत खात्यातून वर्ग (Transfer)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 4: Board Resolution & Approval */}
+          {/* Section 3: Board Resolution & Approval */}
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
             <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
               <div className="flex items-center gap-1.5">
                 <Building2 className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">४. संचालक मंडळ ठराव व मंजुरी (Board Resolution Details - MCS Act Compliance)</h2>
+                <h2 className="text-xs font-bold text-primary">३. संचालक मंडळ ठराव व मंजुरी (Board Resolution Details - MCS Act Compliance)</h2>
               </div>
             </div>
 
@@ -1037,7 +1221,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 <input
                   type="date"
                   value={resolutionData.applicationDate}
-                  onChange={e => setResolutionData(prev => ({ ...prev, applicationDate: e.target.value }))}
+                  onChange={e => handleApplicationDateChange(e.target.value)}
                   required
                   className={inputClass}
                 />
@@ -1059,7 +1243,8 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 <input
                   type="date"
                   value={resolutionData.resolutionDate}
-                  onChange={e => setResolutionData(prev => ({ ...prev, resolutionDate: e.target.value }))}
+                  min={resolutionData.applicationDate}
+                  onChange={e => handleResolutionDateChange(e.target.value)}
                   required
                   className={inputClass}
                 />
@@ -1070,11 +1255,235 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 <input
                   type="date"
                   value={resolutionData.joiningDate}
+                  min={resolutionData.resolutionDate || resolutionData.applicationDate}
                   onChange={e => setResolutionData(prev => ({ ...prev, joiningDate: e.target.value }))}
                   required
                   className={`${inputClass} font-bold text-primary`}
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Section 4: Share Allotment, Fees & Payment Method */}
+          <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
+              <div className="flex items-center gap-1.5">
+                <IndianRupee className="w-4 h-4 text-primary" />
+                <h2 className="text-xs font-bold text-primary">४. भाग भांडवल वाटप, प्रवेश शुल्क व भरणा तपशील (Share Allotment, Admission Fees & Payment Method)</h2>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+              {/* Row 1: Share Basic Allotment */}
+              <div>
+                <label className={labelClass}>वाटप तारीख (Date) <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  required
+                  value={shareConfig.allotmentDate}
+                  min={resolutionData.resolutionDate || resolutionData.applicationDate}
+                  onChange={e => handleAllotmentDateChange(e.target.value)}
+                  className={`${inputClass} font-bold`}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>शेअर्स संख्या (Qty) <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  placeholder="उदा. 10"
+                  value={shareConfig.numberOfShares}
+                  onChange={e => {
+                    const val = e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value) || 0);
+                    setShareConfig(prev => ({ ...prev, numberOfShares: val }));
+                  }}
+                  className={`${inputClass} font-mono font-bold text-right text-primary`}
+                />
+                <span className="text-[10px] text-slate-500 font-semibold">(@ ₹{shareConfig.faceValue}/शेअर)</span>
+              </div>
+
+              <div>
+                <label className={labelClass}>प्रति शेअर दर (Rate ₹)</label>
+                <input
+                  type="number"
+                  readOnly
+                  value={shareConfig.faceValue}
+                  className={`${inputClass} font-mono text-right bg-slate-50 cursor-not-allowed`}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>शेअर्स रक्कम (Share Capital ₹)</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={`₹ ${shareCapitalAmount.toLocaleString('en-IN')}`}
+                  className={`${inputClass} font-mono font-bold text-emerald-800 bg-emerald-50 text-right cursor-not-allowed border-emerald-300`}
+                />
+              </div>
+
+              {/* Row 2: Auto-Calculated Share Range & Certificate No */}
+              <div>
+                <label className={labelClass}>
+                  <span>शेअर्स नं. पासून (From Share No)</span>
+                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={hasShares ? autoFromShareNo : '-'}
+                  className={`${inputClass} font-mono font-bold bg-slate-50 text-slate-800 text-center cursor-not-allowed border-slate-300`}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  <span>शेअर्स नं. पर्यंत (To Share No)</span>
+                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={hasShares ? autoToShareNo : '-'}
+                  className={`${inputClass} font-mono font-bold bg-slate-50 text-slate-800 text-center cursor-not-allowed border-slate-300`}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className={labelClass}>
+                  <span>सर्टिफिकेट नं. (Certificate No)</span>
+                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={hasShares ? autoCertificateNo : '-'}
+                  className={`${inputClass} font-mono font-bold bg-slate-50 text-primary text-center cursor-not-allowed border-slate-300`}
+                />
+              </div>
+
+              {/* Row 3: Fees & Total Amount */}
+              <div>
+                <label className={labelClass}>प्रवेश शुल्क (Admission Fee ₹) <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  min="0"
+                  value={shareConfig.admissionFee}
+                  onChange={e => setShareConfig(prev => ({ ...prev, admissionFee: parseFloat(e.target.value) || 0 }))}
+                  className={`${inputClass} font-mono text-right`}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>इमारत / कल्याण निधी (Fund ₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={shareConfig.buildingFund}
+                  onChange={e => setShareConfig(prev => ({ ...prev, buildingFund: parseFloat(e.target.value) || 0 }))}
+                  className={`${inputClass} font-mono text-right`}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className={labelClass}>एकूण देय रक्कम (Total Amount ₹)</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={`₹ ${totalPayable.toLocaleString('en-IN')}`}
+                  className={`${inputClass} font-mono font-bold text-primary bg-primary/10 text-right cursor-not-allowed border-primary/30 text-sm`}
+                />
+              </div>
+
+              {/* Row 4: Payment Mode */}
+              <div className="sm:col-span-2 md:col-span-4">
+                <label className={labelClass}>भरणा प्रकार (Payment Mode) <span className="text-red-500">*</span></label>
+                <select
+                  value={shareConfig.paymentMode}
+                  onChange={e => {
+                    const newMode = e.target.value as 'Cash' | 'Transfer';
+                    setShareConfig(prev => ({ ...prev, paymentMode: newMode }));
+                    if (newMode === 'Transfer' && selectedCustomerId && customerSavingAccounts.length === 0 && !loadingSavingAccounts) {
+                      fetchCustomerSavingAccounts(Number(selectedCustomerId));
+                    }
+                  }}
+                  className={`${inputClass} font-bold max-w-sm`}
+                >
+                  <option value="Cash">💵 रोख भरणा (Cash Deposit)</option>
+                  <option value="Transfer">🏦 बचत खात्यातून वर्ग (Transfer)</option>
+                </select>
+              </div>
+
+              {/* Dynamic Customer Saving Account Dropdown when Transfer is selected */}
+              {shareConfig.paymentMode === 'Transfer' && (
+                <div className="sm:col-span-2 md:col-span-4 mt-1 p-2.5 bg-blue-50/60 rounded border border-blue-200 animate-in fade-in duration-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-end">
+                    <div className="sm:col-span-2">
+                      <label className={labelClass}>
+                        खातेदाराचे बचत खाते निवडा (Select Customer's Saving Account) <span className="text-red-500">*</span>
+                      </label>
+                      {loadingSavingAccounts ? (
+                        <div className="p-2 text-slate-500 text-xs font-semibold flex items-center gap-1.5">
+                          <span className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
+                          बचत खाती लोड होत आहेत...
+                        </div>
+                      ) : !selectedCustomerId ? (
+                        <div className="p-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded font-medium">
+                          ℹ️ बचत खाते निवडण्यासाठी कृपया आधी खातेदार (Customer) निवडा.
+                        </div>
+                      ) : customerSavingAccounts.length > 0 ? (
+                        <select
+                          value={shareConfig.savingAccountId}
+                          onChange={e => setShareConfig(prev => ({ ...prev, savingAccountId: e.target.value === '' ? '' : Number(e.target.value) }))}
+                          required
+                          className={`${inputClass} font-bold text-blue-900 bg-white`}
+                        >
+                          <option value="">-- बचत खाते निवडा (Select Account) --</option>
+                          {customerSavingAccounts.map((acc: any) => {
+                            const availBal = (acc.currentBalance || 0) - (acc.lienAmount || 0) - (acc.minimumBalance || 0);
+                            return (
+                              <option key={acc.savingAccountID} value={acc.savingAccountID}>
+                                🏦 {acc.accountNo} - {acc.ledgerName || 'बचत ठेव'} | उपलब्ध शिल्लक: ₹{availBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ({acc.status || 'Active'})
+                              </option>
+                            );
+                          })}
+                        </select>
+                      ) : (
+                        <div className="p-2 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded font-bold flex items-center gap-1.5">
+                          <span>⚠️ या खातेदाराचे कोणतेही सक्रिय बचत खाते आढळले नाही. कृपया आधी खातेदाराचे बचत खाते उघडा किंवा '💵 रोख भरणा' पर्याय निवडा.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Selected Account Balance Preview Badge */}
+                    {shareConfig.savingAccountId && (
+                      <div>
+                        {(() => {
+                          const selAcc = customerSavingAccounts.find((a: any) => a.savingAccountID === Number(shareConfig.savingAccountId));
+                          if (!selAcc) return null;
+                          const availBal = (selAcc.currentBalance || 0) - (selAcc.lienAmount || 0) - (selAcc.minimumBalance || 0);
+                          const isShort = totalPayable > 0 && availBal < totalPayable;
+                          return (
+                            <div className={`p-2 rounded border text-xs ${isShort ? 'bg-rose-50 border-rose-300 text-rose-900' : 'bg-emerald-50 border-emerald-300 text-emerald-900'}`}>
+                              <div className="flex justify-between items-center font-bold">
+                                <span>उपलब्ध शिल्लक:</span>
+                                <span className="font-mono text-sm">₹{availBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              {isShort && (
+                                <div className="text-[10px] font-bold text-rose-700 mt-0.5">
+                                  ⚠️ अपुरी शिल्लक! देय: ₹{totalPayable.toLocaleString('en-IN')}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1403,14 +1812,14 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         />
       )}
 
-      {/* 🌟 NEW MEMBER REGISTRATION SUCCESS MODAL WITH DIRECT SHARE ALLOTMENT ACTION */}
+      {/* 🌟 NEW MEMBER REGISTRATION & SHARE ALLOTMENT SUCCESS MODAL */}
       {newRegisteredMember && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-md shadow-2xl max-w-md w-full overflow-hidden border border-slate-300 animate-in fade-in zoom-in-95 duration-150">
-            <div className="bg-emerald-600 text-white px-4 py-3 flex justify-between items-center">
+          <div className="bg-white rounded-md shadow-2xl max-w-lg w-full overflow-hidden border border-slate-300 animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-primary text-white px-4 py-3 flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-white" />
-                <span className="font-bold text-sm">सभासद नोंदणी अर्ज यशस्वी!</span>
+                <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+                <span className="font-bold text-sm">सभासद व शेअर्स वाटप माहिती (Member & Share Details)</span>
               </div>
               <button
                 onClick={() => setNewRegisteredMember(null)}
@@ -1421,50 +1830,75 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
             </div>
 
             <div className="p-4 space-y-3.5">
-              <div className="bg-emerald-50 border border-emerald-200 rounded p-3 text-xs space-y-1.5 text-emerald-950">
-                <p className="font-bold text-emerald-900">
-                  नवीन सभासद नोंदणी अर्ज व संचालक मंडळ ठराव तपशील यशस्वीरित्या जतन झाले आहेत.
-                </p>
-                <div className="pt-2 border-t border-emerald-200/60 font-mono text-[11px] grid grid-cols-2 gap-1.5">
-                  <div>सभासद कोड: <strong className="text-primary font-bold">{newRegisteredMember.memberCode}</strong></div>
-                  <div>ID: <strong>#{newRegisteredMember.memberId}</strong></div>
-                  <div className="col-span-2">नाव: <strong>{newRegisteredMember.memberName}</strong></div>
+              <div className="bg-emerald-50 border border-emerald-200 rounded p-3 text-xs space-y-2.5 text-emerald-950">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-900 text-xs pb-1.5 border-b border-emerald-200">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>नवीन सभासद नोंदणी व भाग भांडवल वाटप यशस्वीरित्या पूर्ण झाले आहे!</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-white/80 p-2 rounded border border-emerald-200">
+                    <span className="text-[10px] text-slate-500 font-medium block">सभासद कोड (Member Code)</span>
+                    <strong className="text-primary font-bold text-sm">{newRegisteredMember.memberCode}</strong>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded border border-emerald-200">
+                    <span className="text-[10px] text-slate-500 font-medium block">सभासद क्रमांक (Member ID)</span>
+                    <strong className="text-slate-800 font-bold text-sm">#{newRegisteredMember.memberId}</strong>
+                  </div>
+                  <div className="col-span-2 bg-white/80 p-2 rounded border border-emerald-200">
+                    <span className="text-[10px] text-slate-500 font-medium block">सभासदाचे नाव (Member Name)</span>
+                    <strong className="text-slate-900 font-bold">{newRegisteredMember.memberName}</strong>
+                  </div>
+
+                  {newRegisteredMember.sharesCount && newRegisteredMember.sharesCount > 0 ? (
+                    <>
+                      <div className="bg-white/80 p-2 rounded border border-emerald-200">
+                        <span className="text-[10px] text-slate-500 font-medium block">वाटप शेअर्स (Shares Allotted)</span>
+                        <strong className="text-emerald-800 font-bold">
+                          {newRegisteredMember.sharesCount} शेअर्स (₹{newRegisteredMember.shareAmount?.toLocaleString('en-IN')})
+                        </strong>
+                      </div>
+                      <div className="bg-white/80 p-2 rounded border border-emerald-200">
+                        <span className="text-[10px] text-slate-500 font-medium block">शेअर्स नंबर श्रेणी (Share Numbers)</span>
+                        <strong className="font-mono text-slate-800 font-bold">
+                          {newRegisteredMember.fromShareNo} ते {newRegisteredMember.toShareNo}
+                        </strong>
+                      </div>
+                      <div className="col-span-2 bg-white/80 p-2 rounded border border-emerald-200">
+                        <span className="text-[10px] text-slate-500 font-medium block">भाग दाखला क्रमांक (Certificate No)</span>
+                        <strong className="font-mono text-primary font-bold">{newRegisteredMember.certNo}</strong>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {newRegisteredMember.voucherNo && (
+                    <div className="col-span-2 bg-emerald-100/90 border border-emerald-300 rounded p-2 text-xs text-emerald-950 font-bold flex items-center justify-between">
+                      <span>🧾 पावती क्र.: <strong className="font-mono text-primary">{newRegisteredMember.voucherNo}</strong></span>
+                      <span className="text-emerald-800">एकूण रक्कम: ₹{newRegisteredMember.feeAmount?.toLocaleString('en-IN')} (Day Book जमा ✅)</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900 flex items-start gap-2">
-                <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="block mb-0.5">पुढील पायरी: भाग भांडवल वाटप (Share Allotment)</strong>
-                  <p className="text-[11px] text-amber-800">
-                    या नवीन सभासदासाठी आता 'भाग भांडवल व्यवस्थापन' फॉर्ममध्ये जाऊन शेअर्स वाटप पूर्ण करा.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-slate-200">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => {
-                    const mId = newRegisteredMember.memberId;
                     setNewRegisteredMember(null);
-                    if (onNavigate) {
-                      onNavigate('share-master', { memberId: mId });
-                    } else {
-                      window.location.href = `/shares/allocation?memberId=${mId}`;
-                    }
+                    setIsListModalOpen(true);
                   }}
-                  className="flex-1 px-4 py-2 bg-primary hover:opacity-95 text-white rounded font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5"
                 >
-                  <span>➡️ थेट भाग भांडवल वाटप करा</span>
+                  <Users className="w-4 h-4 text-slate-600" />
+                  <span>नोंदणीकृत सभासद यादी पहा</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setNewRegisteredMember(null)}
-                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-semibold text-xs border border-slate-300 cursor-pointer text-center"
+                  className="px-5 py-2 bg-primary hover:opacity-95 text-white rounded font-bold text-xs cursor-pointer shadow-xs"
                 >
-                  नवीन अर्ज भरा
+                  नवीन अर्ज भरा (New Application)
                 </button>
               </div>
             </div>

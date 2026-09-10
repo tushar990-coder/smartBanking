@@ -110,6 +110,8 @@ namespace Bhisi.Api.Models
         public decimal TotalReceiptsTransfer { get; set; }
         public decimal TotalPaymentsCash { get; set; }
         public decimal TotalPaymentsTransfer { get; set; }
+        public string VoucherStatus { get; set; } = "approved";
+        public bool IsDraft { get; set; } = false;
     }
 
     public class DaybookGroupDto
@@ -127,6 +129,7 @@ namespace Bhisi.Api.Models
         public string Narration { get; set; } = string.Empty;
         public decimal CashAmount { get; set; }
         public decimal TransferAmount { get; set; }
+        public string Status { get; set; } = string.Empty;
     }
 
     public class DaybookBatchResponseDto
@@ -406,6 +409,8 @@ namespace Bhisi.Api.Models
         public decimal TotalReceiptsTransfer { get; set; }
         public decimal TotalPaymentsCash { get; set; }
         public decimal TotalPaymentsTransfer { get; set; }
+        public string VoucherStatus { get; set; } = "approved";
+        public bool IsDraft { get; set; } = false;
     }
 
     public class DaybookSummaryBatchResponseDto

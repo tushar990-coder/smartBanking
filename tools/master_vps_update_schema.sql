@@ -1,4 +1,4 @@
--- =========================================================================================
+﻿-- =========================================================================================
 -- SmartBanking Core ERP - Universal VPS Database Update & Schema Sync Patch
 -- Zero Data Loss Guarantee - All Existing Records (Members, Vouchers, Accounts) 100% Preserved
 -- Compatible with all VPS client databases (Padawalwadi, Gurudev, Main, etc.)
@@ -264,142 +264,30 @@ BEGIN
 END
 GO
 
-IF COL_LENGTH('Members', 'NomineeAddress') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [NomineeAddress] NVARCHAR(500) NULL;
-    PRINT 'Added NomineeAddress to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'NomineeBirthDate') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [NomineeBirthDate] DATETIME2 NULL;
-    PRINT 'Added NomineeBirthDate to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'NomineeIsMinor') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [NomineeIsMinor] BIT NOT NULL CONSTRAINT DF_Members_NomineeIsMinor DEFAULT 0;
-    PRINT 'Added NomineeIsMinor to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'NomineeGuardianName') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [NomineeGuardianName] NVARCHAR(150) NULL;
-    PRINT 'Added NomineeGuardianName to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'NickName') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [NickName] NVARCHAR(100) NULL;
-    PRINT 'Added NickName to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'AadhaarDocPath') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [AadhaarDocPath] NVARCHAR(MAX) NULL;
-    PRINT 'Added AadhaarDocPath to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'PanDocPath') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [PanDocPath] NVARCHAR(MAX) NULL;
-    PRINT 'Added PanDocPath to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'IsMinor') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [IsMinor] BIT NOT NULL CONSTRAINT DF_Members_IsMinor DEFAULT 0;
-    PRINT 'Added IsMinor to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'GuardianName') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [GuardianName] NVARCHAR(150) NULL;
-    PRINT 'Added GuardianName to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'GuardianNameEng') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [GuardianNameEng] NVARCHAR(150) NULL;
-    PRINT 'Added GuardianNameEng to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'GuardianRelation') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [GuardianRelation] NVARCHAR(50) NULL;
-    PRINT 'Added GuardianRelation to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'GuardianAadhaarNo') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [GuardianAadhaarNo] NVARCHAR(12) NULL;
-    PRINT 'Added GuardianAadhaarNo to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'GuardianMobileNo') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [GuardianMobileNo] NVARCHAR(15) NULL;
-    PRINT 'Added GuardianMobileNo to Members';
-END
-GO
-
-IF COL_LENGTH('Members', 'GuardianAddress') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [GuardianAddress] NVARCHAR(500) NULL;
-    PRINT 'Added GuardianAddress to Members';
-END
-GO
-
--- Ensure CIFNo column exists on Members
-IF COL_LENGTH('Members', 'CIFNo') IS NULL
-BEGIN
-    ALTER TABLE [Members] ADD [CIFNo] NVARCHAR(20) NULL;
-    PRINT 'Added CIFNo column to Members';
-END
-GO
-
 -- Ensure no existing member has NULL IsDeleted or blank MembershipType
 UPDATE [Members] SET [IsDeleted] = 0 WHERE [IsDeleted] IS NULL;
 UPDATE [Members] SET [MembershipType] = 'Regular' WHERE [MembershipType] IS NULL OR [MembershipType] = '';
 GO
 
--- Ensure unique filtered indices on Members exclude soft-deleted records ([IsDeleted] = 0)
-IF COL_LENGTH('Members', 'CIFNo') IS NOT NULL
+-- Drop any legacy indexes on demographic columns if they were created on Members in older patches
+IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_CIFNo' AND object_id = OBJECT_ID('Members'))
 BEGIN
-    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_CIFNo' AND object_id = OBJECT_ID('Members'))
-        DROP INDEX [IX_Members_CIFNo] ON [Members];
-    EXEC('CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_CIFNo] ON [Members]([CIFNo]) WHERE [CIFNo] IS NOT NULL AND [CIFNo] <> '''' AND [IsDeleted] = 0;');
-    PRINT 'Recreated unique index IX_Members_CIFNo with [IsDeleted] = 0 filter';
+    DROP INDEX [IX_Members_CIFNo] ON [Members];
+    PRINT 'Dropped legacy IX_Members_CIFNo from Members (CIFNo is hosted in Customers)';
 END
 GO
 
-IF COL_LENGTH('Members', 'PANNo') IS NOT NULL
+IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_PANNo' AND object_id = OBJECT_ID('Members'))
 BEGIN
-    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_PANNo' AND object_id = OBJECT_ID('Members'))
-        DROP INDEX [IX_Members_PANNo] ON [Members];
-    EXEC('CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_PANNo] ON [Members]([PANNo]) WHERE [PANNo] IS NOT NULL AND [PANNo] <> '''' AND [IsDeleted] = 0;');
-    PRINT 'Recreated unique index IX_Members_PANNo with [IsDeleted] = 0 filter';
+    DROP INDEX [IX_Members_PANNo] ON [Members];
+    PRINT 'Dropped legacy IX_Members_PANNo from Members (PANNo is hosted in Customers)';
 END
 GO
 
-IF COL_LENGTH('Members', 'AadhaarNo') IS NOT NULL
+IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_AadhaarNo' AND object_id = OBJECT_ID('Members'))
 BEGIN
-    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Members_AadhaarNo' AND object_id = OBJECT_ID('Members'))
-        DROP INDEX [IX_Members_AadhaarNo] ON [Members];
-    EXEC('CREATE UNIQUE NONCLUSTERED INDEX [IX_Members_AadhaarNo] ON [Members]([AadhaarNo]) WHERE [AadhaarNo] IS NOT NULL AND [AadhaarNo] <> '''' AND [IsDeleted] = 0;');
-    PRINT 'Recreated unique index IX_Members_AadhaarNo with [IsDeleted] = 0 filter';
+    DROP INDEX [IX_Members_AadhaarNo] ON [Members];
+    PRINT 'Dropped legacy IX_Members_AadhaarNo from Members (AadhaarNo is hosted in Customers)';
 END
 GO
 
@@ -2156,7 +2044,10 @@ BEGIN
     PRINT 'Added CustomerID to SavingAccountMasters';
 END
 GO
-UPDATE [SavingAccountMasters] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;
+IF COL_LENGTH('SavingAccountMasters', 'MemberID') IS NOT NULL
+BEGIN
+    EXEC(N'UPDATE [SavingAccountMasters] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;');
+END
 GO
 
 IF COL_LENGTH('LoanAccounts', 'CustomerID') IS NULL
@@ -2165,7 +2056,10 @@ BEGIN
     PRINT 'Added CustomerID to LoanAccounts';
 END
 GO
-UPDATE [LoanAccounts] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;
+IF COL_LENGTH('LoanAccounts', 'MemberID') IS NOT NULL
+BEGIN
+    EXEC(N'UPDATE [LoanAccounts] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;');
+END
 GO
 
 IF COL_LENGTH('LoanApplications', 'CustomerID') IS NULL
@@ -2174,7 +2068,10 @@ BEGIN
     PRINT 'Added CustomerID to LoanApplications';
 END
 GO
-UPDATE [LoanApplications] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;
+IF COL_LENGTH('LoanApplications', 'MemberID') IS NOT NULL
+BEGIN
+    EXEC(N'UPDATE [LoanApplications] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;');
+END
 GO
 
 IF COL_LENGTH('FdAccounts', 'CustomerID') IS NULL
@@ -2183,7 +2080,10 @@ BEGIN
     PRINT 'Added CustomerID to FdAccounts';
 END
 GO
-UPDATE [FdAccounts] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;
+IF COL_LENGTH('FdAccounts', 'MemberID') IS NOT NULL
+BEGIN
+    EXEC(N'UPDATE [FdAccounts] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;');
+END
 GO
 
 IF COL_LENGTH('RdAccounts', 'CustomerID') IS NULL
@@ -2192,7 +2092,10 @@ BEGIN
     PRINT 'Added CustomerID to RdAccounts';
 END
 GO
-UPDATE [RdAccounts] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;
+IF COL_LENGTH('RdAccounts', 'MemberID') IS NOT NULL
+BEGIN
+    EXEC(N'UPDATE [RdAccounts] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;');
+END
 GO
 
 IF COL_LENGTH('PigmyAccounts', 'CustomerID') IS NULL
@@ -2229,7 +2132,10 @@ BEGIN
     PRINT 'Added CustomerID to LockerAllotments';
 END
 GO
-UPDATE [LockerAllotments] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;
+IF COL_LENGTH('LockerAllotments', 'MemberID') IS NOT NULL
+BEGIN
+    EXEC(N'UPDATE [LockerAllotments] SET [CustomerID] = [MemberID] WHERE [CustomerID] IS NULL AND [MemberID] IS NOT NULL;');
+END
 GO
 
 -- CustomerOpeningBalances Table
@@ -2252,11 +2158,14 @@ BEGIN
 
     IF OBJECT_ID(N'[MemberOpeningBalances]', N'U') IS NOT NULL
     BEGIN
-        INSERT INTO [CustomerOpeningBalances] ([CustomerID], [LedgerID], [Amount], [BalanceType], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn])
-        SELECT [MemberID], [LedgerID], [Amount], [BalanceType], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn]
-        FROM [MemberOpeningBalances]
-        WHERE [MemberID] IN (SELECT [CustomerID] FROM [Customers]);
-        PRINT 'Migrated MemberOpeningBalances to CustomerOpeningBalances';
+        IF COL_LENGTH('MemberOpeningBalances', 'MemberID') IS NOT NULL
+        BEGIN
+            EXEC(N'INSERT INTO [CustomerOpeningBalances] ([CustomerID], [LedgerID], [Amount], [BalanceType], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn])
+            SELECT [MemberID], [LedgerID], [Amount], [BalanceType], [CreatedBy], [CreatedOn], [UpdatedBy], [UpdatedOn]
+            FROM [MemberOpeningBalances]
+            WHERE [MemberID] IN (SELECT [CustomerID] FROM [Customers]);');
+            PRINT 'Migrated MemberOpeningBalances to CustomerOpeningBalances';
+        END
     END
 END
 GO

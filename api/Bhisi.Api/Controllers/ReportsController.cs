@@ -261,6 +261,39 @@ namespace Bhisi.Api.Controllers
             return result;
         }
 
+        private static string FormatVoucherPartyNarration(VoucherDetail vd, string? fallbackNarration)
+        {
+            var customer = vd.Customer ?? vd.Member?.Customer;
+            if (customer != null)
+            {
+                string cif = !string.IsNullOrWhiteSpace(customer.CIFNo)
+                    ? customer.CIFNo
+                    : (customer.CustomerID > 0 ? $"CIF{customer.CustomerID:D6}" : "");
+
+                string fullName = string.Join(" ", new[] { customer.FirstName, customer.MiddleName, customer.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
+
+                if (!string.IsNullOrWhiteSpace(cif) && !string.IsNullOrWhiteSpace(fullName))
+                    return $"{cif} - {fullName}";
+                if (!string.IsNullOrWhiteSpace(fullName))
+                    return fullName;
+                if (!string.IsNullOrWhiteSpace(cif))
+                    return cif;
+            }
+
+            if (vd.Member != null)
+            {
+                string code = !string.IsNullOrWhiteSpace(vd.Member.MemberCode)
+                    ? vd.Member.MemberCode
+                    : $"MEM{vd.Member.MemberID:D4}";
+
+                string memName = string.Join(" ", new[] { vd.Member.FirstName, vd.Member.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
+
+                return !string.IsNullOrWhiteSpace(memName) ? $"{code} - {memName}" : code;
+            }
+
+            return fallbackNarration ?? "";
+        }
+
         [HttpGet("Daybook")]
         public async Task<ActionResult<DaybookResponseDto>> GetDaybook([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] string? voucherStatus = "approved")
         {
@@ -319,9 +352,12 @@ namespace Bhisi.Api.Controllers
 
             var vouchersQuery = _context.Vouchers.AsNoTracking()
                 .Include(v => v.VoucherDetails)
-                .ThenInclude(vd => vd.Ledger)
+                    .ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails)
-                .ThenInclude(vd => vd.Member)
+                    .ThenInclude(vd => vd.Customer)
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Where(v => v.VoucherDate >= startDate 
                          && v.VoucherDate <= endDate
                          && v.VoucherType != "Opening Balance"
@@ -375,11 +411,8 @@ namespace Bhisi.Api.Controllers
 
                     var group = targetDict[vd.LedgerID];
 
-                    string narration = string.IsNullOrWhiteSpace(v.Narration) ? (v.VoucherType ?? "") : v.Narration;
-                    if (vd.Member != null)
-                    {
-                        narration = $"{vd.Member.MemberCode}-{vd.Member.FirstName} {vd.Member.LastName}";
-                    }
+                    string fallbackNarration = string.IsNullOrWhiteSpace(v.Narration) ? (v.VoucherType ?? "") : v.Narration;
+                    string narration = FormatVoucherPartyNarration(vd, fallbackNarration);
 
                     decimal cashAmt = 0m;
                     decimal transferAmt = 0m;
@@ -681,7 +714,8 @@ namespace Bhisi.Api.Controllers
             // Load ALL vouchers for the entire range in one query
             var vouchersQuery = _context.Vouchers.AsNoTracking()
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Ledger)
-                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member)
+                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Customer)
+                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member).ThenInclude(m => m!.Customer)
                 .Where(v => v.VoucherDate >= rangeStart 
                          && v.VoucherDate <= rangeEnd
                          && v.VoucherType != "Opening Balance"
@@ -787,11 +821,8 @@ namespace Bhisi.Api.Controllers
 
                             var group = targetDict[vd.LedgerID];
 
-                            string narration = string.IsNullOrWhiteSpace(v.Narration) ? (v.VoucherType ?? "") : v.Narration;
-                            if (vd.Member != null)
-                            {
-                                narration = $"{vd.Member.MemberCode}-{vd.Member.FirstName} {vd.Member.LastName}";
-                            }
+                            string fallbackNarration = string.IsNullOrWhiteSpace(v.Narration) ? (v.VoucherType ?? "") : v.Narration;
+                            string narration = FormatVoucherPartyNarration(vd, fallbackNarration);
 
                             decimal cashAmt = 0m;
                             decimal transferAmt = 0m;
@@ -1076,7 +1107,9 @@ namespace Bhisi.Api.Controllers
             }
 
             var vouchersQuery = _context.Vouchers.AsNoTracking()
-                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member)
+                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Ledger)
+                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Customer)
+                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member).ThenInclude(m => m!.Customer)
                 .Where(v => v.VoucherDate >= startDate 
                          && v.VoucherDate <= endDate
                          && v.VoucherType != "Opening Balance"
@@ -1139,16 +1172,8 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                    // Collect Member Details / Narration
-                    string memInfo = "";
-                    if (vd.Member != null)
-                    {
-                        memInfo = $"{vd.Member.MemberCode}-{vd.Member.FirstName} {vd.Member.LastName}".Trim();
-                    }
-                    else if (!string.IsNullOrWhiteSpace(v.Narration))
-                    {
-                        memInfo = v.Narration.Trim();
-                    }
+                    // Collect Member / Customer Details / Narration
+                    string memInfo = FormatVoucherPartyNarration(vd, v.Narration ?? "");
 
                     if (!string.IsNullOrEmpty(memInfo))
                     {
@@ -1403,7 +1428,9 @@ namespace Bhisi.Api.Controllers
 
             // Load ALL vouchers for the entire range in one query
             var vouchersQuery = _context.Vouchers.AsNoTracking()
-                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member)
+                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Ledger)
+                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Customer)
+                .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member).ThenInclude(m => m!.Customer)
                 .Where(v => v.VoucherDate >= rangeStart 
                          && v.VoucherDate <= rangeEnd
                          && v.VoucherType != "Opening Balance"
@@ -1514,15 +1541,7 @@ namespace Bhisi.Api.Controllers
                                 }
                             }
 
-                            string memInfo = "";
-                            if (vd.Member != null)
-                            {
-                                memInfo = $"{vd.Member.MemberCode}-{vd.Member.FirstName} {vd.Member.LastName}".Trim();
-                            }
-                            else if (!string.IsNullOrWhiteSpace(v.Narration))
-                            {
-                                memInfo = v.Narration.Trim();
-                            }
+                            string memInfo = FormatVoucherPartyNarration(vd, v.Narration ?? "");
 
                             if (!string.IsNullOrEmpty(memInfo))
                             {
@@ -2170,7 +2189,10 @@ namespace Bhisi.Api.Controllers
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Customer)
+                .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled" && v.VoucherDate >= rangeStart && v.VoucherDate <= rangeEnd);
 
             if (branchId.HasValue)
@@ -2239,15 +2261,7 @@ namespace Bhisi.Api.Controllers
 
                             var group = targetDict[vd.LedgerID];
 
-                            string details = "";
-                            if (vd.Member != null)
-                            {
-                                details = $"{vd.Member.MemberCode}-{vd.Member.FirstName} {vd.Member.LastName}";
-                            }
-                            else
-                            {
-                                details = string.IsNullOrWhiteSpace(v.Narration) ? (vd.Ledger?.LedgerName ?? "") : v.Narration;
-                            }
+                            string details = FormatVoucherPartyNarration(vd, string.IsNullOrWhiteSpace(v.Narration) ? (vd.Ledger?.LedgerName ?? "") : v.Narration);
 
                             var entry = new CashBookEntryDto
                             {
@@ -2359,7 +2373,10 @@ namespace Bhisi.Api.Controllers
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Customer)
+                .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled" && v.VoucherDate >= startDate && v.VoucherDate <= endDate);
             if (branchId.HasValue)
             {
@@ -2397,15 +2414,7 @@ namespace Bhisi.Api.Controllers
 
                     var group = targetDict[vd.LedgerID];
 
-                    string details = "";
-                    if (vd.Member != null)
-                    {
-                        details = $"{vd.Member.MemberCode}-{vd.Member.FirstName} {vd.Member.LastName}";
-                    }
-                    else
-                    {
-                        details = string.IsNullOrWhiteSpace(v.Narration) ? (vd.Ledger?.LedgerName ?? "") : v.Narration;
-                    }
+                    string details = FormatVoucherPartyNarration(vd, string.IsNullOrWhiteSpace(v.Narration) ? (vd.Ledger?.LedgerName ?? "") : v.Narration);
 
                     var entry = new CashBookEntryDto
                     {

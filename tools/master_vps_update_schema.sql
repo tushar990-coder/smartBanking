@@ -45,6 +45,85 @@ BEGIN
 END
 GO
 
+-- Customer Table Extended Fields
+IF OBJECT_ID(N'Customers', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('Customers', 'CustomerType') IS NULL ALTER TABLE [Customers] ADD [CustomerType] NVARCHAR(30) NOT NULL DEFAULT 'Individual';
+    IF COL_LENGTH('Customers', 'KYCStatus') IS NULL ALTER TABLE [Customers] ADD [KYCStatus] NVARCHAR(20) NOT NULL DEFAULT 'Verified';
+    IF COL_LENGTH('Customers', 'CKYCNo') IS NULL ALTER TABLE [Customers] ADD [CKYCNo] NVARCHAR(14) NULL;
+    IF COL_LENGTH('Customers', 'RiskCategory') IS NULL ALTER TABLE [Customers] ADD [RiskCategory] NVARCHAR(20) NOT NULL DEFAULT 'Low';
+    IF COL_LENGTH('Customers', 'HomeBranchID') IS NULL ALTER TABLE [Customers] ADD [HomeBranchID] INT NULL;
+    IF COL_LENGTH('Customers', 'ImportBatchID') IS NULL ALTER TABLE [Customers] ADD [ImportBatchID] BIGINT NULL;
+    PRINT 'Synced Customer Extended CBS Fields';
+END
+GO
+
+-- CIF Sequences Table
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'CifSequences')
+BEGIN
+    CREATE TABLE [CifSequences] (
+        [SequenceID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [BranchID] INT NOT NULL DEFAULT 1,
+        [CurrentNumber] INT NOT NULL DEFAULT 0,
+        [Prefix] NVARCHAR(10) NOT NULL DEFAULT 'CIF'
+    );
+    PRINT 'Created CifSequences Table';
+END
+GO
+
+-- Customer Import Batches Table
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'CustomerImportBatches')
+BEGIN
+    CREATE TABLE [CustomerImportBatches] (
+        [BatchID] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [BatchNumber] NVARCHAR(50) NOT NULL,
+        [FileName] NVARCHAR(255) NOT NULL,
+        [FileType] NVARCHAR(20) NOT NULL DEFAULT 'EXCEL',
+        [InstitutionID] INT NOT NULL DEFAULT 1,
+        [HomeBranchID] INT NOT NULL DEFAULT 1,
+        [TotalRecords] INT NOT NULL DEFAULT 0,
+        [ValidRecords] INT NOT NULL DEFAULT 0,
+        [InvalidRecords] INT NOT NULL DEFAULT 0,
+        [ImportedRecords] INT NOT NULL DEFAULT 0,
+        [SkippedRecords] INT NOT NULL DEFAULT 0,
+        [MergedRecords] INT NOT NULL DEFAULT 0,
+        [Status] NVARCHAR(30) NOT NULL DEFAULT 'Completed',
+        [MakerUserID] INT NOT NULL DEFAULT 1,
+        [MakerUsername] NVARCHAR(100) NOT NULL DEFAULT 'System',
+        [SubmittedOn] DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+        [CheckerUserID] INT NULL,
+        [CheckerUsername] NVARCHAR(100) NULL,
+        [ApprovedOn] DATETIME2 NULL,
+        [StartCif] NVARCHAR(20) NULL,
+        [EndCif] NVARCHAR(20) NULL,
+        [ExecutionTimeMs] BIGINT NOT NULL DEFAULT 0,
+        [RolledBackBy] INT NULL,
+        [RolledBackUsername] NVARCHAR(100) NULL,
+        [RolledBackOn] DATETIME2 NULL,
+        [RollbackReason] NVARCHAR(500) NULL,
+        [SummaryJson] NVARCHAR(MAX) NULL,
+        [ErrorLogJson] NVARCHAR(MAX) NULL,
+        [CreatedOn] DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+    );
+    PRINT 'Created CustomerImportBatches Table';
+END
+ELSE
+BEGIN
+    IF COL_LENGTH('CustomerImportBatches', 'MergedRecords') IS NULL ALTER TABLE [CustomerImportBatches] ADD [MergedRecords] INT NOT NULL DEFAULT 0;
+END
+GO
+
+-- FD Accounts Extended Fields
+IF OBJECT_ID(N'FdAccounts', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('FdAccounts', 'LastInterestPostingDate') IS NULL
+    BEGIN
+        ALTER TABLE [FdAccounts] ADD [LastInterestPostingDate] DATETIME2 NULL;
+        PRINT 'Added LastInterestPostingDate to FdAccounts';
+    END
+END
+GO
+
 -- -----------------------------------------------------------------------------------------
 -- 0.1 LOAN ACCOUNTS & APPLICATIONS CUSTOMER-FIRST LINKAGE (MATCHING TESTING BASELINE)
 -- -----------------------------------------------------------------------------------------

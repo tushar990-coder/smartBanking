@@ -12,7 +12,7 @@ $patchFolder = Join-Path $workspaceRoot "VPS_Multi_App_Master_Patch"
 $zipOutputFile = Join-Path $workspaceRoot "SmartBanking_VPS_Multi_App_Master_Patch.zip"
 $clientDir = Join-Path $workspaceRoot "client"
 $apiDir = Join-Path $workspaceRoot "api\Bhisi.Api"
-$version = "2.4.6"
+$version = "2.4.7"
 $buildDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
 Write-Host "==================================================================" -ForegroundColor Cyan
@@ -26,7 +26,9 @@ if (-not (Test-Path $configFile)) {
     exit 1
 }
 
-$configJson = Get-Content $configFile -Raw -Encoding UTF8 | ConvertFrom-Json
+$rawJson = Get-Content $configFile -Raw -Encoding UTF8
+$cleanedJson = $rawJson -replace '(?m)^\s*//.*$', '' -replace '(?s)/\*.*?\*/', ''
+$configJson = $cleanedJson | ConvertFrom-Json
 Write-Host "Configured Targets ($($configJson.Targets.Count)):" -ForegroundColor White
 foreach ($t in $configJson.Targets) {
     Write-Host "  - $($t.SansthaName) [DB: $($t.TargetDatabase) | AppPool: $($t.IISAppPoolName)]" -ForegroundColor Gray
@@ -172,7 +174,9 @@ if (-not (Test-Path $fullConfigPath)) {
     exit 1
 }
 
-$config = Get-Content $fullConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$rawConfig = Get-Content $fullConfigPath -Raw -Encoding UTF8
+$cleanedConfig = $rawConfig -replace '(?m)^\s*//.*$', '' -replace '(?s)/\*.*?\*/', ''
+$config = $cleanedConfig | ConvertFrom-Json
 $sqlFile = Join-Path $scriptDir "database\update_schema.sql"
 $backendSource = Join-Path $scriptDir "backend"
 $frontendSource = Join-Path $scriptDir "frontend"
@@ -282,44 +286,45 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
         }
 
         # 3. Stop IIS AppPool & Release Process Locks
-        Write-Host " [Step 3] Stopping IIS AppPool ($($target.IISAppPoolName)) & releasing file locks..." -ForegroundColor Yellow
-        try {
-            cmd /c "%windir%\system32\inetsrv\appcmd.exe stop apppool /apppool.name:`"$($target.IISAppPoolName)`"" 2>$null
-        } catch {}
+        if (![string]::IsNullOrWhiteSpace($target.IISAppPoolName)) {
+            Write-Host " [Step 3] Stopping IIS AppPool ($($target.IISAppPoolName)) & releasing file locks..." -ForegroundColor Yellow
+            try {
+                cmd /c "%windir%\system32\inetsrv\appcmd.exe stop apppool /apppool.name:`"$($target.IISAppPoolName)`"" 2>$null
+            } catch {}
+        } else {
+            Write-Host " [Step 3] IIS AppPool not specified. Releasing process locks..." -ForegroundColor Yellow
+        }
         Get-Process -Name "w3wp", "dotnet", "Bhisi.Api" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
 
         # 4. Deploy Backend Files
         Write-Host " [Step 4] Deploying Backend API Binaries..." -ForegroundColor Yellow
-        if (Test-Path $target.BackendFolderPath) {
-            robocopy $backendSource $target.BackendFolderPath /E /R:2 /W:1 /XF "appsettings.json" "appsettings.Production.json" "license.lic" /XD "logs" "uploads" "wwwroot" | Out-Null
-            Write-Host "  -> Backend Binaries Updated Successfully!" -ForegroundColor Green
-            $statusObj.Backend = "OK"
-        } else {
-            Write-Host "  -> Warning: Backend folder not found: $($target.BackendFolderPath)" -ForegroundColor DarkYellow
-            $statusObj.Backend = "Missing Folder"
+        if (-not (Test-Path $target.BackendFolderPath)) {
+            New-Item -Path $target.BackendFolderPath -ItemType Directory -Force | Out-Null
         }
+        robocopy $backendSource $target.BackendFolderPath /E /R:2 /W:1 /XF "appsettings.json" "appsettings.Production.json" "license.lic" /XD "logs" "uploads" "wwwroot" | Out-Null
+        Write-Host "  -> Backend Binaries Updated Successfully!" -ForegroundColor Green
+        $statusObj.Backend = "OK"
 
         # 4.5 Config Files Preserved Intact (appsettings.json and appsettings.Production.json are untouched as requested)
         Write-Host " [Step 4.5] Existing server configuration (appsettings.json / appsettings.Production.json) preserved intact 100%." -ForegroundColor Gray
 
-
         # 5. Deploy Frontend Files
         Write-Host " [Step 5] Deploying Frontend Bundle (Cleaning old cached assets)..." -ForegroundColor Yellow
-        if (Test-Path $target.FrontendFolderPath) {
-            robocopy $frontendSource $target.FrontendFolderPath /E /R:2 /W:1 /PURGE | Out-Null
-            Write-Host "  -> Frontend Bundle Updated Successfully!" -ForegroundColor Green
-            $statusObj.Frontend = "OK"
-        } else {
-            Write-Host "  -> Warning: Frontend folder not found: $($target.FrontendFolderPath)" -ForegroundColor DarkYellow
-            $statusObj.Frontend = "Missing Folder"
+        if (-not (Test-Path $target.FrontendFolderPath)) {
+            New-Item -Path $target.FrontendFolderPath -ItemType Directory -Force | Out-Null
         }
+        robocopy $frontendSource $target.FrontendFolderPath /E /R:2 /W:1 /PURGE | Out-Null
+        Write-Host "  -> Frontend Bundle Updated Successfully!" -ForegroundColor Green
+        $statusObj.Frontend = "OK"
 
         # 6. Start IIS AppPool & Refresh
-        Write-Host " [Step 6] Restarting IIS AppPool ($($target.IISAppPoolName))..." -ForegroundColor Yellow
-        try {
-            cmd /c "%windir%\system32\inetsrv\appcmd.exe start apppool /apppool.name:`"$($target.IISAppPoolName)`"" 2>$null
-        } catch {}
+        if (![string]::IsNullOrWhiteSpace($target.IISAppPoolName)) {
+            Write-Host " [Step 6] Restarting IIS AppPool ($($target.IISAppPoolName))..." -ForegroundColor Yellow
+            try {
+                cmd /c "%windir%\system32\inetsrv\appcmd.exe start apppool /apppool.name:`"$($target.IISAppPoolName)`"" 2>$null
+            } catch {}
+        }
         cmd /c "iisreset" 2>$null
 
         $statusObj.Status = "Completed Successfully"
@@ -407,6 +412,27 @@ pause
 "@
 [System.IO.File]::WriteAllText((Join-Path $patchFolder "1_Click_Update_ALL_Apps.bat"), $batAll, [System.Text.Encoding]::ASCII)
 [System.IO.File]::WriteAllText((Join-Path $patchFolder "Apply_VPS_Patch.bat"), $batAll, [System.Text.Encoding]::ASCII)
+
+# 4. 1_Click_Update_Template.bat
+$batTemplate = @"
+@echo off
+title SmartBanking ERP - 1-Click Update Template
+color 0B
+echo ==================================================================
+echo   SmartBanking ERP - 1-Click Update: Template App
+echo ==================================================================
+echo.
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [WARNING] Administrator rights required. Elevating privileges...
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_patch.ps1" -TargetName "Template"
+echo.
+pause
+"@
+[System.IO.File]::WriteAllText((Join-Path $patchFolder "1_Click_Update_Template.bat"), $batTemplate, [System.Text.Encoding]::ASCII)
 
 # -----------------------------------------------------------------------------------------
 # Step 5: Compress to ZIP & Copy to Desktop

@@ -6,6 +6,15 @@
   "BackupFolder": "D:\\Backups",
   "Targets": [
     {
+      "SansthaName": "Template",
+      "TargetDatabase": "SmartBanking_Template",
+      "IISAppPoolName": "",
+      "BackendFolderPath": "D:\\WebApps\\_template\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\_template\\frontend"
+    }
+  ],
+  "_CommentedOtherTargets": [
+    {
       "SansthaName": "Shree Bambawade Nagari Sahakari PatSanstha (Bambavade)",
       "TargetDatabase": "SmartBanking_Bambawade",
       "IISAppPoolName": "apibambavade",
@@ -39,13 +48,6 @@
       "IISAppPoolName": "ritemp-backend",
       "BackendFolderPath": "D:\\WebApps\\ritemp\\backend",
       "FrontendFolderPath": "D:\\WebApps\\ritemp\\frontend"
-    },    
-    {
-      "SansthaName": "Template",
-      "TargetDatabase": "SmartBanking_Template",
-      "IISAppPoolName": "",
-      "BackendFolderPath": "D:\\WebApps\\_template\\backend",
-      "FrontendFolderPath": "D:\\WebApps\\_template\\frontend"
     }
   ]
 }

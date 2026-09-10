@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import FinancialYearMaster from './components/FinancialYearMaster';
 import CustomerMaster from './components/CustomerMaster';
+import CustomerBulkEntry from './components/CustomerBulkEntry';
 import MemberMaster from './components/MemberMaster';
 import EmployeeBankDetails from './components/EmployeeBankDetails';
 import EmployerMaster from './components/EmployerMaster';
@@ -340,6 +341,7 @@ function App() {
     'trial-balance-namuna-n': '/reports/trial-balance-form-n',
     'cash-book': '/reports/cash-book',
     'daybook': '/reports/daybook',
+    'draft-daybook': '/reports/draft-daybook',
     'daybook-summary': '/reports/daybook-summary',
     'profit-loss': '/reports/profit-loss',
     'balance-sheet': '/reports/balance-sheet',
@@ -550,6 +552,19 @@ function App() {
             {isSidebarOpen && <span className="truncate">ग्राहक नोंदणी (CIF)</span>}
           </button>
 
+          <button 
+            onClick={() => handleNavigate('customer-bulk')}
+            title="ग्राहक बल्क नोंदणी (Excel Grid)"
+            className={`w-full flex items-center ${isSidebarOpen ? 'px-3 justify-start' : 'px-0 justify-center'} py-2 rounded-md text-xs transition-all duration-150 ${
+              activeTab === 'customer-bulk'
+                ? 'bg-emerald-50 text-emerald-950 font-bold border-l-4 border-emerald-600 shadow-2xs' 
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 font-medium'
+            }`}
+          >
+            <FileSpreadsheet size={18} className={`${isSidebarOpen ? 'mr-3' : ''} shrink-0 ${activeTab === 'customer-bulk' ? 'text-emerald-600' : 'text-slate-500'}`} />
+            {isSidebarOpen && <span className="truncate">ग्राहक बल्क नोंदणी (Grid)</span>}
+          </button>
+
           {/* Business Modules Group */}
           {isSidebarOpen ? (
             <p className="px-2 pt-3 pb-1 text-[10px] font-bold text-slate-400 tracking-wider uppercase border-t border-slate-100 mt-3">बँकिंग व्यवहार</p>
@@ -632,6 +647,12 @@ function App() {
                 onClick={() => handleNavigate('loan-process')}
               >
                 <span className="truncate">› कर्ज मागणी व वितरण</span>
+              </li>
+              <li 
+                className={`px-3 py-1 cursor-pointer flex items-center transition-colors text-[11px] rounded ${(activeTab === 'loan-ob' || activeTab === 'loan-opening') ? 'text-emerald-700 font-bold bg-emerald-50' : 'text-slate-600 hover:text-slate-900'}`}
+                onClick={() => handleNavigate('loan-ob')}
+              >
+                <span className="truncate">› कर्ज आरंभिक शिल्लक नोंदणी</span>
               </li>
               <li 
                 className={`px-3 py-1 cursor-pointer flex items-center transition-colors text-[11px] rounded ${activeTab === 'gold-loan-details' ? 'text-emerald-700 font-bold bg-emerald-50' : 'text-slate-600 hover:text-slate-900'}`}
@@ -1456,7 +1477,7 @@ function App() {
         {/* Vouchers & Accounting */}
         {activeTab === 'vouchers' && <VoucherDashboard onNavigate={handleNavigate} />}
         {activeTab === 'voucher' && <VoucherMaster />}
-        {(activeTab === 'voucher-posting' || activeTab === 'voucher-approval') && <VoucherPosting />}
+        {(activeTab === 'voucher-posting' || activeTab === 'voucher-approval') && <VoucherPosting onNavigate={handleNavigate} />}
 
         {/* Cash Management & Cashier Window */}
         {(activeTab === 'cashier-dashboard' || activeTab === 'cash-management') && <CashierDashboard onNavigate={handleNavigate} />}
@@ -1464,7 +1485,8 @@ function App() {
         {activeTab === 'cash-denomination' && <CashDenominationEntry onNavigate={handleNavigate} />}
         
         {/* Customer & Member Module */}
-        {activeTab === 'customers' && <CustomerMaster />}
+        {activeTab === 'customers' && <CustomerMaster onNavigate={handleNavigate} />}
+        {activeTab === 'customer-bulk' && <CustomerBulkEntry onBack={() => handleNavigate('customers')} onNavigateToCustomers={() => handleNavigate('customers')} />}
         {activeTab === 'customer-opening' && <CustomerOpeningBalance />}
         {activeTab === 'shares' && <SharesDashboard onNavigate={handleNavigate} />}
         {activeTab === 'members' && <MemberMaster onNavigate={handleNavigate} />}
@@ -1483,6 +1505,7 @@ function App() {
         {activeTab === 'loan-collection' && <LoanCollectionMaster />}
         {activeTab === 'loan-interest-posting' && <LoanInterestPostingMaster />}
         {activeTab === 'loan-documents' && <LoanDocumentsUpload />}
+        {(activeTab === 'loan-ob' || activeTab === 'loan-opening') && <SettingsDashboard defaultCategory="opening-balance" defaultSub="loan-ob" />}
 
         {/* Day End / EOD Module Screens */}
         {(activeTab === 'day-end' || activeTab === 'eod-dashboard') && <DayEndDashboard />}
@@ -1567,6 +1590,7 @@ function App() {
         {activeTab === 'trial-balance-namuna-n' && <TrialBalanceNamunaN />}
         {activeTab === 'cash-book' && <CashBookReport />}
         {activeTab === 'daybook' && <Daybook />}
+        {activeTab === 'draft-daybook' && <Daybook initialVoucherStatus="pending" />}
         {activeTab === 'daybook-summary' && <DaybookSummary />}
         {activeTab === 'profit-loss' && <ProfitAndLoss />}
         {activeTab === 'balance-sheet' && <BalanceSheet />}

@@ -15,6 +15,7 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
       bgColor: 'bg-blue-50',
       reports: [
         { id: 'daybook', name: 'रोजकीर्द (Daybook)' },
+        { id: 'draft-daybook', name: 'कच्ची रोजकीर्द - पासिंग पूर्व (Draft Daybook)' },
         { id: 'daybook-summary', name: 'रोजकीर्द (Daybook Summary)' },
         { id: 'cash-book', name: 'रोख पुस्तक (Cash Book)' },
         { id: 'general-ledger', name: 'जनरल लेजर (General Ledger)' },

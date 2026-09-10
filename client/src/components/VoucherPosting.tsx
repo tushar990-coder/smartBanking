@@ -27,6 +27,14 @@ interface VoucherDetail {
   amount: number;
   narration: string;
   ledger: { ledgerName: string };
+  customer?: {
+    cifNo?: string;
+    CIFNo?: string;
+    firstName?: string;
+    lastName?: string;
+    FirstName?: string;
+    LastName?: string;
+  };
   member?: {
     MemberCode?: string;
     FirstName?: string;
@@ -34,6 +42,14 @@ interface VoucherDetail {
     memberCode?: string;
     firstName?: string;
     lastName?: string;
+    customer?: {
+      cifNo?: string;
+      CIFNo?: string;
+      firstName?: string;
+      lastName?: string;
+      FirstName?: string;
+      LastName?: string;
+    };
   };
 }
 
@@ -50,7 +66,11 @@ interface Voucher {
   voucherDetails: VoucherDetail[];
 }
 
-const VoucherPosting: React.FC = () => {
+interface VoucherPostingProps {
+  onNavigate?: (tab: string) => void;
+}
+
+const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const { user } = useAuth();
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [selectedVouchers, setSelectedVouchers] = useState<Set<number>>(new Set());
@@ -183,13 +203,9 @@ const VoucherPosting: React.FC = () => {
     setDeleteError('');
   };
 
-  // Execute Single Delete with Reason & Audit Log
+  // Execute Single Delete with optional Reason & Audit Log
   const handleConfirmSingleDelete = async () => {
     if (!targetVoucherToDelete) return;
-    if (!deleteReason.trim() || deleteReason.trim().length < 10) {
-      setDeleteError('व्हाउचर रद्द करण्याचे अधिकृत कारण किमान १० अक्षरांचे असणे बंधनकारक आहे.');
-      return;
-    }
 
     setActionLoading(true);
     setDeleteError('');
@@ -198,7 +214,7 @@ const VoucherPosting: React.FC = () => {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          reason: deleteReason.trim(),
+          reason: deleteReason.trim() || 'नोंद थेट रद्द / डिलीट (Direct Deleted from Database)',
           userId: user?.userID || 1,
           username: user?.username || 'Admin',
           userRole: user?.roleName || user?.role || 'Admin',
@@ -221,13 +237,9 @@ const VoucherPosting: React.FC = () => {
     }
   };
 
-  // Execute Bulk Delete with Reason & Audit Log
+  // Execute Bulk Delete with optional Reason & Audit Log
   const handleConfirmBulkDelete = async () => {
     if (selectedVouchers.size === 0) return;
-    if (!deleteReason.trim() || deleteReason.trim().length < 10) {
-      setDeleteError('व्हाउचर्स रद्द करण्याचे अधिकृत कारण किमान १० अक्षरांचे असणे बंधनकारक आहे.');
-      return;
-    }
 
     setActionLoading(true);
     setDeleteError('');
@@ -237,7 +249,7 @@ const VoucherPosting: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           voucherIds: Array.from(selectedVouchers),
-          reason: deleteReason.trim(),
+          reason: deleteReason.trim() || 'नोंद थेट रद्द / डिलीट (Direct Deleted from Database)',
           userId: user?.userID || 1,
           username: user?.username || 'Admin',
           userRole: user?.roleName || user?.role || 'Admin',
@@ -314,6 +326,23 @@ const VoucherPosting: React.FC = () => {
             >
               <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
               <span>रीफ्रेश (Refresh)</span>
+            </button>
+
+            {/* Verify Pre-Posting Draft Daybook Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onNavigate) {
+                  onNavigate('draft-daybook');
+                } else {
+                  window.location.href = '/reports/draft-daybook';
+                }
+              }}
+              className="bg-amber-400 hover:bg-amber-300 text-amber-950 px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-sm border border-amber-500"
+              title="व्हाउचर पासिंग करण्यापूर्वी कच्ची रोजकीर्द तपासा (Verify Pre-Posting Draft Daybook)"
+            >
+              <span>📖</span>
+              <span>कच्ची रोजकीर्द (Draft Daybook)</span>
             </button>
 
             {/* Bulk Reject Button */}
@@ -633,7 +662,7 @@ const VoucherPosting: React.FC = () => {
                                       <thead className="bg-slate-800 text-white font-semibold">
                                         <tr>
                                           <th className="px-3 py-1.5 text-left border-r border-slate-700">खाते (Ledger Name)</th>
-                                          <th className="px-3 py-1.5 text-left border-r border-slate-700 w-52">सभासद (Member)</th>
+                                          <th className="px-3 py-1.5 text-left border-r border-slate-700 w-52">सीआयएफ क्र. / ग्राहक (CIF ID)</th>
                                           <th className="px-3 py-1.5 text-right border-r border-slate-700 w-36">नावे (Debit Dr ₹)</th>
                                           <th className="px-3 py-1.5 text-right w-36">जमा (Credit Cr ₹)</th>
                                         </tr>
@@ -647,9 +676,45 @@ const VoucherPosting: React.FC = () => {
                                                 <span className="text-gray-500 font-normal italic ml-2 text-[10.5px]">({vd.narration})</span>
                                               ) : null}
                                             </td>
-                                            <td className="px-3 py-1.5 text-gray-700 border-r border-gray-200 font-medium">
-                                              {vd.member ? `${vd.member.MemberCode || vd.member.memberCode || ''} ${vd.member.FirstName || vd.member.firstName || ''} ${vd.member.LastName || vd.member.lastName || ''}`.trim() : '-'}
-                                            </td>
+                                             <td className="px-3 py-1.5 text-gray-700 border-r border-gray-200 font-medium">
+                                               {(() => {
+                                                 const ledgerName = vd.ledger?.ledgerName || '';
+                                                 const accountType = (vd.ledger as any)?.accountType || '';
+                                                 const isCashOrGeneral = accountType === 'Cash In Hand' || 
+                                                                         ledgerName.includes('रोख') || 
+                                                                         ledgerName.toLowerCase().includes('cash');
+
+                                                 if (isCashOrGeneral) {
+                                                   return <span className="text-gray-400 font-mono">-</span>;
+                                                 }
+
+                                                 const cif = vd.customer?.CIFNo || vd.customer?.cifNo || vd.member?.customer?.CIFNo || vd.member?.customer?.cifNo;
+                                                 const firstName = vd.customer?.FirstName || vd.customer?.firstName || vd.member?.customer?.FirstName || vd.member?.customer?.firstName || vd.member?.FirstName || vd.member?.firstName || '';
+                                                 const lastName = vd.customer?.LastName || vd.customer?.lastName || vd.member?.customer?.LastName || vd.member?.customer?.lastName || vd.member?.LastName || vd.member?.lastName || '';
+                                                 const fullName = `${firstName} ${lastName}`.trim();
+
+                                                 if (cif) {
+                                                   return (
+                                                     <div className="flex flex-col leading-tight">
+                                                       <span className="font-extrabold text-primary font-mono text-[11.5px]">{cif}</span>
+                                                       {fullName ? <span className="text-[10px] text-gray-600 font-medium">{fullName}</span> : null}
+                                                     </div>
+                                                   );
+                                                 }
+
+                                                 const memCode = vd.member?.MemberCode || vd.member?.memberCode;
+                                                 if (memCode) {
+                                                   return (
+                                                     <div className="flex flex-col leading-tight">
+                                                       <span className="font-bold text-gray-800 font-mono text-[11.5px]">{memCode}</span>
+                                                       {fullName ? <span className="text-[10px] text-gray-600 font-medium">{fullName}</span> : null}
+                                                     </div>
+                                                   );
+                                                 }
+
+                                                 return <span className="text-gray-400 font-mono">-</span>;
+                                               })()}
+                                             </td>
                                             <td className="px-3 py-1.5 text-right text-rose-600 font-mono font-bold border-r border-gray-200">
                                               {vd.drCr === 'Dr' ? `₹${vd.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                                             </td>
@@ -748,10 +813,10 @@ const VoucherPosting: React.FC = () => {
                 </div>
               </div>
 
-              {/* Mandatory Reason Input */}
+              {/* Optional Reason Input */}
               <div>
                 <label className="block text-xs font-bold text-gray-800 mb-1">
-                  रद्द / डिलीट करण्याचे अधिकृत कारण सांगा (Reason) <span className="text-rose-600">*</span>
+                  रद्द / डिलीट करण्याचे कारण (Reason - पर्यायी / Optional)
                 </label>
                 <textarea
                   rows={3}
@@ -760,13 +825,13 @@ const VoucherPosting: React.FC = () => {
                     setDeleteReason(e.target.value);
                     if (deleteError) setDeleteError('');
                   }}
-                  placeholder="व्हाउचर का रद्द करत आहात ते स्पष्ट लिहा (किमान १० अक्षरे)..."
+                  placeholder="व्हाउचर थेट रद्द करण्याचे कारण लिहा (नसल्यास थेट डिलीट होईल)..."
                   className="w-full text-xs p-2.5 border border-gray-300 rounded-sm focus:outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-600 bg-white"
                   autoFocus
                 />
                 <div className="flex justify-between items-center mt-1 text-[10px]">
-                  <span className={deleteReason.trim().length >= 10 ? 'text-emerald-700 font-bold' : 'text-gray-500'}>
-                    अक्षरे: {deleteReason.trim().length} / किमान १० अक्षरे आवश्यक
+                  <span className="text-gray-500">
+                    थेट डिलीट: कारण लिहिणे ऐच्छिक (Optional) आहे
                   </span>
                   <span className="text-gray-400">
                     वापरकर्ता: <strong>{user?.username || 'Admin'}</strong>
@@ -796,7 +861,7 @@ const VoucherPosting: React.FC = () => {
               <button
                 type="button"
                 onClick={handleConfirmSingleDelete}
-                disabled={actionLoading || deleteReason.trim().length < 10}
+                disabled={actionLoading}
                 className="px-4 py-1.5 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-sm text-xs border border-rose-800 cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
               >
                 {actionLoading ? (
@@ -872,10 +937,10 @@ const VoucherPosting: React.FC = () => {
                 </div>
               </div>
 
-              {/* Mandatory Reason Input */}
+              {/* Optional Reason Input */}
               <div>
                 <label className="block text-xs font-bold text-gray-800 mb-1">
-                  एकत्रित रद्द / डिलीट करण्याचे अधिकृत कारण (Reason) <span className="text-rose-600">*</span>
+                  एकत्रित रद्द / डिलीट करण्याचे कारण (Reason - पर्यायी / Optional)
                 </label>
                 <textarea
                   rows={3}
@@ -884,13 +949,13 @@ const VoucherPosting: React.FC = () => {
                     setDeleteReason(e.target.value);
                     if (deleteError) setDeleteError('');
                   }}
-                  placeholder="सर्व निवडलेले व्हाउचर का रद्द करत आहात ते स्पष्ट लिहा (किमान १० अक्षरे)..."
+                  placeholder="सर्व निवडलेले व्हाउचर थेट रद्द करण्याचे कारण लिहा (नसल्यास थेट डिलीट होतील)..."
                   className="w-full text-xs p-2.5 border border-gray-300 rounded-sm focus:outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-600 bg-white"
                   autoFocus
                 />
                 <div className="flex justify-between items-center mt-1 text-[10px]">
-                  <span className={deleteReason.trim().length >= 10 ? 'text-emerald-700 font-bold' : 'text-gray-500'}>
-                    अक्षरे: {deleteReason.trim().length} / किमान १० अक्षरे आवश्यक
+                  <span className="text-gray-500">
+                    थेट डिलीट: कारण लिहिणे ऐच्छिक (Optional) आहे
                   </span>
                   <span className="text-gray-400">
                     मंजूर/रद्दकर्ता: <strong>{user?.username || 'Admin'}</strong>
@@ -920,7 +985,7 @@ const VoucherPosting: React.FC = () => {
               <button
                 type="button"
                 onClick={handleConfirmBulkDelete}
-                disabled={actionLoading || deleteReason.trim().length < 10}
+                disabled={actionLoading}
                 className="px-4 py-1.5 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-sm text-xs border border-rose-800 cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
               >
                 {actionLoading ? (

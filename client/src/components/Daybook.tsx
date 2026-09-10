@@ -2,11 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import html2pdf from 'html2pdf.js';
 
+export interface DaybookProps {
+  initialVoucherStatus?: 'approved' | 'pending' | 'all';
+}
+
 interface DaybookEntry {
   voucherNo: string;
   narration: string;
   cashAmount: number;
   transferAmount: number;
+  status?: string;
 }
 
 interface DaybookGroup {
@@ -26,6 +31,8 @@ interface DaybookResponse {
   totalReceiptsTransfer: number;
   totalPaymentsCash: number;
   totalPaymentsTransfer: number;
+  voucherStatus?: string;
+  isDraft?: boolean;
 }
 
 const getTodayDate = () => {
@@ -36,11 +43,22 @@ const getTodayDate = () => {
   return `${year}-${month}-${day}`;
 };
 
-export default function Daybook() {
+export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
   const { user } = useAuth();
   const pagesAreaRef = useRef<HTMLDivElement>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [reportViewType, setReportViewType] = useState<'detailed' | 'ledger-wise'>('detailed');
+
+  const getInitialStatus = (): 'approved' | 'pending' | 'all' => {
+    if (initialVoucherStatus) return initialVoucherStatus;
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get('voucherStatus') || params.get('status');
+    if (s === 'pending' || s === 'draft') return 'pending';
+    if (s === 'all') return 'all';
+    return 'approved';
+  };
+
+  const [voucherStatus, setVoucherStatus] = useState<'approved' | 'pending' | 'all'>(getInitialStatus);
   const [fromDate, setFromDate] = useState<string>(getTodayDate());
   const [toDate, setToDate] = useState<string>(getTodayDate());
   const [pages, setPages] = useState<{ date: string; data: DaybookResponse }[]>([]);
@@ -58,8 +76,15 @@ export default function Daybook() {
   useEffect(() => {
     fetchBranches();
     fetchSansthaName();
-    fetchReport();
+    fetchReport(getInitialStatus());
   }, []);
+
+  useEffect(() => {
+    if (initialVoucherStatus && initialVoucherStatus !== voucherStatus) {
+      setVoucherStatus(initialVoucherStatus);
+      fetchReport(initialVoucherStatus);
+    }
+  }, [initialVoucherStatus]);
 
   useEffect(() => {
     if (user?.branchID) {
@@ -97,12 +122,13 @@ export default function Daybook() {
     }
   };
 
-  const fetchReport = async () => {
+  const fetchReport = async (overrideStatus?: 'approved' | 'pending' | 'all') => {
     setLoading(true);
     setError(null);
 
+    const activeStatus = overrideStatus || voucherStatus;
     try {
-      let url = `/api/Reports/DaybookBatch?date=${fromDate}&toDate=${toDate}`;
+      let url = `/api/Reports/DaybookBatch?date=${fromDate}&toDate=${toDate}&voucherStatus=${activeStatus}`;
       if (selectedBranchId !== 'all') {
         url += `&branchId=${selectedBranchId}`;
       }
@@ -159,9 +185,12 @@ export default function Daybook() {
 
   const handleExportExcel = () => {
     if (pages.length === 0) return;
+    const filePrefix = voucherStatus === 'pending' ? 'Draft_Daybook' : voucherStatus === 'all' ? 'Combined_Daybook' : 'Daybook';
+    const statusLabel = voucherStatus === 'pending' ? 'कच्ची रोजकीर्द - व्हाउचर पासिंग पूर्व (Draft Pre-Posting)' : voucherStatus === 'all' ? 'एकत्रित रोजकीर्द (Combined)' : 'पक्की रोजकीर्द (Posted)';
     let csv = `रजि.नं.,${registrationNo || '-'}\n`;
     csv += `संस्था नाव,${sansthaName}\n`;
     csv += `पत्ता,${address}\n`;
+    csv += `स्थिती (Status),${statusLabel}\n`;
     csv += `अहवाल प्रकार,${reportViewType === 'ledger-wise' ? 'खातेवहीनुसार रोजकीर्द (Ledger-wise Summary)' : 'तपशीलवार रोजकीर्द (Detailed)'}\n`;
     csv += `दिनांक,${formatDate(fromDate)} ते ${formatDate(toDate)}\n\n`;
 
@@ -180,17 +209,17 @@ export default function Daybook() {
           csv += `नावे (Payment),${g.ledgerId},"${g.ledgerName}",${g.totalCash},${g.totalTransfer},${g.totalCash + g.totalTransfer}\n`;
         });
       } else {
-        csv += `प्रकार,लेजर आयडी,लेजर नाव,व्हाउचर क्र.,तपशील,रोख (Cash),वर्ग (Transfer),एकूण\n`;
+        csv += `प्रकार,लेजर आयडी,लेजर नाव,व्हाउचर क्र.,तपशील,स्थिती,रोख (Cash),वर्ग (Transfer),एकूण\n`;
 
         page.data.receipts.forEach(g => {
           g.entries.forEach(e => {
-            csv += `जमा (Receipt),${g.ledgerId},"${g.ledgerName}",${e.voucherNo || ''},"${e.narration || ''}",${e.cashAmount},${e.transferAmount},${e.cashAmount + e.transferAmount}\n`;
+            csv += `जमा (Receipt),${g.ledgerId},"${g.ledgerName}",${e.voucherNo || ''},"${e.narration || ''}",${e.status || ''},${e.cashAmount},${e.transferAmount},${e.cashAmount + e.transferAmount}\n`;
           });
         });
 
         page.data.payments.forEach(g => {
           g.entries.forEach(e => {
-            csv += `नावे (Payment),${g.ledgerId},"${g.ledgerName}",${e.voucherNo || ''},"${e.narration || ''}",${e.cashAmount},${e.transferAmount},${e.cashAmount + e.transferAmount}\n`;
+            csv += `नावे (Payment),${g.ledgerId},"${g.ledgerName}",${e.voucherNo || ''},"${e.narration || ''}",${e.status || ''},${e.cashAmount},${e.transferAmount},${e.cashAmount + e.transferAmount}\n`;
           });
         });
       }
@@ -204,7 +233,7 @@ export default function Daybook() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `Daybook_${reportViewType}_${fromDate}_to_${toDate}.csv`);
+    link.setAttribute('download', `${filePrefix}_${reportViewType}_${fromDate}_to_${toDate}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -224,9 +253,10 @@ export default function Daybook() {
     if (!pagesAreaRef.current) return;
     setDownloadingPdf(true);
 
+    const pdfPrefix = voucherStatus === 'pending' ? 'Draft_Daybook' : voucherStatus === 'all' ? 'Combined_Daybook' : 'Daybook';
     const opt = {
       margin: [5, 5, 5, 5],
-      filename: `Daybook_Report_${fromDate}_to_${toDate}.pdf`,
+      filename: `${pdfPrefix}_Report_${fromDate}_to_${toDate}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, logging: false },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
@@ -312,8 +342,32 @@ export default function Daybook() {
           {/* Center: Integrated Inline Filter Inputs */}
           <div className="flex flex-wrap items-center gap-1.5 flex-1 justify-end sm:justify-center">
             
+            {/* Daybook Mode / Voucher Status */}
+            <div className="w-44 sm:w-56">
+              <select
+                value={voucherStatus}
+                onChange={e => {
+                  const newStatus = e.target.value as 'approved' | 'pending' | 'all';
+                  setVoucherStatus(newStatus);
+                  fetchReport(newStatus);
+                }}
+                className={`h-6 border rounded-sm px-1.5 text-[11px] font-bold focus:outline-none focus:ring-1 w-full transition-colors cursor-pointer ${
+                  voucherStatus === 'pending'
+                    ? 'border-amber-500 text-amber-900 bg-amber-50 focus:border-amber-600 focus:ring-amber-500'
+                    : voucherStatus === 'all'
+                    ? 'border-indigo-500 text-indigo-900 bg-indigo-50 focus:border-indigo-600 focus:ring-indigo-500'
+                    : 'border-emerald-600 text-emerald-900 bg-emerald-50 focus:border-emerald-700 focus:ring-emerald-600'
+                }`}
+                title="रोजकीर्द प्रकार निवडा (पक्की / कच्ची / एकत्रित)"
+              >
+                <option value="approved">१. पक्की रोजकीर्द (मंजूर / Posted)</option>
+                <option value="pending">२. कच्ची रोजकीर्द (पासिंग पूर्व / Draft)</option>
+                <option value="all">३. एकत्रित रोजकीर्द (सर्व / Combined)</option>
+              </select>
+            </div>
+
             {/* Report View Type */}
-            <div className="w-36 sm:w-44">
+            <div className="w-36 sm:w-40">
               <select
                 value={reportViewType}
                 onChange={e => setReportViewType(e.target.value as 'detailed' | 'ledger-wise')}
@@ -364,7 +418,7 @@ export default function Daybook() {
 
             {/* View Button */}
             <button
-              onClick={fetchReport}
+              onClick={() => fetchReport()}
               disabled={loading}
               className="h-6 bg-primary hover:opacity-90 text-white px-2.5 rounded-sm text-[11px] font-bold shadow-2xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
             >
@@ -406,6 +460,22 @@ export default function Daybook() {
 
       </div>
 
+      {/* Amber Draft Daybook Notice Banner (Pre-Posting Maker-Checker Audit) */}
+      {voucherStatus === 'pending' && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-sm p-2.5 mb-3 no-print text-amber-900 flex items-start gap-2 shadow-xs">
+          <span className="text-base leading-none">⚠️</span>
+          <div className="flex-1 text-xs">
+            <div className="font-extrabold flex items-center gap-1.5 text-[11px]">
+              <span>कच्ची रोजकीर्द (व्हाउचर पासिंग पूर्व - PRE-POSTING / DRAFT DAYBOOK)</span>
+              <span className="px-1.5 py-0.5 bg-amber-200 text-amber-900 font-mono text-[9px] rounded font-bold uppercase">Pre-Posting Audit Mode</span>
+            </div>
+            <p className="text-[10.5px] mt-0.5 text-amber-800 leading-normal">
+              सदर रोजकीर्दीमध्ये अद्याप मंजूर न झालेली प्रलंबित (Pending) व्हाउचर्स समाविष्ट आहेत. दिवसअखेर व्हाउचर पासिंग (Voucher Posting) करण्यापूर्वी कॅश शिल्लक व नोंदींची पडताळणी करण्यासाठी हा अहवाल वापरावा.
+            </p>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 text-red-700 p-3 rounded-sm mb-4 font-bold text-xs shadow-2xs border border-red-200 no-print flex items-center gap-2">
           <span>⚠️</span> {error}
@@ -428,7 +498,19 @@ export default function Daybook() {
                 }}
               >
                 {/* Header Block */}
-                <div className="border-2 border-gray-900 mb-2 p-2 relative bg-gray-50/50 print:bg-white text-center">
+                <div className={`border-2 mb-2 p-2 relative text-center ${
+                  voucherStatus === 'pending'
+                    ? 'border-amber-800 bg-amber-50/40 print:bg-white print:border-black'
+                    : 'border-gray-900 bg-gray-50/50 print:bg-white'
+                }`}>
+                  {/* Draft Watermark / Stamp on Printed Report */}
+                  {voucherStatus === 'pending' && (
+                    <div className="border border-amber-500 bg-amber-100 text-amber-900 font-extrabold text-[9.5px] py-0.5 px-2 mb-1 rounded-xs tracking-wider uppercase flex items-center justify-between">
+                      <span>⚠️ कच्ची रोजकीर्द / व्हाउचर पासिंग पूर्व मसुदा (DRAFT PRE-POSTING DAYBOOK)</span>
+                      <span className="font-mono text-[8.5px]">अंतिम पासिंग बाकी (UNPOSTED)</span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between items-center text-[11px] font-bold text-gray-900 border-b border-gray-300 pb-1 mb-1.5">
                     <div><span>रजि. नं. - </span><span className="font-mono">{sansthaDetail?.registrationNo || '-'}</span></div>
                     <div><span>शाखा: </span><span className="text-primary font-bold">{getBranchName()}</span></div>
@@ -440,8 +522,18 @@ export default function Daybook() {
 
                   <div className="mt-1.5 flex items-center justify-between">
                     <div className="w-24"></div>
-                    <span className="border-2 border-gray-900 font-extrabold px-6 py-0.5 bg-gray-200 print:bg-gray-100 text-xs tracking-wider text-gray-900 shadow-2xs font-serif uppercase">
-                      {reportViewType === 'ledger-wise' ? 'खातेवहीनुसार रोजकीर्द (LEDGER-WISE DAYBOOK)' : 'रोजकीर्द (DAYBOOK)'}
+                    <span className={`border-2 font-extrabold px-6 py-0.5 text-xs tracking-wider shadow-2xs font-serif uppercase ${
+                      voucherStatus === 'pending'
+                        ? 'border-amber-800 bg-amber-200 print:bg-gray-100 text-amber-950 print:text-black'
+                        : voucherStatus === 'all'
+                        ? 'border-indigo-800 bg-indigo-100 print:bg-gray-100 text-indigo-950 print:text-black'
+                        : 'border-gray-900 bg-gray-200 print:bg-gray-100 text-gray-900'
+                    }`}>
+                      {voucherStatus === 'pending'
+                        ? (reportViewType === 'ledger-wise' ? 'कच्ची खातेवहीनुसार रोजकीर्द - पासिंग पूर्व (DRAFT LEDGER-WISE DAYBOOK)' : 'कच्ची रोजकीर्द - व्हाउचर पासिंग पूर्व (PRE-POSTING / DRAFT DAYBOOK)')
+                        : voucherStatus === 'all'
+                        ? (reportViewType === 'ledger-wise' ? 'एकत्रित खातेवहीनुसार रोजकीर्द (COMBINED LEDGER-WISE DAYBOOK)' : 'एकत्रित रोजकीर्द - मंजूर व प्रलंबित (COMBINED DAYBOOK)')
+                        : (reportViewType === 'ledger-wise' ? 'खातेवहीनुसार रोजकीर्द (LEDGER-WISE DAYBOOK)' : 'रोजकीर्द (DAYBOOK)')}
                     </span>
                     <div className="text-right text-[11px] font-bold text-gray-800">
                       दिनांक : <span className="font-mono">{formatDate(pageDate)}</span>
@@ -499,7 +591,18 @@ export default function Daybook() {
                             <div key={eIdx} className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-200 print:border-gray-200 text-gray-800">
                               <div className="border-r border-gray-300 px-1 py-0.5"></div>
                               <div className="border-r border-gray-300 px-1.5 py-0.5 pl-6 text-[10px]">
-                                {entry.voucherNo && <span className="font-semibold text-primary print:text-black mr-1.5 font-mono">[{entry.voucherNo}]</span>}
+                                {entry.voucherNo && (
+                                  <span className="font-semibold text-primary print:text-black mr-1.5 font-mono">
+                                    [{entry.voucherNo}]
+                                    {voucherStatus !== 'approved' && entry.status && (
+                                      <span className={`ml-1 text-[8.5px] px-1 py-0.2 rounded font-sans font-medium ${
+                                        entry.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                      }`}>
+                                        {entry.status === 'Approved' ? 'मंजूर' : 'प्रलंबित'}
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
                                 <span className="text-gray-700">{entry.narration}</span>
                               </div>
                               <div className="border-r border-gray-300 px-1.5 py-0.5 text-right font-mono text-[10px]">
@@ -567,7 +670,18 @@ export default function Daybook() {
                             <div key={eIdx} className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-200 print:border-gray-200 text-gray-800">
                               <div className="border-r border-gray-300 px-1 py-0.5"></div>
                               <div className="border-r border-gray-300 px-1.5 py-0.5 pl-6 text-[10px]">
-                                {entry.voucherNo && <span className="font-semibold text-rose-700 print:text-black mr-1.5 font-mono">[{entry.voucherNo}]</span>}
+                                {entry.voucherNo && (
+                                  <span className="font-semibold text-rose-700 print:text-black mr-1.5 font-mono">
+                                    [{entry.voucherNo}]
+                                    {voucherStatus !== 'approved' && entry.status && (
+                                      <span className={`ml-1 text-[8.5px] px-1 py-0.2 rounded font-sans font-medium ${
+                                        entry.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                      }`}>
+                                        {entry.status === 'Approved' ? 'मंजूर' : 'प्रलंबित'}
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
                                 <span className="text-gray-700">{entry.narration}</span>
                               </div>
                               <div className="border-r border-gray-300 px-1.5 py-0.5 text-right font-mono text-[10px]">
@@ -648,16 +762,26 @@ export default function Daybook() {
                     </div>
 
                     {/* Row 2: Closing Cash Balance */}
-                    <div className="grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-900 font-extrabold bg-emerald-100/70 print:bg-gray-200 text-gray-900">
+                    <div className={`grid grid-cols-[40px_1fr_70px_70px_82px_35px] border-b border-gray-900 font-extrabold print:bg-gray-200 text-gray-900 ${
+                      voucherStatus === 'pending' ? 'bg-amber-100/80' : 'bg-emerald-100/70'
+                    }`}>
                       <div className="border-r border-gray-900 px-1 py-1"></div>
-                      <div className="border-r border-gray-900 px-1.5 py-1 text-center font-black text-emerald-900 print:text-black">
-                        📌 अखेरची रोख शिल्लक (Closing Balance)
+                      <div className={`border-r border-gray-900 px-1.5 py-1 text-center font-black print:text-black ${
+                        voucherStatus === 'pending' ? 'text-amber-950' : 'text-emerald-900'
+                      }`}>
+                        {voucherStatus === 'pending'
+                          ? '📌 अपेक्षित अखेर रोख शिल्लक (Anticipated Cash)'
+                          : '📌 अखेरची रोख शिल्लक (Closing Balance)'}
                       </div>
-                      <div className="border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black text-emerald-900 print:text-black">
+                      <div className={`border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black print:text-black ${
+                        voucherStatus === 'pending' ? 'text-amber-950' : 'text-emerald-900'
+                      }`}>
                         {formatAmount(pageData.closingBalance)}
                       </div>
                       <div className="border-r border-gray-900 px-1.5 py-1 text-center text-gray-400">-</div>
-                      <div className="border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black bg-emerald-200 print:bg-gray-300">
+                      <div className={`border-r border-gray-900 px-1.5 py-1 text-right font-mono font-black print:bg-gray-300 ${
+                        voucherStatus === 'pending' ? 'bg-amber-200 text-amber-950' : 'bg-emerald-200 text-emerald-900'
+                      }`}>
                         {formatAmount(pageData.closingBalance)}
                       </div>
                       <div className="px-1 py-1"></div>
@@ -682,8 +806,14 @@ export default function Daybook() {
                 </div>
 
                 {/* Official Cash Balance Banner */}
-                <div className="mt-2.5 p-1.5 bg-amber-50 print:bg-white border-2 border-amber-300 print:border-black rounded-xs text-center font-black text-xs text-amber-900 print:text-black shadow-2xs">
-                  💼 अखेरची शिल्लक ₹ {formatAmount(pageData.closingBalance)} (सचिव / सेल्समन / कॅशियर यांचेकडे आहे)
+                <div className={`mt-2.5 p-1.5 border-2 rounded-xs text-center font-black text-xs shadow-2xs ${
+                  voucherStatus === 'pending'
+                    ? 'bg-amber-100 border-amber-500 text-amber-950 print:border-black print:text-black'
+                    : 'bg-amber-50 border-amber-300 text-amber-900 print:border-black print:text-black'
+                }`}>
+                  {voucherStatus === 'pending'
+                    ? `💼 अपेक्षित अखेर रोख शिल्लक (व्हाउचर पासिंगनंतर) ₹ ${formatAmount(pageData.closingBalance)} (कॅशियर / मुख्य रोकडपाल यांचेकडे अपेक्षित)`
+                    : `💼 अखेरची शिल्लक ₹ ${formatAmount(pageData.closingBalance)} (सचिव / सेल्समन / कॅशियर यांचेकडे आहे)`}
                 </div>
 
                 {/* Official Signatures Block */}

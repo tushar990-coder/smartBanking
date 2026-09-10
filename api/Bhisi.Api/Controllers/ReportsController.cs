@@ -262,10 +262,11 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpGet("Daybook")]
-        public async Task<ActionResult<DaybookResponseDto>> GetDaybook([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
+        public async Task<ActionResult<DaybookResponseDto>> GetDaybook([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] string? voucherStatus = "approved")
         {
             DateTime startDate = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
             DateTime endDate = DateTime.SpecifyKind(toDate.HasValue ? toDate.Value.Date.AddDays(1).AddTicks(-1) : date.Date.AddDays(1).AddTicks(-1), DateTimeKind.Unspecified);
+            string statusFilter = (voucherStatus ?? "approved").Trim().ToLower();
 
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
 
@@ -321,13 +322,24 @@ namespace Bhisi.Api.Controllers
                 .ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails)
                 .ThenInclude(vd => vd.Member)
-                .Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") 
-                         && v.Status != "Rejected" 
-                         && v.Status != "Cancelled" 
-                         && v.VoucherDate >= startDate 
+                .Where(v => v.VoucherDate >= startDate 
                          && v.VoucherDate <= endDate
                          && v.VoucherType != "Opening Balance"
                          && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक") && !v.Narration.Contains("स्थलांतर"))));
+
+            if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
+            {
+                vouchersQuery = vouchersQuery.Where(v => v.Status == "Pending" || string.IsNullOrEmpty(v.Status));
+            }
+            else if (statusFilter == "all" || statusFilter == "both")
+            {
+                vouchersQuery = vouchersQuery.Where(v => v.Status != "Rejected" && v.Status != "Cancelled");
+            }
+            else
+            {
+                vouchersQuery = vouchersQuery.Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled");
+            }
+
             if (branchId.HasValue)
             {
                 vouchersQuery = vouchersQuery.Where(v => v.BranchID == branchId.Value);
@@ -429,7 +441,8 @@ namespace Bhisi.Api.Controllers
                         Narration = narration,
                         VoucherNo = v.VoucherNo ?? "",
                         CashAmount = Math.Round(cashAmt, 2),
-                        TransferAmount = Math.Round(transferAmt, 2)
+                        TransferAmount = Math.Round(transferAmt, 2),
+                        Status = v.Status ?? "Pending"
                     };
 
                     group.TotalCash += entry.CashAmount;
@@ -439,147 +452,153 @@ namespace Bhisi.Api.Controllers
             }
 
             // Include unvouchered Loan Disbursements into Nave (Payments)
-            var existingVoucherIds = vouchers.Select(v => v.VoucherID).ToHashSet();
-            var unvoucheredDisbQuery = _context.LoanDisbursements
-                .Where(ld => ld.LoanAccount != null 
-                          && ld.DisbursementDate >= startDate 
-                          && ld.DisbursementDate <= endDate
-                          && !ld.VoucherID.HasValue
-                          && ld.PaymentMode != "Opening Balance"
-                          && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
-
-            if (branchId.HasValue)
+            if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
             {
-                unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => ld.LoanAccount!.BranchID == branchId.Value);
-            }
+                var existingVoucherIds = vouchers.Select(v => v.VoucherID).ToHashSet();
+                var unvoucheredDisbQuery = _context.LoanDisbursements
+                    .Where(ld => ld.LoanAccount != null 
+                              && ld.DisbursementDate >= startDate 
+                              && ld.DisbursementDate <= endDate
+                              && !ld.VoucherID.HasValue
+                              && ld.PaymentMode != "Opening Balance"
+                              && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
 
-            var unvoucheredDisb = await unvoucheredDisbQuery
-                .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
-                .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
-                .ToListAsync();
-
-
-            var defaultLoanLedger = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज") || l.LedgerName.Contains("Loan") || l.LedgerName.Contains("मुद्दल")) ?? ledgers.FirstOrDefault();
-
-            foreach (var ld in unvoucheredDisb)
-            {
-                int lId = ld.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
-                if (lId == 0) continue;
-                string lName = ledgers.FirstOrDefault(l => l.LedgerID == lId)?.LedgerName ?? "कर्ज खाते (Loan Account)";
-
-                if (!naveGroups.ContainsKey(lId))
+                if (branchId.HasValue)
                 {
-                    naveGroups[lId] = new DaybookGroupDto
-                    {
-                        LedgerId = lId,
-                        LedgerName = lName,
-                        Entries = new List<DaybookEntryDto>()
-                    };
+                    unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => ld.LoanAccount!.BranchID == branchId.Value);
                 }
 
-                var group = naveGroups[lId];
-                var member = ld.LoanAccount?.Member;
-                string narration = member != null 
-                    ? $"{member.MemberCode}-{member.FirstName} {member.LastName}" 
-                    : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})";
+                var unvoucheredDisb = await unvoucheredDisbQuery
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .ToListAsync();
 
-                bool isCash = ld.PaymentMode == "Cash";
-                var entry = new DaybookEntryDto
+
+                var defaultLoanLedger = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज") || l.LedgerName.Contains("Loan") || l.LedgerName.Contains("मुद्दल")) ?? ledgers.FirstOrDefault();
+
+                foreach (var ld in unvoucheredDisb)
                 {
-                    Narration = narration,
-                    VoucherNo = "DISB-" + ld.LoanDisbursementID,
-                    CashAmount = isCash ? ld.DisbursementAmount : 0,
-                    TransferAmount = isCash ? 0 : ld.DisbursementAmount
-                };
-                group.TotalCash += entry.CashAmount;
-                group.TotalTransfer += entry.TransferAmount;
-                group.Entries.Add(entry);
-            }
+                    int lId = ld.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
+                    if (lId == 0) continue;
+                    string lName = ledgers.FirstOrDefault(l => l.LedgerID == lId)?.LedgerName ?? "कर्ज खाते (Loan Account)";
 
-            // Include unvouchered Loan Collections into Jama (Receipts)
-            var unvoucheredColQuery = _context.LoanCollections
-                .Where(lc => lc.LoanAccount != null && lc.CollectionDate >= startDate && lc.CollectionDate <= endDate
-                          && !lc.VoucherID.HasValue);
-
-            if (branchId.HasValue)
-            {
-                unvoucheredColQuery = unvoucheredColQuery.Where(lc => lc.LoanAccount!.BranchID == branchId.Value);
-            }
-
-            var unvoucheredCols = await unvoucheredColQuery
-                .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
-                .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
-                .ToListAsync();
-
-
-            var defaultInterestLedger = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज व्याज") || l.LedgerName.Contains("व्याज जमा") || l.LedgerName.Contains("Interest")) ?? defaultLoanLedger;
-
-            foreach (var lc in unvoucheredCols)
-            {
-                var member = lc.LoanAccount?.Member;
-                string memberNarration = member != null 
-                    ? $"{member.MemberCode}-{member.FirstName} {member.LastName}" 
-                    : $"Loan Collection (Rect: {lc.ReceiptNo})";
-                bool isCash = lc.PaymentMode == "Cash";
-
-                // Principal Collected -> Loan Ledger
-                if (lc.PrincipalCollected > 0)
-                {
-                    int lId = lc.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
-                    if (lId > 0)
+                    if (!naveGroups.ContainsKey(lId))
                     {
-                        string lName = ledgers.FirstOrDefault(l => l.LedgerID == lId)?.LedgerName ?? "कर्ज खाते (Loan Account)";
-                        if (!jamaGroups.ContainsKey(lId))
+                        naveGroups[lId] = new DaybookGroupDto
                         {
-                            jamaGroups[lId] = new DaybookGroupDto
-                            {
-                                LedgerId = lId,
-                                LedgerName = lName,
-                                Entries = new List<DaybookEntryDto>()
-                            };
-                        }
-                        var group = jamaGroups[lId];
-                        var entry = new DaybookEntryDto
-                        {
-                            Narration = memberNarration,
-                            VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
-                            CashAmount = isCash ? lc.PrincipalCollected : 0,
-                            TransferAmount = isCash ? 0 : lc.PrincipalCollected
+                            LedgerId = lId,
+                            LedgerName = lName,
+                            Entries = new List<DaybookEntryDto>()
                         };
-                        group.TotalCash += entry.CashAmount;
-                        group.TotalTransfer += entry.TransferAmount;
-                        group.Entries.Add(entry);
                     }
+
+                    var group = naveGroups[lId];
+                    var member = ld.LoanAccount?.Member;
+                    string narration = member != null 
+                        ? $"{member.MemberCode}-{member.FirstName} {member.LastName}" 
+                        : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})";
+
+                    bool isCash = ld.PaymentMode == "Cash";
+                    var entry = new DaybookEntryDto
+                    {
+                        Narration = narration,
+                        VoucherNo = "DISB-" + ld.LoanDisbursementID,
+                        CashAmount = isCash ? ld.DisbursementAmount : 0,
+                        TransferAmount = isCash ? 0 : ld.DisbursementAmount,
+                        Status = "Direct"
+                    };
+                    group.TotalCash += entry.CashAmount;
+                    group.TotalTransfer += entry.TransferAmount;
+                    group.Entries.Add(entry);
                 }
 
-                // Interest Collected -> Interest Ledger
-                if (lc.InterestCollected + lc.PenaltyInterestCollected > 0)
+                // Include unvouchered Loan Collections into Jama (Receipts)
+                var unvoucheredColQuery = _context.LoanCollections
+                    .Where(lc => lc.LoanAccount != null && lc.CollectionDate >= startDate && lc.CollectionDate <= endDate
+                              && !lc.VoucherID.HasValue);
+
+                if (branchId.HasValue)
                 {
-                    int iId = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedger?.LedgerID ?? 0;
-                    if (iId > 0)
+                    unvoucheredColQuery = unvoucheredColQuery.Where(lc => lc.LoanAccount!.BranchID == branchId.Value);
+                }
+
+                var unvoucheredCols = await unvoucheredColQuery
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .ToListAsync();
+
+
+                var defaultInterestLedger = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज व्याज") || l.LedgerName.Contains("व्याज जमा") || l.LedgerName.Contains("Interest")) ?? defaultLoanLedger;
+
+                foreach (var lc in unvoucheredCols)
+                {
+                    var member = lc.LoanAccount?.Member;
+                    string memberNarration = member != null 
+                        ? $"{member.MemberCode}-{member.FirstName} {member.LastName}" 
+                        : $"Loan Collection (Rect: {lc.ReceiptNo})";
+                    bool isCash = lc.PaymentMode == "Cash";
+
+                    // Principal Collected -> Loan Ledger
+                    if (lc.PrincipalCollected > 0)
                     {
-                        string iName = ledgers.FirstOrDefault(l => l.LedgerID == iId)?.LedgerName ?? "कर्ज व्याज जमा (Loan Interest)";
-                        if (!jamaGroups.ContainsKey(iId))
+                        int lId = lc.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
+                        if (lId > 0)
                         {
-                            jamaGroups[iId] = new DaybookGroupDto
+                            string lName = ledgers.FirstOrDefault(l => l.LedgerID == lId)?.LedgerName ?? "कर्ज खाते (Loan Account)";
+                            if (!jamaGroups.ContainsKey(lId))
                             {
-                                LedgerId = iId,
-                                LedgerName = iName,
-                                Entries = new List<DaybookEntryDto>()
+                                jamaGroups[lId] = new DaybookGroupDto
+                                {
+                                    LedgerId = lId,
+                                    LedgerName = lName,
+                                    Entries = new List<DaybookEntryDto>()
+                                };
+                            }
+                            var group = jamaGroups[lId];
+                            var entry = new DaybookEntryDto
+                            {
+                                Narration = memberNarration,
+                                VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
+                                CashAmount = isCash ? lc.PrincipalCollected : 0,
+                                TransferAmount = isCash ? 0 : lc.PrincipalCollected,
+                                Status = "Direct"
                             };
+                            group.TotalCash += entry.CashAmount;
+                            group.TotalTransfer += entry.TransferAmount;
+                            group.Entries.Add(entry);
                         }
-                        var group = jamaGroups[iId];
-                        decimal intAmt = lc.InterestCollected + lc.PenaltyInterestCollected;
-                        var entry = new DaybookEntryDto
+                    }
+
+                    // Interest Collected -> Interest Ledger
+                    if (lc.InterestCollected + lc.PenaltyInterestCollected > 0)
+                    {
+                        int iId = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedger?.LedgerID ?? 0;
+                        if (iId > 0)
                         {
-                            Narration = memberNarration,
-                            VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
-                            CashAmount = isCash ? intAmt : 0,
-                            TransferAmount = isCash ? 0 : intAmt
-                        };
-                        group.TotalCash += entry.CashAmount;
-                        group.TotalTransfer += entry.TransferAmount;
-                        group.Entries.Add(entry);
+                            string iName = ledgers.FirstOrDefault(l => l.LedgerID == iId)?.LedgerName ?? "कर्ज व्याज जमा (Loan Interest)";
+                            if (!jamaGroups.ContainsKey(iId))
+                            {
+                                jamaGroups[iId] = new DaybookGroupDto
+                                {
+                                    LedgerId = iId,
+                                    LedgerName = iName,
+                                    Entries = new List<DaybookEntryDto>()
+                                };
+                            }
+                            var group = jamaGroups[iId];
+                            decimal intAmt = lc.InterestCollected + lc.PenaltyInterestCollected;
+                            var entry = new DaybookEntryDto
+                            {
+                                Narration = memberNarration,
+                                VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
+                                CashAmount = isCash ? intAmt : 0,
+                                TransferAmount = isCash ? 0 : intAmt,
+                                Status = "Direct"
+                            };
+                            group.TotalCash += entry.CashAmount;
+                            group.TotalTransfer += entry.TransferAmount;
+                            group.Entries.Add(entry);
+                        }
                     }
                 }
             }
@@ -588,7 +607,9 @@ namespace Bhisi.Api.Controllers
             {
                 OpeningBalance = openingBalance,
                 Receipts = jamaGroups.Values.OrderBy(g => g.LedgerId).ToList(),
-                Payments = naveGroups.Values.OrderBy(g => g.LedgerId).ToList()
+                Payments = naveGroups.Values.OrderBy(g => g.LedgerId).ToList(),
+                VoucherStatus = statusFilter,
+                IsDraft = (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
             };
 
             // Calculate totals
@@ -603,10 +624,11 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpGet("DaybookBatch")]
-        public async Task<ActionResult<DaybookBatchResponseDto>> GetDaybookBatch([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
+        public async Task<ActionResult<DaybookBatchResponseDto>> GetDaybookBatch([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] string? voucherStatus = "approved")
         {
             DateTime rangeStart = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
             DateTime rangeEnd = DateTime.SpecifyKind(toDate.HasValue ? toDate.Value.Date.AddDays(1).AddTicks(-1) : date.Date.AddDays(1).AddTicks(-1), DateTimeKind.Unspecified);
+            string statusFilter = (voucherStatus ?? "approved").Trim().ToLower();
 
             // Load ledgers once
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
@@ -660,49 +682,64 @@ namespace Bhisi.Api.Controllers
             var vouchersQuery = _context.Vouchers.AsNoTracking()
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member)
-                .Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") 
-                         && v.Status != "Rejected" 
-                         && v.Status != "Cancelled" 
-                         && v.VoucherDate >= rangeStart 
+                .Where(v => v.VoucherDate >= rangeStart 
                          && v.VoucherDate <= rangeEnd
                          && v.VoucherType != "Opening Balance"
                          && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक") && !v.Narration.Contains("स्थलांतर"))));
+
+            if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
+            {
+                vouchersQuery = vouchersQuery.Where(v => v.Status == "Pending" || string.IsNullOrEmpty(v.Status));
+            }
+            else if (statusFilter == "all" || statusFilter == "both")
+            {
+                vouchersQuery = vouchersQuery.Where(v => v.Status != "Rejected" && v.Status != "Cancelled");
+            }
+            else
+            {
+                vouchersQuery = vouchersQuery.Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled");
+            }
+
             if (branchId.HasValue)
             {
                 vouchersQuery = vouchersQuery.Where(v => v.BranchID == branchId.Value);
             }
             var allVouchers = await vouchersQuery.ToListAsync();
 
-            // Load ALL unvouchered loan disbursements and collections for the range
-            var existingVoucherIds = allVouchers.Select(v => v.VoucherID).ToHashSet();
+            // Load unvouchered loan disbursements and collections for the range (only if not draft/pending)
+            var allUnvoucheredDisb = new List<LoanDisbursement>();
+            var allUnvoucheredCols = new List<LoanCollection>();
 
-            var unvoucheredDisbQuery = _context.LoanDisbursements.AsNoTracking()
-                .Where(ld => ld.LoanAccount != null 
-                          && ld.DisbursementDate >= rangeStart 
-                          && ld.DisbursementDate <= rangeEnd
-                          && !ld.VoucherID.HasValue
-                          && ld.PaymentMode != "Opening Balance"
-                          && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
-            if (branchId.HasValue)
+            if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
             {
-                unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => ld.LoanAccount!.BranchID == branchId.Value);
-            }
-            var allUnvoucheredDisb = await unvoucheredDisbQuery
-                .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
-                .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
-                .ToListAsync();
+                var unvoucheredDisbQuery = _context.LoanDisbursements.AsNoTracking()
+                    .Where(ld => ld.LoanAccount != null 
+                              && ld.DisbursementDate >= rangeStart 
+                              && ld.DisbursementDate <= rangeEnd
+                              && !ld.VoucherID.HasValue
+                              && ld.PaymentMode != "Opening Balance"
+                              && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
+                if (branchId.HasValue)
+                {
+                    unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => ld.LoanAccount!.BranchID == branchId.Value);
+                }
+                allUnvoucheredDisb = await unvoucheredDisbQuery
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .ToListAsync();
 
-            var unvoucheredColQuery = _context.LoanCollections.AsNoTracking()
-                .Where(lc => lc.LoanAccount != null && lc.CollectionDate >= rangeStart && lc.CollectionDate <= rangeEnd
-                          && !lc.VoucherID.HasValue);
-            if (branchId.HasValue)
-            {
-                unvoucheredColQuery = unvoucheredColQuery.Where(lc => lc.LoanAccount!.BranchID == branchId.Value);
+                var unvoucheredColQuery = _context.LoanCollections.AsNoTracking()
+                    .Where(lc => lc.LoanAccount != null && lc.CollectionDate >= rangeStart && lc.CollectionDate <= rangeEnd
+                              && !lc.VoucherID.HasValue);
+                if (branchId.HasValue)
+                {
+                    unvoucheredColQuery = unvoucheredColQuery.Where(lc => lc.LoanAccount!.BranchID == branchId.Value);
+                }
+                allUnvoucheredCols = await unvoucheredColQuery
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .ToListAsync();
             }
-            var allUnvoucheredCols = await unvoucheredColQuery
-                .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
-                .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
-                .ToListAsync();
 
             var defaultLoanLedger = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज") || l.LedgerName.Contains("Loan") || l.LedgerName.Contains("मुद्दल")) ?? ledgers.FirstOrDefault();
             var defaultInterestLedger = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज व्याज") || l.LedgerName.Contains("व्याज जमा") || l.LedgerName.Contains("Interest")) ?? defaultLoanLedger;
@@ -816,7 +853,8 @@ namespace Bhisi.Api.Controllers
                                 Narration = narration,
                                 VoucherNo = v.VoucherNo ?? "",
                                 CashAmount = Math.Round(cashAmt, 2),
-                                TransferAmount = Math.Round(transferAmt, 2)
+                                TransferAmount = Math.Round(transferAmt, 2),
+                                Status = v.Status ?? "Pending"
                             };
 
                             group.TotalCash += entry.CashAmount;
@@ -826,112 +864,118 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // Process unvouchered disbursements for this date
-                if (disbByDate.TryGetValue(currentDate, out var dayDisb))
+                // Process unvouchered disbursements and collections for this date
+                if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
                 {
-                    foreach (var ld in dayDisb)
+                    if (disbByDate.TryGetValue(currentDate, out var dayDisb))
                     {
-                        int lId = ld.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
-                        if (lId == 0) continue;
-                        string lName = ledgers.FirstOrDefault(l => l.LedgerID == lId)?.LedgerName ?? "कर्ज खाते (Loan Account)";
-
-                        if (!naveGroups.ContainsKey(lId))
+                        foreach (var ld in dayDisb)
                         {
-                            naveGroups[lId] = new DaybookGroupDto
+                            int lId = ld.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
+                            if (lId == 0) continue;
+                            string lName = ledgers.FirstOrDefault(l => l.LedgerID == lId)?.LedgerName ?? "कर्ज खाते (Loan Account)";
+
+                            if (!naveGroups.ContainsKey(lId))
                             {
-                                LedgerId = lId,
-                                LedgerName = lName,
-                                Entries = new List<DaybookEntryDto>()
-                            };
-                        }
-
-                        var group = naveGroups[lId];
-                        var member = ld.LoanAccount?.Member;
-                        string narration = member != null
-                            ? $"{member.MemberCode}-{member.FirstName} {member.LastName}"
-                            : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})";
-
-                        bool isCash = ld.PaymentMode == "Cash";
-                        var entry = new DaybookEntryDto
-                        {
-                            Narration = narration,
-                            VoucherNo = "DISB-" + ld.LoanDisbursementID,
-                            CashAmount = isCash ? ld.DisbursementAmount : 0,
-                            TransferAmount = isCash ? 0 : ld.DisbursementAmount
-                        };
-                        group.TotalCash += entry.CashAmount;
-                        group.TotalTransfer += entry.TransferAmount;
-                        group.Entries.Add(entry);
-                    }
-                }
-
-                // Process unvouchered collections for this date
-                if (colsByDate.TryGetValue(currentDate, out var dayCols))
-                {
-                    foreach (var lc in dayCols)
-                    {
-                        var member = lc.LoanAccount?.Member;
-                        string memberNarration = member != null
-                            ? $"{member.MemberCode}-{member.FirstName} {member.LastName}"
-                            : $"Loan Collection (Rect: {lc.ReceiptNo})";
-                        bool isCash = lc.PaymentMode == "Cash";
-
-                        if (lc.PrincipalCollected > 0)
-                        {
-                            int lId = lc.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
-                            if (lId > 0)
-                            {
-                                string lName = ledgers.FirstOrDefault(l => l.LedgerID == lId)?.LedgerName ?? "कर्ज खाते (Loan Account)";
-                                if (!jamaGroups.ContainsKey(lId))
+                                naveGroups[lId] = new DaybookGroupDto
                                 {
-                                    jamaGroups[lId] = new DaybookGroupDto
-                                    {
-                                        LedgerId = lId,
-                                        LedgerName = lName,
-                                        Entries = new List<DaybookEntryDto>()
-                                    };
-                                }
-                                var group = jamaGroups[lId];
-                                var entry = new DaybookEntryDto
-                                {
-                                    Narration = memberNarration,
-                                    VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
-                                    CashAmount = isCash ? lc.PrincipalCollected : 0,
-                                    TransferAmount = isCash ? 0 : lc.PrincipalCollected
+                                    LedgerId = lId,
+                                    LedgerName = lName,
+                                    Entries = new List<DaybookEntryDto>()
                                 };
-                                group.TotalCash += entry.CashAmount;
-                                group.TotalTransfer += entry.TransferAmount;
-                                group.Entries.Add(entry);
                             }
-                        }
 
-                        if (lc.InterestCollected + lc.PenaltyInterestCollected > 0)
-                        {
-                            int iId = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedger?.LedgerID ?? 0;
-                            if (iId > 0)
+                            var group = naveGroups[lId];
+                            var member = ld.LoanAccount?.Member;
+                            string narration = member != null 
+                                ? $"{member.MemberCode}-{member.FirstName} {member.LastName}" 
+                                : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})";
+
+                            bool isCash = ld.PaymentMode == "Cash";
+                            var entry = new DaybookEntryDto
                             {
-                                string iName = ledgers.FirstOrDefault(l => l.LedgerID == iId)?.LedgerName ?? "कर्ज व्याज जमा (Loan Interest)";
-                                if (!jamaGroups.ContainsKey(iId))
+                                Narration = narration,
+                                VoucherNo = "DISB-" + ld.LoanDisbursementID,
+                                CashAmount = isCash ? ld.DisbursementAmount : 0,
+                                TransferAmount = isCash ? 0 : ld.DisbursementAmount,
+                                Status = "Direct"
+                            };
+                            group.TotalCash += entry.CashAmount;
+                            group.TotalTransfer += entry.TransferAmount;
+                            group.Entries.Add(entry);
+                        }
+                    }
+
+                    // Process unvouchered collections for this date
+                    if (colsByDate.TryGetValue(currentDate, out var dayCols))
+                    {
+                        foreach (var lc in dayCols)
+                        {
+                            var member = lc.LoanAccount?.Member;
+                            string memberNarration = member != null 
+                                ? $"{member.MemberCode}-{member.FirstName} {member.LastName}" 
+                                : $"Loan Collection (Rect: {lc.ReceiptNo})";
+                            bool isCash = lc.PaymentMode == "Cash";
+
+                            if (lc.PrincipalCollected > 0)
+                            {
+                                int lId = lc.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
+                                if (lId > 0)
                                 {
-                                    jamaGroups[iId] = new DaybookGroupDto
+                                    string lName = ledgers.FirstOrDefault(l => l.LedgerID == lId)?.LedgerName ?? "कर्ज खाते (Loan Account)";
+                                    if (!jamaGroups.ContainsKey(lId))
                                     {
-                                        LedgerId = iId,
-                                        LedgerName = iName,
-                                        Entries = new List<DaybookEntryDto>()
+                                        jamaGroups[lId] = new DaybookGroupDto
+                                        {
+                                            LedgerId = lId,
+                                            LedgerName = lName,
+                                            Entries = new List<DaybookEntryDto>()
+                                        };
+                                    }
+                                    var group = jamaGroups[lId];
+                                    var entry = new DaybookEntryDto
+                                    {
+                                        Narration = memberNarration,
+                                        VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
+                                        CashAmount = isCash ? lc.PrincipalCollected : 0,
+                                        TransferAmount = isCash ? 0 : lc.PrincipalCollected,
+                                        Status = "Direct"
                                     };
+                                    group.TotalCash += entry.CashAmount;
+                                    group.TotalTransfer += entry.TransferAmount;
+                                    group.Entries.Add(entry);
                                 }
-                                var group = jamaGroups[iId];
-                                decimal intAmt = lc.InterestCollected + lc.PenaltyInterestCollected;
-                                var entry = new DaybookEntryDto
+                            }
+
+                            if (lc.InterestCollected + lc.PenaltyInterestCollected > 0)
+                            {
+                                int iId = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedger?.LedgerID ?? 0;
+                                if (iId > 0)
                                 {
-                                    Narration = memberNarration,
-                                    VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
-                                    CashAmount = isCash ? intAmt : 0,
-                                    TransferAmount = isCash ? 0 : intAmt
-                                };
-                                group.TotalCash += entry.CashAmount;
-                                group.TotalTransfer += entry.TransferAmount;
-                                group.Entries.Add(entry);
+                                    string iName = ledgers.FirstOrDefault(l => l.LedgerID == iId)?.LedgerName ?? "कर्ज व्याज जमा (Loan Interest)";
+                                    if (!jamaGroups.ContainsKey(iId))
+                                    {
+                                        jamaGroups[iId] = new DaybookGroupDto
+                                        {
+                                            LedgerId = iId,
+                                            LedgerName = iName,
+                                            Entries = new List<DaybookEntryDto>()
+                                        };
+                                    }
+                                    var group = jamaGroups[iId];
+                                    decimal intAmt = lc.InterestCollected + lc.PenaltyInterestCollected;
+                                    var entry = new DaybookEntryDto
+                                    {
+                                        Narration = memberNarration,
+                                        VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
+                                        CashAmount = isCash ? intAmt : 0,
+                                        TransferAmount = isCash ? 0 : intAmt,
+                                        Status = "Direct"
+                                    };
+                                    group.TotalCash += entry.CashAmount;
+                                    group.TotalTransfer += entry.TransferAmount;
+                                    group.Entries.Add(entry);
+                                }
                             }
                         }
                     }
@@ -942,7 +986,9 @@ namespace Bhisi.Api.Controllers
                 {
                     OpeningBalance = runningOpeningBalance,
                     Receipts = jamaGroups.Values.OrderBy(g => g.LedgerId).ToList(),
-                    Payments = naveGroups.Values.OrderBy(g => g.LedgerId).ToList()
+                    Payments = naveGroups.Values.OrderBy(g => g.LedgerId).ToList(),
+                    VoucherStatus = statusFilter,
+                    IsDraft = (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
                 };
 
                 dayResponse.TotalReceiptsCash = dayResponse.Receipts.Sum(g => g.TotalCash);
@@ -973,10 +1019,11 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpGet("DaybookSummary")]
-        public async Task<ActionResult<DaybookSummaryResponseDto>> GetDaybookSummary([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
+        public async Task<ActionResult<DaybookSummaryResponseDto>> GetDaybookSummary([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] string? voucherStatus = "approved")
         {
             DateTime startDate = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
             DateTime endDate = DateTime.SpecifyKind(toDate.HasValue ? toDate.Value.Date.AddDays(1).AddTicks(-1) : date.Date.AddDays(1).AddTicks(-1), DateTimeKind.Unspecified);
+            string statusFilter = (voucherStatus ?? "approved").Trim().ToLower();
 
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
             var groups = await _context.AccountGroups.AsNoTracking().ToListAsync();
@@ -1030,13 +1077,23 @@ namespace Bhisi.Api.Controllers
 
             var vouchersQuery = _context.Vouchers.AsNoTracking()
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member)
-                .Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") 
-                         && v.Status != "Rejected" 
-                         && v.Status != "Cancelled" 
-                         && v.VoucherDate >= startDate 
+                .Where(v => v.VoucherDate >= startDate 
                          && v.VoucherDate <= endDate
                          && v.VoucherType != "Opening Balance"
                          && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक") && !v.Narration.Contains("स्थलांतर"))));
+
+            if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
+            {
+                vouchersQuery = vouchersQuery.Where(v => v.Status == "Pending" || string.IsNullOrEmpty(v.Status));
+            }
+            else if (statusFilter == "all" || statusFilter == "both")
+            {
+                vouchersQuery = vouchersQuery.Where(v => v.Status != "Rejected" && v.Status != "Cancelled");
+            }
+            else
+            {
+                vouchersQuery = vouchersQuery.Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled");
+            }
             
             if (branchId.HasValue)
             {
@@ -1122,119 +1179,122 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // Include unvouchered Loan Disbursements into GetDaybookSummary (Payment side)
-            var existingVoucherIdsSummary = vouchers.Select(v => v.VoucherID).ToHashSet();
-            var unvoucheredDisbQuerySummary = _context.LoanDisbursements.AsNoTracking()
-                .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
-                .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
-                .Where(ld => ld.DisbursementDate >= startDate 
-                          && ld.DisbursementDate <= endDate
-                          && !ld.VoucherID.HasValue
-                          && ld.PaymentMode != "Opening Balance"
-                          && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
-            if (branchId.HasValue)
+            // Include unvouchered Loan Disbursements and Collections into GetDaybookSummary (only if not draft/pending)
+            if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
             {
-                unvoucheredDisbQuerySummary = unvoucheredDisbQuerySummary.Where(ld => ld.LoanAccount != null && ld.LoanAccount.BranchID == branchId.Value);
-            }
-            var unvoucheredDisbSummary = await unvoucheredDisbQuerySummary.ToListAsync();
-            var defaultLoanLedgerSummary = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज") || l.LedgerName.Contains("Loan") || l.LedgerName.Contains("मुद्दल")) ?? ledgers.FirstOrDefault();
-
-            foreach (var ld in unvoucheredDisbSummary)
-            {
-                int lId = ld.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedgerSummary?.LedgerID ?? 0;
-                if (lId == 0) continue;
-
-                if (!ledgerSummaries.ContainsKey(lId))
+                var existingVoucherIdsSummary = vouchers.Select(v => v.VoucherID).ToHashSet();
+                var unvoucheredDisbQuerySummary = _context.LoanDisbursements.AsNoTracking()
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .Where(ld => ld.DisbursementDate >= startDate 
+                              && ld.DisbursementDate <= endDate
+                              && !ld.VoucherID.HasValue
+                              && ld.PaymentMode != "Opening Balance"
+                              && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
+                if (branchId.HasValue)
                 {
-                    var l = ledgers.FirstOrDefault(x => x.LedgerID == lId);
-                    ledgerSummaries[lId] = new DaybookSummaryLedgerDto
-                    {
-                        LedgerId = lId,
-                        LedgerName = l?.LedgerName ?? "कर्ज खाते (Loan Account)"
-                    };
+                    unvoucheredDisbQuerySummary = unvoucheredDisbQuerySummary.Where(ld => ld.LoanAccount != null && ld.LoanAccount.BranchID == branchId.Value);
                 }
-                var summary = ledgerSummaries[lId];
-                bool isCash = ld.PaymentMode == "Cash";
-                if (isCash) summary.PaymentCash += ld.DisbursementAmount;
-                else summary.PaymentTransfer += ld.DisbursementAmount;
+                var unvoucheredDisbSummary = await unvoucheredDisbQuerySummary.ToListAsync();
+                var defaultLoanLedgerSummary = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज") || l.LedgerName.Contains("Loan") || l.LedgerName.Contains("मुद्दल")) ?? ledgers.FirstOrDefault();
 
-                var m = ld.LoanAccount?.Member;
-                if (m != null)
+                foreach (var ld in unvoucheredDisbSummary)
                 {
-                    string mStr = $"{m.MemberCode}-{m.FirstName} {m.LastName}";
-                    if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
-                    else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
-                }
-            }
+                    int lId = ld.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedgerSummary?.LedgerID ?? 0;
+                    if (lId == 0) continue;
 
-            // Include unvouchered Loan Collections into GetDaybookSummary (Receipt side)
-            var unvoucheredColQuerySummary = _context.LoanCollections.AsNoTracking()
-                .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
-                .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
-                .Where(lc => lc.CollectionDate >= startDate && lc.CollectionDate <= endDate
-                          && !lc.VoucherID.HasValue);
-            if (branchId.HasValue)
-            {
-                unvoucheredColQuerySummary = unvoucheredColQuerySummary.Where(lc => lc.LoanAccount != null && lc.LoanAccount.BranchID == branchId.Value);
-            }
-            var unvoucheredColSummary = await unvoucheredColQuerySummary.ToListAsync();
-            var defaultInterestLedgerSummary = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज व्याज") || l.LedgerName.Contains("व्याज जमा") || l.LedgerName.Contains("Interest")) ?? defaultLoanLedgerSummary;
-
-            foreach (var lc in unvoucheredColSummary)
-            {
-                bool isCash = lc.PaymentMode == "Cash";
-                var m = lc.LoanAccount?.Member;
-                string mStr = m != null ? $"{m.MemberCode}-{m.FirstName} {m.LastName}" : "";
-
-                if (lc.PrincipalCollected > 0)
-                {
-                    int lId = lc.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedgerSummary?.LedgerID ?? 0;
-                    if (lId > 0)
+                    if (!ledgerSummaries.ContainsKey(lId))
                     {
-                        if (!ledgerSummaries.ContainsKey(lId))
+                        var l = ledgers.FirstOrDefault(x => x.LedgerID == lId);
+                        ledgerSummaries[lId] = new DaybookSummaryLedgerDto
                         {
-                            var l = ledgers.FirstOrDefault(x => x.LedgerID == lId);
-                            ledgerSummaries[lId] = new DaybookSummaryLedgerDto
-                            {
-                                LedgerId = lId,
-                                LedgerName = l?.LedgerName ?? "कर्ज खाते (Loan Account)"
-                            };
-                        }
-                        var summary = ledgerSummaries[lId];
-                        if (isCash) summary.ReceiptCash += lc.PrincipalCollected;
-                        else summary.ReceiptTransfer += lc.PrincipalCollected;
+                            LedgerId = lId,
+                            LedgerName = l?.LedgerName ?? "कर्ज खाते (Loan Account)"
+                        };
+                    }
+                    var summary = ledgerSummaries[lId];
+                    bool isCash = ld.PaymentMode == "Cash";
+                    if (isCash) summary.PaymentCash += ld.DisbursementAmount;
+                    else summary.PaymentTransfer += ld.DisbursementAmount;
 
-                        if (!string.IsNullOrEmpty(mStr))
-                        {
-                            if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
-                            else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
-                        }
+                    var m = ld.LoanAccount?.Member;
+                    if (m != null)
+                    {
+                        string mStr = $"{m.MemberCode}-{m.FirstName} {m.LastName}";
+                        if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
+                        else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
                     }
                 }
 
-                if (lc.InterestCollected + lc.PenaltyInterestCollected > 0)
+                // Include unvouchered Loan Collections into GetDaybookSummary (Receipt side)
+                var unvoucheredColQuerySummary = _context.LoanCollections.AsNoTracking()
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .Where(lc => lc.CollectionDate >= startDate && lc.CollectionDate <= endDate
+                              && !lc.VoucherID.HasValue);
+                if (branchId.HasValue)
                 {
-                    int iId = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedgerSummary?.LedgerID ?? 0;
-                    if (iId > 0)
-                    {
-                        if (!ledgerSummaries.ContainsKey(iId))
-                        {
-                            var l = ledgers.FirstOrDefault(x => x.LedgerID == iId);
-                            ledgerSummaries[iId] = new DaybookSummaryLedgerDto
-                            {
-                                LedgerId = iId,
-                                LedgerName = l?.LedgerName ?? "कर्ज व्याज जमा (Loan Interest)"
-                            };
-                        }
-                        var summary = ledgerSummaries[iId];
-                        decimal intAmt = lc.InterestCollected + lc.PenaltyInterestCollected;
-                        if (isCash) summary.ReceiptCash += intAmt;
-                        else summary.ReceiptTransfer += intAmt;
+                    unvoucheredColQuerySummary = unvoucheredColQuerySummary.Where(lc => lc.LoanAccount != null && lc.LoanAccount.BranchID == branchId.Value);
+                }
+                var unvoucheredColSummary = await unvoucheredColQuerySummary.ToListAsync();
+                var defaultInterestLedgerSummary = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज व्याज") || l.LedgerName.Contains("व्याज जमा") || l.LedgerName.Contains("Interest")) ?? defaultLoanLedgerSummary;
 
-                        if (!string.IsNullOrEmpty(mStr))
+                foreach (var lc in unvoucheredColSummary)
+                {
+                    bool isCash = lc.PaymentMode == "Cash";
+                    var m = lc.LoanAccount?.Member;
+                    string mStr = m != null ? $"{m.MemberCode}-{m.FirstName} {m.LastName}" : "";
+
+                    if (lc.PrincipalCollected > 0)
+                    {
+                        int lId = lc.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedgerSummary?.LedgerID ?? 0;
+                        if (lId > 0)
                         {
-                            if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
-                            else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
+                            if (!ledgerSummaries.ContainsKey(lId))
+                            {
+                                var l = ledgers.FirstOrDefault(x => x.LedgerID == lId);
+                                ledgerSummaries[lId] = new DaybookSummaryLedgerDto
+                                {
+                                    LedgerId = lId,
+                                    LedgerName = l?.LedgerName ?? "कर्ज खाते (Loan Account)"
+                                };
+                            }
+                            var summary = ledgerSummaries[lId];
+                            if (isCash) summary.ReceiptCash += lc.PrincipalCollected;
+                            else summary.ReceiptTransfer += lc.PrincipalCollected;
+
+                            if (!string.IsNullOrEmpty(mStr))
+                            {
+                                if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
+                                else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
+                            }
+                        }
+                    }
+
+                    if (lc.InterestCollected + lc.PenaltyInterestCollected > 0)
+                    {
+                        int iId = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedgerSummary?.LedgerID ?? 0;
+                        if (iId > 0)
+                        {
+                            if (!ledgerSummaries.ContainsKey(iId))
+                            {
+                                var l = ledgers.FirstOrDefault(x => x.LedgerID == iId);
+                                ledgerSummaries[iId] = new DaybookSummaryLedgerDto
+                                {
+                                    LedgerId = iId,
+                                    LedgerName = l?.LedgerName ?? "कर्ज व्याज जमा (Loan Interest)"
+                                };
+                            }
+                            var summary = ledgerSummaries[iId];
+                            decimal intAmt = lc.InterestCollected + lc.PenaltyInterestCollected;
+                            if (isCash) summary.ReceiptCash += intAmt;
+                            else summary.ReceiptTransfer += intAmt;
+
+                            if (!string.IsNullOrEmpty(mStr))
+                            {
+                                if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
+                                else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
+                            }
                         }
                     }
                 }
@@ -1274,7 +1334,9 @@ namespace Bhisi.Api.Controllers
                 TotalReceiptsCash = ledgerSummaries.Values.Sum(l => l.ReceiptCash),
                 TotalReceiptsTransfer = ledgerSummaries.Values.Sum(l => l.ReceiptTransfer),
                 TotalPaymentsCash = ledgerSummaries.Values.Sum(l => l.PaymentCash),
-                TotalPaymentsTransfer = ledgerSummaries.Values.Sum(l => l.PaymentTransfer)
+                TotalPaymentsTransfer = ledgerSummaries.Values.Sum(l => l.PaymentTransfer),
+                VoucherStatus = statusFilter,
+                IsDraft = (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
             };
 
             response.ClosingBalance = openingBalance + response.TotalReceiptsCash - response.TotalPaymentsCash;
@@ -1283,10 +1345,11 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpGet("DaybookSummaryBatch")]
-        public async Task<ActionResult<DaybookSummaryBatchResponseDto>> GetDaybookSummaryBatch([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
+        public async Task<ActionResult<DaybookSummaryBatchResponseDto>> GetDaybookSummaryBatch([FromQuery] DateTime date, [FromQuery] DateTime? toDate, [FromQuery] int? branchId, [FromQuery] string? voucherStatus = "approved")
         {
             DateTime rangeStart = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
             DateTime rangeEnd = DateTime.SpecifyKind(toDate.HasValue ? toDate.Value.Date.AddDays(1).AddTicks(-1) : date.Date.AddDays(1).AddTicks(-1), DateTimeKind.Unspecified);
+            string statusFilter = (voucherStatus ?? "approved").Trim().ToLower();
 
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
             var groups = await _context.AccountGroups.AsNoTracking().ToListAsync();
@@ -1341,13 +1404,23 @@ namespace Bhisi.Api.Controllers
             // Load ALL vouchers for the entire range in one query
             var vouchersQuery = _context.Vouchers.AsNoTracking()
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member)
-                .Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") 
-                         && v.Status != "Rejected" 
-                         && v.Status != "Cancelled" 
-                         && v.VoucherDate >= rangeStart 
+                .Where(v => v.VoucherDate >= rangeStart 
                          && v.VoucherDate <= rangeEnd
                          && v.VoucherType != "Opening Balance"
                          && (v.Narration == null || (!v.Narration.Contains("Opening Balance") && !v.Narration.Contains("आरंभीची शिल्लक") && !v.Narration.Contains("स्थलांतर"))));
+
+            if (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
+            {
+                vouchersQuery = vouchersQuery.Where(v => v.Status == "Pending" || string.IsNullOrEmpty(v.Status));
+            }
+            else if (statusFilter == "all" || statusFilter == "both")
+            {
+                vouchersQuery = vouchersQuery.Where(v => v.Status != "Rejected" && v.Status != "Cancelled");
+            }
+            else
+            {
+                vouchersQuery = vouchersQuery.Where(v => (v.Status == "Approved" || string.IsNullOrEmpty(v.Status) || v.Status == "Posted") && v.Status != "Rejected" && v.Status != "Cancelled");
+            }
 
             if (branchId.HasValue)
             {
@@ -1355,33 +1428,37 @@ namespace Bhisi.Api.Controllers
             }
             var allVouchers = await vouchersQuery.ToListAsync();
 
-            // Load ALL unvouchered loan disbursements and collections for the range
-            var existingVoucherIds = allVouchers.Select(v => v.VoucherID).ToHashSet();
+            // Load unvouchered loan disbursements and collections for the range (only if not draft/pending)
+            var allUnvoucheredDisb = new List<LoanDisbursement>();
+            var allUnvoucheredCols = new List<LoanCollection>();
 
-            var unvoucheredDisbQuery = _context.LoanDisbursements.AsNoTracking()
-                .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
-                .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
-                .Where(ld => ld.DisbursementDate >= rangeStart 
-                          && ld.DisbursementDate <= rangeEnd
-                          && !ld.VoucherID.HasValue
-                          && ld.PaymentMode != "Opening Balance"
-                          && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
-            if (branchId.HasValue)
+            if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
             {
-                unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => ld.LoanAccount != null && ld.LoanAccount.BranchID == branchId.Value);
-            }
-            var allUnvoucheredDisb = await unvoucheredDisbQuery.ToListAsync();
+                var unvoucheredDisbQuery = _context.LoanDisbursements.AsNoTracking()
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .Where(ld => ld.DisbursementDate >= rangeStart 
+                              && ld.DisbursementDate <= rangeEnd
+                              && !ld.VoucherID.HasValue
+                              && ld.PaymentMode != "Opening Balance"
+                              && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
+                if (branchId.HasValue)
+                {
+                    unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => ld.LoanAccount != null && ld.LoanAccount.BranchID == branchId.Value);
+                }
+                allUnvoucheredDisb = await unvoucheredDisbQuery.ToListAsync();
 
-            var unvoucheredColQuery = _context.LoanCollections.AsNoTracking()
-                .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
-                .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
-                .Where(lc => lc.CollectionDate >= rangeStart && lc.CollectionDate <= rangeEnd
-                          && !lc.VoucherID.HasValue);
-            if (branchId.HasValue)
-            {
-                unvoucheredColQuery = unvoucheredColQuery.Where(lc => lc.LoanAccount != null && lc.LoanAccount.BranchID == branchId.Value);
+                var unvoucheredColQuery = _context.LoanCollections.AsNoTracking()
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
+                    .Where(lc => lc.CollectionDate >= rangeStart && lc.CollectionDate <= rangeEnd
+                              && !lc.VoucherID.HasValue);
+                if (branchId.HasValue)
+                {
+                    unvoucheredColQuery = unvoucheredColQuery.Where(lc => lc.LoanAccount != null && lc.LoanAccount.BranchID == branchId.Value);
+                }
+                allUnvoucheredCols = await unvoucheredColQuery.ToListAsync();
             }
-            var allUnvoucheredCols = await unvoucheredColQuery.ToListAsync();
 
             var defaultLoanLedger = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज") || l.LedgerName.Contains("Loan") || l.LedgerName.Contains("मुद्दल")) ?? ledgers.FirstOrDefault();
             var defaultInterestLedger = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज व्याज") || l.LedgerName.Contains("व्याज जमा") || l.LedgerName.Contains("Interest")) ?? defaultLoanLedger;
@@ -1477,96 +1554,99 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // 2. Disbursements for currentDate
-                if (disbByDate.TryGetValue(currentDate, out var dayDisb))
+                // 2. Disbursements and Collections for currentDate
+                if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
                 {
-                    foreach (var ld in dayDisb)
+                    if (disbByDate.TryGetValue(currentDate, out var dayDisb))
                     {
-                        int lId = ld.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
-                        if (lId == 0) continue;
-
-                        if (!ledgerSummaries.ContainsKey(lId))
+                        foreach (var ld in dayDisb)
                         {
-                            var l = ledgers.FirstOrDefault(x => x.LedgerID == lId);
-                            ledgerSummaries[lId] = new DaybookSummaryLedgerDto
+                            int lId = ld.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
+                            if (lId == 0) continue;
+
+                            if (!ledgerSummaries.ContainsKey(lId))
                             {
-                                LedgerId = lId,
-                                LedgerName = l?.LedgerName ?? "कर्ज खाते (Loan Account)"
-                            };
-                        }
-                        var summary = ledgerSummaries[lId];
-                        bool isCash = ld.PaymentMode == "Cash";
-                        if (isCash) summary.PaymentCash += ld.DisbursementAmount;
-                        else summary.PaymentTransfer += ld.DisbursementAmount;
+                                var l = ledgers.FirstOrDefault(x => x.LedgerID == lId);
+                                ledgerSummaries[lId] = new DaybookSummaryLedgerDto
+                                {
+                                    LedgerId = lId,
+                                    LedgerName = l?.LedgerName ?? "कर्ज खाते (Loan Account)"
+                                };
+                            }
+                            var summary = ledgerSummaries[lId];
+                            bool isCash = ld.PaymentMode == "Cash";
+                            if (isCash) summary.PaymentCash += ld.DisbursementAmount;
+                            else summary.PaymentTransfer += ld.DisbursementAmount;
 
-                        var m = ld.LoanAccount?.Member;
-                        if (m != null)
-                        {
-                            string mStr = $"{m.MemberCode}-{m.FirstName} {m.LastName}";
-                            if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
-                            else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
-                        }
-                    }
-                }
-
-                // 3. Collections for currentDate
-                if (colsByDate.TryGetValue(currentDate, out var dayCols))
-                {
-                    foreach (var lc in dayCols)
-                    {
-                        bool isCash = lc.PaymentMode == "Cash";
-                        var m = lc.LoanAccount?.Member;
-                        string mStr = m != null ? $"{m.MemberCode}-{m.FirstName} {m.LastName}" : "";
-
-                        if (lc.PrincipalCollected > 0)
-                        {
-                            int lId = lc.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
-                            if (lId > 0)
+                            var m = ld.LoanAccount?.Member;
+                            if (m != null)
                             {
-                                if (!ledgerSummaries.ContainsKey(lId))
-                                {
-                                    var l = ledgers.FirstOrDefault(x => x.LedgerID == lId);
-                                    ledgerSummaries[lId] = new DaybookSummaryLedgerDto
-                                    {
-                                        LedgerId = lId,
-                                        LedgerName = l?.LedgerName ?? "कर्ज खाते (Loan Account)"
-                                    };
-                                }
-                                var summary = ledgerSummaries[lId];
-                                if (isCash) summary.ReceiptCash += lc.PrincipalCollected;
-                                else summary.ReceiptTransfer += lc.PrincipalCollected;
-
-                                if (!string.IsNullOrEmpty(mStr))
-                                {
-                                    if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
-                                    else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
-                                }
+                                string mStr = $"{m.MemberCode}-{m.FirstName} {m.LastName}";
+                                if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
+                                else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
                             }
                         }
+                    }
 
-                        if (lc.InterestCollected + lc.PenaltyInterestCollected > 0)
+                    // 3. Collections for currentDate
+                    if (colsByDate.TryGetValue(currentDate, out var dayCols))
+                    {
+                        foreach (var lc in dayCols)
                         {
-                            int iId = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedger?.LedgerID ?? 0;
-                            if (iId > 0)
-                            {
-                                if (!ledgerSummaries.ContainsKey(iId))
-                                {
-                                    var l = ledgers.FirstOrDefault(x => x.LedgerID == iId);
-                                    ledgerSummaries[iId] = new DaybookSummaryLedgerDto
-                                    {
-                                        LedgerId = iId,
-                                        LedgerName = l?.LedgerName ?? "कर्ज व्याज जमा (Loan Interest)"
-                                    };
-                                }
-                                var summary = ledgerSummaries[iId];
-                                decimal intAmt = lc.InterestCollected + lc.PenaltyInterestCollected;
-                                if (isCash) summary.ReceiptCash += intAmt;
-                                else summary.ReceiptTransfer += intAmt;
+                            bool isCash = lc.PaymentMode == "Cash";
+                            var m = lc.LoanAccount?.Member;
+                            string mStr = m != null ? $"{m.MemberCode}-{m.FirstName} {m.LastName}" : "";
 
-                                if (!string.IsNullOrEmpty(mStr))
+                            if (lc.PrincipalCollected > 0)
+                            {
+                                int lId = lc.LoanAccount?.LoanRate?.LoanLedgerID ?? defaultLoanLedger?.LedgerID ?? 0;
+                                if (lId > 0)
                                 {
-                                    if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
-                                    else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
+                                    if (!ledgerSummaries.ContainsKey(lId))
+                                    {
+                                        var l = ledgers.FirstOrDefault(x => x.LedgerID == lId);
+                                        ledgerSummaries[lId] = new DaybookSummaryLedgerDto
+                                        {
+                                            LedgerId = lId,
+                                            LedgerName = l?.LedgerName ?? "कर्ज खाते (Loan Account)"
+                                        };
+                                    }
+                                    var summary = ledgerSummaries[lId];
+                                    if (isCash) summary.ReceiptCash += lc.PrincipalCollected;
+                                    else summary.ReceiptTransfer += lc.PrincipalCollected;
+
+                                    if (!string.IsNullOrEmpty(mStr))
+                                    {
+                                        if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
+                                        else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
+                                    }
+                                }
+                            }
+
+                            if (lc.InterestCollected + lc.PenaltyInterestCollected > 0)
+                            {
+                                int iId = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedger?.LedgerID ?? 0;
+                                if (iId > 0)
+                                {
+                                    if (!ledgerSummaries.ContainsKey(iId))
+                                    {
+                                        var l = ledgers.FirstOrDefault(x => x.LedgerID == iId);
+                                        ledgerSummaries[iId] = new DaybookSummaryLedgerDto
+                                        {
+                                            LedgerId = iId,
+                                            LedgerName = l?.LedgerName ?? "कर्ज व्याज जमा (Loan Interest)"
+                                        };
+                                    }
+                                    var summary = ledgerSummaries[iId];
+                                    decimal intAmt = lc.InterestCollected + lc.PenaltyInterestCollected;
+                                    if (isCash) summary.ReceiptCash += intAmt;
+                                    else summary.ReceiptTransfer += intAmt;
+
+                                    if (!string.IsNullOrEmpty(mStr))
+                                    {
+                                        if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
+                                        else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
+                                    }
                                 }
                             }
                         }
@@ -1606,7 +1686,9 @@ namespace Bhisi.Api.Controllers
                     TotalReceiptsCash = ledgerSummaries.Values.Sum(l => l.ReceiptCash),
                     TotalReceiptsTransfer = ledgerSummaries.Values.Sum(l => l.ReceiptTransfer),
                     TotalPaymentsCash = ledgerSummaries.Values.Sum(l => l.PaymentCash),
-                    TotalPaymentsTransfer = ledgerSummaries.Values.Sum(l => l.PaymentTransfer)
+                    TotalPaymentsTransfer = ledgerSummaries.Values.Sum(l => l.PaymentTransfer),
+                    VoucherStatus = statusFilter,
+                    IsDraft = (statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted")
                 };
 
                 dayResponse.ClosingBalance = runningOpeningBalance + dayResponse.TotalReceiptsCash - dayResponse.TotalPaymentsCash;
@@ -4403,10 +4485,10 @@ namespace Bhisi.Api.Controllers
 
             string holderName = account.Customer != null
                 ? $"{account.Customer.FirstName} {account.Customer.MiddleName} {account.Customer.LastName}".Trim()
-                : (account.Member != null ? $"{account.Member.FirstName} {account.Member.MiddleName} {account.Member.LastName}".Trim() : "");
+                : "";
 
-            string memberCode = account.Customer?.MemberProfile?.MemberCode ?? account.Member?.MemberCode ?? "";
-            string cifNo = account.Customer?.CIFNo ?? (account.Member?.CIFNo ?? "");
+            string memberCode = account.Customer?.MemberProfile?.MemberCode ?? "";
+            string cifNo = account.Customer?.CIFNo ?? "";
 
             var report = new SavingKhatavaniReportDto
             {

@@ -42,6 +42,7 @@ const getTodayDate = () => {
 
 export default function DaybookSummary() {
   const { user } = useAuth();
+  const [voucherStatus, setVoucherStatus] = useState<'approved' | 'pending' | 'all'>('approved');
   const [fromDate, setFromDate] = useState<string>(getTodayDate());
   const [toDate, setToDate] = useState<string>(getTodayDate());
   const [pages, setPages] = useState<{ date: string; data: DaybookSummaryResponseDto }[]>([]);
@@ -64,7 +65,7 @@ export default function DaybookSummary() {
   useEffect(() => {
     fetchBranches();
     fetchSansthaName();
-    fetchReport();
+    fetchReport('approved');
   }, []);
 
   useEffect(() => {
@@ -103,12 +104,13 @@ export default function DaybookSummary() {
     }
   };
 
-  const fetchReport = async () => {
+  const fetchReport = async (overrideStatus?: 'approved' | 'pending' | 'all') => {
     setLoading(true);
     setError(null);
 
+    const activeStatus = overrideStatus || voucherStatus;
     try {
-      let url = `/api/Reports/DaybookSummaryBatch?date=${fromDate}&toDate=${toDate}`;
+      let url = `/api/Reports/DaybookSummaryBatch?date=${fromDate}&toDate=${toDate}&voucherStatus=${activeStatus}`;
       if (selectedBranchId !== 'all') {
         url += `&branchId=${selectedBranchId}`;
       }
@@ -128,7 +130,7 @@ export default function DaybookSummary() {
         }
       } else if (response.status === 404) {
         // Fallback to single summary endpoint if batch endpoint is not available
-        let fallbackUrl = `/api/Reports/DaybookSummary?date=${fromDate}&toDate=${toDate}`;
+        let fallbackUrl = `/api/Reports/DaybookSummary?date=${fromDate}&toDate=${toDate}&voucherStatus=${activeStatus}`;
         if (selectedBranchId !== 'all') {
           fallbackUrl += `&branchId=${selectedBranchId}`;
         }
@@ -310,6 +312,30 @@ export default function DaybookSummary() {
           {/* Center: Integrated Inline Filter Inputs */}
           <div className="flex flex-wrap items-center gap-1.5 flex-1 justify-end sm:justify-center">
             
+            {/* Daybook Mode / Voucher Status */}
+            <div className="w-44 sm:w-56">
+              <select
+                value={voucherStatus}
+                onChange={e => {
+                  const newStatus = e.target.value as 'approved' | 'pending' | 'all';
+                  setVoucherStatus(newStatus);
+                  fetchReport(newStatus);
+                }}
+                className={`h-6 border rounded-sm px-1.5 text-[11px] font-bold focus:outline-none focus:ring-1 w-full transition-colors cursor-pointer ${
+                  voucherStatus === 'pending'
+                    ? 'border-amber-500 text-amber-900 bg-amber-50 focus:border-amber-600 focus:ring-amber-500'
+                    : voucherStatus === 'all'
+                    ? 'border-indigo-500 text-indigo-900 bg-indigo-50 focus:border-indigo-600 focus:ring-indigo-500'
+                    : 'border-emerald-600 text-emerald-900 bg-emerald-50 focus:border-emerald-700 focus:ring-emerald-600'
+                }`}
+                title="सारांश प्रकार निवडा (पक्की / कच्ची / एकत्रित)"
+              >
+                <option value="approved">१. पक्की रोजकीर्द सारांश (मंजूर / Posted)</option>
+                <option value="pending">२. कच्ची रोजकीर्द सारांश (पासिंग पूर्व / Draft)</option>
+                <option value="all">३. एकत्रित रोजकीर्द सारांश (सर्व / Combined)</option>
+              </select>
+            </div>
+
             {/* Branch */}
             <div className="flex items-center gap-1">
               <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">शाखा:</label>
@@ -350,7 +376,7 @@ export default function DaybookSummary() {
 
             {/* View Button */}
             <button
-              onClick={fetchReport}
+              onClick={() => fetchReport()}
               disabled={loading}
               className="h-6 bg-primary hover:opacity-90 text-white px-2.5 rounded-sm text-[11px] font-bold shadow-2xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
             >
@@ -383,6 +409,22 @@ export default function DaybookSummary() {
 
       </div>
 
+      {/* Amber Draft Notice Banner */}
+      {voucherStatus === 'pending' && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-sm p-2.5 mb-3 no-print text-amber-900 flex items-start gap-2 shadow-xs">
+          <span className="text-base leading-none">⚠️</span>
+          <div className="flex-1 text-xs">
+            <div className="font-extrabold flex items-center gap-1.5 text-[11px]">
+              <span>कच्ची रोजकीर्द सारांश (व्हाउचर पासिंग पूर्व - DRAFT DAYBOOK SUMMARY)</span>
+              <span className="px-1.5 py-0.5 bg-amber-200 text-amber-900 font-mono text-[9px] rounded font-bold uppercase">Pre-Posting Audit Mode</span>
+            </div>
+            <p className="text-[10.5px] mt-0.5 text-amber-800 leading-normal">
+              सदर रोजकीर्द सारांशामध्ये अद्याप मंजूर न झालेली प्रलंबित (Pending) व्हाउचर्स समाविष्ट आहेत. दिवसअखेर व्हाउचर पासिंग करण्यापूर्वी खात्री करण्यासाठी हा सारांश वापरावा.
+            </p>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 text-red-700 p-3 rounded-sm mb-4 font-bold text-xs shadow-2xs border border-red-200 no-print flex items-center gap-2">
           <span>⚠️</span> {error}
@@ -402,7 +444,19 @@ export default function DaybookSummary() {
                 style={{ pageBreakAfter: idx < pages.length - 1 ? 'always' : 'auto' }}
               >
                 {/* Header Section Matching Bank Reports */}
-                <div className="border-2 border-gray-900 mb-2 p-2 relative bg-gray-50/50 print:bg-white text-center">
+                <div className={`border-2 mb-2 p-2 relative text-center ${
+                  voucherStatus === 'pending'
+                    ? 'border-amber-850 bg-amber-50/40 print:bg-white print:border-black'
+                    : 'border-gray-900 bg-gray-50/50 print:bg-white'
+                }`}>
+                  {/* Draft Watermark Stamp */}
+                  {voucherStatus === 'pending' && (
+                    <div className="border border-amber-500 bg-amber-100 text-amber-900 font-extrabold text-[9.5px] py-0.5 px-2 mb-1 rounded-xs tracking-wider uppercase flex items-center justify-between">
+                      <span>⚠️ कच्ची रोजकीर्द सारांश / व्हाउचर पासिंग पूर्व मसुदा (DRAFT PRE-POSTING SUMMARY)</span>
+                      <span className="font-mono text-[8.5px]">अंतिम पासिंग बाकी (UNPOSTED)</span>
+                    </div>
+                  )}
+
                   <div className="flex justify-between items-center text-[11px] font-bold text-gray-900 border-b border-gray-300 pb-1 mb-1.5">
                     <div><span>रजि. नं. - </span><span className="font-mono">{sansthaDetail?.registrationNo || '-'}</span></div>
                     <div><span>शाखा: </span><span className="text-primary font-bold">{getBranchName()}</span></div>
@@ -414,8 +468,18 @@ export default function DaybookSummary() {
 
                   <div className="mt-1.5 flex items-center justify-between">
                     <div className="w-24"></div>
-                    <span className="border-2 border-gray-900 font-extrabold px-6 py-0.5 bg-gray-200 print:bg-gray-100 text-xs tracking-wider text-gray-900 shadow-2xs font-serif uppercase">
-                      रोजकीर्द सारांश (DAYBOOK SUMMARY)
+                    <span className={`border-2 font-extrabold px-6 py-0.5 text-xs tracking-wider shadow-2xs font-serif uppercase ${
+                      voucherStatus === 'pending'
+                        ? 'border-amber-800 bg-amber-200 print:bg-gray-100 text-amber-950 print:text-black'
+                        : voucherStatus === 'all'
+                        ? 'border-indigo-800 bg-indigo-100 print:bg-gray-100 text-indigo-950 print:text-black'
+                        : 'border-gray-900 bg-gray-200 print:bg-gray-100 text-gray-900'
+                    }`}>
+                      {voucherStatus === 'pending'
+                        ? 'कच्ची रोजकीर्द सारांश - व्हाउचर पासिंग पूर्व (DRAFT DAYBOOK SUMMARY)'
+                        : voucherStatus === 'all'
+                        ? 'एकत्रित रोजकीर्द सारांश - मंजूर व प्रलंबित (COMBINED DAYBOOK SUMMARY)'
+                        : 'रोजकीर्द सारांश (DAYBOOK SUMMARY)'}
                     </span>
                     <div className="text-right text-[11px] font-bold text-gray-800">
                       दिनांक : <span className="font-mono">{formatDate(pageDate)}</span>

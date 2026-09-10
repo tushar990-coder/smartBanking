@@ -9,7 +9,6 @@ export interface CustomerOption {
   lastName: string;
   mobileNo?: string;
   aadhaarNo?: string;
-  memberCode?: string;
   status?: string;
 }
 
@@ -36,10 +35,9 @@ export default function CustomerSearchSelect({
   const options = React.useMemo(() => {
     if (!Array.isArray(customers)) return [];
     return customers.map((c: any) => {
-      const cId = Number(c.customerID || c.customerId || c.memberID || c.memberId || c.CustomerID || c.MemberID || 0);
+      const cId = Number(c.customerID || c.customerId || c.CustomerID || 0);
       const cif = (c.cifNo || c.cif || c.CIFNo || '').trim();
       const legacyCust = (c.legacyCustomerNo || c.LegacyCustomerNo || '').trim();
-      const code = (c.memberProfile?.memberCode || c.memberProfile?.MemberCode || c.memberCode || c.code || c.MemberCode || '').trim();
       const mobile = (c.mobileNo || c.mobile || c.MobileNo || '').trim();
       const aadhaar = (c.aadhaarNo || c.aadhaar || c.AadhaarNo || '').trim();
 
@@ -51,7 +49,6 @@ export default function CustomerSearchSelect({
       let codeParts: string[] = [];
       if (cif) codeParts.push(`CIF: ${cif}`);
       if (legacyCust) codeParts.push(`जुना CIF: ${legacyCust}`);
-      if (code && !code.startsWith('TEMP')) codeParts.push(`सभासद: ${code}`);
       if (mobile) codeParts.push(`मो.: ${mobile}`);
 
       const codeStr = codeParts.join(' | ');
@@ -65,7 +62,6 @@ export default function CustomerSearchSelect({
           customerID: cId,
           cifNo: cif,
           legacyCustomerNo: legacyCust,
-          memberCode: code,
           mobileNo: mobile,
           aadhaarNo: aadhaar,
           firstName: fName,
@@ -97,7 +93,6 @@ export default function CustomerSearchSelect({
       ${customer.fullName} 
       ${customer.cifNo || ''} 
       ${customer.legacyCustomerNo || ''} 
-      ${customer.memberCode || ''} 
       ${customer.mobileNo || ''} 
       ${customer.aadhaarNo || ''}
     `.toLowerCase();
@@ -120,7 +115,6 @@ export default function CustomerSearchSelect({
         classNamePrefix="react-select"
         formatOptionLabel={(data: any) => {
           const cust = data.customer;
-          const hasMemberCode = cust.memberCode && !cust.memberCode.startsWith('TEMP');
           return (
             <div className="flex items-center justify-between py-0.5 gap-2">
               <div className="flex items-center gap-2 flex-wrap">
@@ -130,9 +124,9 @@ export default function CustomerSearchSelect({
                     CIF: {cust.cifNo}
                   </span>
                 )}
-                {hasMemberCode && (
-                  <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded font-black flex items-center gap-1 shadow-2xs">
-                    👑 सभासद क्र.: {cust.memberCode}
+                {cust.legacyCustomerNo && (
+                  <span className="text-[10px] bg-sky-50 text-sky-700 border border-sky-200 px-1.5 py-0.5 rounded font-semibold">
+                    जुना CIF: {cust.legacyCustomerNo}
                   </span>
                 )}
               </div>

@@ -359,7 +359,7 @@ namespace Bhisi.Api.Controllers
 
                         DELETE FROM [Customers] WHERE [CustomerID] = 0;
 
-                        DECLARE @MaxIdNow INT = (SELECT ISNULL(MAX([CustomerID]), 1) FROM [Customers]);
+                        DECLARE @MaxIdNow INT = (SELECT ISNULL(MAX([CustomerID]), 0) FROM [Customers]);
                         DBCC CHECKIDENT ('Customers', RESEED, @MaxIdNow);
                     END;
 
@@ -662,9 +662,9 @@ namespace Bhisi.Api.Controllers
                 try
                 {
                     var maxRemainingId = await _context.Customers.MaxAsync(c => (int?)c.CustomerID) ?? 0;
-                    if (id > maxRemainingId)
+                    if (id >= maxRemainingId)
                     {
-                        int reseedVal = maxRemainingId > 0 ? maxRemainingId : 1;
+                        int reseedVal = maxRemainingId;
                         await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('Customers', RESEED, {reseedVal});");
                     }
                 }

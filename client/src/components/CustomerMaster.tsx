@@ -4,11 +4,12 @@ import {
   Check, Eye, RefreshCw, UserCheck2, ShieldAlert, Download, CreditCard, Sparkles, 
   Inbox, CheckCircle2, Clock, XCircle, AlertCircle, Plus, Phone, Calendar, 
   Layers, UploadCloud, Maximize2, ShieldCheck, FileBadge, RotateCcw, Award, CheckSquare,
-  Building2, BookOpen
+  Building2, BookOpen, FileSpreadsheet
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { transliterateMarathi } from '../utils/transliterateMarathi';
 import DeceasedClaimSettlementModal from './DeceasedClaimSettlementModal';
+import CustomerBulkEntry from './CustomerBulkEntry';
 
 interface Customer {
   customerID: number;
@@ -69,7 +70,7 @@ interface Branch {
   branchName: string;
 }
 
-export default function CustomerMaster() {
+export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const { user } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -77,6 +78,7 @@ export default function CustomerMaster() {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isListModalOpen, setIsListModalOpen] = useState(false);
+  const [isBulkEntryOpen, setIsBulkEntryOpen] = useState(false);
 
   const [photoUploading, setPhotoUploading] = useState(false);
   const [signUploading, setSignUploading] = useState(false);
@@ -981,6 +983,18 @@ export default function CustomerMaster() {
   const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
   const inputClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';
 
+  if (isBulkEntryOpen) {
+    return (
+      <CustomerBulkEntry
+        onBack={() => setIsBulkEntryOpen(false)}
+        onNavigateToCustomers={() => {
+          setIsBulkEntryOpen(false);
+          fetchCustomers();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="p-2 sm:p-3 max-w-6xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
       
@@ -1050,6 +1064,23 @@ export default function CustomerMaster() {
           >
             <Plus className="w-3.5 h-3.5" />
             <span>नवीन नोंद</span>
+          </button>
+
+          {/* BULK CUSTOMER ENTRY BUTTON */}
+          <button
+            type="button"
+            onClick={() => {
+              if (onNavigate) {
+                onNavigate('customer-bulk');
+              } else {
+                setIsBulkEntryOpen(true);
+              }
+            }}
+            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+            title="एकाच स्क्रीनवर १००+ ग्राहक Excel सारखे भरा"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>⚡ बल्क ग्राहक नोंदणी (Excel Grid)</span>
           </button>
 
           {/* VIEW LIST BUTTON -> Opens Pop-up List Modal */}

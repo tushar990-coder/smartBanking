@@ -142,6 +142,23 @@ namespace Bhisi.Api.Models
         [MaxLength(20)]
         public string Status { get; set; } = "Active";
 
+        // Regulatory & Compliance Fields
+        [MaxLength(30)]
+        public string CustomerType { get; set; } = "Individual";
+
+        [MaxLength(20)]
+        public string KYCStatus { get; set; } = "Verified";
+
+        [MaxLength(14)]
+        public string? CKYCNo { get; set; }
+
+        [MaxLength(20)]
+        public string RiskCategory { get; set; } = "Low";
+
+        public int? HomeBranchID { get; set; }
+
+        public long? ImportBatchID { get; set; }
+
         public int? EmployerId { get; set; }
 
         [ForeignKey("EmployerId")]

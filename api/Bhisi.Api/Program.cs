@@ -11,7 +11,23 @@ Log.Logger = new LoggerConfiguration()
 try
 {
     Log.Information("Starting web application");
+    LoadEnvFile();
     var builder = WebApplication.CreateBuilder(args);
+
+    var envOnlineDb = Environment.GetEnvironmentVariable("OnlineDB")
+        ?? Environment.GetEnvironmentVariable("ConnectionStrings__OnlineDB");
+    if (!string.IsNullOrWhiteSpace(envOnlineDb))
+    {
+        builder.Configuration["ConnectionStrings:OnlineDB"] = envOnlineDb;
+        builder.Configuration["ConnectionStrings:DefaultConnection"] = envOnlineDb;
+    }
+
+    var envConnStr = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
+        ?? Environment.GetEnvironmentVariable("DefaultConnection");
+    if (!string.IsNullOrWhiteSpace(envConnStr))
+    {
+        builder.Configuration["ConnectionStrings:DefaultConnection"] = envConnStr;
+    }
 
     builder.Host.UseSerilog();
 
@@ -202,6 +218,14 @@ using (var scope = app.Services.CreateScope())
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Vouchers]') AND name = 'ScrollNo')
                 BEGIN
                     ALTER TABLE [Vouchers] ADD [ScrollNo] int NULL;
+                END
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingAccountClosings')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingAccountClosings]') AND name = 'CustomerID')
+                BEGIN
+                    ALTER TABLE [SavingAccountClosings] ADD [CustomerID] int NULL;
                 END
             END
 
@@ -405,6 +429,82 @@ using (var scope = app.Services.CreateScope())
                 BEGIN
                     ALTER TABLE [SansthaDetails] ADD [IsPanCompulsory] bit NOT NULL DEFAULT 0;
                 END
+            END
+
+            -- -----------------------------------------------------------------------------------------
+            -- CUSTOMER BULK & CIF SEQUENCE MODULE SELF-HEALING
+            -- -----------------------------------------------------------------------------------------
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'CifSequences')
+            BEGIN
+                CREATE TABLE [CifSequences] (
+                    [SequenceID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [SequenceCode] nvarchar(50) NOT NULL UNIQUE,
+                    [Prefix] nvarchar(10) NOT NULL DEFAULT 'CIF',
+                    [CurrentValue] bigint NOT NULL DEFAULT 0,
+                    [PaddingLength] int NOT NULL DEFAULT 6,
+                    [LastUpdated] datetime2 NOT NULL DEFAULT GETUTCDATE()
+                );
+            END
+
+            -- Seed CifSequences with current max numeric CIF in Customers table
+            IF NOT EXISTS (SELECT 1 FROM [CifSequences] WHERE [SequenceCode] = 'CORE_CIF_SEQ')
+            BEGIN
+                DECLARE @InitialCifNum bigint = 0;
+                SELECT @InitialCifNum = ISNULL(MAX(CAST(SUBSTRING([CIFNo], 4, 10) AS bigint)), 0)
+                FROM [Customers]
+                WHERE [CIFNo] LIKE 'CIF%' AND ISNUMERIC(SUBSTRING([CIFNo], 4, 10)) = 1;
+
+                INSERT INTO [CifSequences] ([SequenceCode], [Prefix], [CurrentValue], [PaddingLength], [LastUpdated])
+                VALUES ('CORE_CIF_SEQ', 'CIF', @InitialCifNum, 6, GETUTCDATE());
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'CustomerImportBatches')
+            BEGIN
+                CREATE TABLE [CustomerImportBatches] (
+                    [BatchID] bigint IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [BatchNumber] nvarchar(50) NOT NULL UNIQUE,
+                    [FileName] nvarchar(255) NOT NULL DEFAULT 'DirectGridEntry',
+                    [InputMode] nvarchar(20) NOT NULL DEFAULT 'DirectGrid',
+                    [InstitutionID] int NOT NULL DEFAULT 1,
+                    [HomeBranchID] int NOT NULL DEFAULT 1,
+                    [TotalRecords] int NOT NULL DEFAULT 0,
+                    [ValidRecords] int NOT NULL DEFAULT 0,
+                    [InvalidRecords] int NOT NULL DEFAULT 0,
+                    [ImportedRecords] int NOT NULL DEFAULT 0,
+                    [SkippedRecords] int NOT NULL DEFAULT 0,
+                    [Status] nvarchar(30) NOT NULL DEFAULT 'Completed',
+                    [MakerUserID] int NOT NULL DEFAULT 1,
+                    [MakerUsername] nvarchar(100) NOT NULL DEFAULT 'System',
+                    [SubmittedOn] datetime2 NOT NULL DEFAULT GETUTCDATE(),
+                    [CheckerUserID] int NULL,
+                    [CheckerUsername] nvarchar(100) NULL,
+                    [ApprovedOn] datetime2 NULL,
+                    [StartCif] nvarchar(20) NULL,
+                    [EndCif] nvarchar(20) NULL,
+                    [ExecutionTimeMs] bigint NOT NULL DEFAULT 0,
+                    [RolledBackBy] int NULL,
+                    [RolledBackUsername] nvarchar(100) NULL,
+                    [RolledBackOn] datetime2 NULL,
+                    [RollbackReason] nvarchar(500) NULL,
+                    [SummaryJson] nvarchar(max) NULL,
+                    [ErrorLogJson] nvarchar(max) NULL,
+                    [CreatedOn] datetime2 NOT NULL DEFAULT GETUTCDATE()
+                );
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'CustomerImportBatches')
+            BEGIN
+                IF COL_LENGTH('CustomerImportBatches', 'MergedRecords') IS NULL ALTER TABLE [CustomerImportBatches] ADD [MergedRecords] int NOT NULL DEFAULT 0;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Customers')
+            BEGIN
+                IF COL_LENGTH('Customers', 'CustomerType') IS NULL ALTER TABLE [Customers] ADD [CustomerType] nvarchar(30) NOT NULL DEFAULT 'Individual';
+                IF COL_LENGTH('Customers', 'KYCStatus') IS NULL ALTER TABLE [Customers] ADD [KYCStatus] nvarchar(20) NOT NULL DEFAULT 'Verified';
+                IF COL_LENGTH('Customers', 'CKYCNo') IS NULL ALTER TABLE [Customers] ADD [CKYCNo] nvarchar(14) NULL;
+                IF COL_LENGTH('Customers', 'RiskCategory') IS NULL ALTER TABLE [Customers] ADD [RiskCategory] nvarchar(20) NOT NULL DEFAULT 'Low';
+                IF COL_LENGTH('Customers', 'HomeBranchID') IS NULL ALTER TABLE [Customers] ADD [HomeBranchID] int NULL;
+                IF COL_LENGTH('Customers', 'ImportBatchID') IS NULL ALTER TABLE [Customers] ADD [ImportBatchID] bigint NULL;
             END
 
             -- -----------------------------------------------------------------------------------------
@@ -873,6 +973,14 @@ using (var scope = app.Services.CreateScope())
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingInterestSettings]') AND name = 'InterestPayableLedgerID')
                 BEGIN
                     ALTER TABLE [SavingInterestSettings] ADD [InterestPayableLedgerID] int NULL;
+                END
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAccounts')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'LastInterestPostingDate')
+                BEGIN
+                    ALTER TABLE [FdAccounts] ADD [LastInterestPostingDate] datetime2 NULL;
                 END
             END
 
@@ -2076,6 +2184,62 @@ finally
     Log.CloseAndFlush();
 }
 
+static void LoadEnvFile()
+{
+    try
+    {
+        var candidates = new List<string>
+        {
+            Path.Combine(Directory.GetCurrentDirectory(), ".env"),
+            Path.Combine(Directory.GetCurrentDirectory(), "api", "Bhisi.Api", ".env"),
+            Path.Combine(AppContext.BaseDirectory, ".env"),
+            Path.Combine(AppContext.BaseDirectory, "api", "Bhisi.Api", ".env")
+        };
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (int i = 0; i < 5 && dir != null; i++)
+        {
+            candidates.Add(Path.Combine(dir.FullName, ".env"));
+            candidates.Add(Path.Combine(dir.FullName, "api", "Bhisi.Api", ".env"));
+            dir = dir.Parent;
+        }
+
+        string? targetEnv = candidates.Distinct(StringComparer.OrdinalIgnoreCase).FirstOrDefault(File.Exists);
+        if (!string.IsNullOrEmpty(targetEnv))
+        {
+            int loadedCount = 0;
+            foreach (var rawLine in File.ReadAllLines(targetEnv))
+            {
+                var line = rawLine.Trim();
+                if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#") || line.StartsWith("//"))
+                    continue;
+
+                var idx = line.IndexOf('=');
+                if (idx > 0)
+                {
+                    var key = line.Substring(0, idx).Trim();
+                    var val = line.Substring(idx + 1).Trim().Trim('"', '\'');
+                    Environment.SetEnvironmentVariable(key, val);
+                    loadedCount++;
+                }
+            }
+
+            if (loadedCount > 0)
+            {
+                Log.Information(".env loaded successfully from '{EnvPath}' ({Count} active variables).", targetEnv, loadedCount);
+            }
+            else
+            {
+                Log.Information(".env detected at '{EnvPath}' (all entries commented / local mode active).", targetEnv);
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Warning("Could not load .env file: {Message}", ex.Message);
+    }
+}
+
 static string ResolveWorkingConnectionString(string configuredConnStr)
 {
     try
@@ -2084,6 +2248,36 @@ static string ResolveWorkingConnectionString(string configuredConnStr)
         string originalServer = string.IsNullOrWhiteSpace(builder.DataSource) ? "." : builder.DataSource;
         string targetDb = string.IsNullOrWhiteSpace(builder.InitialCatalog) ? "SmartBanking_Gurudev" : builder.InitialCatalog;
 
+        bool isLocalServer = originalServer.Equals(".", StringComparison.OrdinalIgnoreCase)
+            || originalServer.Equals("(local)", StringComparison.OrdinalIgnoreCase)
+            || originalServer.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || originalServer.StartsWith(@".\", StringComparison.OrdinalIgnoreCase)
+            || originalServer.StartsWith(@"localhost\", StringComparison.OrdinalIgnoreCase)
+            || originalServer.StartsWith(@"(local)\", StringComparison.OrdinalIgnoreCase);
+
+        if (!isLocalServer)
+        {
+            // Remote / Cloud / VPS SQL Server
+            Log.Information("Connecting directly to remote SQL Server instance '{Server}' for database '{Database}'...", originalServer, targetDb);
+            try
+            {
+                var remoteBuilder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(configuredConnStr)
+                {
+                    ConnectTimeout = 30
+                };
+                using var conn = new Microsoft.Data.SqlClient.SqlConnection(remoteBuilder.ConnectionString);
+                conn.Open();
+                Log.Information("SQL Server connection verified on remote instance '{Server}' for database '{Database}'.", originalServer, targetDb);
+                return remoteBuilder.ConnectionString;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to connect to remote SQL Server '{Server}' database '{Database}': {Message}", originalServer, targetDb, ex.Message);
+                return configuredConnStr;
+            }
+        }
+
+        // Local candidate fallback chain
         string[] candidateServers = new[] { originalServer, @".\SQLEXPRESS", @".", @"(local)", @"localhost", @"localhost\SQLEXPRESS" }
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();

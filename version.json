@@ -1,8 +1,9 @@
 {
-  "version": "2.4.5",
+  "version": "2.4.6",
   "releaseDate": "2026-09-08",
-  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.4.5",
+  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.4.6",
   "changelog": [
+    "⭐ [2026-09-08] कर्ज हप्ता वेळापत्रक एकत्रीकरण (Loan Schedule Unified): कर्ज आरंभिक शिल्लक नोंदणी आणि कर्ज अर्ज नोंदणी व मंजुरी या दोन्ही ठिकाणी ६ रकान्यांचा हप्ता चार्ट (बाकी शिल्लक रकान्यासह) व गणन पद्धती १००% एकसमान.",
     "⭐ [2026-09-08] मुदत ठेव (Fixed Deposit - FD) 100% Pure CIF-First: FdAccounts मधून MemberID कायमस्वरूपी वगळला, CustomerID अनिवार्य (NOT NULL), खाते उघडणे, मुदत समाप्ती, नूतनीकरण व मुदतपूर्व बंद सर्व व्हाउचर्समध्ये CustomerID सब-लेजर टॅगिंग व परिपूर्ण Dr == Cr संतुलन.",
     "⭐ [2026-09-08] आवर्ती ठेव (Recurring Deposit - RD) 100% Pure CIF-First: RdAccounts मधून MemberID ड्रॉप, CustomerID NOT NULL व संयुक्त खातेदारासाठी JointCustomerID लागू. हप्ता संकलन, व्याज तरतूद (Accrual), मुदतपूर्व बंद व FD नूतनीकरण सर्व ठिकाणी संतुलित व्हाउचर्स.",
     "⭐ [2026-09-08] ऑडिट व सीबीएस मानके (Audit & CBS Compliance): सर्व व्हाउचर्समध्ये CustomerID अनिवार्य व सभासद लिंक असल्यास MemberID सब-लेजर नोंद. Customer 360 अहवाल व ३४ स्वयंचलित QA टेस्ट १००% यशस्वी (0 Errors).",

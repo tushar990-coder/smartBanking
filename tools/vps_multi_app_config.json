@@ -27,13 +27,6 @@
       "FrontendFolderPath": "D:\\WebApps\\Testing\\testing.hellomindspace.in"
     },
     {
-      "SansthaName": "Shree Gurudev Nagari Sahakari PatSanstha (Gurudev)",
-      "TargetDatabase": "SmartBanking_Gurudev",
-      "IISAppPoolName": "apigurudev",
-      "BackendFolderPath": "D:\\WebApps\\Gurudev\\api.gurudev.hellomindspace.in",
-      "FrontendFolderPath": "D:\\WebApps\\Gurudev\\gurudev.hellomindspace.in"
-    },
-    {
       "SansthaName": "Shree Maharshi Shamrao Patil Yadravkar gramin BigarshetiSahakari Patsanstha Maryadit Yadrav",
       "TargetDatabase": "SmartBanking_maharshiyadravkar",
       "IISAppPoolName": "maharshiyadravkar-backend",
@@ -46,6 +39,13 @@
       "IISAppPoolName": "ritemp-backend",
       "BackendFolderPath": "D:\\WebApps\\ritemp\\backend",
       "FrontendFolderPath": "D:\\WebApps\\ritemp\\frontend"
+    },    
+    {
+      "SansthaName": "Template",
+      "TargetDatabase": "SmartBanking_Template",
+      "IISAppPoolName": "",
+      "BackendFolderPath": "D:\\WebApps\\_template\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\_template\\frontend"
     }
   ]
 }

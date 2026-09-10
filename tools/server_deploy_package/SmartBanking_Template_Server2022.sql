@@ -1,3 +1,17 @@
+USE master;
+GO
+IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = N'SmartBanking_Template')
+BEGIN
+    CREATE DATABASE [SmartBanking_Template];
+    PRINT 'Database [SmartBanking_Template] created successfully.';
+END
+ELSE
+BEGIN
+    PRINT 'Database [SmartBanking_Template] already exists.';
+END
+GO
+USE [SmartBanking_Template];
+GO
 -- =========================================================================================
 -- SmartBanking Core ERP - 100% Pure Template Database Deployment Script
 -- Database Name   : SmartBanking_Template
@@ -4169,6 +4183,76 @@ GO
 
 -- Execute once to establish triggers
 EXEC [dbo].[sp_SyncDatabaseIdentities];
+GO
+
+-- -----------------------------------------------------------------------------------------
+-- View: [dbo].[vw_Members] (Backward Compatibility & Normalized Demographic Join)
+-- -----------------------------------------------------------------------------------------
+IF OBJECT_ID('dbo.[vw_Members]', 'V') IS NOT NULL
+    DROP VIEW dbo.[vw_Members];
+GO
+
+CREATE VIEW [dbo].[vw_Members]
+AS
+SELECT 
+    m.MemberID,
+    m.CustomerID,
+    m.BranchID,
+    m.MemberCode,
+    m.LegacyMemberNo,
+    m.MembershipType,
+    m.JoiningDate,
+    m.Status,
+    m.IsDeleted,
+    m.CreatedBy,
+    m.CreatedOn,
+    m.UpdatedBy,
+    m.UpdatedOn,
+    c.CIFNo,
+    c.FirstName,
+    c.MiddleName,
+    c.LastName,
+    c.NickName,
+    c.FirstNameEng,
+    c.MiddleNameEng,
+    c.LastNameEng,
+    c.Address,
+    c.AddressEng,
+    c.Village,
+    c.Taluka,
+    c.District,
+    c.MobileNo,
+    c.AadhaarNo,
+    c.PANNo,
+    c.PhotoPath,
+    c.SignaturePath,
+    c.AadhaarDocPath,
+    c.PanDocPath,
+    c.Gender,
+    c.BirthDate,
+    c.Occupation,
+    c.CasteCategory,
+    c.Caste,
+    c.Email,
+    c.EmployerId,
+    c.IsMinor,
+    c.GuardianName,
+    c.GuardianNameEng,
+    c.GuardianRelation,
+    c.GuardianAadhaarNo,
+    c.GuardianMobileNo,
+    c.GuardianAddress,
+    c.NomineeName,
+    c.NomineeNameEng,
+    c.NomineeRelation,
+    c.NomineeAddress,
+    c.NomineeBirthDate,
+    c.NomineeIsMinor,
+    c.NomineeGuardianName
+FROM [dbo].[Members] m
+INNER JOIN [dbo].[Customers] c ON m.CustomerID = c.CustomerID;
+GO
+PRINT 'Created view [vw_Members]';
 GO
 
 -- =========================================================================================

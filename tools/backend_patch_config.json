@@ -1,0 +1,35 @@
+{
+  "Description": "Configuration for Backend API Patch Deployment. Only enabled targets will be updated.",
+  "Targets": [
+    {
+      "SansthaName": "Shree Jotirling Nagari Sahakari PatSanstha (Padawalwadi)",
+      "IISAppPoolName": "padvalwadi-backend",
+      "BackendFolderPath": "D:\\WebApps\\padvalwadi\\backend",
+      "Enabled": false
+    },
+    {
+      "SansthaName": "Shree Bambawade Nagari Sahakari PatSanstha (Bambavade)",
+      "IISAppPoolName": "apibambavade",
+      "BackendFolderPath": "D:\\WebApps\\bambavade\\api.bambavade.hellomindspace.in",
+      "Enabled": false
+    },
+    {
+      "SansthaName": "Testing Environment",
+      "IISAppPoolName": "apitesting",
+      "BackendFolderPath": "D:\\WebApps\\Testing\\api.testing.hellomindspace.in",
+      "Enabled": false
+    },
+    {
+      "SansthaName": "Shree Maharshi Shamrao Patil Yadravkar",
+      "IISAppPoolName": "maharshiyadravkar-backend",
+      "BackendFolderPath": "D:\\WebApps\\maharshiyadravkar\\backend",
+      "Enabled": false
+    },
+    {
+      "SansthaName": "Abhiyantriki Tantraniketan Sevkanchi Sahakari Karmachari Patsanstha",
+      "IISAppPoolName": "ritemp-backend",
+      "BackendFolderPath": "D:\\WebApps\\ritemp\\backend",
+      "Enabled": false
+    }
+  ]
+}

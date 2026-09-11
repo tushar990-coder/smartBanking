@@ -31,7 +31,9 @@ namespace Bhisi.Api.Controllers
         [HttpPost("Login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
-            var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.MobileNo == request.MobileNo && a.Status == "Active");
+            var agent = await _context.PigmyAgents
+                .Include(a => a.Customer)
+                .FirstOrDefaultAsync(a => a.Customer != null && a.Customer.MobileNo == request.MobileNo && a.Status == "Active");
             if (agent == null)
             {
                 return Unauthorized("Invalid Mobile Number or Inactive Agent.");
@@ -43,7 +45,7 @@ namespace Bhisi.Api.Controllers
             {
                 agentId = agent.PigmyAgentID,
                 agentName = agent.AgentName,
-                mobileNo = agent.MobileNo,
+                mobileNo = agent.Customer?.MobileNo ?? string.Empty,
                 token = $"temp-token-agent-{agent.PigmyAgentID}"
             });
         }

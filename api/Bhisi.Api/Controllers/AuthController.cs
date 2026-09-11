@@ -68,7 +68,8 @@ namespace Bhisi.Api.Controllers
                     // Check if logging in as Pigmy Agent
                     var agent = await _context.PigmyAgents
                         .Include(a => a.Branch)
-                        .FirstOrDefaultAsync(a => (a.MobileNo == request.Username || a.AgentName == request.Username) && a.Status == "Active");
+                        .Include(a => a.Customer)
+                        .FirstOrDefaultAsync(a => (a.Username == request.Username || (a.Customer != null && a.Customer.MobileNo == request.Username) || a.AgentName == request.Username) && a.Status == "Active");
 
                     if (agent != null)
                     {
@@ -107,7 +108,7 @@ namespace Bhisi.Api.Controllers
                                 new Claim(ClaimTypes.Role, "AGENT"),
                                 new Claim("agentId", agent.PigmyAgentID.ToString()),
                                 new Claim("AgentId", agent.PigmyAgentID.ToString()),
-                                new Claim("MobileNo", agent.MobileNo),
+                                new Claim("MobileNo", agent.Customer?.MobileNo ?? string.Empty),
                                 new Claim("BranchID", agentBranch.BranchID.ToString()),
                                 new Claim("FinancialYearID", (agentFy?.FinancialYearID ?? 1).ToString())
                             }),
@@ -123,7 +124,7 @@ namespace Bhisi.Api.Controllers
                             Username = agent.AgentName,
                             Role = "AGENT",
                             AgentId = agent.PigmyAgentID,
-                            MobileNo = agent.MobileNo,
+                            MobileNo = agent.Customer?.MobileNo ?? string.Empty,
                             BranchID = agentBranch.BranchID,
                             BranchName = agentBranch.BranchName,
                             FinancialYearID = agentFy?.FinancialYearID ?? 1,

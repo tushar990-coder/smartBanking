@@ -40,6 +40,7 @@ namespace Bhisi.Api.Controllers
         {
             return await _context.PigmyAgents
                 .Include(a => a.Branch)
+                .Include(a => a.Customer)
                 .ToListAsync();
         }
 
@@ -49,6 +50,7 @@ namespace Bhisi.Api.Controllers
         {
             var pigmyAgent = await _context.PigmyAgents
                 .Include(a => a.Branch)
+                .Include(a => a.Customer)
                 .FirstOrDefaultAsync(a => a.PigmyAgentID == id);
 
             if (pigmyAgent == null)
@@ -75,10 +77,18 @@ namespace Bhisi.Api.Controllers
             }
 
             existing.AgentName = pigmyAgent.AgentName;
-            existing.MobileNo = pigmyAgent.MobileNo;
             existing.JoiningDate = pigmyAgent.JoiningDate;
             existing.Status = pigmyAgent.Status;
             existing.BranchID = pigmyAgent.BranchID;
+            existing.CustomerID = pigmyAgent.CustomerID;
+            existing.Username = pigmyAgent.Username;
+            existing.MaxCashLimit = pigmyAgent.MaxCashLimit;
+            existing.MaxLockDays = pigmyAgent.MaxLockDays;
+
+            if (!string.IsNullOrEmpty(pigmyAgent.Password))
+            {
+                existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword(pigmyAgent.Password);
+            }
 
             try
             {
@@ -100,6 +110,12 @@ namespace Bhisi.Api.Controllers
                 pigmyAgent.JoiningDate = DateTime.Today;
             }
             pigmyAgent.CreatedDate = DateTime.Now;
+
+            if (!string.IsNullOrEmpty(pigmyAgent.Password))
+            {
+                pigmyAgent.PasswordHash = BCrypt.Net.BCrypt.HashPassword(pigmyAgent.Password);
+            }
+
             _context.PigmyAgents.Add(pigmyAgent);
             await _context.SaveChangesAsync();
 

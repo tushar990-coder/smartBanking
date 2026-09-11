@@ -59,10 +59,41 @@ namespace Bhisi.Api.Services
             if (pendingCash < 0) pendingCash = 0m;
 
             bool isLocked = pendingCash > maxLimit;
-
             string message = isLocked
                 ? $"Agent locked. Pending cash (₹{pendingCash:N2}) exceeds ₹{maxLimit:N2} limit. Please remit cash to branch."
                 : "Agent active and allowed to collect.";
+
+            // 3. Time Rule: Lock if there are pending cash collections older than MaxLockDays
+            if (!isLocked && pendingCash > 0)
+            {
+                var lastDepositDate = await _context.PigmyAgentCashDeposits
+                    .Where(d => d.AgentId == agentId)
+                    .OrderByDescending(d => d.DepositDate)
+                    .Select(d => (DateTime?)d.DepositDate)
+                    .FirstOrDefaultAsync();
+
+                var unremittedCollectionsQuery = _context.PigmyCollections
+                    .Where(c => c.AgentId == agentId && (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"));
+
+                if (lastDepositDate.HasValue)
+                {
+                    unremittedCollectionsQuery = unremittedCollectionsQuery.Where(c => c.CollectionDate > lastDepositDate.Value);
+                }
+
+                var oldestUnremittedCollectionDate = await unremittedCollectionsQuery
+                    .OrderBy(c => c.CollectionDate)
+                    .Select(c => (DateTime?)c.CollectionDate)
+                    .FirstOrDefaultAsync();
+
+                if (oldestUnremittedCollectionDate.HasValue)
+                {
+                    if ((DateTime.UtcNow - oldestUnremittedCollectionDate.Value).TotalDays >= agent.MaxLockDays)
+                    {
+                        isLocked = true;
+                        message = $"Agent locked. You have pending cash collections older than {agent.MaxLockDays} days. Please remit pending cash (₹{pendingCash:N2}) to branch.";
+                    }
+                }
+            }
 
             return new AgentLockStatusResult
             {

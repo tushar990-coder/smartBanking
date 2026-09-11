@@ -15,15 +15,17 @@ import {
   RotateCcw,
   Save,
   AlertTriangle,
-  X
+  X,
+  Eye,
+  EyeOff
 } from 'lucide-react';
+import CustomerSearchSelect from './common/CustomerSearchSelect';
 
 interface PigmyAgent {
   pigmyAgentID?: number;
   pigmyAgentId?: number;
   id?: number;
   agentName: string;
-  mobileNo: string;
   joiningDate?: string;
   status: string;
   branchID?: number;
@@ -32,8 +34,13 @@ interface PigmyAgent {
     branchName: string;
     branchCode: string;
   };
+  customerID?: number;
   createdBy?: number;
   createdDate?: string;
+  username?: string;
+  password?: string;
+  maxCashLimit?: number;
+  maxLockDays?: number;
 }
 
 interface Branch {
@@ -59,18 +66,29 @@ export default function PigmyAgentMaster() {
   const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('ALL');
   const [editingAgentId, setEditingAgentId] = useState<number | null>(null);
   const [deleteDependencyModal, setDeleteDependencyModal] = useState<DeleteDependencyInfo | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const formContainerRef = useRef<HTMLDivElement>(null);
   const agentNameInputRef = useRef<HTMLInputElement>(null);
   
+  const [customers, setCustomers] = useState<any[]>([]);
+
   const [formData, setFormData] = useState({
+    customerID: '',
     agentName: '',
-    mobileNo: '',
+    username: '',
+    password: '',
     joiningDate: new Date().toISOString().split('T')[0],
     status: 'Active',
-    branchID: '' as number | string
+    branchID: '' as number | string,
+    maxCashLimit: 20000,
+    maxLockDays: 2
   });
 
-  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4500);
+  };
 
   const getAgentId = (agent: PigmyAgent): number => {
     return agent.pigmyAgentID ?? agent.pigmyAgentId ?? agent.id ?? 0;
@@ -98,6 +116,17 @@ export default function PigmyAgentMaster() {
     }
   };
 
+  const fetchCustomers = async () => {
+    try {
+      const response = await axios.get('/api/Customers');
+      if (response.data) {
+        setCustomers(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch customers', error);
+    }
+  };
+
   const fetchAgents = async () => {
     setLoading(true);
     try {
@@ -111,7 +140,7 @@ export default function PigmyAgentMaster() {
         loadedAgents = agentsRes.data;
         setAgents(loadedAgents);
       } else {
-        setMessage({ type: 'error', text: 'एजंट लिस्ट लोड करताना त्रुटी आली.' });
+        showToast('एजंट लिस्ट लोड करताना त्रुटी आली.');
       }
 
       if (nextIdRes.data && nextIdRes.data.nextId) {
@@ -122,7 +151,7 @@ export default function PigmyAgentMaster() {
       }
     } catch (error) {
       console.error('Failed to fetch agents', error);
-      setMessage({ type: 'error', text: 'सर्व्हरशी संपर्क होऊ शकला नाही.' });
+      showToast('सर्व्हरशी संपर्क होऊ शकला नाही.');
     } finally {
       setLoading(false);
     }
@@ -131,16 +160,21 @@ export default function PigmyAgentMaster() {
   useEffect(() => {
     fetchAgents();
     fetchBranches();
+    fetchCustomers();
   }, []);
 
   const resetForm = () => {
     setEditingAgentId(null);
     setFormData({
+      customerID: '',
       agentName: '',
-      mobileNo: '',
+      username: '',
+      password: '',
       joiningDate: new Date().toISOString().split('T')[0],
       status: 'Active',
-      branchID: branches.length > 0 ? branches[0].branchID : ''
+      branchID: branches.length > 0 ? branches[0].branchID : '',
+      maxCashLimit: 20000,
+      maxLockDays: 2
     });
   };
 
@@ -152,13 +186,17 @@ export default function PigmyAgentMaster() {
       : new Date().toISOString().split('T')[0];
 
     setFormData({
+      customerID: agent.customerID ? String(agent.customerID) : '',
       agentName: agent.agentName || '',
-      mobileNo: agent.mobileNo || '',
+      username: agent.username || '',
+      password: '',
       joiningDate: formattedJoinDate,
       status: agent.status || 'Active',
-      branchID: agent.branchID || agent.branch?.branchID || (branches.length > 0 ? branches[0].branchID : '')
+      branchID: agent.branchID || agent.branch?.branchID || (branches.length > 0 ? branches[0].branchID : ''),
+      maxCashLimit: agent.maxCashLimit || 20000,
+      maxLockDays: agent.maxLockDays || 2
     });
-    setMessage({ type: 'info', text: `एजंट '${agent.agentName}' (ID: ${formatAgentCode(id)}) चे डिटेल्स फॉर्ममध्ये भरले आहेत. बदल करून अपडेट बटणावर क्लिक करा.` });
+    showToast(`एजंट '${agent.agentName}' (ID: ${formatAgentCode(id)}) चे डिटेल्स फॉर्ममध्ये भरले आहेत. बदल करून अपडेट बटणावर क्लिक करा.`);
 
     if (formContainerRef.current) {
       formContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -177,7 +215,7 @@ export default function PigmyAgentMaster() {
   const handleDelete = async (agent: PigmyAgent, force: boolean = false) => {
     const id = getAgentId(agent);
     if (!id) {
-      setMessage({ type: 'error', text: 'वैध एजंट आयडी (Valid Agent ID) सापडला नाही.' });
+      showToast('वैध एजंट आयडी (Valid Agent ID) सापडला नाही.');
       return;
     }
 
@@ -189,7 +227,7 @@ export default function PigmyAgentMaster() {
       const url = `/api/PigmyAgents/${id}${force ? '?force=true' : ''}`;
       const response = await axios.delete(url);
 
-      setMessage({ type: 'success', text: response.data?.message || `एजंट '${agent.agentName}' यशस्वीरित्या हटवला गेला.` });
+      showToast(response.data?.message || `एजंट '${agent.agentName}' यशस्वीरित्या हटवला गेला.`);
       if (editingAgentId === id) {
         resetForm();
       }
@@ -207,7 +245,7 @@ export default function PigmyAgentMaster() {
           message: data.message || 'या एजंटशी इतर नोंदी जोडलेल्या आहेत.'
         });
       } else {
-        setMessage({ type: 'error', text: data?.message || 'एजंट डिलीट करताना सर्व्हर त्रुटी आली.' });
+        showToast(data?.message || 'एजंट डिलीट करताना सर्व्हर त्रुटी आली.');
       }
     }
   };
@@ -218,17 +256,16 @@ export default function PigmyAgentMaster() {
       await axios.put(`/api/PigmyAgents/${id}`, {
         pigmyAgentID: id,
         agentName: agent.agentName,
-        mobileNo: agent.mobileNo,
         joiningDate: agent.joiningDate,
         status: 'Inactive',
         branchID: agent.branchID || agent.branch?.branchID
       });
 
-      setMessage({ type: 'success', text: `एजंट '${agent.agentName}' ची स्थिती (Status) 'Inactive' करण्यात आली.` });
+      showToast(`एजंट '${agent.agentName}' ची स्थिती (Status) 'Inactive' करण्यात आली.`);
       setDeleteDependencyModal(null);
       fetchAgents();
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'एजंट इनॲक्टिव्ह करताना त्रुटी आली.' });
+      showToast(error.response?.data?.message || 'एजंट इनॲक्टिव्ह करताना त्रुटी आली.');
     }
   };
 
@@ -236,11 +273,7 @@ export default function PigmyAgentMaster() {
     e.preventDefault();
 
     if (!formData.agentName.trim()) {
-      setMessage({ type: 'error', text: 'कृपया एजंटचे नाव प्रविष्ट करा.' });
-      return;
-    }
-    if (!formData.mobileNo.trim()) {
-      setMessage({ type: 'error', text: 'कृपया मोबाईल नंबर प्रविष्ट करा.' });
+      showToast('कृपया एजंटचे नाव प्रविष्ट करा.');
       return;
     }
 
@@ -251,8 +284,8 @@ export default function PigmyAgentMaster() {
         : `/api/PigmyAgents`;
 
       const payload = isEditing 
-        ? { pigmyAgentID: editingAgentId, ...formData, branchID: formData.branchID ? Number(formData.branchID) : null }
-        : { ...formData, branchID: formData.branchID ? Number(formData.branchID) : null };
+        ? { pigmyAgentID: editingAgentId, ...formData, customerID: formData.customerID ? Number(formData.customerID) : null, branchID: formData.branchID ? Number(formData.branchID) : null }
+        : { ...formData, customerID: formData.customerID ? Number(formData.customerID) : null, branchID: formData.branchID ? Number(formData.branchID) : null };
 
       const response = isEditing 
         ? await axios.put(url, payload)
@@ -261,24 +294,22 @@ export default function PigmyAgentMaster() {
       const data = response.data || {};
       const savedId = getAgentId(data) || data.pigmyAgentID || nextAgentId;
 
-      setMessage({ 
-        type: 'success', 
-        text: isEditing 
+      showToast(
+        isEditing 
           ? `एजंट '${formData.agentName}' ची माहिती अपडेट झाली!` 
-          : `नवीन एजंट '${formData.agentName}' (${formatAgentCode(savedId)}) यशस्वीरित्या जतन (Save) झाला!` 
-      });
+          : `नवीन एजंट '${formData.agentName}' (${formatAgentCode(savedId)}) यशस्वीरित्या जतन (Save) झाला!`
+      );
       resetForm();
       fetchAgents();
     } catch (error: any) {
       console.error('Error saving agent', error);
-      setMessage({ type: 'error', text: error.response?.data?.message || 'माहिती सबमिट करताना सर्व्हर त्रुटी आली.' });
+      showToast(error.response?.data?.message || 'माहिती सबमिट करताना सर्व्हर त्रुटी आली.');
     }
   };
 
   const filteredAgents = agents.filter(agent => {
     const idStr = getAgentId(agent).toString();
     const matchesSearch = agent.agentName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      agent.mobileNo?.includes(searchTerm) ||
       idStr.includes(searchTerm);
 
     const agentBranchId = agent.branchID || agent.branch?.branchID;
@@ -289,6 +320,13 @@ export default function PigmyAgentMaster() {
 
   return (
     <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
+      {/* Custom Toast Notification - Highly Visible */}
+      {toastMessage && (
+        <div className="fixed top-4 right-4 z-[9999999] bg-slate-900 border border-slate-700 text-white px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 transition-all">
+          <AlertCircle className="w-6 h-6 text-amber-400" />
+          <span className="font-bold text-sm tracking-wide leading-relaxed">{toastMessage}</span>
+        </div>
+      )}
       
       {/* Outer Container matching Standard ERP Theme */}
       <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden flex flex-col">
@@ -316,21 +354,6 @@ export default function PigmyAgentMaster() {
         </div>
 
         <div className="p-3">
-
-          {/* Alert Message Banner */}
-          {message && (
-            <div className={`p-2.5 mb-3 rounded-sm border flex items-center gap-2 text-xs font-bold ${
-              message.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
-              message.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
-              'bg-blue-50 border-blue-200 text-blue-800'
-            }`}>
-              {message.type === 'success' && <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />}
-              {message.type === 'error' && <XCircle className="w-4 h-4 text-red-600 shrink-0" />}
-              {message.type === 'info' && <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />}
-              <div className="flex-1">{message.text}</div>
-              <button onClick={() => setMessage(null)} className="text-gray-400 hover:text-gray-600 font-bold text-sm">×</button>
-            </div>
-          )}
 
           {/* Add / Edit Form Card */}
           <div 
@@ -365,8 +388,8 @@ export default function PigmyAgentMaster() {
               )}
             </div>
 
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
-              <div>
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5">
+              <div className="md:col-span-1">
                 <label className="block text-[11px] font-bold text-gray-700 mb-0.5 flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3 text-gray-400" />
                   <span>एजंट नंबर / आयडी (Agent No)</span>
@@ -382,24 +405,43 @@ export default function PigmyAgentMaster() {
                 <span className="text-[10px] text-gray-400 block mt-0.5">Read-Only Auto Code</span>
               </div>
 
-              <div>
+              <div className="md:col-span-3">
                 <label className="block text-[11px] font-bold text-gray-700 mb-0.5 flex items-center gap-1">
+                  <UserPlus className="w-3 h-3 text-gray-400" />
                   <span>एजंटचे नाव (Agent Name) *</span>
                 </label>
-                <input 
-                  ref={agentNameInputRef}
-                  type="text" 
-                  required
-                  placeholder="उदा. राहुल पांडुरंग पाटील"
-                  className={`w-full border rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-bold ${
-                    editingAgentId !== null ? 'border-primary bg-amber-50/40' : 'border-gray-300 bg-white text-gray-900'
-                  }`}
-                  value={formData.agentName}
-                  onChange={(e) => setFormData({...formData, agentName: e.target.value})}
+                <CustomerSearchSelect
+                  customers={customers}
+                  value={formData.customerID ? Number(formData.customerID) : ''}
+                  onChange={(val) => {
+                    const selected = customers.find(c => c.customerID === val);
+                    
+                    if (val) {
+                      // Check if an agent already exists for this customer
+                      const existingAgent = agents.find(a => a.customerID === val);
+                      if (existingAgent) {
+                        handleEdit(existingAgent);
+                        showToast(`हा कस्टमर आधीपासूनच '${existingAgent.agentName}' या नावाने नोंदणीकृत आहे. आपण माहिती संपादित करत आहात.`);
+                        return;
+                      }
+                    }
+
+                    // Otherwise, reset edit mode to create a new agent
+                    setEditingAgentId(null);
+                    
+                    setFormData(prev => ({
+                      ...prev,
+                      customerID: val ? String(val) : '',
+                      agentName: selected ? (`${selected.firstName || ''} ${selected.middleName || ''} ${selected.lastName || ''}`.trim() || selected.customerName || prev.agentName) : prev.agentName,
+                      password: '', // Clear password when switching to a new user
+                      username: ''  // Clear username to prevent mixing up data
+                    }));
+                  }}
+                  placeholder="-- कस्टमर निवडा --"
                 />
               </div>
 
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-[11px] font-bold text-gray-700 mb-0.5 flex items-center gap-1">
                   <span>शाखा (Branch) *</span>
                 </label>
@@ -418,23 +460,7 @@ export default function PigmyAgentMaster() {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-0.5 flex items-center gap-1">
-                  <Phone className="w-3 h-3 text-gray-400" />
-                  <span>मोबाईल नंबर (Mobile No) *</span>
-                </label>
-                <input 
-                  type="text" 
-                  required
-                  maxLength={10}
-                  placeholder="उदा. 9876543210"
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono"
-                  value={formData.mobileNo}
-                  onChange={(e) => setFormData({...formData, mobileNo: e.target.value.replace(/\D/g, '')})}
-                />
-              </div>
-
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-[11px] font-bold text-gray-700 mb-0.5 flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3 text-gray-400" />
                   <span>स्थिती (Status)</span>
@@ -449,6 +475,87 @@ export default function PigmyAgentMaster() {
                   <option value="Suspended">Suspended (निलंबित)</option>
                 </select>
               </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-bold text-gray-700 mb-0.5 flex items-center gap-1">
+                  <span>कॅश लिमिट (Max Cash ₹)</span>
+                </label>
+                <input 
+                  type="number"
+                  min="0"
+                  step="1000"
+                  required
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-bold"
+                  value={formData.maxCashLimit}
+                  onChange={(e) => setFormData({...formData, maxCashLimit: parseInt(e.target.value) || 0})}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-bold text-gray-700 mb-0.5 flex items-center gap-1">
+                  <span>लॉक दिवस (Max Lock Days)</span>
+                </label>
+                <input 
+                  type="number"
+                  min="1"
+                  step="1"
+                  required
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-bold"
+                  value={formData.maxLockDays}
+                  onChange={(e) => setFormData({...formData, maxLockDays: parseInt(e.target.value) || 1})}
+                />
+              </div>
+
+              {/* Mobile App Login Details Section */}
+              <div className="sm:col-span-2 md:col-span-6 bg-blue-50/50 p-2.5 rounded-sm border border-blue-100 mt-1">
+                <div className="text-[10px] font-bold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5" />
+                  <span>मोबाईल ॲप्लिकेशन लॉगिन माहिती (Mobile App Credentials)</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5 flex items-center gap-1">
+                      <span>युझरनेम (Username)</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="लॉगिन युझरनेम"
+                      autoComplete="off"
+                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-bold"
+                      value={formData.username}
+                      onChange={(e) => setFormData({...formData, username: e.target.value})}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5 flex items-center gap-1">
+                      <span>पासवर्ड (Password)</span>
+                    </label>
+                    <div className="relative">
+                      <input 
+                        type={showPassword ? "text" : "password"} 
+                        placeholder={editingAgentId !== null ? "नवीन पासवर्ड (ऐच्छिक)" : "पासवर्ड"}
+                        autoComplete="new-password"
+                        className="w-full border border-gray-300 rounded-sm pl-2 pr-8 py-1 text-xs bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary font-bold"
+                        value={formData.password}
+                        onChange={(e) => setFormData({...formData, password: e.target.value})}
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
 
               {/* Action Buttons */}
               <div className="sm:col-span-2 md:col-span-5 flex justify-end gap-2 pt-1 border-t border-gray-200">
@@ -526,8 +633,8 @@ export default function PigmyAgentMaster() {
                     <th className="py-2 px-3 border-r border-white/20">Agent ID</th>
                     <th className="py-2 px-3 border-r border-white/20">एजंटचे नाव (Agent Name)</th>
                     <th className="py-2 px-3 border-r border-white/20">शाखा (Branch)</th>
-                    <th className="py-2 px-3 border-r border-white/20">मोबाईल नंबर (Mobile)</th>
                     <th className="py-2 px-3 border-r border-white/20">रुजू दिनांक (Joining Date)</th>
+                    <th className="py-2 px-3 border-r border-white/20">लिमिट (Limit)</th>
                     <th className="py-2 px-3 border-r border-white/20">स्थिती (Status)</th>
                     <th className="py-2 px-3 text-center">कारवाई (Actions)</th>
                   </tr>
@@ -564,11 +671,12 @@ export default function PigmyAgentMaster() {
                           <td className="py-1.5 px-3 text-gray-700 border-r border-gray-200">
                             {branchName}
                           </td>
-                          <td className="py-1.5 px-3 font-mono text-gray-700 border-r border-gray-200">
-                            {ag.mobileNo}
-                          </td>
                           <td className="py-1.5 px-3 text-gray-700 border-r border-gray-200">
                             {joiningDateStr}
+                          </td>
+                          <td className="py-1.5 px-3 text-gray-700 border-r border-gray-200 font-bold">
+                            ₹{ag.maxCashLimit?.toLocaleString('en-IN') || '20,000'} <br/>
+                            <span className="text-[10px] text-gray-500 font-normal">({ag.maxLockDays || 2} दिवस)</span>
                           </td>
                           <td className="py-1.5 px-3 border-r border-gray-200">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold ${

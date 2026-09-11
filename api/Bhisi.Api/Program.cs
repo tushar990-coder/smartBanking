@@ -2196,8 +2196,16 @@ static void LoadEnvFile()
             Path.Combine(AppContext.BaseDirectory, "api", "Bhisi.Api", ".env")
         };
 
+        var curr = new DirectoryInfo(Directory.GetCurrentDirectory());
+        for (int i = 0; i < 7 && curr != null; i++)
+        {
+            candidates.Add(Path.Combine(curr.FullName, ".env"));
+            candidates.Add(Path.Combine(curr.FullName, "api", "Bhisi.Api", ".env"));
+            curr = curr.Parent;
+        }
+
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        for (int i = 0; i < 5 && dir != null; i++)
+        for (int i = 0; i < 7 && dir != null; i++)
         {
             candidates.Add(Path.Combine(dir.FullName, ".env"));
             candidates.Add(Path.Combine(dir.FullName, "api", "Bhisi.Api", ".env"));

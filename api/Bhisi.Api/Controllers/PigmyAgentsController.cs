@@ -128,9 +128,9 @@ namespace Bhisi.Api.Controllers
             return CreatedAtAction("GetPigmyAgent", new { id = pigmyAgent.PigmyAgentID }, pigmyAgent);
         }
 
-        // DELETE: api/PigmyAgents/5?force=false
+        // DELETE: api/PigmyAgents/5
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeletePigmyAgent(int id, [FromQuery] bool force = false)
+        public async Task<IActionResult> DeletePigmyAgent(int id)
         {
             var pigmyAgent = await _context.PigmyAgents.FindAsync(id);
             if (pigmyAgent == null)
@@ -145,7 +145,7 @@ namespace Bhisi.Api.Controllers
 
             int totalDependencies = accountsCount + collectionsCount + commissionsCount + depositsCount;
 
-            if (totalDependencies > 0 && !force)
+            if (totalDependencies > 0)
             {
                 return BadRequest(new
                 {
@@ -154,50 +154,12 @@ namespace Bhisi.Api.Controllers
                     collectionsCount,
                     commissionsCount,
                     depositsCount,
-                    message = $"या एजंटशी {accountsCount} पिग्मी खाती व {collectionsCount} कलेक्शन नोंदी जोडलेल्या आहेत. थेट डिलीट केल्यास डेटाबेसमधील संदर्भ (Constraint) खराब होऊ शकतो."
+                    message = $"या एजंटशी {accountsCount} पिग्मी खाती व {collectionsCount} कलेक्शन नोंदी जोडलेल्या आहेत. व्यवहार झालेले असल्यामुळे हा एजंट डिलीट करता येणार नाही. कृपया एजंटचा Status 'Inactive' (निष्क्रिय) करा."
                 });
             }
 
             try
             {
-                if (totalDependencies > 0 && force)
-                {
-                    // Find another active agent to reassign references
-                    var otherAgent = await _context.PigmyAgents
-                        .Where(a => a.PigmyAgentID != id)
-                        .OrderBy(a => a.PigmyAgentID)
-                        .FirstOrDefaultAsync();
-
-                    if (otherAgent != null)
-                    {
-                        var accountsToUpdate = await _context.PigmyAccounts.Where(a => a.PigmyAgentID == id).ToListAsync();
-                        foreach (var acc in accountsToUpdate)
-                        {
-                            acc.PigmyAgentID = otherAgent.PigmyAgentID;
-                        }
-
-                        var collectionsToUpdate = await _context.PigmyCollections.Where(c => c.AgentId == id).ToListAsync();
-                        foreach (var col in collectionsToUpdate)
-                        {
-                            col.AgentId = otherAgent.PigmyAgentID;
-                        }
-
-                        var commissionsToUpdate = await _context.PigmyAgentCommissions.Where(c => c.AgentId == id).ToListAsync();
-                        foreach (var comm in commissionsToUpdate)
-                        {
-                            comm.AgentId = otherAgent.PigmyAgentID;
-                        }
-
-                        var depositsToUpdate = await _context.PigmyAgentCashDeposits.Where(d => d.AgentId == id).ToListAsync();
-                        foreach (var dep in depositsToUpdate)
-                        {
-                            dep.AgentId = otherAgent.PigmyAgentID;
-                        }
-
-                        await _context.SaveChangesAsync();
-                    }
-                }
-
                 _context.PigmyAgents.Remove(pigmyAgent);
                 await _context.SaveChangesAsync();
                 return Ok(new { message = "एजंट यशस्वीरित्या हटवला (Deleted) गेला." });

@@ -23,20 +23,31 @@ namespace Bhisi.Api.Controllers
 
         public class LoginRequest
         {
-            [Required]
-            public string MobileNo { get; set; } = string.Empty;
+            [Required(ErrorMessage = "युझरनेम आवश्यक आहे.")]
+            public string Username { get; set; } = string.Empty;
+
+            [Required(ErrorMessage = "पासवर्ड आवश्यक आहे.")]
+            public string Password { get; set; } = string.Empty;
         }
 
-        // POST: api/PigmyApp/Login (UNTOUCHED)
+        // POST: api/PigmyApp/Login
         [HttpPost("Login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
             var agent = await _context.PigmyAgents
                 .Include(a => a.Customer)
-                .FirstOrDefaultAsync(a => a.Customer != null && a.Customer.MobileNo == request.MobileNo && a.Status == "Active");
+                .Include(a => a.Branch)
+                .FirstOrDefaultAsync(a => a.Username == request.Username && a.Status == "Active");
+            
             if (agent == null)
             {
-                return Unauthorized("Invalid Mobile Number or Inactive Agent.");
+                return Unauthorized(new { message = "अवैध युझरनेम किंवा एजंट सक्रिय नाही." });
+            }
+
+            // Verify Password using BCrypt
+            if (string.IsNullOrEmpty(agent.PasswordHash) || !BCrypt.Net.BCrypt.Verify(request.Password, agent.PasswordHash))
+            {
+                return Unauthorized(new { message = "चुकीचा पासवर्ड." });
             }
 
             // In a real production scenario, generate and return a JWT here.
@@ -45,9 +56,57 @@ namespace Bhisi.Api.Controllers
             {
                 agentId = agent.PigmyAgentID,
                 agentName = agent.AgentName,
+                username = agent.Username,
                 mobileNo = agent.Customer?.MobileNo ?? string.Empty,
+                branchId = agent.BranchID,
+                branchName = agent.Branch?.BranchName ?? "",
                 token = $"temp-token-agent-{agent.PigmyAgentID}"
             });
+        }
+
+        public class ChangePasswordRequest
+        {
+            [Required]
+            public string OldPassword { get; set; } = string.Empty;
+
+            [Required]
+            [MinLength(6, ErrorMessage = "पासवर्ड किमान ६ अक्षरांचा असावा.")]
+            public string NewPassword { get; set; } = string.Empty;
+        }
+
+        // POST: api/PigmyApp/ChangePassword
+        [HttpPost("ChangePassword")]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, [FromHeader(Name = "X-Agent-Id")] int agentId)
+        {
+            if (agentId <= 0) return Unauthorized(new { message = "वैध X-Agent-Id हेडर पुरवा." });
+
+            var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == agentId);
+            if (agent == null) return NotFound(new { message = "एजंट सापडला नाही." });
+            if (agent.Status != "Active") return Unauthorized(new { message = "एजंट सक्रिय नाही." });
+
+            if (string.IsNullOrEmpty(agent.PasswordHash))
+            {
+                // If there's no old password set yet, don't allow change via this API, or just fail verification.
+                return BadRequest(new { message = "जुना पासवर्ड सेट केलेला नाही. कृपया ॲडमिनशी संपर्क साधा." });
+            }
+
+            try
+            {
+                bool isValidOldPassword = BCrypt.Net.BCrypt.Verify(request.OldPassword, agent.PasswordHash);
+                if (!isValidOldPassword)
+                {
+                    return BadRequest(new { message = "जुना पासवर्ड चुकीचा आहे." });
+                }
+
+                agent.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { success = true, message = "पासवर्ड यशस्वीरीत्या बदलला!" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "पासवर्ड बदलताना सर्व्हर त्रुटी आली: " + ex.Message });
+            }
         }
 
         // GET: api/PigmyApp/Dashboard (UNTOUCHED)

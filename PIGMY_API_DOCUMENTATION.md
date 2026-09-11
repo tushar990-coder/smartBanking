@@ -108,8 +108,8 @@
 }
 ```
 
-### `DELETE /api/PigmyAgents/{id}?force=true|false`
-- **वर्णन**: एजंट डिलीट करणे (किंवा `force=true` ने संदर्भ दुसऱ्या एजंटकडे हस्तांतरित करणे).
+### `DELETE /api/PigmyAgents/{id}`
+- **वर्णन**: एजंट डिलीट करणे. (जर व्यवहार झालेले असतील, तर एजंट डिलीट न होता 'Inactive' करण्याची सूचना मिळेल).
 
 ---
 
@@ -436,12 +436,40 @@
 **Headers required**: `X-Agent-Id: <AgentID>` किंवा `Authorization: Bearer <Token>`
 
 ### `POST /api/PigmyApp/Login` *(एजंट मोबाईल लॉगिन)*
+- **वर्णन**: मोबाईल ॲपमध्ये प्रवेश करण्यासाठी युझरनेम आणि पासवर्ड वापरून सुरक्षित लॉगिन.
 - **Request Body (JSON)**:
 ```json
 {
-  "mobileNo": "9876543210"
+  "username": "agent_anand",
+  "password": "mySecurePassword123"
 }
 ```
+- **Response**: 
+```json
+{
+  "agentId": 2,
+  "agentName": "आनंद विनायक पाटील",
+  "username": "agent_anand",
+  "mobileNo": "9876543210",
+  "branchId": 1,
+  "branchName": "Main Branch",
+  "token": "temp-token-agent-2"
+}
+```
+
+---
+
+### `POST /api/PigmyApp/ChangePassword` *(एजंट पासवर्ड बदलणे)*
+- **वर्णन**: लॉगिन झाल्यानंतर एजंट आपला स्वतःचा पासवर्ड बदलू शकतो.
+- **Headers required**: `X-Agent-Id: <AgentID>`
+- **Request Body (JSON)**:
+```json
+{
+  "oldPassword": "old-password-123",
+  "newPassword": "new-password-456"
+}
+```
+- **Response**: `{"success": true, "message": "पासवर्ड यशस्वीरीत्या बदलला!"}`
 
 ---
 

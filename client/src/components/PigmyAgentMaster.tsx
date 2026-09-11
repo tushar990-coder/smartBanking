@@ -632,6 +632,7 @@ export default function PigmyAgentMaster() {
                   <tr className="bg-primary text-white font-bold uppercase tracking-wider text-[11px]">
                     <th className="py-2 px-3 border-r border-white/20">Agent ID</th>
                     <th className="py-2 px-3 border-r border-white/20">एजंटचे नाव (Agent Name)</th>
+                    <th className="py-2 px-3 border-r border-white/20">युझरनेम (Username)</th>
                     <th className="py-2 px-3 border-r border-white/20">शाखा (Branch)</th>
                     <th className="py-2 px-3 border-r border-white/20">रुजू दिनांक (Joining Date)</th>
                     <th className="py-2 px-3 border-r border-white/20">लिमिट (Limit)</th>
@@ -667,6 +668,9 @@ export default function PigmyAgentMaster() {
                           </td>
                           <td className="py-1.5 px-3 font-bold text-gray-900 border-r border-gray-200">
                             {ag.agentName}
+                          </td>
+                          <td className="py-1.5 px-3 text-gray-600 border-r border-gray-200 font-mono text-[11px]">
+                            {ag.username || '-'}
                           </td>
                           <td className="py-1.5 px-3 text-gray-700 border-r border-gray-200">
                             {branchName}
@@ -771,12 +775,6 @@ export default function PigmyAgentMaster() {
                 className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold transition-all shadow-xs flex items-center justify-center gap-1"
               >
                 <span>एजंट इनॲक्टिव्ह (Inactive) करा</span>
-              </button>
-              <button
-                onClick={() => handleDelete(deleteDependencyModal.agent, true)}
-                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold transition-all shadow-xs flex items-center justify-center gap-1"
-              >
-                <span>खाती ट्रान्सफर करून सक्तीने डिलीट करा</span>
               </button>
             </div>
           </div>

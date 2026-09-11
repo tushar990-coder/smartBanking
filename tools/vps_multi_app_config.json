@@ -18,36 +18,35 @@
       "IISAppPoolName": "apitesting",
       "BackendFolderPath": "D:\\WebApps\\Testing\\api.testing.hellomindspace.in",
       "FrontendFolderPath": "D:\\WebApps\\Testing\\testing.hellomindspace.in"
-    }
-  ],
-  "_CommentedOtherTargets": [
+    },
     {
       "SansthaName": "Shree Bambawade Nagari Sahakari PatSanstha (Bambavade)",
-      "TargetDatabase": "SmartBanking_Bambawade",
-      "IISAppPoolName": "apibambavade",
-      "BackendFolderPath": "D:\\WebApps\\bambavade\\api.bambavade.hellomindspace.in",
-      "FrontendFolderPath": "D:\\WebApps\\bambavade\\bambavade.hellomindspace.in"
+      "TargetDatabase": "SmartBanking_bambavadeurban",
+      "IISAppPoolName": "bambavadeurban-backend",
+      "BackendFolderPath": "D:\\WebApps\\bambavadeurban\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\bambavadeurban\\frontend"
     },
     {
       "SansthaName": "Shree Jotirling Nagari Sahakari PatSanstha (Padawalwadi)",
-      "TargetDatabase": "SmartBanking_JotirlingPdw",
-      "IISAppPoolName": "api.jotirlingpdw.hellomindspace.in",
-      "BackendFolderPath": "D:\\WebApps\\Jotirlingpdw\\api.jotirlingpdw.hellomindspace.in",
-      "FrontendFolderPath": "D:\\WebApps\\Jotirlingpdw\\jotirlingpdw.hellomindspace.in"
+      "TargetDatabase": "SmartBanking_padvalwadi",
+      "IISAppPoolName": "padvalwadi-backend",
+      "BackendFolderPath": "D:\\WebApps\\padvalwadi\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\padvalwadi\\frontend"
     },
     {
       "SansthaName": "Shree Maharshi Shamrao Patil Yadravkar gramin BigarshetiSahakari Patsanstha Maryadit Yadrav",
-      "TargetDatabase": "SmartBanking_maharshiyadravkar",
-      "IISAppPoolName": "maharshiyadravkar-backend",
-      "BackendFolderPath": "D:\\WebApps\\maharshiyadravkar\\backend",
-      "FrontendFolderPath": "D:\\WebApps\\maharshiyadravkar\\frontend"
+      "TargetDatabase": "SmartBanking_maharshiyadrav",
+      "IISAppPoolName": "maharshiyadrav-backend",
+      "BackendFolderPath": "D:\\WebApps\\maharshiyadrav\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\maharshiyadrav\\frontend"
     },
     {
       "SansthaName": "Abhiyantriki Tantraniketan Sevkanchi Sahakari Karmachari Patsanstha Maryadit Rajaramnagar,Sakharale",
-      "TargetDatabase": "SmartBanking_ritemp",
-      "IISAppPoolName": "ritemp-backend",
-      "BackendFolderPath": "D:\\WebApps\\ritemp\\backend",
-      "FrontendFolderPath": "D:\\WebApps\\ritemp\\frontend"
+      "TargetDatabase": "SmartBanking_ritemployee",
+      "IISAppPoolName": "ritemployee-backend",
+      "BackendFolderPath": "D:\\WebApps\\ritemployee\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\ritemployee\\frontend"
     }
-  ]
+  ],
+  "_CommentedOtherTargets": []
 }

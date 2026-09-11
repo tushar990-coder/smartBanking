@@ -101,6 +101,18 @@ $utf8WithBom = New-Object System.Text.UTF8Encoding($true)
 [System.IO.File]::WriteAllText($sqlDest, $sqlContent, $utf8WithBom)
 Write-Host "  -> Database update schema copied with UTF-8 BOM encoding." -ForegroundColor White
 
+$universalSyncSource = Join-Path $workspaceRoot "tools\Universal_Schema_Only_Sync.sql"
+if (Test-Path $universalSyncSource) {
+    Copy-Item $universalSyncSource (Join-Path $patchFolder "database\Universal_Schema_Only_Sync.sql") -Force
+    Write-Host "  -> Universal Schema-Only Sync SQL included in database package." -ForegroundColor White
+}
+
+$diffSource = Join-Path $workspaceRoot "tools\Compare_Database_Schema_Diff.sql"
+if (Test-Path $diffSource) {
+    Copy-Item $diffSource (Join-Path $patchFolder "database\Compare_Database_Schema_Diff.sql") -Force
+    Write-Host "  -> Compare Database Schema Diff SQL included in database package." -ForegroundColor White
+}
+
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null
@@ -454,6 +466,48 @@ echo.
 pause
 "@
 [System.IO.File]::WriteAllText((Join-Path $patchFolder "1_Click_Update_Testing.bat"), $batTesting, [System.Text.Encoding]::ASCII)
+
+# 6. 1_Click_Update_Yadravkar.bat
+$batYadravkar = @"
+@echo off
+title SmartBanking ERP - 1-Click Update Yadravkar
+color 0B
+echo ==================================================================
+echo   SmartBanking ERP - 1-Click Update: Yadravkar Sanstha
+echo ==================================================================
+echo.
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [WARNING] Administrator rights required. Elevating privileges...
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_patch.ps1" -TargetName "Yadrav"
+echo.
+pause
+"@
+[System.IO.File]::WriteAllText((Join-Path $patchFolder "1_Click_Update_Yadravkar.bat"), $batYadravkar, [System.Text.Encoding]::ASCII)
+
+# 7. 1_Click_Update_RITEMP.bat
+$batRitemp = @"
+@echo off
+title SmartBanking ERP - 1-Click Update RITEMP
+color 0B
+echo ==================================================================
+echo   SmartBanking ERP - 1-Click Update: RITEMP Sanstha
+echo ==================================================================
+echo.
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [WARNING] Administrator rights required. Elevating privileges...
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_patch.ps1" -TargetName "ritemployee"
+echo.
+pause
+"@
+[System.IO.File]::WriteAllText((Join-Path $patchFolder "1_Click_Update_RITEMP.bat"), $batRitemp, [System.Text.Encoding]::ASCII)
 
 # -----------------------------------------------------------------------------------------
 # Step 5: Compress to ZIP & Copy to Desktop

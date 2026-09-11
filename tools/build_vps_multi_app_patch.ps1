@@ -12,7 +12,7 @@ $patchFolder = Join-Path $workspaceRoot "VPS_Multi_App_Master_Patch"
 $zipOutputFile = Join-Path $workspaceRoot "SmartBanking_VPS_Multi_App_Master_Patch.zip"
 $clientDir = Join-Path $workspaceRoot "client"
 $apiDir = Join-Path $workspaceRoot "api\Bhisi.Api"
-$version = "2.4.7"
+$version = "2.4.8"
 $buildDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
 Write-Host "==================================================================" -ForegroundColor Cyan
@@ -433,6 +433,27 @@ echo.
 pause
 "@
 [System.IO.File]::WriteAllText((Join-Path $patchFolder "1_Click_Update_Template.bat"), $batTemplate, [System.Text.Encoding]::ASCII)
+
+# 5. 1_Click_Update_Testing.bat
+$batTesting = @"
+@echo off
+title SmartBanking ERP - 1-Click Update Testing
+color 0B
+echo ==================================================================
+echo   SmartBanking ERP - 1-Click Update: Testing Environment
+echo ==================================================================
+echo.
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [WARNING] Administrator rights required. Elevating privileges...
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0apply_patch.ps1" -TargetName "Testing"
+echo.
+pause
+"@
+[System.IO.File]::WriteAllText((Join-Path $patchFolder "1_Click_Update_Testing.bat"), $batTesting, [System.Text.Encoding]::ASCII)
 
 # -----------------------------------------------------------------------------------------
 # Step 5: Compress to ZIP & Copy to Desktop

@@ -11,6 +11,13 @@
       "IISAppPoolName": "",
       "BackendFolderPath": "D:\\WebApps\\_template\\backend",
       "FrontendFolderPath": "D:\\WebApps\\_template\\frontend"
+    },
+    {
+      "SansthaName": "Testing Environment",
+      "TargetDatabase": "SmartBanking_Testing",
+      "IISAppPoolName": "apitesting",
+      "BackendFolderPath": "D:\\WebApps\\Testing\\api.testing.hellomindspace.in",
+      "FrontendFolderPath": "D:\\WebApps\\Testing\\testing.hellomindspace.in"
     }
   ],
   "_CommentedOtherTargets": [
@@ -27,13 +34,6 @@
       "IISAppPoolName": "api.jotirlingpdw.hellomindspace.in",
       "BackendFolderPath": "D:\\WebApps\\Jotirlingpdw\\api.jotirlingpdw.hellomindspace.in",
       "FrontendFolderPath": "D:\\WebApps\\Jotirlingpdw\\jotirlingpdw.hellomindspace.in"
-    },
-    {
-      "SansthaName": "Testing Environment",
-      "TargetDatabase": "SmartBanking_Testing",
-      "IISAppPoolName": "apitesting",
-      "BackendFolderPath": "D:\\WebApps\\Testing\\api.testing.hellomindspace.in",
-      "FrontendFolderPath": "D:\\WebApps\\Testing\\testing.hellomindspace.in"
     },
     {
       "SansthaName": "Shree Maharshi Shamrao Patil Yadravkar gramin BigarshetiSahakari Patsanstha Maryadit Yadrav",

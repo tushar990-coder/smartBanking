@@ -440,7 +440,7 @@ export default function PigmyCollectionMaster() {
               <UserGroupIcon className="w-10 h-10 text-gray-400 mx-auto" />
               <h3 className="font-bold text-gray-700 text-xs">कृपया वरील ड्रॉपडाउनमधून पिग्मी एजंट निवडा.</h3>
               <p className="text-[11px] text-gray-500 max-w-md mx-auto">
-                एजंट निवडताच त्याच्या हाताखालील सर्व ग्राहकांची खाती पत्रकात लोड होतील आणि एकाच वेळी दैनंदिन जमा नोंदवता येईल.
+                एजंट निवडताच त्याच्या हाताखालील सर्व खातेदारांची खाती पत्रकात लोड होतील आणि एकाच वेळी दैनंदिन जमा नोंदवता येईल.
               </p>
             </div>
           ) : agentAccounts.length === 0 ? (
@@ -476,7 +476,7 @@ export default function PigmyCollectionMaster() {
                     <tr className="bg-gray-100 text-gray-700 text-[11px] font-bold uppercase tracking-wider border-b border-gray-200">
                       <th className="py-2 px-2.5 text-center w-10 border-r border-gray-200">#</th>
                       <th className="py-2 px-2.5 border-r border-gray-200">खाते क्रमांक (Account No)</th>
-                      <th className="py-2 px-2.5 border-r border-gray-200">ग्राहकाचे नाव (Customer Name)</th>
+                      <th className="py-2 px-2.5 border-r border-gray-200">खातेदाराचे नाव (Customer Name)</th>
                       <th className="py-2 px-2.5 border-r border-gray-200">मोबाईल नंबर (Mobile)</th>
                       <th className="py-2 px-2.5 text-right border-r border-gray-200">सध्याची जमा ठेव (Current ₹)</th>
                       <th className="py-2 px-3 text-right bg-emerald-100/70 text-emerald-900 font-extrabold">
@@ -614,7 +614,7 @@ export default function PigmyCollectionMaster() {
                     </p>
                   </div>
                   <div className="text-right space-y-0.5 text-[11px]">
-                    <p className="text-gray-700 font-bold">ग्राहक: <span className="text-gray-900">{getCustomerFullName(selectedSingleAccount.customer)}</span></p>
+                    <p className="text-gray-700 font-bold">खातेदार: <span className="text-gray-900">{getCustomerFullName(selectedSingleAccount.customer)}</span></p>
                     <p className="text-gray-600">एजंट: <span className="text-gray-800">{selectedSingleAccount.agent?.agentName || selectedSingleAccount.pigmyAgent?.agentName || '-'}</span></p>
                   </div>
                 </div>

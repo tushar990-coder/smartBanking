@@ -111,7 +111,7 @@ const FdAccrualPosting: React.FC = () => {
       return;
     }
 
-    if (!window.confirm(`तुम्हाला खरोखर निवडलेल्या ${selected.length} ग्राहकांच्या खात्यांवर एकूण ₹ ${selected.reduce((sum, i) => sum + i.calculatedInterest, 0).toLocaleString('en-IN')} व्याज पोस्ट करायचे आहे का?`)) {
+    if (!window.confirm(`तुम्हाला खरोखर निवडलेल्या ${selected.length} खातेदारांच्या खात्यांवर एकूण ₹ ${selected.reduce((sum, i) => sum + i.calculatedInterest, 0).toLocaleString('en-IN')} व्याज पोस्ट करायचे आहे का?`)) {
       return;
     }
 
@@ -173,7 +173,7 @@ const FdAccrualPosting: React.FC = () => {
           <Calculator className="w-5 h-5 text-blue-200" />
           <div>
             <h1 className="text-sm font-bold tracking-wide">मुदत ठेव व्याज तरतूद (FD Interest Provision Run & Posting)</h1>
-            <p className="text-[10px] text-blue-100 font-normal">ग्राहकानुसार (Customer-wise) व्याज मोजणी, मुद्दलावर / व्याजावर निवड आणि सिस्टीम ऑटो-व्हाउचर पोस्टिंग</p>
+            <p className="text-[10px] text-blue-100 font-normal">खातेदारानुसार (Customer-wise) व्याज मोजणी, मुद्दलावर / व्याजावर निवड आणि सिस्टीम ऑटो-व्हाउचर पोस्टिंग</p>
           </div>
         </div>
         <span className="text-[10px] bg-blue-800/60 border border-blue-400/40 text-blue-100 font-semibold px-2 py-0.5 rounded font-mono">
@@ -276,7 +276,7 @@ const FdAccrualPosting: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-gray-200">
             <div className="flex items-center gap-3">
               <span className="text-xs font-bold text-gray-800">
-                २. ग्राहक-निहाय व्याज मोजणी तक्ता (Customer-wise List)
+                २. खातेदार-निहाय व्याज मोजणी तक्ता (Customer-wise List)
               </span>
               <span className="text-[11px] text-gray-500 font-medium">
                 एकूण खाती: <strong className="text-primary font-bold">{previewItems.length}</strong> | निवडलेले: <strong className="text-emerald-700 font-bold">{selectedCount}</strong>

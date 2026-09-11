@@ -243,7 +243,7 @@ export default function PigmyReports() {
         'पावती क्र.': c.receiptNo,
         'तारीख': formatDisplayDate(c.collectionDate),
         'खाते क्र.': c.pigmyAccountNo || '-',
-        'ग्राहकाचे नाव': c.customerName || c.memberName || '-',
+        'खातेदाराचे नाव': c.customerName || c.memberName || '-',
         'पिग्मी एजंट': c.agentName || '-',
         'आरंभी शिल्लक (₹)': c.openingBalance || 0,
         'जमा रक्कम (₹)': c.collectionAmount || 0,
@@ -271,7 +271,7 @@ export default function PigmyReports() {
       const excelRows = filteredAccounts.map((a, i) => ({
         'अ.क्र.': i + 1,
         'खाते क्र.': a.accountNo,
-        'ग्राहक CIF': a.customer?.cifNo || a.cifNo || '-',
+        'खातेदार CIF': a.customer?.cifNo || a.cifNo || '-',
         'खातेदाराचे नाव': a.customer?.customerName || a.customerName || '-',
         'एजंट नाव': a.pigmyAgent?.agentName || '-',
         'उघडल्याचा दिनांक': formatDisplayDate(a.openingDate),

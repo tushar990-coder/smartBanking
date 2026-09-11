@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { transliterateMarathi } from '../utils/transliterateMarathi';
 
 export interface BulkCustomerRow {
   id: string; // unique client id
@@ -100,7 +101,7 @@ const createEmptyRow = (
   village: sanstha?.village || '',
   taluka: sanstha?.taluka || '',
   district: sanstha?.district || '',
-  occupation: '',
+  occupation: customDefaults?.occupation || 'शेती',
   customerType: 'Individual',
   kycStatus: 'Verified',
   ckycNo: '',
@@ -144,8 +145,9 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
   const [lastDraftSavedTime, setLastDraftSavedTime] = useState<string | null>(null);
 
   // Live Server Duplicates Cache (Mobile, Aadhaar, PAN)
-  const [serverErrorsMap, setServerErrorsMap] = useState<Record<number, string[]>>({});
+  const [serverErrorsMap, setServerErrorsMap] = useState<Record<string, string[]>>({});
   const [isValidatingServer, setIsValidatingServer] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Saving States
   const [isSaving, setIsSaving] = useState(false);
@@ -197,6 +199,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
             if (isFresh) {
               return prevRows.map(r => ({
                 ...r,
+                occupation: r.occupation || 'शेती',
                 birthDate: r.birthDate || DEFAULT_BIRTH_DATE,
                 address: r.address || s.address || '',
                 village: r.village || s.village || '',
@@ -330,11 +333,26 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
         // LegacyCustomerNo validation
         const leg = r.legacyCustomerNo.trim();
         if (leg && legacyFreq[leg] > 1) {
-          errors.push(`जुना ग्राहक क्र. '${leg}' ग्रिडमध्ये पुनरावृत्ती झाला आहे.`);
+          errors.push(`जुना खातेदार क्र. '${leg}' ग्रिडमध्ये पुनरावृत्ती झाला आहे.`);
         }
 
-        // Check if server validation flagged this row index
-        const serverErrs = serverErrorsMap[idx + 1];
+        // Minor check & warning
+        if (r.birthDate) {
+          const bDate = new Date(r.birthDate);
+          const eighteenYearsAgo = new Date();
+          eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+          if (bDate > eighteenYearsAgo) {
+            warnings.push('खातेदार अल्पवयीन (वय १८ पेक्षा कमी - Minor) आहे.');
+          }
+        }
+
+        // Nominee name without relation warning
+        if (r.nomineeName?.trim() && !r.nomineeRelation?.trim()) {
+          warnings.push('वारसदाराचे नाव भरले आहे, नाते (Relation) भरणे उचित ठरेल.');
+        }
+
+        // Check if server validation flagged this client row id or index
+        const serverErrs = serverErrorsMap[r.id] || serverErrorsMap[String(idx + 1)];
         if (serverErrs && serverErrs.length > 0) {
           serverErrs.forEach(serr => {
             if (!errors.includes(serr)) errors.push(serr);
@@ -368,6 +386,46 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
     };
   }, [rows, validations]);
 
+  // Prospective sequential CIF / CustomerID generator for new rows (starts after already saved customers)
+  const newRowCifMap = useMemo(() => {
+    const map = new Map<string, string>();
+    let baseNum = 1;
+    let prefix = 'CIF';
+    let padLen = 6;
+
+    if (nextCifPreview) {
+      const letters = nextCifPreview.match(/^[A-Za-z]+/)?.[0] || 'CIF';
+      const digits = nextCifPreview.replace(/\D/g, '');
+      prefix = letters;
+      if (digits) {
+        baseNum = parseInt(digits, 10);
+        padLen = digits.length;
+      }
+    }
+
+    // Check max numeric CIF in current grid to avoid overlaps with existing
+    let maxExistingCifNum = 0;
+    rows.forEach(r => {
+      if (r.cifNo && r.cifNo.startsWith(prefix)) {
+        const num = parseInt(r.cifNo.substring(prefix.length), 10);
+        if (!isNaN(num) && num > maxExistingCifNum) {
+          maxExistingCifNum = num;
+        }
+      }
+    });
+
+    let currentNewNum = Math.max(baseNum, maxExistingCifNum + 1);
+
+    rows.forEach(r => {
+      if (!r.customerID || r.customerID <= 0) {
+        map.set(r.id, `${prefix}${String(currentNewNum).padStart(padLen, '0')}`);
+        currentNewNum++;
+      }
+    });
+
+    return map;
+  }, [rows, nextCifPreview]);
+
   // -------------------------------------------------------------
   // DEBOUNCED SERVER DUPLICATE VALIDATION
   // -------------------------------------------------------------
@@ -397,10 +455,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
       setIsValidatingServer(true);
       const res = await axios.post('/api/CustomerBulk/validate-live', candidateRows);
       if (res.data?.results) {
-        const errMap: Record<number, string[]> = {};
+        const errMap: Record<string, string[]> = {};
         res.data.results.forEach((item: any) => {
           if (!item.isValid && item.errors?.length > 0) {
-            errMap[item.rowIndex] = item.errors;
+            const key = item.clientRowId || String(item.rowIndex);
+            errMap[key] = item.errors;
           }
         });
         setServerErrorsMap(errMap);
@@ -470,8 +529,50 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
         updated.panNo = value.toUpperCase();
       }
 
+      // Auto transliterate Marathi names to English
+      if (field === 'firstName' && typeof value === 'string') {
+        updated.firstNameEng = transliterateMarathi(value);
+      }
+      if (field === 'middleName' && typeof value === 'string') {
+        updated.middleNameEng = transliterateMarathi(value);
+      }
+      if (field === 'lastName' && typeof value === 'string') {
+        updated.lastNameEng = transliterateMarathi(value);
+      }
+
       return updated;
     }));
+  };
+
+  // Auto-generate English spelling from Marathi names for active or selected rows
+  const handleAutoFillEnglishNames = () => {
+    let filledCount = 0;
+    setRows(prev => prev.map(r => {
+      if (selectedRowIds.size > 0 && !selectedRowIds.has(r.id)) {
+        return r;
+      }
+      if (!r.firstName && !r.middleName && !r.lastName) {
+        return r;
+      }
+
+      const newFirstEng = r.firstName ? transliterateMarathi(r.firstName) : r.firstNameEng;
+      const newMidEng = r.middleName ? transliterateMarathi(r.middleName) : r.middleNameEng;
+      const newLastEng = r.lastName ? transliterateMarathi(r.lastName) : r.lastNameEng;
+
+      if (newFirstEng !== r.firstNameEng || newMidEng !== r.middleNameEng || newLastEng !== r.lastNameEng) {
+        filledCount++;
+      }
+
+      return {
+        ...r,
+        firstNameEng: newFirstEng,
+        middleNameEng: newMidEng,
+        lastNameEng: newLastEng
+      };
+    }));
+
+    alert(`मराठी नावांवरून इंग्रजी स्पेलिंग स्वयंचलित तयार केले! (${selectedRowIds.size > 0 ? selectedRowIds.size + ' निवडलेल्या' : 'सर्व'} ओळी तपासल्या)`);
+    if (showQuickFill) setShowQuickFill(false);
   };
 
   // -------------------------------------------------------------
@@ -518,7 +619,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
       setSelectedExistingIds(new Set(list.map((c: any) => c.customerID)));
     } catch (err) {
       console.error('Fetch existing customers failed', err);
-      alert('विद्यमान ग्राहक यादी आणताना त्रुटी आली.');
+      alert('विद्यमान खातेदार यादी आणताना त्रुटी आली.');
     } finally {
       setIsLoadingExisting(false);
     }
@@ -527,9 +628,17 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
   const handleLoadExistingIntoGrid = (mode: 'replace' | 'append') => {
     const chosen = existingCustomersList.filter(c => selectedExistingIds.has(c.customerID));
     if (chosen.length === 0) {
-      alert('कृपया ग्रिडमध्ये लोड करण्यासाठी किमान एक ग्राहक निवडा.');
+      alert('कृपया ग्रिडमध्ये लोड करण्यासाठी किमान एक खातेदार निवडा.');
       return;
     }
+
+    // Sort chosen customers in natural ascending order by CIF or CustomerID (CIF000001, CIF000002...)
+    chosen.sort((a, b) => {
+      if (a.cifNo && b.cifNo) {
+        return a.cifNo.localeCompare(b.cifNo, undefined, { numeric: true });
+      }
+      return (a.customerID || 0) - (b.customerID || 0);
+    });
 
     const mappedRows: BulkCustomerRow[] = chosen.map(c => ({
       id: 'row_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
@@ -539,9 +648,9 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
       firstName: c.firstName || '',
       middleName: c.middleName || '',
       lastName: c.lastName || '',
-      firstNameEng: c.firstNameEng || '',
-      middleNameEng: c.middleNameEng || '',
-      lastNameEng: c.lastNameEng || '',
+      firstNameEng: c.firstNameEng || (c.firstName ? transliterateMarathi(c.firstName) : ''),
+      middleNameEng: c.middleNameEng || (c.middleName ? transliterateMarathi(c.middleName) : ''),
+      lastNameEng: c.lastNameEng || (c.lastName ? transliterateMarathi(c.lastName) : ''),
       mobileNo: c.mobileNo || '',
       aadhaarNo: c.aadhaarNo || '',
       panNo: c.panNo || '',
@@ -572,7 +681,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
     }
 
     setShowExistingModal(false);
-    alert(`${mappedRows.length} विद्यमान ग्राहक ग्रिडमध्ये यशस्वीरित्या लोड झाले. तुम्ही आता त्यांच्या माहितीत बदल करून थेट सेव्ह करू शकता!`);
+    alert(`${mappedRows.length} विद्यमान खातेदार ग्रिडमध्ये यशस्वीरित्या लोड झाले. तुम्ही आता त्यांच्या माहितीत बदल करून थेट सेव्ह करू शकता!`);
   };
 
   // -------------------------------------------------------------
@@ -588,12 +697,23 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
     const lines = pasteData.trim().split(/\r\n|\n|\r/);
     if (lines.length === 0) return;
 
+    // Field order matches EXACTLY the visible table columns order:
+    // 1. legacyCustomerNo, 2. firstName, 3. middleName, 4. lastName,
+    // 5. firstNameEng, 6. middleNameEng, 7. lastNameEng,
+    // 8. mobileNo, 9. aadhaarNo, 10. panNo, 11. gender,
+    // 12. nomineeName, 13. nomineeRelation,
+    // 14. occupation, 15. birthDate,
+    // 16. village, 17. taluka, 18. district, 19. address,
+    // 20. customerType, 21. kycStatus, 22. ckycNo, 23. riskCategory
     const fieldOrder: (keyof BulkCustomerRow)[] = [
-      'firstName', 'middleName', 'lastName', 'firstNameEng', 'lastNameEng',
-      'mobileNo', 'aadhaarNo', 'panNo', 'gender', 'birthDate',
-      'address', 'village', 'taluka', 'district', 'occupation',
-      'customerType', 'kycStatus', 'ckycNo', 'riskCategory',
-      'email', 'nomineeName', 'nomineeRelation', 'legacyCustomerNo'
+      'legacyCustomerNo',
+      'firstName', 'middleName', 'lastName',
+      'firstNameEng', 'middleNameEng', 'lastNameEng',
+      'mobileNo', 'aadhaarNo', 'panNo', 'gender',
+      'nomineeName', 'nomineeRelation',
+      'occupation', 'birthDate',
+      'village', 'taluka', 'district', 'address',
+      'customerType', 'kycStatus', 'ckycNo', 'riskCategory'
     ];
 
     const startFieldIdx = fieldOrder.indexOf(startField);
@@ -619,16 +739,239 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
           if (targetFieldIdx < fieldOrder.length) {
             const fName = fieldOrder[targetFieldIdx];
             let cleanVal = cellVal.trim();
-            if (fName === 'panNo') cleanVal = cleanVal.toUpperCase();
+            if (fName === 'panNo') {
+              cleanVal = cleanVal.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            } else if (fName === 'mobileNo') {
+              cleanVal = cleanVal.replace(/\D/g, '');
+              if (cleanVal.length === 12 && cleanVal.startsWith('91')) {
+                cleanVal = cleanVal.substring(2);
+              }
+            } else if (fName === 'aadhaarNo' || fName === 'ckycNo') {
+              cleanVal = cleanVal.replace(/\D/g, '');
+            }
             (currentRow as any)[fName] = cleanVal;
           }
         });
+
+        // Auto transliterate Marathi names to English if English names were not provided in paste
+        if (currentRow.firstName && !currentRow.firstNameEng) {
+          currentRow.firstNameEng = transliterateMarathi(currentRow.firstName);
+        }
+        if (currentRow.middleName && !currentRow.middleNameEng) {
+          currentRow.middleNameEng = transliterateMarathi(currentRow.middleName);
+        }
+        if (currentRow.lastName && !currentRow.lastNameEng) {
+          currentRow.lastNameEng = transliterateMarathi(currentRow.lastName);
+        }
 
         next[targetRowIdx] = currentRow;
       });
 
       return next;
     });
+  };
+
+  // Download Sample Excel Template
+  const handleDownloadSampleTemplate = () => {
+    const sampleData = [
+      {
+        'जुना खातेदार क्र (LegacyCustomerNo)': 'OLD-101',
+        'पहिले नाव (FirstName) *': 'रमेश',
+        'मधले नाव (MiddleName)': 'आनंदराव',
+        'आडनाव (LastName) *': 'पाटील',
+        'First Name (Eng)': 'Ramesh',
+        'Middle Name (Eng)': 'Anandrao',
+        'Last Name (Eng)': 'Patil',
+        'मोबाईल क्र (MobileNo)': '9822012345',
+        'आधार क्र (AadhaarNo)': '234567890123',
+        'पॅन क्र (PANNo)': 'ABCDE1234F',
+        'लिंग (Gender)': 'Male',
+        'वारसदार (NomineeName)': 'सुनिता पाटील',
+        'नाते (NomineeRelation)': 'पत्नी',
+        'व्यवसाय (Occupation)': 'शेती',
+        'जन्मतारीख (BirthDate YYYY-MM-DD)': '1990-01-01',
+        'गाव / शहर (Village)': sansthaDefaults?.village || 'सांगली',
+        'तालुका (Taluka)': sansthaDefaults?.taluka || 'मिरज',
+        'जिल्हा (District)': sansthaDefaults?.district || 'सांगली',
+        'पत्ता (Address)': sansthaDefaults?.address || 'मु. पो. सांगली',
+        'खातेदार प्रकार (CustomerType)': 'Individual',
+        'केवायसी (KYCStatus)': 'Verified',
+        'CKYC क्र (CKYCNo)': '',
+        'जोखीम (RiskCategory)': 'Low'
+      },
+      {
+        'जुना खातेदार क्र (LegacyCustomerNo)': '',
+        'पहिले नाव (FirstName) *': 'सुरेश',
+        'मधले नाव (MiddleName)': 'बाळकृष्ण',
+        'आडनाव (LastName) *': 'शिंदे',
+        'First Name (Eng)': 'Suresh',
+        'Middle Name (Eng)': 'Balkrishna',
+        'Last Name (Eng)': 'Shinde',
+        'मोबाईल क्र (MobileNo)': '9890123456',
+        'आधार क्र (AadhaarNo)': '345678901234',
+        'पॅन क्र (PANNo)': 'XYZPK9876Q',
+        'लिंग (Gender)': 'Male',
+        'वारसदार (NomineeName)': '',
+        'नाते (NomineeRelation)': '',
+        'व्यवसाय (Occupation)': 'शेती',
+        'जन्मतारीख (BirthDate YYYY-MM-DD)': '1988-05-15',
+        'गाव / शहर (Village)': sansthaDefaults?.village || 'कराड',
+        'तालुका (Taluka)': sansthaDefaults?.taluka || 'कराड',
+        'जिल्हा (District)': sansthaDefaults?.district || 'सातारा',
+        'पत्ता (Address)': sansthaDefaults?.address || 'मु. पो. कराड',
+        'खातेदार प्रकार (CustomerType)': 'Individual',
+        'केवायसी (KYCStatus)': 'Verified',
+        'CKYC क्र (CKYCNo)': '',
+        'जोखीम (RiskCategory)': 'Low'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Customer_Template');
+    XLSX.writeFile(wb, `Customer_Bulk_Sample_Template.xlsx`);
+  };
+
+  // Direct Excel File Upload Parser (Supports Marathi & English headers)
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        if (!rawJson || rawJson.length === 0) {
+          alert('निवडलेल्या एक्सेल फाइलमध्ये कोणताही डेटा आढळला नाही.');
+          return;
+        }
+
+        const importedRows: BulkCustomerRow[] = rawJson.map((row: any) => {
+          const getVal = (keys: string[]): string => {
+            for (const k of keys) {
+              for (const rowKey of Object.keys(row)) {
+                const normKey = rowKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const targetKey = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (normKey.includes(targetKey) || rowKey.includes(k)) {
+                  const val = row[rowKey];
+                  return val !== undefined && val !== null ? String(val).trim() : '';
+                }
+              }
+            }
+            return '';
+          };
+
+          const fName = getVal(['पहिले नाव', 'firstname', 'first_name', 'नाव']);
+          const mName = getVal(['मधले नाव', 'middlename', 'middle_name']);
+          const lName = getVal(['आडनाव', 'lastname', 'last_name']);
+          const fNameEng = getVal(['firstnameeng', 'first name eng']);
+          const mNameEng = getVal(['middlenameeng', 'middle name eng', 'father name eng', 'fathernameeng', 'father name', 'middle name']);
+          const lNameEng = getVal(['lastnameeng', 'last name eng']);
+
+          let mob = getVal(['मोबाईल', 'mobile', 'mobileno', 'contact']);
+          mob = mob.replace(/\D/g, '');
+          if (mob.length === 12 && mob.startsWith('91')) mob = mob.substring(2);
+
+          let aadh = getVal(['आधार', 'aadhaar', 'aadhaarno', 'uid']);
+          aadh = aadh.replace(/\D/g, '');
+
+          let pan = getVal(['पॅन', 'pan', 'panno']);
+          pan = pan.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+          let gender = getVal(['लिंग', 'gender']);
+          if (gender.toLowerCase().startsWith('f') || gender.includes('स्त्री')) gender = 'Female';
+          else if (gender.toLowerCase().startsWith('o') || gender.includes('इतर')) gender = 'Other';
+          else gender = 'Male';
+
+          let bDate = getVal(['जन्मतारीख', 'birthdate', 'dob']);
+          if (!bDate || bDate.length < 8) bDate = DEFAULT_BIRTH_DATE;
+          else if (bDate.includes('/')) {
+            const parts = bDate.split('/');
+            if (parts.length === 3) {
+              bDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+            }
+          }
+
+          const vill = getVal(['गाव', 'शहर', 'village']) || sansthaDefaults?.village || '';
+          const tal = getVal(['तालुका', 'taluka']) || sansthaDefaults?.taluka || '';
+          const dist = getVal(['जिल्हा', 'district']) || sansthaDefaults?.district || '';
+          const addr = getVal(['पत्ता', 'address']) || sansthaDefaults?.address || '';
+          const occ = getVal(['व्यवसाय', 'occupation']);
+          const cType = getVal(['खातेदार प्रकार', 'ग्राहक प्रकार', 'customertype']) || 'Individual';
+          const kyc = getVal(['केवायसी', 'kycstatus', 'kyc']) || 'Verified';
+          let ckyc = getVal(['ckyc', 'ckycno']).replace(/\D/g, '');
+          const risk = getVal(['जोखीम', 'riskcategory', 'risk']) || 'Low';
+          const email = getVal(['ईमेल', 'email']);
+          const nomName = getVal(['वारसदार', 'nominee', 'nomineename']);
+          const nomRel = getVal(['नाते', 'relation', 'nomineerelation']);
+          const legNo = getVal(['जुना खातेदार', 'जुना ग्राहक', 'legacy', 'legacycustomerno']);
+
+          return createEmptyRow({
+            firstName: fName,
+            middleName: mName,
+            lastName: lName,
+            firstNameEng: fNameEng || (fName ? transliterateMarathi(fName) : ''),
+            middleNameEng: mNameEng || (mName ? transliterateMarathi(mName) : ''),
+            lastNameEng: lNameEng || (lName ? transliterateMarathi(lName) : ''),
+            mobileNo: mob,
+            aadhaarNo: aadh,
+            panNo: pan,
+            gender: gender,
+            birthDate: bDate,
+            village: vill,
+            taluka: tal,
+            district: dist,
+            address: addr,
+            occupation: occ,
+            customerType: cType,
+            kycStatus: kyc,
+            ckycNo: ckyc,
+            riskCategory: risk,
+            email: email,
+            nomineeName: nomName,
+            nomineeRelation: nomRel,
+            legacyCustomerNo: legNo
+          }, sansthaDefaults);
+        });
+
+        const hasData = rows.some(r => r.firstName || r.lastName || r.mobileNo);
+        if (hasData) {
+          const action = window.confirm(`एक्सेल फाइलमधून ${importedRows.length} खातेदार सापडले.\n\n[OK] = सध्याच्या ग्रिडमध्ये जोडा (Append)\n[Cancel] = सध्याचा ग्रिड साफ करून हेच खातेदार ठेवा (Replace)`);
+          if (action) {
+            setRows(prev => [...prev, ...importedRows]);
+          } else {
+            setRows(importedRows);
+          }
+        } else {
+          setRows(importedRows);
+        }
+
+        alert(`एक्सेल फाइलमधून ${importedRows.length} खातेदार यशस्वीरित्या आयात केले!`);
+      } catch (err) {
+        console.error('Excel parse error', err);
+        alert('एक्सेल फाइल वाचताना त्रुटी आली. कृपया फाइल फॉरमॅट तपासा.');
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // Keyboard Navigation: Enter key moves to next row cell
+  const handleKeyDownNavigate = (e: React.KeyboardEvent<HTMLInputElement>, rowIdx: number, fieldName: string) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const nextInput = document.querySelector(`input[data-row-idx="${rowIdx + 1}"][data-field="${fieldName}"]`) as HTMLInputElement;
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.select();
+      }
+    }
   };
 
   // Download Error Excel (Export only invalid rows with reasons)
@@ -640,30 +983,32 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
       if (v && !v.isValid) {
         errorRowsData.push({
           'अनुक्रमांक (Row)': idx + 1,
-          'नोंदणी प्रकार': r.customerID && r.customerID > 0 ? `संपादित (CIF: ${r.cifNo || ''})` : 'नवीन',
+          'नोंदणी प्रकार': r.customerID && r.customerID > 0 ? `संपादित (CIF: ${r.cifNo || ''})` : `नवीन (CIF: ${newRowCifMap.get(r.id) || ''})`,
           'त्रुटीचे कारण (Error Reason)': v.errors.join(' | '),
+          'जुना खातेदार क्र (LegacyCustomerNo)': r.legacyCustomerNo,
           'पहिले नाव (FirstName)': r.firstName,
           'मधले नाव (MiddleName)': r.middleName,
           'आडनाव (LastName)': r.lastName,
           'नाव इंग्रजीत (FirstNameEng)': r.firstNameEng,
+          'वडिलांचे नाव इंग्रजीत (MiddleNameEng)': r.middleNameEng,
           'आडनाव इंग्रजीत (LastNameEng)': r.lastNameEng,
           'मोबाईल (MobileNo)': r.mobileNo,
           'आधार क्र (AadhaarNo)': r.aadhaarNo ? String(r.aadhaarNo) : '',
           'पॅन क्र (PANNo)': r.panNo,
           'लिंग (Gender)': r.gender,
+          'वारसदार नाव (NomineeName)': r.nomineeName,
+          'वारसदार नाते (NomineeRelation)': r.nomineeRelation,
+          'व्यवसाय (Occupation)': r.occupation,
           'जन्मतारीख (BirthDate)': r.birthDate,
-          'पत्ता (Address)': r.address,
           'गाव (Village)': r.village,
           'तालुका (Taluka)': r.taluka,
           'जिल्हा (District)': r.district,
-          'व्यवसाय (Occupation)': r.occupation,
-          'ग्राहक प्रकार (CustomerType)': r.customerType,
+          'पत्ता (Address)': r.address,
+          'खातेदार प्रकार (CustomerType)': r.customerType,
           'केवायसी स्थिती (KYCStatus)': r.kycStatus,
           'CKYC क्र (CKYCNo)': r.ckycNo,
           'जोखीम वर्ग (RiskCategory)': r.riskCategory,
-          'ईमेल (Email)': r.email,
-          'वारसदार (NomineeName)': r.nomineeName,
-          'जुना ग्राहक क्र (LegacyCustomerNo)': r.legacyCustomerNo
+          'ईमेल (Email)': r.email
         });
       }
     });
@@ -684,7 +1029,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
   // -------------------------------------------------------------
   const handleBulkSave = async (saveValidOnly = true) => {
     if (validRows === 0) {
-      alert('जतन करण्यासाठी एकही वैध ग्राहक सापडला नाही. कृपया आवश्यक फील्ड्स (पहिले नाव, आडनाव) भरा.');
+      alert('जतन करण्यासाठी एकही वैध खातेदार सापडला नाही. कृपया आवश्यक फील्ड्स (पहिले नाव, आडनाव) भरा.');
       return;
     }
 
@@ -696,7 +1041,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
     const newCount = rows.filter(r => validations.get(r.id)?.isValid && (!r.customerID || r.customerID === 0)).length;
     const editCount = rows.filter(r => validations.get(r.id)?.isValid && r.customerID && r.customerID > 0).length;
 
-    const confirmMsg = `एकूण ${validRows} वैध नोंदी सेव्ह करायच्या आहेत का?\n(नवीन ग्राहक: ${newCount}, अद्ययावत ग्राहक: ${editCount})`;
+    const confirmMsg = `एकूण ${validRows} वैध नोंदी सेव्ह करायच्या आहेत का?\n(नवीन खातेदार: ${newCount}, अद्ययावत खातेदार: ${editCount})`;
 
     if (!window.confirm(confirmMsg)) return;
 
@@ -770,12 +1115,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
           skippedCount: res.data.skippedCount || 0,
           startCif: res.data.startCif || '-',
           endCif: res.data.endCif || '-',
-          message: res.data.message || 'सर्व ग्राहक यशस्वीरित्या जतन झाले.'
+          message: res.data.message || 'सर्व खातेदार यशस्वीरित्या जतन झाले.'
         });
       }
     } catch (err: any) {
       console.error(err);
-      const errMsg = err.response?.data?.message || err.message || 'ग्राहक जतन करताना त्रुटी आली.';
+      const errMsg = err.response?.data?.message || err.message || 'खातेदार जतन करताना त्रुटी आली.';
       alert('त्रुटी: ' + errMsg);
     } finally {
       setIsSaving(false);
@@ -841,14 +1186,14 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                 <FileSpreadsheet className="w-5 h-5" />
               </div>
               <h1 className="text-base font-black text-slate-900 tracking-tight">
-                ग्राहक बल्क नोंदणी व संपादन (Customer Bulk Entry & Edit Grid)
+                खातेदार बल्क नोंदणी व संपादन (Customer Bulk Entry & Edit Grid)
               </h1>
               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-300">
                 Excel Spreadsheet Mode
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              एकाच स्क्रीनवर १००+ नवीन ग्राहकांची नोंद करा किंवा विद्यमान ग्राहक लोड करून बल्क एडिट करा • संस्थेचा पत्ता व जन्मतारीख 01/01/1990 आपोआप लागू.
+              एकाच स्क्रीनवर १००+ नवीन खातेदारांची नोंद करा किंवा विद्यमान खातेदार लोड करून बल्क एडिट करा • संस्थेचा पत्ता व जन्मतारीख 01/01/1990 आपोआप लागू.
             </p>
           </div>
         </div>
@@ -863,6 +1208,35 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
             </div>
           )}
 
+          {/* 📁 Hidden Excel File Input */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept=".xlsx, .xls, .csv"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+
+          {/* 📤 Upload Excel File Button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded border border-emerald-300 flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+            title="एक्सेल फाइल (.xlsx / .csv) निवडून थेट ग्रिडमध्ये डेटा आयात करा"
+          >
+            <Upload className="w-3.5 h-3.5 text-emerald-700" />
+            <span>एक्सेल फाइल अपलोड</span>
+          </button>
+
+          {/* 📄 Download Sample Template */}
+          <button
+            onClick={handleDownloadSampleTemplate}
+            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded border border-slate-300 flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+            title="खातेदारांच्या डेटा एन्ट्रीसाठी नमुना एक्सेल टेम्प्लेट डाऊनलोड करा"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-600" />
+            <span>नमुना टेम्प्लेट</span>
+          </button>
+
           {/* 📥 Load Existing Customers Button */}
           <button
             onClick={() => {
@@ -872,10 +1246,10 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
               }
             }}
             className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-800 text-xs font-bold rounded border border-sky-300 flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
-            title="डेटाबेसमधील आधी भरलेले ग्राहक ग्रिडमध्ये आणून बल्क एडिट करा"
+            title="डेटाबेसमधील आधी भरलेले खातेदार ग्रिडमध्ये आणून बल्क एडिट करा"
           >
             <FolderDown className="w-3.5 h-3.5 text-sky-700" />
-            <span>विद्यमान ग्राहक लोड करा</span>
+            <span>विद्यमान खातेदार लोड करा</span>
           </button>
 
           {/* Quick-Fill Popover Toggle */}
@@ -957,6 +1331,18 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     कस्टम लागू करा (Apply Custom)
                   </button>
                 </div>
+
+                <div className="pt-2 border-t border-slate-200 mt-2">
+                  <button
+                    type="button"
+                    onClick={handleAutoFillEnglishNames}
+                    className="w-full py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[11px] font-bold rounded flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs"
+                    title="मराठी नावांवरून इंग्रजी स्पेलिंग स्वयंचलित तयार करा"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-white" />
+                    <span>मराठीवरून इंग्रजी नावे भरा</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -992,7 +1378,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                 : 'bg-slate-300 text-slate-500 cursor-not-allowed'
             }`}
-            title="सर्व वैध ग्राहक एकाच वेळी सेव्ह करा"
+            title="सर्व वैध खातेदार एकाच वेळी सेव्ह करा"
           >
             {isSaving ? (
               <>
@@ -1122,6 +1508,16 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
             ⚡ +१०० ओळी (Fast Bulk)
           </button>
 
+          {/* Auto Transliterate Marathi to English button */}
+          <button
+            onClick={handleAutoFillEnglishNames}
+            className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded shadow-xs flex items-center gap-1 cursor-pointer transition ml-1"
+            title="मराठी नावांवरून इंग्रजी स्पेलिंग स्वयंचलित तयार करा (किंवा निवडलेल्या ओळी)"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-100" />
+            <span>⚡ इंग्रजी स्पेलिंग भरा</span>
+          </button>
+
           {selectedRowIds.size > 0 && (
             <button
               onClick={handleDeleteSelected}
@@ -1163,7 +1559,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
             {/* Sticky Header */}
             <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300 sticky top-0 z-20 shadow-2xs select-none">
               <tr>
-                <th className="p-1.5 w-10 text-center border-r border-slate-300 bg-slate-100">
+                <th className="p-1.5 w-10 text-center border-r border-slate-300">
                   <input
                     type="checkbox"
                     checked={filteredRows.length > 0 && selectedRowIds.size === filteredRows.length}
@@ -1172,8 +1568,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                   />
                 </th>
                 <th className="p-1.5 w-12 text-center border-r border-slate-300">#</th>
-                <th className="p-1.5 w-20 text-center border-r border-slate-300 bg-slate-100">प्रकार / CIF</th>
-                <th className="p-1.5 w-14 text-center border-r border-slate-300">स्थिती</th>
+                <th className="p-1.5 min-w-[95px] text-center border-r border-slate-300">प्रकार / CIF</th>
+                <th className="p-1.5 min-w-[70px] text-center border-r border-slate-300">स्थिती</th>
+                <th className="p-1.5 min-w-[110px] border-r border-slate-300 text-indigo-900 font-bold bg-indigo-50/40">
+                  जुना खातेदार क्र.
+                </th>
                 <th className="p-1.5 min-w-[120px] border-r border-slate-300 text-slate-900">
                   पहिले नाव <span className="text-rose-600 font-black">*</span>
                 </th>
@@ -1182,24 +1581,25 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                   आडनाव <span className="text-rose-600 font-black">*</span>
                 </th>
                 <th className="p-1.5 min-w-[110px] border-r border-slate-300">First Name (Eng)</th>
+                <th className="p-1.5 min-w-[125px] border-r border-slate-300">Father / Middle (Eng)</th>
                 <th className="p-1.5 min-w-[110px] border-r border-slate-300">Last Name (Eng)</th>
                 <th className="p-1.5 min-w-[115px] border-r border-slate-300">मोबाईल क्र. (10 अंक)</th>
                 <th className="p-1.5 min-w-[125px] border-r border-slate-300">आधार क्र. (12 अंक)</th>
                 <th className="p-1.5 min-w-[110px] border-r border-slate-300">पॅन क्र. (PAN)</th>
                 <th className="p-1.5 min-w-[85px] border-r border-slate-300">लिंग</th>
+                <th className="p-1.5 min-w-[110px] border-r border-slate-300">वारसदार नाव</th>
+                <th className="p-1.5 min-w-[90px] border-r border-slate-300">नाते</th>
+                {/* Default-filled fields placed at the end */}
+                <th className="p-1.5 min-w-[100px] border-r border-slate-300">व्यवसाय</th>
                 <th className="p-1.5 min-w-[115px] border-r border-slate-300">जन्मतारीख</th>
                 <th className="p-1.5 min-w-[120px] border-r border-slate-300">गाव / शहर</th>
                 <th className="p-1.5 min-w-[100px] border-r border-slate-300">तालुका</th>
                 <th className="p-1.5 min-w-[100px] border-r border-slate-300">जिल्हा</th>
                 <th className="p-1.5 min-w-[140px] border-r border-slate-300">पत्ता</th>
-                <th className="p-1.5 min-w-[100px] border-r border-slate-300">व्यवसाय</th>
-                <th className="p-1.5 min-w-[105px] border-r border-slate-300">ग्राहक प्रकार</th>
+                <th className="p-1.5 min-w-[105px] border-r border-slate-300">खातेदार प्रकार</th>
                 <th className="p-1.5 min-w-[95px] border-r border-slate-300">केवायसी</th>
                 <th className="p-1.5 min-w-[125px] border-r border-slate-300">CKYC क्र.</th>
                 <th className="p-1.5 min-w-[80px] border-r border-slate-300">जोखीम</th>
-                <th className="p-1.5 min-w-[110px] border-r border-slate-300">वारसदार नाव</th>
-                <th className="p-1.5 min-w-[90px] border-r border-slate-300">नाते</th>
-                <th className="p-1.5 min-w-[100px] border-r border-slate-300">जुना ग्राहक क्र.</th>
                 <th className="p-1.5 w-12 text-center">कृती</th>
               </tr>
             </thead>
@@ -1235,7 +1635,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     </td>
 
                     {/* Type / CIF Badge */}
-                    <td className="p-1 text-center border-r border-slate-200 bg-slate-50/50">
+                    <td className="p-1 text-center border-r border-slate-200 bg-slate-50/60">
                       {isExisting ? (
                         <div className="flex flex-col items-center">
                           <span className="bg-sky-100 text-sky-800 font-black text-[9px] px-1 py-0.5 rounded border border-sky-300" title={`CustomerID: ${row.customerID}`}>
@@ -1246,9 +1646,14 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                           </span>
                         </div>
                       ) : (
-                        <span className="bg-emerald-50 text-emerald-700 font-bold text-[9px] px-1.5 py-0.5 rounded border border-emerald-200">
-                          नवीन
-                        </span>
+                        <div className="flex flex-col items-center">
+                          <span className="bg-emerald-50 text-emerald-700 font-bold text-[9px] px-1.5 py-0.5 rounded border border-emerald-200">
+                            नवीन
+                          </span>
+                          <span className="text-[9px] font-mono text-emerald-700 font-bold mt-0.5" title="प्रस्तावित पुढील CIF क्रमांक">
+                            {newRowCifMap.get(row.id) || nextCifPreview}
+                          </span>
+                        </div>
                       )}
                     </td>
 
@@ -1259,11 +1664,35 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                           <span className="bg-rose-600 text-white font-black text-[9px] px-1.5 py-0.5 rounded shadow-2xs">
                             त्रुटी
                           </span>
-                          <div className="hidden group-hover:block absolute left-8 top-0 z-50 w-56 p-2 bg-slate-900 text-white text-[10px] rounded shadow-lg">
+                          <div className="hidden group-hover:block absolute left-8 top-0 z-50 w-64 p-2 bg-slate-900 text-white text-[10px] rounded shadow-lg text-left">
                             <div className="font-bold text-rose-300 mb-1">दुरुस्ती आवश्यक:</div>
                             <ul className="list-disc pl-3 space-y-0.5">
                               {validation.errors.map((err, eIdx) => (
                                 <li key={eIdx}>{err}</li>
+                              ))}
+                            </ul>
+                            {validation.warnings.length > 0 && (
+                              <>
+                                <div className="font-bold text-amber-300 mt-1.5 mb-0.5">सूचना (Warnings):</div>
+                                <ul className="list-disc pl-3 space-y-0.5 text-amber-200">
+                                  {validation.warnings.map((warn, wIdx) => (
+                                    <li key={wIdx}>{warn}</li>
+                                  ))}
+                                </ul>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ) : validation.warnings.length > 0 ? (
+                        <div className="group relative inline-block cursor-help">
+                          <span className="bg-amber-500 text-white font-black text-[9px] px-1.5 py-0.5 rounded shadow-2xs">
+                            सूचना
+                          </span>
+                          <div className="hidden group-hover:block absolute left-8 top-0 z-50 w-64 p-2 bg-slate-900 text-white text-[10px] rounded shadow-lg text-left">
+                            <div className="font-bold text-amber-300 mb-1">सूचना (Warnings):</div>
+                            <ul className="list-disc pl-3 space-y-0.5 text-amber-200">
+                              {validation.warnings.map((warn, wIdx) => (
+                                <li key={wIdx}>{warn}</li>
                               ))}
                             </ul>
                           </div>
@@ -1275,13 +1704,31 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       )}
                     </td>
 
+                    {/* LegacyCustomerNo (Placed BEFORE FirstName) */}
+                    <td className="p-0.5 border-r border-slate-200 bg-indigo-50/20">
+                      <input
+                        type="text"
+                        data-row-idx={idx}
+                        data-field="legacyCustomerNo"
+                        value={row.legacyCustomerNo}
+                        onChange={e => handleCellChange(row.id, 'legacyCustomerNo', e.target.value)}
+                        onPaste={e => handlePaste(e, idx, 'legacyCustomerNo')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'legacyCustomerNo')}
+                        placeholder="जुना क्र."
+                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-indigo-500 font-medium"
+                      />
+                    </td>
+
                     {/* FirstName (Mandatory) */}
                     <td className="p-0.5 border-r border-slate-200">
                       <input
                         type="text"
+                        data-row-idx={idx}
+                        data-field="firstName"
                         value={row.firstName}
                         onChange={e => handleCellChange(row.id, 'firstName', e.target.value)}
                         onPaste={e => handlePaste(e, idx, 'firstName')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'firstName')}
                         placeholder="पहिले नाव"
                         className={`w-full px-1.5 py-1 text-xs border rounded-xs focus:outline-none focus:ring-1 ${
                           !row.firstName.trim() ? 'border-rose-400 bg-rose-50/40 text-slate-900' : 'border-slate-300 focus:border-primary'
@@ -1293,9 +1740,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     <td className="p-0.5 border-r border-slate-200">
                       <input
                         type="text"
+                        data-row-idx={idx}
+                        data-field="middleName"
                         value={row.middleName}
                         onChange={e => handleCellChange(row.id, 'middleName', e.target.value)}
                         onPaste={e => handlePaste(e, idx, 'middleName')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'middleName')}
                         placeholder="मधले नाव"
                         className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
                       />
@@ -1305,9 +1755,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     <td className="p-0.5 border-r border-slate-200">
                       <input
                         type="text"
+                        data-row-idx={idx}
+                        data-field="lastName"
                         value={row.lastName}
                         onChange={e => handleCellChange(row.id, 'lastName', e.target.value)}
                         onPaste={e => handlePaste(e, idx, 'lastName')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'lastName')}
                         placeholder="आडनाव"
                         className={`w-full px-1.5 py-1 text-xs border rounded-xs focus:outline-none focus:ring-1 ${
                           !row.lastName.trim() ? 'border-rose-400 bg-rose-50/40 text-slate-900' : 'border-slate-300 focus:border-primary'
@@ -1319,10 +1772,28 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     <td className="p-0.5 border-r border-slate-200">
                       <input
                         type="text"
+                        data-row-idx={idx}
+                        data-field="firstNameEng"
                         value={row.firstNameEng}
                         onChange={e => handleCellChange(row.id, 'firstNameEng', e.target.value)}
                         onPaste={e => handlePaste(e, idx, 'firstNameEng')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'firstNameEng')}
                         placeholder="First Name"
+                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                      />
+                    </td>
+
+                    {/* MiddleNameEng (Father / Husband Name in English) */}
+                    <td className="p-0.5 border-r border-slate-200">
+                      <input
+                        type="text"
+                        data-row-idx={idx}
+                        data-field="middleNameEng"
+                        value={row.middleNameEng}
+                        onChange={e => handleCellChange(row.id, 'middleNameEng', e.target.value)}
+                        onPaste={e => handlePaste(e, idx, 'middleNameEng')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'middleNameEng')}
+                        placeholder="Middle / Father Name"
                         className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
                       />
                     </td>
@@ -1331,9 +1802,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     <td className="p-0.5 border-r border-slate-200">
                       <input
                         type="text"
+                        data-row-idx={idx}
+                        data-field="lastNameEng"
                         value={row.lastNameEng}
                         onChange={e => handleCellChange(row.id, 'lastNameEng', e.target.value)}
                         onPaste={e => handlePaste(e, idx, 'lastNameEng')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'lastNameEng')}
                         placeholder="Last Name"
                         className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
                       />
@@ -1344,9 +1818,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       <input
                         type="text"
                         maxLength={10}
+                        data-row-idx={idx}
+                        data-field="mobileNo"
                         value={row.mobileNo}
                         onChange={e => handleCellChange(row.id, 'mobileNo', e.target.value.replace(/\D/g, ''))}
                         onPaste={e => handlePaste(e, idx, 'mobileNo')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'mobileNo')}
                         placeholder="98XXXXXXXX"
                         className={`w-full px-1.5 py-1 text-xs font-mono border rounded-xs focus:outline-none ${
                           row.mobileNo && (!mobileRegex.test(row.mobileNo) || (validation.errors.some(x => x.includes('मोबाईल'))))
@@ -1361,9 +1838,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       <input
                         type="text"
                         maxLength={12}
+                        data-row-idx={idx}
+                        data-field="aadhaarNo"
                         value={row.aadhaarNo}
                         onChange={e => handleCellChange(row.id, 'aadhaarNo', e.target.value.replace(/\D/g, ''))}
                         onPaste={e => handlePaste(e, idx, 'aadhaarNo')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'aadhaarNo')}
                         placeholder="12 अंकी आधार"
                         className={`w-full px-1.5 py-1 text-xs font-mono border rounded-xs focus:outline-none ${
                           row.aadhaarNo && (!aadhaarRegex.test(row.aadhaarNo) || (validation.errors.some(x => x.includes('आधार'))))
@@ -1378,9 +1858,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       <input
                         type="text"
                         maxLength={10}
+                        data-row-idx={idx}
+                        data-field="panNo"
                         value={row.panNo}
                         onChange={e => handleCellChange(row.id, 'panNo', e.target.value.toUpperCase())}
                         onPaste={e => handlePaste(e, idx, 'panNo')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'panNo')}
                         placeholder="ABCDE1234F"
                         className={`w-full px-1.5 py-1 text-xs font-mono border rounded-xs focus:outline-none uppercase ${
                           row.panNo && (!panRegex.test(row.panNo) || (validation.errors.some(x => x.includes('पॅन'))))
@@ -1403,6 +1886,51 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       </select>
                     </td>
 
+                    {/* NomineeName */}
+                    <td className="p-0.5 border-r border-slate-200">
+                      <input
+                        type="text"
+                        data-row-idx={idx}
+                        data-field="nomineeName"
+                        value={row.nomineeName}
+                        onChange={e => handleCellChange(row.id, 'nomineeName', e.target.value)}
+                        onPaste={e => handlePaste(e, idx, 'nomineeName')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'nomineeName')}
+                        placeholder="वारसदार नाव"
+                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none"
+                      />
+                    </td>
+
+                    {/* NomineeRelation */}
+                    <td className="p-0.5 border-r border-slate-200">
+                      <input
+                        type="text"
+                        data-row-idx={idx}
+                        data-field="nomineeRelation"
+                        value={row.nomineeRelation}
+                        onChange={e => handleCellChange(row.id, 'nomineeRelation', e.target.value)}
+                        onPaste={e => handlePaste(e, idx, 'nomineeRelation')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'nomineeRelation')}
+                        placeholder="नाते"
+                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none"
+                      />
+                    </td>
+
+                    {/* Occupation (Default: शेती) */}
+                    <td className="p-0.5 border-r border-slate-200">
+                      <input
+                        type="text"
+                        data-row-idx={idx}
+                        data-field="occupation"
+                        value={row.occupation}
+                        onChange={e => handleCellChange(row.id, 'occupation', e.target.value)}
+                        onPaste={e => handlePaste(e, idx, 'occupation')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'occupation')}
+                        placeholder="व्यवसाय"
+                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
+                      />
+                    </td>
+
                     {/* BirthDate */}
                     <td className="p-0.5 border-r border-slate-200">
                       <input
@@ -1417,9 +1945,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     <td className="p-0.5 border-r border-slate-200">
                       <input
                         type="text"
+                        data-row-idx={idx}
+                        data-field="village"
                         value={row.village}
                         onChange={e => handleCellChange(row.id, 'village', e.target.value)}
                         onPaste={e => handlePaste(e, idx, 'village')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'village')}
                         placeholder="गाव/शहर"
                         className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
                       />
@@ -1429,9 +1960,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     <td className="p-0.5 border-r border-slate-200">
                       <input
                         type="text"
+                        data-row-idx={idx}
+                        data-field="taluka"
                         value={row.taluka}
                         onChange={e => handleCellChange(row.id, 'taluka', e.target.value)}
                         onPaste={e => handlePaste(e, idx, 'taluka')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'taluka')}
                         placeholder="तालुका"
                         className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
                       />
@@ -1441,9 +1975,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     <td className="p-0.5 border-r border-slate-200">
                       <input
                         type="text"
+                        data-row-idx={idx}
+                        data-field="district"
                         value={row.district}
                         onChange={e => handleCellChange(row.id, 'district', e.target.value)}
                         onPaste={e => handlePaste(e, idx, 'district')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'district')}
                         placeholder="जिल्हा"
                         className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
                       />
@@ -1453,22 +1990,13 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     <td className="p-0.5 border-r border-slate-200">
                       <input
                         type="text"
+                        data-row-idx={idx}
+                        data-field="address"
                         value={row.address}
                         onChange={e => handleCellChange(row.id, 'address', e.target.value)}
                         onPaste={e => handlePaste(e, idx, 'address')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'address')}
                         placeholder="पत्ता"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
-                      />
-                    </td>
-
-                    {/* Occupation */}
-                    <td className="p-0.5 border-r border-slate-200">
-                      <input
-                        type="text"
-                        value={row.occupation}
-                        onChange={e => handleCellChange(row.id, 'occupation', e.target.value)}
-                        onPaste={e => handlePaste(e, idx, 'occupation')}
-                        placeholder="व्यवसाय"
                         className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none focus:border-primary"
                       />
                     </td>
@@ -1509,9 +2037,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       <input
                         type="text"
                         maxLength={14}
+                        data-row-idx={idx}
+                        data-field="ckycNo"
                         value={row.ckycNo}
                         onChange={e => handleCellChange(row.id, 'ckycNo', e.target.value.replace(/\D/g, ''))}
                         onPaste={e => handlePaste(e, idx, 'ckycNo')}
+                        onKeyDown={e => handleKeyDownNavigate(e, idx, 'ckycNo')}
                         placeholder="14 अंकी CKYC"
                         className="w-full px-1.5 py-1 text-xs font-mono border border-slate-300 rounded-xs focus:outline-none"
                       />
@@ -1528,39 +2059,6 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                         <option value="Medium">Medium</option>
                         <option value="High">High</option>
                       </select>
-                    </td>
-
-                    {/* NomineeName */}
-                    <td className="p-0.5 border-r border-slate-200">
-                      <input
-                        type="text"
-                        value={row.nomineeName}
-                        onChange={e => handleCellChange(row.id, 'nomineeName', e.target.value)}
-                        placeholder="वारसदार नाव"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none"
-                      />
-                    </td>
-
-                    {/* NomineeRelation */}
-                    <td className="p-0.5 border-r border-slate-200">
-                      <input
-                        type="text"
-                        value={row.nomineeRelation}
-                        onChange={e => handleCellChange(row.id, 'nomineeRelation', e.target.value)}
-                        placeholder="नाते"
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none"
-                      />
-                    </td>
-
-                    {/* LegacyCustomerNo */}
-                    <td className="p-0.5 border-r border-slate-200">
-                      <input
-                        type="text"
-                        value={row.legacyCustomerNo}
-                        onChange={e => handleCellChange(row.id, 'legacyCustomerNo', e.target.value)}
-                        placeholder="जुना ग्राहक क्र."
-                        className="w-full px-1.5 py-1 text-xs border border-slate-300 rounded-xs focus:outline-none"
-                      />
                     </td>
 
                     {/* Delete Action */}
@@ -1586,7 +2084,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
         <div className="flex items-center gap-2 text-xs text-slate-600">
           <Info className="w-4 h-4 text-primary" />
           <span>
-            <strong>टीप:</strong> केवळ वैध असलेले <strong>{validRows}</strong> ग्राहक जतन केले जातील. विद्यमान ग्राहकांचे जुने CustomerID व CIF सुरक्षित ठेवून बदल सेव्ह केले जातात.
+            <strong>टीप:</strong> केवळ वैध असलेले <strong>{validRows}</strong> खातेदार जतन केले जातील. विद्यमान खातेदारांचे जुने CustomerID व CIF सुरक्षित ठेवून बदल सेव्ह केले जातात.
           </span>
         </div>
 
@@ -1596,7 +2094,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
               onClick={onNavigateToCustomers}
               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded border border-slate-300 cursor-pointer transition"
             >
-              📋 ग्राहक यादी पहा
+              📋 खातेदार यादी पहा
             </button>
           )}
 
@@ -1617,7 +2115,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
             ) : (
               <>
                 <Save className="w-4 h-4" />
-                <span>सर्व वैध ग्राहक जतन करा ({validRows})</span>
+                <span>सर्व वैध खातेदार जतन करा ({validRows})</span>
               </>
             )}
           </button>
@@ -1636,10 +2134,10 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900">
-                    विद्यमान ग्राहक डेटा लोड करा (Bulk Edit Customers)
+                    विद्यमान खातेदार डेटा लोड करा (Bulk Edit Customers)
                   </h3>
                   <p className="text-xs text-slate-500">
-                    डेटाबेसमधून ग्राहक निवडून ग्रिडमध्ये आणा आणि त्यांचे नाव, पत्ता किंवा संपर्क माहिती एकाच वेळी अपडेट करा.
+                    डेटाबेसमधून खातेदार निवडून ग्रिडमध्ये आणा आणि त्यांचे नाव, पत्ता किंवा संपर्क माहिती एकाच वेळी अपडेट करा.
                   </p>
                 </div>
               </div>
@@ -1723,7 +2221,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       />
                     </th>
                     <th className="p-2 w-24">CIF क्रमांक</th>
-                    <th className="p-2">ग्राहकाचे पूर्ण नाव</th>
+                    <th className="p-2">खातेदाराचे पूर्ण नाव</th>
                     <th className="p-2 w-28">मोबाईल नंबर</th>
                     <th className="p-2 w-32">आधार क्रमांक</th>
                     <th className="p-2 w-24">पॅन क्रमांक</th>
@@ -1735,13 +2233,13 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                     <tr>
                       <td colSpan={7} className="p-6 text-center text-slate-500">
                         <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
-                        <span>ग्राहक यादी लोड होत आहे...</span>
+                        <span>खातेदार यादी लोड होत आहे...</span>
                       </td>
                     </tr>
                   ) : existingCustomersList.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="p-6 text-center text-slate-500">
-                        कोणतेही ग्राहक सापडले नाहीत. कृपया शोध निकष तपासा.
+                        कोणतेही खातेदार सापडले नाहीत. कृपया शोध निकष तपासा.
                       </td>
                     </tr>
                   ) : (
@@ -1794,7 +2292,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
             {/* Modal Footer Controls */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t text-xs">
               <div className="text-slate-600 font-medium">
-                निवडलेले ग्राहक: <strong className="text-sky-800 font-black">{selectedExistingIds.size}</strong> / {existingCustomersList.length}
+                निवडलेले खातेदार: <strong className="text-sky-800 font-black">{selectedExistingIds.size}</strong> / {existingCustomersList.length}
               </div>
 
               <div className="flex items-center gap-2">
@@ -1812,7 +2310,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       ? 'bg-sky-600 hover:bg-sky-700 text-white'
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
-                  title="सध्याच्या ग्रिडमध्ये या ग्राहकांना पुढे जोडा"
+                  title="सध्याच्या ग्रिडमध्ये या खातेदारांना पुढे जोडा"
                 >
                   ग्रिडमध्ये जोडा (+ Append)
                 </button>
@@ -1824,7 +2322,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                       ? 'bg-primary hover:opacity-90 text-white shadow-xs'
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
-                  title="सध्याचा ग्रिड रिकामा करून फक्त हेच ग्राहक लोड करा"
+                  title="सध्याचा ग्रिड रिकामा करून फक्त हेच खातेदार लोड करा"
                 >
                   ग्रिड बदला (Replace Grid)
                 </button>
@@ -1843,7 +2341,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
             </div>
 
             <h3 className="text-base font-black text-slate-900 mb-1">
-              ग्राहक बल्क व्यवहार यशस्वी!
+              खातेदार बल्क व्यवहार यशस्वी!
             </h3>
             <p className="text-xs text-slate-500 mb-4">
               डेटाबेसमध्ये सर्व बदल यशस्वीरित्या जतन झाले आहेत.
@@ -1855,11 +2353,11 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                 <span className="font-bold text-slate-800 font-mono">{saveResultModal.batchNumber}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">नवीन नोंदलेले ग्राहक (Inserted):</span>
+                <span className="text-slate-500">नवीन नोंदलेले खातेदार (Inserted):</span>
                 <span className="font-black text-emerald-700">{saveResultModal.importedCount}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">अद्ययावत केलेले ग्राहक (Updated):</span>
+                <span className="text-slate-500">अद्ययावत केलेले खातेदार (Updated):</span>
                 <span className="font-black text-sky-700">{saveResultModal.updatedCount}</span>
               </div>
               {saveResultModal.importedCount > 0 && (
@@ -1893,7 +2391,7 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
                   }}
                   className="px-4 py-1.5 bg-primary hover:opacity-90 text-white text-xs font-bold rounded cursor-pointer transition shadow-xs"
                 >
-                  📋 ग्राहक यादी पहा
+                  📋 खातेदार यादी पहा
                 </button>
               )}
             </div>

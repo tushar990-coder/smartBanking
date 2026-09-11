@@ -662,7 +662,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                       <thead className="bg-slate-800 text-white font-semibold">
                                         <tr>
                                           <th className="px-3 py-1.5 text-left border-r border-slate-700">खाते (Ledger Name)</th>
-                                          <th className="px-3 py-1.5 text-left border-r border-slate-700 w-52">सीआयएफ क्र. / ग्राहक (CIF ID)</th>
+                                          <th className="px-3 py-1.5 text-left border-r border-slate-700 w-52">सीआयएफ क्र. / खातेदार (CIF ID)</th>
                                           <th className="px-3 py-1.5 text-right border-r border-slate-700 w-36">नावे (Debit Dr ₹)</th>
                                           <th className="px-3 py-1.5 text-right w-36">जमा (Credit Cr ₹)</th>
                                         </tr>

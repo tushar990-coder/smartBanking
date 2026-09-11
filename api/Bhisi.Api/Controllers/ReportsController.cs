@@ -4661,6 +4661,140 @@ namespace Bhisi.Api.Controllers
 
             return Ok(response);
         }
+
+        // GET: api/Reports/CustomerListReport
+        [HttpGet("CustomerListReport")]
+        public async Task<ActionResult<CustomerReportResponseDto>> GetCustomerListReport(
+            [FromQuery] int? branchId = null,
+            [FromQuery] string? customerType = null,
+            [FromQuery] string? kycStatus = null,
+            [FromQuery] string? status = null,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null,
+            [FromQuery] string? search = null)
+        {
+            try
+            {
+                var query = _context.Customers
+                    .AsNoTracking()
+                    .Include(c => c.Branch)
+                    .Where(c => !c.IsDeleted)
+                    .AsQueryable();
+
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    query = query.Where(c => c.BranchID == branchId.Value);
+                }
+
+                if (!string.IsNullOrWhiteSpace(customerType) && customerType != "सर्व" && customerType != "All")
+                {
+                    query = query.Where(c => c.CustomerType == customerType);
+                }
+
+                if (!string.IsNullOrWhiteSpace(kycStatus) && kycStatus != "सर्व" && kycStatus != "All")
+                {
+                    query = query.Where(c => c.KYCStatus == kycStatus);
+                }
+
+                if (!string.IsNullOrWhiteSpace(status) && status != "सर्व" && status != "All")
+                {
+                    query = query.Where(c => c.Status == status);
+                }
+
+                if (fromDate.HasValue)
+                {
+                    var from = fromDate.Value.Date;
+                    query = query.Where(c => c.RegistrationDate >= from);
+                }
+
+                if (toDate.HasValue)
+                {
+                    var to = toDate.Value.Date.AddDays(1).AddTicks(-1);
+                    query = query.Where(c => c.RegistrationDate <= to);
+                }
+
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    string s = search.Trim().ToLower();
+                    query = query.Where(c => (c.FirstName != null && c.FirstName.ToLower().Contains(s)) ||
+                                             (c.LastName != null && c.LastName.ToLower().Contains(s)) ||
+                                             (c.FirstNameEng != null && c.FirstNameEng.ToLower().Contains(s)) ||
+                                             (c.LastNameEng != null && c.LastNameEng.ToLower().Contains(s)) ||
+                                             (c.CIFNo != null && c.CIFNo.ToLower().Contains(s)) ||
+                                             (c.LegacyCustomerNo != null && c.LegacyCustomerNo.ToLower().Contains(s)) ||
+                                             (c.MobileNo != null && c.MobileNo.Contains(s)) ||
+                                             (c.AadhaarNo != null && c.AadhaarNo.Contains(s)) ||
+                                             (c.Village != null && c.Village.ToLower().Contains(s)));
+                }
+
+                var customerList = await query
+                    .OrderBy(c => c.CustomerID)
+                    .ToListAsync();
+
+                // Calculate summary counts
+                int total = customerList.Count;
+                int active = customerList.Count(c => c.Status == "Active");
+                int inactive = customerList.Count(c => c.Status != "Active");
+                int kycVerified = customerList.Count(c => c.KYCStatus == "Verified" || c.KYCStatus == "पूर्ण");
+                int kycPending = total - kycVerified;
+                int individual = customerList.Count(c => string.Equals(c.CustomerType, "Individual", StringComparison.OrdinalIgnoreCase) || string.Equals(c.CustomerType, "वैयक्तिक", StringComparison.OrdinalIgnoreCase));
+                int commercial = total - individual;
+
+                var rows = new List<CustomerReportRowDto>();
+                int srNo = 1;
+
+                foreach (var c in customerList)
+                {
+                    string fullName = $"{c.FirstName} {c.MiddleName} {c.LastName}".Trim().Replace("  ", " ");
+                    string fullNameEng = $"{c.FirstNameEng} {c.MiddleNameEng} {c.LastNameEng}".Trim().Replace("  ", " ");
+
+                    rows.Add(new CustomerReportRowDto
+                    {
+                        SrNo = srNo++,
+                        CustomerID = c.CustomerID,
+                        CIFNo = c.CIFNo ?? string.Empty,
+                        LegacyCustomerNo = c.LegacyCustomerNo,
+                        FullName = fullName,
+                        FullNameEng = string.IsNullOrWhiteSpace(fullNameEng) ? null : fullNameEng,
+                        MobileNo = c.MobileNo,
+                        Email = c.Email,
+                        Address = c.Address,
+                        Village = c.Village,
+                        Taluka = c.Taluka,
+                        District = c.District,
+                        CustomerType = c.CustomerType ?? "Individual",
+                        KYCStatus = c.KYCStatus ?? "Verified",
+                        AadhaarNoMasked = MaskAadhaar(c.AadhaarNo),
+                        PANNo = string.IsNullOrWhiteSpace(c.PANNo) ? "-" : c.PANNo,
+                        Gender = c.Gender,
+                        BirthDate = c.BirthDate,
+                        RegistrationDate = c.RegistrationDate,
+                        BranchID = c.BranchID,
+                        BranchName = c.Branch?.BranchName ?? "शाखा",
+                        Status = c.Status ?? "Active",
+                        RiskCategory = c.RiskCategory ?? "Low"
+                    });
+                }
+
+                var response = new CustomerReportResponseDto
+                {
+                    TotalCustomers = total,
+                    ActiveCustomers = active,
+                    InactiveCustomers = inactive,
+                    KycVerifiedCount = kycVerified,
+                    KycPendingCount = kycPending,
+                    IndividualCount = individual,
+                    CommercialCount = commercial,
+                    Rows = rows
+                };
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "खातेदार यादी अहवाल तयार करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
     }
 
 

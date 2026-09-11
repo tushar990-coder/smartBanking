@@ -8,6 +8,7 @@ interface LoanAccount {
     loanAccountID: number;
     loanAccountNo: string;
     memberID: number;
+    customerID?: number;
     sanctionedAmount: number;
     principalBalance: number;
     interestBalance: number;
@@ -16,6 +17,12 @@ interface LoanAccount {
     member?: {
         firstName: string;
         lastName: string;
+        memberCode?: string;
+    };
+    customer?: {
+        firstName?: string;
+        lastName?: string;
+        cifNo?: string;
     };
     loanRate?: {
         loanType: string;
@@ -939,7 +946,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         options={borrowerOptions}
                                         value={selectedBorrowerKey || (selectedMemberId ? `M_${selectedMemberId}` : '')} 
                                         onChange={handleMemberChange} 
-                                        placeholder="खातेदार, ग्राहक किंवा सभासद निवडा..." required />
+                                        placeholder="खातेदार किंवा सभासद निवडा..." required />
                                 </div>
                                 
                                 <div>

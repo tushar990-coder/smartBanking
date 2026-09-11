@@ -22,6 +22,8 @@ interface FdAccountDetails {
   remarks?: string;
   branchName?: string;
   mobileNo?: string;
+  customerName?: string;
+  cifNo?: string;
 }
 
 interface Props {
@@ -105,6 +107,7 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
 
     const encodedMsg = encodeURIComponent(message);
     const cleanMobile = account.mobileNo ? account.mobileNo.replace(/\D/g, '') : '';
+    const phoneParam = cleanMobile ? `phone=91${cleanMobile.replace(/^91/, '')}&` : '';
     if (!navigator.onLine) {
       alert('इंटरनेट कनेक्शन उपलब्ध नाही (Offline Mode). कृपया पावती प्रिंट करा.');
       return;
@@ -132,7 +135,7 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
   const maturityInWords = getAmountInWordsMarathi(account.maturityAmount || 0);
 
   // Compact Single Half-A4 (A5 Size) Receipt Card Component
-  const RenderReceiptCard = ({ copyType }: { copyType: 'ग्राहक प्रत (Member Copy)' | 'दप्तर प्रत (Office Copy)' }) => (
+  const RenderReceiptCard = ({ copyType }: { copyType: 'खातेदार प्रत (Member Copy)' | 'दप्तर प्रत (Office Copy)' }) => (
     <div
       className={`p-3.5 relative ${
         printMode === 'blank'
@@ -197,7 +200,7 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
 
         {/* Official Legal Statement */}
         <div className="bg-slate-50/90 border border-slate-200 p-2 rounded text-[10px] leading-snug text-slate-800 text-justify">
-          प्रमाणित करण्यात येते की, श्री/श्रीमती <strong className="text-slate-950 font-bold">{account.memberName || account.customerName}</strong> ({account.memberCode ? `सभासद कोड: ${account.memberCode}` : `ग्राहक / CIF: ${account.cifNo || '-'}`}) यांनी शाखेत <strong className="text-primary font-black">{formatCurrency(account.depositAmount)}</strong> ठेव जमा केली असून नियमानुसार स्वीकारण्यात आली आहे.
+          प्रमाणित करण्यात येते की, श्री/श्रीमती <strong className="text-slate-950 font-bold">{account.memberName || account.customerName}</strong> ({account.memberCode ? `सभासद कोड: ${account.memberCode}` : `खातेदार / CIF: ${account.cifNo || '-'}`}) यांनी शाखेत <strong className="text-primary font-black">{formatCurrency(account.depositAmount)}</strong> ठेव जमा केली असून नियमानुसार स्वीकारण्यात आली आहे.
         </div>
 
         {/* Particulars Grid Table */}
@@ -428,7 +431,7 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
           }}
         >
           {/* Top Receipt Copy 1 */}
-          <RenderReceiptCard copyType="ग्राहक प्रत (Member Copy)" />
+          <RenderReceiptCard copyType="खातेदार प्रत (Member Copy)" />
 
           {/* Dashed Separator Line for Cut-out */}
           {copies === 'dual' && (

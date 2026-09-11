@@ -411,7 +411,7 @@ export default function LockerDashboard({ onNavigate }: LockerDashboardProps) {
             <div>
               <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">🔴 वाटप झालेले</span>
               <p className="text-2xl font-black text-blue-800 mt-0.5">{summary.allottedLockers}</p>
-              <span className="text-[10px] text-slate-500 font-medium">सक्रिय ग्राहक</span>
+              <span className="text-[10px] text-slate-500 font-medium">सक्रिय खातेदार</span>
             </div>
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center font-bold group-hover:bg-blue-600 group-hover:text-white transition-colors">
               <UserCheck size={20} />
@@ -544,7 +544,7 @@ export default function LockerDashboard({ onNavigate }: LockerDashboardProps) {
                 </div>
                 <div>
                   <span className="font-bold text-slate-800 text-[11px] block">ड्युअल की ऑथेंटिकेशन (Dual Key)</span>
-                  <span className="text-[10px] text-slate-500">प्रत्येक लॉकर उघडण्यासाठी ग्राहकाची चावी व बँकेची मास्टर चावी आवश्यक असते.</span>
+                  <span className="text-[10px] text-slate-500">प्रत्येक लॉकर उघडण्यासाठी खातेदाराची चावी व बँकेची मास्टर चावी आवश्यक असते.</span>
                 </div>
               </div>
 

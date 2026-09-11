@@ -134,7 +134,7 @@ const PigmyInterestPosting: React.FC = () => {
                   <thead className="bg-gray-100 text-gray-700 uppercase border-b border-gray-200 font-bold">
                     <tr>
                       <th className="p-2 border-r border-gray-200">खाते क्र (Account No)</th>
-                      <th className="p-2 border-r border-gray-200">ग्राहकाचे नाव (Customer Name)</th>
+                      <th className="p-2 border-r border-gray-200">खातेदाराचे नाव (Customer Name)</th>
                       <th className="p-2 border-r border-gray-200 text-right">चालू शिल्लक (Balance ₹)</th>
                       <th className="p-2 text-right text-emerald-800">कॅल्क्युलेटेड व्याज (Interest ₹)</th>
                     </tr>

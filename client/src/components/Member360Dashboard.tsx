@@ -275,7 +275,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
             } catch (err) {
                 if (isMounted) {
                     console.error("Failed to load customer list", err);
-                    setError("ग्राहकांची यादी लोड करता आली नाही.");
+                    setError("खातेदारांची यादी लोड करता आली नाही.");
                 }
             }
         };

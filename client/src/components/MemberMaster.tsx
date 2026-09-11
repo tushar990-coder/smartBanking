@@ -587,7 +587,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     }
 
     if (!editingId && !selectedCustomerId) {
-      setError("कृपया प्रथम खातेदार (Customer) निवडा किंवा ग्राहक नोंदणी करा.");
+      setError("कृपया प्रथम खातेदार (Customer) निवडा किंवा खातेदार नोंदणी करा.");
       return;
     }
 
@@ -1031,20 +1031,20 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 <Users className="w-4 h-4 text-primary" />
                 <h2 className="text-xs font-bold text-primary">१. खातेदार निवड व शाखा (Customer Linkage & Branch)</h2>
               </div>
-              <span className="text-[10px] text-gray-500 font-medium">आधी ग्राहक नोंदणी झाली असल्यास थेट शोधा व निवडा</span>
+              <span className="text-[10px] text-gray-500 font-medium">आधी खातेदार नोंदणी झाली असल्यास थेट शोधा व निवडा</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end">
               <div className="sm:col-span-2">
                 <label className={labelClass}>
-                  नोंदणीकृत ग्राहक निवडा (Search Customer by CIF / Name / Mobile / Aadhaar) <span className="text-red-500">*</span>
+                  नोंदणीकृत खातेदार निवडा (Search Customer by CIF / Name / Mobile / Aadhaar) <span className="text-red-500">*</span>
                 </label>
                 <CustomerSearchSelect
                   customers={customers}
                   value={selectedCustomerId}
                   onChange={handleCustomerSelect}
                   isDisabled={!!editingId}
-                  placeholder="-- ग्राहक शोधा व निवडा (उदा. CIF001066 / तुषार / 9876...) --"
+                  placeholder="-- खातेदार शोधा व निवडा (उदा. CIF001066 / तुषार / 9876...) --"
                 />
               </div>
 

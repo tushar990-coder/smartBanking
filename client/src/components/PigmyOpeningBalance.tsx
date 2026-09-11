@@ -200,7 +200,7 @@ export default function PigmyOpeningBalance() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.customerID) return toast.error('कृपया ग्राहक निवडा.');
+    if (!formData.customerID) return toast.error('कृपया खातेदार निवडा.');
     if (!formData.pigmySchemeID) return toast.error('कृपया पिग्मी योजना निवडा.');
     if (!formData.pigmyAgentID) return toast.error('कृपया एजंट निवडा.');
 
@@ -230,7 +230,7 @@ export default function PigmyOpeningBalance() {
         setSuccessModalData({
           isEdit: true,
           accountNo: accNo,
-          customerName: customerObj ? `${customerObj.firstName || ''} ${customerObj.middleName ? customerObj.middleName + ' ' : ''}${customerObj.lastName || ''}`.trim() : 'ग्राहक',
+          customerName: customerObj ? `${customerObj.firstName || ''} ${customerObj.middleName ? customerObj.middleName + ' ' : ''}${customerObj.lastName || ''}`.trim() : 'खातेदार',
           cifNo: customerObj?.cifNo || '-',
           mobileNo: customerObj?.mobileNo || '-',
           schemeName: schemeObj?.schemeName || 'पिग्मी योजना',
@@ -248,7 +248,7 @@ export default function PigmyOpeningBalance() {
         setSuccessModalData({
           isEdit: false,
           accountNo: createdAccountNo,
-          customerName: customerObj ? `${customerObj.firstName || ''} ${customerObj.middleName ? customerObj.middleName + ' ' : ''}${customerObj.lastName || ''}`.trim() : 'ग्राहक',
+          customerName: customerObj ? `${customerObj.firstName || ''} ${customerObj.middleName ? customerObj.middleName + ' ' : ''}${customerObj.lastName || ''}`.trim() : 'खातेदार',
           cifNo: customerObj?.cifNo || '-',
           mobileNo: customerObj?.mobileNo || '-',
           schemeName: schemeObj?.schemeName || 'पिग्मी योजना',
@@ -278,8 +278,8 @@ export default function PigmyOpeningBalance() {
     const rows = filteredAccounts.map((acc, i) => ({
       'अ.क्र.': i + 1,
       'खाते क्र.': acc.accountNo,
-      'ग्राहक CIF': acc.customer?.cifNo || '-',
-      'ग्राहकाचे नाव': acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : '-',
+      'खातेदार CIF': acc.customer?.cifNo || '-',
+      'खातेदाराचे नाव': acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : '-',
       'पिग्मी योजना': acc.pigmyScheme?.schemeName || '-',
       'एजंटचे नाव': acc.pigmyAgent?.agentName || '-',
       'आरंभिक शिल्लक (₹)': acc.totalDepositedAmount || acc.openingBalance || 0,
@@ -444,13 +444,13 @@ export default function PigmyOpeningBalance() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <div>
                 <label className={labelClass}>
-                  ग्राहक निवडा (Customer) <span className="text-red-500">*</span>
+                  खातेदार निवडा (Customer) <span className="text-red-500">*</span>
                 </label>
                 <CustomerSearchSelect
                   customers={customers}
                   value={formData.customerID ? Number(formData.customerID) : ''}
                   onChange={(val) => setFormData(prev => ({ ...prev, customerID: val ? String(val) : '' }))}
-                  placeholder="-- ग्राहक नाव, CIF किंवा मोबाईलने शोधा --"
+                  placeholder="-- खातेदार नाव, CIF किंवा मोबाईलने शोधा --"
                 />
               </div>
 
@@ -695,7 +695,7 @@ export default function PigmyOpeningBalance() {
                           {acc.accountNo}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
-                          <div className="font-bold text-gray-900">{acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : `ग्राहक ID: ${acc.customerID}`}</div>
+                          <div className="font-bold text-gray-900">{acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : `खातेदार ID: ${acc.customerID}`}</div>
                           <div className="text-[10px] text-gray-500 font-mono">CIF: {acc.customer?.cifNo || '-'}</div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-800">
@@ -801,7 +801,7 @@ export default function PigmyOpeningBalance() {
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <span className="text-slate-500 font-semibold flex items-center gap-1.5">
                     <User className="w-3.5 h-3.5 text-primary" />
-                    <span>ग्राहकाचे नाव:</span>
+                    <span>खातेदाराचे नाव:</span>
                   </span>
                   <div className="text-right">
                     <span className="font-extrabold text-slate-900 text-xs">{successModalData.customerName}</span>

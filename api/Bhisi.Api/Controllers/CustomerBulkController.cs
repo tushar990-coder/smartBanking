@@ -89,6 +89,14 @@ namespace Bhisi.Api.Controllers
             public List<string> Warnings { get; set; } = new List<string>();
         }
 
+        public class BulkValidationResult
+        {
+            public int TotalRows { get; set; }
+            public int ValidCount { get; set; }
+            public int InvalidCount { get; set; }
+            public List<RowValidationItem> Results { get; set; } = new List<RowValidationItem>();
+        }
+
         public class BulkSaveRequest
         {
             public string BatchName { get; set; } = "DirectGridEntry";
@@ -141,7 +149,26 @@ namespace Bhisi.Api.Controllers
                     .AsNoTracking()
                     .FirstOrDefaultAsync(s => s.SequenceCode == "CORE_CIF_SEQ");
 
-                long nextNum = (seq?.CurrentValue ?? 0) + 1;
+                long maxNum = seq?.CurrentValue ?? 0;
+
+                // Also check max existing CIF from Customers table so next preview is always strictly accurate
+                var latestCifs = await _context.Customers
+                    .AsNoTracking()
+                    .Where(c => c.CIFNo != null && c.CIFNo.StartsWith("CIF"))
+                    .OrderByDescending(c => c.CustomerID)
+                    .Take(20)
+                    .Select(c => c.CIFNo!)
+                    .ToListAsync();
+
+                foreach (var cif in latestCifs)
+                {
+                    if (cif.Length > 3 && long.TryParse(cif.Substring(3), out long parsed) && parsed > maxNum)
+                    {
+                        maxNum = parsed;
+                    }
+                }
+
+                long nextNum = maxNum + 1;
                 return $"CIF{nextNum.ToString().PadLeft(seq?.PaddingLength ?? 6, '0')}";
             }
             catch
@@ -195,7 +222,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var list = await query
-                .OrderByDescending(c => c.CustomerID)
+                .OrderBy(c => c.CustomerID)
                 .Take(limit > 0 && limit <= 500 ? limit : 100)
                 .Select(c => new BulkCustomerRowDto
                 {
@@ -240,15 +267,27 @@ namespace Bhisi.Api.Controllers
         [HttpPost("validate-live")]
         public async Task<IActionResult> ValidateLive([FromBody] List<BulkCustomerRowDto> rows)
         {
+            var valResult = await RunInternalValidationAsync(rows ?? new List<BulkCustomerRowDto>());
+            return Ok(new
+            {
+                totalRows = valResult.TotalRows,
+                validCount = valResult.ValidCount,
+                invalidCount = valResult.InvalidCount,
+                results = valResult.Results
+            });
+        }
+
+        private async Task<BulkValidationResult> RunInternalValidationAsync(List<BulkCustomerRowDto> rows)
+        {
             if (rows == null || rows.Count == 0)
             {
-                return Ok(new
+                return new BulkValidationResult
                 {
-                    totalRows = 0,
-                    validCount = 0,
-                    invalidCount = 0,
-                    results = new List<RowValidationItem>()
-                });
+                    TotalRows = 0,
+                    ValidCount = 0,
+                    InvalidCount = 0,
+                    Results = new List<RowValidationItem>()
+                };
             }
 
             var results = new List<RowValidationItem>();
@@ -481,11 +520,24 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // Birth Date check
-                if (r.BirthDate.HasValue && r.BirthDate.Value > DateTime.Today)
+                // Birth Date check & Minor warning
+                if (r.BirthDate.HasValue)
                 {
-                    item.Errors.Add("जन्मतारीख भविष्यातील असू शकत नाही.");
-                    item.IsValid = false;
+                    if (r.BirthDate.Value > DateTime.Today)
+                    {
+                        item.Errors.Add("जन्मतारीख भविष्यातील असू शकत नाही.");
+                        item.IsValid = false;
+                    }
+                    else if (r.BirthDate.Value > DateTime.Today.AddYears(-18))
+                    {
+                        item.Warnings.Add("ग्राहक अल्पवयीन (वय १८ पेक्षा कमी - Minor) आहे.");
+                    }
+                }
+
+                // Nominee Name / Relation validation warning
+                if (!string.IsNullOrWhiteSpace(r.NomineeName) && string.IsNullOrWhiteSpace(r.NomineeRelation))
+                {
+                    item.Warnings.Add("वारसदाराचे नाव भरले आहे, नाते (Relation) देखील भरणे उचित ठरेल.");
                 }
 
                 results.Add(item);
@@ -494,13 +546,13 @@ namespace Bhisi.Api.Controllers
             int validCount = results.Count(x => x.IsValid);
             int invalidCount = results.Count(x => !x.IsValid);
 
-            return Ok(new
+            return new BulkValidationResult
             {
-                totalRows = rows.Count,
-                validCount,
-                invalidCount,
-                results
-            });
+                TotalRows = rows.Count,
+                ValidCount = validCount,
+                InvalidCount = invalidCount,
+                Results = results
+            };
         }
 
         // POST: api/CustomerBulk/save
@@ -517,22 +569,9 @@ namespace Bhisi.Api.Controllers
             var (userId, username, userBranchId, _) = GetCurrentUserContext();
             int targetBranchId = request.BranchID.HasValue && request.BranchID.Value > 0 ? request.BranchID.Value : userBranchId;
 
-            // Re-validate to ensure 100% integrity before commit
-            var validationResponse = await ValidateLive(request.Customers) as OkObjectResult;
-            dynamic? valData = validationResponse?.Value;
-            var validationMap = new Dictionary<int, RowValidationItem>();
-
-            if (valData != null)
-            {
-                var list = valData.results as List<RowValidationItem>;
-                if (list != null)
-                {
-                    foreach (var v in list)
-                    {
-                        validationMap[v.RowIndex] = v;
-                    }
-                }
-            }
+            // Re-validate to ensure 100% integrity before commit (strongly typed, no dynamic reflection)
+            var valResult = await RunInternalValidationAsync(request.Customers);
+            var validationMap = valResult.Results.ToDictionary(v => v.RowIndex);
 
             var validCandidates = new List<BulkCustomerRowDto>();
             var skippedCandidates = new List<BulkCustomerRowDto>();
@@ -642,7 +681,7 @@ namespace Bhisi.Api.Controllers
                         Village = string.IsNullOrWhiteSpace(dto.Village) ? null : dto.Village.Trim(),
                         Taluka = string.IsNullOrWhiteSpace(dto.Taluka) ? null : dto.Taluka.Trim(),
                         District = string.IsNullOrWhiteSpace(dto.District) ? null : dto.District.Trim(),
-                        Occupation = string.IsNullOrWhiteSpace(dto.Occupation) ? null : dto.Occupation.Trim(),
+                        Occupation = string.IsNullOrWhiteSpace(dto.Occupation) ? "शेती" : dto.Occupation.Trim(),
                         CustomerType = string.IsNullOrWhiteSpace(dto.CustomerType) ? "Individual" : dto.CustomerType.Trim(),
                         KYCStatus = string.IsNullOrWhiteSpace(dto.KYCStatus) ? "Verified" : dto.KYCStatus.Trim(),
                         CKYCNo = string.IsNullOrWhiteSpace(dto.CKYCNo) ? null : dto.CKYCNo.Trim(),
@@ -655,6 +694,7 @@ namespace Bhisi.Api.Controllers
                         ImportBatchID = batchRecord.BatchID,
                         Status = "Active",
                         IsDeleted = false,
+                        IsMinor = dto.BirthDate.HasValue && dto.BirthDate.Value > DateTime.Today.AddYears(-18),
                         CreatedBy = userId,
                         CreatedOn = DateTime.UtcNow,
                         RegistrationDate = DateTime.Today
@@ -688,6 +728,7 @@ namespace Bhisi.Api.Controllers
                             existing.PANNo = string.IsNullOrWhiteSpace(dto.PANNo) ? null : dto.PANNo.Trim().ToUpper();
                             existing.Gender = string.IsNullOrWhiteSpace(dto.Gender) ? "Male" : dto.Gender.Trim();
                             existing.BirthDate = dto.BirthDate;
+                            existing.IsMinor = dto.BirthDate.HasValue && dto.BirthDate.Value > DateTime.Today.AddYears(-18);
                             existing.Address = string.IsNullOrWhiteSpace(dto.Address) ? null : dto.Address.Trim();
                             existing.Village = string.IsNullOrWhiteSpace(dto.Village) ? null : dto.Village.Trim();
                             existing.Taluka = string.IsNullOrWhiteSpace(dto.Taluka) ? null : dto.Taluka.Trim();
@@ -777,26 +818,38 @@ namespace Bhisi.Api.Controllers
         {
             if (count <= 0) return (string.Empty, string.Empty, new List<string>());
 
-            var seq = await _context.CifSequences
-                .FirstOrDefaultAsync(s => s.SequenceCode == "CORE_CIF_SEQ");
+            CifSequence? seq = null;
+            try
+            {
+                // SQL Server atomic lock with UPDLOCK, ROWLOCK to guarantee zero duplicate CIF in concurrency
+                seq = await _context.CifSequences
+                    .FromSqlInterpolated($"SELECT * FROM CifSequences WITH (UPDLOCK, ROWLOCK) WHERE SequenceCode = 'CORE_CIF_SEQ'")
+                    .FirstOrDefaultAsync();
+            }
+            catch
+            {
+                seq = await _context.CifSequences.FirstOrDefaultAsync(s => s.SequenceCode == "CORE_CIF_SEQ");
+            }
+
+            long maxExisting = 0;
+            var latestCifs = await _context.Customers
+                .AsNoTracking()
+                .Where(c => c.CIFNo != null && c.CIFNo.StartsWith("CIF"))
+                .OrderByDescending(c => c.CustomerID)
+                .Take(50)
+                .Select(c => c.CIFNo!)
+                .ToListAsync();
+
+            foreach (var c in latestCifs)
+            {
+                if (c.Length > 3 && long.TryParse(c.Substring(3), out long num) && num > maxExisting)
+                {
+                    maxExisting = num;
+                }
+            }
 
             if (seq == null)
             {
-                long maxExisting = 0;
-                var allCifs = await _context.Customers
-                    .AsNoTracking()
-                    .Where(c => c.CIFNo != null && c.CIFNo.StartsWith("CIF"))
-                    .Select(c => c.CIFNo!)
-                    .ToListAsync();
-
-                foreach (var c in allCifs)
-                {
-                    if (int.TryParse(c.Substring(3), out int num) && num > maxExisting)
-                    {
-                        maxExisting = num;
-                    }
-                }
-
                 seq = new CifSequence
                 {
                     SequenceCode = "CORE_CIF_SEQ",
@@ -806,6 +859,12 @@ namespace Bhisi.Api.Controllers
                     LastUpdated = DateTime.UtcNow
                 };
                 _context.CifSequences.Add(seq);
+                await _context.SaveChangesAsync();
+            }
+            else if (seq.CurrentValue < maxExisting)
+            {
+                seq.CurrentValue = maxExisting;
+                seq.LastUpdated = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
             }
 

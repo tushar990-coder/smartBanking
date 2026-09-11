@@ -391,7 +391,7 @@ const SavingAccountMaster: React.FC = () => {
     }
     // Don't add duplicate
     if (jointHolderCustomerIDs.includes(selectedJointCustomerID)) {
-      setError('हा ग्राहक आधीच जोडलेला आहे.');
+      setError('हा खातेदार आधीच जोडलेला आहे.');
       return;
     }
     setJointHolderCustomerIDs(prev => [...prev, selectedJointCustomerID]);

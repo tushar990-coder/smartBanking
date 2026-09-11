@@ -434,7 +434,7 @@ export default function SansthaMaster() {
               <ShieldCheck className="w-4 h-4 text-primary" />
               <h2 className="text-xs font-bold text-primary">३. खातेदार नोंदणी व केवायसी पडताळणी नियम (Customer Registration & KYC Rules)</h2>
             </div>
-            <span className="text-[10px] text-gray-500 font-medium">नवीन ग्राहक व खाते उघडताना लागू होणारे नियम</span>
+            <span className="text-[10px] text-gray-500 font-medium">नवीन खातेदार व खाते उघडताना लागू होणारे नियम</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">

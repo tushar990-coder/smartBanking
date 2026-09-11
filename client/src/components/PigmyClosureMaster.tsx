@@ -127,7 +127,7 @@ const PigmyClosureMaster: React.FC = () => {
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-gray-50 p-2.5 rounded border border-gray-200">
                 <div>
-                  <p className="text-[10px] text-gray-500 font-bold uppercase">ग्राहकाचे नाव (Customer Name)</p>
+                  <p className="text-[10px] text-gray-500 font-bold uppercase">खातेदाराचे नाव (Customer Name)</p>
                   <p className="font-bold text-xs text-gray-900">{preview.customerName || preview.memberName}</p>
                 </div>
                 <div>

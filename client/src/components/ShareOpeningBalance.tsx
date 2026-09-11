@@ -928,12 +928,12 @@ const ShareOpeningBalance: React.FC = () => {
           {/* Row 2: Select Member & IDs */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
             <div className="sm:col-span-6">
-              <label className={labelClass}>खातेदार / ग्राहक निवडा (Select Customer / CIF) <span className="text-red-500">*</span></label>
+              <label className={labelClass}>खातेदार निवडा (Select Customer / CIF) <span className="text-red-500">*</span></label>
               <MemberSearchSelect 
                 members={members} 
                 value={formData.memberId ? Number(formData.memberId) : ''} 
                 onChange={(val) => handleChange({ target: { name: 'memberId', value: val ? String(val) : '' } })} 
-                placeholder="-- ग्राहक शोधा (CIF No / नाव / मोबाईल) --"
+                placeholder="-- खातेदार शोधा (CIF No / नाव / मोबाईल) --"
               />
             </div>
 

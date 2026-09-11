@@ -94,7 +94,7 @@ export default function PigmyAccountOpening() {
     const mn = c.middleName || c.MiddleName || '';
     const ln = c.lastName || c.LastName || '';
     const name = `${fn} ${mn} ${ln}`.replace(/\s+/g, ' ').trim();
-    return name || 'अज्ञात ग्राहक';
+    return name || 'अज्ञात खातेदार';
   };
 
   const getCustomerCif = (c: any): string => {
@@ -280,8 +280,8 @@ export default function PigmyAccountOpening() {
     setErrorMessage('');
 
     if (!formData.customerID) {
-      setErrorMessage('कृपया ग्राहक निवडा.');
-      toast.error('कृपया ग्राहक निवडा.');
+      setErrorMessage('कृपया खातेदार निवडा.');
+      toast.error('कृपया खातेदार निवडा.');
       return;
     }
     if (!formData.pigmySchemeID) {
@@ -521,7 +521,7 @@ export default function PigmyAccountOpening() {
         <div>
           <div className="text-xs font-bold text-slate-800 pb-2 mb-3 border-b border-slate-100 flex items-center gap-1.5">
             <User className="w-4 h-4 text-primary" />
-            <span>१. ग्राहक व खाते क्रमांक माहिती (Customer & Account Info)</span>
+            <span>१. खातेदार व खाते क्रमांक माहिती (Customer & Account Info)</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -651,7 +651,7 @@ export default function PigmyAccountOpening() {
 
                 <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-xl text-[10px] flex items-center gap-1 shrink-0">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>निवडलेला ग्राहक (Active Customer)</span>
+                  <span>निवडलेला खातेदार (Active Customer)</span>
                 </span>
               </div>
 
@@ -883,7 +883,7 @@ export default function PigmyAccountOpening() {
                 <thead className="bg-primary text-white font-semibold sticky top-0 z-10">
                   <tr>
                     <th className="px-3 py-2.5">खाते क्रमांक (Account No)</th>
-                    <th className="px-3 py-2.5">ग्राहकाचे नाव (Customer Name)</th>
+                    <th className="px-3 py-2.5">खातेदाराचे नाव (Customer Name)</th>
                     <th className="px-3 py-2.5">पिग्मी योजना (Scheme)</th>
                     <th className="px-3 py-2.5">नियुक्त एजंट (Agent)</th>
                     <th className="px-3 py-2.5 text-right">जमा रक्कम (Balance ₹)</th>
@@ -1047,7 +1047,7 @@ export default function PigmyAccountOpening() {
                 </div>
 
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                  <span className="text-slate-500 font-medium">ग्राहकाचे नाव (Customer Name):</span>
+                  <span className="text-slate-500 font-medium">खातेदाराचे नाव (Customer Name):</span>
                   <span className="font-bold text-slate-900">
                     👤 {selectedAccountModal.customer ? `${selectedAccountModal.customer.firstName} ${selectedAccountModal.customer.middleName ? selectedAccountModal.customer.middleName + ' ' : ''}${selectedAccountModal.customer.lastName}` : '-'}
                   </span>
@@ -1253,7 +1253,7 @@ export default function PigmyAccountOpening() {
                 </div>
 
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-medium">ग्राहकाचे नाव:</span>
+                  <span className="text-slate-500 font-medium">खातेदाराचे नाव:</span>
                   <span className="font-bold text-slate-900">{createdAccountResult.customerName}</span>
                 </div>
 

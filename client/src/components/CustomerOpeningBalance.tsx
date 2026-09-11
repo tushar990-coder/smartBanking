@@ -93,7 +93,7 @@ export default function CustomerOpeningBalanceForm() {
       return;
     }
     if (!selectedCustomerId) {
-      alert("कृपया ग्राहक निवडा.");
+      alert("कृपया खातेदार निवडा.");
       return;
     }
     if (!formData.amount || parseFloat(formData.amount) <= 0) {
@@ -117,7 +117,7 @@ export default function CustomerOpeningBalanceForm() {
       });
 
       if (response.ok) {
-        alert("ग्राहक आरंभी शिल्लक यशस्वीरित्या सेव्ह केली!");
+        alert("खातेदार आरंभी शिल्लक यशस्वीरित्या सेव्ह केली!");
         setFormData({ ledgerID: '', amount: '', balanceType: 'Dr' });
         setSelectedCustomerId('');
         fetchBalances();
@@ -165,8 +165,8 @@ export default function CustomerOpeningBalanceForm() {
             <Wallet className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-gray-800">ग्राहक आरंभी शिल्लक (Customer Opening Balance)</h1>
-            <p className="text-[11px] text-gray-500">ग्राहकांच्या वैयक्तिक लेजर खात्यांची आरंभी शिल्लक (नावे / जमा) नोंदणी</p>
+            <h1 className="text-base font-bold text-gray-800">खातेदार आरंभी शिल्लक (Customer Opening Balance)</h1>
+            <p className="text-[11px] text-gray-500">खातेदारांच्या वैयक्तिक लेजर खात्यांची आरंभी शिल्लक (नावे / जमा) नोंदणी</p>
           </div>
         </div>
 
@@ -201,7 +201,7 @@ export default function CustomerOpeningBalanceForm() {
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-gray-700 mb-1">ग्राहक (Customer / CIF) *</label>
+              <label className="block text-[11px] font-bold text-gray-700 mb-1">खातेदार (Customer / CIF) *</label>
               <CustomerSearchSelect
                 customers={customers}
                 value={selectedCustomerId}
@@ -250,7 +250,7 @@ export default function CustomerOpeningBalanceForm() {
         {/* List Table */}
         <div className="lg:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex flex-col">
           <div className="flex justify-between items-center mb-3">
-            <h2 className="text-sm font-bold text-gray-800">नोंदवलेली ग्राहक आरंभी शिल्लक यादी ({balances.length})</h2>
+            <h2 className="text-sm font-bold text-gray-800">नोंदवलेली खातेदार आरंभी शिल्लक यादी ({balances.length})</h2>
             <div className="relative w-64">
               <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
               <input
@@ -268,7 +268,7 @@ export default function CustomerOpeningBalanceForm() {
               <thead>
                 <tr className="bg-gray-100 text-gray-700 border-b">
                   <th className="p-2">CIF कोड</th>
-                  <th className="p-2">ग्राहकाचे नाव</th>
+                  <th className="p-2">खातेदाराचे नाव</th>
                   <th className="p-2">लेजर खाते</th>
                   <th className="p-2 text-right">रक्कम (₹)</th>
                   <th className="p-2 text-center">प्रकार</th>

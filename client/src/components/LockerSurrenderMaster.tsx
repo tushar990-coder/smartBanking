@@ -357,7 +357,7 @@ const LockerSurrenderMaster: React.FC = () => {
                       onChange={handleChange}
                       className="rounded text-emerald-600 focus:ring-emerald-500"
                     />
-                    <span>ग्राहकाकडून मूळ चावी परत मिळाली</span>
+                    <span>खातेदाराकडून मूळ चावी परत मिळाली</span>
                   </label>
                 </div>
 

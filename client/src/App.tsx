@@ -24,6 +24,7 @@ import {
   Calculator, 
   ShieldCheck, 
   FileSpreadsheet, 
+  FileText,
   Settings, 
   UserCog,
   KeyRound,
@@ -77,6 +78,7 @@ import LoanLedgerReport from './components/LoanLedgerReport';
 import LoanOverdueReport from './components/LoanOverdueReport';
 import LoanRecoveryNoticeReport from './components/LoanRecoveryNoticeReport';
 import GuarantorReport from './components/GuarantorReport';
+import CustomerListReport from './components/CustomerListReport';
 import MemberListReport from './components/MemberListReport';
 import AadhaarCardYadiReport from './components/AadhaarCardYadiReport';
 import SabhasadLabhanshReport from './components/SabhasadLabhanshReport';
@@ -355,6 +357,7 @@ function App() {
     'loan-recovery-notice-report': '/reports/loan-recovery-notice',
     'interest-waiver-register': '/reports/interest-waiver',
     'guarantor-loan-report': '/reports/guarantor-report',
+    'customer-list-report': '/reports/customer-list',
     'member-list-report': '/reports/member-list',
     'aadhaar-list': '/reports/aadhaar-list',
     'sabhasad-labhansh-report': '/reports/labhansh-report',
@@ -541,7 +544,7 @@ function App() {
 
           <button 
             onClick={() => handleNavigate('customers')}
-            title="ग्राहक नोंदणी (CIF)"
+            title="खातेदार"
             className={`w-full flex items-center ${isSidebarOpen ? 'px-3 justify-start' : 'px-0 justify-center'} py-2 rounded-md text-xs transition-all duration-150 ${
               activeTab === 'customers'
                 ? 'bg-emerald-50 text-emerald-950 font-bold border-l-4 border-emerald-600 shadow-2xs' 
@@ -549,12 +552,12 @@ function App() {
             }`}
           >
             <Users size={18} className={`${isSidebarOpen ? 'mr-3' : ''} shrink-0 ${activeTab === 'customers' ? 'text-emerald-600' : 'text-slate-500'}`} />
-            {isSidebarOpen && <span className="truncate">ग्राहक नोंदणी (CIF)</span>}
+            {isSidebarOpen && <span className="truncate">खातेदार</span>}
           </button>
 
           <button 
             onClick={() => handleNavigate('customer-bulk')}
-            title="ग्राहक बल्क नोंदणी (Excel Grid)"
+            title="खातेदार बल्क नोंदणी (Excel Grid)"
             className={`w-full flex items-center ${isSidebarOpen ? 'px-3 justify-start' : 'px-0 justify-center'} py-2 rounded-md text-xs transition-all duration-150 ${
               activeTab === 'customer-bulk'
                 ? 'bg-emerald-50 text-emerald-950 font-bold border-l-4 border-emerald-600 shadow-2xs' 
@@ -562,7 +565,20 @@ function App() {
             }`}
           >
             <FileSpreadsheet size={18} className={`${isSidebarOpen ? 'mr-3' : ''} shrink-0 ${activeTab === 'customer-bulk' ? 'text-emerald-600' : 'text-slate-500'}`} />
-            {isSidebarOpen && <span className="truncate">ग्राहक बल्क नोंदणी (Grid)</span>}
+            {isSidebarOpen && <span className="truncate">खातेदार बल्क नोंदणी (Grid)</span>}
+          </button>
+
+          <button 
+            onClick={() => handleNavigate('customer-list-report')}
+            title="खातेदार यादी अहवाल"
+            className={`w-full flex items-center ${isSidebarOpen ? 'px-3 justify-start' : 'px-0 justify-center'} py-2 rounded-md text-xs transition-all duration-150 ${
+              activeTab === 'customer-list-report'
+                ? 'bg-emerald-50 text-emerald-950 font-bold border-l-4 border-emerald-600 shadow-2xs' 
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 font-medium'
+            }`}
+          >
+            <FileText size={18} className={`${isSidebarOpen ? 'mr-3' : ''} shrink-0 ${activeTab === 'customer-list-report' ? 'text-emerald-600' : 'text-slate-500'}`} />
+            {isSidebarOpen && <span className="truncate">खातेदार यादी अहवाल</span>}
           </button>
 
           {/* Business Modules Group */}
@@ -1606,6 +1622,7 @@ function App() {
         {activeTab === 'loan-recovery-notice-report' && <LoanRecoveryNoticeReport />}
         {activeTab === 'interest-waiver-register' && <InterestWaiverRegister />}
         {activeTab === 'guarantor-loan-report' && <GuarantorReport />}
+        {activeTab === 'customer-list-report' && <CustomerListReport />}
         {activeTab === 'member-list-report' && <MemberListReport />}
         {activeTab === 'aadhaar-list' && <AadhaarCardYadiReport />}
         {activeTab === 'sabhasad-labhansh-report' && <SabhasadLabhanshReport />}

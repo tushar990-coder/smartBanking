@@ -47,12 +47,13 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
       ]
     },
     {
-      title: 'सभासद व शेअर्स (Member & Shares)',
+      title: 'खातेदार, सभासद व शेअर्स (Customer, Member & Shares)',
       icon: <Users className="w-3.5 h-3.5" />,
       accentColor: 'border-emerald-700',
       iconColor: 'text-emerald-700',
       bgColor: 'bg-emerald-50',
       reports: [
+        { id: 'customer-list-report', name: 'खातेदार यादी (Customer / CIF List)' },
         { id: 'member-list-report', name: 'सभासद यादी (Member List)' },
         { id: 'aadhaar-list', name: 'आधार कार्ड यादी (Aadhaar Card List)' },
         { id: 'member-balance-report', name: 'सभासद शेअर्स यादी (Member Shares List)' },

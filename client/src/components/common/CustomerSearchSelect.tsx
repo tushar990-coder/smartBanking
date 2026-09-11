@@ -26,7 +26,7 @@ export default function CustomerSearchSelect({
   customers = [],
   value,
   onChange,
-  placeholder = "-- ग्राहक निवडा (CIF / नाव / मोबाईलने शोधा) --",
+  placeholder = "-- खातेदार निवडा (CIF / नाव / मोबाईलने शोधा) --",
   className = "",
   isDisabled = false,
   isClearable = true

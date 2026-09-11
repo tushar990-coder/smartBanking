@@ -561,7 +561,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       const trimmedLegacy = formData.legacyCustomerNo.trim().toLowerCase();
       const duplicate = customers.find(c => c.customerID !== editingId && (c.legacyCustomerNo?.trim().toLowerCase() === trimmedLegacy || (c as any).LegacyCustomerNo?.trim().toLowerCase() === trimmedLegacy));
       if (duplicate) {
-        alert(`हा जुना ग्राहक आयडी (${formData.legacyCustomerNo}) आधीच ग्राहक '${duplicate.firstName} ${duplicate.lastName}' (CIF: ${duplicate.cifNo}) साठी नोंदवला आहे.`);
+        alert(`हा जुना खातेदार आयडी (${formData.legacyCustomerNo}) आधीच खातेदार '${duplicate.firstName} ${duplicate.lastName}' (CIF: ${duplicate.cifNo}) साठी नोंदवला आहे.`);
         legacyCustomerNoInputRef.current?.focus();
         return;
       }
@@ -1006,7 +1006,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
           </div>
           <div>
             <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
-              <span>ग्राहक / खातेदार नोंदणी मास्टर</span>
+              <span>खातेदार नोंदणी मास्टर</span>
               <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Customer / CIF Master)</span>
               {editingId !== null && (
                 <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
@@ -1041,7 +1041,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
               setIsRequestsModalOpen(true);
             }}
             className="bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11px] font-bold px-2.5 py-1 rounded-sm flex items-center gap-1.5 shadow-2xs transition-all relative border border-amber-500/40 cursor-pointer"
-            title="मोबाईल ॲप / एजंट द्वारे आलेल्या नवीन ग्राहक विनंत्या"
+            title="मोबाईल ॲप / एजंट द्वारे आलेल्या नवीन खातेदार विनंत्या"
           >
             <Download className="w-3.5 h-3.5 text-slate-900" />
             <span>📥 एजंट विनंत्या</span>
@@ -1077,10 +1077,10 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
               }
             }}
             className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-            title="एकाच स्क्रीनवर १००+ ग्राहक Excel सारखे भरा"
+            title="एकाच स्क्रीनवर १००+ खातेदार Excel सारखे भरा"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>⚡ बल्क ग्राहक नोंदणी (Excel Grid)</span>
+            <span>⚡ खातेदार बल्क नोंदणी (Excel Grid)</span>
           </button>
 
           {/* VIEW LIST BUTTON -> Opens Pop-up List Modal */}
@@ -1151,7 +1151,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
               एजंट विनंती #{selectedRequestId}
             </span>
             <span className="text-xs font-bold text-slate-950">
-              {loadedAgentName ? `${loadedAgentName} यांच्याकडून पाठवलेली ग्राहक माहिती फॉर्ममध्ये लोड केली आहे.` : 'एजंटने पाठवलेली माहिती फॉर्ममध्ये लोड केली आहे.'}
+              {loadedAgentName ? `${loadedAgentName} यांच्याकडून पाठवलेली खातेदार माहिती फॉर्ममध्ये लोड केली आहे.` : 'एजंटने पाठवलेली माहिती फॉर्ममध्ये लोड केली आहे.'}
             </span>
           </div>
           <button
@@ -2076,7 +2076,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
               </label>
               {pigmyFormData.openPigmyAccount && (
                 <span className="text-[10px] bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded-sm">
-                  ✓ ग्राहकासोबत पिग्मी खातेही उघडले जाईल
+                  ✓ खातेदारासोबत पिग्मी खातेही उघडले जाईल
                 </span>
               )}
             </div>
@@ -2189,7 +2189,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
               <div className="flex items-center gap-2">
                 <Camera className="w-5 h-5 text-emerald-400" />
                 <span className="font-bold text-sm">
-                  {cameraMode === 'photo' && 'ग्राहक फोटो कॅमेरा (Square 400x400)'}
+                  {cameraMode === 'photo' && 'खातेदार फोटो कॅमेरा (Square 400x400)'}
                   {cameraMode === 'signature' && 'स्वाक्षरी कॅमेरा (Horizontal 600x200)'}
                   {cameraMode === 'aadhaarDoc' && 'आधार कार्ड कॅमेरा (800x500)'}
                   {cameraMode === 'panDoc' && 'पॅन कार्ड कॅमेरा (800x500)'}
@@ -2309,7 +2309,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                     <th className="p-2 text-center w-12">अ.क्र.</th>
                     <th className="p-2 text-center w-10">फोटो</th>
                     <th className="p-2">CIF कोड</th>
-                    <th className="p-2">ग्राहक ID</th>
+                    <th className="p-2">खातेदार ID</th>
                     <th className="p-2">जुना / लेगसी क्र.</th>
                     <th className="p-2 min-w-[180px]">खातेदाराचे पूर्ण नाव</th>
                     <th className="p-2 text-center">खाते सुरू दिनांक</th>

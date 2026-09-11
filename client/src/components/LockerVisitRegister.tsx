@@ -262,7 +262,7 @@ const LockerVisitRegister: React.FC = () => {
           </div>
           <div>
             <h1 className="text-base font-bold text-slate-800">दैनिक लॉकर हाताळणी नोंदवही (Locker Visit Register)</h1>
-            <p className="text-xs text-slate-500">लॉकर रूम उघडल्याची वेळ, ग्राहक सही पडताळणी व कस्टोडियन तपासणी (Dual Key Register)</p>
+            <p className="text-xs text-slate-500">लॉकर रूम उघडल्याची वेळ, खातेदार सही पडताळणी व कस्टोडियन तपासणी (Dual Key Register)</p>
           </div>
         </div>
 
@@ -289,7 +289,7 @@ const LockerVisitRegister: React.FC = () => {
           <div className="flex items-center space-x-2">
             <span className="w-3 h-3 rounded-full bg-amber-500 animate-ping"></span>
             <p className="text-xs font-bold text-amber-900">
-              सध्या लॉकर रूममध्ये उपस्थित: <strong>{insideVaultVisits.length} ग्राहक</strong>
+              सध्या लॉकर रूममध्ये उपस्थित: <strong>{insideVaultVisits.length} खातेदार</strong>
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -452,7 +452,7 @@ const LockerVisitRegister: React.FC = () => {
                 className="rounded text-emerald-600 focus:ring-emerald-500"
               />
               <span className="flex items-center gap-1 text-emerald-800">
-                <ShieldCheck size={14} className="text-emerald-600" /> ग्राहकाची सही व ओळख पडताळली (Signature & KYC Verified)
+                <ShieldCheck size={14} className="text-emerald-600" /> खातेदाराची सही व ओळख पडताळली (Signature & KYC Verified)
               </span>
             </label>
 
@@ -507,7 +507,7 @@ const LockerVisitRegister: React.FC = () => {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="लॉकर क्र. / ग्राहक शोधा..."
+              placeholder="लॉकर क्र. / खातेदार शोधा..."
               className="w-full text-xs pl-7 pr-2.5 py-1 rounded border border-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
             />
           </div>

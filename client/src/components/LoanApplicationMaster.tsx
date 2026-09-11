@@ -564,7 +564,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     setSuccess('');
 
     if (!formData.memberID && !formData.customerID) {
-      setError('कृपया अर्जदार ग्राहक किंवा सभासद निवडा! (Please select Applicant)');
+      setError('कृपया अर्जदार खातेदार किंवा सभासद निवडा! (Please select Applicant)');
       return;
     }
 
@@ -1115,7 +1115,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
 
                 <div className="sm:col-span-2">
                   <label className={labelClass}>
-                    अर्जदार ग्राहक / सभासद निवडा (Select Customer / Member) <span className="text-red-500">*</span>
+                    अर्जदार खातेदार / सभासद निवडा (Select Customer / Member) <span className="text-red-500">*</span>
                   </label>
                   <div className={isEditing ? 'opacity-90' : ''}>
                     <MemberSearchSelect
@@ -1130,7 +1130,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                           memberID: memId ? Number(memId) : (selected?.memberCode ? Number(val) : 0)
                         }));
                       }}
-                      placeholder="-- सभासद/ग्राहक नाव, CIF, कोड किंवा मोबाईलने शोधा --"
+                      placeholder="-- सभासद/खातेदार नाव, CIF, कोड किंवा मोबाईलने शोधा --"
                     />
                   </div>
                 </div>

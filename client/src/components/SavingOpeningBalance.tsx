@@ -340,7 +340,7 @@ const SavingOpeningBalance: React.FC = () => {
     const resolvedCustomerId = selected?.customerID || (selected?.id ? Number(selected.id) : Number(formData.customerID));
 
     if (!resolvedCustomerId) {
-      setError('कृपया खातेदार (ग्राहक / CIF) निवडा.');
+      setError('कृपया खातेदार (CIF) निवडा.');
       return;
     }
 
@@ -745,7 +745,7 @@ const SavingOpeningBalance: React.FC = () => {
                         </span>
                       ) : (
                         <span className="text-blue-800 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                          ग्राहक (Customer)
+                          खातेदार (Customer)
                         </span>
                       )}
                     </span>

@@ -172,7 +172,7 @@ export default function MemberSearchSelect({
 
   const formatOptionLabel = (data: any, { context }: any) => {
     const m = data.member;
-    const fullName = m.fullName || `${m.firstName || ''} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName || ''}`.trim() || `ग्राहक #${m.customerID || m.memberID}`;
+    const fullName = m.fullName || `${m.firstName || ''} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName || ''}`.trim() || `खातेदार #${m.customerID || m.memberID}`;
     const cifCode = m.cifNo || (m.legacyCustomerNo ? `CIF:${m.legacyCustomerNo}` : `CIF00${m.customerID || m.memberID}`);
     const memCode = m.memberCode || '';
 

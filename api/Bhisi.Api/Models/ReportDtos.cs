@@ -539,5 +539,45 @@ namespace Bhisi.Api.Models
             return xParts.Length.CompareTo(yParts.Length);
         }
     }
+
+    public class CustomerReportRowDto
+    {
+        public int SrNo { get; set; }
+        public int CustomerID { get; set; }
+        public string CIFNo { get; set; } = string.Empty;
+        public string? LegacyCustomerNo { get; set; }
+        public string FullName { get; set; } = string.Empty;
+        public string? FullNameEng { get; set; }
+        public string? MobileNo { get; set; }
+        public string? Email { get; set; }
+        public string? Address { get; set; }
+        public string? Village { get; set; }
+        public string? Taluka { get; set; }
+        public string? District { get; set; }
+        public string CustomerType { get; set; } = "Individual";
+        public string KYCStatus { get; set; } = "Verified";
+        public string? AadhaarNoMasked { get; set; }
+        public string? PANNo { get; set; }
+        public string? Gender { get; set; }
+        public DateTime? BirthDate { get; set; }
+        public DateTime RegistrationDate { get; set; }
+        public int BranchID { get; set; }
+        public string BranchName { get; set; } = string.Empty;
+        public string Status { get; set; } = "Active";
+        public string? RiskCategory { get; set; }
+        public int LinkedAccountsCount { get; set; }
+    }
+
+    public class CustomerReportResponseDto
+    {
+        public int TotalCustomers { get; set; }
+        public int ActiveCustomers { get; set; }
+        public int InactiveCustomers { get; set; }
+        public int KycVerifiedCount { get; set; }
+        public int KycPendingCount { get; set; }
+        public int IndividualCount { get; set; }
+        public int CommercialCount { get; set; }
+        public List<CustomerReportRowDto> Rows { get; set; } = new();
+    }
 }
 

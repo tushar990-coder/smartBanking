@@ -3602,6 +3602,16 @@ BEGIN
 END
 GO
 
+IF OBJECT_ID(N'[PigmySchemes]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('PigmySchemes', 'InterestCalculationMethod') IS NULL ALTER TABLE [PigmySchemes] ADD [InterestCalculationMethod] NVARCHAR(50) NULL;
+    IF COL_LENGTH('PigmySchemes', 'MinDurationMonths') IS NULL ALTER TABLE [PigmySchemes] ADD [MinDurationMonths] INT NULL;
+    IF COL_LENGTH('PigmySchemes', 'PenaltyInterestRate') IS NULL ALTER TABLE [PigmySchemes] ADD [PenaltyInterestRate] DECIMAL(5,2) NULL;
+    IF COL_LENGTH('PigmySchemes', 'PrematureInterestRate') IS NULL ALTER TABLE [PigmySchemes] ADD [PrematureInterestRate] DECIMAL(5,2) NULL;
+    PRINT 'Synchronized PigmySchemes schema (InterestCalculationMethod, MinDurationMonths, PenaltyInterestRate, PrematureInterestRate)';
+END
+GO
+
 IF OBJECT_ID(N'[PigmyAgentAccountTransfers]', N'U') IS NULL
 BEGIN
     CREATE TABLE [PigmyAgentAccountTransfers] (

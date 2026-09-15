@@ -174,7 +174,7 @@ namespace Bhisi.Api.Controllers
                 {
                     // STANDARD COLLECTION WATERFALL LOGIC
                     bool isDailyReducing = loanRate != null && 
-                        ((loanRate.InterestCalculationMethod?.Contains("Daily Reducing") == true) || (loanRate.InterestCalculationMethod?.Contains("Reducing") == true));
+                        ((loanRate.InterestCalculationMethod?.Contains("Daily Reducing") == true) || (loanRate.InterestCalculationMethod?.Contains("दैनिक घटती") == true));
 
                     if (isDailyReducing)
                     {
@@ -185,19 +185,9 @@ namespace Bhisi.Api.Controllers
                         decimal newInterest = diffDays > 0 ? Math.Round((loanAccount.PrincipalBalance * rate * diffDays) / 36500m) : 0;
                         loanAccount.InterestBalance += newInterest;
                     }
-                    else if (loanAccount.IsOpeningBalance)
-                    {
-                        var dbSchedules = await _context.LoanInstallmentSchedules
-                            .Where(s => s.LoanAccountID == loanAccount.LoanAccountID)
-                            .ToListAsync();
-
-                        var lastDate = loanAccount.LastInstallmentPaidDate ?? loanAccount.OpeningDate;
-                        var newlyDueSchedules = dbSchedules.Where(s => s.DueDate > lastDate && s.DueDate <= collection.CollectionDate).ToList();
-                        decimal newInterest = newlyDueSchedules.Sum(s => s.InterestAmount);
-                        loanAccount.InterestBalance += newInterest;
-                    }
                     else
                     {
+                        // Scheduled Loan Policy: Flat, Reducing (समान हप्ता / EMI), or Reducing (समान मुद्दल)
                         var dbSchedules = await _context.LoanInstallmentSchedules
                             .Where(s => s.LoanAccountID == loanAccount.LoanAccountID)
                             .ToListAsync();
@@ -337,17 +327,22 @@ namespace Bhisi.Api.Controllers
 
                 foreach (var schedule in allSchedules)
                 {
-                    if (totalPrincipalPaid >= schedule.PrincipalAmount)
+                    if (totalPrincipalPaid >= schedule.PrincipalAmount && schedule.PrincipalAmount > 0)
                     {
                         schedule.Status = "Paid";
                         schedule.PaidDate = schedule.PaidDate ?? collection.CollectionDate;
                         totalPrincipalPaid -= schedule.PrincipalAmount;
                     }
+                    else if (totalPrincipalPaid > 0)
+                    {
+                        schedule.Status = "Partial";
+                        schedule.PaidDate = collection.CollectionDate;
+                        totalPrincipalPaid = 0;
+                    }
                     else
                     {
-                        schedule.Status = "Pending";
+                        schedule.Status = schedule.DueDate < DateTime.Today ? "Overdue" : "Pending";
                         schedule.PaidDate = null;
-                        totalPrincipalPaid = 0;
                     }
                     _context.Entry(schedule).State = EntityState.Modified;
                 }

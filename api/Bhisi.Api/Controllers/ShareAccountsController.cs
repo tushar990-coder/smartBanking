@@ -1411,12 +1411,18 @@ namespace Bhisi.Api.Controllers
                     request.MemberId = member.MemberID;
                     int resolvedCustomerId = member.CustomerID ?? cust?.CustomerID ?? 1;
 
+                    if (string.IsNullOrWhiteSpace(member.MemberCode) || member.MemberCode.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase))
+                    {
+                        member.MemberCode = $"MEM{member.MemberID:D4}";
+                        member.MembershipType = "Regular";
+                    }
+
                     if (!string.IsNullOrWhiteSpace(request.LegacyMemberNo))
                     {
                         var trimmedLegacy = request.LegacyMemberNo.Trim();
                         member.LegacyMemberNo = trimmedLegacy;
-                        _context.Members.Update(member);
                     }
+                    _context.Members.Update(member);
 
                     var account = await _context.ShareAccounts
                         .Include(a => a.Certificates)
@@ -1637,6 +1643,13 @@ namespace Bhisi.Api.Controllers
                 {
                     account.MemberId = member.MemberID;
                     account.CustomerID = cust?.CustomerID ?? member.CustomerID ?? account.CustomerID;
+
+                    if (string.IsNullOrWhiteSpace(member.MemberCode) || member.MemberCode.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase))
+                    {
+                        member.MemberCode = $"MEM{member.MemberID:D4}";
+                        member.MembershipType = "Regular";
+                        _context.Entry(member).State = EntityState.Modified;
+                    }
 
                     if (!string.IsNullOrWhiteSpace(request.LegacyMemberNo))
                     {
@@ -2207,20 +2220,29 @@ namespace Bhisi.Api.Controllers
 
                 // Step 2: Sequence all active shareholding members strictly 1 to N (MEM0001..MEM0216)
                 string orderByClause = orderBy.Equals("LegacyNo", StringComparison.OrdinalIgnoreCase)
-                    ? "TRY_CAST(m.LegacyMemberNo AS INT) ASC, sa.ShareAccountId ASC"
-                    : "TRY_CAST(REPLACE(REPLACE(COALESCE(sc.CertificateNo, ''), 'CERT-', ''), 'CERT', '') AS INT) ASC, TRY_CAST(m.LegacyMemberNo AS INT) ASC, sa.ShareAccountId ASC";
+                    ? "TRY_CAST(LegacyNo AS INT) ASC, ShareAccountId ASC"
+                    : "TRY_CAST(REPLACE(REPLACE(COALESCE(CertNo, ''), 'CERT-', ''), 'CERT', '') AS INT) ASC, TRY_CAST(LegacyNo AS INT) ASC, ShareAccountId ASC";
 
                 string resequenceSql = $@"
-                    ;WITH RankedShareholders AS (
+                    ;WITH DistinctAccounts AS (
                         SELECT 
                             sa.MemberId,
-                            ROW_NUMBER() OVER (
-                                ORDER BY {orderByClause}
-                            ) as SeqNo
+                            MIN(COALESCE(sc.CertificateNo, '')) as CertNo,
+                            MIN(m.LegacyMemberNo) as LegacyNo,
+                            MIN(sa.ShareAccountId) as ShareAccountId
                         FROM ShareAccounts sa
                         INNER JOIN Members m ON sa.MemberId = m.MemberID
                         LEFT JOIN ShareCertificates sc ON sc.ShareAccountId = sa.ShareAccountId
                         WHERE sa.TotalShareCount > 0
+                        GROUP BY sa.MemberId
+                    ),
+                    RankedShareholders AS (
+                        SELECT 
+                            MemberId,
+                            ROW_NUMBER() OVER (
+                                ORDER BY {orderByClause}
+                            ) as SeqNo
+                        FROM DistinctAccounts
                     )
                     UPDATE m
                     SET 

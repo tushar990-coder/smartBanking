@@ -35,6 +35,7 @@ interface Props {
   isDisabled?: boolean;
   isClearable?: boolean;
   required?: boolean;
+  compact?: boolean;
 }
 
 export default function MemberSearchSelect({
@@ -44,7 +45,8 @@ export default function MemberSearchSelect({
   placeholder = "-- सभासद निवडा --",
   className = "",
   isDisabled = false,
-  isClearable = true
+  isClearable = true,
+  compact = false
 }: Props) {
   
   // Transform members into react-select options format
@@ -56,9 +58,12 @@ export default function MemberSearchSelect({
       const custId = Number(m.customerID || m.customerId || m.CustomerID || m.id || 0) || (memId > 0 ? memId : 0);
       const primaryValueId = Number(m.memberID || m.memberId || m.MemberID || m.customerID || m.customerId || m.CustomerID || m.id || 0);
 
-      const rawCode = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.code || m.MemberCode || '').trim();
+      const rawCode = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.code || m.MemberCode || m.memberNo || '').trim();
       const isNullOrEmpty = !rawCode || rawCode.toLowerCase() === 'null' || rawCode.toLowerCase() === 'undefined';
-      const cleanMemCode = isNullOrEmpty ? '' : rawCode;
+      let cleanMemCode = isNullOrEmpty ? '' : rawCode;
+      if (!cleanMemCode && memId > 0) {
+        cleanMemCode = `MEM${String(memId).padStart(4, '0')}`;
+      }
 
       const rawLegacyMember = String(rawMemProfile?.legacyMemberNo || rawMemProfile?.LegacyMemberNo || m.legacyMemberNo || m.oldMemberCode || m.oldMemberNo || m.LegacyMemberNo || '').trim();
       const rawLegacyCust = String(m.legacyCustomerNo || m.LegacyCustomerNo || (m as any)?.customerProfile?.legacyCustomerNo || '').trim();
@@ -177,6 +182,15 @@ export default function MemberSearchSelect({
     const memCode = m.memberCode || '';
 
     if (context === 'value') {
+      if (compact) {
+        return (
+          <div className="flex items-center overflow-hidden text-xs w-full" title={`${cifCode} | ${memCode} | ${fullName}`}>
+            <span className="font-bold text-slate-900 truncate text-[11px]">
+              {fullName}
+            </span>
+          </div>
+        );
+      }
       return (
         <div className="flex items-center gap-1.5 overflow-hidden text-xs py-0.5 w-full">
           <span className="text-[11px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-sky-100 text-sky-950 border border-sky-300">
@@ -246,8 +260,8 @@ export default function MemberSearchSelect({
         styles={{
           control: (base, state) => ({
             ...base,
-            minHeight: '28px',
-            height: '28px',
+            minHeight: compact ? '26px' : '28px',
+            height: compact ? '26px' : '28px',
             fontSize: '11px',
             borderColor: state.isFocused ? '#004a75' : '#d1d5db',
             borderRadius: '2px',
@@ -259,8 +273,8 @@ export default function MemberSearchSelect({
           }),
           valueContainer: (base) => ({
             ...base,
-            padding: '0 6px',
-            height: '28px',
+            padding: compact ? '0 4px' : '0 6px',
+            height: compact ? '26px' : '28px',
             display: 'flex',
             alignItems: 'center',
             overflow: 'hidden'
@@ -308,11 +322,11 @@ export default function MemberSearchSelect({
           }),
           dropdownIndicator: (base) => ({
             ...base,
-            padding: '2px 4px'
+            padding: compact ? '0 2px' : '2px 4px'
           }),
           clearIndicator: (base) => ({
             ...base,
-            padding: '2px 4px'
+            padding: compact ? '0 2px' : '2px 4px'
           })
         }}
         menuPortalTarget={typeof document !== 'undefined' ? document.body : undefined}

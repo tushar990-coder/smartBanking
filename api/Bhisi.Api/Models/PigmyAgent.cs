@@ -12,7 +12,8 @@ namespace Bhisi.Api.Models
         [StringLength(100)]
         public string AgentName { get; set; } = string.Empty;
 
-
+        [StringLength(20)]
+        public string? MobileNo { get; set; }
 
         public DateTime? JoiningDate { get; set; }
 

@@ -446,6 +446,14 @@ using (var scope = app.Services.CreateScope())
                 );
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'CifSequences')
+            BEGIN
+                IF COL_LENGTH('CifSequences', 'SequenceCode') IS NULL ALTER TABLE [CifSequences] ADD [SequenceCode] nvarchar(50) NULL;
+                IF COL_LENGTH('CifSequences', 'CurrentValue') IS NULL ALTER TABLE [CifSequences] ADD [CurrentValue] bigint NOT NULL DEFAULT 0;
+                IF COL_LENGTH('CifSequences', 'PaddingLength') IS NULL ALTER TABLE [CifSequences] ADD [PaddingLength] int NOT NULL DEFAULT 6;
+                IF COL_LENGTH('CifSequences', 'LastUpdated') IS NULL ALTER TABLE [CifSequences] ADD [LastUpdated] datetime2 NOT NULL DEFAULT GETUTCDATE();
+            END
+
             -- Seed CifSequences with current max numeric CIF in Customers table
             IF NOT EXISTS (SELECT 1 FROM [CifSequences] WHERE [SequenceCode] = 'CORE_CIF_SEQ')
             BEGIN
@@ -494,6 +502,7 @@ using (var scope = app.Services.CreateScope())
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'CustomerImportBatches')
             BEGIN
+                IF COL_LENGTH('CustomerImportBatches', 'InputMode') IS NULL ALTER TABLE [CustomerImportBatches] ADD [InputMode] nvarchar(20) NOT NULL DEFAULT 'DirectGrid';
                 IF COL_LENGTH('CustomerImportBatches', 'MergedRecords') IS NULL ALTER TABLE [CustomerImportBatches] ADD [MergedRecords] int NOT NULL DEFAULT 0;
             END
 

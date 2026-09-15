@@ -514,7 +514,7 @@ const LoanCollectionMaster: React.FC = () => {
         if (selectedAccount) {
             const loanRate = selectedAccount.loanRate;
             const isDailyReducing = loanRate && 
-                (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("Reducing"));
+                (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"));
 
             if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
                 const collectionDateObj = parseDateSafe(formData.collectionDate || new Date());
@@ -576,7 +576,7 @@ const LoanCollectionMaster: React.FC = () => {
 
         const loanRate = account.loanRate;
         const isDailyReducing = loanRate && 
-            (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("Reducing"));
+            (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"));
 
         // Check if we have schedule details loaded and is NOT daily reducing
         if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
@@ -979,6 +979,19 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 </option>
                                             ))}
                                         </select>
+                                        {selectedAccount && selectedAccount.loanRate && (
+                                            <div className="mt-1.5 px-2 py-1 bg-slate-100 border border-slate-200 rounded text-[10px] flex flex-wrap items-center justify-between gap-1">
+                                                <span className="text-slate-600 font-medium">
+                                                    व्याज पद्धत: <strong className="text-primary font-bold">{selectedAccount.loanRate.interestCalculationMethod || 'Flat (फ्लॅट)'}</strong>
+                                                </span>
+                                                <span className="text-slate-600 font-medium">
+                                                    हप्ता प्रकार: <strong className="text-emerald-700 font-bold">{selectedAccount.loanRate.loanInstallmentType || 'समान हप्ता'}</strong>
+                                                </span>
+                                                <span className="text-slate-600 font-medium">
+                                                    नियमित हप्ता: <strong className="text-blue-700 font-bold font-mono">₹{(selectedAccount.installmentAmount || 0).toLocaleString('en-IN')}</strong>
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1205,7 +1218,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                      (() => {
                                          const loanRate = selectedAccount.loanRate;
                                          const isDailyReducing = loanRate && 
-                                             (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("Reducing"));
+                                             (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"));
 
                                          const disbursementDate = accountDetails?.disbursementDate || selectedAccount.loanDisbursementDate || selectedAccount.openingDate;
                                          const totalDisbursed = accountDetails?.totalDisbursedAmount || accountDetails?.sanctionedAmount || selectedAccount.sanctionedAmount;

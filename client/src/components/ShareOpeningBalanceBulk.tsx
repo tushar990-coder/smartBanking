@@ -34,7 +34,11 @@ interface ShareScheme {
   dividendRate: number;
   isActive: boolean;
   shareCapitalLedgerID?: number | null;
+  shareCapitalLedgerId?: number | null;
+  ShareCapitalLedgerID?: number | null;
+  shareCapitalLedger?: any;
   dividendPayableLedgerID?: number | null;
+  dividendPayableLedgerId?: number | null;
 }
 
 interface GridRow {
@@ -92,6 +96,18 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
     return token ? { 'Authorization': `Bearer ${token}` } : {};
   };
 
+  // Ensure uniform 4-digit zero-padded Member Code format (MEM0001, MEM0002, etc.)
+  const formatMemberCode = (code?: string, id?: number | string): string => {
+    const clean = (code || '').trim();
+    if (clean && clean !== 'MEM-नवीन' && !clean.startsWith('MEM#')) {
+      return clean;
+    }
+    if (id && Number(id) > 0) {
+      return `MEM${String(id).padStart(4, '0')}`;
+    }
+    return '';
+  };
+
   // Generate blank rows helper
   const createBlankRow = (): GridRow => ({
     id: Math.random().toString(36).substring(2, 9),
@@ -111,10 +127,34 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
     isExistingRecord: false
   });
 
+  // Helper to extract Share Capital Credit Ledger ID from Scheme
+  const getSchemeCapitalLedgerId = (scheme?: any): string => {
+    if (!scheme) return '';
+    const capId = scheme.shareCapitalLedgerID ?? 
+                  scheme.shareCapitalLedgerId ?? 
+                  scheme.ShareCapitalLedgerID ?? 
+                  scheme.shareCapitalLedger?.ledgerID ?? 
+                  scheme.shareCapitalLedger?.ledgerId ?? 
+                  scheme.shareCapitalLedger?.LedgerID;
+    return capId ? String(capId) : '';
+  };
+
   // Initial Load
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  // Auto-sync "भाग भांडवल जमा खाते" (Share Capital Ledger) whenever selected scheme or schemes list changes
+  useEffect(() => {
+    if (!defaultSchemeId || schemes.length === 0) return;
+    const selScheme = schemes.find(s => String(s.shareSchemeId) === String(defaultSchemeId));
+    if (selScheme) {
+      const capId = getSchemeCapitalLedgerId(selScheme);
+      if (capId) {
+        setDefaultLedgerId(capId);
+      }
+    }
+  }, [defaultSchemeId, schemes]);
 
   const loadInitialData = async () => {
     try {
@@ -132,13 +172,13 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
 
   const fetchMembers = async () => {
     try {
-      const res = await fetch('/api/Members', { headers: getAuthHeaders() });
+      const res = await fetch('/api/Customers', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setMembers(Array.isArray(data) ? data : []);
+        setMembers(Array.isArray(data) ? data : (data?.value || []));
       }
     } catch (error) {
-      console.error('Failed to fetch members', error);
+      console.error('Failed to fetch members/customers', error);
     }
   };
 
@@ -161,8 +201,13 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
         const data = await res.json();
         const activeSchemes = Array.isArray(data) ? data.filter((s: ShareScheme) => s.isActive) : [];
         setSchemes(activeSchemes);
-        if (activeSchemes.length > 0 && !defaultSchemeId) {
-          setDefaultSchemeId(activeSchemes[0].shareSchemeId.toString());
+        if (activeSchemes.length > 0) {
+          const first = activeSchemes[0];
+          setDefaultSchemeId(first.shareSchemeId.toString());
+          const capId = getSchemeCapitalLedgerId(first);
+          if (capId) {
+            setDefaultLedgerId(capId);
+          }
         }
       }
     } catch (error) {
@@ -175,15 +220,17 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       const res = await fetch('/api/Ledgers', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setLedgers(Array.isArray(data) ? data : []);
+        const safeLedgers = Array.isArray(data) ? data : [];
+        setLedgers(safeLedgers);
         // Auto select share capital ledger if available
-        const shareCapital = data.find((l: any) => 
+        const shareCapital = safeLedgers.find((l: any) => 
           l.ledgerName?.toLowerCase().includes('share capital') || 
           l.ledgerName?.includes('भाग भांडवल') || 
-          l.ledgerName?.includes('शेअर भांडवल')
+          l.ledgerName?.includes('शेअर भांडवल') ||
+          l.ledgerName?.includes('भांडवल')
         );
         if (shareCapital) {
-          setDefaultLedgerId(shareCapital.ledgerID.toString());
+          setDefaultLedgerId(prev => prev || shareCapital.ledgerID.toString());
         }
       }
     } catch (error) {
@@ -228,21 +275,25 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
     }
 
     const loadedRows: GridRow[] = existingBalances.map(b => {
-      const m = members.find(mem => (
-        (b.customerId && (mem as any).customerID === b.customerId) ||
+      const m = members.find((mem: any) => (
+        (b.customerId && String(mem.customerID ?? '') === String(b.customerId)) ||
         (b.cifNo && mem.cifNo && mem.cifNo.trim().toLowerCase() === b.cifNo.trim().toLowerCase()) ||
-        mem.memberID === b.memberId
+        String(mem.memberID ?? '') === String(b.memberId) ||
+        String(mem.memberProfile?.memberID ?? '') === String(b.memberId)
       ));
       const targetMemberId = (b.customerId && b.customerId > 0) ? b.customerId : b.memberId;
       const qty = b.shareQuantity || 0;
       const fv = b.faceValue || 100;
+      const rawCode = b.memberNo || (m as any)?.memberProfile?.memberCode || (m as any)?.memberCode || '';
+      const memCode = formatMemberCode(rawCode, targetMemberId);
+      const legNo = b.legacyMemberNo || (m as any)?.memberProfile?.legacyMemberNo || (m as any)?.legacyMemberNo || '';
       return {
         id: Math.random().toString(36).substring(2, 9),
         memberId: targetMemberId,
-        memberName: m ? `${m.firstName || ''} ${m.lastName || ''}`.trim() : (b.memberName || ''),
-        memberCode: m ? (m.memberCode || '') : '',
-        cifNo: m ? (m.cifNo || '') : '',
-        legacyMemberNo: m ? (m.legacyMemberNo || '') : '',
+        memberName: b.memberName || (m ? `${m.firstName || ''} ${m.lastName || ''}`.trim() : ''),
+        memberCode: memCode,
+        cifNo: b.cifNo || (m as any)?.cifNo || '',
+        legacyMemberNo: legNo,
         shareSchemeId: b.shareSchemeId || (defaultSchemeId ? parseInt(defaultSchemeId) : ''),
         shareQuantity: qty,
         faceValue: fv,
@@ -299,7 +350,7 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
   };
 
   // Update single row field
-  const handleRowChange = (id: string, field: keyof GridRow, value: any) => {
+  const handleRowChange = (id: string, field: keyof GridRow, value: any, selectedMemberObj?: any) => {
     setRows(prev => {
       // Find previous non-empty row's toShareNo to auto-suggest fromShareNo
       const rowIndex = prev.findIndex(r => r.id === id);
@@ -321,18 +372,33 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
         const safeFv = (isNaN(fv) || fv <= 0) ? 100 : fv;
 
         if (field === 'memberId') {
-          const selMember = members.find(m => m.memberID === value);
+          const selMember = selectedMemberObj || members.find((m: any) => 
+            String(m.memberID ?? '') === String(value) || 
+            String(m.customerID ?? '') === String(value) || 
+            String(m.id ?? '') === String(value) || 
+            String(m.memberProfile?.memberID ?? '') === String(value)
+          );
+
           if (selMember) {
-            updated.memberName = `${selMember.firstName || ''} ${selMember.lastName || ''}`.trim();
-            updated.memberCode = selMember.memberCode || '';
-            updated.cifNo = selMember.cifNo || '';
-            updated.legacyMemberNo = selMember.legacyMemberNo ? String(selMember.legacyMemberNo).trim() : '';
+            const rawCode = String(selMember.memberProfile?.memberCode || selMember.memberCode || '').trim();
+            const rawLegacy = String(selMember.memberProfile?.legacyMemberNo || selMember.legacyMemberNo || selMember.oldMemberCode || '').trim();
+            const fName = selMember.firstName || '';
+            const lName = selMember.lastName || '';
+            let fullName = `${fName} ${lName}`.trim();
+            if (!fullName && selMember.customer) {
+              fullName = `${selMember.customer.firstName || ''} ${selMember.customer.lastName || ''}`.trim();
+            }
+
+            updated.memberName = fullName;
+            updated.memberCode = formatMemberCode(rawCode, value);
+            updated.cifNo = selMember.cifNo || selMember.customer?.cifNo || '';
+            updated.legacyMemberNo = rawLegacy;
 
             // 🔍 Check if member already has an existing opening balance
-            const existing = existingBalances.find(b => (
-              (b.customerId && b.customerId === value) ||
+            const existing = existingBalances.find((b: any) => (
+              (b.customerId && String(b.customerId) === String(value)) ||
               (selMember?.cifNo && b.cifNo && b.cifNo.trim().toLowerCase() === selMember.cifNo.trim().toLowerCase()) ||
-              (b.memberId === value && (!b.customerId || b.customerId === value))
+              (b.memberId && String(b.memberId) === String(value) && (!b.customerId || String(b.customerId) === String(value)))
             ));
             if (existing) {
               updated.shareQuantity = existing.shareQuantity || '';
@@ -387,7 +453,8 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
         if (field === 'totalAmount') {
           const amt = typeof value === 'number' ? value : parseFloat(value || '0');
           if (!isNaN(amt) && amt > 0) {
-            const calculatedQty = Math.floor(amt / safeFv);
+            // Nearest round logic: 540 -> 5 shares, 570 -> 6 shares
+            const calculatedQty = Math.round(amt / safeFv);
             updated.shareQuantity = calculatedQty > 0 ? calculatedQty : '';
             updated.totalAmount = amt;
             const fromS = typeof updated.fromShareNo === 'number' ? updated.fromShareNo : parseInt(updated.fromShareNo || '0', 10);
@@ -584,10 +651,17 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
 
     try {
       const payloadRecords = validRows.map(r => {
-        const m = members.find(mem => mem.memberID === r.memberId || (mem as any).customerID === r.memberId);
+        const m = members.find((mem: any) => 
+          String(mem.memberID ?? '') === String(r.memberId) || 
+          String(mem.customerID ?? '') === String(r.memberId) || 
+          String(mem.id ?? '') === String(r.memberId) ||
+          String(mem.memberProfile?.memberID ?? '') === String(r.memberId)
+        );
+        const resolvedCustId = (m as any)?.customerID || (m as any)?.id || Number(r.memberId);
+        const resolvedMemId = m?.memberProfile?.memberID || m?.memberID || (m as any)?.customerID || Number(r.memberId);
         return {
-          memberId: Number(r.memberId),
-          customerId: (m as any)?.customerID || (m as any)?.id || null,
+          memberId: resolvedMemId,
+          customerId: resolvedCustId,
           certificateId: r.certificateId || null,
           shareSchemeId: r.shareSchemeId ? Number(r.shareSchemeId) : (defaultSchemeId ? Number(defaultSchemeId) : null),
           legacyMemberNo: r.legacyMemberNo || null,
@@ -649,12 +723,15 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       if (cols.length === 0 || !cols[0]) return;
 
       const searchKey = cols[0].toLowerCase();
-      const matchedMember = members.find(m => 
+      const matchedMember = members.find((m: any) => 
         (m.memberCode && m.memberCode.toLowerCase() === searchKey) ||
+        (m.memberProfile?.memberCode && m.memberProfile.memberCode.toLowerCase() === searchKey) ||
         (m.cifNo && m.cifNo.toLowerCase() === searchKey) ||
         (m.legacyMemberNo && m.legacyMemberNo.toLowerCase() === searchKey) ||
+        (m.memberProfile?.legacyMemberNo && m.memberProfile.legacyMemberNo.toLowerCase() === searchKey) ||
         (m.memberID && m.memberID.toString() === searchKey) ||
-        (`${m.firstName} ${m.lastName}`.toLowerCase().includes(searchKey))
+        ((m as any).customerID && (m as any).customerID.toString() === searchKey) ||
+        (`${m.firstName || ''} ${m.lastName || ''}`.toLowerCase().includes(searchKey))
       );
 
       const qty = cols[1] ? parseInt(cols[1].replace(/\D/g, ''), 10) : 10;
@@ -665,18 +742,22 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
       const divPay = cols[6] ? parseFloat(cols[6].replace(/[^\d.]/g, '')) : '';
 
       const mId = matchedMember ? ((matchedMember as any).customerID || matchedMember.memberID) : '';
-      const existing = mId ? existingBalances.find(b => (
-        (b.customerId && b.customerId === mId) ||
-        (b.memberId === mId && (!b.customerId || b.customerId === mId))
+      const existing = mId ? existingBalances.find((b: any) => (
+        (b.customerId && String(b.customerId) === String(mId)) ||
+        (b.memberId === mId && (!b.customerId || String(b.customerId) === String(mId)))
       )) : null;
+
+      const rawPastedCode = matchedMember?.memberCode || (matchedMember as any)?.memberProfile?.memberCode || '';
+      const memCode = formatMemberCode(rawPastedCode, mId);
+      const legNo = matchedMember?.legacyMemberNo || (matchedMember as any)?.memberProfile?.legacyMemberNo || '';
 
       newRows.push({
         id: Math.random().toString(36).substring(2, 9),
         memberId: mId,
         memberName: matchedMember ? `${matchedMember.firstName || ''} ${matchedMember.lastName || ''}`.trim() : (cols[0] || ''),
-        memberCode: matchedMember ? (matchedMember.memberCode || '') : '',
+        memberCode: memCode,
         cifNo: matchedMember ? (matchedMember.cifNo || '') : '',
-        legacyMemberNo: matchedMember ? (matchedMember.legacyMemberNo || '') : '',
+        legacyMemberNo: legNo,
         shareSchemeId: defaultSchemeId ? parseInt(defaultSchemeId) : (schemes.length > 0 ? schemes[0].shareSchemeId : ''),
         shareQuantity: isNaN(qty) ? '' : qty,
         faceValue: isNaN(fv) ? 100 : fv,
@@ -840,9 +921,13 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
 
       {/* Global Batch Controls Bar */}
       <div className="bg-white p-3 rounded-sm border border-slate-200 shadow-xs mb-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
-          <div>
-            <label className={labelClass}>आरंभी दिनांक (Opening Date) *</label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 items-end">
+          
+          {/* 1. आरंभी दिनांक */}
+          <div className="md:col-span-2">
+            <label className="block text-[11px] font-bold text-gray-700 mb-1 truncate">
+              आरंभी दिनांक <span className="text-red-500">*</span>
+            </label>
             <input
               type="date"
               value={openingDate}
@@ -851,11 +936,22 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
             />
           </div>
 
-          <div>
-            <label className={labelClass}>डीफॉल्ट शेअर योजना (Default Scheme)</label>
+          {/* 2. डीफॉल्ट शेअर योजना */}
+          <div className="md:col-span-3">
+            <label className="block text-[11px] font-bold text-gray-700 mb-1 truncate">
+              डीफॉल्ट शेअर योजना
+            </label>
             <select
               value={defaultSchemeId}
-              onChange={(e) => setDefaultSchemeId(e.target.value)}
+              onChange={(e) => {
+                const sId = e.target.value;
+                setDefaultSchemeId(sId);
+                const sel = schemes.find(s => String(s.shareSchemeId) === String(sId));
+                const capId = getSchemeCapitalLedgerId(sel);
+                if (capId) {
+                  setDefaultLedgerId(capId);
+                }
+              }}
               className={inputClass}
             >
               {schemes.map(s => (
@@ -866,15 +962,22 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
             </select>
           </div>
 
-          <div>
-            <label className={`${labelClass} flex items-center gap-1`}>
-              <span>शेअर भांडवल लेजर (Capital Ledger)</span>
-              <span className="text-red-500 font-black">*</span>
-            </label>
+          {/* 3. शेअर भांडवल लेजर */}
+          <div className="md:col-span-3">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-bold text-gray-700 truncate">
+                शेअर भांडवल लेजर <span className="text-red-500">*</span>
+              </label>
+              {defaultLedgerId && (
+                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0 ml-1">
+                  ✓ ऑटो मॅप
+                </span>
+              )}
+            </div>
             <select
               value={defaultLedgerId}
               onChange={(e) => setDefaultLedgerId(e.target.value)}
-              className={`${inputClass} ${!defaultLedgerId ? 'border-amber-500 bg-amber-50/70 ring-1 ring-amber-400 font-semibold text-amber-900' : 'border-emerald-500 font-semibold'}`}
+              className={`${inputClass} ${!defaultLedgerId ? 'border-amber-500 bg-amber-50/70 ring-1 ring-amber-400 font-semibold text-amber-900' : 'border-emerald-500 font-semibold text-emerald-900'}`}
             >
               <option value="">-- कृपया लेजर निवडा (अनिवार्य) --</option>
               {ledgers.map(l => (
@@ -885,8 +988,11 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
             </select>
           </div>
 
-          <div>
-            <label className={labelClass}>आरंभी दाखला क्र. (Start Cert No)</label>
+          {/* 4. आरंभी दाखला क्र. */}
+          <div className="md:col-span-2">
+            <label className="block text-[11px] font-bold text-gray-700 mb-1 truncate">
+              आरंभी दाखला क्र.
+            </label>
             <input
               type="text"
               value={startCertNo}
@@ -896,8 +1002,11 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
             />
           </div>
 
-          <div>
-            <label className={labelClass}>आरंभी शेअर क्र. (Start Share No)</label>
+          {/* 5. आरंभी शेअर क्र. */}
+          <div className="md:col-span-2">
+            <label className="block text-[11px] font-bold text-gray-700 mb-1 truncate">
+              आरंभी शेअर क्र.
+            </label>
             <input
               type="number"
               value={startShareNo}
@@ -991,7 +1100,8 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
             <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10 select-none">
               <tr>
                 <th className="py-2 px-1 text-center w-7 border-r border-slate-200">#</th>
-                <th className="py-2 px-2 min-w-[280px] border-r border-slate-200">सभासदाचे नाव (Member Search) *</th>
+                <th className="py-2 px-2 w-36 text-center border-r border-slate-200">सभासद आयडी / कोड</th>
+                <th className="py-2 px-2 min-w-[260px] border-r border-slate-200">सभासदाचे नाव (Member Search) *</th>
                 <th className="py-2 px-2 w-20 text-center border-r border-slate-200">शेअर्स संख्या *</th>
                 <th className="py-2 px-2 w-18 text-center border-r border-slate-200">दर्शनी मूल्य (₹)</th>
                 <th className="py-2 px-2 w-24 text-right border-r border-slate-200">एकूण रक्कम (₹) *</th>
@@ -1018,22 +1128,38 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
                       {index + 1}
                     </td>
 
-                    {/* Member Search Select (With integrated Member Code & Cust ID badges) */}
-                    <td className="py-1 px-2 border-r border-slate-100">
-                      <div className="flex flex-col gap-0.5">
-                        <MemberSearchSelect
-                          members={members}
-                          value={row.memberId || undefined}
-                          onChange={(mId) => handleRowChange(row.id, 'memberId', mId)}
-                          placeholder="सभासद शोधा (नाव, कोड, CIF)..."
-                          className="w-full text-[11px]"
-                        />
-                        {row.isExistingRecord && (
-                          <div className="flex items-center gap-1 text-[9px] text-purple-800 font-bold bg-purple-50 px-1.5 py-0.2 rounded border border-purple-200 w-fit">
-                            <span>✏️ आधीची नोंद (संपादन मोड)</span>
-                          </div>
-                        )}
-                      </div>
+                    {/* Dedicated Member ID / Code Column */}
+                    <td 
+                      className="py-1 px-2 border-r border-slate-100 text-center whitespace-nowrap"
+                      title={row.memberId ? `सभासद कोड: ${formatMemberCode(row.memberCode, row.memberId)} | CIF: ${row.cifNo || '-'} | Member ID: ${row.memberId}${row.legacyMemberNo ? ` | जुना क्र.: ${row.legacyMemberNo}` : ''}` : ''}
+                    >
+                      {row.memberId ? (
+                        <div className="inline-flex items-center justify-center gap-1.5">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold font-mono bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs">
+                            {formatMemberCode(row.memberCode, row.memberId)}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-semibold font-mono">
+                            (ID: {row.memberId})
+                          </span>
+                          {row.isExistingRecord && (
+                            <span title="आधीची नोंद (संपादन मोड)" className="text-xs cursor-help">✏️</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-300 text-xs font-mono">--</span>
+                      )}
+                    </td>
+
+                    {/* Member Search Select */}
+                    <td className="py-1 px-1.5 border-r border-slate-100" title={row.memberId ? `${row.memberName} (${row.memberCode || '-'})` : ''}>
+                      <MemberSearchSelect
+                        members={members}
+                        value={row.memberId || undefined}
+                        onChange={(mId, selMem) => handleRowChange(row.id, 'memberId', mId, selMem)}
+                        placeholder="सभासद शोधा (नाव, कोड, CIF)..."
+                        className="w-full text-[11px]"
+                        compact={true}
+                      />
                     </td>
 
                     {/* Share Quantity */}

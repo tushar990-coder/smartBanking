@@ -34,34 +34,90 @@ namespace Bhisi.Api.Services
             _httpContextAccessor = httpContextAccessor;
         }
 
+        private static string? _cachedNonWindowsMachineCode;
+
         public string GetMachineCode()
         {
-            return HardwareInfoHelper.GetMachineCode();
+            if (OperatingSystem.IsWindows())
+            {
+                return HardwareInfoHelper.GetMachineCode();
+            }
+
+            return GetNonWindowsMachineCode();
+        }
+
+        private static string GetNonWindowsMachineCode()
+        {
+            if (!string.IsNullOrEmpty(_cachedNonWindowsMachineCode))
+            {
+                return _cachedNonWindowsMachineCode;
+            }
+
+            try
+            {
+                string rawId = string.Empty;
+                if (File.Exists("/etc/machine-id"))
+                {
+                    rawId = File.ReadAllText("/etc/machine-id").Trim();
+                }
+                else if (File.Exists("/var/lib/dbus/machine-id"))
+                {
+                    rawId = File.ReadAllText("/var/lib/dbus/machine-id").Trim();
+                }
+
+                if (string.IsNullOrWhiteSpace(rawId))
+                {
+                    rawId = $"{Environment.MachineName}_{Environment.ProcessorCount}_{Environment.OSVersion}";
+                }
+
+                using var sha256 = SHA256.Create();
+                byte[] hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawId));
+                string hex = Convert.ToHexString(hashBytes).ToUpperInvariant();
+
+                string chunk1 = hex.Substring(0, 4);
+                string chunk2 = hex.Substring(4, 4);
+                string chunk3 = hex.Substring(8, 4);
+                string chunk4 = hex.Substring(12, 4);
+
+                _cachedNonWindowsMachineCode = $"SB-MCH-{chunk1}-{chunk2}-{chunk3}-{chunk4}";
+                return _cachedNonWindowsMachineCode;
+            }
+            catch
+            {
+                string fallback = Environment.MachineName + "_" + Environment.UserName;
+                using var sha256 = SHA256.Create();
+                byte[] hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(fallback));
+                string hex = Convert.ToHexString(hashBytes).ToUpperInvariant();
+                _cachedNonWindowsMachineCode = $"SB-MCH-{hex.Substring(0, 4)}-{hex.Substring(4, 4)}-{hex.Substring(8, 4)}-{hex.Substring(12, 4)}";
+                return _cachedNonWindowsMachineCode;
+            }
         }
 
         public LicenseStatusDto GetLicenseStatus()
         {
-            // 1. Bypass license check in Development Mode for seamless debugging
-            if (_env.IsDevelopment())
+            // 1. Bypass license check for Localhost / Development Mode for seamless testing & debugging
+            string currentHost = GetCurrentRequestHost();
+            if (_env.IsDevelopment() || IsLocalHostOrTesting(currentHost))
             {
                 return new LicenseStatusDto
                 {
                     IsValid = true,
-                    StatusCode = "DEVELOPMENT_MODE",
-                    Message = "डेव्हलपमेंट मोड सक्रिय आहे (License Bypass for Development & Debugging)",
+                    StatusCode = "LOCAL_DEVELOPMENT",
+                    LicenseType = "LOCAL_TESTING",
+                    Message = "स्थानिक चाचणी मोड सक्रिय आहे (Localhost Testing Mode)",
                     MachineCode = GetMachineCode(),
-                    ClientName = "Developer Environment",
-                    SansthaName = "विकासक चाचणी शाखा (Developer Testing)",
+                    ClientName = "Localhost Environment",
+                    SansthaName = "स्थानिक चाचणी (Localhost Testing)",
+                    ActiveDomain = string.IsNullOrWhiteSpace(currentHost) ? "localhost" : currentHost,
                     IssuedDate = DateTime.Today.AddDays(-30),
                     ExpiryDate = DateTime.Today.AddYears(10),
                     DaysRemaining = 3650,
                     PlanName = "SmartBanking-Enterprise-Dev",
-                    EnabledFeatures = new() { "SAVINGS", "LOANS", "FD", "PIGMY", "LOCKER", "SHARES", "DAYBOOK", "REPORTS", "AUDIT", "SEC101" }
+                    EnabledFeatures = new() { "CORE", "SAVINGS", "LOANS", "FD", "RD", "PIGMY", "LOCKER", "SHARES", "DAYBOOK", "REPORTS", "AUDIT", "SEC101" }
                 };
             }
 
             // 2. Online Wildcard Domain Authorization (*.hellomindspace.in for cloud VPS testing)
-            string currentHost = GetCurrentRequestHost();
             if (IsAuthorizedWildcardDomain(currentHost))
             {
                 return new LicenseStatusDto
@@ -342,6 +398,19 @@ namespace Bhisi.Api.Services
             }
             catch { }
             return string.Empty;
+        }
+
+        private bool IsLocalHostOrTesting(string host)
+        {
+            if (string.IsNullOrWhiteSpace(host)) return true;
+            host = host.ToLowerInvariant().Trim();
+            if (host.Contains(":")) host = host.Split(':')[0];
+
+            return host == "localhost" ||
+                   host == "127.0.0.1" ||
+                   host == "::1" ||
+                   host == "0.0.0.0" ||
+                   host.EndsWith(".local", StringComparison.OrdinalIgnoreCase);
         }
 
         private bool IsAuthorizedWildcardDomain(string host)

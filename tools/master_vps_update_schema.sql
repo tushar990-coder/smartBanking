@@ -1,4 +1,4 @@
-﻿-- =========================================================================================
+-- =========================================================================================
 -- SmartBanking Core ERP - Universal VPS Database Update & Schema Sync Patch
 -- Zero Data Loss Guarantee - All Existing Records (Members, Vouchers, Accounts) 100% Preserved
 -- Compatible with all VPS client databases (Padawalwadi, Gurudev, Main, etc.)
@@ -3517,6 +3517,34 @@ BEGIN
         ''Transitioned Fixed Deposit (FD) and Recurring Deposit (RD) to 100% Pure CustomerID-First (CIF) architecture with zero data loss. Dropped MemberID from FdAccounts and RdAccounts, balanced all accounting vouchers with sub-ledger CustomerID tagging.'', 
         ''VPS Administrator'',
         ''2026-09-08''
+    );');
+END
+GO
+
+-- 4. Sync MemberCode for Members who have ShareAccounts if MemberCode is empty or null
+IF OBJECT_ID(N'[Members]', N'U') IS NOT NULL AND OBJECT_ID(N'[ShareAccounts]', N'U') IS NOT NULL
+BEGIN
+    UPDATE m
+    SET m.[MemberCode] = 'MEM' + RIGHT('0000' + CAST(m.[MemberID] AS VARCHAR(10)), 4)
+    FROM [Members] m
+    INNER JOIN [ShareAccounts] sa ON sa.[MemberId] = m.[MemberID]
+    WHERE m.[MemberCode] IS NULL OR LTRIM(RTRIM(m.[MemberCode])) = '';
+    PRINT 'Synced missing MemberCodes for active Shareholders in Members table';
+END
+GO
+
+-- 5. Record Version v2.4.9 in SystemVersionHistories
+IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
+BEGIN
+    EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+    VALUES (
+        ''2.4.9'', 
+        GETUTCDATE(), 
+        ''SmartBanking VPS Multi-App Master Patch v2.4.9'', 
+        ''SUCCESS'', 
+        ''Core Banking Share Opening Balance & MemberCode Synchronization, Customer / CIF dropdown badge enrichment, and CBS UX enhancement.'', 
+        ''VPS Administrator'',
+        ''2026-09-15''
     );');
 END
 GO

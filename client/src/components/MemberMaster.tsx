@@ -41,6 +41,8 @@ interface Customer extends CustomerOption {
   nomineeName?: string;
   nomineeRelation?: string;
   nomineeAddress?: string;
+  memberCode?: string;
+  branchID?: number;
 }
 
 interface Member {

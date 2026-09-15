@@ -799,10 +799,13 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
               </div>
 
               <div>
-                <label className={labelClass}>कर्ज हप्ता प्रकार</label>
+                <label className={labelClass}>कर्ज हप्ता प्रकार (Installment Type)</label>
                 <select name="loanInstallmentType" value={formData.loanInstallmentType} onChange={handleChange} className={inputClass}>
-                  <option value="कर्जावरती">कर्जावरती</option>
-                  <option value="व्याजवरती">व्याजवरती</option>
+                  <option value="समान हप्ता">समान हप्ता (EMI - स्थिर मासिक हप्ता)</option>
+                  <option value="समान मुद्दल">समान मुद्दल (Equal Principal - घटता हप्ता)</option>
+                  <option value="फ्लॅट हप्ता">फ्लॅट हप्ता (Flat Installment)</option>
+                  <option value="कर्जावरती">कर्जावरती (Equal Principal - मुद्दलावर)</option>
+                  <option value="व्याजवरती">व्याजवरती (Interest Only / Bullet)</option>
                 </select>
               </div>
             </div>

@@ -94,13 +94,29 @@ export default function LoginForm() {
       } catch {}
 
       if (!response.ok) {
-        throw new Error(typeof data === 'string' ? data : (data?.message || 'लॉगिन अयशस्वी झाले. युझरनेम किंवा पासवर्ड तपासा.'));
+        let errorMsg = 'लॉगिन अयशस्वी झाले. युझर आयडी किंवा पासवर्ड तपासा.';
+        const raw = typeof data === 'string' ? data : (data?.message || '');
+        if (raw.toLowerCase().includes('invalid username') || raw.toLowerCase().includes('invalid agent') || raw.toLowerCase().includes('incorrect password')) {
+          errorMsg = 'चुकीचा युझर आयडी किंवा पासवर्ड. कृपया पुन्हा तपासा.';
+        } else if (raw.toLowerCase().includes('locked')) {
+          errorMsg = 'वारंवार चुकीच्या प्रयत्नांमुळे खाते लॉक झाले आहे. कृपया ॲडमिनशी संपर्क साधा.';
+        } else if (raw.toLowerCase().includes('inactive')) {
+          errorMsg = 'हे युझर खाते निष्क्रिय (Inactive) आहे.';
+        } else if (raw) {
+          errorMsg = raw;
+        }
+        throw new Error(errorMsg);
       }
 
       login(data);
     } catch (err: any) {
       console.error('Login submission error:', err);
-      setError(err?.message || 'लॉगिन अयशस्वी झाले. कृपया माहिती तपासा.');
+      const msg = err?.message;
+      if (!msg || msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('fetch')) {
+        setError('बॅकएंड सर्व्हरशी संपर्क होऊ शकला नाही. कृपया सर्व्हर सुरू असल्याची खात्री करा.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }

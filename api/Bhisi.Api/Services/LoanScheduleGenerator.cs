@@ -44,7 +44,7 @@ namespace Bhisi.Api.Services
                 ? request.FirstInstallmentDate.Value
                 : (isWeekly ? disbursementDate.AddDays(7) : disbursementDate.AddMonths(stepMonths));
 
-            if (calcMethod.Contains("Flat") || calcMethod.Contains("फ्लॅट"))
+            if (calcMethod.Contains("Flat") || calcMethod.Contains("फ्लॅट") || installmentType.Contains("Flat") || installmentType.Contains("फ्लॅट"))
             {
                 int totalMonths = request.DurationMonths > 0 ? request.DurationMonths : (isWeekly ? (int)Math.Max(1, Math.Ceiling(n / 4.33)) : n * stepMonths);
                 decimal totalInterest = (P * ratePerYear * ((decimal)totalMonths / 12m)) / 100m;

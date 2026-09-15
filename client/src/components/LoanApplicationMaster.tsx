@@ -349,49 +349,75 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     }
   }, [members]);
 
+  // Core Banking Helper for computing standard installment based on interest policy
+  const computeCalculatedInstallment = (
+    P: number,
+    ratePerYear: number,
+    n: number,
+    frequency: string,
+    durationMonths: number,
+    rateObj?: LoanRate
+  ) => {
+    if (P <= 0 || ratePerYear <= 0 || n <= 0) return 0;
+
+    let freqDivisor = 12;
+    let stepMonths = 1;
+    const isWeekly = frequency === 'साप्ताहिक';
+    if (isWeekly) {
+      freqDivisor = 52;
+      stepMonths = 0;
+    } else if (frequency === 'त्रैमासिक') {
+      freqDivisor = 4;
+      stepMonths = 3;
+    } else if (frequency === 'सहामाही') {
+      freqDivisor = 2;
+      stepMonths = 6;
+    } else if (frequency === 'वार्षिक') {
+      freqDivisor = 1;
+      stepMonths = 12;
+    }
+
+    const calcMethod = rateObj?.interestCalculationMethod || "Flat (फ्लॅट)";
+    const instType = rateObj?.loanInstallmentType || "समान हप्ता";
+
+    if (calcMethod.includes("Flat") || calcMethod.includes("फ्लॅट") || instType.includes("फ्लॅट")) {
+      // Flat Interest Policy: Total Interest = P * R * T / 100
+      const totalMonths = durationMonths > 0 ? durationMonths : (isWeekly ? Math.max(1, Math.ceil(n / 4.33)) : n * stepMonths);
+      const totalInterest = (P * ratePerYear * (totalMonths / 12)) / 100;
+      return Math.round((P + totalInterest) / n);
+    } else if (calcMethod.includes("Reducing") && (instType === "समान मुद्दल" || instType === "कर्जावरती" || instType.includes("मुद्दल") || instType.includes("कर्जावर"))) {
+      // Reducing - Equal Principal (मुद्दल स्थिर, हप्ता घटत जाणारा)
+      return Math.round(P / n);
+    } else {
+      // Reducing - Equated Monthly Installment (EMI)
+      const r = (ratePerYear / 100) / freqDivisor;
+      if (r === 0) return Math.round(P / n);
+      return Math.round((P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1));
+    }
+  };
+
   // Auto EMI calculation
   useEffect(() => {
     if (formData.requestedAmount && formData.interestRate && formData.noOfInstallments) {
       const P = formData.requestedAmount;
       const ratePerYear = formData.interestRate;
       const n = formData.noOfInstallments;
-      let freqDivisor = 12;
-      if (formData.installmentFrequency === 'साप्ताहिक') freqDivisor = 52;
-      else if (formData.installmentFrequency === 'त्रैमासिक') freqDivisor = 4;
-      else if (formData.installmentFrequency === 'सहामाही') freqDivisor = 2;
-      else if (formData.installmentFrequency === 'वार्षिक') freqDivisor = 1;
-
       const rateObj = loanRates.find(r => r.loanRateID === formData.loanRateID);
-      let newInstallment = 0;
 
-      if (rateObj) {
-        const calcMethod = rateObj.interestCalculationMethod || "Reducing (घटती शिल्लक)";
-        const instType = rateObj.loanInstallmentType || "समान हप्ता";
-
-        if (calcMethod.includes("Reducing") && (instType === "समान मुद्दल" || instType === "कर्जावरती" || instType.includes("मुद्दल") || instType.includes("कर्जावर"))) {
-          newInstallment = Math.round(P / n);
-        } else {
-          const r = (ratePerYear / 100) / freqDivisor;
-          if (r === 0) {
-            newInstallment = Math.round(P / n);
-          } else {
-            newInstallment = Math.round((P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1));
-          }
-        }
-      } else {
-        const r = (ratePerYear / 100) / freqDivisor;
-        if (r === 0) {
-          newInstallment = Math.round(P / n);
-        } else {
-          newInstallment = Math.round((P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1));
-        }
-      }
+      const newInstallment = computeCalculatedInstallment(
+        P,
+        ratePerYear,
+        n,
+        formData.installmentFrequency || 'मासिक',
+        formData.durationMonths || 12,
+        rateObj
+      );
       
       if (!isInstAmountEdited && formData.installmentAmount !== newInstallment) {
         setFormData(prev => ({ ...prev, installmentAmount: newInstallment }));
       }
     }
-  }, [formData.requestedAmount, formData.interestRate, formData.noOfInstallments, formData.installmentFrequency, formData.loanRateID, loanRates, isInstAmountEdited]);
+  }, [formData.requestedAmount, formData.interestRate, formData.noOfInstallments, formData.installmentFrequency, formData.durationMonths, formData.loanRateID, loanRates, isInstAmountEdited]);
 
   useEffect(() => {
     if (formData.durationMonths && formData.installmentFrequency) {
@@ -497,30 +523,16 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
       const P = formData.requestedAmount;
       const ratePerYear = formData.interestRate;
       const n = formData.noOfInstallments;
-      let freqDivisor = 12;
-      if (formData.installmentFrequency === 'त्रैमासिक') freqDivisor = 4;
-      else if (formData.installmentFrequency === 'सहामाही') freqDivisor = 2;
-      else if (formData.installmentFrequency === 'वार्षिक') freqDivisor = 1;
-
       const rateObj = loanRates.find(r => r.loanRateID === formData.loanRateID);
-      let newInstallment = 0;
 
-      if (rateObj) {
-        const calcMethod = rateObj.interestCalculationMethod || "Reducing (घटती शिल्लक)";
-        const instType = rateObj.loanInstallmentType || "समान हप्ता";
-
-        if (calcMethod.includes("Reducing") && (instType === "समान मुद्दल" || instType === "कर्जावरती" || instType.includes("मुद्दल") || instType.includes("कर्जावर"))) {
-          newInstallment = Math.round(P / n);
-        } else {
-          const r = (ratePerYear / 100) / freqDivisor;
-          if (r === 0) newInstallment = Math.round(P / n);
-          else newInstallment = Math.round((P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1));
-        }
-      } else {
-        const r = (ratePerYear / 100) / freqDivisor;
-        if (r === 0) newInstallment = Math.round(P / n);
-        else newInstallment = Math.round((P * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1));
-      }
+      const newInstallment = computeCalculatedInstallment(
+        P,
+        ratePerYear,
+        n,
+        formData.installmentFrequency || 'मासिक',
+        formData.durationMonths || 12,
+        rateObj
+      );
       setFormData(prev => ({ ...prev, installmentAmount: newInstallment }));
     }
   };
@@ -725,7 +737,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
         installmentFrequency: formData.installmentFrequency || 'मासिक',
         loanDisbursementDate: formData.applicationDate || new Date().toISOString().split('T')[0],
         firstInstallmentDate: formData.firstInstallmentDate ? formData.firstInstallmentDate : null,
-        customInstallmentAmount: formData.installmentAmount && formData.installmentAmount > 0 ? formData.installmentAmount : null
+        customInstallmentAmount: isInstAmountEdited && formData.installmentAmount && formData.installmentAmount > 0 ? formData.installmentAmount : null
       };
 
       const res = await axios.post('/api/LoanAccounts/PreviewSchedule', payload);
@@ -1634,7 +1646,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
             </div>
 
             {/* Mini Summary Banner */}
-            <div className="grid grid-cols-3 gap-1 text-[10px] bg-primary/5 p-2 rounded-sm border border-primary/20 mb-2">
+            <div className="grid grid-cols-3 gap-1 text-[10px] bg-primary/5 p-2 rounded-sm border border-primary/20 mb-1.5">
               <div>
                 <span className="text-gray-500 block">मागणी रक्कम:</span>
                 <span className="font-bold text-gray-900 font-mono">₹{(formData.requestedAmount || 0).toLocaleString('en-IN')}</span>
@@ -1648,6 +1660,27 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                 <span className="font-bold text-indigo-900 font-mono">{formData.interestRate || 0}% p.a.</span>
               </div>
             </div>
+
+            {/* Interest Policy & Installment Type Badge */}
+            {(() => {
+              const currentRate = loanRates.find(r => r.loanRateID === formData.loanRateID);
+              const isFlat = currentRate?.interestCalculationMethod?.includes('Flat') || currentRate?.interestCalculationMethod?.includes('फ्लॅट');
+              const isDeclining = currentRate?.interestCalculationMethod?.includes('Reducing') && 
+                (currentRate?.loanInstallmentType === 'समान मुद्दल' || currentRate?.loanInstallmentType === 'कर्जावरती' || currentRate?.loanInstallmentType?.includes('मुद्दल') || currentRate?.loanInstallmentType?.includes('कर्जावर'));
+              
+              return (
+                <div className="mb-2 px-2 py-1 rounded bg-slate-100 border border-slate-200 text-[10px] flex items-center justify-between">
+                  <span className="text-slate-600 font-medium">
+                    व्याज पद्धत: <strong className="text-primary">{currentRate?.interestCalculationMethod || 'Flat (फ्लॅट)'}</strong>
+                  </span>
+                  <span className="text-slate-600 font-medium">
+                    हप्ता प्रकार: <strong className={isFlat ? 'text-blue-700' : (isDeclining ? 'text-amber-700' : 'text-emerald-700')}>
+                      {isFlat ? 'फ्लॅट हप्ता (स्थिर मुद्दल व व्याज)' : (isDeclining ? 'समान मुद्दल (घटणारा हप्ता)' : 'समान हप्ता (EMI)')}
+                    </strong>
+                  </span>
+                </div>
+              );
+            })()}
 
             {scheduleData.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-400 bg-slate-50/50 rounded border border-dashed border-gray-200">
@@ -1688,6 +1721,23 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       </tr>
                     ))}
                   </tbody>
+                  {scheduleData.length > 0 && (
+                    <tfoot className="bg-slate-100 font-mono font-bold text-gray-800 border-t-2 border-gray-300 sticky bottom-0">
+                      <tr>
+                        <td colSpan={2} className="p-1.5 text-center font-sans text-[11px]">एकूण (Total):</td>
+                        <td className="p-1.5 text-right text-gray-900 border-r border-gray-200">
+                          ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="p-1.5 text-right text-rose-700 border-r border-gray-200">
+                          ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="p-1.5 text-right text-emerald-800 border-r border-gray-200">
+                          ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="p-1.5 text-right text-gray-400 font-sans">-</td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             )}

@@ -76,16 +76,23 @@ export default function CustomerListReport() {
   const [toDate, setToDate] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
+  const isMountedRef = useRef(true);
+
   useEffect(() => {
+    isMountedRef.current = true;
     fetchSanstha();
     fetchBranches();
     fetchData();
+
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   const fetchSanstha = async () => {
     try {
       const res = await axios.get('/api/SansthaDetails');
-      if (res.data) {
+      if (res.data && isMountedRef.current) {
         if (Array.isArray(res.data) && res.data.length > 0) {
           setSansthaDetail(res.data[0]);
         } else if (!Array.isArray(res.data)) {
@@ -100,7 +107,9 @@ export default function CustomerListReport() {
   const fetchBranches = async () => {
     try {
       const res = await axios.get('/api/Branches');
-      setBranches(res.data || []);
+      if (isMountedRef.current) {
+        setBranches(res.data || []);
+      }
     } catch (err) {
       console.error('Failed to load branches', err);
     }
@@ -134,12 +143,18 @@ export default function CustomerListReport() {
       }
 
       const res = await axios.get(`/api/Reports/CustomerListReport?${params.toString()}`);
-      setReportData(res.data);
+      if (isMountedRef.current) {
+        setReportData(res.data);
+      }
     } catch (err: any) {
       console.error(err);
-      setError('खातेदार यादी माहिती लोड करताना त्रुटी आली. कृपया पुन्हा प्रयत्न करा.');
+      if (isMountedRef.current) {
+        setError('खातेदार यादी माहिती लोड करताना त्रुटी आली. कृपया पुन्हा प्रयत्न करा.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 

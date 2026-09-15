@@ -200,7 +200,9 @@ namespace Bhisi.Api.Controllers
                         MemberProfile = c.MemberProfile != null ? new Member
                         {
                             MemberID = c.MemberProfile.MemberID,
-                            MemberCode = c.MemberProfile.MemberCode,
+                            MemberCode = !string.IsNullOrWhiteSpace(c.MemberProfile.MemberCode)
+                                ? c.MemberProfile.MemberCode
+                                : $"MEM{c.MemberProfile.MemberID:D4}",
                             LegacyMemberNo = c.MemberProfile.LegacyMemberNo,
                             MembershipType = c.MemberProfile.MembershipType
                         } : null

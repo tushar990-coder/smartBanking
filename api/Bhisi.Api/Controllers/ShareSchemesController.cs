@@ -27,7 +27,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<ShareScheme>>> GetShareSchemes([FromQuery] int? branchId)
         {
             // In Core Banking, Share Capital and Membership Schemes are Sanstha-Wide policies applicable to all branches
-            return await _context.ShareSchemes
+            var schemes = await _context.ShareSchemes
                 .Include(s => s.ShareCapitalLedger)
                 .Include(s => s.EntranceFeeLedger)
                 .Include(s => s.ShareTransferFeeLedger)
@@ -36,6 +36,27 @@ namespace Bhisi.Api.Controllers
                 .OrderByDescending(s => s.EffectiveDate)
                 .ThenBy(s => s.ShareSchemeId)
                 .ToListAsync();
+
+            bool hasChanges = false;
+            foreach (var s in schemes)
+            {
+                if (!s.ShareCapitalLedgerID.HasValue || s.ShareCapitalLedgerID.Value <= 0 || s.ShareCapitalLedger == null)
+                {
+                    var capitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context, s.ShareSchemeId);
+                    if (capitalLedger != null)
+                    {
+                        s.ShareCapitalLedgerID = capitalLedger.LedgerID;
+                        s.ShareCapitalLedger = capitalLedger;
+                        hasChanges = true;
+                    }
+                }
+            }
+            if (hasChanges)
+            {
+                try { await _context.SaveChangesAsync(); } catch { }
+            }
+
+            return schemes;
         }
 
         // GET: api/ShareSchemes/5

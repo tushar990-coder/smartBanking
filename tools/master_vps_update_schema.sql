@@ -1760,21 +1760,44 @@ WHERE ([IsDeleted] = 1 OR [Status] = 'Closed')
   AND [MemberID] NOT IN (SELECT DISTINCT [MemberId] FROM [ShareCertificates] WHERE [MemberId] IS NOT NULL);
 
 -- Standardize blank/NULL CIF numbers sequentially across all registered customers
-;WITH MaxCifVal AS (
-    SELECT COALESCE(MAX(TRY_CAST(SUBSTRING([CIFNo], 4, 10) AS INT)), 0) AS [MaxCif]
-    FROM [Members]
-    WHERE [CIFNo] LIKE 'CIF%'
-),
-MissingCifs AS (
-    SELECT [MemberID], ROW_NUMBER() OVER (ORDER BY [MemberID]) AS [RowSeq]
-    FROM [Members]
-    WHERE ([CIFNo] IS NULL OR [CIFNo] = '')
-)
-UPDATE m
-SET m.[CIFNo] = 'CIF' + RIGHT('000000' + CAST(mv.[MaxCif] + mc.[RowSeq] AS VARCHAR(10)), 6)
-FROM [Members] m
-INNER JOIN MissingCifs mc ON m.[MemberID] = mc.[MemberID]
-CROSS JOIN MaxCifVal mv;
+IF COL_LENGTH('Members', 'CIFNo') IS NOT NULL
+BEGIN
+    EXEC('
+    ;WITH MaxCifVal AS (
+        SELECT COALESCE(MAX(TRY_CAST(SUBSTRING([CIFNo], 4, 10) AS INT)), 0) AS [MaxCif]
+        FROM [Members]
+        WHERE [CIFNo] LIKE ''CIF%''
+    ),
+    MissingCifs AS (
+        SELECT [MemberID], ROW_NUMBER() OVER (ORDER BY [MemberID]) AS [RowSeq]
+        FROM [Members]
+        WHERE ([CIFNo] IS NULL OR [CIFNo] = '''')
+    )
+    UPDATE m
+    SET m.[CIFNo] = ''CIF'' + RIGHT(''000000'' + CAST(mv.[MaxCif] + mc.[RowSeq] AS VARCHAR(10)), 6)
+    FROM [Members] m
+    INNER JOIN MissingCifs mc ON m.[MemberID] = mc.[MemberID]
+    CROSS JOIN MaxCifVal mv;');
+END
+
+IF OBJECT_ID('Customers', 'U') IS NOT NULL AND COL_LENGTH('Customers', 'CIFNo') IS NOT NULL
+BEGIN
+    ;WITH MaxCifVal AS (
+        SELECT COALESCE(MAX(TRY_CAST(SUBSTRING([CIFNo], 4, 10) AS INT)), 0) AS [MaxCif]
+        FROM [Customers]
+        WHERE [CIFNo] LIKE 'CIF%'
+    ),
+    MissingCifs AS (
+        SELECT [CustomerID], ROW_NUMBER() OVER (ORDER BY [CustomerID]) AS [RowSeq]
+        FROM [Customers]
+        WHERE ([CIFNo] IS NULL OR [CIFNo] = '')
+    )
+    UPDATE c
+    SET c.[CIFNo] = 'CIF' + RIGHT('000000' + CAST(mv.[MaxCif] + mc.[RowSeq] AS VARCHAR(10)), 6)
+    FROM [Customers] c
+    INNER JOIN MissingCifs mc ON c.[CustomerID] = mc.[CustomerID]
+    CROSS JOIN MaxCifVal mv;
+END
 
 -- 1. Reset MemberCode to NULL for all non-shareholder customers (preserves CIF & Legacy numbers)
 UPDATE [Members]
@@ -2011,7 +2034,12 @@ BEGIN
     SET IDENTITY_INSERT [Customers] OFF;
 
     IF OBJECT_ID(N'[Members]', N'U') IS NOT NULL
-        UPDATE [Members] SET [CustomerID] = @TargetCustId, [CIFNo] = @CorrectedCif WHERE [CustomerID] = 0 OR [CIFNo] = 'CIF000000';
+    BEGIN
+        IF COL_LENGTH('Members', 'CIFNo') IS NOT NULL
+            EXEC sp_executesql N'UPDATE [Members] SET [CustomerID] = @cid, [CIFNo] = @cif WHERE [CustomerID] = 0 OR [CIFNo] = ''CIF000000'';', N'@cid INT, @cif NVARCHAR(20)', @cid = @TargetCustId, @cif = @CorrectedCif;
+        ELSE
+            UPDATE [Members] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+    END
     IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
         UPDATE [SavingAccountMasters] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
     IF OBJECT_ID(N'[LoanAccounts]', N'U') IS NOT NULL
@@ -2228,15 +2256,26 @@ BEGIN
         BEGIN TRY
             IF COL_LENGTH('Members', 'CustomerID') IS NOT NULL
             BEGIN
-                EXEC sp_executesql N'
-                    UPDATE m
-                    SET m.[CustomerID] = cm.NewCustomerID,
-                        m.[CIFNo] = cm.NewCIF
-                    FROM [Members] m
-                    INNER JOIN #CustomerMap cm ON m.[CustomerID] = cm.OldCustomerID;';
+                IF COL_LENGTH('Members', 'CIFNo') IS NOT NULL
+                BEGIN
+                    EXEC sp_executesql N'
+                        UPDATE m
+                        SET m.[CustomerID] = cm.NewCustomerID,
+                            m.[CIFNo] = cm.NewCIF
+                        FROM [Members] m
+                        INNER JOIN #CustomerMap cm ON m.[CustomerID] = cm.OldCustomerID;';
+                END
+                ELSE
+                BEGIN
+                    EXEC sp_executesql N'
+                        UPDATE m
+                        SET m.[CustomerID] = cm.NewCustomerID
+                        FROM [Members] m
+                        INNER JOIN #CustomerMap cm ON m.[CustomerID] = cm.OldCustomerID;';
+                END
             END
 
-            IF COL_LENGTH('Members', 'MemberID') IS NOT NULL
+            IF COL_LENGTH('Members', 'MemberID') IS NOT NULL AND COL_LENGTH('Members', 'CIFNo') IS NOT NULL
             BEGIN
                 EXEC sp_executesql N'
                     UPDATE m
@@ -2696,7 +2735,7 @@ BEGIN
 
     IF EXISTS (SELECT 1 FROM #TempMissingCust)
     BEGIN
-        IF COL_LENGTH('Members', 'FirstName') IS NOT NULL
+        IF COL_LENGTH('Members', 'FirstName') IS NOT NULL AND COL_LENGTH('Members', 'CIFNo') IS NOT NULL
         BEGIN
             EXEC('INSERT INTO Members (
                 BranchID, CustomerID, CIFNo, MemberCode, LegacyMemberNo,
@@ -3067,11 +3106,12 @@ BEGIN
     -- Map Members.CustomerID to Customers.CustomerID
     IF COL_LENGTH('Members', 'CIFNo') IS NOT NULL
     BEGIN
-        UPDATE m
-        SET m.CustomerID = c.CustomerID
-        FROM dbo.Members m
-        INNER JOIN dbo.Customers c ON m.CIFNo = c.CIFNo
-        WHERE m.CustomerID <> c.CustomerID OR m.CustomerID IS NULL;
+        EXEC('
+            UPDATE m
+            SET m.CustomerID = c.CustomerID
+            FROM dbo.Members m
+            INNER JOIN dbo.Customers c ON m.CIFNo = c.CIFNo
+            WHERE m.CustomerID <> c.CustomerID OR m.CustomerID IS NULL;');
         PRINT 'Healed and verified Members.CustomerID foreign keys to Customers.CustomerID based on CIFNo.';
     END
 

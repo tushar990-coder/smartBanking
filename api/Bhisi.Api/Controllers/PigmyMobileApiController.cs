@@ -624,5 +624,29 @@ namespace Bhisi.Api.Controllers
                 paidVouchersCount = paidRecords.Count
             });
         }
+        // ==========================================
+        // 10. GET /api/PigmyApp/schemes
+        // ==========================================
+        [HttpGet("api/PigmyApp/schemes")]
+        public async Task<IActionResult> GetActivePigmySchemes()
+        {
+            var schemes = await _context.PigmySchemes
+                .Where(s => s.Status == "Active")
+                .Select(s => new
+                {
+                    schemeId = s.PigmySchemeID,
+                    schemeCode = s.SchemeCode,
+                    schemeName = s.SchemeName,
+                    interestRate = s.InterestRate,
+                    durationMonths = s.DurationMonths,
+                    minDurationMonths = s.MinDurationMonths,
+                    prematureInterestRate = s.PrematureInterestRate,
+                    penaltyInterestRate = s.PenaltyInterestRate,
+                    interestCalculationMethod = s.InterestCalculationMethod
+                })
+                .ToListAsync();
+
+            return Ok(schemes);
+        }
     }
 }

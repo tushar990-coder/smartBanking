@@ -78,6 +78,10 @@ namespace Bhisi.Api.Controllers
             existing.InterestExpenseLedgerID = pigmyScheme.InterestExpenseLedgerID;
             existing.InterestPayableLedgerID = pigmyScheme.InterestPayableLedgerID;
             existing.CommissionExpenseLedgerID = pigmyScheme.CommissionExpenseLedgerID;
+            existing.PrematureInterestRate = pigmyScheme.PrematureInterestRate;
+            existing.MinDurationMonths = pigmyScheme.MinDurationMonths;
+            existing.PenaltyInterestRate = pigmyScheme.PenaltyInterestRate;
+            existing.InterestCalculationMethod = pigmyScheme.InterestCalculationMethod;
 
             try
             {

@@ -39,6 +39,11 @@ interface PigmyScheme {
   schemeName: string;
   interestRate: number;
   durationMonths: number;
+  prematureInterestRate?: number;
+  minDurationMonths?: number;
+  interestDays?: number;
+  penaltyInterestRate?: number;
+  interestCalculationMethod?: string;
   status: string;
   pigmyLiabilityLedgerID?: number | null;
   interestExpenseLedgerID?: number | null;
@@ -81,6 +86,11 @@ export default function PigmySchemeMaster() {
     schemeName: '',
     interestRate: '',
     durationMonths: '12',
+    prematureInterestRate: '',
+    minDurationMonths: '',
+    interestDays: '365',
+    penaltyInterestRate: '',
+    interestCalculationMethod: 'Flat (फ्लॅट)',
     status: 'Active',
     pigmyLiabilityLedgerID: 0,
     interestExpenseLedgerID: 0,
@@ -147,6 +157,11 @@ export default function PigmySchemeMaster() {
       schemeName: '',
       interestRate: '',
       durationMonths: '12',
+      prematureInterestRate: '',
+      minDurationMonths: '',
+      interestDays: '365',
+      penaltyInterestRate: '',
+      interestCalculationMethod: 'Flat (फ्लॅट)',
       status: 'Active',
       pigmyLiabilityLedgerID: 0,
       interestExpenseLedgerID: 0,
@@ -167,6 +182,11 @@ export default function PigmySchemeMaster() {
       schemeName: scheme.schemeName || '',
       interestRate: scheme.interestRate !== undefined ? String(scheme.interestRate) : '',
       durationMonths: scheme.durationMonths !== undefined ? String(scheme.durationMonths) : '12',
+      prematureInterestRate: scheme.prematureInterestRate !== undefined ? String(scheme.prematureInterestRate) : '',
+      minDurationMonths: scheme.minDurationMonths !== undefined ? String(scheme.minDurationMonths) : '',
+      interestDays: scheme.interestDays !== undefined ? String(scheme.interestDays) : '365',
+      penaltyInterestRate: scheme.penaltyInterestRate !== undefined ? String(scheme.penaltyInterestRate) : '',
+      interestCalculationMethod: scheme.interestCalculationMethod || 'Flat (फ्लॅट)',
       status: scheme.status || 'Active',
       pigmyLiabilityLedgerID: scheme.pigmyLiabilityLedgerID || 0,
       interestExpenseLedgerID: scheme.interestExpenseLedgerID || 0,
@@ -557,7 +577,7 @@ export default function PigmySchemeMaster() {
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1.5 border-t border-gray-200">
               <div>
                 <label className={labelClass}>
-                  मुदत (महिने) <span className="text-red-500">*</span>
+                  कमाल कालावधी (महिने) <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -567,6 +587,65 @@ export default function PigmySchemeMaster() {
                   onChange={(e) => setFormData({ ...formData, durationMonths: e.target.value })}
                   className={`${inputClass} font-mono font-bold`}
                 />
+              </div>
+
+              <div>
+                <label className={labelClass}>अकाली व्याजदार (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="उदा. 5.5"
+                  value={formData.prematureInterestRate}
+                  onChange={(e) => setFormData({ ...formData, prematureInterestRate: e.target.value })}
+                  className={`${inputClass} font-mono`}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>किमान कालावधी (महिने)</label>
+                <input
+                  type="number"
+                  placeholder="उदा. 6"
+                  value={formData.minDurationMonths}
+                  onChange={(e) => setFormData({ ...formData, minDurationMonths: e.target.value })}
+                  className={`${inputClass} font-mono`}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>व्याजाचे दिवस</label>
+                <input
+                  type="number"
+                  placeholder="उदा. 365"
+                  value={formData.interestDays}
+                  onChange={(e) => setFormData({ ...formData, interestDays: e.target.value })}
+                  className={`${inputClass} font-mono`}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>दंडव्याज (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="उदा. 2.0"
+                  value={formData.penaltyInterestRate}
+                  onChange={(e) => setFormData({ ...formData, penaltyInterestRate: e.target.value })}
+                  className={`${inputClass} font-mono`}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>व्याज आकारणी पद्धत</label>
+                <select
+                  value={formData.interestCalculationMethod}
+                  onChange={(e) => setFormData({ ...formData, interestCalculationMethod: e.target.value })}
+                  className={`${inputClass} font-mono`}
+                >
+                  <option value="Flat (फ्लॅट)">Flat (फ्लॅट)</option>
+                  <option value="Reducing (घटती पद्धत)">Reducing (घटती पद्धत)</option>
+                  <option value="Daily Reducing (दैनिक घटती)">Daily Reducing (दैनिक घटती)</option>
+                </select>
               </div>
 
               <div>

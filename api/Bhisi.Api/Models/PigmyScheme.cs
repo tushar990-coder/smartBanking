@@ -27,6 +27,17 @@ namespace Bhisi.Api.Models
         [StringLength(20)]
         public string Status { get; set; } = "Active";
 
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal? PrematureInterestRate { get; set; }
+
+        public int? MinDurationMonths { get; set; }
+
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal? PenaltyInterestRate { get; set; }
+
+        [StringLength(50)]
+        public string? InterestCalculationMethod { get; set; }
+
         // General Ledger (GL) Mapping Properties for Core Banking Integration
         public int? PigmyLiabilityLedgerID { get; set; }
         [ForeignKey("PigmyLiabilityLedgerID")]

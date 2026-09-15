@@ -110,6 +110,17 @@ namespace Bhisi.Api.Controllers
             public string PaymentMode { get; set; } = "CASH";
             public string? Narration { get; set; }
             public int BranchId { get; set; } = 1;
+            public int? CashierId { get; set; }
+
+            // Denominations
+            public int? Count500 { get; set; }
+            public int? Count200 { get; set; }
+            public int? Count100 { get; set; }
+            public int? Count50 { get; set; }
+            public int? Count20 { get; set; }
+            public int? Count10 { get; set; }
+            public int? Count5 { get; set; }
+            public int? CountCoins { get; set; }
         }
 
         // POST: api/AgentDayBook/DepositCash
@@ -132,6 +143,22 @@ namespace Bhisi.Api.Controllers
             if (request.Amount > currentHolding)
             {
                 return BadRequest($"जमा रक्कम (₹{request.Amount:N2}) एजंटकडील शिल्लक रक्कमेपेक्षा (₹{currentHolding:N2}) जास्त असू शकत नाही.");
+            }
+
+            int count500 = request.Count500 ?? 0;
+            int count200 = request.Count200 ?? 0;
+            int count100 = request.Count100 ?? 0;
+            int count50 = request.Count50 ?? 0;
+            int count20 = request.Count20 ?? 0;
+            int count10 = request.Count10 ?? 0;
+            int count5 = request.Count5 ?? 0;
+            int countCoins = request.CountCoins ?? 0;
+
+            decimal denomTotal = (count500 * 500) + (count200 * 200) + (count100 * 100) + (count50 * 50) + (count20 * 20) + (count10 * 10) + (count5 * 5) + countCoins;
+
+            if (denomTotal > 0 && denomTotal != request.Amount)
+            {
+                return BadRequest($"नोटांची एकूण मोजणी (₹{denomTotal:N2}) ही भरणा रक्कमेसह (₹{request.Amount:N2}) तंतोतंत जुळली पाहिजे.");
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -196,6 +223,42 @@ namespace Bhisi.Api.Controllers
 
                 _context.PigmyAgentCashDeposits.Add(deposit);
                 await _context.SaveChangesAsync();
+
+                // Record Denomination Breakdown if provided
+                if (denomTotal > 0)
+                {
+                    int cashierId = request.CashierId ?? 0;
+                    if (cashierId <= 0)
+                    {
+                        var defaultCashier = await _context.Cashiers.FirstOrDefaultAsync(c => (c.BranchId == request.BranchId || c.BranchId == null) && c.IsActive);
+                        cashierId = defaultCashier?.Id ?? 1;
+                    }
+
+                    var denominationEntry = new CashDenomination
+                    {
+                        BranchId = request.BranchId,
+                        CashierId = cashierId,
+                        DenominationDate = request.DepositDate,
+                        EntryType = "PIGMY_REMITTANCE",
+                        Count500 = count500,
+                        Count200 = count200,
+                        Count100 = count100,
+                        Count50 = count50,
+                        Count20 = count20,
+                        Count10 = count10,
+                        Count5 = count5,
+                        CountCoins = countCoins,
+                        TotalAmount = denomTotal,
+                        ExpectedAmount = request.Amount,
+                        DifferenceAmount = 0,
+                        DifferenceType = "MATCHED",
+                        Remarks = $"Pigmy Agent {request.AgentId} Remittance {receiptNo}",
+                        VerifiedBy = "Cashier",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.CashDenominations.Add(denominationEntry);
+                    await _context.SaveChangesAsync();
+                }
 
                 await transaction.CommitAsync();
 

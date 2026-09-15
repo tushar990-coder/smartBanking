@@ -118,6 +118,74 @@ namespace Bhisi.Api.Controllers
             return Ok(collections);
         }
 
+        // GET: api/PigmyCollections/MobileSyncQueue
+        [HttpGet("MobileSyncQueue")]
+        public async Task<ActionResult<object>> GetMobileSyncQueue([FromQuery] DateTime? date, [FromQuery] int? agentId)
+        {
+            var targetDate = (date ?? DateTime.Today).Date;
+            var nextDate = targetDate.AddDays(1);
+
+            var query = _context.PigmyCollections
+                .Include(c => c.PigmyAccount)
+                    .ThenInclude(a => a!.Customer)
+                .Include(c => c.Agent)
+                .Where(c => c.CollectionSource == "APP" && c.CollectionDate >= targetDate && c.CollectionDate < nextDate);
+
+            if (agentId.HasValue && agentId.Value > 0)
+            {
+                query = query.Where(c => c.AgentId == agentId.Value);
+            }
+
+            var items = await query
+                .OrderByDescending(c => c.CollectionId)
+                .Select(c => new
+                {
+                    c.CollectionId,
+                    c.ReceiptNo,
+                    c.CollectionDate,
+                    c.CollectionAmount,
+                    c.OpeningBalance,
+                    c.ClosingBalance,
+                    c.PaymentMode,
+                    c.Notes,
+                    c.IsVoucherGenerated,
+                    c.VoucherId,
+                    c.SyncReferenceId,
+                    c.TransactionId,
+                    PigmyAccountNo = c.PigmyAccount != null ? c.PigmyAccount.AccountNo : "",
+                    CustomerName = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? 
+                        (c.PigmyAccount.Customer.FirstName + " " + (c.PigmyAccount.Customer.LastName ?? "")).Trim() : "",
+                    MobileNo = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? c.PigmyAccount.Customer.MobileNo : "",
+                    AgentId = c.AgentId,
+                    AgentName = c.Agent != null ? c.Agent.AgentName : ""
+                })
+                .ToListAsync();
+
+            var totalAmount = items.Sum(i => i.CollectionAmount);
+            var totalCount = items.Count;
+
+            var agentSummaries = items
+                .GroupBy(i => new { i.AgentId, i.AgentName })
+                .Select(g => new
+                {
+                    g.Key.AgentId,
+                    g.Key.AgentName,
+                    Count = g.Count(),
+                    TotalAmount = g.Sum(x => x.CollectionAmount),
+                    PendingVouchers = g.Count(x => !x.IsVoucherGenerated)
+                })
+                .ToList();
+
+            return Ok(new
+            {
+                Date = targetDate,
+                TotalCount = totalCount,
+                TotalAmount = totalAmount,
+                AgentSummaries = agentSummaries,
+                Items = items
+            });
+        }
+
         // POST: api/PigmyCollections/Manual
         [HttpPost("Manual")]
         public async Task<IActionResult> ProcessManualCollection([FromBody] ManualCollectionDto dto)

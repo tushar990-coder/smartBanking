@@ -17,7 +17,15 @@ import {
   AlertTriangle,
   X,
   Eye,
-  EyeOff
+  EyeOff,
+  ArrowRightLeft,
+  History,
+  CheckSquare,
+  Square,
+  Users,
+  Wallet,
+  Calendar,
+  Check
 } from 'lucide-react';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 
@@ -68,6 +76,28 @@ export default function PigmyAgentMaster() {
   const [deleteDependencyModal, setDeleteDependencyModal] = useState<DeleteDependencyInfo | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState<boolean>(false);
+
+  // Transfer Modal States
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState<boolean>(false);
+  const [transferAgent, setTransferAgent] = useState<PigmyAgent | null>(null);
+  const [transferPreCheck, setTransferPreCheck] = useState<any | null>(null);
+  const [loadingPreCheck, setLoadingPreCheck] = useState<boolean>(false);
+  const [targetAgentId, setTargetAgentId] = useState<number | ''>('');
+  const [transferMode, setTransferMode] = useState<'ALL' | 'SELECTIVE'>('ALL');
+  const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
+  const [accountSearch, setAccountSearch] = useState<string>('');
+  const [outgoingStatus, setOutgoingStatus] = useState<string>('Suspended');
+  const [transferReason, setTransferReason] = useState<string>('एजंट कार्यमुक्ती / खाते हस्तांतरण');
+  const [transferRemarks, setTransferRemarks] = useState<string>('');
+  const [forceAllowCash, setForceAllowCash] = useState<boolean>(false);
+  const [submittingTransfer, setSubmittingTransfer] = useState<boolean>(false);
+
+  // History Modal States
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+  const [historyAgent, setHistoryAgent] = useState<PigmyAgent | null>(null);
+  const [transferHistoryList, setTransferHistoryList] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
+
   const formContainerRef = useRef<HTMLDivElement>(null);
   const agentNameInputRef = useRef<HTMLInputElement>(null);
   
@@ -266,6 +296,125 @@ export default function PigmyAgentMaster() {
       fetchAgents();
     } catch (error: any) {
       showToast(error.response?.data?.message || 'एजंट इनॲक्टिव्ह करताना त्रुटी आली.');
+    }
+  };
+
+  const openTransferModal = async (agent: PigmyAgent) => {
+    const id = getAgentId(agent);
+    if (!id) return;
+    setTransferAgent(agent);
+    setTransferPreCheck(null);
+    setTargetAgentId('');
+    setTransferMode('ALL');
+    setSelectedAccountIds([]);
+    setAccountSearch('');
+    setOutgoingStatus('Suspended');
+    setTransferReason('एजंट कार्यमुक्ती / खाते हस्तांतरण');
+    setTransferRemarks('');
+    setForceAllowCash(false);
+    setIsTransferModalOpen(true);
+    setDeleteDependencyModal(null);
+    setLoadingPreCheck(true);
+
+    try {
+      const res = await axios.get(`/api/PigmyAgents/${id}/TransferPreCheck`);
+      setTransferPreCheck(res.data);
+      if (res.data.activeAccounts) {
+        setSelectedAccountIds(res.data.activeAccounts.map((a: any) => a.pigmyAccountId));
+      }
+    } catch (err: any) {
+      console.error('Error fetching transfer precheck', err);
+      showToast(err.response?.data?.message || 'हस्तांतरण माहिती लोड करताना त्रुटी आली.');
+    } finally {
+      setLoadingPreCheck(false);
+    }
+  };
+
+  const openHistoryModal = async (agent: PigmyAgent) => {
+    const id = getAgentId(agent);
+    if (!id) return;
+    setHistoryAgent(agent);
+    setTransferHistoryList([]);
+    setIsHistoryModalOpen(true);
+    setLoadingHistory(true);
+
+    try {
+      const res = await axios.get(`/api/PigmyAgents/${id}/TransferHistory`);
+      setTransferHistoryList(res.data || []);
+    } catch (err: any) {
+      console.error('Error fetching transfer history', err);
+      showToast(err.response?.data?.message || 'हस्तांतरण इतिहास लोड करताना त्रुटी आली.');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const toggleAccountSelection = (accId: number) => {
+    setSelectedAccountIds(prev => 
+      prev.includes(accId) ? prev.filter(id => id !== accId) : [...prev, accId]
+    );
+  };
+
+  const toggleSelectAllAccounts = () => {
+    if (!transferPreCheck?.activeAccounts) return;
+    const filteredAccounts = transferPreCheck.activeAccounts.filter((a: any) => 
+      a.accountNo?.toLowerCase().includes(accountSearch.toLowerCase()) ||
+      a.customerName?.toLowerCase().includes(accountSearch.toLowerCase())
+    );
+    const filteredIds = filteredAccounts.map((a: any) => a.pigmyAccountId);
+    const allSelected = filteredIds.every((id: number) => selectedAccountIds.includes(id));
+
+    if (allSelected) {
+      setSelectedAccountIds(prev => prev.filter(id => !filteredIds.includes(id)));
+    } else {
+      setSelectedAccountIds(prev => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
+
+  const handleExecuteTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferAgent) return;
+    const fromId = getAgentId(transferAgent);
+    if (!targetAgentId) {
+      alert('कृपया हस्तांतरणासाठी नवीन सक्रिय एजंट (Target Agent) निवडा.');
+      return;
+    }
+    if (transferMode === 'SELECTIVE' && selectedAccountIds.length === 0) {
+      alert('कृपया हस्तांतरणासाठी किमान एक खाते निवडा.');
+      return;
+    }
+
+    if (transferPreCheck?.hasPendingCash && !forceAllowCash && outgoingStatus !== 'KeepActive') {
+      alert(`एजंटकडे ₹${Number(transferPreCheck.pendingCash).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ची जमा न झालेली रोकड शिल्लक (Unremitted Cash) आहे. कृपया रोकड शाखेत जमा करा अथवा 'व्यवस्थापकीय ओव्हरराईड' निवडा.`);
+      return;
+    }
+
+    const countToTransfer = transferMode === 'ALL' ? (transferPreCheck?.activeAccountsCount || 0) : selectedAccountIds.length;
+    const targetAgentObj = transferPreCheck?.targetAgents?.find((a: any) => a.pigmyAgentId === Number(targetAgentId));
+    const confirmMsg = `तुम्हाला नक्की ${countToTransfer} खाती '${targetAgentObj?.agentName || 'नवीन एजंट'}' यांच्याकडे वर्ग करायची आहेत का?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setSubmittingTransfer(true);
+    try {
+      const payload = {
+        fromAgentId: fromId,
+        toAgentId: Number(targetAgentId),
+        accountIds: transferMode === 'SELECTIVE' ? selectedAccountIds : null,
+        newFromAgentStatus: outgoingStatus,
+        reason: transferReason,
+        remarks: transferRemarks,
+        forceAllowWithCashBalance: forceAllowCash
+      };
+
+      const res = await axios.post('/api/PigmyAgents/TransferAccounts', payload);
+      showToast(res.data?.message || 'खाती यशस्वीरित्या वर्ग झाली!');
+      setIsTransferModalOpen(false);
+      fetchAgents();
+    } catch (err: any) {
+      console.error('Error executing transfer', err);
+      alert(err.response?.data?.message || 'खाते हस्तांतरण करताना त्रुटी आली.');
+    } finally {
+      setSubmittingTransfer(false);
     }
   };
 
@@ -700,17 +849,37 @@ export default function PigmyAgentMaster() {
                               <button 
                                 onClick={() => handleEdit(ag)}
                                 className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-sm font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
+                                title="संपादित करा"
                               >
                                 <Edit3 className="w-3 h-3" />
-                                <span>संपादित करा (Edit)</span>
+                                <span>संपादित</span>
+                              </button>
+
+                              <button 
+                                onClick={() => openTransferModal(ag)}
+                                className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300 rounded-sm font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
+                                title="खाती वर्ग / कार्यमुक्ती (Transfer & Deactivate)"
+                              >
+                                <ArrowRightLeft className="w-3 h-3" />
+                                <span>खाते वर्ग</span>
+                              </button>
+
+                              <button 
+                                onClick={() => openHistoryModal(ag)}
+                                className="px-2 py-0.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-sm font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
+                                title="हस्तांतरण इतिहास (Transfer History)"
+                              >
+                                <History className="w-3 h-3" />
+                                <span>इतिहास</span>
                               </button>
                               
                               <button 
                                 onClick={() => handleDelete(ag)}
                                 className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-sm font-bold text-[10px] transition cursor-pointer flex items-center gap-1"
+                                title="डिलीट करा"
                               >
                                 <Trash2 className="w-3 h-3" />
-                                <span>डिलीट (Delete)</span>
+                                <span>डिलीट</span>
                               </button>
                             </div>
                           </td>
@@ -771,10 +940,429 @@ export default function PigmyAgentMaster() {
 
             <div className="p-4 bg-white border-t border-slate-200 flex flex-col sm:flex-row justify-end gap-2">
               <button
-                onClick={() => handleMakeInactive(deleteDependencyModal.agent)}
-                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold transition-all shadow-xs flex items-center justify-center gap-1"
+                onClick={() => openTransferModal(deleteDependencyModal.agent)}
+                className="px-3.5 py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <span>एजंट इनॲक्टिव्ह (Inactive) करा</span>
+                <ArrowRightLeft className="w-4 h-4" />
+                <span>खाती दुसऱ्या एजंटकडे वर्ग करा (Transfer Accounts)</span>
+              </button>
+              <button
+                onClick={() => handleMakeInactive(deleteDependencyModal.agent)}
+                className="px-3.5 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <span>एजंट इनॲक्टिव्ह करा</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ACCOUNT TRANSFER & DEACTIVATION MODAL */}
+      {isTransferModalOpen && transferAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6">
+            {/* Header */}
+            <div className="p-4 bg-gradient-to-r from-indigo-800 to-indigo-900 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/10 rounded-xl">
+                  <ArrowRightLeft className="w-5 h-5 text-indigo-200" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">पिग्मी खाते हस्तांतरण व एजंट कार्यमुक्ती</h3>
+                  <p className="text-[10px] text-indigo-200">Pigmy Agent Suspension & Customer Account Reallocation</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsTransferModalOpen(false)}
+                className="p-1 rounded-full hover:bg-white/20 text-white transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {loadingPreCheck ? (
+              <div className="p-12 text-center text-gray-500 font-bold flex flex-col items-center gap-3">
+                <RefreshCw className="w-8 h-8 animate-spin text-indigo-600" />
+                <span>एजंट खाती व शिल्लक पडताळणी लोड होत आहे...</span>
+              </div>
+            ) : (
+              <form onSubmit={handleExecuteTransfer} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+                {/* Outgoing Agent Info Banner */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
+                  <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-200 pb-2">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">सध्याचा एजंट (Outgoing Agent)</span>
+                      <span className="text-sm font-bold text-slate-900">
+                        {transferAgent.agentName} ({formatAgentCode(getAgentId(transferAgent))})
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">शाखा (Branch)</span>
+                      <span className="text-xs font-bold text-slate-800">
+                        {transferPreCheck?.agent?.branchName || transferAgent.branch?.branchName || '-'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 pt-1">
+                    <div className="p-2 bg-white rounded-lg border border-slate-200 text-center">
+                      <span className="text-[10px] text-slate-500 font-medium block">सक्रिय खाती (Accounts)</span>
+                      <span className="text-sm font-extrabold text-indigo-700">
+                        {transferPreCheck?.activeAccountsCount || 0}
+                      </span>
+                    </div>
+                    <div className="p-2 bg-white rounded-lg border border-slate-200 text-center">
+                      <span className="text-[10px] text-slate-500 font-medium block">एकूण ठेव शिल्लक (Deposits)</span>
+                      <span className="text-sm font-extrabold text-emerald-700">
+                        ₹{Number(transferPreCheck?.totalActiveBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className={`p-2 rounded-lg border text-center ${
+                      (transferPreCheck?.pendingCash || 0) > 0 
+                        ? 'bg-rose-50 border-rose-200 text-rose-900' 
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    }`}>
+                      <span className="text-[10px] font-medium block">
+                        {(transferPreCheck?.pendingCash || 0) > 0 ? 'प्रलंबित रोकड (Cash in Hand)' : 'रोकड हिशोब'}
+                      </span>
+                      <span className="text-sm font-extrabold">
+                        ₹{Number(transferPreCheck?.pendingCash || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cash Balance Warning / Manager Override */}
+                {transferPreCheck?.hasPendingCash && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                    <div className="flex items-start gap-2 text-amber-900">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="text-xs">
+                        <span className="font-bold block">रोख वसुली सूचना (Cash Handover Check):</span>
+                        या एजंटकडे <span className="font-extrabold text-rose-700">₹{Number(transferPreCheck.pendingCash).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span> ची जमा न झालेली रोकड शिल्लक आहे. कार्यमुक्तीपूर्वी ही रक्कम शाखेत जमा करणे आवश्यक आहे.
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 p-2 bg-white rounded-lg border border-amber-300 text-xs font-bold text-slate-800 cursor-pointer hover:bg-amber-50/50">
+                      <input 
+                        type="checkbox"
+                        checked={forceAllowCash}
+                        onChange={(e) => setForceAllowCash(e.target.checked)}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                      />
+                      <span>व्यवस्थापकीय मान्यता (Manager Override): शिल्लक रोकड असतानाही खाती हस्तांतरित करण्यास परवानगी द्या.</span>
+                    </label>
+                  </div>
+                )}
+
+                {/* Step 1: Target Agent Selection */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-indigo-600" />
+                    <span>हस्तांतरणासाठी नवीन एजंट निवडा (Select Target Active Agent) *</span>
+                  </label>
+                  <select
+                    required
+                    value={targetAgentId}
+                    onChange={(e) => setTargetAgentId(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs bg-white text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  >
+                    <option value="">-- नवीन एजंट निवडा --</option>
+                    {transferPreCheck?.targetAgents?.map((a: any) => (
+                      <option key={a.pigmyAgentId} value={a.pigmyAgentId}>
+                        {a.agentName} (ID: #{a.pigmyAgentId}) - {a.branchName}
+                      </option>
+                    ))}
+                  </select>
+                  {transferPreCheck?.targetAgents?.length === 0 && (
+                    <p className="text-[11px] text-rose-600 mt-1 font-bold">
+                      कोणताही दुसरा सक्रिय (Active) एजंट उपलब्ध नाही. कृपया आधी नवीन एजंट सक्रिय करा.
+                    </p>
+                  )}
+                </div>
+
+                {/* Step 2: Transfer Mode */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    हस्तांतरण पद्धत (Transfer Mode):
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTransferMode('ALL')}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                        transferMode === 'ALL'
+                          ? 'bg-indigo-50 border-indigo-500 text-indigo-900 ring-2 ring-indigo-500/20'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>सर्व सक्रिय खाती वर्ग करा ({transferPreCheck?.activeAccountsCount || 0} खाती)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTransferMode('SELECTIVE')}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                        transferMode === 'SELECTIVE'
+                          ? 'bg-indigo-50 border-indigo-500 text-indigo-900 ring-2 ring-indigo-500/20'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>निवडक खाती वर्ग करा ({selectedAccountIds.length} निवडली)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Selective Accounts Table */}
+                {transferMode === 'SELECTIVE' && (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50 p-2 space-y-2">
+                    <div className="flex flex-wrap justify-between items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={toggleSelectAllAccounts}
+                          className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <CheckSquare className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>सर्व निवडा / काढा</span>
+                        </button>
+                        <span className="text-xs font-bold text-slate-600">
+                          निवडली: {selectedAccountIds.length} / {transferPreCheck?.activeAccounts?.length || 0}
+                        </span>
+                      </div>
+
+                      <div className="relative">
+                        <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-2" />
+                        <input
+                          type="text"
+                          placeholder="खाते क्र. किंवा ग्राहक नाव..."
+                          value={accountSearch}
+                          onChange={(e) => setAccountSearch(e.target.value)}
+                          className="pl-7 pr-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 w-44"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-lg">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0">
+                          <tr>
+                            <th className="p-2 text-center w-10">निवडा</th>
+                            <th className="p-2">खाते क्र.</th>
+                            <th className="p-2">ग्राहक नाव</th>
+                            <th className="p-2">योजना</th>
+                            <th className="p-2 text-right">शिल्लक (₹)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {transferPreCheck?.activeAccounts
+                            ?.filter((a: any) => 
+                              a.accountNo?.toLowerCase().includes(accountSearch.toLowerCase()) ||
+                              a.customerName?.toLowerCase().includes(accountSearch.toLowerCase())
+                            )
+                            .map((acc: any) => {
+                              const isSelected = selectedAccountIds.includes(acc.pigmyAccountId);
+                              return (
+                                <tr 
+                                  key={acc.pigmyAccountId}
+                                  onClick={() => toggleAccountSelection(acc.pigmyAccountId)}
+                                  className={`cursor-pointer hover:bg-indigo-50/50 transition ${isSelected ? 'bg-indigo-50/30' : ''}`}
+                                >
+                                  <td className="p-2 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleAccountSelection(acc.pigmyAccountId)}
+                                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                  </td>
+                                  <td className="p-2 font-mono font-bold text-indigo-900">{acc.accountNo}</td>
+                                  <td className="p-2 font-semibold text-slate-800">{acc.customerName}</td>
+                                  <td className="p-2 text-slate-500">{acc.schemeName}</td>
+                                  <td className="p-2 text-right font-bold text-slate-900">
+                                    ₹{Number(acc.totalDepositedAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 3: Outgoing Agent Status */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    हस्तांतरणानंतर मूळ एजंटची स्थिती (Outgoing Agent Status):
+                  </label>
+                  <select
+                    value={outgoingStatus}
+                    onChange={(e) => setOutgoingStatus(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs bg-white text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  >
+                    <option value="Suspended">Suspended (तात्पुरते निलंबित करा) - चौकशी किंवा गैरहजेरी</option>
+                    <option value="Terminated">Terminated (कायमस्वरूपी कार्यमुक्त करा) - सेवा समाप्ती / राजीनामा</option>
+                    <option value="Inactive">Inactive (अक्रिय करा)</option>
+                    <option value="KeepActive">KeepActive (एजंट सक्रिय ठेवा - केवळ खाती वर्ग करा)</option>
+                  </select>
+                </div>
+
+                {/* Step 4: Reason & Remarks */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      हस्तांतरणाचे कारण (Transfer Reason):
+                    </label>
+                    <select
+                      value={transferReason}
+                      onChange={(e) => setTransferReason(e.target.value)}
+                      className="w-full border border-slate-300 rounded-lg p-2 text-xs bg-white text-slate-900 font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none mb-1.5"
+                    >
+                      <option value="एजंट कार्यमुक्ती / खाते हस्तांतरण">एजंट कार्यमुक्ती / खाते हस्तांतरण</option>
+                      <option value="एजंट राजीनामा (Resignation)">एजंट राजीनामा (Resignation)</option>
+                      <option value="एजंट निलंबन (Suspension)">एजंट निलंबन (Suspension)</option>
+                      <option value="रूट / कार्यक्षेत्र फेरबदल (Route Change)">रूट / कार्यक्षेत्र फेरबदल (Route Change)</option>
+                      <option value="ग्राहक विनंती (Customer Request)">ग्राहक विनंती (Customer Request)</option>
+                      <option value="इतर (Other)">इतर (Other)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      शेरा / टिप्पणी (Remarks):
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="काही विशेष नोंद असल्यास..."
+                      value={transferRemarks}
+                      onChange={(e) => setTransferRemarks(e.target.value)}
+                      className="w-full border border-slate-300 rounded-lg p-2 text-xs bg-white text-slate-900 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsTransferModalOpen(false)}
+                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
+                  >
+                    रद्द करा (Cancel)
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingTransfer || !targetAgentId || (transferMode === 'SELECTIVE' && selectedAccountIds.length === 0)}
+                    className="px-5 py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md disabled:opacity-50 cursor-pointer"
+                  >
+                    {submittingTransfer ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ArrowRightLeft className="w-4 h-4" />
+                    )}
+                    <span>खाती वर्ग करा (Confirm & Execute Transfer)</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TRANSFER HISTORY MODAL */}
+      {isHistoryModalOpen && historyAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6">
+            {/* Header */}
+            <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/10 rounded-xl">
+                  <History className="w-5 h-5 text-indigo-300" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">खाते हस्तांतरण इतिहास (Transfer History Log)</h3>
+                  <p className="text-[10px] text-slate-300">
+                    एजंट: {historyAgent.agentName} ({formatAgentCode(getAgentId(historyAgent))})
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="p-1 rounded-full hover:bg-white/20 text-white transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <div className="p-12 text-center text-gray-500 font-bold flex flex-col items-center gap-3">
+                <RefreshCw className="w-8 h-8 animate-spin text-indigo-600" />
+                <span>इतिहास नोंदी लोड होत आहेत...</span>
+              </div>
+            ) : transferHistoryList.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 font-bold">
+                या एजंटशी संबंधित कोणतीही हस्तांतरण नोंद सापडली नाही.
+              </div>
+            ) : (
+              <div className="p-4 max-h-[75vh] overflow-y-auto">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                      <th className="p-2">दिनांक व वेळ</th>
+                      <th className="p-2">बॅच क्र.</th>
+                      <th className="p-2">खाते क्र. व ग्राहक</th>
+                      <th className="p-2">हस्तांतरण (From ➔ To)</th>
+                      <th className="p-2 text-right">शिल्लक रक्कम</th>
+                      <th className="p-2 text-center">प्रकार</th>
+                      <th className="p-2">कारण</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {transferHistoryList.map((item: any) => {
+                      const isOutgoing = item.fromAgentID === getAgentId(historyAgent);
+                      return (
+                        <tr key={item.transferID} className="hover:bg-slate-50 transition">
+                          <td className="p-2 text-slate-600 font-medium">
+                            {new Date(item.transferredOn).toLocaleString('en-GB')}
+                          </td>
+                          <td className="p-2 font-mono text-[11px] text-slate-500">{item.batchNumber}</td>
+                          <td className="p-2">
+                            <span className="font-mono font-bold text-indigo-900 block">{item.accountNo}</span>
+                            <span className="text-[11px] text-slate-600">{item.customerName}</span>
+                          </td>
+                          <td className="p-2">
+                            <div className="flex items-center gap-1.5 font-bold">
+                              <span className={isOutgoing ? 'text-rose-700' : 'text-slate-700'}>{item.fromAgentName}</span>
+                              <ArrowRightLeft className="w-3 h-3 text-slate-400" />
+                              <span className={!isOutgoing ? 'text-emerald-700' : 'text-slate-700'}>{item.toAgentName}</span>
+                            </div>
+                          </td>
+                          <td className="p-2 text-right font-bold text-slate-900">
+                            ₹{Number(item.totalBalanceAtTransfer).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              item.transferType === 'BULK' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}>
+                              {item.transferType}
+                            </span>
+                          </td>
+                          <td className="p-2 text-slate-600 text-[11px]">{item.reason || '-'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsHistoryModalOpen(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+              >
+                बंद करा (Close)
               </button>
             </div>
           </div>

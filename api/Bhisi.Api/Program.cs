@@ -229,6 +229,40 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgents')
+            BEGIN
+                IF COL_LENGTH('PigmyAgents', 'MobileNo') IS NULL ALTER TABLE [PigmyAgents] ADD [MobileNo] nvarchar(20) NULL;
+                IF COL_LENGTH('PigmyAgents', 'Username') IS NULL ALTER TABLE [PigmyAgents] ADD [Username] nvarchar(100) NULL;
+                IF COL_LENGTH('PigmyAgents', 'PasswordHash') IS NULL ALTER TABLE [PigmyAgents] ADD [PasswordHash] nvarchar(255) NULL;
+                IF COL_LENGTH('PigmyAgents', 'Pin') IS NULL ALTER TABLE [PigmyAgents] ADD [Pin] nvarchar(10) NULL;
+                IF COL_LENGTH('PigmyAgents', 'CustomerID') IS NULL ALTER TABLE [PigmyAgents] ADD [CustomerID] int NULL;
+                IF COL_LENGTH('PigmyAgents', 'MaxCashLimit') IS NULL ALTER TABLE [PigmyAgents] ADD [MaxCashLimit] decimal(18,2) NOT NULL DEFAULT 20000.00;
+                IF COL_LENGTH('PigmyAgents', 'MaxLockDays') IS NULL ALTER TABLE [PigmyAgents] ADD [MaxLockDays] int NOT NULL DEFAULT 2;
+                IF COL_LENGTH('PigmyAgents', 'JoiningDate') IS NULL ALTER TABLE [PigmyAgents] ADD [JoiningDate] datetime2 NULL;
+                IF COL_LENGTH('PigmyAgents', 'CreatedBy') IS NULL ALTER TABLE [PigmyAgents] ADD [CreatedBy] int NOT NULL DEFAULT 1;
+                IF COL_LENGTH('PigmyAgents', 'CreatedDate') IS NULL ALTER TABLE [PigmyAgents] ADD [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE();
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgentAccountTransfers')
+            BEGIN
+                CREATE TABLE [PigmyAgentAccountTransfers] (
+                    [TransferID] bigint IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [BatchNumber] nvarchar(50) NOT NULL,
+                    [BranchID] int NOT NULL DEFAULT 1,
+                    [FromAgentID] int NOT NULL,
+                    [ToAgentID] int NOT NULL,
+                    [PigmyAccountID] int NOT NULL,
+                    [TotalBalanceAtTransfer] decimal(18,2) NOT NULL DEFAULT 0,
+                    [TransferredOn] datetime2 NOT NULL DEFAULT GETDATE(),
+                    [TransferredBy] int NOT NULL DEFAULT 1,
+                    [Reason] nvarchar(500) NOT NULL,
+                    [TransferType] nvarchar(20) NOT NULL DEFAULT 'BULK'
+                );
+                CREATE INDEX [IX_PigmyAgentAccountTransfers_FromAgent] ON [PigmyAgentAccountTransfers] ([FromAgentID]);
+                CREATE INDEX [IX_PigmyAgentAccountTransfers_ToAgent] ON [PigmyAgentAccountTransfers] ([ToAgentID]);
+                CREATE INDEX [IX_PigmyAgentAccountTransfers_Account] ON [PigmyAgentAccountTransfers] ([PigmyAccountID]);
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Members')
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'IsDeleted')

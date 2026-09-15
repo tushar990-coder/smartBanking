@@ -66,6 +66,7 @@ namespace Bhisi.Api.Services
                     AccountNo = existingCollection.PigmyAccount?.AccountNo ?? "",
                     CustomerName = customerName,
                     MemberName = customerName,
+                    CustomerMobile = existingCollection.PigmyAccount?.Customer?.MobileNo ?? "",
                     ReceiptNo = existingCollection.ReceiptNo,
                     Amount = existingCollection.CollectionAmount,
                     CurrentBalance = existingCollection.ClosingBalance,
@@ -225,6 +226,34 @@ namespace Bhisi.Api.Services
                 var customerName = account.Customer != null
                     ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim()
                     : "";
+                var customerMobile = account.Customer?.MobileNo ?? "";
+                string smsText = $"प्रिय सभासद, आपल्या दैनिक ठेव खाते क्र. {account.AccountNo} मध्ये ₹{addedAmount:N2} जमा झाले आहेत. चालू शिल्लक ₹{closingBal:N2}. पावती: {receiptNo}. - SmartBanking";
+
+                // Real-Time CBS notification hook
+                try
+                {
+                    var notification = new SystemNotification
+                    {
+                        BranchID = account.BranchID,
+                        ModuleName = "Pigmy",
+                        NotificationType = "COLLECTION",
+                        Title = $"पिग्मी पावती ₹{addedAmount:N0} जमा",
+                        Description = $"खाते क्र. {account.AccountNo} ({customerName}) मध्ये ₹{addedAmount:N2} जमा. पावती: {receiptNo}, चालू शिल्लक: ₹{closingBal:N2}",
+                        Priority = "LOW",
+                        TargetTab = "Pigmy",
+                        EntityName = "PigmyAccount",
+                        EntityID = account.PigmyAccountID.ToString(),
+                        Amount = addedAmount,
+                        Status = "Active",
+                        CreatedOn = DateTime.UtcNow
+                    };
+                    _context.SystemNotifications.Add(notification);
+                    await _context.SaveChangesAsync();
+                }
+                catch
+                {
+                    // Non-blocking notification dispatch
+                }
 
                 return new SingleCollectionResponseDto
                 {
@@ -236,11 +265,13 @@ namespace Bhisi.Api.Services
                     AccountNo = account.AccountNo,
                     CustomerName = customerName,
                     MemberName = customerName,
+                    CustomerMobile = customerMobile,
                     ReceiptNo = receiptNo,
                     Amount = addedAmount,
                     CurrentBalance = closingBal,
                     PaymentMode = paymentMode,
                     Timestamp = collDate,
+                    SmsNotificationText = smsText,
                     Message = "Collection processed and saved successfully."
                 };
             }

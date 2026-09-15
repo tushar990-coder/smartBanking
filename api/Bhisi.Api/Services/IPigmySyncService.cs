@@ -42,6 +42,8 @@ namespace Bhisi.Api.Services
         public string? PaymentMode { get; set; }
         public DateTime? Timestamp { get; set; }
         public int StatusCode { get; set; } = 200;
+        public string? SmsNotificationText { get; set; }
+        public string? CustomerMobile { get; set; }
     }
 
     public class BulkSyncRequestDto

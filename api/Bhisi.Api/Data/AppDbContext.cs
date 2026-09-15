@@ -89,6 +89,7 @@ namespace Bhisi.Api.Data
         public DbSet<PigmyAgentCommission> PigmyAgentCommissions { get; set; }
         public DbSet<PigmyInterestLog> PigmyInterestLogs { get; set; }
         public DbSet<AgentCustomerRequest> AgentCustomerRequests { get; set; }
+        public DbSet<PigmyAgentAccountTransfer> PigmyAgentAccountTransfers { get; set; }
 
         // Investment Module DbSets
         public DbSet<InvestmentInstitution> InvestmentInstitutions { get; set; }

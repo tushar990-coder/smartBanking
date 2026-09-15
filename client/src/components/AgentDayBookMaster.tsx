@@ -40,6 +40,56 @@ const AgentDayBookMaster: React.FC = () => {
   const [message, setMessage] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<RemittanceItem | null>(null);
 
+  // Cash Denominations State
+  const [showDenomGrid, setShowDenomGrid] = useState<boolean>(true);
+  const [denominations, setDenominations] = useState<{ [key: string]: number }>({
+    500: 0,
+    200: 0,
+    100: 0,
+    50: 0,
+    20: 0,
+    10: 0,
+    5: 0,
+    coins: 0
+  });
+
+  const handleDenomChange = (denom: string, countStr: string) => {
+    const count = parseInt(countStr) || 0;
+    setDenominations(prev => {
+      const updated = { ...prev, [denom]: Math.max(0, count) };
+      return updated;
+    });
+  };
+
+  const totalDenominationAmount = 
+    (denominations[500] || 0) * 500 +
+    (denominations[200] || 0) * 200 +
+    (denominations[100] || 0) * 100 +
+    (denominations[50] || 0) * 50 +
+    (denominations[20] || 0) * 20 +
+    (denominations[10] || 0) * 10 +
+    (denominations[5] || 0) * 5 +
+    (denominations.coins || 0);
+
+  const applyDenomToDepositAmount = () => {
+    if (totalDenominationAmount > 0) {
+      setDepositAmount(totalDenominationAmount);
+    }
+  };
+
+  const resetDenominations = () => {
+    setDenominations({
+      500: 0,
+      200: 0,
+      100: 0,
+      50: 0,
+      20: 0,
+      10: 0,
+      5: 0,
+      coins: 0
+    });
+  };
+
   useEffect(() => {
     fetch('/api/PigmyAgents')
       .then((res) => res.json())
@@ -79,8 +129,14 @@ const AgentDayBookMaster: React.FC = () => {
 
   const handleDeposit = async () => {
     if (!selectedAgentId || !depositAmount) return;
+
+    if (paymentMode === 'CASH' && totalDenominationAmount > 0 && totalDenominationAmount !== Number(depositAmount)) {
+      setMessage(`त्रुटी: नोटांची एकूण मोजणी (₹${totalDenominationAmount.toLocaleString('en-IN')}) आणि भरणा रक्कम (₹${Number(depositAmount).toLocaleString('en-IN')}) तंतोतंत जुळली पाहिजे.`);
+      return;
+    }
+
     try {
-      const payload = {
+      const payload: any = {
         agentId: Number(selectedAgentId),
         depositDate: selectedDate,
         amount: Number(depositAmount),
@@ -88,6 +144,17 @@ const AgentDayBookMaster: React.FC = () => {
         narration: narration,
         branchId: 1
       };
+
+      if (paymentMode === 'CASH' && totalDenominationAmount > 0) {
+        payload.count500 = denominations[500] || 0;
+        payload.count200 = denominations[200] || 0;
+        payload.count100 = denominations[100] || 0;
+        payload.count50 = denominations[50] || 0;
+        payload.count20 = denominations[20] || 0;
+        payload.count10 = denominations[10] || 0;
+        payload.count5 = denominations[5] || 0;
+        payload.countCoins = denominations.coins || 0;
+      }
 
       const res = await fetch('/api/AgentDayBook/DepositCash', {
         method: 'POST',
@@ -100,6 +167,7 @@ const AgentDayBookMaster: React.FC = () => {
         setMessage(`यशस्वी! पावती क्र: ${data.receiptNo} | मोड: ${paymentMode} | व्हाउचर क्र: ${data.voucherNo}`);
         setDepositAmount('');
         setNarration('');
+        resetDenominations();
         fetchSummary(); // Refresh balances and history
       } else {
         const errText = await res.text();
@@ -249,7 +317,18 @@ const AgentDayBookMaster: React.FC = () => {
           </div>
 
           <div className="mb-2">
-            <label className="block text-[11px] font-bold text-gray-700 mb-0.5">शाखेत जमा रक्कम (Remittance Amount ₹)</label>
+            <div className="flex justify-between items-center mb-0.5">
+              <label className="block text-[11px] font-bold text-gray-700">शाखेत जमा रक्कम (Remittance Amount ₹)</label>
+              {paymentMode === 'CASH' && totalDenominationAmount > 0 && (
+                <button
+                  type="button"
+                  onClick={applyDenomToDepositAmount}
+                  className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline"
+                >
+                  नोटांची रक्कम घ्या (₹{totalDenominationAmount.toLocaleString('en-IN')})
+                </button>
+              )}
+            </div>
             <input
               type="number"
               className="w-full border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-xs font-bold bg-white"
@@ -258,6 +337,76 @@ const AgentDayBookMaster: React.FC = () => {
               onChange={(e) => setDepositAmount(e.target.value ? Number(e.target.value) : '')}
             />
           </div>
+
+          {/* Cash Denomination Counter Grid (Active when Cash Mode is selected) */}
+          {paymentMode === 'CASH' && (
+            <div className="mb-2 border border-emerald-200 bg-emerald-50/40 rounded-sm p-2 text-xs">
+              <div className="flex justify-between items-center mb-1.5 pb-1 border-b border-emerald-200">
+                <span className="font-bold text-emerald-900 text-[11px] flex items-center gap-1">
+                  💵 कॅशियर नोटा मोजणी (Denominations)
+                </span>
+                <button
+                  type="button"
+                  onClick={resetDenominations}
+                  className="text-[10px] text-gray-500 hover:text-red-600 font-medium"
+                >
+                  रीसेट (Reset)
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
+                {[
+                  { label: '₹ ५००', key: 500, val: 500 },
+                  { label: '₹ २००', key: 200, val: 200 },
+                  { label: '₹ १००', key: 100, val: 100 },
+                  { label: '₹ ५०', key: 50, val: 50 },
+                  { label: '₹ २०', key: 20, val: 20 },
+                  { label: '₹ १०', key: 10, val: 10 },
+                  { label: '₹ ५', key: 5, val: 5 },
+                  { label: 'नाणी (Coins)', key: 'coins', val: 1, isCoin: true }
+                ].map((d) => (
+                  <div key={d.key.toString()} className="flex items-center justify-between bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                    <span className="font-semibold text-gray-700 w-16 text-[10px]">{d.label}</span>
+                    <span className="text-gray-400 text-[10px]">×</span>
+                    <input
+                      type="number"
+                      min="0"
+                      className="w-12 text-center border border-gray-300 rounded px-1 py-0.5 text-xs font-mono font-bold focus:border-emerald-500 focus:outline-none"
+                      value={denominations[d.key] || ''}
+                      placeholder="0"
+                      onChange={(e) => handleDenomChange(d.key.toString(), e.target.value)}
+                    />
+                    <span className="font-mono text-[10px] text-gray-600 w-12 text-right">
+                      ₹{((denominations[d.key] || 0) * d.val).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Denomination Total & Matching Indicator */}
+              <div className="mt-2 pt-1 border-t border-emerald-200 flex justify-between items-center text-[11px]">
+                <div>
+                  <span className="text-gray-600 font-medium">एकूण नोटा: </span>
+                  <span className="font-mono font-bold text-emerald-800">
+                    ₹ {totalDenominationAmount.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                {totalDenominationAmount > 0 && depositAmount && Number(depositAmount) > 0 && (
+                  <div>
+                    {totalDenominationAmount === Number(depositAmount) ? (
+                      <span className="text-emerald-700 font-bold bg-emerald-100 px-1.5 py-0.5 rounded text-[10px]">
+                        ✓ अचूक (Matched)
+                      </span>
+                    ) : (
+                      <span className="text-red-700 font-bold bg-red-100 px-1.5 py-0.5 rounded text-[10px]">
+                        फरक: ₹ {Math.abs(totalDenominationAmount - Number(depositAmount)).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="mb-3">
             <label className="block text-[11px] font-bold text-gray-700 mb-0.5">तपशील / शेरा (Narration)</label>

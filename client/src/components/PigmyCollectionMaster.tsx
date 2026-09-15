@@ -12,7 +12,8 @@ import {
   MagnifyingGlassIcon,
   ArrowRightIcon,
   SparklesIcon,
-  ClockIcon
+  ClockIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 
 interface Customer {
@@ -81,6 +82,16 @@ export default function PigmyCollectionMaster() {
 
   // App Sync State
   const [appSyncJson, setAppSyncJson] = useState('[\n  {\n    "pigmyAccountId": 1,\n    "agentId": 1,\n    "collectionDate": "2026-08-09",\n    "collectionAmount": 100,\n    "syncReferenceId": "uuid-1234"\n  }\n]');
+  const [mobileQueue, setMobileQueue] = useState<{
+    date: string;
+    totalCount: number;
+    totalAmount: number;
+    agentSummaries: any[];
+    items: any[];
+  } | null>(null);
+  const [mobileSyncView, setMobileSyncView] = useState<'queue' | 'json'>('queue');
+  const [mobileQueueLoading, setMobileQueueLoading] = useState(false);
+  const [selectedQueueAgent, setSelectedQueueAgent] = useState<number | ''>('');
 
   // Refs for auto-focus keyboard navigation
   const inputRefs = useRef<{ [accountId: number]: HTMLInputElement | null }>({});
@@ -90,6 +101,25 @@ export default function PigmyCollectionMaster() {
     fetchAccounts();
     fetchHistory();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'app') {
+      fetchMobileQueue(selectedQueueAgent);
+    }
+  }, [activeTab, selectedQueueAgent]);
+
+  const fetchMobileQueue = async (agentId?: number | '') => {
+    setMobileQueueLoading(true);
+    try {
+      const url = agentId ? `/api/PigmyCollections/MobileSyncQueue?agentId=${agentId}` : '/api/PigmyCollections/MobileSyncQueue';
+      const res = await axios.get(url);
+      setMobileQueue(res.data);
+    } catch (err) {
+      console.error('Failed to fetch mobile sync queue', err);
+    } finally {
+      setMobileQueueLoading(false);
+    }
+  };
 
   const fetchAgents = async () => {
     try {
@@ -660,39 +690,222 @@ export default function PigmyCollectionMaster() {
         </div>
       )}
 
-      {/* TAB 3: APP SYNC */}
+      {/* TAB 3: MOBILE APP SYNC & REVIEW QUEUE */}
       {activeTab === 'app' && (
         <div className="bg-gray-50/80 p-3 rounded border border-gray-200 space-y-3">
-          <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider pb-1 border-b border-gray-200 flex justify-between items-center">
-            <h2 className="flex items-center gap-1.5">
-              <DevicePhoneMobileIcon className="w-4 h-4 text-indigo-600" />
-              <span>मोबाईल अ‍ॅप सिंक (Mobile App Sync Simulator)</span>
-            </h2>
-            <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-sm border border-amber-200">
-              Idempotency Protected
-            </span>
-          </div>
-          
-          <p className="text-gray-600 text-xs">
-            एजंट मोबाईल अ‍ॅपमधील ऑफलाइन जमा व्यवहारांचा JSON डेटा येथे सिंक करण्यासाठी एंटर करा.
-          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-gray-200">
+            <div className="flex items-center gap-2">
+              <DevicePhoneMobileIcon className="w-5 h-5 text-indigo-600" />
+              <div>
+                <h2 className="text-xs font-bold text-gray-800 uppercase tracking-wider">
+                  मोबाईल अ‍ॅप सिंक व तपासणी (Mobile App Sync & Audit Queue)
+                </h2>
+                <p className="text-[10px] text-gray-500">एजंट मोबाईल अ‍ॅपमधील रिअल-टाइम व ऑफलाइन व्यवहारांची तपासणी</p>
+              </div>
+            </div>
 
-          <textarea
-            className="w-full h-48 p-3 font-mono text-xs bg-slate-900 text-emerald-400 rounded-sm border border-slate-700 focus:outline-none"
-            value={appSyncJson}
-            onChange={(e) => setAppSyncJson(e.target.value)}
-          />
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-sm border border-gray-300 p-0.5 bg-white text-xs">
+                <button
+                  type="button"
+                  onClick={() => setMobileSyncView('queue')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-xs transition ${
+                    mobileSyncView === 'queue' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  📡 सिंक यादी व ऑडिट (Live Queue)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileSyncView('json')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-xs transition ${
+                    mobileSyncView === 'json' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  ⚡ ऑफलाईन JSON सिंक (JSON Tool)
+                </button>
+              </div>
 
-          <div className="flex justify-end">
-            <button 
-              onClick={handleAppSync}
-              disabled={loading}
-              className="flex items-center gap-1 px-4 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white font-bold rounded-sm text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
-            >
-              {loading ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> : <DocumentArrowUpIcon className="w-3.5 h-3.5" />}
-              <span>सिंक डेटा सेव्ह करा (Process Sync)</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => fetchMobileQueue(selectedQueueAgent)}
+                className="p-1.5 border border-gray-300 rounded-sm bg-white hover:bg-gray-100 text-gray-700"
+                title="रिफ्रेश करा"
+              >
+                <ArrowPathIcon className={`w-3.5 h-3.5 ${mobileQueueLoading ? 'animate-spin text-indigo-600' : ''}`} />
+              </button>
+            </div>
           </div>
+
+          {mobileSyncView === 'queue' ? (
+            <div className="space-y-3">
+              {/* Summary KPIs & Agent Filter */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <div className="bg-white p-2.5 rounded border border-indigo-100 shadow-2xs">
+                  <span className="text-[10px] text-gray-500 font-bold block uppercase">आजचे मोबाईल कलेक्शन</span>
+                  <span className="text-base font-extrabold text-indigo-700 font-mono">
+                    {mobileQueue?.totalCount || 0} पावत्या
+                  </span>
+                </div>
+                <div className="bg-white p-2.5 rounded border border-emerald-100 shadow-2xs">
+                  <span className="text-[10px] text-gray-500 font-bold block uppercase">एकूण जमा रक्कम</span>
+                  <span className="text-base font-extrabold text-emerald-700 font-mono">
+                    ₹ {(mobileQueue?.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="bg-white p-2.5 rounded border border-purple-100 shadow-2xs">
+                  <span className="text-[10px] text-gray-500 font-bold block uppercase">सक्रिय सिंक एजंट्स</span>
+                  <span className="text-base font-extrabold text-purple-700 font-mono">
+                    {mobileQueue?.agentSummaries?.length || 0} एजंट
+                  </span>
+                </div>
+                <div className="bg-white p-2 rounded border border-gray-200 shadow-2xs flex flex-col justify-center">
+                  <label className="text-[10px] font-bold text-gray-600 uppercase mb-1">एजंटनुसार फिल्टर</label>
+                  <select
+                    className="border border-gray-300 rounded-sm px-1.5 py-0.5 text-xs bg-white font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    value={selectedQueueAgent}
+                    onChange={(e) => setSelectedQueueAgent(e.target.value ? Number(e.target.value) : '')}
+                  >
+                    <option value="">सर्व एजंट्स (All Agents)</option>
+                    {agents.map((ag) => (
+                      <option key={ag.pigmyAgentID} value={ag.pigmyAgentID}>
+                        {ag.agentName} {ag.agentCode ? `(${ag.agentCode})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Agent Batch Cards */}
+              {mobileQueue?.agentSummaries && mobileQueue.agentSummaries.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {mobileQueue.agentSummaries.map((ag) => (
+                    <div key={ag.agentId} className="bg-white p-2 rounded border border-gray-200 shadow-2xs flex justify-between items-center text-xs">
+                      <div>
+                        <div className="font-bold text-gray-800 flex items-center gap-1">
+                          <span>{ag.agentName}</span>
+                          <span className="text-[10px] text-gray-400">#{ag.agentId}</span>
+                        </div>
+                        <div className="text-[11px] text-gray-600">
+                          {ag.count} पावत्या • <span className="font-bold text-emerald-700">₹ {ag.totalAmount.toLocaleString('en-IN')}</span>
+                        </div>
+                      </div>
+                      <div>
+                        {ag.pendingVouchers === 0 ? (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
+                            <ShieldCheckIcon className="w-3 h-3 text-emerald-600" /> व्हाउचर पूर्ण
+                          </span>
+                        ) : (
+                          <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded">
+                            {ag.pendingVouchers} प्रलंबित
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Live Collections Table */}
+              <div className="overflow-x-auto border border-gray-200 rounded-sm bg-white">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100 text-gray-700 text-[11px] font-bold uppercase tracking-wider border-b border-gray-200">
+                      <th className="py-2 px-2.5">पावती क्रमांक (Receipt)</th>
+                      <th className="py-2 px-2.5">खाते क्रमांक (Account)</th>
+                      <th className="py-2 px-2.5">खातेदाराचे नाव (Customer)</th>
+                      <th className="py-2 px-2.5">एजंट (Agent)</th>
+                      <th className="py-2 px-2.5 text-right">रक्कम (Amount ₹)</th>
+                      <th className="py-2 px-2.5 text-center">मोड (Mode)</th>
+                      <th className="py-2 px-2.5 text-center">तपासणी स्थिती (Status)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 text-xs">
+                    {mobileQueueLoading ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-gray-500">
+                          <ArrowPathIcon className="w-5 h-5 animate-spin mx-auto text-indigo-600 mb-1" />
+                          मोबाईल सिंक माहिती लोड होत आहे...
+                        </td>
+                      </tr>
+                    ) : !mobileQueue?.items || mobileQueue.items.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-gray-500 font-medium">
+                          आज मोबाईल अ‍ॅपद्वारे कोणतेही कलेक्शन सिंक झालेले नाही.
+                        </td>
+                      </tr>
+                    ) : (
+                      mobileQueue.items.map((item) => (
+                        <tr key={item.collectionId} className="hover:bg-indigo-50/40 transition">
+                          <td className="py-2 px-2.5 font-mono font-bold text-gray-900">
+                            {item.receiptNo}
+                            {item.syncReferenceId && (
+                              <div className="text-[9px] text-gray-400 truncate max-w-[120px]" title={item.syncReferenceId}>
+                                UUID: {item.syncReferenceId}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-2 px-2.5 font-mono font-bold text-primary">{item.pigmyAccountNo}</td>
+                          <td className="py-2 px-2.5">
+                            <div className="font-bold text-gray-900">{item.customerName || '-'}</div>
+                            {item.mobileNo && <div className="text-[10px] text-gray-500 font-mono">{item.mobileNo}</div>}
+                          </td>
+                          <td className="py-2 px-2.5 font-semibold text-gray-700">{item.agentName}</td>
+                          <td className="py-2 px-2.5 text-right font-mono font-bold text-emerald-700">
+                            ₹ {item.collectionAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2 px-2.5 text-center">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-700 border border-gray-200">
+                              {item.paymentMode || 'CASH'}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2.5 text-center">
+                            {item.isVoucherGenerated ? (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded border border-emerald-200">
+                                <CheckCircleIcon className="w-3 h-3 text-emerald-600" /> सिंक व व्हाउचर पूर्ण
+                              </span>
+                            ) : (
+                              <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded border border-amber-200">
+                                प्रलंबित
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center bg-indigo-50 border border-indigo-200 rounded p-2 text-xs text-indigo-900">
+                <span>
+                  <strong>ऑफलाइन बॅच सिंक:</strong> मोबाईल अ‍ॅप नेटवर्क नसताना ऑफलाइन साठवलेला व्यवहार डेटा JSON स्वरूपात खाली पेस्ट करून सिंक करा.
+                </span>
+                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 font-bold text-[10px] rounded">
+                  Idempotency Protected
+                </span>
+              </div>
+
+              <textarea
+                className="w-full h-44 p-3 font-mono text-xs bg-slate-900 text-emerald-400 rounded-sm border border-slate-700 focus:outline-none"
+                value={appSyncJson}
+                onChange={(e) => setAppSyncJson(e.target.value)}
+              />
+
+              <div className="flex justify-end">
+                <button 
+                  onClick={handleAppSync}
+                  disabled={loading}
+                  className="flex items-center gap-1 px-4 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white font-bold rounded-sm text-xs shadow-xs transition disabled:opacity-50 cursor-pointer"
+                >
+                  {loading ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> : <DocumentArrowUpIcon className="w-3.5 h-3.5" />}
+                  <span>सिंक डेटा सेव्ह करा (Process Offline Sync)</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

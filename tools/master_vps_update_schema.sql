@@ -3573,6 +3573,57 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- PIGMY MODULE SCHEMA SYNCHRONIZATION (Mobile App, Agent Cash Limit, Lien & Denominations)
+-- -----------------------------------------------------------------------------------------
+IF OBJECT_ID(N'[PigmyAgents]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('PigmyAgents', 'MobileNo') IS NULL ALTER TABLE [PigmyAgents] ADD [MobileNo] NVARCHAR(20) NULL;
+    IF COL_LENGTH('PigmyAgents', 'Username') IS NULL ALTER TABLE [PigmyAgents] ADD [Username] NVARCHAR(100) NULL;
+    IF COL_LENGTH('PigmyAgents', 'PasswordHash') IS NULL ALTER TABLE [PigmyAgents] ADD [PasswordHash] NVARCHAR(255) NULL;
+    IF COL_LENGTH('PigmyAgents', 'Pin') IS NULL ALTER TABLE [PigmyAgents] ADD [Pin] NVARCHAR(10) NULL;
+    IF COL_LENGTH('PigmyAgents', 'CustomerID') IS NULL ALTER TABLE [PigmyAgents] ADD [CustomerID] INT NULL;
+    IF COL_LENGTH('PigmyAgents', 'MaxCashLimit') IS NULL ALTER TABLE [PigmyAgents] ADD [MaxCashLimit] DECIMAL(18,2) NOT NULL CONSTRAINT DF_PigmyAgents_MaxCashLimit DEFAULT 20000.00;
+    IF COL_LENGTH('PigmyAgents', 'MaxLockDays') IS NULL ALTER TABLE [PigmyAgents] ADD [MaxLockDays] INT NOT NULL CONSTRAINT DF_PigmyAgents_MaxLockDays DEFAULT 2;
+    IF COL_LENGTH('PigmyAgents', 'JoiningDate') IS NULL ALTER TABLE [PigmyAgents] ADD [JoiningDate] DATETIME2 NULL;
+    IF COL_LENGTH('PigmyAgents', 'CreatedBy') IS NULL ALTER TABLE [PigmyAgents] ADD [CreatedBy] INT NOT NULL CONSTRAINT DF_PigmyAgents_CreatedBy DEFAULT 1;
+    IF COL_LENGTH('PigmyAgents', 'CreatedDate') IS NULL ALTER TABLE [PigmyAgents] ADD [CreatedDate] DATETIME2 NOT NULL CONSTRAINT DF_PigmyAgents_CreatedDate DEFAULT GETDATE();
+    PRINT 'Synchronized PigmyAgents schema (MobileNo, Cash Limits, Mobile Auth credentials)';
+END
+GO
+
+IF OBJECT_ID(N'[PigmyCollections]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('PigmyCollections', 'SyncReferenceId') IS NULL ALTER TABLE [PigmyCollections] ADD [SyncReferenceId] NVARCHAR(100) NULL;
+    IF COL_LENGTH('PigmyCollections', 'TransactionId') IS NULL ALTER TABLE [PigmyCollections] ADD [TransactionId] NVARCHAR(100) NULL;
+    IF COL_LENGTH('PigmyCollections', 'PaymentMode') IS NULL ALTER TABLE [PigmyCollections] ADD [PaymentMode] NVARCHAR(20) NOT NULL CONSTRAINT DF_PigmyCollections_PaymentMode DEFAULT 'CASH';
+    IF COL_LENGTH('PigmyCollections', 'Notes') IS NULL ALTER TABLE [PigmyCollections] ADD [Notes] NVARCHAR(500) NULL;
+    PRINT 'Synchronized PigmyCollections schema (SyncReferenceId, Idempotency TransactionId, PaymentMode)';
+END
+GO
+
+IF OBJECT_ID(N'[PigmyAgentAccountTransfers]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [PigmyAgentAccountTransfers] (
+        [TransferID] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [BatchNumber] NVARCHAR(50) NOT NULL,
+        [BranchID] INT NOT NULL CONSTRAINT DF_PigmyAgentAccountTransfers_BranchID DEFAULT 1,
+        [FromAgentID] INT NOT NULL,
+        [ToAgentID] INT NOT NULL,
+        [PigmyAccountID] INT NOT NULL,
+        [TotalBalanceAtTransfer] DECIMAL(18,2) NOT NULL CONSTRAINT DF_PigmyAgentAccountTransfers_TotalBalance DEFAULT 0,
+        [TransferredOn] DATETIME2 NOT NULL CONSTRAINT DF_PigmyAgentAccountTransfers_TransferredOn DEFAULT GETDATE(),
+        [TransferredBy] INT NOT NULL CONSTRAINT DF_PigmyAgentAccountTransfers_TransferredBy DEFAULT 1,
+        [Reason] NVARCHAR(500) NOT NULL,
+        [TransferType] NVARCHAR(20) NOT NULL CONSTRAINT DF_PigmyAgentAccountTransfers_TransferType DEFAULT 'BULK'
+    );
+    CREATE INDEX [IX_PigmyAgentAccountTransfers_FromAgent] ON [PigmyAgentAccountTransfers] ([FromAgentID]);
+    CREATE INDEX [IX_PigmyAgentAccountTransfers_ToAgent] ON [PigmyAgentAccountTransfers] ([ToAgentID]);
+    CREATE INDEX [IX_PigmyAgentAccountTransfers_Account] ON [PigmyAgentAccountTransfers] ([PigmyAccountID]);
+    PRINT 'Created PigmyAgentAccountTransfers audit table';
+END
+GO
+
 -- 5. Record Version v2.4.9 in SystemVersionHistories
 IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
 BEGIN

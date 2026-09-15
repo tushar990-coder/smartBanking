@@ -1,8 +1,9 @@
 {
-  "version": "2.4.9",
+  "version": "2.5.0",
   "releaseDate": "2026-09-15",
-  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.4.9",
+  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.0",
   "changelog": [
+    "⭐ [2026-09-15] दैनिक ठेव सीबीएस एंटरप्राइज सूट (CBS Pigmy Enterprise Suite): १) एजंट कार्यमुक्ती व खाते हस्तांतरण (Agent Suspension & Customer Account Reallocation - Zero Historical Loss, Cash Handover Warning व Audit Batch), २) कॅशियर नोटा मोजणी ग्रिड (Cashier Denomination Counter Grid - CashDenominations टेबल नोंद), ३) मोबाईल सिंक तपासणी व ऑडिट डॅशबोर्ड (Mobile Collections Review Queue), ४) सक्रिय कर्ज धारणाधिकार तपासणी व मुदतपूर्व बंद दंड स्लॅब्स (Loan Lien Protection & Penalty Slabs), ५) ग्राहक तात्काळ एसएमएस व सीबीएस सूचना हुक (Customer SMS & Notification Hook).",
     "⭐ [2026-09-15] शेअर ओपनिंग बॅलन्स व सभासद कोड सिंक (Share Opening Balance & Member Code Alignment): सभासद व शेअर्स वाटप झालेल्या खातेदारांसाठी सलग MemberCode (MEM0001 ते MEMxxxx) स्वयंचलित जोडणे, खातेदार शोध ड्रॉपडाऊनमध्ये CIF व MEM बॅज दुहेरी सुरक्षा आणि कोर बँकिंग मानकांनुसार ५-भागीय आधुनिक UI रचना.",
     "⭐ [2026-09-11] खातेदार यादी अहवाल (Customer / CIF Master List Report): कोर बँकिंग मानकांनुसार शाखावार, केवायसी स्थिती, नोंदणी कालावधी फिल्टर्स, आधार मास्किंग, A4 लँडस्केप ३-स्तरीय स्वाक्षरी प्रिंटिंग व एक्सेल (.xlsx) एक्सपोर्ट.",
     "⭐ [2026-09-11] मराठी नाव टाईप करताच इंग्रजी स्पेलिंग स्वयंचलित (Real-Time Auto-Transliteration): खातेदार बल्क नोंदणीत पहिले, मधले व आडनाव टाईप करताना ध्वन्यात्मक इंग्रजी स्पेलिंग त्वरित भरणे व एक्सेल आयात/पेस्ट सपोर्ट.",

@@ -689,7 +689,13 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
         })
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { message: text || 'सर्व्हरकडून अवैध प्रतिसाद आला.' };
+      }
 
       if (res.ok) {
         setMessage(data.message || `एकूण ${validRows.length} नोंदी यशस्वीरित्या सेव्ह झाल्या!`);
@@ -699,13 +705,14 @@ const ShareOpeningBalanceBulk: React.FC<ShareOpeningBalanceBulkProps> = ({ onSwi
         await Promise.all([fetchBalances(), fetchNextShareConfig()]);
         setRows(Array.from({ length: 10 }, () => createBlankRow()));
       } else {
-        setMessage(data.message || 'बल्क सेव्ह करताना त्रुटी आली.');
+        const errMsg = data.message || (typeof data === 'string' ? data : 'बल्क सेव्ह करताना त्रुटी आली.');
+        setMessage(errMsg);
         setMessageType('error');
-        alert(data.message || 'बल्क सेव्ह करताना त्रुटी आली.');
+        alert(errMsg);
       }
     } catch (err: any) {
       console.error(err);
-      setMessage('सर्व्हर किंवा नेटवर्क त्रुटी: ' + err.message);
+      setMessage('सर्व्हर किंवा नेटवर्क त्रुटी: ' + (err.message || err));
       setMessageType('error');
     }
     setLoading(false);

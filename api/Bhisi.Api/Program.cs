@@ -1027,6 +1027,14 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanAccounts')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'LastInterestPostingDate')
+                BEGIN
+                    ALTER TABLE [LoanAccounts] ADD [LastInterestPostingDate] datetime2 NULL;
+                END
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentSchemes')
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[InvestmentSchemes]') AND name = 'InvestmentType')

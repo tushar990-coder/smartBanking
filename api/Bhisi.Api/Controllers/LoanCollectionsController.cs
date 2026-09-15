@@ -179,6 +179,11 @@ namespace Bhisi.Api.Controllers
                     if (isDailyReducing)
                     {
                         var fromDateStr = loanAccount.LastInstallmentPaidDate ?? loanAccount.LoanDisbursementDate ?? loanAccount.OpeningDate;
+                        if (loanAccount.LastInterestPostingDate.HasValue && loanAccount.LastInterestPostingDate.Value > fromDateStr)
+                        {
+                            fromDateStr = loanAccount.LastInterestPostingDate.Value;
+                        }
+
                         var rate = loanRate?.InterestRate ?? loanAccount.InterestRate;
                         var diffTime = collection.CollectionDate - fromDateStr;
                         var diffDays = Math.Max(0, diffTime.Days);
@@ -317,36 +322,25 @@ namespace Bhisi.Api.Controllers
                 _context.LoanCollections.Add(collection);
                 await _context.SaveChangesAsync();
 
-                // Update LoanInstallmentSchedules using FIFO allocation of the total principal paid
+                // Synchronize LoanInstallmentSchedules using CBS standard FIFO allocation
                 var allSchedules = await _context.LoanInstallmentSchedules
                     .Where(s => s.LoanAccountID == collection.LoanAccountID)
                     .OrderBy(s => s.InstallmentNo)
                     .ToListAsync();
 
-                decimal totalPrincipalPaid = loanAccount.SanctionedAmount - loanAccount.PrincipalBalance;
-
-                foreach (var schedule in allSchedules)
+                if (allSchedules.Any())
                 {
-                    if (totalPrincipalPaid >= schedule.PrincipalAmount && schedule.PrincipalAmount > 0)
+                    var allCollections = await _context.LoanCollections
+                        .Where(c => c.LoanAccountID == collection.LoanAccountID)
+                        .ToListAsync();
+
+                    Services.LoanScheduleGenerator.SynchronizeSchedules(loanAccount, allSchedules, allCollections);
+                    foreach (var schedule in allSchedules)
                     {
-                        schedule.Status = "Paid";
-                        schedule.PaidDate = schedule.PaidDate ?? collection.CollectionDate;
-                        totalPrincipalPaid -= schedule.PrincipalAmount;
+                        _context.Entry(schedule).State = EntityState.Modified;
                     }
-                    else if (totalPrincipalPaid > 0)
-                    {
-                        schedule.Status = "Partial";
-                        schedule.PaidDate = collection.CollectionDate;
-                        totalPrincipalPaid = 0;
-                    }
-                    else
-                    {
-                        schedule.Status = schedule.DueDate < DateTime.Today ? "Overdue" : "Pending";
-                        schedule.PaidDate = null;
-                    }
-                    _context.Entry(schedule).State = EntityState.Modified;
+                    await _context.SaveChangesAsync();
                 }
-                await _context.SaveChangesAsync();
 
                 // Get LoanRate to fetch Ledger IDs
                 var loanAccFetched = await _context.LoanAccounts.Include(l => l.Member).Include(l => l.Customer).FirstOrDefaultAsync(l => l.LoanAccountID == collection.LoanAccountID);
@@ -684,7 +678,7 @@ namespace Bhisi.Api.Controllers
                 _context.LoanCollections.Remove(collection);
                 await _context.SaveChangesAsync();
 
-                // Recalculate LoanInstallmentSchedules for this account
+                // Resynchronize LoanInstallmentSchedules for this account
                 if (loanAccount != null)
                 {
                     var allSchedules = await _context.LoanInstallmentSchedules
@@ -692,24 +686,19 @@ namespace Bhisi.Api.Controllers
                         .OrderBy(s => s.InstallmentNo)
                         .ToListAsync();
 
-                    decimal totalPrincipalPaid = loanAccount.SanctionedAmount - loanAccount.PrincipalBalance;
-
-                    foreach (var schedule in allSchedules)
+                    if (allSchedules.Any())
                     {
-                        if (totalPrincipalPaid >= schedule.PrincipalAmount)
+                        var remainingCollections = await _context.LoanCollections
+                            .Where(c => c.LoanAccountID == loanAccount.LoanAccountID && c.LoanCollectionID != id)
+                            .ToListAsync();
+
+                        Services.LoanScheduleGenerator.SynchronizeSchedules(loanAccount, allSchedules, remainingCollections);
+                        foreach (var schedule in allSchedules)
                         {
-                            schedule.Status = "Paid";
-                            totalPrincipalPaid -= schedule.PrincipalAmount;
+                            _context.Entry(schedule).State = EntityState.Modified;
                         }
-                        else
-                        {
-                            schedule.Status = "Pending";
-                            schedule.PaidDate = null;
-                            totalPrincipalPaid = 0;
-                        }
-                        _context.Entry(schedule).State = EntityState.Modified;
+                        await _context.SaveChangesAsync();
                     }
-                    await _context.SaveChangesAsync();
                 }
 
                 await transaction.CommitAsync();

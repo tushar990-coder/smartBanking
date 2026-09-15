@@ -311,5 +311,72 @@ namespace Bhisi.Api.Services
             
             return totalUnpaidInterest;
         }
+
+        public static void SynchronizeSchedules(
+            LoanAccount account,
+            List<LoanInstallmentSchedule> schedules,
+            List<LoanCollection> collections)
+        {
+            if (schedules == null || !schedules.Any()) return;
+
+            decimal priorPrincipalPaid = (account.IsOpeningBalance && account.SanctionedAmount > account.PrincipalBalance && account.PrincipalBalance > 0)
+                ? (account.SanctionedAmount - account.PrincipalBalance)
+                : 0;
+
+            decimal totalPrincipalPaid = priorPrincipalPaid + (collections?.Sum(c => c.PrincipalCollected) ?? 0);
+            decimal totalInterestPaid = collections?.Sum(c => c.InterestCollected) ?? 0;
+
+            var sortedSchedules = schedules.OrderBy(s => s.InstallmentNo).ToList();
+            var orderedCollections = (collections ?? new List<LoanCollection>())
+                .OrderBy(c => c.CollectionDate)
+                .ToList();
+
+            decimal runningPrincipalPaid = totalPrincipalPaid;
+            decimal runningInterestPaid = totalInterestPaid;
+
+            foreach (var s in sortedSchedules)
+            {
+                if (account.IsOpeningBalance && s.DueDate <= account.OpeningDate)
+                {
+                    s.Status = "Paid";
+                    s.PaidDate = account.OpeningDate;
+                    runningPrincipalPaid = Math.Max(0, runningPrincipalPaid - s.PrincipalAmount);
+                    continue;
+                }
+
+                bool isPrincipalCovered = runningPrincipalPaid >= s.PrincipalAmount;
+                bool isInterestCovered = s.InterestAmount <= 0 || runningInterestPaid >= s.InterestAmount;
+
+                if (isPrincipalCovered && isInterestCovered)
+                {
+                    s.Status = "Paid";
+                    runningPrincipalPaid -= s.PrincipalAmount;
+                    if (s.InterestAmount > 0)
+                    {
+                        runningInterestPaid -= s.InterestAmount;
+                    }
+
+                    var lastColl = orderedCollections.LastOrDefault();
+                    s.PaidDate = lastColl?.CollectionDate ?? DateTime.Today;
+                }
+                else if (runningPrincipalPaid > 0 || runningInterestPaid > 0)
+                {
+                    s.Status = "PartiallyPaid";
+                    runningPrincipalPaid = Math.Max(0, runningPrincipalPaid - s.PrincipalAmount);
+                    if (s.InterestAmount > 0)
+                    {
+                        runningInterestPaid = Math.Max(0, runningInterestPaid - s.InterestAmount);
+                    }
+                    var lastColl = orderedCollections.LastOrDefault();
+                    s.PaidDate = lastColl?.CollectionDate ?? DateTime.Today;
+                }
+                else
+                {
+                    s.Status = s.DueDate < DateTime.Today ? "Overdue" : "Pending";
+                    s.PaidDate = null;
+                }
+            }
+        }
     }
 }
+

@@ -504,9 +504,36 @@ const LoanCollectionMaster: React.FC = () => {
 
     const calculateInterest = (acc: any, dateStr: string) => {
         if (!acc) return;
-        const installment = acc.installmentAmount || 0;
-        // Use autoApportion to pre-fill the form with installment amount correctly allocated
-        autoApportion(installment, formData.fees || [], acc, dateStr);
+        const loanRate = acc.loanRate;
+        const isInterestOnly = loanRate && 
+            (loanRate.loanInstallmentType?.includes("व्याजवरती") || 
+             loanRate.loanInstallmentType?.includes("Interest Only") ||
+             loanRate.loanInstallmentType?.includes("Bullet") ||
+             loanRate.shortName?.toLowerCase().includes("gold") ||
+             loanRate.loanType?.includes("सोने"));
+
+        if (isInterestOnly) {
+            const rate = acc.loanRate?.interestRate || acc.interestRate || 0;
+            const principal = acc.principalBalance || 0;
+            const fromDateStr = getInterestStartDate(acc);
+            let accruedInterest = acc.interestBalance || 0;
+            if (fromDateStr) {
+                const fromDate = new Date(fromDateStr);
+                fromDate.setHours(0, 0, 0, 0);
+                const toDate = parseDateSafe(dateStr || new Date());
+                toDate.setHours(0, 0, 0, 0);
+                const diffTime = toDate.getTime() - fromDate.getTime();
+                const diffDays = Math.max(0, Math.round(diffTime / (1000 * 60 * 60 * 24)));
+                if (diffDays > 0) {
+                    accruedInterest += Math.round((principal * rate * diffDays) / 36500);
+                }
+            }
+            const totalDue = (acc.overdueInterestBalance || 0) + accruedInterest;
+            autoApportion(totalDue, formData.fees || [], acc, dateStr);
+        } else {
+            const installment = acc.installmentAmount || 0;
+            autoApportion(installment, formData.fees || [], acc, dateStr);
+        }
     };
 
     // Watch for collectionDate and accountDetails changes to recalculate interest and due amount
@@ -516,7 +543,16 @@ const LoanCollectionMaster: React.FC = () => {
             const isDailyReducing = loanRate && 
                 (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"));
 
-            if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
+            const isInterestOnly = loanRate && 
+                (loanRate.loanInstallmentType?.includes("व्याजवरती") || 
+                 loanRate.loanInstallmentType?.includes("Interest Only") ||
+                 loanRate.loanInstallmentType?.includes("Bullet") ||
+                 loanRate.shortName?.toLowerCase().includes("gold") ||
+                 loanRate.loanType?.includes("सोने"));
+
+            if (isInterestOnly) {
+                calculateInterest(selectedAccount, formData.collectionDate || new Date().toISOString().split('T')[0]);
+            } else if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
                 const collectionDateObj = parseDateSafe(formData.collectionDate || new Date());
                 collectionDateObj.setHours(0, 0, 0, 0);
 
@@ -980,16 +1016,34 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             ))}
                                         </select>
                                         {selectedAccount && selectedAccount.loanRate && (
-                                            <div className="mt-1.5 px-2 py-1 bg-slate-100 border border-slate-200 rounded text-[10px] flex flex-wrap items-center justify-between gap-1">
-                                                <span className="text-slate-600 font-medium">
-                                                    व्याज पद्धत: <strong className="text-primary font-bold">{selectedAccount.loanRate.interestCalculationMethod || 'Flat (फ्लॅट)'}</strong>
-                                                </span>
-                                                <span className="text-slate-600 font-medium">
-                                                    हप्ता प्रकार: <strong className="text-emerald-700 font-bold">{selectedAccount.loanRate.loanInstallmentType || 'समान हप्ता'}</strong>
-                                                </span>
-                                                <span className="text-slate-600 font-medium">
-                                                    नियमित हप्ता: <strong className="text-blue-700 font-bold font-mono">₹{(selectedAccount.installmentAmount || 0).toLocaleString('en-IN')}</strong>
-                                                </span>
+                                            <div className="mt-2 p-2 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/90 border border-blue-200/80 rounded-sm shadow-2xs text-[11px] flex flex-wrap items-center justify-between gap-2">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-bold bg-primary text-white tracking-wide">
+                                                        धोरण (Policy)
+                                                    </span>
+                                                    <span className="text-slate-700">
+                                                        योजना: <strong className="text-primary font-bold">{selectedAccount.loanRate.loanType || selectedAccount.loanRate.shortName}</strong>
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-2.5">
+                                                    <span className="text-slate-600">
+                                                        हप्ता: <strong className="text-emerald-800 font-bold">{selectedAccount.loanRate.loanInstallmentType || 'समान हप्ता'}</strong>
+                                                    </span>
+                                                    <span className="text-slate-600">
+                                                        आकारणी: <strong className="text-blue-800 font-bold">{selectedAccount.loanRate.interestCalculationMethod || 'Daily Reducing'}</strong>
+                                                    </span>
+                                                    <span className="text-slate-600">
+                                                        वारंवारता: <strong className="text-purple-800 font-bold">{selectedAccount.loanRate.interestPostingFrequency || 'मासिक'}</strong>
+                                                    </span>
+                                                    <span className="bg-white px-2 py-0.5 border border-blue-200 rounded-sm font-medium shadow-2xs">
+                                                        {selectedAccount.loanRate?.loanInstallmentType?.includes("व्याजवरती") ? "ऑटो चालू थकीत व्याज: " : "नियमित हप्ता: "}
+                                                        <strong className="text-primary font-mono font-bold">
+                                                            ₹{selectedAccount.loanRate?.loanInstallmentType?.includes("व्याजवरती")
+                                                                ? ((formData.interestCollected || 0) + (formData.penaltyInterestCollected || 0)).toLocaleString('en-IN')
+                                                                : (selectedAccount.installmentAmount || 0).toLocaleString('en-IN')}
+                                                        </strong>
+                                                    </span>
+                                                </div>
                                             </div>
                                         )}
                                     </div>

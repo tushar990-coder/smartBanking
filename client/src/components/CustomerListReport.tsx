@@ -240,67 +240,67 @@ export default function CustomerListReport() {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {/* 1. TOP ERP CONTROL PANEL (Non-Printable) */}
-      <div className="bg-white p-3 rounded-sm border border-gray-200 shadow-2xs space-y-3 no-print">
+      <div className="bg-white p-2 sm:p-2.5 rounded border border-gray-200 shadow-2xs space-y-2 no-print">
         {/* Title & Action Row */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-2 border-b border-gray-200">
+        <div className="flex flex-wrap justify-between items-center gap-2 pb-1.5 border-b border-gray-200">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded bg-primary/10 text-primary flex items-center justify-center font-bold">
-              <Users className="w-5 h-5" />
+            <div className="w-7 h-7 rounded bg-primary/10 text-primary flex items-center justify-center font-bold shrink-0">
+              <Users className="w-4 h-4" />
             </div>
-            <div>
-              <h1 className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h1 className="text-xs sm:text-sm font-bold text-gray-900 flex items-center gap-1.5">
                 खातेदार यादी अहवाल (Customer / CIF Master List)
-                <span className="text-[10px] bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded-full">
+                <span className="text-[9px] bg-blue-100 text-blue-800 font-semibold px-1.5 py-0.5 rounded-full">
                   कोर बँकिंग सीबीएस
                 </span>
               </h1>
-              <p className="text-[11px] text-gray-500">
-                शाखावार, केवायसी व वर्गवारीनुसार अधिकृत खातेदार नोंदवही व अहवाल
-              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={fetchData}
               disabled={loading}
-              className="px-3 py-1.5 bg-primary text-white text-xs font-semibold rounded hover:bg-primary/90 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              className="px-2.5 py-1 bg-primary text-white text-xs font-semibold rounded hover:bg-primary/90 transition flex items-center gap-1 shadow-2xs cursor-pointer"
+              title="अहवाल रिफ्रेश करा"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              अहवाल लोड करा (Refresh)
+              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+              <span>रिफ्रेश</span>
             </button>
             <button
               onClick={handleExportExcel}
-              className="px-3 py-1.5 bg-emerald-700 text-white text-xs font-semibold rounded hover:bg-emerald-800 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              className="px-2.5 py-1 bg-emerald-700 text-white text-xs font-semibold rounded hover:bg-emerald-800 transition flex items-center gap-1 shadow-2xs cursor-pointer"
+              title="एक्सेल एक्सपोर्ट (.xlsx)"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              एक्सेल (.xlsx)
+              <FileSpreadsheet className="w-3 h-3" />
+              <span>एक्सेल</span>
             </button>
             <button
               onClick={() => window.print()}
-              className="px-3 py-1.5 bg-slate-800 text-white text-xs font-semibold rounded hover:bg-slate-900 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              className="px-2.5 py-1 bg-slate-800 text-white text-xs font-semibold rounded hover:bg-slate-900 transition flex items-center gap-1 shadow-2xs cursor-pointer"
+              title="प्रिंट (A4 Landscape)"
             >
-              <Printer className="w-3.5 h-3.5" />
-              प्रिंट करा (A4 Landscape)
+              <Printer className="w-3 h-3" />
+              <span>प्रिंट</span>
             </button>
           </div>
         </div>
 
-        {/* Multi-Criteria Filters Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
+        {/* Multi-Criteria Filters Grid (Compact Single/Double Line) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-1.5 text-xs items-end">
           {/* Branch Filter */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-700 mb-1">
+            <label className="block text-[10px] font-bold text-gray-600 mb-0.5">
               शाखा (Branch)
             </label>
             <select
               value={selectedBranchId}
               onChange={(e) => setSelectedBranchId(e.target.value)}
-              className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none"
+              className="w-full px-2 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none font-medium h-7 bg-white"
             >
-              <option value="all">सर्व शाखा (All Branches)</option>
+              <option value="all">सर्व शाखा (All)</option>
               {branches.map((b) => (
                 <option key={b.branchID} value={b.branchID}>
                   {b.branchName}
@@ -311,48 +311,48 @@ export default function CustomerListReport() {
 
           {/* Customer Type */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-700 mb-1">
-              खातेदार प्रकार (Type)
+            <label className="block text-[10px] font-bold text-gray-600 mb-0.5">
+              प्रकार (Type)
             </label>
             <select
               value={customerTypeFilter}
               onChange={(e) => setCustomerTypeFilter(e.target.value)}
-              className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none"
+              className="w-full px-2 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none font-medium h-7 bg-white"
             >
-              <option value="सर्व">सर्व (All Types)</option>
+              <option value="सर्व">सर्व प्रकार (All)</option>
               <option value="Individual">वैयक्तिक (Individual)</option>
               <option value="Joint">संयुक्त (Joint)</option>
-              <option value="Proprietorship">प्रोप्रायटरशिप (Proprietorship)</option>
+              <option value="Proprietorship">प्रोप्रायटर (Prop)</option>
               <option value="SHG">बचत गट (SHG)</option>
-              <option value="Trust">ट्रस्ट / संस्था (Trust/Org)</option>
+              <option value="Trust">संस्था (Trust/Org)</option>
             </select>
           </div>
 
           {/* KYC Status */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-700 mb-1">
-              केवायसी स्थिती (KYC)
+            <label className="block text-[10px] font-bold text-gray-600 mb-0.5">
+              केवायसी (KYC)
             </label>
             <select
               value={kycStatusFilter}
               onChange={(e) => setKycStatusFilter(e.target.value)}
-              className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none"
+              className="w-full px-2 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none font-medium h-7 bg-white"
             >
-              <option value="सर्व">सर्व (All KYC)</option>
-              <option value="Verified">केवायसी पूर्ण (Verified)</option>
-              <option value="Pending">केवायसी अपूर्ण (Pending)</option>
+              <option value="सर्व">सर्व केवायसी (All)</option>
+              <option value="Verified">पूर्ण (Verified)</option>
+              <option value="Pending">अपूर्ण (Pending)</option>
             </select>
           </div>
 
           {/* Status */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-700 mb-1">
-              सद्यस्थिती (Status)
+            <label className="block text-[10px] font-bold text-gray-600 mb-0.5">
+              स्थिती (Status)
             </label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none"
+              className="w-full px-2 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none font-medium h-7 bg-white"
             >
               <option value="सर्व">सर्व स्थिती (All)</option>
               <option value="Active">सक्रिय (Active)</option>
@@ -363,130 +363,114 @@ export default function CustomerListReport() {
 
           {/* From Date */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-700 mb-1">
+            <label className="block text-[10px] font-bold text-gray-600 mb-0.5">
               दिनांक पासून (From)
             </label>
             <input
               type="date"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
-              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none"
+              className="w-full px-2 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none font-medium h-7 bg-white"
             />
           </div>
 
           {/* To Date */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-700 mb-1">
+            <label className="block text-[10px] font-bold text-gray-600 mb-0.5">
               दिनांक पर्यंत (To)
             </label>
             <input
               type="date"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
-              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none"
+              className="w-full px-2 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none font-medium h-7 bg-white"
             />
+          </div>
+
+          {/* Filter & Reset Action Buttons */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={fetchData}
+              className="flex-1 px-2 py-1 bg-gray-800 hover:bg-black text-white text-xs font-semibold rounded transition cursor-pointer h-7 flex items-center justify-center gap-1"
+              title="फिल्टर लागू करा"
+            >
+              <Filter className="w-3 h-3" />
+              <span>लागू करा</span>
+            </button>
+            <button
+              onClick={handleResetFilters}
+              className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded transition border border-gray-300 cursor-pointer h-7 flex items-center justify-center"
+              title="सर्व फिल्टर्स रीसेट करा"
+            >
+              <span>रीसेट</span>
+            </button>
           </div>
         </div>
 
-        {/* Search Bar & Reset */}
-        <div className="flex flex-col sm:flex-row items-center gap-2 pt-1 border-t border-gray-100">
-          <div className="relative flex-1 w-full">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="सीआयएफ (CIF), जुना क्र., खातेदाराचे नाव (मराठी/इंग्रजी), मोबाईल, आधार किंवा गावाने शोधा..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && fetchData()}
-              className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none"
-            />
-          </div>
-          <button
-            onClick={fetchData}
-            className="px-3 py-1.5 bg-gray-800 hover:bg-black text-white text-xs font-semibold rounded transition cursor-pointer"
-          >
-            फिल्टर लागू करा
-          </button>
-          <button
-            onClick={handleResetFilters}
-            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded transition border border-gray-300 cursor-pointer"
-          >
-            रीसेट
-          </button>
+        {/* Compact Quick Search Bar */}
+        <div className="relative w-full">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="सीआयएफ (CIF), जुना क्र., खातेदाराचे नाव, मोबाईल, आधार किंवा गावाने त्वरित शोधा..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && fetchData()}
+            className="w-full pl-8 pr-3 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary focus:outline-none h-7 bg-slate-50/50 focus:bg-white transition"
+          />
         </div>
       </div>
 
-      {/* 2. EXECUTIVE KPI CARDS (Summary Strip) */}
+      {/* 2. COMPACT EXECUTIVE KPI STRIP (Single Line Slim Bar) */}
       {reportData && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 no-print">
-          <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-gray-600">एकूण खातेदार</span>
-              <Users className="w-4 h-4 text-blue-600" />
-            </div>
-            <p className="text-lg font-black text-gray-900 mt-1">
-              {reportData.totalCustomers.toLocaleString('en-IN')}
-            </p>
-            <span className="text-[10px] text-gray-500">निवडलेल्या निकषानुसार</span>
+        <div className="bg-white px-3 py-1.5 rounded border border-gray-200 shadow-2xs flex flex-wrap items-center justify-between text-xs gap-2 no-print">
+          <div className="flex items-center gap-1.5">
+            <Users className="w-3.5 h-3.5 text-blue-600" />
+            <span className="text-gray-600 text-[11px] font-medium">एकूण खातेदार:</span>
+            <span className="font-bold text-gray-900 text-xs">{reportData.totalCustomers.toLocaleString('en-IN')}</span>
           </div>
 
-          <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-gray-600">सक्रिय (Active)</span>
-              <UserCheck className="w-4 h-4 text-emerald-600" />
-            </div>
-            <p className="text-lg font-black text-emerald-700 mt-1">
-              {reportData.activeCustomers.toLocaleString('en-IN')}
-            </p>
+          <div className="h-3 w-px bg-gray-200 hidden sm:block"></div>
+
+          <div className="flex items-center gap-1.5">
+            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="text-gray-600 text-[11px] font-medium">सक्रिय (Active):</span>
+            <span className="font-bold text-emerald-700 text-xs">{reportData.activeCustomers.toLocaleString('en-IN')}</span>
             <span className="text-[10px] text-emerald-600 font-semibold">
-              {reportData.totalCustomers > 0 
-                ? `${Math.round((reportData.activeCustomers / reportData.totalCustomers) * 100)}% सक्रिय` 
-                : '०%'}
+              ({reportData.totalCustomers > 0 ? Math.round((reportData.activeCustomers / reportData.totalCustomers) * 100) : 0}%)
             </span>
           </div>
 
-          <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-gray-600">निष्क्रिय (Inactive)</span>
-              <UserX className="w-4 h-4 text-red-500" />
-            </div>
-            <p className="text-lg font-black text-red-600 mt-1">
-              {reportData.inactiveCustomers.toLocaleString('en-IN')}
-            </p>
-            <span className="text-[10px] text-gray-500">बंद किंवा डॉरमंट</span>
+          <div className="h-3 w-px bg-gray-200 hidden sm:block"></div>
+
+          <div className="flex items-center gap-1.5">
+            <UserX className="w-3.5 h-3.5 text-red-500" />
+            <span className="text-gray-600 text-[11px] font-medium">निष्क्रिय (Inactive):</span>
+            <span className="font-bold text-red-600 text-xs">{reportData.inactiveCustomers.toLocaleString('en-IN')}</span>
           </div>
 
-          <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-gray-600">केवायसी पूर्ण</span>
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            </div>
-            <p className="text-lg font-black text-emerald-700 mt-1">
-              {reportData.kycVerifiedCount.toLocaleString('en-IN')}
-            </p>
-            <span className="text-[10px] text-emerald-600 font-semibold">KYC Verified</span>
+          <div className="h-3 w-px bg-gray-200 hidden sm:block"></div>
+
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="text-gray-600 text-[11px] font-medium">केवायसी पूर्ण:</span>
+            <span className="font-bold text-emerald-700 text-xs">{reportData.kycVerifiedCount.toLocaleString('en-IN')}</span>
           </div>
 
-          <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-gray-600">केवायसी अपूर्ण</span>
-              <Clock className="w-4 h-4 text-amber-500" />
-            </div>
-            <p className="text-lg font-black text-amber-600 mt-1">
-              {reportData.kycPendingCount.toLocaleString('en-IN')}
-            </p>
-            <span className="text-[10px] text-amber-600 font-semibold">Pending Docs</span>
+          <div className="h-3 w-px bg-gray-200 hidden sm:block"></div>
+
+          <div className="flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-gray-600 text-[11px] font-medium">केवायसी अपूर्ण:</span>
+            <span className="font-bold text-amber-600 text-xs">{reportData.kycPendingCount.toLocaleString('en-IN')}</span>
           </div>
 
-          <div className="bg-white p-2.5 rounded-sm border border-gray-200 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-gray-600">वैयक्तिक / इतर</span>
-              <Building2 className="w-4 h-4 text-indigo-600" />
-            </div>
-            <p className="text-lg font-black text-indigo-700 mt-1">
-              {reportData.individualCount} / {reportData.commercialCount}
-            </p>
-            <span className="text-[10px] text-gray-500">Indiv / Non-Indiv</span>
+          <div className="h-3 w-px bg-gray-200 hidden sm:block"></div>
+
+          <div className="flex items-center gap-1.5">
+            <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="text-gray-600 text-[11px] font-medium">वैयक्तिक / इतर:</span>
+            <span className="font-bold text-indigo-700 text-xs">{reportData.individualCount} / {reportData.commercialCount}</span>
           </div>
         </div>
       )}

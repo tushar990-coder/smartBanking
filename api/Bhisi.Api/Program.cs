@@ -2206,6 +2206,20 @@ app.UseCors("AllowReactApp");
 
 app.UseMiddleware<Bhisi.Api.Filters.LicenseEnforcementMiddleware>();
 
+app.Use(async (context, next) =>
+{
+    await next();
+
+    // Prevent 302 Redirects for API Routes (Convert to 401 Unauthorized)
+    if (context.Response.StatusCode == 302 && context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.Clear();
+        context.Response.StatusCode = 401;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsync("{\"error\":\"Unauthorized\",\"message\":\"Authentication is required to access this resource.\"}");
+    }
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -2220,6 +2234,14 @@ app.MapGet("/favicon.ico", (IWebHostEnvironment env) =>
     }
     return Results.NoContent();
 }).AllowAnonymous();
+
+// Ensure unhandled /api/* paths return 404 JSON and DO NOT hit the SPA fallback
+app.MapFallback("/api/{**catchall}", async context =>
+{
+    context.Response.StatusCode = 404;
+    context.Response.ContentType = "application/json";
+    await context.Response.WriteAsync("{\"error\":\"Not Found\",\"message\":\"The requested API endpoint does not exist.\"}");
+});
 
 app.MapFallbackToFile("index.html").AllowAnonymous(); // Handles React routing without requiring JWT
 

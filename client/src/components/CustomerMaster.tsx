@@ -594,6 +594,45 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
     };
 
     try {
+      if (selectedRequestId) {
+        const approvePayload = {
+          customerData: payload,
+          pigmyData: {
+            openPigmyAccount: pigmyFormData.openPigmyAccount,
+            pigmySchemeID: pigmyFormData.pigmySchemeID ? Number(pigmyFormData.pigmySchemeID) : null,
+            pigmyAgentID: pigmyFormData.pigmyAgentID ? Number(pigmyFormData.pigmyAgentID) : null,
+            dailyDepositAmount: Number(pigmyFormData.dailyDepositAmount || 100),
+            openingBalance: Number(pigmyFormData.initialDepositAmount || 0)
+          }
+        };
+
+        const res = await fetch(`/api/AgentCustomerRequests/${selectedRequestId}/approve-and-create`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify(approvePayload)
+        });
+
+        if (res.ok) {
+          const resData = await res.json();
+          alert(`नवीन खातेदार आणि पिग्मी खाते यशस्वीरित्या तयार झाले.\nCIF: ${resData.cifNo}\nPigmy A/c: ${resData.pigmyAccountNo || 'N/A'}`);
+          resetForm();
+          fetchCustomers();
+          fetchPendingAgentRequests();
+          setTimeout(() => legacyCustomerNoInputRef.current?.focus(), 100);
+        } else {
+          let errorMsg = 'जतन करता आले नाही.';
+          try {
+            const text = await res.text();
+            try {
+              const err = JSON.parse(text);
+              errorMsg = err.message || err.title || (typeof err === 'string' ? err : text);
+            } catch { errorMsg = text || res.statusText; }
+          } catch { errorMsg = res.statusText; }
+          alert(`त्रुटी: ${errorMsg}`);
+        }
+        return; // EXIT HERE so standard logic is skipped entirely
+      }
+
       let response;
       if (editingId !== null) {
         response = await fetch(`${API_URL}/${editingId}`, {
@@ -623,22 +662,6 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
           savedCustomer = {};
         }
         const targetCustomerId = (editingId !== null) ? editingId : savedCustomer.customerID;
-
-        // If agent request was loaded, approve it
-        if (selectedRequestId) {
-          try {
-            await fetch(`/api/AgentCustomerRequests/${selectedRequestId}/approve`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...getAuthHeaders()
-              },
-              body: JSON.stringify({ customerId: targetCustomerId })
-            });
-          } catch (e) {
-            console.error("Error auto-approving agent request", e);
-          }
-        }
 
         // If open pigmy account was selected
         if (pigmyFormData.openPigmyAccount && pigmyFormData.pigmySchemeID && pigmyFormData.pigmyAgentID) {

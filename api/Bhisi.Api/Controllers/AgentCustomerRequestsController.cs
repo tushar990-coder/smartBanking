@@ -206,6 +206,95 @@ namespace Bhisi.Api.Controllers
             return Ok(new { message = "विनंती यशस्वीरित्या मंजूर झाली.", request });
         }
 
+        // PUT: api/AgentCustomerRequests/5/approve-and-create
+        [HttpPut("{id}/approve-and-create")]
+        public async Task<IActionResult> ApproveAndCreateRequest(int id, [FromBody] ApproveAndCreateRequestDto dto)
+        {
+            var request = await _context.AgentCustomerRequests.FindAsync(id);
+            if (request == null)
+            {
+                return NotFound(new { message = "विनंती सापडली नाही." });
+            }
+
+            if (request.Status == "Approved")
+            {
+                return BadRequest(new { message = "ही विनंती आधीच मंजूर झाली आहे." });
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // 1. Create Customer
+                var customer = dto.CustomerData;
+                customer.CreatedOn = DateTime.UtcNow;
+                customer.Status = "Active";
+                
+                _context.Customers.Add(customer);
+                await _context.SaveChangesAsync();
+
+                // Generate CIF
+                customer.CIFNo = $"CIF-{customer.BranchID:D2}-{customer.CustomerID:D6}";
+                await _context.SaveChangesAsync();
+
+                PigmyAccount createdPigmyAccount = null;
+
+                // 2. Create Pigmy Account if requested
+                if (dto.PigmyData != null && dto.PigmyData.OpenPigmyAccount && dto.PigmyData.PigmySchemeID.HasValue && dto.PigmyData.PigmyAgentID.HasValue)
+                {
+                    var scheme = await _context.PigmySchemes.FindAsync(dto.PigmyData.PigmySchemeID.Value);
+                    if (scheme != null)
+                    {
+                        var dateStr = DateTime.Now.ToString("yyyyMMdd");
+                        var accountNo = $"PGM-{customer.BranchID}-{dateStr}-{customer.CustomerID:D4}";
+
+                        createdPigmyAccount = new PigmyAccount
+                        {
+                            AccountNo = accountNo,
+                            CustomerID = customer.CustomerID,
+                            BranchID = customer.BranchID,
+                            PigmySchemeID = scheme.PigmySchemeID,
+                            PigmyAgentID = dto.PigmyData.PigmyAgentID.Value,
+                            OpeningDate = DateTime.Today,
+                            MaturityDate = DateTime.Today.AddMonths(scheme.DurationMonths > 0 ? scheme.DurationMonths : 12),
+                            InterestRate = scheme.InterestRate,
+                            TotalDepositedAmount = dto.PigmyData.OpeningBalance,
+                            Status = "Active",
+                            CreatedBy = dto.ApprovedByUserID ?? 0,
+                            CreatedDate = DateTime.UtcNow
+                        };
+                        _context.PigmyAccounts.Add(createdPigmyAccount);
+                        await _context.SaveChangesAsync();
+                    }
+                }
+
+                // 3. Mark Request as Approved
+                request.Status = "Approved";
+                request.ApprovalDate = DateTime.Now;
+                request.ApprovedByUserID = dto.ApprovedByUserID;
+                request.CreatedCustomerID = customer.CustomerID;
+                if (createdPigmyAccount != null)
+                {
+                    request.CreatedPigmyAccountID = createdPigmyAccount.PigmyAccountID;
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { 
+                    message = "विनंती यशस्वीरित्या मंजूर झाली आणि खाते उघडले.", 
+                    customerId = customer.CustomerID,
+                    cifNo = customer.CIFNo,
+                    pigmyAccountId = createdPigmyAccount?.PigmyAccountID,
+                    pigmyAccountNo = createdPigmyAccount?.AccountNo
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { message = $"Error approving request: {ex.Message}" });
+            }
+        }
+
         // PUT: api/AgentCustomerRequests/5/reject
         [HttpPut("{id}/reject")]
         public async Task<IActionResult> RejectRequest(int id, [FromBody] RejectRequestDto dto)
@@ -254,5 +343,21 @@ namespace Bhisi.Api.Controllers
     {
         public int? ApprovedByUserID { get; set; }
         public string? RejectionReason { get; set; }
+    }
+
+    public class PigmyAccountCreationDto 
+    {
+        public bool OpenPigmyAccount { get; set; }
+        public int? PigmySchemeID { get; set; }
+        public int? PigmyAgentID { get; set; }
+        public decimal DailyDepositAmount { get; set; }
+        public decimal OpeningBalance { get; set; }
+    }
+
+    public class ApproveAndCreateRequestDto
+    {
+        public Customer CustomerData { get; set; }
+        public PigmyAccountCreationDto PigmyData { get; set; }
+        public int? ApprovedByUserID { get; set; }
     }
 }

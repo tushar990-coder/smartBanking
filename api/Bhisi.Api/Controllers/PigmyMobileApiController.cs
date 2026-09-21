@@ -251,6 +251,82 @@ namespace Bhisi.Api.Controllers
         }
 
         // ==========================================
+        // 3.5 POST /api/PigmyApp/create-request
+        // ==========================================
+        public class MobileCreateRequestDto
+        {
+            [Required]
+            public string FirstName { get; set; } = string.Empty;
+            public string? MiddleName { get; set; }
+            [Required]
+            public string LastName { get; set; } = string.Empty;
+            [Required]
+            public string MobileNo { get; set; } = string.Empty;
+            public decimal DailyDepositAmount { get; set; } = 100;
+            public string? Address { get; set; }
+            public string? AadhaarNo { get; set; }
+            public string? PANNo { get; set; }
+            public int? PigmySchemeID { get; set; }
+            public int BranchID { get; set; } = 1;
+            public int? AgentId { get; set; }
+        }
+
+        [HttpPost("api/PigmyApp/create-request")]
+        public async Task<IActionResult> CreateAccountRequest([FromBody] MobileCreateRequestDto dto)
+        {
+            int agentId = dto.AgentId.HasValue && dto.AgentId.Value > 0 ? dto.AgentId.Value : GetCurrentAgentId();
+            if (agentId <= 0)
+            {
+                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+            }
+
+            var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == agentId);
+            if (agent == null)
+            {
+                return BadRequest(new { message = "Assigned agent not found." });
+            }
+
+            int branchId = dto.BranchID > 0 ? dto.BranchID : (agent.BranchID ?? 1);
+
+            try
+            {
+                var newRequest = new AgentCustomerRequest
+                {
+                    FirstName = dto.FirstName.Trim(),
+                    MiddleName = dto.MiddleName?.Trim(),
+                    LastName = dto.LastName.Trim(),
+                    MobileNo = dto.MobileNo?.Trim(),
+                    Address = dto.Address?.Trim(),
+                    AadhaarNo = dto.AadhaarNo?.Trim(),
+                    PANNo = dto.PANNo?.Trim(),
+                    PigmySchemeID = dto.PigmySchemeID,
+                    DailyDepositAmount = dto.DailyDepositAmount,
+                    OpenPigmyAccount = true,
+                    BranchID = branchId,
+                    PigmyAgentID = agentId,
+                    AgentName = agent.AgentName,
+                    RequestDate = DateTime.Now,
+                    Status = "Pending"
+                };
+
+                _context.AgentCustomerRequests.Add(newRequest);
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "Customer request submitted successfully. It is pending branch approval.",
+                    requestId = newRequest.RequestID,
+                    status = newRequest.Status
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = $"Error submitting request: {ex.Message}" });
+            }
+        }
+
+        // ==========================================
         // 4. POST /api/collections (Single Sync)
         // ==========================================
         [HttpPost("api/collections")]

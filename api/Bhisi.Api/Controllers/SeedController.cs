@@ -599,20 +599,38 @@ namespace Bhisi.Api.Controllers
                 var memberList = new List<Member>();
                 foreach (var item in demoMembersData)
                 {
-                    var existingM = await _context.Members.FirstOrDefaultAsync(m => m.MemberCode == item.Code);
+                    var existingM = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberCode == item.Code);
                     if (existingM == null)
                     {
+                        var cust = await _context.Customers.FirstOrDefaultAsync(c => c.AadhaarNo == item.Aadhaar || c.MobileNo == item.Mobile);
+                        if (cust == null)
+                        {
+                            cust = new Customer
+                            {
+                                BranchID = branch.BranchID,
+                                FirstName = item.First,
+                                MiddleName = item.Middle,
+                                LastName = item.Last,
+                                MobileNo = item.Mobile,
+                                AadhaarNo = item.Aadhaar,
+                                Address = $"{item.City}, महाराष्ट्र",
+                                Village = item.City,
+                                RegistrationDate = DateTime.Today.AddDays(-120),
+                                Status = "Active"
+                            };
+                            _context.Customers.Add(cust);
+                            await _context.SaveChangesAsync();
+                        }
+
                         existingM = new Member
                         {
+                            CustomerID = cust.CustomerID,
                             MemberCode = item.Code,
-                            FirstName = item.First,
-                            MiddleName = item.Middle,
-                            LastName = item.Last,
-                            MobileNo = item.Mobile,
-                            AadhaarNo = item.Aadhaar,
-                            Address = $"{item.City}, महाराष्ट्र",
                             BranchID = branch.BranchID,
-                            JoiningDate = DateTime.Today.AddDays(-120)
+                            JoiningDate = DateTime.Today.AddDays(-120),
+                            MembershipType = "Regular",
+                            Status = "Active",
+                            CreatedOn = DateTime.Now
                         };
                         _context.Members.Add(existingM);
                         await _context.SaveChangesAsync();

@@ -442,7 +442,9 @@ namespace Bhisi.Api.Controllers
 
                 string borrowerName = loanAccFetched?.Customer != null 
                     ? $"{loanAccFetched.Customer.FirstName} {loanAccFetched.Customer.LastName}".Trim() 
-                    : $"{loanAccFetched?.Member?.FirstName} {loanAccFetched?.Member?.LastName}".Trim();
+                    : (loanAccFetched?.Member?.Customer != null 
+                        ? $"{loanAccFetched.Member.Customer.FirstName} {loanAccFetched.Member.Customer.LastName}".Trim() 
+                        : "Borrower");
 
                 var voucher = new Voucher
                 {

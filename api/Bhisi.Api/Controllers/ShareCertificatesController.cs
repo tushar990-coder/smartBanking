@@ -49,6 +49,7 @@ namespace Bhisi.Api.Controllers
             var query = _context.ShareCertificates
                 .Include(c => c.ShareAccount)
                     .ThenInclude(sa => sa!.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Where(c => c.Status != "OpeningBalance");
 
             if (memberId.HasValue && memberId.Value > 0)
@@ -103,11 +104,11 @@ namespace Bhisi.Api.Controllers
                     c.CertificateNo,
                     IssueDate = c.IssueDate.ToString("yyyy-MM-dd"),
                     MemberId = mId,
-                    MemberName = $"{member?.FirstName ?? ""} {(member?.MiddleName != null ? member.MiddleName + " " : "")}{member?.LastName ?? ""}".Trim(),
-                    MemberNameEng = $"{member?.FirstNameEng ?? ""} {member?.LastNameEng ?? ""}".Trim(),
+                    MemberName = $"{member?.Customer?.FirstName ?? ""} {(member?.Customer?.MiddleName != null ? member.Customer.MiddleName + " " : "")}{member?.Customer?.LastName ?? ""}".Trim(),
+                    MemberNameEng = $"{member?.Customer?.FirstNameEng ?? ""} {member?.Customer?.LastNameEng ?? ""}".Trim(),
                     MemberNo = member?.MemberCode ?? "",
                     AccountNo = c.ShareAccount?.AccountNo ?? "",
-                    CIFNo = member?.CIFNo ?? "",
+                    CIFNo = member?.Customer?.CIFNo ?? "",
                     LegacyMemberNo = member?.LegacyMemberNo ?? "",
                     c.FromShareNo,
                     c.ToShareNo,
@@ -116,10 +117,10 @@ namespace Bhisi.Api.Controllers
                     TotalAmount = c.NumberOfShares * c.FaceValue,
                     c.Status,
                     c.PrintCount,
-                    MemberAddress = member?.Address ?? member?.Village ?? "",
-                    Village = member?.Village ?? "",
-                    MobileNo = member?.MobileNo ?? "",
-                    FatherHusbandName = member?.MiddleName ?? "",
+                    MemberAddress = member?.Customer?.Address ?? member?.Customer?.Village ?? "",
+                    Village = member?.Customer?.Village ?? "",
+                    MobileNo = member?.Customer?.MobileNo ?? "",
+                    FatherHusbandName = member?.Customer?.MiddleName ?? "",
                     JointMemberNames = joint,
                     MembershipType = member?.MembershipType ?? "Regular"
                 };
@@ -141,21 +142,26 @@ namespace Bhisi.Api.Controllers
             return Ok(result.ToList());
         }
 
-        // GET: api/ShareCertificates/Member/5 or api/ShareCertificates/ByMember/5
+        // GET: api/ShareCertificates/Member/5 or api/ShareCertificates/ByMember/5 or api/ShareCertificates/Customer/5
         [HttpGet("Member/{memberId}")]
         [HttpGet("ByMember/{memberId}")]
-        public async Task<IActionResult> GetMemberCertificates(int memberId)
+        [HttpGet("Customer/{customerId}")]
+        [HttpGet("ByCustomer/{customerId}")]
+        public async Task<IActionResult> GetMemberCertificates(int memberId, [FromRoute] int? customerId = null)
         {
+            int targetId = customerId.HasValue && customerId.Value > 0 ? customerId.Value : memberId;
             var account = await _context.ShareAccounts
-                .FirstOrDefaultAsync(s => s.MemberId == memberId);
+                .Include(s => s.Member)
+                .FirstOrDefaultAsync(s => s.CustomerID == targetId || s.MemberId == targetId || (s.Member != null && s.Member.CustomerID == targetId));
 
             if (account == null)
             {
                 return Ok(new List<object>()); // Empty list if no account
             }
 
+            int resolvedMemId = account.MemberId;
             var jointMembers = await _context.JointMembers
-                .Where(j => j.PrimaryMemberID == memberId && j.Status == "Active")
+                .Where(j => j.PrimaryMemberID == resolvedMemId && j.Status == "Active")
                 .ToListAsync();
 
             string jointMemberNames = jointMembers.Any()
@@ -164,7 +170,8 @@ namespace Bhisi.Api.Controllers
 
             var certificates = await _context.ShareCertificates
                 .Include(c => c.ShareAccount)
-                .ThenInclude(sa => sa!.Member)
+                    .ThenInclude(sa => sa!.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Where(c => c.ShareAccountId == account.ShareAccountId && c.Status != "OpeningBalance")
                 .OrderByDescending(c => c.IssueDate)
                 .Select(c => new
@@ -172,11 +179,11 @@ namespace Bhisi.Api.Controllers
                     c.CertificateId,
                     c.CertificateNo,
                     IssueDate = c.IssueDate.ToString("yyyy-MM-dd"),
-                    MemberName = c.ShareAccount!.Member!.FirstName + " " + (c.ShareAccount.Member.MiddleName != null ? c.ShareAccount.Member.MiddleName + " " : "") + c.ShareAccount.Member.LastName,
-                    MemberNameEng = (c.ShareAccount.Member.FirstNameEng != null ? c.ShareAccount.Member.FirstNameEng + " " : "") + (c.ShareAccount.Member.LastNameEng ?? ""),
+                    MemberName = (c.ShareAccount!.Member!.Customer != null ? c.ShareAccount.Member.Customer.FirstName + " " + (c.ShareAccount.Member.Customer.MiddleName != null ? c.ShareAccount.Member.Customer.MiddleName + " " : "") + c.ShareAccount.Member.Customer.LastName : "").Trim(),
+                    MemberNameEng = (c.ShareAccount!.Member!.Customer != null ? (c.ShareAccount.Member.Customer.FirstNameEng != null ? c.ShareAccount.Member.Customer.FirstNameEng + " " : "") + (c.ShareAccount.Member.Customer.LastNameEng ?? "") : "").Trim(),
                     MemberNo = c.ShareAccount.Member.MemberCode ?? "",
                     AccountNo = c.ShareAccount.AccountNo,
-                    CIFNo = c.ShareAccount.Member.CIFNo ?? "",
+                    CIFNo = c.ShareAccount.Member.Customer != null ? c.ShareAccount.Member.Customer.CIFNo ?? "" : "",
                     LegacyMemberNo = c.ShareAccount.Member.LegacyMemberNo ?? "",
                     c.FromShareNo,
                     c.ToShareNo,
@@ -185,10 +192,10 @@ namespace Bhisi.Api.Controllers
                     TotalAmount = c.NumberOfShares * c.FaceValue,
                     c.Status,
                     c.PrintCount,
-                    MemberAddress = c.ShareAccount.Member.Address ?? c.ShareAccount.Member.Village ?? "",
-                    Village = c.ShareAccount.Member.Village ?? "",
-                    MobileNo = c.ShareAccount.Member.MobileNo ?? "",
-                    FatherHusbandName = c.ShareAccount.Member.MiddleName ?? "",
+                    MemberAddress = c.ShareAccount.Member.Customer != null ? (c.ShareAccount.Member.Customer.Address ?? c.ShareAccount.Member.Customer.Village ?? "") : "",
+                    Village = c.ShareAccount.Member.Customer != null ? (c.ShareAccount.Member.Customer.Village ?? "") : "",
+                    MobileNo = c.ShareAccount.Member.Customer != null ? (c.ShareAccount.Member.Customer.MobileNo ?? "") : "",
+                    FatherHusbandName = c.ShareAccount.Member.Customer != null ? (c.ShareAccount.Member.Customer.MiddleName ?? "") : "",
                     JointMemberNames = jointMemberNames,
                     MembershipType = c.ShareAccount.Member.MembershipType ?? "Regular"
                 })
@@ -230,6 +237,7 @@ namespace Bhisi.Api.Controllers
 
             var shareAcc = await _context.ShareAccounts
                 .Include(sa => sa.Member)
+                    .ThenInclude(m => m!.Customer)
                 .FirstOrDefaultAsync(sa => sa.MemberId == memberId);
 
             if (shareAcc == null)
@@ -314,11 +322,11 @@ namespace Bhisi.Api.Controllers
                 cert.CertificateId,
                 cert.CertificateNo,
                 IssueDate = cert.IssueDate.ToString("yyyy-MM-dd"),
-                MemberName = $"{member?.FirstName ?? ""} {(member?.MiddleName != null ? member.MiddleName + " " : "")}{member?.LastName ?? ""}".Trim(),
-                MemberNameEng = $"{member?.FirstNameEng ?? ""} {member?.LastNameEng ?? ""}".Trim(),
+                MemberName = $"{member?.Customer?.FirstName ?? ""} {(member?.Customer?.MiddleName != null ? member.Customer.MiddleName + " " : "")}{member?.Customer?.LastName ?? ""}".Trim(),
+                MemberNameEng = $"{member?.Customer?.FirstNameEng ?? ""} {member?.Customer?.LastNameEng ?? ""}".Trim(),
                 MemberNo = member?.MemberCode ?? "",
                 AccountNo = shareAcc.AccountNo,
-                CIFNo = member?.CIFNo ?? "",
+                CIFNo = member?.Customer?.CIFNo ?? "",
                 LegacyMemberNo = member?.LegacyMemberNo ?? "",
                 cert.FromShareNo,
                 cert.ToShareNo,
@@ -327,10 +335,10 @@ namespace Bhisi.Api.Controllers
                 TotalAmount = cert.NumberOfShares * cert.FaceValue,
                 cert.Status,
                 cert.PrintCount,
-                MemberAddress = member?.Address ?? member?.Village ?? "",
-                Village = member?.Village ?? "",
-                MobileNo = member?.MobileNo ?? "",
-                FatherHusbandName = member?.MiddleName ?? "",
+                MemberAddress = member?.Customer?.Address ?? member?.Customer?.Village ?? "",
+                Village = member?.Customer?.Village ?? "",
+                MobileNo = member?.Customer?.MobileNo ?? "",
+                FatherHusbandName = member?.Customer?.MiddleName ?? "",
                 JointMemberNames = jointMemberNames,
                 MembershipType = member?.MembershipType ?? "Regular"
             };
@@ -358,6 +366,7 @@ namespace Bhisi.Api.Controllers
                 var certificate = await _context.ShareCertificates
                     .Include(c => c.ShareAccount)
                         .ThenInclude(sa => sa!.Member)
+                            .ThenInclude(m => m!.Customer)
                     .FirstOrDefaultAsync(c => c.CertificateId == id);
 
                 if (certificate == null) return NotFound("शेअर प्रमाणपत्र सापडले नाही.");
@@ -444,7 +453,7 @@ namespace Bhisi.Api.Controllers
                 // 5. Generate Accounting Voucher in Day Book (Payment / Journal Voucher)
                 var voucherDate = DateTime.Today;
                 int vchCount = await _context.Vouchers.CountAsync() + 1;
-                string memberNameStr = member != null ? $"{member.FirstName} {member.LastName}" : "सभासद";
+                string memberNameStr = member?.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "सभासद";
 
                 var (actionUserId, _, _) = GetCurrentUserContext();
                 var voucher = new Voucher
@@ -472,7 +481,7 @@ namespace Bhisi.Api.Controllers
                 var shareTxn = new ShareTransaction
                 {
                     ShareAccountId = account.ShareAccountId,
-                    CustomerID = member?.CustomerID ?? (account.Member != null ? account.Member.CustomerID ?? account.MemberId : 1),
+                    CustomerID = member?.CustomerID ?? (account.CustomerID > 0 ? account.CustomerID : (account.Member?.CustomerID ?? 1)),
                     TransactionDate = DateTime.Today,
                     TransactionType = "Withdrawal",
                     NumberOfShares = certificate.NumberOfShares,

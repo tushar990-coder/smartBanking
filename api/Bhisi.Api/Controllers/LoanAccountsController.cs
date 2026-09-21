@@ -72,13 +72,13 @@ namespace Bhisi.Api.Controllers
             var query = _context.LoanAccounts
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
-                .Include(l => l.CoMember)
-                .Include(l => l.CoMember2)
+                .Include(l => l.CoMember).ThenInclude(m => m!.Customer)
+                .Include(l => l.CoMember2).ThenInclude(m => m!.Customer)
                 .Include(l => l.CoCustomer)
                 .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
-                .Include(l => l.Guarantor1Member)
-                .Include(l => l.Guarantor2Member)
+                .Include(l => l.Guarantor1Member).ThenInclude(m => m!.Customer)
+                .Include(l => l.Guarantor2Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.Guarantor1Customer)
                 .Include(l => l.Guarantor2Customer)
                 .Include(l => l.Branch)
@@ -137,13 +137,13 @@ namespace Bhisi.Api.Controllers
             var loanAccount = await _context.LoanAccounts
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
-                .Include(l => l.CoMember)
-                .Include(l => l.CoMember2)
+                .Include(l => l.CoMember).ThenInclude(m => m!.Customer)
+                .Include(l => l.CoMember2).ThenInclude(m => m!.Customer)
                 .Include(l => l.CoCustomer)
                 .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
-                .Include(l => l.Guarantor1Member)
-                .Include(l => l.Guarantor2Member)
+                .Include(l => l.Guarantor1Member).ThenInclude(m => m!.Customer)
+                .Include(l => l.Guarantor2Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.Guarantor1Customer)
                 .Include(l => l.Guarantor2Customer)
                 .Include(l => l.Branch)
@@ -1024,7 +1024,7 @@ namespace Bhisi.Api.Controllers
 
                 string borrowerName = acc.Customer != null 
                     ? $"{acc.Customer.FirstName} {acc.Customer.LastName}".Trim() 
-                    : (acc.Member != null ? $"{acc.Member.FirstName} {acc.Member.LastName}".Trim() : "N/A");
+                    : (acc.Member?.Customer != null ? $"{acc.Member.Customer.FirstName} {acc.Member.Customer.LastName}".Trim() : "N/A");
 
                 items.Add(new LoanInterestPostingItemDto
                 {

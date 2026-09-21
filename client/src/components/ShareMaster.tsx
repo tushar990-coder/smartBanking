@@ -468,6 +468,7 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
     setMessage(null);
 
     const payload = {
+      customerId: selectedMemberId,
       memberId: selectedMemberId,
       numberOfShares: Number(numberOfShares),
       transactionDate: transactionDate,

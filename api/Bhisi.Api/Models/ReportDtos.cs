@@ -453,6 +453,7 @@ namespace Bhisi.Api.Models
         public string? OldAccountNo { get; set; }
         public string MemberCode { get; set; } = string.Empty;
         public string CIFNo { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
         public string MemberName { get; set; } = string.Empty;
         public string AccountType { get; set; } = string.Empty;
         public string LedgerName { get; set; } = string.Empty;

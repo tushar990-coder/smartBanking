@@ -45,9 +45,10 @@ namespace Bhisi.Api.Controllers
             int maxCif = 107;
             foreach (var m in members)
             {
-                if (!string.IsNullOrWhiteSpace(m.CIFNo))
+                var cif = m.Customer?.CIFNo;
+                if (!string.IsNullOrWhiteSpace(cif))
                 {
-                    var digits = new string(m.CIFNo.Where(char.IsDigit).ToArray());
+                    var digits = new string(cif.Where(char.IsDigit).ToArray());
                     if (int.TryParse(digits, out int num) && num <= 600 && num > maxCif)
                     {
                         maxCif = num;
@@ -58,14 +59,15 @@ namespace Bhisi.Api.Controllers
             bool hasChanges = false;
             foreach (var m in members)
             {
-                bool isInvalid = string.IsNullOrWhiteSpace(m.CIFNo) || 
-                                 (int.TryParse(new string(m.CIFNo.Where(char.IsDigit).ToArray()), out int n) && n > 600);
+                var cif = m.Customer?.CIFNo;
+                bool isInvalid = string.IsNullOrWhiteSpace(cif) || 
+                                 (int.TryParse(new string((cif ?? "").Where(char.IsDigit).ToArray()), out int n) && n > 600);
 
-                if (isInvalid)
+                if (isInvalid && m.Customer != null)
                 {
                     maxCif++;
-                    m.CIFNo = $"CIF{maxCif:D6}";
-                    _context.Members.Update(m);
+                    m.Customer.CIFNo = $"CIF{maxCif:D6}";
+                    _context.Customers.Update(m.Customer);
                     hasChanges = true;
                 }
             }
@@ -76,18 +78,18 @@ namespace Bhisi.Api.Controllers
             }
 
             var result = members.Select(m => {
-                var detail = bankDetails.FirstOrDefault(b => b.CIFNo == m.CIFNo);
+                var detail = bankDetails.FirstOrDefault(b => b.CIFNo == m.Customer?.CIFNo);
                 return new EmployeeBankDetailDto
                 {
                     EmployeeBankDetailID = detail?.EmployeeBankDetailID,
                     MemberID = m.MemberID,
-                    CIFNo = m.CIFNo ?? $"CIF{m.MemberID:D6}",
-                    MemberName = $"{m.FirstName} {m.MiddleName} {m.LastName}".Replace("  ", " ").Trim(),
+                    CIFNo = m.Customer?.CIFNo ?? $"CIF{m.MemberID:D6}",
+                    MemberName = m.Customer != null ? $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Replace("  ", " ").Trim() : "",
                     EmployeeID = detail?.EmployeeID ?? "",
                     DepartmentID = detail?.DepartmentID,
                     JoiningDate = detail?.JoiningDate,
                     EmployeeStatus = detail?.EmployeeStatus ?? "Active",
-                    MobileNumber = detail?.MobileNumber ?? m.MobileNo,
+                    MobileNumber = detail?.MobileNumber ?? m.Customer?.MobileNo,
                     BankName = detail?.BankName ?? "",
                     IFSCCode = detail?.IFSCCode ?? "",
                     AccountNumber = detail?.AccountNumber ?? "",
@@ -149,8 +151,11 @@ namespace Bhisi.Api.Controllers
                         if (member != null)
                         {
                             item.CIFNo = MembersController.GenerateCifNo(member);
-                            member.CIFNo = item.CIFNo;
-                            _context.Members.Update(member);
+                            if (member.Customer != null && string.IsNullOrEmpty(member.Customer.CIFNo))
+                            {
+                                member.Customer.CIFNo = item.CIFNo;
+                                _context.Customers.Update(member.Customer);
+                            }
                         }
                         else
                         {

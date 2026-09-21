@@ -172,11 +172,10 @@ namespace Bhisi.Api.Controllers
                     ? (row.LegacyMemberNo.Length > 50 ? row.LegacyMemberNo.Substring(0, 50) : row.LegacyMemberNo)
                     : oldMemberCode;
 
-                var member = new Member
+                var customer = new Customer
                 {
-                    MemberCode = autoMemberCode,
-                    LegacyMemberNo = legacyMemberNo,
-                    CIFNo = string.IsNullOrWhiteSpace(row.CIFNo) ? null : (row.CIFNo.Length > 20 ? row.CIFNo.Substring(0, 20) : row.CIFNo),
+                    BranchID = branchId,
+                    CIFNo = string.IsNullOrWhiteSpace(row.CIFNo) ? $"CIF{autoMemberCode}" : (row.CIFNo.Length > 20 ? row.CIFNo.Substring(0, 20) : row.CIFNo),
                     FirstName = firstName.Length > 50 ? firstName.Substring(0, 50) : firstName,
                     MiddleName = string.IsNullOrWhiteSpace(row.MiddleName) ? null : (row.MiddleName.Trim().Length > 50 ? row.MiddleName.Trim().Substring(0, 50) : row.MiddleName.Trim()),
                     LastName = lastName.Length > 50 ? lastName.Substring(0, 50) : lastName,
@@ -193,7 +192,6 @@ namespace Bhisi.Api.Controllers
                     District = string.IsNullOrWhiteSpace(row.District) ? null : (row.District.Trim().Length > 100 ? row.District.Trim().Substring(0, 100) : row.District.Trim()),
                     Gender = string.IsNullOrWhiteSpace(row.Gender) ? null : (row.Gender.Trim().Length > 10 ? row.Gender.Trim().Substring(0, 10) : row.Gender.Trim()),
                     BirthDate = row.BirthDate,
-                    JoiningDate = row.JoiningDate ?? DateTime.Today,
                     Occupation = string.IsNullOrWhiteSpace(row.Occupation) ? null : (row.Occupation.Trim().Length > 100 ? row.Occupation.Trim().Substring(0, 100) : row.Occupation.Trim()),
                     NomineeName = string.IsNullOrWhiteSpace(row.NomineeName) ? null : (row.NomineeName.Trim().Length > 150 ? row.NomineeName.Trim().Substring(0, 150) : row.NomineeName.Trim()),
                     NomineeNameEng = string.IsNullOrWhiteSpace(row.NomineeNameEng) ? null : (row.NomineeNameEng.Trim().Length > 150 ? row.NomineeNameEng.Trim().Substring(0, 150) : row.NomineeNameEng.Trim()),
@@ -209,8 +207,17 @@ namespace Bhisi.Api.Controllers
                     GuardianMobileNo = string.IsNullOrWhiteSpace(row.GuardianMobileNo) ? null : (row.GuardianMobileNo.Trim().Length > 15 ? row.GuardianMobileNo.Trim().Substring(0, 15) : row.GuardianMobileNo.Trim()),
                     GuardianAddress = string.IsNullOrWhiteSpace(row.GuardianAddress) ? null : (row.GuardianAddress.Trim().Length > 500 ? row.GuardianAddress.Trim().Substring(0, 500) : row.GuardianAddress.Trim()),
                     Status = status,
-                    EmployerId = empId,
-                    BranchID = branchId // Selected branch
+                    EmployerId = empId
+                };
+
+                var member = new Member
+                {
+                    MemberCode = autoMemberCode,
+                    LegacyMemberNo = legacyMemberNo,
+                    JoiningDate = row.JoiningDate ?? DateTime.Today,
+                    Status = status,
+                    BranchID = branchId,
+                    Customer = customer
                 };
 
                 newMembers.Add(member);
@@ -470,7 +477,7 @@ namespace Bhisi.Api.Controllers
                 var newAccount = new ShareAccount
                 {
                     MemberId = member.MemberID,
-                    CustomerID = member.CustomerID ?? member.MemberID,
+                    CustomerID = member.CustomerID ?? (member.Customer?.CustomerID ?? 1),
                     AccountNo = accountNo,
                     TotalShareCount = row.TotalShareCount,
                     TotalShareAmount = row.TotalShareAmount,

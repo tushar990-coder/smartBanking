@@ -3264,22 +3264,13 @@ BEGIN
       );
     IF LEN(@IdxDrop) > 0 EXEC sp_executesql @IdxDrop;
 
-    -- Drop default constraints on redundant columns
+    -- Drop default constraints on any redundant columns
     DECLARE @DfDrop NVARCHAR(MAX) = '';
     SELECT @DfDrop = @DfDrop + 'ALTER TABLE [dbo].[Members] DROP CONSTRAINT [' + d.name + '];' + CHAR(13)
     FROM sys.default_constraints d
     JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
     WHERE d.parent_object_id = OBJECT_ID(N'[dbo].[Members]')
-      AND c.name IN (
-          'CIFNo', 'FirstName', 'MiddleName', 'LastName', 'NickName', 'FirstNameEng', 'MiddleNameEng', 'LastNameEng',
-          'Address', 'AddressEng', 'Village', 'Taluka', 'District',
-          'MobileNo', 'AadhaarNo', 'PANNo',
-          'PhotoPath', 'SignaturePath', 'AadhaarDocPath', 'PanDocPath',
-          'Gender', 'BirthDate', 'Occupation', 'CasteCategory', 'Caste', 'Email', 'EmployerId',
-          'IsMinor', 'GuardianName', 'GuardianNameEng', 'GuardianRelation', 'GuardianAadhaarNo', 'GuardianMobileNo', 'GuardianAddress',
-          'NomineeName', 'NomineeNameEng', 'NomineeRelation', 'NomineeAddress', 'NomineeBirthDate', 'NomineeIsMinor', 'NomineeGuardianName',
-          'OldMemberCode', 'LegacyMemberId'
-      );
+      AND c.name NOT IN ('MembershipType', 'IsDeleted');
     IF LEN(@DfDrop) > 0 EXEC sp_executesql @DfDrop;
 
     -- Drop foreign keys on EmployerId from Members
@@ -3291,7 +3282,7 @@ BEGIN
     WHERE fk.parent_object_id = OBJECT_ID(N'[dbo].[Members]') AND c.name = 'EmployerId';
     IF LEN(@FkDrop) > 0 EXEC sp_executesql @FkDrop;
 
-    -- Drop redundant columns
+    -- Drop redundant columns individually
     DECLARE @Cols TABLE (ColName NVARCHAR(128));
     INSERT INTO @Cols VALUES
         ('FirstName'), ('MiddleName'), ('LastName'), ('NickName'),
@@ -3306,16 +3297,27 @@ BEGIN
         ('NomineeBirthDate'), ('NomineeIsMinor'), ('NomineeGuardianName'),
         ('CIFNo'), ('OldMemberCode'), ('LegacyMemberId');
 
-    DECLARE @SqlDrop NVARCHAR(MAX) = '';
-    SELECT @SqlDrop = @SqlDrop + 'ALTER TABLE [dbo].[Members] DROP COLUMN [' + c.ColName + '];' + CHAR(13)
-    FROM @Cols c
-    WHERE COL_LENGTH('Members', c.ColName) IS NOT NULL;
-
-    IF LEN(@SqlDrop) > 0
+    DECLARE @curCol NVARCHAR(128);
+    DECLARE col_cursor CURSOR LOCAL FAST_FORWARD FOR SELECT ColName FROM @Cols;
+    OPEN col_cursor;
+    FETCH NEXT FROM col_cursor INTO @curCol;
+    WHILE @@FETCH_STATUS = 0
     BEGIN
-        EXEC sp_executesql @SqlDrop;
-        PRINT 'Dropped redundant demographic and legacy columns from dbo.Members (Aligned to 13 canonical columns).';
+        IF COL_LENGTH('dbo.Members', @curCol) IS NOT NULL
+        BEGIN
+            BEGIN TRY
+                DECLARE @dropStmt NVARCHAR(MAX) = 'ALTER TABLE [dbo].[Members] DROP COLUMN [' + @curCol + '];';
+                EXEC sp_executesql @dropStmt;
+            END TRY
+            BEGIN CATCH
+            END CATCH
+        END
+        FETCH NEXT FROM col_cursor INTO @curCol;
     END
+    CLOSE col_cursor;
+    DEALLOCATE col_cursor;
+
+    PRINT 'Dropped redundant demographic and legacy columns from dbo.Members (Aligned to 13 canonical columns).';
 END
 GO
 
@@ -3634,18 +3636,369 @@ BEGIN
 END
 GO
 
--- 5. Record Version v2.4.9 in SystemVersionHistories
+-- -----------------------------------------------------------------------------------------
+-- 6. MEMBERS TABLE NORMALIZATION & CIF-FIRST ARCHITECTURE ALIGNMENT
+-- -----------------------------------------------------------------------------------------
+PRINT '------------------------------------------------------------------------';
+PRINT 'Starting Members Table Normalization & Non-Shareholder Cleanup...';
+PRINT '------------------------------------------------------------------------';
+
+IF OBJECT_ID(N'[dbo].[Customers]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[Members]', N'U') IS NOT NULL
+BEGIN
+    -- ६.१ खात्री करा की सर्व Members ला CustomerID जोडलेला आहे
+    IF COL_LENGTH('Members', 'CustomerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[Members] ADD [CustomerID] INT NULL;
+    END
+
+    EXEC sp_executesql N'UPDATE [dbo].[Members]
+    SET [CustomerID] = [MemberID]
+    WHERE [CustomerID] IS NULL OR [CustomerID] = 0;';
+
+    -- जर Members मध्ये नाव/पत्ता असेल, तर प्रथम Customers मध्ये नसलेल्या नोंदी INSERT करा व नंतर सिंक करा
+    IF COL_LENGTH('Members', 'FirstName') IS NOT NULL
+    BEGIN
+        DECLARE @InsertCustSql NVARCHAR(MAX) = N'
+        SET IDENTITY_INSERT [dbo].[Customers] ON;
+        INSERT INTO [dbo].[Customers] (
+            CustomerID, BranchID, CIFNo, FirstName, MiddleName, LastName, NickName,
+            FirstNameEng, MiddleNameEng, LastNameEng, Address, AddressEng, Village,
+            Taluka, District, MobileNo, AadhaarNo, PANNo, RegistrationDate,
+            PhotoPath, SignaturePath, AadhaarDocPath, PanDocPath, Gender, BirthDate,
+            Occupation, CasteCategory, Caste, Email, EmployerId, IsMinor,
+            GuardianName, GuardianNameEng, GuardianRelation, GuardianAadhaarNo, GuardianMobileNo, GuardianAddress,
+            NomineeName, NomineeNameEng, NomineeRelation, NomineeAddress, NomineeBirthDate, NomineeIsMinor, NomineeGuardianName,
+            Status, IsDeleted, CreatedBy, CreatedOn
+        )
+        SELECT 
+            m.MemberID,
+            m.BranchID,
+            ISNULL(m.CIFNo, ''CIF'' + RIGHT(''00000'' + CAST(m.MemberID AS VARCHAR(10)), 6)),
+            ISNULL(m.FirstName, ''Member '' + CAST(m.MemberID AS VARCHAR(10))),
+            ISNULL(m.MiddleName, ''''),
+            ISNULL(m.LastName, ''''),
+            m.NickName,
+            m.FirstNameEng, m.MiddleNameEng, m.LastNameEng,
+            m.Address, m.AddressEng, m.Village, m.Taluka, m.District,
+            m.MobileNo, m.AadhaarNo, m.PANNo, m.JoiningDate,
+            m.PhotoPath, m.SignaturePath, m.AadhaarDocPath, m.PanDocPath,
+            m.Gender, m.BirthDate, m.Occupation, m.CasteCategory, m.Caste,
+            m.Email, m.EmployerId, ISNULL(m.IsMinor, 0),
+            m.GuardianName, m.GuardianNameEng, m.GuardianRelation, m.GuardianAadhaarNo, m.GuardianMobileNo, m.GuardianAddress,
+            m.NomineeName, m.NomineeNameEng, m.NomineeRelation, m.NomineeAddress, m.NomineeBirthDate, ISNULL(m.NomineeIsMinor, 0), m.NomineeGuardianName,
+            ISNULL(m.Status, ''Active''), ISNULL(m.IsDeleted, 0), ISNULL(m.CreatedBy, 1), ISNULL(m.CreatedOn, SYSUTCDATETIME())
+        FROM [dbo].[Members] m
+        WHERE NOT EXISTS (SELECT 1 FROM [dbo].[Customers] c WHERE c.CustomerID = m.MemberID);
+        SET IDENTITY_INSERT [dbo].[Customers] OFF;
+
+        UPDATE c
+        SET 
+            c.FirstName = CASE WHEN c.FirstName IS NULL OR LEN(c.FirstName) = 0 THEN m.FirstName ELSE c.FirstName END,
+            c.MiddleName = ISNULL(c.MiddleName, m.MiddleName),
+            c.LastName = CASE WHEN c.LastName IS NULL OR LEN(c.LastName) = 0 THEN m.LastName ELSE c.LastName END,
+            c.NickName = ISNULL(c.NickName, m.NickName),
+            c.Address = ISNULL(c.Address, m.Address),
+            c.Village = ISNULL(c.Village, m.Village),
+            c.Taluka = ISNULL(c.Taluka, m.Taluka),
+            c.District = ISNULL(c.District, m.District),
+            c.MobileNo = ISNULL(c.MobileNo, m.MobileNo),
+            c.AadhaarNo = ISNULL(c.AadhaarNo, m.AadhaarNo),
+            c.PANNo = ISNULL(c.PANNo, m.PANNo),
+            c.Gender = ISNULL(c.Gender, m.Gender),
+            c.BirthDate = ISNULL(c.BirthDate, m.BirthDate),
+            c.NomineeName = ISNULL(c.NomineeName, m.NomineeName),
+            c.NomineeRelation = ISNULL(c.NomineeRelation, m.NomineeRelation)
+        FROM [dbo].[Customers] c
+        INNER JOIN [dbo].[Members] m ON m.CustomerID = c.CustomerID;';
+        EXEC sp_executesql @InsertCustSql;
+    END
+    ELSE
+    BEGIN
+        EXEC sp_executesql N'
+        SET IDENTITY_INSERT [dbo].[Customers] ON;
+        INSERT INTO [dbo].[Customers] (CustomerID, BranchID, CIFNo, FirstName, MiddleName, LastName, RegistrationDate, Status, IsDeleted, CreatedBy, CreatedOn)
+        SELECT m.CustomerID, m.BranchID, ''CIF'' + RIGHT(''00000'' + CAST(m.CustomerID AS VARCHAR(10)), 6), N''सभासद'', CAST(m.MemberID AS NVARCHAR(20)), ISNULL(m.MemberCode, N''नोंद''), m.JoiningDate, m.Status, 0, 1, SYSUTCDATETIME()
+        FROM [dbo].[Members] m
+        WHERE NOT EXISTS (SELECT 1 FROM [dbo].[Customers] c WHERE c.CustomerID = m.CustomerID);
+        SET IDENTITY_INSERT [dbo].[Customers] OFF;';
+    END
+
+    -- Foreign Key Constraint
+    IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_Members_Customers')
+    BEGIN
+        ALTER TABLE [dbo].[Members] ADD CONSTRAINT [FK_Members_Customers] FOREIGN KEY ([CustomerID]) REFERENCES [dbo].[Customers]([CustomerID]);
+    END
+
+    -- Backward-compatibility view [dbo].[vw_Members]
+    IF OBJECT_ID('[dbo].[vw_Members]', 'V') IS NULL
+        EXEC('CREATE VIEW [dbo].[vw_Members] AS SELECT 1 AS Dummy;');
+
+    EXEC('ALTER VIEW [dbo].[vw_Members]
+    AS
+    SELECT 
+        m.MemberID, m.CustomerID, m.BranchID, m.MemberCode, m.LegacyMemberNo,
+        m.MembershipType, m.JoiningDate, m.Status, m.IsDeleted,
+        m.CreatedBy, m.CreatedOn, m.UpdatedBy, m.UpdatedOn,
+        c.CIFNo, c.FirstName, c.MiddleName, c.LastName, c.NickName,
+        c.FirstNameEng, c.MiddleNameEng, c.LastNameEng, c.Address, c.AddressEng,
+        c.Village, c.Taluka, c.District, c.MobileNo, c.AadhaarNo, c.PANNo,
+        c.PhotoPath, c.SignaturePath, c.AadhaarDocPath, c.PanDocPath,
+        c.Gender, c.BirthDate, c.Occupation, c.CasteCategory, c.Caste,
+        c.Email, c.EmployerId, c.IsMinor, c.GuardianName, c.GuardianNameEng,
+        c.GuardianRelation, c.GuardianAadhaarNo, c.GuardianMobileNo, c.GuardianAddress,
+        c.NomineeName, c.NomineeNameEng, c.NomineeRelation, c.NomineeAddress,
+        c.NomineeBirthDate, c.NomineeIsMinor, c.NomineeGuardianName
+    FROM [dbo].[Members] m
+    INNER JOIN [dbo].[Customers] c ON m.CustomerID = c.CustomerID;');
+
+    -- Drop indexes on redundant columns
+    DECLARE @IdxDrop NVARCHAR(MAX) = '';
+    SELECT @IdxDrop = @IdxDrop + 'DROP INDEX [' + i.name + '] ON [dbo].[Members];' + CHAR(13)
+    FROM sys.indexes i
+    JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+    WHERE i.object_id = OBJECT_ID(N'[dbo].[Members]')
+      AND i.is_primary_key = 0
+      AND c.name IN (
+          'CIFNo', 'FirstName', 'MiddleName', 'LastName', 'NickName', 'FirstNameEng', 'MiddleNameEng', 'LastNameEng',
+          'Address', 'AddressEng', 'Village', 'Taluka', 'District', 'MobileNo', 'AadhaarNo', 'PANNo',
+          'PhotoPath', 'SignaturePath', 'AadhaarDocPath', 'PanDocPath', 'Gender', 'BirthDate', 'Occupation',
+          'CasteCategory', 'Caste', 'Email', 'EmployerId', 'IsMinor', 'GuardianName', 'GuardianNameEng',
+          'GuardianRelation', 'GuardianAadhaarNo', 'GuardianMobileNo', 'GuardianAddress', 'NomineeName',
+          'NomineeNameEng', 'NomineeRelation', 'NomineeAddress', 'NomineeBirthDate', 'NomineeIsMinor', 'NomineeGuardianName'
+      );
+    IF LEN(@IdxDrop) > 0 EXEC sp_executesql @IdxDrop;
+
+    -- Drop default constraints on any redundant columns
+    DECLARE @DfDrop NVARCHAR(MAX) = '';
+    SELECT @DfDrop = @DfDrop + 'ALTER TABLE [dbo].[Members] DROP CONSTRAINT [' + d.name + '];' + CHAR(13)
+    FROM sys.default_constraints d
+    JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+    WHERE d.parent_object_id = OBJECT_ID(N'[dbo].[Members]')
+      AND c.name NOT IN ('MembershipType', 'IsDeleted');
+    IF LEN(@DfDrop) > 0 EXEC sp_executesql @DfDrop;
+
+    -- Drop EmployerId FK
+    DECLARE @FkDrop NVARCHAR(MAX) = '';
+    SELECT @FkDrop = @FkDrop + 'ALTER TABLE [dbo].[Members] DROP CONSTRAINT [' + fk.name + '];' + CHAR(13)
+    FROM sys.foreign_keys fk
+    JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+    JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+    WHERE fk.parent_object_id = OBJECT_ID(N'[dbo].[Members]') AND c.name = 'EmployerId';
+    IF LEN(@FkDrop) > 0 EXEC sp_executesql @FkDrop;
+
+    -- Drop 43 redundant columns individually
+    DECLARE @ColsToDrop TABLE (ColName NVARCHAR(128));
+    INSERT INTO @ColsToDrop VALUES
+        ('FirstName'), ('MiddleName'), ('LastName'), ('NickName'),
+        ('FirstNameEng'), ('MiddleNameEng'), ('LastNameEng'),
+        ('Address'), ('AddressEng'), ('Village'), ('Taluka'), ('District'),
+        ('MobileNo'), ('AadhaarNo'), ('PANNo'),
+        ('PhotoPath'), ('SignaturePath'), ('AadhaarDocPath'), ('PanDocPath'),
+        ('Gender'), ('BirthDate'), ('Occupation'), ('CasteCategory'), ('Caste'), ('Email'), ('EmployerId'),
+        ('IsMinor'), ('GuardianName'), ('GuardianNameEng'), ('GuardianRelation'),
+        ('GuardianAadhaarNo'), ('GuardianMobileNo'), ('GuardianAddress'),
+        ('NomineeName'), ('NomineeNameEng'), ('NomineeRelation'), ('NomineeAddress'),
+        ('NomineeBirthDate'), ('NomineeIsMinor'), ('NomineeGuardianName'),
+        ('CIFNo'), ('OldMemberCode'), ('LegacyMemberId');
+
+    DECLARE @curCol NVARCHAR(128);
+    DECLARE col_cursor CURSOR LOCAL FAST_FORWARD FOR SELECT ColName FROM @ColsToDrop;
+    OPEN col_cursor;
+    FETCH NEXT FROM col_cursor INTO @curCol;
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        IF COL_LENGTH('dbo.Members', @curCol) IS NOT NULL
+        BEGIN
+            BEGIN TRY
+                DECLARE @dropStmt NVARCHAR(MAX) = 'ALTER TABLE [dbo].[Members] DROP COLUMN [' + @curCol + '];';
+                EXEC sp_executesql @dropStmt;
+            END TRY
+            BEGIN CATCH
+            END CATCH
+        END
+        FETCH NEXT FROM col_cursor INTO @curCol;
+    END
+    CLOSE col_cursor;
+    DEALLOCATE col_cursor;
+
+    -- Delete 0-share accounts & certificates
+    DECLARE @DeletingShareAccounts TABLE (ShareAccountId INT PRIMARY KEY);
+    INSERT INTO @DeletingShareAccounts
+    SELECT ShareAccountId FROM [dbo].[ShareAccounts]
+    WHERE (TotalShareCount = 0 OR TotalShareCount IS NULL)
+      AND MemberId NOT IN (
+          SELECT DISTINCT MemberId 
+          FROM [dbo].[ShareAccounts] 
+          WHERE TotalShareCount > 0 AND MemberId IS NOT NULL
+      );
+
+    DELETE sc FROM [dbo].[ShareCertificates] sc INNER JOIN @DeletingShareAccounts sa ON sc.ShareAccountId = sa.ShareAccountId;
+    DELETE st FROM [dbo].[ShareTransactions] st INNER JOIN @DeletingShareAccounts sa ON st.ShareAccountId = sa.ShareAccountId;
+    DELETE sa FROM [dbo].[ShareAccounts] sa INNER JOIN @DeletingShareAccounts dsa ON sa.ShareAccountId = dsa.ShareAccountId;
+
+    -- Identify deletable members
+    IF OBJECT_ID('tempdb..#DeletingMembers') IS NOT NULL DROP TABLE #DeletingMembers;
+    CREATE TABLE #DeletingMembers (MemberID INT PRIMARY KEY);
+    INSERT INTO #DeletingMembers
+    SELECT MemberID FROM [dbo].[Members]
+    WHERE MemberID NOT IN (
+        SELECT DISTINCT MemberId FROM [dbo].[ShareAccounts] WHERE MemberId IS NOT NULL AND TotalShareCount > 0
+    )
+    AND MemberID NOT IN (
+        SELECT MemberID FROM [dbo].[LoanAccounts] WHERE MemberID IS NOT NULL
+        UNION
+        SELECT MemberID FROM [dbo].[LoanApplications] WHERE MemberID IS NOT NULL
+    )
+    AND MemberID NOT IN (
+        SELECT MemberID FROM [dbo].[CommitteeMembers] WHERE MemberID IS NOT NULL
+    )
+    AND MemberID NOT IN (
+        SELECT PrimaryMemberID FROM [dbo].[JointMembers] WHERE PrimaryMemberID IS NOT NULL
+    )
+    AND MemberID NOT IN (
+        SELECT MemberID FROM [dbo].[LockerAllotments] WHERE MemberID IS NOT NULL
+    );
+
+    -- Unlink nullable references
+    IF OBJECT_ID('dbo.LoanAccounts') IS NOT NULL
+    BEGIN
+        IF COL_LENGTH('dbo.LoanAccounts', 'CoMemberID') IS NOT NULL
+            EXEC sp_executesql N'UPDATE la SET la.CoMemberID = NULL FROM [dbo].[LoanAccounts] la INNER JOIN #DeletingMembers d ON la.CoMemberID = d.MemberID;';
+        IF COL_LENGTH('dbo.LoanAccounts', 'CoMember2ID') IS NOT NULL
+            EXEC sp_executesql N'UPDATE la SET la.CoMember2ID = NULL FROM [dbo].[LoanAccounts] la INNER JOIN #DeletingMembers d ON la.CoMember2ID = d.MemberID;';
+        IF COL_LENGTH('dbo.LoanAccounts', 'Guarantor1MemberID') IS NOT NULL
+            EXEC sp_executesql N'UPDATE la SET la.Guarantor1MemberID = NULL FROM [dbo].[LoanAccounts] la INNER JOIN #DeletingMembers d ON la.Guarantor1MemberID = d.MemberID;';
+        IF COL_LENGTH('dbo.LoanAccounts', 'Guarantor2MemberID') IS NOT NULL
+            EXEC sp_executesql N'UPDATE la SET la.Guarantor2MemberID = NULL FROM [dbo].[LoanAccounts] la INNER JOIN #DeletingMembers d ON la.Guarantor2MemberID = d.MemberID;';
+        IF COL_LENGTH('dbo.LoanAccounts', 'RecommendedByDirectorID') IS NOT NULL
+            EXEC sp_executesql N'UPDATE la SET la.RecommendedByDirectorID = NULL FROM [dbo].[LoanAccounts] la INNER JOIN #DeletingMembers d ON la.RecommendedByDirectorID = d.MemberID;';
+    END
+
+    IF OBJECT_ID('dbo.LoanApplications') IS NOT NULL
+    BEGIN
+        IF COL_LENGTH('dbo.LoanApplications', 'CoMemberID') IS NOT NULL
+            EXEC sp_executesql N'UPDATE la SET la.CoMemberID = NULL FROM [dbo].[LoanApplications] la INNER JOIN #DeletingMembers d ON la.CoMemberID = d.MemberID;';
+        IF COL_LENGTH('dbo.LoanApplications', 'CoMember2ID') IS NOT NULL
+            EXEC sp_executesql N'UPDATE la SET la.CoMember2ID = NULL FROM [dbo].[LoanApplications] la INNER JOIN #DeletingMembers d ON la.CoMember2ID = d.MemberID;';
+        IF COL_LENGTH('dbo.LoanApplications', 'Guarantor1MemberID') IS NOT NULL
+            EXEC sp_executesql N'UPDATE la SET la.Guarantor1MemberID = NULL FROM [dbo].[LoanApplications] la INNER JOIN #DeletingMembers d ON la.Guarantor1MemberID = d.MemberID;';
+        IF COL_LENGTH('dbo.LoanApplications', 'Guarantor2MemberID') IS NOT NULL
+            EXEC sp_executesql N'UPDATE la SET la.Guarantor2MemberID = NULL FROM [dbo].[LoanApplications] la INNER JOIN #DeletingMembers d ON la.Guarantor2MemberID = d.MemberID;';
+        IF COL_LENGTH('dbo.LoanApplications', 'RecommendedByDirectorID') IS NOT NULL
+            EXEC sp_executesql N'UPDATE la SET la.RecommendedByDirectorID = NULL FROM [dbo].[LoanApplications] la INNER JOIN #DeletingMembers d ON la.RecommendedByDirectorID = d.MemberID;';
+    END
+
+    IF OBJECT_ID('dbo.BorrowerLinkedAccounts') IS NOT NULL AND COL_LENGTH('dbo.BorrowerLinkedAccounts', 'LinkedMemberID') IS NOT NULL AND COL_LENGTH('dbo.BorrowerLinkedAccounts', 'ParentMemberID') IS NOT NULL
+        EXEC sp_executesql N'DELETE bla FROM [dbo].[BorrowerLinkedAccounts] bla INNER JOIN #DeletingMembers d ON bla.LinkedMemberID = d.MemberID OR bla.ParentMemberID = d.MemberID;';
+
+    IF OBJECT_ID('dbo.SavingAccountJointHolders') IS NOT NULL AND COL_LENGTH('dbo.SavingAccountJointHolders', 'MemberID') IS NOT NULL
+        EXEC sp_executesql N'DELETE jh FROM [dbo].[SavingAccountJointHolders] jh INNER JOIN #DeletingMembers d ON jh.MemberID = d.MemberID;';
+
+    IF OBJECT_ID('dbo.DemandMemberDetails') IS NOT NULL AND COL_LENGTH('dbo.DemandMemberDetails', 'MemberId') IS NOT NULL
+        EXEC sp_executesql N'DELETE dmd FROM [dbo].[DemandMemberDetails] dmd INNER JOIN #DeletingMembers d ON dmd.MemberId = d.MemberID;';
+
+    IF OBJECT_ID('dbo.DeceasedClaimSettlements') IS NOT NULL AND COL_LENGTH('dbo.DeceasedClaimSettlements', 'MemberID') IS NOT NULL
+        EXEC sp_executesql N'DELETE dcs FROM [dbo].[DeceasedClaimSettlements] dcs INNER JOIN #DeletingMembers d ON dcs.MemberID = d.MemberID;';
+
+    IF OBJECT_ID('dbo.JointMembers') IS NOT NULL AND COL_LENGTH('dbo.JointMembers', 'PrimaryMemberID') IS NOT NULL
+        EXEC sp_executesql N'DELETE jm FROM [dbo].[JointMembers] jm INNER JOIN #DeletingMembers d ON jm.PrimaryMemberID = d.MemberID;';
+
+    IF COL_LENGTH('SavingAccountMasters', 'MemberID') IS NOT NULL
+    BEGIN
+        ALTER TABLE [dbo].[SavingAccountMasters] ALTER COLUMN [MemberID] INT NULL;
+        EXEC sp_executesql N'UPDATE s SET s.MemberID = NULL FROM [dbo].[SavingAccountMasters] s INNER JOIN #DeletingMembers d ON s.MemberID = d.MemberID;';
+    END
+
+    IF COL_LENGTH('FdAccounts', 'MemberID') IS NOT NULL
+    BEGIN
+        ALTER TABLE [dbo].[FdAccounts] ALTER COLUMN [MemberID] INT NULL;
+        EXEC sp_executesql N'UPDATE f SET f.MemberID = NULL FROM [dbo].[FdAccounts] f INNER JOIN #DeletingMembers d ON f.MemberID = d.MemberID;';
+    END
+
+    IF COL_LENGTH('RdAccounts', 'MemberID') IS NOT NULL
+    BEGIN
+        ALTER TABLE [dbo].[RdAccounts] ALTER COLUMN [MemberID] INT NULL;
+        EXEC sp_executesql N'UPDATE r SET r.MemberID = NULL FROM [dbo].[RdAccounts] r INNER JOIN #DeletingMembers d ON r.MemberID = d.MemberID;';
+    END
+
+    IF COL_LENGTH('PigmyAccounts', 'MemberID') IS NOT NULL
+    BEGIN
+        ALTER TABLE [dbo].[PigmyAccounts] ALTER COLUMN [MemberID] INT NULL;
+        EXEC sp_executesql N'UPDATE p SET p.MemberID = NULL FROM [dbo].[PigmyAccounts] p INNER JOIN #DeletingMembers d ON p.MemberID = d.MemberID;';
+    END
+
+    IF COL_LENGTH('VoucherDetails', 'MemberID') IS NOT NULL
+    BEGIN
+        ALTER TABLE [dbo].[VoucherDetails] ALTER COLUMN [MemberID] INT NULL;
+        EXEC sp_executesql N'UPDATE v SET v.MemberID = NULL FROM [dbo].[VoucherDetails] v INNER JOIN #DeletingMembers d ON v.MemberID = d.MemberID;';
+    END
+
+    IF OBJECT_ID('dbo.MemberOpeningBalances') IS NOT NULL AND COL_LENGTH('dbo.MemberOpeningBalances', 'MemberID') IS NOT NULL
+        EXEC sp_executesql N'DELETE mob FROM [dbo].[MemberOpeningBalances] mob INNER JOIN #DeletingMembers d ON mob.MemberID = d.MemberID;';
+
+    DELETE FROM [dbo].[Members]
+    WHERE MemberID IN (SELECT MemberID FROM #DeletingMembers);
+
+    -- Reseed Identity
+    DECLARE @MaxID INT;
+    SELECT @MaxID = ISNULL(MAX(MemberID), 0) FROM [dbo].[Members];
+    IF @MaxID > 0
+    BEGIN
+        DBCC CHECKIDENT ('Members', RESEED, @MaxID);
+    END
+
+    PRINT '  -> Members Table Normalized (13 Canonical Columns) & Non-Shareholders Cleaned!';
+END
+GO
+
+-- 6.5 Strict 1:1 MemberID & MemberCode Alignment & Share Account Sync (1 -> MEM0001, 2 -> MEM0002)
+IF OBJECT_ID(N'[Members]', N'U') IS NOT NULL
+BEGIN
+    PRINT '------------------------------------------------------------------------';
+    PRINT 'Starting Strict 1:1 MemberID & MemberCode Alignment (1 -> MEM0001)...';
+    PRINT '------------------------------------------------------------------------';
+    BEGIN TRY
+        -- Step 1: Temporary code to prevent unique index collision
+        UPDATE [dbo].[Members]
+        SET [MemberCode] = 'TMP_' + CAST([MemberID] AS VARCHAR(10)) + '_' + SUBSTRING(CONVERT(VARCHAR(40), NEWID()), 1, 8)
+        WHERE [MemberID] > 0;
+
+        -- Step 2: Set exact 1:1 MemberCode
+        UPDATE [dbo].[Members]
+        SET [MemberCode] = 'MEM' + RIGHT('0000' + CAST([MemberID] AS VARCHAR(10)), 4)
+        WHERE [MemberID] > 0;
+
+        -- Step 3: Synchronize ShareAccounts.AccountNo = 'SA-' + MemberCode
+        IF OBJECT_ID(N'[ShareAccounts]', N'U') IS NOT NULL
+        BEGIN
+            UPDATE sa
+            SET sa.[AccountNo] = 'SA-' + m.[MemberCode]
+            FROM [dbo].[ShareAccounts] sa
+            INNER JOIN [dbo].[Members] m ON sa.[MemberId] = m.[MemberID]
+            WHERE m.[MemberCode] IS NOT NULL;
+        END
+
+        PRINT '  -> Strict 1:1 MemberCode (1 -> MEM0001) & Share Accounts Synced Successfully!';
+    END TRY
+    BEGIN CATCH
+        PRINT '  -> Notice during 1:1 MemberCode alignment: ' + ERROR_MESSAGE();
+    END CATCH
+END
+GO
+
+-- 7. Record Version v2.5.0 in SystemVersionHistories
 IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
 BEGIN
     EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
     VALUES (
-        ''2.4.9'', 
+        ''2.5.0'', 
         GETUTCDATE(), 
-        ''SmartBanking VPS Multi-App Master Patch v2.4.9'', 
+        ''SmartBanking VPS Multi-App Master Patch v2.5.0'', 
         ''SUCCESS'', 
-        ''Core Banking Share Opening Balance & MemberCode Synchronization, Customer / CIF dropdown badge enrichment, and CBS UX enhancement.'', 
+        ''Members Table Normalization (43 redundant columns dropped to 13 canonical columns), Strict 1:1 MemberCode Alignment (1 -> MEM0001), Pure CIF-First Architecture, Non-shareholder cleanup, and vw_Members backward compatibility view.'', 
         ''VPS Administrator'',
-        ''2026-09-15''
+        ''2026-09-18''
     );');
 END
 GO

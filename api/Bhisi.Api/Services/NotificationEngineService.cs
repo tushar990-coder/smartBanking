@@ -82,6 +82,7 @@ namespace Bhisi.Api.Services
             // 1. Loan Recovery Due (कर्ज वसुली मुदतपूर्ती - सभासद तपशील समाविष्ट)
             var overdueLoans = await _db.LoanAccounts
                 .Include(l => l.Member)
+                    .ThenInclude(m => m!.Customer)
                 .Where(l => l.BranchID == branchId && (l.OverdueInterestBalance > 0 || l.PrincipalBalance > 0))
                 .Take(30)
                 .ToListAsync();
@@ -97,10 +98,10 @@ namespace Bhisi.Api.Services
 
                 if (!exists)
                 {
-                    string memberName = loan.Member != null 
-                        ? $"{loan.Member.FirstName} {loan.Member.MiddleName} {loan.Member.LastName}".Replace("  ", " ").Trim()
+                    string memberName = loan.Member?.Customer != null 
+                        ? $"{loan.Member.Customer.FirstName} {loan.Member.Customer.MiddleName} {loan.Member.Customer.LastName}".Replace("  ", " ").Trim()
                         : "सभासद";
-                    string mobileNo = loan.Member?.MobileNo ?? "N/A";
+                    string mobileNo = loan.Member?.Customer?.MobileNo ?? "N/A";
                     decimal pendingAmount = loan.OverdueInterestBalance > 0 ? loan.OverdueInterestBalance : loan.PrincipalBalance;
 
                     _db.SystemNotifications.Add(new SystemNotification

@@ -2001,23 +2001,23 @@ namespace Bhisi.Api.Controllers
 
             string fullName = customer != null
                 ? $"{customer.FirstName} {customer.MiddleName} {customer.LastName}".Replace("  ", " ").Trim()
-                : (member != null ? $"{member.FirstName} {member.MiddleName} {member.LastName}".Replace("  ", " ").Trim() : "");
+                : (member?.Customer != null ? $"{member.Customer.FirstName} {member.Customer.MiddleName} {member.Customer.LastName}".Replace("  ", " ").Trim() : "");
 
             if (string.IsNullOrWhiteSpace(fullName))
             {
                 fullName = customer != null 
                     ? $"{customer.FirstNameEng} {customer.MiddleNameEng} {customer.LastNameEng}".Replace("  ", " ").Trim()
-                    : (member != null ? $"{member.FirstNameEng} {member.MiddleNameEng} {member.LastNameEng}".Replace("  ", " ").Trim() : "");
+                    : (member?.Customer != null ? $"{member.Customer.FirstNameEng} {member.Customer.MiddleNameEng} {member.Customer.LastNameEng}".Replace("  ", " ").Trim() : "");
             }
 
             return Ok(new {
                 CustomerID = targetCustId,
                 MemberID = targetMemId ?? (customer?.CustomerID ?? 0),
                 MemberCode = member?.MemberCode ?? (customer?.CIFNo ?? ""),
-                CIFNo = customer?.CIFNo ?? member?.CIFNo ?? "",
+                CIFNo = customer?.CIFNo ?? member?.Customer?.CIFNo ?? "",
                 MemberName = fullName,
-                MobileNo = customer?.MobileNo ?? member?.MobileNo ?? "",
-                Address = customer?.Address ?? member?.Address ?? "",
+                MobileNo = customer?.MobileNo ?? member?.Customer?.MobileNo ?? "",
+                Address = customer?.Address ?? member?.Customer?.Address ?? "",
                 BranchName = customer?.Branch?.BranchName ?? member?.Branch?.BranchName ?? "",
                 TotalFDAccountsCount = accounts.Count,
                 TotalPrincipalInvested = accounts.Sum(a => a.DepositAmount),

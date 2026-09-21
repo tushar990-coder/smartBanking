@@ -37,10 +37,7 @@ interface SavingAccount {
   customerID?: number;
   customerName?: string;
   customerNameEng?: string;
-  memberID?: number;
-  memberCode?: string;
-  memberName?: string;
-  memberNameEng?: string;
+
   accountType?: string;
   openingDate?: string;
   isLegacyAccount?: boolean;
@@ -75,7 +72,7 @@ interface SavingTransaction {
   voucherNo?: string;
   accountNo?: string;
   customerName?: string;
-  memberName?: string;
+
 }
 
 const formatDisplayDate = (dStr?: string | null) => {
@@ -223,7 +220,6 @@ const SavingTransactionEntry: React.FC = () => {
 
       const params = new URLSearchParams(window.location.search);
       const customerIdStr = params.get('customerId') || params.get('customerID');
-      const memberIdStr = params.get('memberId');
       const accountIdStr = params.get('accountId') || params.get('savingAccountId');
       const typeStr = params.get('type');
 
@@ -243,18 +239,6 @@ const SavingTransactionEntry: React.FC = () => {
         } else if (customerIdStr) {
           const cId = parseInt(customerIdStr, 10);
           const matchedAcc = accData.find((a: any) => a.customerID === cId);
-          if (matchedAcc) {
-            setSelectedLedgerID(matchedAcc.ledgerID || 7);
-            setFormData((prev) => ({
-              ...prev,
-              savingAccountID: matchedAcc.savingAccountID,
-              transactionType: typeStr || prev.transactionType
-            }));
-            setSelectedAccount(matchedAcc);
-          }
-        } else if (memberIdStr) {
-          const mId = parseInt(memberIdStr, 10);
-          const matchedAcc = accData.find((a: any) => a.customerID === mId || a.memberID === mId);
           if (matchedAcc) {
             setSelectedLedgerID(matchedAcc.ledgerID || 7);
             setFormData((prev) => ({
@@ -405,10 +389,10 @@ const SavingTransactionEntry: React.FC = () => {
     : accounts;
 
   const accountOptions = filteredAccounts.map((acc) => {
-    const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : (acc.memberCode ? ` [${acc.memberCode}]` : '');
+    const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : '';
     const oldAccPart = (acc.oldAccountNo || acc.legacyAccountNumber) ? ` (जुने: ${acc.oldAccountNo || acc.legacyAccountNumber})` : '';
-    const namePart = acc.customerName || acc.memberName || 'अज्ञात';
-    const engPart = (acc.customerNameEng || acc.memberNameEng) ? ` (${acc.customerNameEng || acc.memberNameEng})` : '';
+    const namePart = acc.customerName || 'अज्ञात';
+    const engPart = acc.customerNameEng ? ` (${acc.customerNameEng})` : '';
     const balPart = ` - शिल्लक: ₹${(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     return {
       value: acc.savingAccountID,
@@ -422,10 +406,10 @@ const SavingTransactionEntry: React.FC = () => {
     : accounts.filter(acc => acc.savingAccountID !== formData.savingAccountID);
 
   const targetAccountOptions = filteredTargetAccounts.map((acc) => {
-    const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : (acc.memberCode ? ` [${acc.memberCode}]` : '');
+    const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : '';
     const oldAccPart = (acc.oldAccountNo || acc.legacyAccountNumber) ? ` (जुने: ${acc.oldAccountNo || acc.legacyAccountNumber})` : '';
-    const namePart = acc.customerName || acc.memberName || 'अज्ञात';
-    const engPart = (acc.customerNameEng || acc.memberNameEng) ? ` (${acc.customerNameEng || acc.memberNameEng})` : '';
+    const namePart = acc.customerName || 'अज्ञात';
+    const engPart = acc.customerNameEng ? ` (${acc.customerNameEng})` : '';
     const balPart = ` - शिल्लक: ₹${(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     return {
       value: acc.savingAccountID,
@@ -441,7 +425,7 @@ const SavingTransactionEntry: React.FC = () => {
     const query = searchQuery.toLowerCase();
     return (
       (t.accountNo && t.accountNo.toLowerCase().includes(query)) ||
-      (t.memberName && t.memberName.toLowerCase().includes(query)) ||
+      (t.customerName && t.customerName.toLowerCase().includes(query)) ||
       (t.transactionType && t.transactionType.toLowerCase().includes(query)) ||
       (t.voucherNo && t.voucherNo.toLowerCase().includes(query))
     );
@@ -831,7 +815,7 @@ const SavingTransactionEntry: React.FC = () => {
                     👤
                   </div>
                   <div>
-                    <span className="font-bold text-slate-900">{selectedAccount.customerName || selectedAccount.memberName}</span>
+                    <span className="font-bold text-slate-900">{selectedAccount.customerName}</span>
                     {selectedAccount.cifNo && (
                       <span className="ml-1.5 bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[10px] font-bold font-mono">
                         CIF: {selectedAccount.cifNo}
@@ -897,7 +881,7 @@ const SavingTransactionEntry: React.FC = () => {
                   {selectedTargetAccount ? (
                     <div className="md:col-span-1 bg-emerald-50 border border-emerald-300 rounded-sm px-3 py-1.5 flex flex-col justify-center shadow-2xs">
                       <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">
-                        👤 खातेदार: {selectedTargetAccount.customerName || selectedTargetAccount.memberName}
+                        👤 खातेदार: {selectedTargetAccount.customerName}
                       </span>
                       <span className="text-xs font-black text-emerald-950">
                         💳 शिल्लक: ₹ {selectedTargetAccount.currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -959,18 +943,14 @@ const SavingTransactionEntry: React.FC = () => {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">खातेदार नाव</span>
-                      <p className="font-bold text-sm text-slate-900 truncate leading-tight">{selectedAccount.customerName || selectedAccount.memberName}</p>
+                      <p className="font-bold text-sm text-slate-900 truncate leading-tight">{selectedAccount.customerName}</p>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
                         {selectedAccount.cifNo && (
                           <span className="text-[10px] font-bold bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 font-mono">
                             CIF: {selectedAccount.cifNo}
                           </span>
                         )}
-                        {selectedAccount.memberCode && (
-                          <span className="text-[10px] font-bold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
-                            कोड: {selectedAccount.memberCode}
-                          </span>
-                        )}
+
                       </div>
                     </div>
                     <span className={`px-2 py-0.5 text-[10px] font-bold rounded tracking-wide shrink-0 ${
@@ -1236,7 +1216,7 @@ const SavingTransactionEntry: React.FC = () => {
                           {t.accountNo}
                         </td>
                         <td className="px-2 py-1.5 border-r border-slate-200 text-left font-semibold text-slate-900 min-w-[160px]">
-                          {t.customerName || t.memberName}
+                          {t.customerName}
                         </td>
                         <td className="px-2 py-1.5 border-r border-slate-200 text-center whitespace-nowrap">
                           <span className={`px-2 py-0.5 inline-flex text-[10px] leading-3 font-bold rounded ${

@@ -70,8 +70,8 @@ namespace Bhisi.Api.Controllers
                     {
                         SavingAccountID = account.SavingAccountID,
                         AccountNo = account.AccountNo,
+                        CIFNo = account.Customer?.CIFNo ?? "",
                         CustomerName = custName,
-                        MemberName = custName,
                         CurrentBalance = account.CurrentBalance,
                         InterestRate = account.InterestRate,
                         CalculatedInterest = Math.Round(interest, 2)
@@ -355,8 +355,8 @@ namespace Bhisi.Api.Controllers
     {
         public int SavingAccountID { get; set; }
         public string AccountNo { get; set; } = string.Empty;
+        public string CIFNo { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
-        public string MemberName { get; set; } = string.Empty;
         public decimal CurrentBalance { get; set; }
         public decimal InterestRate { get; set; }
         public decimal CalculatedInterest { get; set; }

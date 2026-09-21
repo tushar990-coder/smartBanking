@@ -286,7 +286,9 @@ namespace Bhisi.Api.Controllers
                     ? vd.Member.MemberCode
                     : $"MEM{vd.Member.MemberID:D4}";
 
-                string memName = string.Join(" ", new[] { vd.Member.FirstName, vd.Member.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
+                string memName = vd.Member.Customer != null
+                    ? string.Join(" ", new[] { vd.Member.Customer.FirstName, vd.Member.Customer.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim()
+                    : "";
 
                 return !string.IsNullOrWhiteSpace(memName) ? $"{code} - {memName}" : code;
             }
@@ -502,7 +504,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 var unvoucheredDisb = await unvoucheredDisbQuery
-                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .ToListAsync();
 
@@ -527,9 +529,9 @@ namespace Bhisi.Api.Controllers
 
                     var group = naveGroups[lId];
                     var member = ld.LoanAccount?.Member;
-                    string narration = member != null 
-                        ? $"{member.MemberCode}-{member.FirstName} {member.LastName}" 
-                        : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})";
+                    string narration = member?.Customer != null 
+                        ? $"{member.MemberCode}-{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
+                        : (member != null ? $"{member.MemberCode}" : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})");
 
                     bool isCash = ld.PaymentMode == "Cash";
                     var entry = new DaybookEntryDto
@@ -556,7 +558,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 var unvoucheredCols = await unvoucheredColQuery
-                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .ToListAsync();
 
@@ -566,9 +568,9 @@ namespace Bhisi.Api.Controllers
                 foreach (var lc in unvoucheredCols)
                 {
                     var member = lc.LoanAccount?.Member;
-                    string memberNarration = member != null 
-                        ? $"{member.MemberCode}-{member.FirstName} {member.LastName}" 
-                        : $"Loan Collection (Rect: {lc.ReceiptNo})";
+                    string memberNarration = member?.Customer != null 
+                        ? $"{member.MemberCode}-{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
+                        : (member != null ? $"{member.MemberCode}" : $"Loan Collection (Rect: {lc.ReceiptNo})");
                     bool isCash = lc.PaymentMode == "Cash";
 
                     // Principal Collected -> Loan Ledger
@@ -758,7 +760,7 @@ namespace Bhisi.Api.Controllers
                     unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => ld.LoanAccount!.BranchID == branchId.Value);
                 }
                 allUnvoucheredDisb = await unvoucheredDisbQuery
-                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .ToListAsync();
 
@@ -770,7 +772,7 @@ namespace Bhisi.Api.Controllers
                     unvoucheredColQuery = unvoucheredColQuery.Where(lc => lc.LoanAccount!.BranchID == branchId.Value);
                 }
                 allUnvoucheredCols = await unvoucheredColQuery
-                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .ToListAsync();
             }
@@ -918,9 +920,9 @@ namespace Bhisi.Api.Controllers
 
                             var group = naveGroups[lId];
                             var member = ld.LoanAccount?.Member;
-                            string narration = member != null 
-                                ? $"{member.MemberCode}-{member.FirstName} {member.LastName}" 
-                                : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})";
+                            string narration = member?.Customer != null 
+                                ? $"{member.MemberCode}-{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
+                                : (member != null ? $"{member.MemberCode}" : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})");
 
                             bool isCash = ld.PaymentMode == "Cash";
                             var entry = new DaybookEntryDto
@@ -943,9 +945,9 @@ namespace Bhisi.Api.Controllers
                         foreach (var lc in dayCols)
                         {
                             var member = lc.LoanAccount?.Member;
-                            string memberNarration = member != null 
-                                ? $"{member.MemberCode}-{member.FirstName} {member.LastName}" 
-                                : $"Loan Collection (Rect: {lc.ReceiptNo})";
+                            string memberNarration = member?.Customer != null 
+                                ? $"{member.MemberCode}-{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
+                                : (member != null ? $"{member.MemberCode}" : $"Loan Collection (Rect: {lc.ReceiptNo})");
                             bool isCash = lc.PaymentMode == "Cash";
 
                             if (lc.PrincipalCollected > 0)
@@ -1209,7 +1211,7 @@ namespace Bhisi.Api.Controllers
             {
                 var existingVoucherIdsSummary = vouchers.Select(v => v.VoucherID).ToHashSet();
                 var unvoucheredDisbQuerySummary = _context.LoanDisbursements.AsNoTracking()
-                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .Where(ld => ld.DisbursementDate >= startDate 
                               && ld.DisbursementDate <= endDate
@@ -1245,7 +1247,7 @@ namespace Bhisi.Api.Controllers
                     var m = ld.LoanAccount?.Member;
                     if (m != null)
                     {
-                        string mStr = $"{m.MemberCode}-{m.FirstName} {m.LastName}";
+                        string mStr = m.Customer != null ? $"{m.MemberCode}-{m.Customer.FirstName} {m.Customer.LastName}".Trim() : $"{m.MemberCode}";
                         if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
                         else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
                     }
@@ -1253,7 +1255,7 @@ namespace Bhisi.Api.Controllers
 
                 // Include unvouchered Loan Collections into GetDaybookSummary (Receipt side)
                 var unvoucheredColQuerySummary = _context.LoanCollections.AsNoTracking()
-                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .Where(lc => lc.CollectionDate >= startDate && lc.CollectionDate <= endDate
                               && !lc.VoucherID.HasValue);
@@ -1268,7 +1270,7 @@ namespace Bhisi.Api.Controllers
                 {
                     bool isCash = lc.PaymentMode == "Cash";
                     var m = lc.LoanAccount?.Member;
-                    string mStr = m != null ? $"{m.MemberCode}-{m.FirstName} {m.LastName}" : "";
+                    string mStr = m?.Customer != null ? $"{m.MemberCode}-{m.Customer.FirstName} {m.Customer.LastName}".Trim() : (m != null ? $"{m.MemberCode}" : "");
 
                     if (lc.PrincipalCollected > 0)
                     {
@@ -1462,7 +1464,7 @@ namespace Bhisi.Api.Controllers
             if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
             {
                 var unvoucheredDisbQuery = _context.LoanDisbursements.AsNoTracking()
-                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .Where(ld => ld.DisbursementDate >= rangeStart 
                               && ld.DisbursementDate <= rangeEnd
@@ -1476,7 +1478,7 @@ namespace Bhisi.Api.Controllers
                 allUnvoucheredDisb = await unvoucheredDisbQuery.ToListAsync();
 
                 var unvoucheredColQuery = _context.LoanCollections.AsNoTracking()
-                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member)
+                    .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.LoanRate)
                     .Where(lc => lc.CollectionDate >= rangeStart && lc.CollectionDate <= rangeEnd
                               && !lc.VoucherID.HasValue);
@@ -1600,7 +1602,7 @@ namespace Bhisi.Api.Controllers
                             var m = ld.LoanAccount?.Member;
                             if (m != null)
                             {
-                                string mStr = $"{m.MemberCode}-{m.FirstName} {m.LastName}";
+                                string mStr = m.Customer != null ? $"{m.MemberCode}-{m.Customer.FirstName} {m.Customer.LastName}".Trim() : $"{m.MemberCode}";
                                 if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
                                 else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
                             }
@@ -1614,7 +1616,7 @@ namespace Bhisi.Api.Controllers
                         {
                             bool isCash = lc.PaymentMode == "Cash";
                             var m = lc.LoanAccount?.Member;
-                            string mStr = m != null ? $"{m.MemberCode}-{m.FirstName} {m.LastName}" : "";
+                            string mStr = m?.Customer != null ? $"{m.MemberCode}-{m.Customer.FirstName} {m.Customer.LastName}".Trim() : (m != null ? $"{m.MemberCode}" : "");
 
                             if (lc.PrincipalCollected > 0)
                             {
@@ -2542,8 +2544,8 @@ namespace Bhisi.Api.Controllers
                         MemberId = member.MemberID,
                         MemberCode = member.MemberCode ?? "",
                         LegacyMemberNo = member.LegacyMemberNo ?? "",
-                        CIFNo = member.CIFNo ?? "",
-                        MemberName = string.Join(" ", new[] { member.FirstName, member.MiddleName, member.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim(),
+                        CIFNo = member.Customer?.CIFNo ?? "",
+                        MemberName = member.Customer != null ? string.Join(" ", new[] { member.Customer.FirstName, member.Customer.MiddleName, member.Customer.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "",
                         Balance = Math.Abs(netBal),
                         BalanceType = netBal > 0 ? "Dr" : "Cr"
                     });
@@ -2590,10 +2592,13 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(a => a!.Customer)
                 .Include(d => d.LoanAccount!)
                     .ThenInclude(a => a!.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Include(d => d.LoanAccount!)
                     .ThenInclude(a => a!.Guarantor1Member)
+                        .ThenInclude(m => m!.Customer)
                 .Include(d => d.LoanAccount!)
                     .ThenInclude(a => a!.Guarantor2Member)
+                        .ThenInclude(m => m!.Customer)
                 .Include(d => d.LoanAccount!)
                     .ThenInclude(a => a!.LoanRate)
                 .AsQueryable();
@@ -2618,11 +2623,15 @@ namespace Bhisi.Api.Controllers
                 var acc = d.LoanAccount;
                 var cust = acc?.Customer;
                 var mem = acc?.Member;
+                var memCust = mem?.Customer;
                 string bName = cust != null
                     ? string.Join(" ", new[] { cust.FirstName, cust.MiddleName, cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim()
-                    : (mem != null ? string.Join(" ", new[] { mem.FirstName, mem.MiddleName, mem.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "");
-                string cif = cust?.CIFNo ?? mem?.CIFNo ?? "";
+                    : (memCust != null ? string.Join(" ", new[] { memCust.FirstName, memCust.MiddleName, memCust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "");
+                string cif = cust?.CIFNo ?? memCust?.CIFNo ?? "";
                 string mCode = mem?.MemberCode ?? "";
+
+                var g1Cust = acc?.Guarantor1Member?.Customer;
+                var g2Cust = acc?.Guarantor2Member?.Customer;
 
                 return new LoanDisbursementRegisterDto
                 {
@@ -2638,8 +2647,8 @@ namespace Bhisi.Api.Controllers
                     DepositDeduction = 0,
                     OtherDeductions = d.ProcessingFee + d.InsuranceDeduction + d.StationeryCharges + d.OtherDeductions,
                     NetAmountPaid = d.NetAmountPaid,
-                    Guarantor1Name = acc?.Guarantor1Member != null ? string.Join(" ", new[] { acc.Guarantor1Member.FirstName, acc.Guarantor1Member.MiddleName, acc.Guarantor1Member.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "",
-                    Guarantor2Name = acc?.Guarantor2Member != null ? string.Join(" ", new[] { acc.Guarantor2Member.FirstName, acc.Guarantor2Member.MiddleName, acc.Guarantor2Member.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : ""
+                    Guarantor1Name = g1Cust != null ? string.Join(" ", new[] { g1Cust.FirstName, g1Cust.MiddleName, g1Cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "",
+                    Guarantor2Name = g2Cust != null ? string.Join(" ", new[] { g2Cust.FirstName, g2Cust.MiddleName, g2Cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : ""
                 };
             });
 
@@ -2654,6 +2663,7 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(a => a!.Customer)
                 .Include(c => c.LoanAccount!)
                     .ThenInclude(a => a!.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Include(c => c.LoanAccount!)
                     .ThenInclude(a => a!.LoanRate)
                 .AsQueryable();
@@ -2678,10 +2688,11 @@ namespace Bhisi.Api.Controllers
                 var acc = c.LoanAccount;
                 var cust = acc?.Customer;
                 var mem = acc?.Member;
+                var memCust = mem?.Customer;
                 string mName = cust != null
                     ? string.Join(" ", new[] { cust.FirstName, cust.MiddleName, cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim()
-                    : (mem != null ? string.Join(" ", new[] { mem.FirstName, mem.MiddleName, mem.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "");
-                string cif = cust?.CIFNo ?? mem?.CIFNo ?? "";
+                    : (memCust != null ? string.Join(" ", new[] { memCust.FirstName, memCust.MiddleName, memCust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "");
+                string cif = cust?.CIFNo ?? memCust?.CIFNo ?? "";
                 string mCode = mem?.MemberCode ?? "";
 
                 return new LoanCollectionRegisterDto
@@ -2715,7 +2726,7 @@ namespace Bhisi.Api.Controllers
                 var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
                 var loanAccount = await _context.LoanAccounts
                     .Include(la => la.Customer)
-                    .Include(la => la.Member)
+                    .Include(la => la.Member).ThenInclude(m => m!.Customer)
                     .Include(la => la.LoanRate)
                     .FirstOrDefaultAsync(la => la.LoanAccountID == loanAccountId);
 
@@ -2723,12 +2734,13 @@ namespace Bhisi.Api.Controllers
 
                 var cust = loanAccount.Customer;
                 var mem = loanAccount.Member;
+                var memCust = mem?.Customer;
                 string bName = cust != null
                     ? $"{cust.FirstName} {cust.MiddleName} {cust.LastName}".Trim()
-                    : (mem != null ? $"{mem.FirstName} {mem.MiddleName} {mem.LastName}".Trim() : "");
-                string aadhaar = cust?.AadhaarNo ?? mem?.AadhaarNo ?? "";
-                string pan = cust?.PANNo ?? mem?.PANNo ?? "";
-                string cif = cust?.CIFNo ?? mem?.CIFNo ?? "";
+                    : (memCust != null ? $"{memCust.FirstName} {memCust.MiddleName} {memCust.LastName}".Trim() : "");
+                string aadhaar = cust?.AadhaarNo ?? memCust?.AadhaarNo ?? "";
+                string pan = cust?.PANNo ?? memCust?.PANNo ?? "";
+                string cif = cust?.CIFNo ?? memCust?.CIFNo ?? "";
 
                 var report = new LoanLedgerReportDto
                 {
@@ -2758,7 +2770,11 @@ namespace Bhisi.Api.Controllers
                 else if (loanAccount.Guarantor1MemberID.HasValue && loanAccount.Guarantor1MemberID.Value > 0)
                 {
                     var g1 = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == loanAccount.Guarantor1MemberID);
-                    if (g1 != null) report.Guarantors.Add(new LoanLedgerGuarantorDto { Name = $"{g1.FirstName} {g1.LastName}".Trim() });
+                    if (g1 != null)
+                    {
+                        string g1Name = g1.Customer != null ? $"{g1.Customer.FirstName} {g1.Customer.LastName}".Trim() : "Guarantor 1";
+                        report.Guarantors.Add(new LoanLedgerGuarantorDto { Name = g1Name });
+                    }
                 }
 
                 if (loanAccount.Guarantor2CustomerID.HasValue && loanAccount.Guarantor2CustomerID.Value > 0)
@@ -2769,7 +2785,11 @@ namespace Bhisi.Api.Controllers
                 else if (loanAccount.Guarantor2MemberID.HasValue && loanAccount.Guarantor2MemberID.Value > 0)
                 {
                     var g2 = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == loanAccount.Guarantor2MemberID);
-                    if (g2 != null) report.Guarantors.Add(new LoanLedgerGuarantorDto { Name = $"{g2.FirstName} {g2.LastName}".Trim() });
+                    if (g2 != null)
+                    {
+                        string g2Name = g2.Customer != null ? $"{g2.Customer.FirstName} {g2.Customer.LastName}".Trim() : "Guarantor 2";
+                        report.Guarantors.Add(new LoanLedgerGuarantorDto { Name = g2Name });
+                    }
                 }
 
                 // Fetch transactions
@@ -3396,18 +3416,18 @@ namespace Bhisi.Api.Controllers
                         MemberID = targetMemId ?? (customer?.CustomerID ?? 0),
                         MemberCode = member?.MemberCode ?? (customer?.CIFNo ?? ""),
                         OldMemberCode = member?.LegacyMemberNo ?? "",
-                        CIFNo = customer?.CIFNo ?? member?.CIFNo ?? "",
-                        FirstName = customer?.FirstName ?? member?.FirstName ?? "",
-                        MiddleName = customer?.MiddleName ?? member?.MiddleName,
-                        LastName = customer?.LastName ?? member?.LastName ?? "",
-                        NickName = customer?.NickName ?? member?.NickName,
-                        MobileNo = customer?.MobileNo ?? member?.MobileNo ?? "",
-                        AadhaarNo = MaskAadhaar(customer?.AadhaarNo ?? member?.AadhaarNo ?? ""),
-                        PANNo = customer?.PANNo ?? member?.PANNo,
+                        CIFNo = customer?.CIFNo ?? member?.Customer?.CIFNo ?? "",
+                        FirstName = customer?.FirstName ?? member?.Customer?.FirstName ?? "",
+                        MiddleName = customer?.MiddleName ?? member?.Customer?.MiddleName,
+                        LastName = customer?.LastName ?? member?.Customer?.LastName ?? "",
+                        NickName = customer?.NickName ?? member?.Customer?.NickName,
+                        MobileNo = customer?.MobileNo ?? member?.Customer?.MobileNo ?? "",
+                        AadhaarNo = MaskAadhaar(customer?.AadhaarNo ?? member?.Customer?.AadhaarNo ?? ""),
+                        PANNo = customer?.PANNo ?? member?.Customer?.PANNo,
                         BranchName = branchName,
                         JoiningDate = member?.JoiningDate ?? customer?.RegistrationDate ?? DateTime.Today,
                         Status = member?.Status ?? customer?.Status ?? "Active",
-                        PhotoPath = customer?.PhotoPath ?? member?.PhotoPath
+                        PhotoPath = customer?.PhotoPath ?? member?.Customer?.PhotoPath
                     },
                     Balances = new BalanceSummaryDto
                     {
@@ -3481,10 +3501,10 @@ namespace Bhisi.Api.Controllers
 
             var query = _context.LoanAccounts
                 .Include(la => la.Customer)
-                .Include(la => la.Member)
+                .Include(la => la.Member).ThenInclude(m => m!.Customer)
                 .Include(la => la.LoanRate)
-                .Include(la => la.Guarantor1Member)
-                .Include(la => la.Guarantor2Member)
+                .Include(la => la.Guarantor1Member).ThenInclude(m => m!.Customer)
+                .Include(la => la.Guarantor2Member).ThenInclude(m => m!.Customer)
                 .Where(la => la.OpeningDate <= toDate && la.Status == "Active");
 
             if (branchId.HasValue && branchId.Value > 0)
@@ -3547,14 +3567,16 @@ namespace Bhisi.Api.Controllers
                 var gList = new List<string>();
                 if (la.Guarantor1Member != null)
                 {
-                    string g1Name = $"{la.Guarantor1Member.FirstName} {la.Guarantor1Member.MiddleName} {la.Guarantor1Member.LastName}".Replace("  ", " ").Trim();
-                    string g1Mobile = !string.IsNullOrWhiteSpace(la.Guarantor1Member.MobileNo) ? $" ({la.Guarantor1Member.MobileNo})" : "";
+                    var g1Cust = la.Guarantor1Member.Customer;
+                    string g1Name = g1Cust != null ? $"{g1Cust.FirstName} {g1Cust.MiddleName} {g1Cust.LastName}".Replace("  ", " ").Trim() : "";
+                    string g1Mobile = !string.IsNullOrWhiteSpace(g1Cust?.MobileNo) ? $" ({g1Cust.MobileNo})" : "";
                     gList.Add($"१) {g1Name}{g1Mobile}");
                 }
                 if (la.Guarantor2Member != null)
                 {
-                    string g2Name = $"{la.Guarantor2Member.FirstName} {la.Guarantor2Member.MiddleName} {la.Guarantor2Member.LastName}".Replace("  ", " ").Trim();
-                    string g2Mobile = !string.IsNullOrWhiteSpace(la.Guarantor2Member.MobileNo) ? $" ({la.Guarantor2Member.MobileNo})" : "";
+                    var g2Cust = la.Guarantor2Member.Customer;
+                    string g2Name = g2Cust != null ? $"{g2Cust.FirstName} {g2Cust.MiddleName} {g2Cust.LastName}".Replace("  ", " ").Trim() : "";
+                    string g2Mobile = !string.IsNullOrWhiteSpace(g2Cust?.MobileNo) ? $" ({g2Cust.MobileNo})" : "";
                     gList.Add($"२) {g2Name}{g2Mobile}");
                 }
                 string guarantorDetails = string.Join("\n", gList);
@@ -3563,9 +3585,9 @@ namespace Bhisi.Api.Controllers
                 var mem = la.Member;
                 string mName = cust != null
                     ? $"{cust.FirstName} {cust.MiddleName} {cust.LastName}".Trim()
-                    : (mem != null ? $"{mem.FirstName} {mem.MiddleName} {mem.LastName}".Trim() : "");
-                string mob = cust?.MobileNo ?? mem?.MobileNo ?? "";
-                string cif = cust?.CIFNo ?? mem?.CIFNo ?? "";
+                    : (mem?.Customer != null ? $"{mem.Customer.FirstName} {mem.Customer.MiddleName} {mem.Customer.LastName}".Trim() : "");
+                string mob = cust?.MobileNo ?? mem?.Customer?.MobileNo ?? "";
+                string cif = cust?.CIFNo ?? mem?.Customer?.CIFNo ?? "";
                 string mCode = mem?.MemberCode ?? "";
 
                 rows.Add(new OverdueLoanRowDto
@@ -3686,7 +3708,7 @@ namespace Bhisi.Api.Controllers
                 {
                     MemberID = member.MemberID,
                     MemberNo = member.MemberCode ?? "",
-                    MemberName = $"{member.FirstName} {member.MiddleName} {member.LastName}".Trim(),
+                    MemberName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.MiddleName} {member.Customer.LastName}".Trim() : "",
                     Balance = displayBalance,
                     BalanceType = balanceType
                 });
@@ -3784,13 +3806,13 @@ namespace Bhisi.Api.Controllers
                 SansthaInfo = sanstha,
                 MemberNo = member.MemberCode ?? "",
                 LegacyMemberNo = member.LegacyMemberNo ?? string.Empty,
-                MemberName = $"{member.FirstName} {member.MiddleName} {member.LastName}".Trim(),
-                MobileNo = member.MobileNo ?? string.Empty,
-                Village = member.Village ?? string.Empty,
-                Taluka = member.Taluka ?? string.Empty,
-                Address = member.Address ?? string.Empty,
-                AadhaarNo = member.AadhaarNo ?? string.Empty,
-                PANNo = member.PANNo ?? string.Empty,
+                MemberName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.MiddleName} {member.Customer.LastName}".Trim() : "",
+                MobileNo = member.Customer?.MobileNo ?? string.Empty,
+                Village = member.Customer?.Village ?? string.Empty,
+                Taluka = member.Customer?.Taluka ?? string.Empty,
+                Address = member.Customer?.Address ?? string.Empty,
+                AadhaarNo = member.Customer?.AadhaarNo ?? string.Empty,
+                PANNo = member.Customer?.PANNo ?? string.Empty,
                 LedgerName = ledger.LedgerName,
                 FromDate = fromDate,
                 ToDate = toDate,
@@ -3841,17 +3863,17 @@ namespace Bhisi.Api.Controllers
                     MemberID = member.MemberID,
                     MemberCode = member.MemberCode ?? "",
                     LegacyMemberNo = member.LegacyMemberNo ?? "",
-                    CIFNo = member.CIFNo ?? "",
+                    CIFNo = member.Customer?.CIFNo ?? "",
                     AccountNo = shareAccount?.AccountNo ?? member.MemberCode ?? "",
                     JoiningDate = member.JoiningDate,
                     EntranceFeeDate = member.JoiningDate,
-                    FullName = $"{member.FirstName} {member.MiddleName} {member.LastName}".Trim(),
-                    Address = $"{member.Address}, {member.Village}, {member.Taluka}, {member.District}".Trim(new char[] { ',', ' ' }),
-                    AgeAtJoining = member.BirthDate.HasValue ? (member.JoiningDate.Year - member.BirthDate.Value.Year) : 0,
-                    NomineeName = member.NomineeName ?? "-",
-                    NomineeAddress = member.NomineeAddress ?? "-",
+                    FullName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.MiddleName} {member.Customer.LastName}".Trim() : "",
+                    Address = member.Customer != null ? $"{member.Customer.Address}, {member.Customer.Village}, {member.Customer.Taluka}, {member.Customer.District}".Trim(new char[] { ',', ' ' }) : "",
+                    AgeAtJoining = (member.Customer?.BirthDate.HasValue == true) ? (member.JoiningDate.Year - member.Customer.BirthDate.Value.Year) : 0,
+                    NomineeName = member.Customer?.NomineeName ?? "-",
+                    NomineeAddress = member.Customer?.NomineeAddress ?? "-",
                     NominationDate = member.JoiningDate,
-                    Occupation = member.Occupation ?? "-",
+                    Occupation = member.Customer?.Occupation ?? "-",
                     CessationDate = member.Status == "Closed" ? member.UpdatedOn : null,
                     CessationReason = "-",
                     Remarks = member.Status == "Closed" ? "Account Closed" : "-"
@@ -3953,7 +3975,18 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(m => m.Status == status);
             }
 
-            var members = await query.OrderBy(m => m.MemberID).ToListAsync();
+            var membersRaw = await query.ToListAsync();
+            var members = membersRaw
+                .OrderBy(m => {
+                    if (!string.IsNullOrWhiteSpace(m.MemberCode))
+                    {
+                        var digits = new string(m.MemberCode.Where(char.IsDigit).ToArray());
+                        if (int.TryParse(digits, out int num) && num > 0) return num;
+                    }
+                    return m.MemberID;
+                })
+                .ThenBy(m => m.MemberID)
+                .ToList();
             var memberIds = members.Select(m => m.MemberID).ToList();
 
             var shareAccounts = await _context.ShareAccounts
@@ -3972,32 +4005,32 @@ namespace Bhisi.Api.Controllers
                     : "-";
 
                 int age = 0;
-                if (m.BirthDate.HasValue)
+                if (m.Customer?.BirthDate.HasValue == true)
                 {
-                    age = m.JoiningDate.Year - m.BirthDate.Value.Year;
-                    if (m.BirthDate.Value.Date > m.JoiningDate.AddYears(-age)) age--;
+                    age = m.JoiningDate.Year - m.Customer.BirthDate.Value.Year;
+                    if (m.Customer.BirthDate.Value.Date > m.JoiningDate.AddYears(-age)) age--;
                 }
 
                 rows.Add(new INamunaRegisterRowDto
                 {
                     SrNo = sr++,
                     MemberID = m.MemberID,
-                    MemberCode = m.MemberCode ?? m.CIFNo ?? "",
-                    CIFNo = m.CIFNo ?? "",
-                    FullName = $"{m.FirstName} {m.MiddleName} {m.LastName}".Trim().Replace("  ", " "),
-                    FullNameEng = $"{m.FirstNameEng} {m.MiddleNameEng} {m.LastNameEng}".Trim().Replace("  ", " "),
-                    Address = $"{m.Address}, {m.Village}, {m.Taluka}".Trim(new char[] { ',', ' ' }),
-                    Occupation = m.Occupation ?? "-",
+                    MemberCode = m.MemberCode ?? m.Customer?.CIFNo ?? "",
+                    CIFNo = m.Customer?.CIFNo ?? "",
+                    FullName = m.Customer != null ? $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Trim().Replace("  ", " ") : "",
+                    FullNameEng = m.Customer != null ? $"{m.Customer.FirstNameEng} {m.Customer.MiddleNameEng} {m.Customer.LastNameEng}".Trim().Replace("  ", " ") : "",
+                    Address = m.Customer != null ? $"{m.Customer.Address}, {m.Customer.Village}, {m.Customer.Taluka}".Trim(new char[] { ',', ' ' }) : "",
+                    Occupation = m.Customer?.Occupation ?? "-",
                     JoiningDate = m.JoiningDate,
                     AgeAtJoining = age > 0 ? age : null,
                     TotalShareCount = sh?.TotalShareCount ?? 0,
                     TotalShareAmount = sh?.TotalShareAmount ?? 0,
                     CertificateNos = certNos,
-                    NomineeName = m.NomineeName ?? "-",
-                    NomineeRelation = m.NomineeRelation ?? "-",
-                    NomineeAddress = m.NomineeAddress ?? "-",
-                    NomineeIsMinor = m.NomineeIsMinor,
-                    NomineeGuardianName = m.NomineeGuardianName,
+                    NomineeName = m.Customer?.NomineeName ?? "-",
+                    NomineeRelation = m.Customer?.NomineeRelation ?? "-",
+                    NomineeAddress = m.Customer?.NomineeAddress ?? "-",
+                    NomineeIsMinor = false,
+                    NomineeGuardianName = "-",
                     Status = m.Status,
                     CessationDate = m.Status == "Closed" || m.Status == "Mayat" ? m.UpdatedOn : null,
                     CessationReason = m.Status == "Mayat" ? "मयत (Deceased Claim Settled)" : (m.Status == "Closed" ? "सभासदत्व राजीनामा/रद्द (Closed)" : "-"),
@@ -4039,7 +4072,18 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(m => m.MembershipType == membershipType);
             }
 
-            var members = await query.OrderBy(m => m.MemberID).ToListAsync();
+            var membersRaw = await query.ToListAsync();
+            var members = membersRaw
+                .OrderBy(m => {
+                    if (!string.IsNullOrWhiteSpace(m.MemberCode))
+                    {
+                        var digits = new string(m.MemberCode.Where(char.IsDigit).ToArray());
+                        if (int.TryParse(digits, out int num) && num > 0) return num;
+                    }
+                    return m.MemberID;
+                })
+                .ThenBy(m => m.MemberID)
+                .ToList();
             var memberIds = members.Select(m => m.MemberID).ToList();
 
             var shareAccounts = await _context.ShareAccounts
@@ -4099,12 +4143,12 @@ namespace Bhisi.Api.Controllers
                 {
                     SrNo = sr++,
                     MemberID = m.MemberID,
-                    MemberCode = m.MemberCode ?? m.CIFNo ?? "",
-                    CIFNo = m.CIFNo ?? "",
-                    FullName = $"{m.FirstName} {m.MiddleName} {m.LastName}".Trim().Replace("  ", " "),
-                    FullNameEng = $"{m.FirstNameEng} {m.MiddleNameEng} {m.LastNameEng}".Trim().Replace("  ", " "),
-                    Address = $"{m.Address}, {m.Village}".Trim(new char[] { ',', ' ' }),
-                    MobileNo = m.MobileNo ?? "-",
+                    MemberCode = m.MemberCode ?? m.Customer?.CIFNo ?? "",
+                    CIFNo = m.Customer?.CIFNo ?? "",
+                    FullName = m.Customer != null ? $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Trim().Replace("  ", " ") : "",
+                    FullNameEng = m.Customer != null ? $"{m.Customer.FirstNameEng} {m.Customer.MiddleNameEng} {m.Customer.LastNameEng}".Trim().Replace("  ", " ") : "",
+                    Address = m.Customer != null ? $"{m.Customer.Address}, {m.Customer.Village}".Trim(new char[] { ',', ' ' }) : "",
+                    MobileNo = m.Customer?.MobileNo ?? "-",
                     MembershipType = mType,
                     TotalShareCount = shareCount,
                     TotalShareAmount = shareAmt,
@@ -4182,10 +4226,10 @@ namespace Bhisi.Api.Controllers
 
                 string name = c != null 
                     ? $"{c.FirstName} {c.MiddleName} {c.LastName}".Trim() 
-                    : (m != null ? $"{m.FirstName} {m.MiddleName} {m.LastName}".Trim() : "N/A");
+                    : (m?.Customer != null ? $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Trim() : "N/A");
                 string code = m?.MemberCode ?? c?.CIFNo ?? "";
-                string cif = c?.CIFNo ?? m?.CIFNo ?? (resCId.HasValue ? $"CIF{resCId.Value:D6}" : $"CIF{resMId:D6}");
-                string mobile = !string.IsNullOrWhiteSpace(c?.MobileNo) ? c.MobileNo : (!string.IsNullOrWhiteSpace(m?.MobileNo) ? m.MobileNo : "-");
+                string cif = c?.CIFNo ?? m?.Customer?.CIFNo ?? (resCId.HasValue ? $"CIF{resCId.Value:D6}" : $"CIF{resMId:D6}");
+                string mobile = !string.IsNullOrWhiteSpace(c?.MobileNo) ? c.MobileNo : (!string.IsNullOrWhiteSpace(m?.Customer?.MobileNo) ? m.Customer.MobileNo : "-");
 
                 guarantorProfiles[key] = (resMId, resCId, name, code, cif, mobile);
             }
@@ -4239,9 +4283,9 @@ namespace Bhisi.Api.Controllers
                         loanAccountNo = l.LoanAccountNo,
                         borrowerName = l.Customer != null 
                             ? $"{l.Customer.FirstName} {l.Customer.MiddleName} {l.Customer.LastName}".Trim() 
-                            : (l.Member != null ? $"{l.Member.FirstName} {l.Member.MiddleName} {l.Member.LastName}".Trim() : ""),
+                            : (l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Trim() : ""),
                         borrowerCode = l.Member?.MemberCode ?? l.Customer?.CIFNo,
-                        borrowerCIF = l.Customer?.CIFNo ?? l.Member?.CIFNo ?? "",
+                        borrowerCIF = l.Customer?.CIFNo ?? l.Member?.Customer?.CIFNo ?? "",
                         loanType = l.LoanRate?.ShortName ?? l.LoanRate?.LoanType ?? "",
                         sanctionedAmount = l.SanctionedAmount,
                         currentBalance = l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance,
@@ -4257,9 +4301,9 @@ namespace Bhisi.Api.Controllers
                         applicationNo = a.ApplicationNo,
                         borrowerName = a.Customer != null 
                             ? $"{a.Customer.FirstName} {a.Customer.MiddleName} {a.Customer.LastName}".Trim() 
-                            : (a.Member != null ? $"{a.Member.FirstName} {a.Member.MiddleName} {a.Member.LastName}".Trim() : ""),
+                            : (a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.MiddleName} {a.Member.Customer.LastName}".Trim() : ""),
                         borrowerCode = a.Member?.MemberCode ?? a.Customer?.CIFNo,
-                        borrowerCIF = a.Customer?.CIFNo ?? a.Member?.CIFNo ?? "",
+                        borrowerCIF = a.Customer?.CIFNo ?? a.Member?.Customer?.CIFNo ?? "",
                         loanType = a.LoanRate?.ShortName ?? a.LoanRate?.LoanType ?? "",
                         requestedAmount = a.RequestedAmount,
                         guarantorType = MatchesAppG1(a) ? "जामीनदार १ (Guarantor 1)" : "जामीनदार २ (Guarantor 2)",
@@ -4321,7 +4365,18 @@ namespace Bhisi.Api.Controllers
                 savingQuery = savingQuery.Where(s => s.BranchID == branchId.Value);
             }
 
-            var members = await membersQuery.OrderBy(m => m.MemberID).ToListAsync();
+            var membersRaw = await membersQuery.ToListAsync();
+            var members = membersRaw
+                .OrderBy(m => {
+                    if (!string.IsNullOrWhiteSpace(m.MemberCode))
+                    {
+                        var digits = new string(m.MemberCode.Where(char.IsDigit).ToArray());
+                        if (int.TryParse(digits, out int num) && num > 0) return num;
+                    }
+                    return m.MemberID;
+                })
+                .ThenBy(m => m.MemberID)
+                .ToList();
             var savingAccounts = await savingQuery.ToListAsync();
 
             var list = new List<AadhaarReportRowDto>();
@@ -4337,10 +4392,10 @@ namespace Bhisi.Api.Controllers
                         list.Add(new AadhaarReportRowDto
                         {
                             SrNo = srNo++,
-                            CifNo = m.MemberCode ?? m.CIFNo ?? "",
-                            AccountHolderName = $"{m.FirstName} {m.MiddleName} {m.LastName}".Trim().Replace("  ", " "),
+                            CifNo = m.MemberCode ?? m.Customer?.CIFNo ?? "",
+                            AccountHolderName = m.Customer != null ? $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Trim().Replace("  ", " ") : "",
                             SavingAccountNo = a.AccountNo,
-                            AadhaarNo = MaskAadhaar(m.AadhaarNo)
+                            AadhaarNo = MaskAadhaar(m.Customer?.AadhaarNo)
                         });
                     }
                 }
@@ -4349,10 +4404,10 @@ namespace Bhisi.Api.Controllers
                     list.Add(new AadhaarReportRowDto
                     {
                         SrNo = srNo++,
-                        CifNo = m.MemberCode ?? m.CIFNo ?? "",
-                        AccountHolderName = $"{m.FirstName} {m.MiddleName} {m.LastName}".Trim().Replace("  ", " "),
+                        CifNo = m.MemberCode ?? m.Customer?.CIFNo ?? "",
+                        AccountHolderName = m.Customer != null ? $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Trim().Replace("  ", " ") : "",
                         SavingAccountNo = "",
-                        AadhaarNo = MaskAadhaar(m.AadhaarNo)
+                        AadhaarNo = MaskAadhaar(m.Customer?.AadhaarNo)
                     });
                 }
             }
@@ -4506,6 +4561,7 @@ namespace Bhisi.Api.Controllers
                 OldAccountNo = account.OldAccountNo ?? account.LegacyAccountNumber,
                 MemberCode = memberCode,
                 CIFNo = cifNo,
+                CustomerName = holderName,
                 MemberName = holderName,
                 AccountType = account.AccountType,
                 LedgerName = account.Ledger?.LedgerName ?? "बचत ठेव",
@@ -4548,6 +4604,7 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(l => l!.Customer)
                 .Include(g => g.LoanAccount)
                     .ThenInclude(l => l!.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Include(g => g.LoanAccount)
                     .ThenInclude(l => l!.Branch)
                 .AsQueryable();
@@ -4603,9 +4660,9 @@ namespace Bhisi.Api.Controllers
                         borrowerName = $"{c.CIFNo} - {borrowerName}";
                     }
                 }
-                else if (m != null)
+                else if (m?.Customer != null)
                 {
-                    borrowerName = $"{m.FirstName} {m.MiddleName} {m.LastName}".Trim().Replace("  ", " ");
+                    borrowerName = $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Trim().Replace("  ", " ");
                     if (!string.IsNullOrEmpty(m.MemberCode))
                     {
                         borrowerName = $"{m.MemberCode} - {borrowerName}";
@@ -4628,7 +4685,7 @@ namespace Bhisi.Api.Controllers
                     LoanAccountID = g.LoanAccountID,
                     LoanAccountNo = l?.LoanAccountNo ?? g.LoanAccountID.ToString(),
                     CustomerID = l?.CustomerID,
-                    CifNo = c?.CIFNo ?? m?.CIFNo ?? "",
+                    CifNo = c?.CIFNo ?? m?.Customer?.CIFNo ?? "",
                     MemberID = m?.MemberID ?? l?.CustomerID ?? 0,
                     MemberCode = m?.MemberCode ?? c?.CIFNo ?? "",
                     BorrowerName = borrowerName,

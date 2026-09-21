@@ -8,8 +8,6 @@ interface SavingAccount {
   cifNo?: string;
   customerID?: number;
   customerName?: string;
-  memberID?: number;
-  memberName?: string;
   currentBalance: number;
   minimumBalance: number;
   status: string;
@@ -20,7 +18,6 @@ interface SavingAccountClosing {
   accountNo: string;
   cifNo?: string;
   customerName?: string;
-  memberName?: string;
   closureDate: string;
   grossBalance: number;
   closingCharges: number;
@@ -60,7 +57,6 @@ const SavingAccountClosingMaster: React.FC = () => {
 
       const params = new URLSearchParams(window.location.search);
       const customerIdStr = params.get('customerId') || params.get('customerID');
-      const memberIdStr = params.get('memberId');
       const accountIdStr = params.get('accountId') || params.get('savingAccountId');
 
       let matchedAcc: any = null;
@@ -70,9 +66,6 @@ const SavingAccountClosingMaster: React.FC = () => {
       } else if (customerIdStr) {
         const cId = parseInt(customerIdStr, 10);
         matchedAcc = active.find((a: any) => a.customerID === cId);
-      } else if (memberIdStr) {
-        const mId = parseInt(memberIdStr, 10);
-        matchedAcc = active.find((a: any) => a.customerID === mId || a.memberID === mId);
       }
 
       if (matchedAcc) {
@@ -158,7 +151,7 @@ const SavingAccountClosingMaster: React.FC = () => {
 
   const accountOptions = activeAccounts.map(a => {
     const cifPart = a.cifNo ? ` [CIF: ${a.cifNo}]` : '';
-    const namePart = a.customerName || a.memberName || 'अज्ञात';
+    const namePart = a.customerName || 'अज्ञात';
     return {
       value: a.savingAccountID,
       label: `${a.accountNo}${cifPart} - ${namePart} (शिल्लक: ₹${a.currentBalance.toFixed(2)})`
@@ -274,7 +267,7 @@ const SavingAccountClosingMaster: React.FC = () => {
               <div className="space-y-1.5">
                 <div>
                   <span className="font-semibold text-gray-500">खातेदार:</span>
-                  <p className="font-bold text-sm text-primary truncate">{selectedAccount.customerName || selectedAccount.memberName}</p>
+                  <p className="font-bold text-sm text-primary truncate">{selectedAccount.customerName}</p>
                   {selectedAccount.cifNo && (
                     <span className="text-[10px] font-bold bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 font-mono">
                       CIF: {selectedAccount.cifNo}
@@ -327,7 +320,7 @@ const SavingAccountClosingMaster: React.FC = () => {
                 closings.map((c) => (
                   <tr key={c.closingID} className="hover:bg-gray-50">
                     <td className="px-2 py-1 border-r border-gray-200 text-left font-medium text-red-600">{c.accountNo}</td>
-                    <td className="px-2 py-1 border-r border-gray-200 text-left">{c.customerName || c.memberName}</td>
+                    <td className="px-2 py-1 border-r border-gray-200 text-left">{c.customerName || 'अज्ञात'}</td>
                     <td className="px-2 py-1 border-r border-gray-200 text-left">
                       {new Date(c.closureDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                     </td>

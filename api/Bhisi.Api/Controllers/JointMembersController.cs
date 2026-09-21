@@ -156,7 +156,7 @@ namespace Bhisi.Api.Controllers
 
             // Auto-generate JointMemberCode
             int currentCount = await _context.JointMembers.CountAsync(j => j.PrimaryMemberID == jointMember.PrimaryMemberID) + 1;
-            jointMember.JointMemberCode = $"{primaryMember.MemberCode ?? primaryMember.CIFNo ?? "MEM"}-J{currentCount}";
+            jointMember.JointMemberCode = $"{primaryMember.MemberCode ?? primaryMember.Customer?.CIFNo ?? "MEM"}-J{currentCount}";
 
             jointMember.CreatedBy = userId;
             jointMember.CreatedOn = DateTime.Now;
@@ -165,7 +165,8 @@ namespace Bhisi.Api.Controllers
             _context.JointMembers.Add(jointMember);
             await _context.SaveChangesAsync();
 
-            await LogAuditAsync("JOINT_MEMBER_CREATE", jointMember.JointMemberID.ToString(), $"सह-सभासद नोंदणी: {jointMember.FirstName} {jointMember.LastName}, मुख्य सभासद: {primaryMember.FirstName} {primaryMember.LastName}");
+            string primaryName = primaryMember.Customer != null ? $"{primaryMember.Customer.FirstName} {primaryMember.Customer.LastName}" : $"Member #{primaryMember.MemberID}";
+            await LogAuditAsync("JOINT_MEMBER_CREATE", jointMember.JointMemberID.ToString(), $"सह-सभासद नोंदणी: {jointMember.FirstName} {jointMember.LastName}, मुख्य सभासद: {primaryName}");
 
             return CreatedAtAction("GetJointMember", new { id = jointMember.JointMemberID }, jointMember);
         }

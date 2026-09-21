@@ -57,7 +57,7 @@ namespace Bhisi.Api.Controllers
                     LockerNo = v.Allotment != null && v.Allotment.Locker != null ? v.Allotment.Locker.LockerNo : "",
                     CabinetNo = v.Allotment != null && v.Allotment.Locker != null ? v.Allotment.Locker.CabinetNo : "",
                     KeyNo = v.Allotment != null && v.Allotment.Locker != null ? v.Allotment.Locker.KeyNo : "",
-                    MemberName = v.Allotment != null && v.Allotment.Member != null ? $"{v.Allotment.Member.FirstName} {v.Allotment.Member.LastName}" : "",
+                    MemberName = v.Allotment != null && v.Allotment.Customer != null ? $"{v.Allotment.Customer.FirstName} {v.Allotment.Customer.LastName}" : (v.Allotment != null && v.Allotment.Member != null && v.Allotment.Member.Customer != null ? $"{v.Allotment.Member.Customer.FirstName} {v.Allotment.Member.Customer.LastName}" : ""),
                     v.VisitDate,
                     v.TimeIn,
                     v.TimeOut,

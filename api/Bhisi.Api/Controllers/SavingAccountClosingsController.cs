@@ -32,10 +32,8 @@ namespace Bhisi.Api.Controllers
                 .Select(c => new {
                     c.ClosingID,
                     AccountNo = c.SavingAccount != null ? c.SavingAccount.AccountNo : "",
+                    CIFNo = c.SavingAccount != null && c.SavingAccount.Customer != null ? c.SavingAccount.Customer.CIFNo : "",
                     CustomerName = c.SavingAccount != null && c.SavingAccount.Customer != null
-                        ? $"{c.SavingAccount.Customer.FirstName} {c.SavingAccount.Customer.LastName}".Trim()
-                        : "",
-                    MemberName = c.SavingAccount != null && c.SavingAccount.Customer != null
                         ? $"{c.SavingAccount.Customer.FirstName} {c.SavingAccount.Customer.LastName}".Trim()
                         : "",
                     c.ClosureDate,

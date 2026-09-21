@@ -1,4 +1,4 @@
-﻿-- ====================================================================================================
+-- ====================================================================================================
 -- SCRIPT: Universal_Schema_Only_Sync.sql
 -- PURPOSE: Universal Schema-Only Synchronization Script for SmartBanking Core Banking System
 -- SOURCE BASELINE: SmartBanking_Template (Gold Master Baseline - 126 Tables, 1711 Columns)
@@ -8700,7 +8700,6 @@ BEGIN
     CREATE TABLE [dbo].[PigmyAgents] (
         [PigmyAgentID] INT IDENTITY(1,1) NOT NULL,
         [AgentName] NVARCHAR(100) NOT NULL,
-        [MobileNo] NVARCHAR(15) NOT NULL,
         [Status] NVARCHAR(20) NOT NULL,
         [CreatedBy] INT NOT NULL,
         [CreatedDate] DATETIME2 NOT NULL,
@@ -8719,12 +8718,6 @@ IF COL_LENGTH(N'[dbo].[PigmyAgents]', N'AgentName') IS NULL
 BEGIN
     ALTER TABLE [dbo].[PigmyAgents] ADD [AgentName] NVARCHAR(100) NOT NULL DEFAULT '';
     PRINT '  + Added column [AgentName] to [dbo].[PigmyAgents]';
-END
-GO
-IF COL_LENGTH(N'[dbo].[PigmyAgents]', N'MobileNo') IS NULL
-BEGIN
-    ALTER TABLE [dbo].[PigmyAgents] ADD [MobileNo] NVARCHAR(15) NOT NULL DEFAULT '';
-    PRINT '  + Added column [MobileNo] to [dbo].[PigmyAgents]';
 END
 GO
 IF COL_LENGTH(N'[dbo].[PigmyAgents]', N'Status') IS NULL

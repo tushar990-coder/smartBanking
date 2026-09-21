@@ -67,19 +67,33 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
-            existingRecord.MemberID = memberOpeningBalance.MemberID;
+            Member? mem = null;
             if (memberOpeningBalance.CustomerID.HasValue && memberOpeningBalance.CustomerID.Value > 0)
             {
                 existingRecord.CustomerID = memberOpeningBalance.CustomerID.Value;
+                mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == memberOpeningBalance.CustomerID.Value);
             }
-            else
+            
+            if (mem == null && memberOpeningBalance.MemberID > 0)
             {
-                var mem = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberOpeningBalance.MemberID);
+                mem = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberOpeningBalance.MemberID);
                 if (mem != null && mem.CustomerID.HasValue)
                 {
                     existingRecord.CustomerID = mem.CustomerID.Value;
                 }
+                else
+                {
+                    // Check if MemberID was passed as CustomerID
+                    var cust = await _context.Customers.FindAsync(memberOpeningBalance.MemberID);
+                    if (cust != null)
+                    {
+                        existingRecord.CustomerID = cust.CustomerID;
+                        mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == cust.CustomerID);
+                    }
+                }
             }
+            if (mem != null) existingRecord.MemberID = mem.MemberID;
+
             existingRecord.LedgerID = memberOpeningBalance.LedgerID;
             existingRecord.Amount = memberOpeningBalance.Amount;
             existingRecord.BalanceType = memberOpeningBalance.BalanceType;
@@ -111,14 +125,32 @@ namespace Bhisi.Api.Controllers
         [MigrationLockFilter]
         public async Task<ActionResult<MemberOpeningBalance>> PostMemberOpeningBalance(MemberOpeningBalance memberOpeningBalance)
         {
-            if (!memberOpeningBalance.CustomerID.HasValue || memberOpeningBalance.CustomerID.Value <= 0)
+            Member? mem = null;
+            if (memberOpeningBalance.CustomerID.HasValue && memberOpeningBalance.CustomerID.Value > 0)
             {
-                var mem = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberOpeningBalance.MemberID);
+                mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == memberOpeningBalance.CustomerID.Value);
+            }
+
+            if (mem == null && memberOpeningBalance.MemberID > 0)
+            {
+                mem = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberOpeningBalance.MemberID);
                 if (mem != null && mem.CustomerID.HasValue)
                 {
                     memberOpeningBalance.CustomerID = mem.CustomerID.Value;
                 }
+                else
+                {
+                    // Check if passed MemberID is actually CustomerID
+                    var cust = await _context.Customers.FindAsync(memberOpeningBalance.MemberID);
+                    if (cust != null)
+                    {
+                        memberOpeningBalance.CustomerID = cust.CustomerID;
+                        mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == cust.CustomerID);
+                    }
+                }
             }
+            if (mem != null) memberOpeningBalance.MemberID = mem.MemberID;
+
             memberOpeningBalance.CreatedOn = DateTime.Now;
             _context.MemberOpeningBalances.Add(memberOpeningBalance);
             await _context.SaveChangesAsync();

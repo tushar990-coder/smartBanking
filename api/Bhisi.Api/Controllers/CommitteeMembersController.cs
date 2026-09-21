@@ -25,6 +25,7 @@ namespace Bhisi.Api.Controllers
 
                 var rawMembers = await _context.CommitteeMembers
                     .Include(c => c.Member)
+                        .ThenInclude(m => m!.Customer)
                     .ToListAsync();
 
                 // Fetch loan balances and overdue statuses for all committee members
@@ -53,8 +54,8 @@ namespace Bhisi.Api.Controllers
                         c.CommitteeMemberID,
                         c.MemberID,
                         MemberCode = c.Member?.MemberCode ?? "",
-                        MemberName = c.Member != null ? $"{c.Member.FirstName} {c.Member.MiddleName} {c.Member.LastName}".Trim() : "",
-                        MobileNo = c.Member?.MobileNo ?? "",
+                        MemberName = c.Member?.Customer != null ? $"{c.Member.Customer.FirstName} {c.Member.Customer.MiddleName} {c.Member.Customer.LastName}".Trim() : "",
+                        MobileNo = c.Member?.Customer?.MobileNo ?? "",
                         Designation = c.Designation ?? "",
                         JoiningDate = c.JoiningDate,
                         EndDate = c.EndDate,

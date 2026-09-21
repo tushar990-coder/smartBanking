@@ -246,7 +246,10 @@ namespace Bhisi.Api.Controllers
 
             var statuses = await _context.LoanAccountNpaStatuses
                 .Include(s => s.LoanAccount)
-                .ThenInclude(l => l!.Member)
+                    .ThenInclude(l => l!.Customer)
+                .Include(s => s.LoanAccount)
+                    .ThenInclude(l => l!.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Where(s => s.AsOfDate.Date == date.Date)
                 .ToListAsync();
 
@@ -261,7 +264,10 @@ namespace Bhisi.Api.Controllers
                 {
                     statuses = await _context.LoanAccountNpaStatuses
                         .Include(s => s.LoanAccount)
-                        .ThenInclude(l => l!.Member)
+                            .ThenInclude(l => l!.Customer)
+                        .Include(s => s.LoanAccount)
+                            .ThenInclude(l => l!.Member)
+                                .ThenInclude(m => m!.Customer)
                         .Where(s => s.AsOfDate.Date == lastAvailableDate.Date)
                         .ToListAsync();
                 }
@@ -280,7 +286,9 @@ namespace Bhisi.Api.Controllers
                 {
                     LoanAccountID = s.LoanAccountID,
                     LoanAccountNo = s.LoanAccount?.LoanAccountNo ?? "",
-                    BorrowerName = s.LoanAccount?.Member != null ? $"{s.LoanAccount.Member.FirstName} {s.LoanAccount.Member.LastName}" : "",
+                    BorrowerName = s.LoanAccount?.Customer != null 
+                        ? $"{s.LoanAccount.Customer.FirstName} {s.LoanAccount.Customer.LastName}".Trim() 
+                        : (s.LoanAccount?.Member?.Customer != null ? $"{s.LoanAccount.Member.Customer.FirstName} {s.LoanAccount.Member.Customer.LastName}".Trim() : ""),
                     Category = s.Category,
                     CategoryMarathi = GetCategoryMarathi(s.Category),
                     OutstandingBalance = Math.Round(s.OutstandingBalance / 100000m, 2),
@@ -297,7 +305,9 @@ namespace Bhisi.Api.Controllers
                 {
                     LoanAccountID = s.LoanAccountID,
                     LoanAccountNo = s.LoanAccount?.LoanAccountNo ?? "",
-                    BorrowerName = s.LoanAccount?.Member != null ? $"{s.LoanAccount.Member.FirstName} {s.LoanAccount.Member.LastName}" : "",
+                    BorrowerName = s.LoanAccount?.Customer != null 
+                        ? $"{s.LoanAccount.Customer.FirstName} {s.LoanAccount.Customer.LastName}".Trim() 
+                        : (s.LoanAccount?.Member?.Customer != null ? $"{s.LoanAccount.Member.Customer.FirstName} {s.LoanAccount.Member.Customer.LastName}".Trim() : ""),
                     Category = s.Category,
                     CategoryMarathi = GetCategoryMarathi(s.Category),
                     OutstandingBalance = Math.Round(s.OutstandingBalance / 100000m, 2),
@@ -322,7 +332,10 @@ namespace Bhisi.Api.Controllers
             var statuses = await _context.LoanAccountNpaStatuses
                 .AsNoTracking()
                 .Include(s => s.LoanAccount)
+                    .ThenInclude(l => l!.Customer)
+                .Include(s => s.LoanAccount)
                     .ThenInclude(l => l!.Member)
+                        .ThenInclude(m => m!.Customer)
                 .Include(s => s.LoanAccount)
                     .ThenInclude(l => l!.LoanRate)
                 .Include(s => s.LoanAccount!.LoanInstallmentSchedules)
@@ -342,7 +355,10 @@ namespace Bhisi.Api.Controllers
                     statuses = await _context.LoanAccountNpaStatuses
                         .AsNoTracking()
                         .Include(s => s.LoanAccount)
+                            .ThenInclude(l => l!.Customer)
+                        .Include(s => s.LoanAccount)
                             .ThenInclude(l => l!.Member)
+                                .ThenInclude(m => m!.Customer)
                         .Include(s => s.LoanAccount)
                             .ThenInclude(l => l!.LoanRate)
                         .Include(s => s.LoanAccount!.LoanInstallmentSchedules)
@@ -439,7 +455,7 @@ namespace Bhisi.Api.Controllers
                     LoanAccountID = s.LoanAccountID,
                     AccountNo = loan.LoanAccountNo,
                     MemberCode = loan.Member?.MemberCode ?? loan.Member?.LegacyMemberNo ?? (loan.MemberID > 0 ? loan.MemberID.ToString() : "-"),
-                    Name = loan.Member != null ? $"{loan.Member.FirstName} {loan.Member.LastName}".Trim() : "Unknown",
+                    Name = loan.Customer != null ? $"{loan.Customer.FirstName} {loan.Customer.LastName}".Trim() : (loan.Member?.Customer != null ? $"{loan.Member.Customer.FirstName} {loan.Member.Customer.LastName}".Trim() : "Unknown"),
                     LoanType = loan.LoanRate?.ShortName ?? loan.LoanRate?.LoanType ?? "सामान्य कर्ज",
                     SanctionedAmount = Math.Round(loan.SanctionedAmount, 2),
                     DisbursementDate = loan.LoanDisbursementDate,

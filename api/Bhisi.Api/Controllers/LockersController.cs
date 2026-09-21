@@ -43,12 +43,13 @@ namespace Bhisi.Api.Controllers
             }
 
             var activeAllotments = await _context.LockerAllotments
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Where(a => a.Status == "Active")
                 .ToDictionaryAsync(a => a.LockerID, a => new {
                     a.AllotmentID,
                     a.LockerAccountNo,
-                    MemberName = (a.Member != null ? $"{a.Member.MemberCode ?? a.Member.MemberID.ToString()} - {a.Member.FirstName} {a.Member.LastName}" : ""),
+                    MemberName = (a.Customer != null ? $"{a.Customer.CIFNo} - {a.Customer.FirstName} {a.Customer.LastName}" : (a.Member?.Customer != null ? $"{a.Member.MemberCode ?? a.Member.MemberID.ToString()} - {a.Member.Customer.FirstName} {a.Member.Customer.LastName}" : "")),
                     a.AllotmentDate,
                     a.ExpiryDate
                 });
@@ -135,12 +136,13 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var activeAllotments = await _context.LockerAllotments
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Where(a => a.Status == "Active")
                 .ToDictionaryAsync(a => a.LockerID, a => new {
                     a.AllotmentID,
                     a.LockerAccountNo,
-                    MemberName = (a.Member != null ? $"{a.Member.MemberCode ?? a.Member.MemberID.ToString()} - {a.Member.FirstName} {a.Member.LastName}" : ""),
+                    MemberName = (a.Customer != null ? $"{a.Customer.CIFNo} - {a.Customer.FirstName} {a.Customer.LastName}" : (a.Member?.Customer != null ? $"{a.Member.MemberCode ?? a.Member.MemberID.ToString()} - {a.Member.Customer.FirstName} {a.Member.Customer.LastName}" : "")),
                     a.AllotmentDate,
                     a.ExpiryDate,
                     IsOverdue = a.ExpiryDate < DateTime.Today

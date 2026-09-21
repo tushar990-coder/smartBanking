@@ -345,6 +345,17 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         !m.memberCode.startsWith('TEMP')
       );
 
+      const getMemberNumericCode = (code?: string, id?: number) => {
+        if (code) {
+          const digits = code.replace(/\D/g, '');
+          const num = parseInt(digits, 10);
+          if (!isNaN(num) && num > 0) return num;
+        }
+        return id || 0;
+      };
+
+      strictlyMembers.sort((a, b) => getMemberNumericCode(a.memberCode, a.memberID) - getMemberNumericCode(b.memberCode, b.memberID));
+
       if (isMountedRef.current) {
         setMembers(strictlyMembers);
         fetchCustomers(strictlyMembers);
@@ -881,6 +892,16 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     const aadhaar = (m.aadhaarNo || '').toLowerCase();
 
     return name.includes(q) || code.includes(q) || cif.includes(q) || mobile.includes(q) || village.includes(q) || aadhaar.includes(q);
+  }).sort((a, b) => {
+    const getNum = (code?: string, id?: number) => {
+      if (code) {
+        const digits = code.replace(/\D/g, '');
+        const num = parseInt(digits, 10);
+        if (!isNaN(num) && num > 0) return num;
+      }
+      return id || 0;
+    };
+    return getNum(a.memberCode, a.memberID) - getNum(b.memberCode, b.memberID);
   });
 
   // KPI Calculations
@@ -911,8 +932,8 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 </span>
               )}
             </h1>
-            <p className="text-[11px] text-gray-500 font-medium">
-              महाराष्ट्र सहकारी संस्था अधिनियम, १९६० (MCS Act Sec 24 / Form I) नुसार नवीन सभासद अर्ज नोंदणी व संचालक मंडळ ठराव व्यवस्थापन
+            <p className="text-[10.5px] text-gray-500">
+              महाराष्ट्र सहकारी संस्था अधिनियम १९६० नियम ३२ व संस्था उपविधीनुसार अधिकृत सभासद नोंदणी व भाग वाटप प्रणाली
             </p>
           </div>
         </div>
@@ -1138,24 +1159,30 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
               <div>
-                <label className={labelClass}>सभासद क्रमांक (Member Code) <span className="text-red-500">*</span></label>
+                <label className={labelClass}>
+                  सभासद क्रमांक (Member Code) <span className="text-red-500">*</span>
+                  {editingId !== null && <span className="text-amber-700 text-[9.5px] ml-1 font-semibold">(कायमस्वरूपी लॉक)</span>}
+                </label>
                 <div className="flex gap-1">
                   <input
                     type="text"
                     value={formData.memberCode}
                     onChange={e => setFormData(prev => ({ ...prev, memberCode: e.target.value }))}
+                    readOnly={editingId !== null}
                     required
                     placeholder="उदा. MEM001050"
-                    className={`${inputClass} font-mono font-bold text-primary`}
+                    className={`${inputClass} font-mono font-bold ${editingId !== null ? 'bg-slate-100 text-slate-700 cursor-not-allowed border-slate-300' : 'text-primary'}`}
                   />
-                  <button
-                    type="button"
-                    onClick={fetchNextMemberCode}
-                    title="पुढील कोड रिफ्रेश करा"
-                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-gray-300 rounded-sm cursor-pointer shadow-2xs flex items-center justify-center h-[28px]"
-                  >
-                    <RefreshCw className="w-3 h-3 text-slate-700" />
-                  </button>
+                  {editingId === null && (
+                    <button
+                      type="button"
+                      onClick={fetchNextMemberCode}
+                      title="पुढील कोड रिफ्रेश करा"
+                      className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-gray-300 rounded-sm cursor-pointer shadow-2xs flex items-center justify-center h-[28px]"
+                    >
+                      <RefreshCw className="w-3 h-3 text-slate-700" />
+                    </button>
+                  )}
                 </div>
               </div>
 

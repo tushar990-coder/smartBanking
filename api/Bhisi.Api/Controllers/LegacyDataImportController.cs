@@ -245,7 +245,7 @@ namespace Bhisi.Api.Controllers
                             var aadhaar = reader["Adhar_no"].ToString() ?? "";
 
                             var legacyStr = legacyId.ToString();
-                            var existing = await _context.Members.FirstOrDefaultAsync(m => m.LegacyMemberNo == legacyStr || (empCode != null && m.LegacyMemberNo == empCode));
+                            var existing = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.LegacyMemberNo == legacyStr || (empCode != null && m.LegacyMemberNo == empCode));
                             if (existing == null)
                             {
                                 var mappedEmployerId = 0;
@@ -254,23 +254,44 @@ namespace Bhisi.Api.Controllers
                                     var emp = await _context.EmployerMasters.FirstOrDefaultAsync(e => e.LegacyTypeId == typeId.Value);
                                     if (emp != null) mappedEmployerId = emp.Id;
                                 }
-                                _context.Members.Add(new Member
+
+                                var customer = new Customer
                                 {
-                                    LegacyMemberNo = !string.IsNullOrWhiteSpace(empCode) ? empCode : legacyStr,
-                                    MemberCode = "M" + legacyId,
+                                    BranchID = 1,
+                                    CIFNo = $"CIF{legacyId:D6}",
                                     FirstName = fNameUni,
                                     MiddleName = mNameUni,
                                     LastName = lNameUni,
                                     MobileNo = string.IsNullOrEmpty(mobile) ? "0000000000" : mobile,
                                     AadhaarNo = string.IsNullOrEmpty(aadhaar) ? "NA" + legacyId : aadhaar,
                                     Address = "",
-                                    EmployerId = mappedEmployerId == 0 ? (int?)null : mappedEmployerId
+                                    EmployerId = mappedEmployerId == 0 ? (int?)null : mappedEmployerId,
+                                    RegistrationDate = DateTime.UtcNow,
+                                    Status = "Active"
+                                };
+                                _context.Customers.Add(customer);
+                                await _context.SaveChangesAsync();
+
+                                _context.Members.Add(new Member
+                                {
+                                    CustomerID = customer.CustomerID,
+                                    BranchID = 1,
+                                    LegacyMemberNo = !string.IsNullOrWhiteSpace(empCode) ? empCode : legacyStr,
+                                    MemberCode = "M" + legacyId,
+                                    JoiningDate = DateTime.Today,
+                                    Status = "Active",
+                                    MembershipType = "Regular"
                                 });
                                 importedMembers++;
                             }
                             else
                             {
-                                existing.FirstName = fNameUni; existing.MiddleName = mNameUni; existing.LastName = lNameUni;
+                                if (existing.Customer != null)
+                                {
+                                    existing.Customer.FirstName = fNameUni;
+                                    existing.Customer.MiddleName = mNameUni;
+                                    existing.Customer.LastName = lNameUni;
+                                }
                             }
                         }
                     }

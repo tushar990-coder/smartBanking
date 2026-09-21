@@ -5,7 +5,7 @@ interface CalculatedInterest {
   savingAccountID: number;
   accountNo: string;
   customerName?: string;
-  memberName?: string;
+
   currentBalance: number;
   interestRate: number;
   calculatedInterest: number;
@@ -191,7 +191,7 @@ const SavingInterestPostingMaster: React.FC = () => {
                 {calculationResults.map((item) => (
                   <tr key={item.savingAccountID} className="hover:bg-gray-50">
                     <td className="px-2 py-0.5 border-r border-gray-200 text-left font-medium text-primary">{item.accountNo}</td>
-                    <td className="px-2 py-0.5 border-r border-gray-200 text-left">{item.customerName || item.memberName}</td>
+                    <td className="px-2 py-0.5 border-r border-gray-200 text-left">{item.customerName}</td>
                     <td className="px-2 py-0.5 border-r border-gray-200 text-right">₹{item.currentBalance.toFixed(2)}</td>
                     <td className="px-2 py-0.5 border-r border-gray-200 text-center">{item.interestRate}%</td>
                     <td className="px-2 py-0.5 text-right font-bold text-emerald-600">₹{item.calculatedInterest.toFixed(2)}</td>

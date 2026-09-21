@@ -14,6 +14,12 @@
       "Enabled": false
     },
     {
+      "SansthaName": "Testing1 Environment",
+      "IISAppPoolName": "testing1-backend",
+      "BackendFolderPath": "D:\\WebApps\\testing1\\backend",
+      "Enabled": true
+    },
+    {
       "SansthaName": "Testing Environment",
       "IISAppPoolName": "apitesting",
       "BackendFolderPath": "D:\\WebApps\\Testing\\api.testing.hellomindspace.in",

@@ -68,7 +68,8 @@ New-Item -ItemType Directory -Path $backendTempPublish -Force | Out-Null
 
 Push-Location $apiDir
 try {
-    dotnet publish -c Release -r win-x64 --self-contained false -o $backendTempPublish
+    dotnet restore -r win-x64
+    dotnet publish -c Release -r win-x64 --no-self-contained -o $backendTempPublish
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $backendTempPublish "Bhisi.Api.dll"))) {
         Write-Host "[ERROR] Backend publish failed!" -ForegroundColor Red
         Pop-Location
@@ -111,6 +112,19 @@ $diffSource = Join-Path $workspaceRoot "tools\Compare_Database_Schema_Diff.sql"
 if (Test-Path $diffSource) {
     Copy-Item $diffSource (Join-Path $patchFolder "database\Compare_Database_Schema_Diff.sql") -Force
     Write-Host "  -> Compare Database Schema Diff SQL included in database package." -ForegroundColor White
+}
+
+$cleanupSource = Join-Path $workspaceRoot "tools\members_normalization_and_cleanup.sql"
+if (Test-Path $cleanupSource) {
+    Copy-Item $cleanupSource (Join-Path $patchFolder "database\members_normalization_and_cleanup.sql") -Force
+    Write-Host "  -> Members Normalization & Cleanup SQL included in database package." -ForegroundColor White
+}
+
+$alignCodesSource = Join-Path $workspaceRoot "tools\align_member_codes_1to1.sql"
+if (Test-Path $alignCodesSource) {
+    $alignSqlContent = [System.IO.File]::ReadAllText($alignCodesSource, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText((Join-Path $patchFolder "database\align_member_codes_1to1.sql"), $alignSqlContent, $utf8WithBom)
+    Write-Host "  -> align_member_codes_1to1.sql included in database package (UTF-8 BOM)." -ForegroundColor White
 }
 
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
@@ -524,6 +538,11 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $desktop = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
 $desktopDest = Join-Path $desktop "SmartBanking_VPS_Multi_App_Master_Patch.zip"
 Copy-Item $zipOutputFile $desktopDest -Force
+
+$localDesktop = "C:\Users\$env:USERNAME\Desktop"
+if ((Test-Path $localDesktop) -and ($localDesktop -ne $desktop)) {
+    Copy-Item $zipOutputFile (Join-Path $localDesktop "SmartBanking_VPS_Multi_App_Master_Patch.zip") -Force
+}
 
 Write-Host ""
 Write-Host "==================================================================" -ForegroundColor Green

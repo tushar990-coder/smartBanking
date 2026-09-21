@@ -56,7 +56,7 @@ namespace Bhisi.Api.Controllers
                     a.LockerAccountNo.ToLower().Contains(term) ||
                     (a.Locker != null && a.Locker.LockerNo.ToLower().Contains(term)) ||
                     (a.Customer != null && ((a.Customer.FirstName + " " + a.Customer.LastName).ToLower().Contains(term) || (a.Customer.CIFNo != null && a.Customer.CIFNo.ToLower().Contains(term)))) ||
-                    (a.Member != null && ((a.Member.FirstName + " " + a.Member.LastName).ToLower().Contains(term) || (a.Member.MemberCode != null && a.Member.MemberCode.ToLower().Contains(term)))) ||
+                    (a.Member != null && a.Member.Customer != null && (((a.Member.Customer.FirstName + " " + a.Member.Customer.LastName).ToLower().Contains(term)) || (a.Member.MemberCode != null && a.Member.MemberCode.ToLower().Contains(term)))) ||
                     (a.NomineeName != null && a.NomineeName.ToLower().Contains(term)));
             }
 
@@ -73,15 +73,15 @@ namespace Bhisi.Api.Controllers
                     TypeName = a.Locker != null && a.Locker.LockerType != null ? a.Locker.LockerType.TypeName : "",
                     a.CustomerID,
                     a.MemberID,
-                    CIFNo = a.Customer != null ? a.Customer.CIFNo : (a.Member != null ? a.Member.CIFNo : ""),
+                    CIFNo = a.Customer != null ? a.Customer.CIFNo : (a.Member != null && a.Member.Customer != null ? a.Member.Customer.CIFNo : ""),
                     MemberNo = a.Member != null ? (a.Member.MemberCode ?? a.Member.MemberID.ToString()) : "",
-                    MemberName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.LastName}" : (a.Member != null ? $"{a.Member.FirstName} {a.Member.LastName}" : ""),
-                    MemberPhone = a.Customer != null ? a.Customer.MobileNo : (a.Member != null ? a.Member.MobileNo : ""),
-                    MemberAddress = a.Customer != null ? a.Customer.Address : (a.Member != null ? a.Member.Address : ""),
+                    MemberName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.LastName}" : (a.Member != null && a.Member.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.LastName}" : ""),
+                    MemberPhone = a.Customer != null ? a.Customer.MobileNo : (a.Member != null && a.Member.Customer != null ? a.Member.Customer.MobileNo : ""),
+                    MemberAddress = a.Customer != null ? a.Customer.Address : (a.Member != null && a.Member.Customer != null ? a.Member.Customer.Address : ""),
                     a.JointMember1_ID,
-                    JointMember1_Name = a.JointMember1 != null ? $"{a.JointMember1.FirstName} {a.JointMember1.LastName}" : "",
+                    JointMember1_Name = a.JointMember1 != null && a.JointMember1.Customer != null ? (a.JointMember1.Customer.FirstName + " " + a.JointMember1.Customer.LastName).Trim() : "",
                     a.JointMember2_ID,
-                    JointMember2_Name = a.JointMember2 != null ? $"{a.JointMember2.FirstName} {a.JointMember2.LastName}" : "",
+                    JointMember2_Name = a.JointMember2 != null && a.JointMember2.Customer != null ? (a.JointMember2.Customer.FirstName + " " + a.JointMember2.Customer.LastName).Trim() : "",
                     a.OperatingInstruction,
                     a.AllotmentDate,
                     a.RentStartDate,
@@ -114,9 +114,9 @@ namespace Bhisi.Api.Controllers
             var a = await _context.LockerAllotments
                 .Include(x => x.Locker).ThenInclude(l => l!.LockerType)
                 .Include(x => x.Customer)
-                .Include(x => x.Member)
-                .Include(x => x.JointMember1)
-                .Include(x => x.JointMember2)
+                .Include(x => x.Member).ThenInclude(m => m!.Customer)
+                .Include(x => x.JointMember1).ThenInclude(m => m!.Customer)
+                .Include(x => x.JointMember2).ThenInclude(m => m!.Customer)
                 .Include(x => x.LinkedSavingAccount)
                 .FirstOrDefaultAsync(x => x.AllotmentID == id);
 
@@ -146,15 +146,15 @@ namespace Bhisi.Api.Controllers
                 TypeName = a.Locker?.LockerType?.TypeName ?? "",
                 a.CustomerID,
                 a.MemberID,
-                CIFNo = a.Customer?.CIFNo ?? a.Member?.CIFNo ?? "",
+                CIFNo = a.Customer?.CIFNo ?? a.Member?.Customer?.CIFNo ?? "",
                 MemberNo = a.Member?.MemberCode ?? a.Member?.MemberID.ToString() ?? "",
-                MemberName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.LastName}" : (a.Member != null ? $"{a.Member.FirstName} {a.Member.LastName}" : ""),
-                MemberPhone = a.Customer?.MobileNo ?? a.Member?.MobileNo ?? "",
-                MemberAddress = a.Customer?.Address ?? a.Member?.Address ?? "",
+                MemberName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.LastName}" : (a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.LastName}" : ""),
+                MemberPhone = a.Customer?.MobileNo ?? a.Member?.Customer?.MobileNo ?? "",
+                MemberAddress = a.Customer?.Address ?? a.Member?.Customer?.Address ?? "",
                 a.JointMember1_ID,
-                JointMember1_Name = a.JointMember1 != null ? $"{a.JointMember1.FirstName} {a.JointMember1.LastName}" : "",
+                JointMember1_Name = a.JointMember1?.Customer != null ? $"{a.JointMember1.Customer.FirstName} {a.JointMember1.Customer.LastName}".Trim() : "",
                 a.JointMember2_ID,
-                JointMember2_Name = a.JointMember2 != null ? $"{a.JointMember2.FirstName} {a.JointMember2.LastName}" : "",
+                JointMember2_Name = a.JointMember2?.Customer != null ? $"{a.JointMember2.Customer.FirstName} {a.JointMember2.Customer.LastName}".Trim() : "",
                 a.OperatingInstruction,
                 a.AllotmentDate,
                 a.RentStartDate,
@@ -268,9 +268,11 @@ namespace Bhisi.Api.Controllers
             int? depositVoucherId = null;
             int? rentVoucherId = null;
             
-            var accountHolderName = member != null 
-                ? $"{member.FirstName} {member.LastName}".Trim() 
-                : $"{customer?.FirstName} {customer?.LastName}".Trim();
+            var accountHolderName = (customer != null 
+                ? $"{customer.FirstName} {customer.LastName}".Trim() 
+                : (member?.Customer != null 
+                    ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
+                    : "Locker Holder"));
 
             // 1. Post Security Deposit Voucher if amount > 0 and GL configured
             if (dto.SecurityDepositAmount > 0 && locker.LockerType?.DepositLiabilityLedgerID.HasValue == true)

@@ -82,7 +82,7 @@ namespace Bhisi.Api.Controllers
         // GET: api/Members
         [AllowAnonymous]
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Member>>> GetMembers(
+        public async Task<ActionResult<IEnumerable<MemberResponseDto>>> GetMembers(
             [FromQuery] int? branchId = null,
             [FromQuery] string? status = null,
             [FromQuery] bool? hasSharesOnly = null,
@@ -130,68 +130,19 @@ namespace Bhisi.Api.Controllers
                 }
 
                 var members = await query.ToListAsync();
-
-                // Defensive null-handling: ensure no string field is null in the response
-                foreach (var member in members)
-                {
-                    member.FirstName = member.FirstName ?? string.Empty;
-                    member.LastName = member.LastName ?? string.Empty;
-                    member.NickName = member.NickName ?? string.Empty;
-                    member.MobileNo = member.MobileNo ?? string.Empty;
-                    member.AadhaarNo = member.AadhaarNo ?? string.Empty;
-                    member.Status = member.Status ?? "Active";
-                    member.MemberCode = member.MemberCode ?? string.Empty;
-                    member.MiddleName = member.MiddleName ?? string.Empty;
-                    member.Address = member.Address ?? string.Empty;
-                    member.Village = member.Village ?? string.Empty;
-                    member.Taluka = member.Taluka ?? string.Empty;
-                    member.District = member.District ?? string.Empty;
-                    member.Email = member.Email ?? string.Empty;
-                    member.PANNo = member.PANNo ?? string.Empty;
-                    member.NomineeName = member.NomineeName ?? string.Empty;
-                    member.NomineeNameEng = member.NomineeNameEng ?? string.Empty;
-                    member.NomineeRelation = member.NomineeRelation ?? string.Empty;
-                    member.NomineeAddress = member.NomineeAddress ?? string.Empty;
-                    member.NomineeGuardianName = member.NomineeGuardianName ?? string.Empty;
-                    member.PhotoPath = member.PhotoPath ?? string.Empty;
-                    member.SignaturePath = member.SignaturePath ?? string.Empty;
-                    member.AadhaarDocPath = member.AadhaarDocPath ?? string.Empty;
-                    member.PanDocPath = member.PanDocPath ?? string.Empty;
-                    member.Gender = member.Gender ?? string.Empty;
-                    member.Occupation = member.Occupation ?? string.Empty;
-                    member.CasteCategory = member.CasteCategory ?? string.Empty;
-                    member.Caste = member.Caste ?? string.Empty;
-                    member.LegacyMemberNo = member.LegacyMemberNo ?? string.Empty;
-                    member.FirstNameEng = member.FirstNameEng ?? string.Empty;
-                    member.MiddleNameEng = member.MiddleNameEng ?? string.Empty;
-                    member.LastNameEng = member.LastNameEng ?? string.Empty;
-                    member.AddressEng = member.AddressEng ?? string.Empty;
-                    member.GuardianName = member.GuardianName ?? string.Empty;
-                    member.GuardianNameEng = member.GuardianNameEng ?? string.Empty;
-                    member.GuardianRelation = member.GuardianRelation ?? string.Empty;
-                    member.GuardianAadhaarNo = member.GuardianAadhaarNo ?? string.Empty;
-                    member.GuardianMobileNo = member.GuardianMobileNo ?? string.Empty;
-                    member.GuardianAddress = member.GuardianAddress ?? string.Empty;
-                    member.LegacyMemberNo = member.LegacyMemberNo ?? string.Empty;
-
-                    if (string.IsNullOrWhiteSpace(member.CIFNo))
-                    {
-                        member.CIFNo = GenerateCifNo(member);
-                    }
-
-                    if (member.Branch != null)
-                    {
-                        member.Branch.BranchCode = member.Branch.BranchCode ?? string.Empty;
-                        member.Branch.BranchName = member.Branch.BranchName ?? string.Empty;
-                        member.Branch.Address = member.Branch.Address ?? string.Empty;
-                        member.Branch.BranchType = member.Branch.BranchType ?? "Branch";
-                        member.Branch.IFSCCode = member.Branch.IFSCCode ?? string.Empty;
-                        member.Branch.MobileNo = member.Branch.MobileNo ?? string.Empty;
-                        member.Branch.Email = member.Branch.Email ?? string.Empty;
-                    }
-                }
-
-                return members;
+                var result = members
+                    .OrderBy(m => {
+                        if (!string.IsNullOrWhiteSpace(m.MemberCode))
+                        {
+                            var digits = new string(m.MemberCode.Where(char.IsDigit).ToArray());
+                            if (int.TryParse(digits, out int num) && num > 0) return num;
+                        }
+                        return m.MemberID;
+                    })
+                    .ThenBy(m => m.MemberID)
+                    .Select(MemberResponseDto.FromMember)
+                    .ToList();
+                return Ok(result);
             }
             catch (Exception ex)
             {
@@ -206,19 +157,14 @@ namespace Bhisi.Api.Controllers
 
         public static string GenerateCifNo(Member member)
         {
-            if (!string.IsNullOrWhiteSpace(member.CIFNo))
+            if (member.Customer != null && !string.IsNullOrWhiteSpace(member.Customer.CIFNo))
             {
-                return member.CIFNo;
+                return member.Customer.CIFNo;
             }
 
             if (!string.IsNullOrWhiteSpace(member.LegacyMemberNo) && int.TryParse(member.LegacyMemberNo.Trim(), out int legacyNum))
             {
                 return "CIF" + legacyNum.ToString("D6");
-            }
-
-            if (member.LegacyMemberId.HasValue && member.LegacyMemberId.Value > 0)
-            {
-                return "CIF" + member.LegacyMemberId.Value.ToString("D6");
             }
 
             if (!string.IsNullOrWhiteSpace(member.MemberCode))
@@ -236,15 +182,18 @@ namespace Bhisi.Api.Controllers
         [HttpPost("fix-cifs")]
         public async Task<IActionResult> FixCifNumbers()
         {
-            var members = await _context.Members.ToListAsync();
+            var members = await _context.Members.Include(m => m.Customer).ToListAsync();
             int updatedCount = 0;
             foreach (var member in members)
             {
-                var correctCif = GenerateCifNo(member);
-                if (member.CIFNo != correctCif)
+                if (member.Customer != null)
                 {
-                    member.CIFNo = correctCif;
-                    updatedCount++;
+                    var correctCif = GenerateCifNo(member);
+                    if (member.Customer.CIFNo != correctCif)
+                    {
+                        member.Customer.CIFNo = correctCif;
+                        updatedCount++;
+                    }
                 }
             }
             if (updatedCount > 0)
@@ -257,7 +206,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Members/5
         [HttpGet("{id:int}")]
-        public async Task<ActionResult<Member>> GetMember(int id)
+        public async Task<ActionResult<MemberResponseDto>> GetMember(int id)
         {
             var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
             var member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == id);
@@ -272,7 +221,7 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(403, new { message = "आपल्याला इतर शाखेतील सभासदांची माहिती पाहण्याची परवानगी नाही (Access Denied: Cross-Branch Isolation Barrier Violation)." });
             }
 
-            return member;
+            return Ok(MemberResponseDto.FromMember(member));
         }
 
         // GET: api/Members/next-code
@@ -405,12 +354,12 @@ namespace Bhisi.Api.Controllers
                         CIFNo = m.Customer != null ? m.Customer.CIFNo : "",
                         FullName = m.Customer != null
                             ? $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Replace("  ", " ").Trim()
-                            : $"{m.FirstName} {m.MiddleName} {m.LastName}".Replace("  ", " ").Trim(),
-                        FirstName = m.Customer != null ? m.Customer.FirstName : m.FirstName,
-                        MiddleName = m.Customer != null ? m.Customer.MiddleName : m.MiddleName,
-                        LastName = m.Customer != null ? m.Customer.LastName : m.LastName,
-                        MobileNo = m.Customer != null ? m.Customer.MobileNo : m.MobileNo,
-                        Village = m.Customer != null ? m.Customer.Village : m.Village,
+                            : "",
+                        FirstName = m.Customer != null ? m.Customer.FirstName : "",
+                        MiddleName = m.Customer != null ? m.Customer.MiddleName : "",
+                        LastName = m.Customer != null ? m.Customer.LastName : "",
+                        MobileNo = m.Customer != null ? m.Customer.MobileNo : "",
+                        Village = m.Customer != null ? m.Customer.Village : "",
                         m.JoiningDate,
                         m.MembershipType,
                         m.LegacyMemberNo,
@@ -454,7 +403,7 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        private List<string> ValidateMemberLengths(Member member)
+        private List<string> ValidateCustomerLengths(MemberRequestDto member)
         {
             var errors = new List<string>();
 
@@ -524,13 +473,13 @@ namespace Bhisi.Api.Controllers
 
         // PUT: api/Members/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutMember(int id, Member member)
+        public async Task<IActionResult> PutMember(int id, [FromBody] MemberRequestDto req)
         {
-            if (member.MemberID > 0 && id != member.MemberID)
+            if (req.MemberID > 0 && id != req.MemberID)
             {
                 return BadRequest(new { message = "Member ID mismatch." });
             }
-            member.MemberID = id;
+            req.MemberID = id;
 
             var (userId, username, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
 
@@ -552,185 +501,193 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            var customer = existingMember.Customer;
+
             if (!isHeadOfficeAdmin)
             {
-                if (existingMember.BranchID != userBranchId || member.BranchID != userBranchId)
+                if (existingMember.BranchID != userBranchId || req.BranchID != userBranchId)
                 {
                     return StatusCode(403, new { message = "आपण केवळ आपल्या शाखेतील सभासदांची माहिती अद्ययावत करू शकता (Cross-Branch Edit Denied)." });
                 }
-                member.BranchID = userBranchId;
+                req.BranchID = userBranchId;
             }
 
             // Fill any missing KYC fields from existing customer
-            if (string.IsNullOrWhiteSpace(member.FirstName)) member.FirstName = existingMember.FirstName;
-            if (string.IsNullOrWhiteSpace(member.LastName)) member.LastName = existingMember.LastName;
-            if (string.IsNullOrWhiteSpace(member.MobileNo)) member.MobileNo = existingMember.MobileNo;
-            if (string.IsNullOrWhiteSpace(member.AadhaarNo)) member.AadhaarNo = existingMember.AadhaarNo;
-            if (string.IsNullOrWhiteSpace(member.PANNo)) member.PANNo = existingMember.PANNo;
-            if (string.IsNullOrWhiteSpace(member.CIFNo)) member.CIFNo = existingMember.CIFNo;
+            if (string.IsNullOrWhiteSpace(req.FirstName)) req.FirstName = customer.FirstName;
+            if (string.IsNullOrWhiteSpace(req.LastName)) req.LastName = customer.LastName;
+            if (string.IsNullOrWhiteSpace(req.MobileNo)) req.MobileNo = customer.MobileNo;
+            if (string.IsNullOrWhiteSpace(req.AadhaarNo)) req.AadhaarNo = customer.AadhaarNo;
+            if (string.IsNullOrWhiteSpace(req.PANNo)) req.PANNo = customer.PANNo;
+            if (string.IsNullOrWhiteSpace(req.CIFNo)) req.CIFNo = customer.CIFNo;
 
             // Validate required fields before saving
             var validationErrors = new List<string>();
-            if (string.IsNullOrWhiteSpace(member.FirstName))
+            if (string.IsNullOrWhiteSpace(req.FirstName))
                 validationErrors.Add("पहिले नाव (FirstName) आवश्यक आहे.");
-            if (string.IsNullOrWhiteSpace(member.LastName))
+            if (string.IsNullOrWhiteSpace(req.LastName))
                 validationErrors.Add("आडनाव (LastName) आवश्यक आहे.");
 
             // Sanitize optional fields to null if empty
-            member.MobileNo = string.IsNullOrWhiteSpace(member.MobileNo) ? null : member.MobileNo.Trim();
-            member.AadhaarNo = string.IsNullOrWhiteSpace(member.AadhaarNo) ? null : member.AadhaarNo.Trim();
-            member.PANNo = string.IsNullOrWhiteSpace(member.PANNo) ? null : member.PANNo.Trim().ToUpper();
-            member.MemberCode = string.IsNullOrWhiteSpace(member.MemberCode) ? null : member.MemberCode.Trim();
+            req.MobileNo = string.IsNullOrWhiteSpace(req.MobileNo) ? null : req.MobileNo.Trim();
+            req.AadhaarNo = string.IsNullOrWhiteSpace(req.AadhaarNo) ? null : req.AadhaarNo.Trim();
+            req.PANNo = string.IsNullOrWhiteSpace(req.PANNo) ? null : req.PANNo.Trim().ToUpper();
+            req.MemberCode = string.IsNullOrWhiteSpace(req.MemberCode) ? null : req.MemberCode.Trim();
 
             if (validationErrors.Count > 0)
                 return BadRequest(new { message = "आवश्यक माहिती भरा (Required fields missing)", errors = validationErrors });
 
-            var lengthErrors = ValidateMemberLengths(member);
+            var lengthErrors = ValidateCustomerLengths(req);
             if (lengthErrors.Count > 0)
                 return BadRequest(new { message = "माहितीची लांबी डेटाबेसच्या मर्यादेपेक्षा जास्त आहे (Field length limit exceeded)", errors = lengthErrors });
 
             // Duplicate checks for other members
-            member.LegacyMemberNo = string.IsNullOrWhiteSpace(member.LegacyMemberNo) ? null : member.LegacyMemberNo.Trim();
+            req.LegacyMemberNo = string.IsNullOrWhiteSpace(req.LegacyMemberNo) ? null : req.LegacyMemberNo.Trim();
 
-            if (!string.IsNullOrWhiteSpace(member.MemberCode))
+            if (!string.IsNullOrWhiteSpace(req.MemberCode))
             {
                 bool codeExists = await _context.Members
-                    .AnyAsync(m => m.MemberID != id && !m.IsDeleted && m.MemberCode == member.MemberCode);
+                    .AnyAsync(m => m.MemberID != id && !m.IsDeleted && m.MemberCode == req.MemberCode);
                 if (codeExists)
                 {
-                    return BadRequest(new { message = $"हा सभासद क्रमांक ({member.MemberCode}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा सभासद क्रमांक ({req.MemberCode}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(member.LegacyMemberNo))
+            if (!string.IsNullOrWhiteSpace(req.LegacyMemberNo))
             {
                 var existingLegacyMember = await _context.Members
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(m => m.MemberID != id && !m.IsDeleted && m.LegacyMemberNo == member.LegacyMemberNo);
+                    .Include(m => m.Customer)
+                    .FirstOrDefaultAsync(m => m.MemberID != id && !m.IsDeleted && m.LegacyMemberNo == req.LegacyMemberNo);
                 if (existingLegacyMember != null)
                 {
-                    return BadRequest(new { message = $"हा जुना सभासद आयडी ({member.LegacyMemberNo}) आधीच सभासद '{existingLegacyMember.FirstName} {existingLegacyMember.LastName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे." });
+                    string legacyName = existingLegacyMember.Customer != null ? $"{existingLegacyMember.Customer.FirstName} {existingLegacyMember.Customer.LastName}".Trim() : "Member";
+                    return BadRequest(new { message = $"हा जुना सभासद आयडी ({req.LegacyMemberNo}) आधीच सभासद '{legacyName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे." });
                 }
             }
 
-            // Exclude the current member's linked customer from duplicate checks
-            var currentCustomerIds = await _context.Members.Include(m => m.Customer).Where(m => m.MemberID == id && m.CustomerID.HasValue).Select(m => m.CustomerID!.Value).ToListAsync();
+            // Exclude current customer from duplicate checks
+            int curCustId = customer.CustomerID;
 
-            if (!string.IsNullOrWhiteSpace(member.AadhaarNo))
+            if (!string.IsNullOrWhiteSpace(req.AadhaarNo))
             {
-                bool aadhaarExists = await _context.Customers.AnyAsync(c => !currentCustomerIds.Contains(c.CustomerID) && c.AadhaarNo == member.AadhaarNo);
+                bool aadhaarExists = await _context.Customers.AnyAsync(c => c.CustomerID != curCustId && c.AadhaarNo == req.AadhaarNo);
                 if (aadhaarExists)
                 {
-                    return BadRequest(new { message = $"हा आधार नंबर ({member.AadhaarNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा आधार नंबर ({req.AadhaarNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(member.PANNo))
+            if (!string.IsNullOrWhiteSpace(req.PANNo))
             {
-                bool panExists = await _context.Customers.AnyAsync(c => !currentCustomerIds.Contains(c.CustomerID) && c.PANNo == member.PANNo);
+                bool panExists = await _context.Customers.AnyAsync(c => c.CustomerID != curCustId && c.PANNo == req.PANNo);
                 if (panExists)
                 {
-                    return BadRequest(new { message = $"हा पॅन नंबर ({member.PANNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा पॅन नंबर ({req.PANNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(member.MobileNo))
+            if (!string.IsNullOrWhiteSpace(req.MobileNo))
             {
-                bool mobileExists = await _context.Customers.AnyAsync(c => !currentCustomerIds.Contains(c.CustomerID) && c.MobileNo == member.MobileNo);
+                bool mobileExists = await _context.Customers.AnyAsync(c => c.CustomerID != curCustId && c.MobileNo == req.MobileNo);
                 if (mobileExists)
                 {
-                    return BadRequest(new { message = $"हा मोबाईल नंबर ({member.MobileNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा मोबाईल नंबर ({req.MobileNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
             }
 
-            // Minor Age Validation on Backend
-            if (member.BirthDate.HasValue)
+            // Minor Age Validation
+            if (req.BirthDate.HasValue)
             {
                 var today = DateTime.Today;
-                int age = today.Year - member.BirthDate.Value.Year;
-                if (member.BirthDate.Value.Date > today.AddYears(-age)) age--;
+                int age = today.Year - req.BirthDate.Value.Year;
+                if (req.BirthDate.Value.Date > today.AddYears(-age)) age--;
 
                 if (age < 18)
                 {
-                    member.IsMinor = true;
-                    if (string.IsNullOrWhiteSpace(member.GuardianName))
+                    req.IsMinor = true;
+                    if (string.IsNullOrWhiteSpace(req.GuardianName))
                     {
                         return BadRequest(new { message = "सभासदाचे वय १८ वर्षांपेक्षा कमी (अज्ञान) असल्याने पालकाचे नाव (Guardian Name) आवश्यक आहे." });
                     }
-                    if (string.IsNullOrWhiteSpace(member.GuardianRelation))
+                    if (string.IsNullOrWhiteSpace(req.GuardianRelation))
                     {
                         return BadRequest(new { message = "अज्ञान सभासदासाठी पालकाचे नाते (Guardian Relation) निवडणे आवश्यक आहे." });
                     }
                 }
                 else
                 {
-                    member.IsMinor = false;
+                    req.IsMinor = false;
                 }
             }
 
-            existingMember.BranchID = member.BranchID;
-            existingMember.LegacyMemberNo = member.LegacyMemberNo;
-            existingMember.FirstName = member.FirstName;
-            existingMember.MiddleName = member.MiddleName;
-            existingMember.LastName = member.LastName;
-            existingMember.NickName = member.NickName;
-            existingMember.FirstNameEng = member.FirstNameEng;
-            existingMember.MiddleNameEng = member.MiddleNameEng;
-            existingMember.LastNameEng = member.LastNameEng;
-            existingMember.Address = member.Address;
-            existingMember.AddressEng = member.AddressEng;
-            existingMember.Village = member.Village;
-            existingMember.Taluka = member.Taluka;
-            existingMember.District = member.District;
-            existingMember.MobileNo = member.MobileNo;
-            existingMember.AadhaarNo = member.AadhaarNo;
-            existingMember.PANNo = member.PANNo;
-            existingMember.JoiningDate = member.JoiningDate;
-            existingMember.NomineeName = member.NomineeName;
-            existingMember.NomineeNameEng = member.NomineeNameEng;
-            existingMember.NomineeRelation = member.NomineeRelation;
-            existingMember.NomineeAddress = member.NomineeAddress;
-            existingMember.NomineeBirthDate = member.NomineeBirthDate;
-            existingMember.NomineeIsMinor = member.NomineeIsMinor;
-            existingMember.NomineeGuardianName = member.NomineeGuardianName;
-            existingMember.PhotoPath = member.PhotoPath;
-            existingMember.SignaturePath = member.SignaturePath;
-            if (!string.IsNullOrWhiteSpace(member.CIFNo) && member.CIFNo != existingMember.CIFNo)
+            // Update linked Customer entity
+            customer.FirstName = req.FirstName ?? customer.FirstName;
+            customer.MiddleName = req.MiddleName ?? customer.MiddleName;
+            customer.LastName = req.LastName ?? customer.LastName;
+            customer.NickName = req.NickName ?? customer.NickName;
+            customer.FirstNameEng = req.FirstNameEng ?? customer.FirstNameEng;
+            customer.MiddleNameEng = req.MiddleNameEng ?? customer.MiddleNameEng;
+            customer.LastNameEng = req.LastNameEng ?? customer.LastNameEng;
+            customer.Address = req.Address ?? customer.Address;
+            customer.AddressEng = req.AddressEng ?? customer.AddressEng;
+            customer.Village = req.Village ?? customer.Village;
+            customer.Taluka = req.Taluka ?? customer.Taluka;
+            customer.District = req.District ?? customer.District;
+            customer.MobileNo = req.MobileNo;
+            customer.AadhaarNo = req.AadhaarNo;
+            customer.PANNo = req.PANNo;
+            customer.NomineeName = req.NomineeName ?? customer.NomineeName;
+            customer.NomineeNameEng = req.NomineeNameEng ?? customer.NomineeNameEng;
+            customer.NomineeRelation = req.NomineeRelation ?? customer.NomineeRelation;
+            customer.NomineeAddress = req.NomineeAddress ?? customer.NomineeAddress;
+            customer.NomineeBirthDate = req.NomineeBirthDate ?? customer.NomineeBirthDate;
+            customer.NomineeIsMinor = req.NomineeIsMinor;
+            customer.NomineeGuardianName = req.NomineeGuardianName ?? customer.NomineeGuardianName;
+            customer.PhotoPath = req.PhotoPath ?? customer.PhotoPath;
+            customer.SignaturePath = req.SignaturePath ?? customer.SignaturePath;
+            customer.AadhaarDocPath = req.AadhaarDocPath ?? customer.AadhaarDocPath;
+            customer.PanDocPath = req.PanDocPath ?? customer.PanDocPath;
+            customer.Gender = req.Gender ?? customer.Gender;
+            customer.BirthDate = req.BirthDate ?? customer.BirthDate;
+            customer.Occupation = req.Occupation ?? customer.Occupation;
+            customer.CasteCategory = req.CasteCategory ?? customer.CasteCategory;
+            customer.Caste = req.Caste ?? customer.Caste;
+            customer.Email = req.Email ?? customer.Email;
+            customer.IsMinor = req.IsMinor;
+            customer.GuardianName = req.GuardianName ?? customer.GuardianName;
+            customer.GuardianNameEng = req.GuardianNameEng ?? customer.GuardianNameEng;
+            customer.GuardianRelation = req.GuardianRelation ?? customer.GuardianRelation;
+            customer.GuardianAadhaarNo = req.GuardianAadhaarNo ?? customer.GuardianAadhaarNo;
+            customer.GuardianMobileNo = req.GuardianMobileNo ?? customer.GuardianMobileNo;
+            customer.GuardianAddress = req.GuardianAddress ?? customer.GuardianAddress;
+            customer.EmployerId = req.EmployerId ?? customer.EmployerId;
+            customer.UpdatedBy = userId;
+            customer.UpdatedOn = DateTime.Now;
+
+            if (!string.IsNullOrWhiteSpace(req.CIFNo) && req.CIFNo != customer.CIFNo)
             {
-                bool cifExists = await _context.Customers.IgnoreQueryFilters().AnyAsync(c => !currentCustomerIds.Contains(c.CustomerID) && c.CIFNo == member.CIFNo);
+                bool cifExists = await _context.Customers.IgnoreQueryFilters().AnyAsync(c => c.CustomerID != curCustId && c.CIFNo == req.CIFNo);
                 if (cifExists)
                 {
-                    return BadRequest(new { message = $"हा CIF क्रमांक ({member.CIFNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा CIF क्रमांक ({req.CIFNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
-                existingMember.CIFNo = member.CIFNo.Trim();
+                customer.CIFNo = req.CIFNo.Trim();
             }
 
-            existingMember.AadhaarDocPath = member.AadhaarDocPath;
-            existingMember.PanDocPath = member.PanDocPath;
-            existingMember.Gender = member.Gender;
-            existingMember.BirthDate = member.BirthDate;
-            existingMember.Occupation = member.Occupation;
-            existingMember.CasteCategory = member.CasteCategory;
-            existingMember.Caste = member.Caste;
-            existingMember.Email = member.Email;
-            existingMember.IsMinor = member.IsMinor;
-            existingMember.GuardianName = member.GuardianName;
-            existingMember.GuardianNameEng = member.GuardianNameEng;
-            existingMember.GuardianRelation = member.GuardianRelation;
-            existingMember.GuardianAadhaarNo = member.GuardianAadhaarNo;
-            existingMember.GuardianMobileNo = member.GuardianMobileNo;
-            existingMember.GuardianAddress = member.GuardianAddress;
-            existingMember.EmployerId = member.EmployerId;
-            existingMember.LegacyMemberNo = member.LegacyMemberNo;
-            existingMember.Status = member.Status;
-            existingMember.MembershipType = string.IsNullOrWhiteSpace(member.MembershipType) ? "Regular" : member.MembershipType.Trim();
+            // Update Member database entity
+            existingMember.BranchID = req.BranchID;
+            existingMember.LegacyMemberNo = req.LegacyMemberNo;
+            existingMember.JoiningDate = req.JoiningDate;
+            existingMember.Status = req.Status;
+            existingMember.MembershipType = string.IsNullOrWhiteSpace(req.MembershipType) ? "Regular" : req.MembershipType.Trim();
             existingMember.UpdatedBy = userId;
             existingMember.UpdatedOn = DateTime.Now;
 
             try
             {
                 await _context.SaveChangesAsync();
-                await LogAuditAsync("MEMBER_UPDATE", id.ToString(), $"सभासद माहिती अद्ययावत केली: {existingMember.FirstName} {existingMember.LastName}, CIF: {existingMember.CIFNo}");
+                await LogAuditAsync("MEMBER_UPDATE", id.ToString(), $"सभासद माहिती अद्ययावत केली: {customer.FirstName} {customer.LastName}, CIF: {customer.CIFNo}");
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -746,15 +703,15 @@ namespace Bhisi.Api.Controllers
             catch (DbUpdateException ex)
             {
                 string detailedError = ex.InnerException?.Message ?? ex.Message;
-                if (detailedError.Contains("IX_Members_AadhaarNo") || detailedError.Contains("AadhaarNo"))
+                if (detailedError.Contains("IX_Customers_AadhaarNo") || detailedError.Contains("AadhaarNo"))
                 {
                     return BadRequest(new { message = "हा आधार नंबर आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
-                if (detailedError.Contains("IX_Members_PANNo") || detailedError.Contains("PANNo"))
+                if (detailedError.Contains("IX_Customers_PANNo") || detailedError.Contains("PANNo"))
                 {
                     return BadRequest(new { message = "हा पॅन नंबर आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
-                if (detailedError.Contains("IX_Members_CIFNo") || detailedError.Contains("CIFNo"))
+                if (detailedError.Contains("IX_Customers_CIFNo") || detailedError.Contains("CIFNo"))
                 {
                     return BadRequest(new { message = "हा CIF क्रमांक आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
@@ -765,32 +722,29 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "खातेदार अपडेट करताना त्रुटी आली: " + detailedError });
             }
 
-            return Ok(existingMember);
+            return Ok(MemberResponseDto.FromMember(existingMember));
         }
 
         // POST: api/Members
         [HttpPost]
-        public async Task<ActionResult<Member>> PostMember(Member member)
+        public async Task<ActionResult<MemberResponseDto>> PostMember([FromBody] MemberRequestDto req)
         {
             var (userId, username, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
 
             if (!isHeadOfficeAdmin)
             {
-                member.BranchID = userBranchId;
+                req.BranchID = userBranchId;
             }
 
-            // Disconnect navigation entities to prevent EF Core from attempting cascading insertions
-            member.Branch = null;
-            member.Employer = null;
-            member.BranchID = member.BranchID > 0 ? member.BranchID : (userBranchId > 0 ? userBranchId : 1);
+            req.BranchID = req.BranchID > 0 ? req.BranchID : (userBranchId > 0 ? userBranchId : 1);
 
             Customer? customer = null;
-            if (member.CustomerID.HasValue && member.CustomerID.Value > 0)
+            if (req.CustomerID.HasValue && req.CustomerID.Value > 0)
             {
-                customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == member.CustomerID.Value);
+                customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == req.CustomerID.Value);
                 if (customer == null)
                 {
-                    return BadRequest(new { message = $"दिलेला खातेदार आयडी ({member.CustomerID}) आढळला नाही." });
+                    return BadRequest(new { message = $"दिलेला खातेदार आयडी ({req.CustomerID}) आढळला नाही." });
                 }
 
                 var existingMemberForCust = await _context.Members
@@ -802,112 +756,114 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // Auto-fill KYC fields from customer if omitted in member payload
-                if (string.IsNullOrWhiteSpace(member.FirstName)) member.FirstName = customer.FirstName;
-                if (string.IsNullOrWhiteSpace(member.LastName)) member.LastName = customer.LastName;
-                if (string.IsNullOrWhiteSpace(member.MiddleName)) member.MiddleName = customer.MiddleName;
-                if (string.IsNullOrWhiteSpace(member.MobileNo)) member.MobileNo = customer.MobileNo;
-                if (string.IsNullOrWhiteSpace(member.AadhaarNo)) member.AadhaarNo = customer.AadhaarNo;
-                if (string.IsNullOrWhiteSpace(member.PANNo)) member.PANNo = customer.PANNo;
-                if (string.IsNullOrWhiteSpace(member.CIFNo)) member.CIFNo = customer.CIFNo;
-                if (string.IsNullOrWhiteSpace(member.Address)) member.Address = customer.Address;
-                if (string.IsNullOrWhiteSpace(member.Village)) member.Village = customer.Village;
+                if (string.IsNullOrWhiteSpace(req.FirstName)) req.FirstName = customer.FirstName;
+                if (string.IsNullOrWhiteSpace(req.LastName)) req.LastName = customer.LastName;
+                if (string.IsNullOrWhiteSpace(req.MiddleName)) req.MiddleName = customer.MiddleName;
+                if (string.IsNullOrWhiteSpace(req.MobileNo)) req.MobileNo = customer.MobileNo;
+                if (string.IsNullOrWhiteSpace(req.AadhaarNo)) req.AadhaarNo = customer.AadhaarNo;
+                if (string.IsNullOrWhiteSpace(req.PANNo)) req.PANNo = customer.PANNo;
+                if (string.IsNullOrWhiteSpace(req.CIFNo)) req.CIFNo = customer.CIFNo;
+                if (string.IsNullOrWhiteSpace(req.Address)) req.Address = customer.Address;
+                if (string.IsNullOrWhiteSpace(req.Village)) req.Village = customer.Village;
             }
 
             // Validate required fields before saving
             var validationErrors = new List<string>();
-            if (string.IsNullOrWhiteSpace(member.FirstName))
+            if (string.IsNullOrWhiteSpace(req.FirstName))
                 validationErrors.Add("पहिले नाव (FirstName) आवश्यक आहे.");
-            if (string.IsNullOrWhiteSpace(member.LastName))
+            if (string.IsNullOrWhiteSpace(req.LastName))
                 validationErrors.Add("आडनाव (LastName) आवश्यक आहे.");
 
             // Sanitize optional fields to null if empty
-            member.MobileNo = string.IsNullOrWhiteSpace(member.MobileNo) ? null : member.MobileNo.Trim();
-            member.AadhaarNo = string.IsNullOrWhiteSpace(member.AadhaarNo) ? null : member.AadhaarNo.Trim();
-            member.PANNo = string.IsNullOrWhiteSpace(member.PANNo) ? null : member.PANNo.Trim().ToUpper();
-            member.MemberCode = string.IsNullOrWhiteSpace(member.MemberCode) ? null : member.MemberCode.Trim();
+            req.MobileNo = string.IsNullOrWhiteSpace(req.MobileNo) ? null : req.MobileNo.Trim();
+            req.AadhaarNo = string.IsNullOrWhiteSpace(req.AadhaarNo) ? null : req.AadhaarNo.Trim();
+            req.PANNo = string.IsNullOrWhiteSpace(req.PANNo) ? null : req.PANNo.Trim().ToUpper();
+            req.MemberCode = string.IsNullOrWhiteSpace(req.MemberCode) ? null : req.MemberCode.Trim();
 
             if (validationErrors.Count > 0)
                 return BadRequest(new { message = "आवश्यक माहिती भरा (Required fields missing)", errors = validationErrors });
 
-            var lengthErrors = ValidateMemberLengths(member);
+            var lengthErrors = ValidateCustomerLengths(req);
             if (lengthErrors.Count > 0)
                 return BadRequest(new { message = "माहितीची लांबी डेटाबेसच्या मर्यादेपेक्षा जास्त आहे (Field length limit exceeded)", errors = lengthErrors });
 
             // Duplicate checks for Member
-            member.LegacyMemberNo = string.IsNullOrWhiteSpace(member.LegacyMemberNo) ? null : member.LegacyMemberNo.Trim();
+            req.LegacyMemberNo = string.IsNullOrWhiteSpace(req.LegacyMemberNo) ? null : req.LegacyMemberNo.Trim();
 
-            if (!string.IsNullOrWhiteSpace(member.MemberCode))
+            if (!string.IsNullOrWhiteSpace(req.MemberCode))
             {
                 bool codeExists = await _context.Members
-                    .AnyAsync(m => !m.IsDeleted && m.MemberCode == member.MemberCode);
+                    .AnyAsync(m => !m.IsDeleted && m.MemberCode == req.MemberCode);
                 if (codeExists)
                 {
-                    return BadRequest(new { message = $"हा सभासद क्रमांक ({member.MemberCode}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा सभासद क्रमांक ({req.MemberCode}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(member.LegacyMemberNo))
+            if (!string.IsNullOrWhiteSpace(req.LegacyMemberNo))
             {
                 var existingLegacyMember = await _context.Members
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(m => !m.IsDeleted && m.LegacyMemberNo == member.LegacyMemberNo);
+                    .Include(m => m.Customer)
+                    .FirstOrDefaultAsync(m => !m.IsDeleted && m.LegacyMemberNo == req.LegacyMemberNo);
                 if (existingLegacyMember != null)
                 {
-                    return BadRequest(new { message = $"हा जुना सभासद आयडी ({member.LegacyMemberNo}) आधीच सभासद '{existingLegacyMember.FirstName} {existingLegacyMember.LastName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे." });
+                    string legacyName = existingLegacyMember.Customer != null ? $"{existingLegacyMember.Customer.FirstName} {existingLegacyMember.Customer.LastName}".Trim() : "Member";
+                    return BadRequest(new { message = $"हा जुना सभासद आयडी ({req.LegacyMemberNo}) आधीच सभासद '{legacyName}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे." });
                 }
             }
 
             int currentCustId = customer?.CustomerID ?? 0;
 
-            if (!string.IsNullOrWhiteSpace(member.AadhaarNo))
+            if (!string.IsNullOrWhiteSpace(req.AadhaarNo))
             {
-                bool aadhaarExists = await _context.Customers.AnyAsync(c => c.CustomerID != currentCustId && c.AadhaarNo == member.AadhaarNo);
+                bool aadhaarExists = await _context.Customers.AnyAsync(c => c.CustomerID != currentCustId && c.AadhaarNo == req.AadhaarNo);
                 if (aadhaarExists)
                 {
-                    return BadRequest(new { message = $"हा आधार नंबर ({member.AadhaarNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा आधार नंबर ({req.AadhaarNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(member.PANNo))
+            if (!string.IsNullOrWhiteSpace(req.PANNo))
             {
-                bool panExists = await _context.Customers.AnyAsync(c => c.CustomerID != currentCustId && c.PANNo == member.PANNo);
+                bool panExists = await _context.Customers.AnyAsync(c => c.CustomerID != currentCustId && c.PANNo == req.PANNo);
                 if (panExists)
                 {
-                    return BadRequest(new { message = $"हा पॅन नंबर ({member.PANNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा पॅन नंबर ({req.PANNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(member.MobileNo))
+            if (!string.IsNullOrWhiteSpace(req.MobileNo))
             {
-                bool mobileExists = await _context.Customers.AnyAsync(c => c.CustomerID != currentCustId && c.MobileNo == member.MobileNo);
+                bool mobileExists = await _context.Customers.AnyAsync(c => c.CustomerID != currentCustId && c.MobileNo == req.MobileNo);
                 if (mobileExists)
                 {
-                    return BadRequest(new { message = $"हा मोबाईल नंबर ({member.MobileNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
+                    return BadRequest(new { message = $"हा मोबाईल नंबर ({req.MobileNo}) आधीच दुसऱ्या सभासदाकडे नोंदवला आहे." });
                 }
             }
 
-            // Minor Age Validation on Backend
-            if (member.BirthDate.HasValue)
+            // Minor Age Validation
+            if (req.BirthDate.HasValue)
             {
                 var today = DateTime.Today;
-                int age = today.Year - member.BirthDate.Value.Year;
-                if (member.BirthDate.Value.Date > today.AddYears(-age)) age--;
+                int age = today.Year - req.BirthDate.Value.Year;
+                if (req.BirthDate.Value.Date > today.AddYears(-age)) age--;
 
                 if (age < 18)
                 {
-                    member.IsMinor = true;
-                    if (string.IsNullOrWhiteSpace(member.GuardianName))
+                    req.IsMinor = true;
+                    if (string.IsNullOrWhiteSpace(req.GuardianName))
                     {
                         return BadRequest(new { message = "सभासदाचे वय १८ वर्षांपेक्षा कमी (अज्ञान) असल्याने पालकाचे नाव (Guardian Name) आवश्यक आहे." });
                     }
-                    if (string.IsNullOrWhiteSpace(member.GuardianRelation))
+                    if (string.IsNullOrWhiteSpace(req.GuardianRelation))
                     {
                         return BadRequest(new { message = "अज्ञान सभासदासाठी पालकाचे नाते (Guardian Relation) निवडणे आवश्यक आहे." });
                     }
                 }
                 else
                 {
-                    member.IsMinor = false;
+                    req.IsMinor = false;
                 }
             }
 
@@ -916,24 +872,21 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "सभासद नोंदणीसाठी प्रथम खातेदार निवडणे बंधनकारक आहे. नवीन खातेदार फक्त 'ग्राहक / खातेदार नोंदणी मास्टर' फॉर्ममधूनच नोंदवता येतो." });
             }
 
-            member.CustomerID = customer.CustomerID;
-            member.Customer = null;
-
-            if (string.IsNullOrWhiteSpace(member.MemberCode))
+            var member = new Member
             {
-                member.MemberCode = null;
-            }
-            else
-            {
-                member.MemberCode = member.MemberCode.Trim();
-            }
-
-            member.CreatedBy = userId;
-            member.CreatedOn = DateTime.Now;
-            member.IsDeleted = false;
-            member.MembershipType = string.IsNullOrWhiteSpace(member.MembershipType) 
-                ? (string.IsNullOrWhiteSpace(member.MemberCode) ? "Nominal" : "Regular") 
-                : member.MembershipType.Trim();
+                CustomerID = customer.CustomerID,
+                BranchID = req.BranchID,
+                MemberCode = string.IsNullOrWhiteSpace(req.MemberCode) ? null : req.MemberCode.Trim(),
+                JoiningDate = req.JoiningDate == default ? DateTime.Today : req.JoiningDate,
+                Status = string.IsNullOrWhiteSpace(req.Status) ? "Active" : req.Status.Trim(),
+                MembershipType = string.IsNullOrWhiteSpace(req.MembershipType) 
+                    ? (string.IsNullOrWhiteSpace(req.MemberCode) ? "Nominal" : "Regular") 
+                    : req.MembershipType.Trim(),
+                LegacyMemberNo = req.LegacyMemberNo,
+                CreatedBy = userId,
+                CreatedOn = DateTime.Now,
+                IsDeleted = false
+            };
 
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
             try
@@ -942,14 +895,14 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 // --- Integrated Share Allotment + Fee Posting ---
-                int numShares = member.NumberOfShares.HasValue && member.NumberOfShares.Value > 0 ? member.NumberOfShares.Value : 0;
-                decimal faceVal = member.ShareFaceValue.HasValue && member.ShareFaceValue.Value > 0 ? member.ShareFaceValue.Value : 100M;
+                int numShares = req.NumberOfShares.HasValue && req.NumberOfShares.Value > 0 ? req.NumberOfShares.Value : 0;
+                decimal faceVal = req.ShareFaceValue.HasValue && req.ShareFaceValue.Value > 0 ? req.ShareFaceValue.Value : 100M;
                 decimal shareCapitalAmount = numShares * faceVal;
-                decimal admissionFee = member.AdmissionFee.HasValue && member.AdmissionFee.Value > 0 ? member.AdmissionFee.Value : 0;
-                decimal buildingFund = member.BuildingFund.HasValue && member.BuildingFund.Value > 0 ? member.BuildingFund.Value : 0;
+                decimal admissionFee = req.AdmissionFee.HasValue && req.AdmissionFee.Value > 0 ? req.AdmissionFee.Value : 0;
+                decimal buildingFund = req.BuildingFund.HasValue && req.BuildingFund.Value > 0 ? req.BuildingFund.Value : 0;
                 decimal totalAmount = shareCapitalAmount + admissionFee + buildingFund;
 
-                DateTime allotDate = member.AllotmentDate?.Date ?? member.JoiningDate.Date;
+                DateTime allotDate = req.AllotmentDate?.Date ?? member.JoiningDate.Date;
                 if (allotDate == default) allotDate = DateTime.Today;
 
                 ShareAccount? shareAccount = null;
@@ -963,7 +916,7 @@ namespace Bhisi.Api.Controllers
                     shareAccount = new ShareAccount
                     {
                         MemberId = member.MemberID,
-                        CustomerID = member.CustomerID ?? customer!.CustomerID,
+                        CustomerID = member.CustomerID ?? customer.CustomerID,
                         AccountNo = $"SH-{nextSeq:D4}",
                         TotalShareCount = numShares,
                         TotalShareAmount = shareCapitalAmount,
@@ -982,7 +935,7 @@ namespace Bhisi.Api.Controllers
                     shareCert = new ShareCertificate
                     {
                         ShareAccountId = shareAccount.ShareAccountId,
-                        CustomerID = member.CustomerID ?? customer!.CustomerID,
+                        CustomerID = member.CustomerID ?? customer.CustomerID,
                         CertificateNo = certNo,
                         FromShareNo = startShareNo,
                         ToShareNo = endShareNo,
@@ -1004,27 +957,29 @@ namespace Bhisi.Api.Controllers
                         NumberOfShares = numShares,
                         Amount = shareCapitalAmount,
                         Narration = $"भाग भांडवल वाटप : {numShares} शेअर्स. {member.MemberCode}",
-                        CustomerID = member.CustomerID ?? customer!.CustomerID
+                        CustomerID = member.CustomerID ?? customer.CustomerID
                     };
                     _context.ShareTransactions.Add(shareTxn);
                     await _context.SaveChangesAsync();
                 }
 
+                string? generatedVoucherNo = null;
+
                 if (totalAmount > 0)
                 {
                     int debitLedgerId;
-                    string pMode = string.IsNullOrWhiteSpace(member.PaymentMode) ? "Cash" : member.PaymentMode.Trim();
+                    string pMode = string.IsNullOrWhiteSpace(req.PaymentMode) ? "Cash" : req.PaymentMode.Trim();
 
                     if (pMode.Equals("Transfer", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (!member.SavingAccountId.HasValue || member.SavingAccountId.Value <= 0)
+                        if (!req.SavingAccountId.HasValue || req.SavingAccountId.Value <= 0)
                         {
                             await dbTransaction.RollbackAsync();
                             return BadRequest(new { message = "बचत खात्यातून वर्ग करण्यासाठी बचत खाते निवडणे आवश्यक आहे." });
                         }
 
-                        var savingAcc = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == member.SavingAccountId.Value);
-                        if (savingAcc == null || savingAcc.CustomerID != customer!.CustomerID)
+                        var savingAcc = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == req.SavingAccountId.Value);
+                        if (savingAcc == null || savingAcc.CustomerID != customer.CustomerID)
                         {
                             await dbTransaction.RollbackAsync();
                             return BadRequest(new { message = "निवडलेले बचत खाते अमान्य आहे किंवा या खातेदाराचे नाही." });
@@ -1075,7 +1030,7 @@ namespace Bhisi.Api.Controllers
                         debitLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, member.BranchID, "SHARE");
                     }
 
-                    int custId = customer!.CustomerID;
+                    int custId = customer.CustomerID;
                     var voucherDetailsList = new List<VoucherDetail>
                     {
                         new VoucherDetail
@@ -1135,8 +1090,8 @@ namespace Bhisi.Api.Controllers
 
                     string vchPrefix = numShares > 0 ? "VCH-SHR" : "VCH-ADM";
                     string vchNarration = numShares > 0
-                        ? $"सभासद नोंदणी व भाग वाटप ({numShares} शेअर्स) - {customer!.FirstName} {customer.LastName} ({member.MemberCode ?? ("M-" + member.MemberID)}). {pMode}"
-                        : $"सभासद प्रवेश शुल्क पावती (Admission Fee) - {customer!.FirstName} {customer.LastName} ({member.MemberCode ?? ("M-" + member.MemberID)}). {pMode}";
+                        ? $"सभासद नोंदणी व भाग वाटप ({numShares} शेअर्स) - {customer.FirstName} {customer.LastName} ({member.MemberCode ?? ("M-" + member.MemberID)}). {pMode}"
+                        : $"सभासद प्रवेश शुल्क पावती (Admission Fee) - {customer.FirstName} {customer.LastName} ({member.MemberCode ?? ("M-" + member.MemberID)}). {pMode}";
 
                     var voucher = new Voucher
                     {
@@ -1159,13 +1114,13 @@ namespace Bhisi.Api.Controllers
                         shareTxn.VoucherId = voucher.VoucherID;
                     }
 
-                    member.GeneratedVoucherNo = voucher.VoucherNo;
+                    generatedVoucherNo = voucher.VoucherNo;
                 }
 
                 await dbTransaction.CommitAsync();
 
                 member.Customer = customer;
-                await LogAuditAsync("MEMBER_CREATE", member.MemberID.ToString(), $"नवीन सभासद नोंदणी: {customer!.FirstName} {customer.LastName}, CIF: {customer.CIFNo}" + (!string.IsNullOrEmpty(member.GeneratedVoucherNo) ? $", पावती व्हाऊचर: {member.GeneratedVoucherNo}" : ""));
+                await LogAuditAsync("MEMBER_CREATE", member.MemberID.ToString(), $"नवीन सभासद नोंदणी: {customer.FirstName} {customer.LastName}, CIF: {customer.CIFNo}" + (!string.IsNullOrEmpty(generatedVoucherNo) ? $", पावती व्हाऊचर: {generatedVoucherNo}" : ""));
             }
             catch (DbUpdateException ex)
             {
@@ -1187,7 +1142,7 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, new { message = "सभासद नोंदणी करताना अनपेक्षित त्रुटी आली: " + (ex.InnerException?.Message ?? ex.Message) });
             }
 
-            return CreatedAtAction("GetMember", new { id = member.MemberID }, member);
+            return CreatedAtAction("GetMember", new { id = member.MemberID }, MemberResponseDto.FromMember(member));
         }
 
         // DELETE: api/Members/5
@@ -1254,7 +1209,9 @@ namespace Bhisi.Api.Controllers
                     Console.WriteLine($"[WARNING] Member reseed error: {reseedEx.Message}");
                 }
 
-                await LogAuditAsync("MEMBER_DELETE", id.ToString(), $"सभासद कायमचा डिलीट केला: {member.FirstName} {member.LastName}, CIF: {member.CIFNo}, Code: {member.MemberCode}");
+                string memberName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "Member";
+                string cifNo = member.Customer?.CIFNo ?? "";
+                await LogAuditAsync("MEMBER_DELETE", id.ToString(), $"सभासद कायमचा डिलीट केला: {memberName}, CIF: {cifNo}, Code: {member.MemberCode}");
 
                 return Ok(new { message = "सभासद यशस्वीरित्या डिलीट केला." });
             }
@@ -1346,7 +1303,7 @@ namespace Bhisi.Api.Controllers
 
             // Check if member is a Guarantor on any active loans
             var guarantorLoansRaw = await _context.LoanAccounts
-                .Include(l => l.Member)
+                .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Where(l => (l.Guarantor1MemberID == id || l.Guarantor2MemberID == id) && l.Status != "Closed")
                 .ToListAsync();
 
@@ -1354,9 +1311,9 @@ namespace Bhisi.Api.Controllers
             {
                 LoanAccountID = l.LoanAccountID,
                 LoanAccountNo = l.LoanAccountNo,
-                BorrowerName = l.Member != null ? $"{l.Member.FirstName} {(string.IsNullOrWhiteSpace(l.Member.MiddleName) ? "" : l.Member.MiddleName + " ")}{l.Member.LastName}".Trim() : "Unknown",
+                BorrowerName = l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {(string.IsNullOrWhiteSpace(l.Member.Customer.MiddleName) ? "" : l.Member.Customer.MiddleName + " ")}{l.Member.Customer.LastName}".Trim() : "Unknown",
                 BorrowerCode = l.Member != null ? l.Member.MemberCode : "",
-                BorrowerCif = l.Member != null ? l.Member.CIFNo : "",
+                BorrowerCif = l.Member?.Customer != null ? l.Member.Customer.CIFNo : "",
                 SanctionedAmount = l.SanctionedAmount,
                 PrincipalBalance = l.PrincipalBalance,
                 InterestBalance = l.InterestBalance,
@@ -1365,16 +1322,18 @@ namespace Bhisi.Api.Controllers
                 Status = l.Status
             }).ToList();
 
-            var activeGuarantorLoans = guaranteedLoans.Where(l => l.TotalOutstanding > 0).ToList();
-            bool hasGuarantorLiability = activeGuarantorLoans.Count > 0;
-            decimal totalGuaranteedOutstanding = activeGuarantorLoans.Sum(l => l.TotalOutstanding);
+            var activeGuaranteedLoans = guaranteedLoans.Where(l => l.TotalOutstanding > 0).ToList();
+            bool hasGuarantorLiability = activeGuaranteedLoans.Count > 0;
+            decimal totalGuaranteedOutstanding = activeGuaranteedLoans.Sum(l => l.TotalOutstanding);
 
             bool canClose = loanBalance <= 0 && savingBalance <= 0 && fdBalance <= 0 && rdBalance <= 0 && pigmyBalance <= 0 && !hasGuarantorLiability;
+
+            string memberName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "Member";
 
             return Ok(new
             {
                 MemberId = id,
-                MemberName = $"{member.FirstName} {member.LastName}",
+                MemberName = memberName,
                 Status = member.Status,
                 LoanBalance = loanBalance,
                 SavingBalance = savingBalance,
@@ -1436,6 +1395,9 @@ namespace Bhisi.Api.Controllers
                     return BadRequest("Cannot close member. Active accounts or outstanding balances exist.");
                 }
 
+                string memberName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "Member";
+                string cifNo = member.Customer?.CIFNo ?? "";
+
                 // Handle Share Closure if any
                 var shareAccount = await _context.ShareAccounts.FirstOrDefaultAsync(s => s.MemberId == id);
                 if (shareAccount != null && shareAccount.TotalShareCount > 0)
@@ -1454,7 +1416,7 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = DateTime.Today,
                         VoucherType = "Payment",
                         TotalAmount = totalShareAmount,
-                        Narration = $"Share Withdrawal on Member Closure for {member.FirstName} {member.LastName}. {request.Narration}",
+                        Narration = $"Share Withdrawal on Member Closure for {memberName}. {request.Narration}",
                         CreatedBy = userId,
                         VoucherDetails = new List<VoucherDetail>
                         {
@@ -1468,7 +1430,7 @@ namespace Bhisi.Api.Controllers
                     var shareTxn = new ShareTransaction
                     {
                         ShareAccountId = shareAccount.ShareAccountId,
-                        CustomerID = member.CustomerID ?? member.MemberID,
+                        CustomerID = member.CustomerID ?? (member.Customer?.CustomerID ?? 1),
                         TransactionType = "Withdrawal",
                         NumberOfShares = shareAccount.TotalShareCount,
                         Amount = totalShareAmount,
@@ -1488,7 +1450,7 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                await LogAuditAsync("MEMBER_CLOSE", id.ToString(), $"सभासदत्व यशस्वीरित्या रद्द केले: {member.FirstName} {member.LastName}, CIF: {member.CIFNo}");
+                await LogAuditAsync("MEMBER_CLOSE", id.ToString(), $"सभासदत्व यशस्वीरित्या रद्द केले: {memberName}, CIF: {cifNo}");
 
                 return Ok(new { message = "Member successfully closed." });
             }
@@ -1549,16 +1511,19 @@ namespace Bhisi.Api.Controllers
 
             decimal netPayable = totalGrossAssets - loanLiability;
 
+            var cust = member.Customer;
+            string memberName = cust != null ? $"{cust.FirstName} {cust.MiddleName} {cust.LastName}".Replace("  ", " ").Trim() : "Member";
+
             return Ok(new
             {
                 memberID = id,
-                memberName = $"{member.FirstName} {member.MiddleName} {member.LastName}".Trim(),
+                memberName = memberName,
                 memberCode = member.MemberCode,
-                cifNo = member.CIFNo,
+                cifNo = cust?.CIFNo ?? "",
                 status = member.Status,
-                nomineeName = member.NomineeName ?? "-",
-                nomineeRelation = member.NomineeRelation ?? "-",
-                nomineeAddress = member.NomineeAddress ?? "-",
+                nomineeName = cust?.NomineeName ?? "-",
+                nomineeRelation = cust?.NomineeRelation ?? "-",
+                nomineeAddress = cust?.NomineeAddress ?? "-",
                 savingsBalance,
                 fdBalance,
                 rdBalance,
@@ -1675,6 +1640,8 @@ namespace Bhisi.Api.Controllers
                     var claimLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("दावा") || l.LedgerName.Contains("Claim") || l.LedgerName.Contains("वारस")) ?? cashLedger;
 
                     int vchCount = await _context.Vouchers.CountAsync() + 1;
+                    string memberCustName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "Member";
+
                     var voucher = new Voucher
                     {
                         BranchID = req.BranchId,
@@ -1682,7 +1649,7 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = DateTime.Today,
                         VoucherType = "Payment",
                         TotalAmount = netAmount,
-                        Narration = $"मयत सभासद वारसदार क्लेम सेटलमेंट: {member.FirstName} {member.LastName} (वारसदार: {req.NomineeName}, मयत दाखला: {req.DeathCertificateNo}, ठराव: {req.ResolutionNo})",
+                        Narration = $"मयत सभासद वारसदार क्लेम सेटलमेंट: {memberCustName} (वारसदार: {req.NomineeName}, मयत दाखला: {req.DeathCertificateNo}, ठराव: {req.ResolutionNo})",
                         CreatedBy = userId,
                         VoucherDetails = new List<VoucherDetail>
                         {
@@ -1702,8 +1669,8 @@ namespace Bhisi.Api.Controllers
                     BranchID = req.BranchId,
                     DeathDate = req.DeathDate,
                     DeathCertificateNo = req.DeathCertificateNo,
-                    NomineeName = string.IsNullOrWhiteSpace(req.NomineeName) ? (member.NomineeName ?? "Legal Heir") : req.NomineeName,
-                    NomineeRelation = req.NomineeRelation ?? member.NomineeRelation,
+                    NomineeName = string.IsNullOrWhiteSpace(req.NomineeName) ? (member.Customer?.NomineeName ?? "Legal Heir") : req.NomineeName,
+                    NomineeRelation = req.NomineeRelation ?? member.Customer?.NomineeRelation,
                     NomineeAadhaarNo = req.NomineeAadhaarNo,
                     NomineeMobileNo = req.NomineeMobileNo,
                     NomineeBankAccount = req.NomineeBankAccount,
@@ -1733,7 +1700,8 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                await LogAuditAsync("DECEASED_CLAIM_SETTLED", settlement.ClaimID.ToString(), $"मयत खातेदार क्लेम सेटलमेंट पूर्ण: {member.FirstName} {member.LastName}, वारसदार: {settlement.NomineeName}, निव्वळ रक्कम: ₹{netAmount}");
+                string memberFullName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "Member";
+                await LogAuditAsync("DECEASED_CLAIM_SETTLED", settlement.ClaimID.ToString(), $"मयत खातेदार क्लेम सेटलमेंट पूर्ण: {memberFullName}, वारसदार: {settlement.NomineeName}, निव्वळ रक्कम: ₹{netAmount}");
 
                 return Ok(new
                 {
@@ -1795,13 +1763,13 @@ namespace Bhisi.Api.Controllers
                 : 0;
 
             var ownActiveLoans = await _context.LoanAccounts
-                .Include(l => l.Member)
+                .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.LoanRate)
                 .Where(l => (l.MemberID == id || l.CoMemberID == id || l.CoMember2ID == id) && l.Status == "Active")
                 .ToListAsync();
 
             var activeGuaranteedLoans = await _context.LoanAccounts
-                .Include(l => l.Member)
+                .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.LoanRate)
                 .Include(l => l.LoanApplication)
                 .Where(l => l.Status == "Active" && (
@@ -1817,13 +1785,13 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var ownPendingApps = await _context.LoanApplications
-                .Include(a => a.Member)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Include(a => a.LoanRate)
                 .Where(a => (a.MemberID == id || a.CoMemberID == id || a.CoMember2ID == id) && !disbursedLoanAppIds.Contains(a.LoanApplicationID))
                 .ToListAsync();
 
             var pendingGuaranteedApps = await _context.LoanApplications
-                .Include(a => a.Member)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Include(a => a.LoanRate)
                 .Where(a => (a.Guarantor1MemberID == id || a.Guarantor2MemberID == id) && !disbursedLoanAppIds.Contains(a.LoanApplicationID))
                 .ToListAsync();
@@ -1832,7 +1800,7 @@ namespace Bhisi.Api.Controllers
             {
                 loanAccountID = l.LoanAccountID,
                 loanAccountNo = l.LoanAccountNo,
-                borrowerName = $"{l.Member?.FirstName} {l.Member?.MiddleName} {l.Member?.LastName}".Trim(),
+                borrowerName = l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
                 borrowerCode = l.Member?.MemberCode,
                 loanType = l.LoanRate?.ShortName ?? l.LoanRate?.LoanType ?? "",
                 sanctionedAmount = l.SanctionedAmount,
@@ -1844,7 +1812,7 @@ namespace Bhisi.Api.Controllers
             {
                 loanApplicationID = a.LoanApplicationID,
                 applicationNo = a.ApplicationNo,
-                borrowerName = $"{a.Member?.FirstName} {a.Member?.MiddleName} {a.Member?.LastName}".Trim(),
+                borrowerName = a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.MiddleName} {a.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
                 borrowerCode = a.Member?.MemberCode,
                 loanType = a.LoanRate?.ShortName ?? a.LoanRate?.LoanType ?? "",
                 requestedAmount = a.RequestedAmount,
@@ -1855,7 +1823,7 @@ namespace Bhisi.Api.Controllers
             {
                 loanAccountID = l.LoanAccountID,
                 loanAccountNo = l.LoanAccountNo,
-                borrowerName = $"{l.Member?.FirstName} {l.Member?.MiddleName} {l.Member?.LastName}".Trim(),
+                borrowerName = l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
                 borrowerCode = l.Member?.MemberCode,
                 loanType = l.LoanRate?.ShortName ?? l.LoanRate?.LoanType ?? "",
                 sanctionedAmount = l.SanctionedAmount,
@@ -1867,23 +1835,26 @@ namespace Bhisi.Api.Controllers
             {
                 loanApplicationID = a.LoanApplicationID,
                 applicationNo = a.ApplicationNo,
-                borrowerName = $"{a.Member?.FirstName} {a.Member?.MiddleName} {a.Member?.LastName}".Trim(),
+                borrowerName = a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.MiddleName} {a.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
                 borrowerCode = a.Member?.MemberCode,
                 loanType = a.LoanRate?.ShortName ?? a.LoanRate?.LoanType ?? "",
                 requestedAmount = a.RequestedAmount,
                 status = "Pending"
             }).ToList();
 
+            var cust = member.Customer;
+            string memberName = cust != null ? $"{cust.FirstName} {cust.MiddleName} {cust.LastName}".Replace("  ", " ").Trim() : "Member";
+
             var summary = new
             {
                 memberID = id,
-                memberName = $"{member.FirstName} {member.MiddleName} {member.LastName}".Trim(),
+                memberName = memberName,
                 memberCode = member.MemberCode,
-                cifNo = member.CIFNo ?? GenerateCifNo(member),
-                mobileNo = string.IsNullOrWhiteSpace(member.MobileNo) || member.MobileNo == "0000000000" ? "-" : member.MobileNo,
-                address = member.Address,
-                village = member.Village,
-                occupation = member.Occupation,
+                cifNo = cust?.CIFNo ?? GenerateCifNo(member),
+                mobileNo = string.IsNullOrWhiteSpace(cust?.MobileNo) || cust.MobileNo == "0000000000" ? "-" : cust.MobileNo,
+                address = cust?.Address ?? "",
+                village = cust?.Village ?? "",
+                occupation = cust?.Occupation ?? "",
                 sharesCount = sharesCount,
                 sharesBalance = sharesBalance,
                 savingsBalance = savingsBalance,
@@ -1935,7 +1906,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var activeRecommendedLoans = await _context.LoanAccounts
-                .Include(l => l.Member)
+                .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.LoanRate)
                 .Include(l => l.LoanApplication)
                 .Where(l => l.Status == "Active" && (
@@ -1950,7 +1921,7 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var pendingRecommendedApps = await _context.LoanApplications
-                .Include(a => a.Member)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Include(a => a.LoanRate)
                 .Where(a => a.RecommendedByDirectorID == id && !disbursedLoanAppIds.Contains(a.LoanApplicationID))
                 .ToListAsync();
@@ -1959,7 +1930,7 @@ namespace Bhisi.Api.Controllers
             {
                 loanAccountID = l.LoanAccountID,
                 loanAccountNo = l.LoanAccountNo,
-                borrowerName = $"{l.Member?.FirstName} {l.Member?.MiddleName} {l.Member?.LastName}".Trim(),
+                borrowerName = l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
                 borrowerCode = l.Member?.MemberCode,
                 loanType = l.LoanRate?.ShortName ?? l.LoanRate?.LoanType ?? "",
                 sanctionedAmount = l.SanctionedAmount,
@@ -1971,20 +1942,23 @@ namespace Bhisi.Api.Controllers
             {
                 loanApplicationID = a.LoanApplicationID,
                 applicationNo = a.ApplicationNo,
-                borrowerName = $"{a.Member?.FirstName} {a.Member?.MiddleName} {a.Member?.LastName}".Trim(),
+                borrowerName = a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.MiddleName} {a.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
                 borrowerCode = a.Member?.MemberCode,
                 loanType = a.LoanRate?.ShortName ?? a.LoanRate?.LoanType ?? "",
                 requestedAmount = a.RequestedAmount,
                 status = "Pending"
             }).ToList();
 
+            var dCust = director.Customer;
+            string directorName = dCust != null ? $"{dCust.FirstName} {dCust.MiddleName} {dCust.LastName}".Replace("  ", " ").Trim() : "Director";
+
             var summary = new
             {
                 memberID = id,
-                directorName = $"{director.FirstName} {director.MiddleName} {director.LastName}".Trim(),
+                directorName = directorName,
                 directorCode = director.MemberCode,
-                cifNo = director.CIFNo ?? GenerateCifNo(director),
-                mobileNo = string.IsNullOrWhiteSpace(director.MobileNo) || director.MobileNo == "0000000000" ? "-" : director.MobileNo,
+                cifNo = dCust?.CIFNo ?? GenerateCifNo(director),
+                mobileNo = string.IsNullOrWhiteSpace(dCust?.MobileNo) || dCust.MobileNo == "0000000000" ? "-" : dCust.MobileNo,
                 activeRecommendedLoansCount = activeRecommendedLoans.Count,
                 pendingRecommendedAppsCount = pendingRecommendedApps.Count,
                 totalRecommendedSanctionedAmount = activeRecommendedLoans.Sum(l => l.SanctionedAmount) + pendingRecommendedApps.Sum(a => a.RequestedAmount),

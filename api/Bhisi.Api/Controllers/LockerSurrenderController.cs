@@ -43,7 +43,7 @@ namespace Bhisi.Api.Controllers
                     s.AllotmentID,
                     LockerAccountNo = s.Allotment != null ? s.Allotment.LockerAccountNo : "",
                     LockerNo = s.Allotment != null && s.Allotment.Locker != null ? s.Allotment.Locker.LockerNo : "",
-                    MemberName = s.Allotment != null && s.Allotment.Member != null ? $"{s.Allotment.Member.FirstName} {s.Allotment.Member.LastName}" : "",
+                    MemberName = s.Allotment != null && s.Allotment.Customer != null ? $"{s.Allotment.Customer.FirstName} {s.Allotment.Customer.LastName}" : (s.Allotment != null && s.Allotment.Member != null && s.Allotment.Member.Customer != null ? $"{s.Allotment.Member.Customer.FirstName} {s.Allotment.Member.Customer.LastName}" : ""),
                     s.SurrenderDate,
                     s.KeyReceived,
                     s.KeysCondition,
@@ -68,7 +68,8 @@ namespace Bhisi.Api.Controllers
         {
             var allotment = await _context.LockerAllotments
                 .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Include(a => a.LinkedSavingAccount)
                 .FirstOrDefaultAsync(a => a.AllotmentID == dto.AllotmentID);
 
@@ -97,6 +98,8 @@ namespace Bhisi.Api.Controllers
                 var cashLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("रोख") || l.LedgerName.Contains("Cash"));
                 if (cashLedger != null) cashLedgerId = cashLedger.LedgerID;
 
+                string holderName = allotment.Customer != null ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}" : (allotment.Member?.Customer != null ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}" : "Holder");
+
                 int vchCount = await _context.Vouchers.CountAsync() + 1;
                 var voucher = new Voucher
                 {
@@ -105,7 +108,7 @@ namespace Bhisi.Api.Controllers
                     VoucherDate = dto.SurrenderDate,
                     VoucherType = dto.RefundPaymentMode == "SavingCredit" ? "Journal" : "Payment",
                     TotalAmount = dto.DepositAmount,
-                    Narration = $"Locker Surrender & Security Deposit Refund: {allotment.LockerAccountNo} (Locker: {allotment.Locker?.LockerNo}) - {allotment.Member?.FirstName} {allotment.Member?.LastName}. Net Refund: ₹{dto.NetRefundAmount:N2}",
+                    Narration = $"Locker Surrender & Security Deposit Refund: {allotment.LockerAccountNo} (Locker: {allotment.Locker?.LockerNo}) - {holderName}. Net Refund: ₹{dto.NetRefundAmount:N2}",
                     Status = "Approved",
                     CreatedBy = 1,
                     VoucherDetails = new List<VoucherDetail>()

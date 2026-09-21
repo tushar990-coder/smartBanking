@@ -111,12 +111,6 @@ namespace Bhisi.Api.Controllers
                     CustomerNameEng = s.Customer != null 
                         ? (s.Customer.FirstNameEng + (string.IsNullOrWhiteSpace(s.Customer.MiddleNameEng) ? "" : " " + s.Customer.MiddleNameEng) + " " + s.Customer.LastNameEng).Trim()
                         : "",
-                    MemberName = s.Customer != null 
-                        ? (s.Customer.FirstName + (string.IsNullOrWhiteSpace(s.Customer.MiddleName) ? "" : " " + s.Customer.MiddleName) + " " + s.Customer.LastName).Trim()
-                        : "",
-                    MemberNameEng = s.Customer != null 
-                        ? (s.Customer.FirstNameEng + (string.IsNullOrWhiteSpace(s.Customer.MiddleNameEng) ? "" : " " + s.Customer.MiddleNameEng) + " " + s.Customer.LastNameEng).Trim()
-                        : "",
                     MobileNo = s.Customer != null ? (s.Customer.MobileNo ?? "") : "",
                     AadhaarNo = s.Customer != null ? (s.Customer.AadhaarNo ?? "") : "",
                     PANNo = s.Customer != null ? (s.Customer.PANNo ?? "") : "",
@@ -146,9 +140,6 @@ namespace Bhisi.Api.Controllers
                         CustomerName = jh.Customer != null 
                             ? (jh.Customer.FirstName + (string.IsNullOrWhiteSpace(jh.Customer.MiddleName) ? "" : " " + jh.Customer.MiddleName) + " " + jh.Customer.LastName).Trim()
                             : "",
-                        MemberName = jh.Customer != null 
-                            ? (jh.Customer.FirstName + (string.IsNullOrWhiteSpace(jh.Customer.MiddleName) ? "" : " " + jh.Customer.MiddleName) + " " + jh.Customer.LastName).Trim()
-                            : "",
                         MobileNo = jh.Customer != null ? (jh.Customer.MobileNo ?? "") : ""
                     }).ToList()
                 })
@@ -159,7 +150,6 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/SavingAccounts/ByCustomer/5
         [HttpGet("ByCustomer/{customerId}")]
-        [HttpGet("ByMember/{customerId}")]
         public async Task<ActionResult<IEnumerable<object>>> GetSavingAccountsByCustomer(int customerId)
         {
             return await GetSavingAccountMasters(branchId: null, customerId: customerId);
@@ -195,12 +185,6 @@ namespace Bhisi.Api.Controllers
                 CustomerNameEng = s.Customer != null 
                     ? $"{s.Customer.FirstNameEng} {s.Customer.LastNameEng}".Trim()
                     : "",
-                MemberName = s.Customer != null 
-                    ? $"{s.Customer.FirstName} {s.Customer.LastName}".Trim()
-                    : "",
-                MemberNameEng = s.Customer != null 
-                    ? $"{s.Customer.FirstNameEng} {s.Customer.LastNameEng}".Trim()
-                    : "",
                 MobileNo = s.Customer != null ? (s.Customer.MobileNo ?? "") : "",
                 AadhaarNo = s.Customer != null ? (s.Customer.AadhaarNo ?? "") : "",
                 PANNo = s.Customer != null ? (s.Customer.PANNo ?? "") : "",
@@ -228,9 +212,6 @@ namespace Bhisi.Api.Controllers
                     jh.CustomerID,
                     CIFNo = jh.Customer != null ? (jh.Customer.CIFNo ?? "") : "",
                     CustomerName = jh.Customer != null 
-                        ? $"{jh.Customer.FirstName} {jh.Customer.LastName}".Trim() 
-                        : "",
-                    MemberName = jh.Customer != null 
                         ? $"{jh.Customer.FirstName} {jh.Customer.LastName}".Trim() 
                         : "",
                     MobileNo = jh.Customer != null ? (jh.Customer.MobileNo ?? "") : ""

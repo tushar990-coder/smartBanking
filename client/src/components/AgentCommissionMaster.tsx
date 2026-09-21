@@ -74,9 +74,10 @@ interface PaidHistoryRow {
 interface SavingAccount {
   savingAccountID: number;
   accountNo: string;
-  memberID: number;
-  member?: { memberName: string };
-  totalBalance: number;
+  customerID?: number;
+  customerName?: string;
+  currentBalance?: number;
+  totalBalance?: number;
 }
 
 export default function AgentCommissionMaster() {
@@ -834,7 +835,7 @@ export default function AgentCommissionMaster() {
                     <option value="">-- बचत खाते निवडा --</option>
                     {savingAccounts.map(a => (
                       <option key={a.savingAccountID} value={a.savingAccountID}>
-                        {a.accountNo} - {a.member?.memberName} (शिल्लक: ₹{a.totalBalance})
+                        {a.accountNo} - {a.customerName || 'एजंट बचत खाते'} (शिल्लक: ₹{a.currentBalance ?? a.totalBalance ?? 0})
                       </option>
                     ))}
                   </select>

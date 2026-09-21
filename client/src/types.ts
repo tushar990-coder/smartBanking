@@ -11,8 +11,6 @@ export interface SavingAccount {
   accountNo: string;
   customerID?: number;
   customerName?: string;
-  memberID?: number;
-  memberName?: string;
   cifNo?: string;
   openingDate: string;
   openingBalance: number;

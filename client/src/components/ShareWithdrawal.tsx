@@ -149,6 +149,7 @@ const ShareWithdrawal: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          customerId: parseInt(selectedMemberId),
           memberId: parseInt(selectedMemberId),
           numberOfShares: qty,
           narration: formData.narration,

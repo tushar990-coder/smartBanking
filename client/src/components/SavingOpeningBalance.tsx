@@ -33,14 +33,12 @@ import * as XLSX from 'xlsx';
 interface CustomerItem extends CustomerOption {
   id?: number;
   legacyCustomerNo?: string;
-  oldMemberCode?: string;
-  legacyMemberNo?: string;
   [key: string]: any;
 }
 
 const SavingOpeningBalance: React.FC = () => {
   const { user } = useAuth();
-  const [members, setMembers] = useState<CustomerItem[]>([]);
+  const [customers, setCustomers] = useState<CustomerItem[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [ledgers, setLedgers] = useState<any[]>([]);
   const [schemes, setSchemes] = useState<any[]>([]);
@@ -116,7 +114,7 @@ const SavingOpeningBalance: React.FC = () => {
   };
 
   const getCustomerDisplayName = (cId: number) => {
-    const cust = members.find(m => (m.customerID || m.id) === cId);
+    const cust = customers.find(m => (m.customerID || m.id) === cId);
     if (!cust) return `खातेदार #${cId}`;
     const cif = cust.cifNo ? `[CIF: ${cust.cifNo}] ` : '';
     const name = `${cust.firstName || ''} ${cust.middleName ? cust.middleName + ' ' : ''}${cust.lastName || ''}`.trim();
@@ -126,7 +124,7 @@ const SavingOpeningBalance: React.FC = () => {
   useEffect(() => {
     fetchBranches();
     fetchSchemes();
-    fetchMembers();
+    fetchCustomers();
     fetchLedgers();
     fetchMigratedAccounts();
     fetchNextAccountNo(formData.branchID || 1);
@@ -208,10 +206,10 @@ const SavingOpeningBalance: React.FC = () => {
     }
   };
 
-  const fetchMembers = async () => {
+  const fetchCustomers = async () => {
     try {
       const response = await axios.get(`${API_URL}/Customers`);
-      setMembers(response.data);
+      setCustomers(response.data);
     } catch (err) {
       console.error('Error fetching customers', err);
     }
@@ -254,7 +252,7 @@ const SavingOpeningBalance: React.FC = () => {
     setEditAccountId(account.savingAccountID);
     setConfirmedCustomerID(account.customerID);
 
-    const jointIds = (account.jointHolders || []).map((jh: any) => jh.customerID || jh.customerId || jh.memberID).filter(Boolean);
+    const jointIds = (account.jointHolders || []).map((jh: any) => jh.customerID || jh.customerId).filter(Boolean);
     setJointHolderCustomerIDs(jointIds);
     setSelectedJointCustomerID(null);
 
@@ -336,7 +334,7 @@ const SavingOpeningBalance: React.FC = () => {
     setError('');
     setSuccess('');
 
-    const selected = members.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
+    const selected = customers.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
     const resolvedCustomerId = selected?.customerID || (selected?.id ? Number(selected.id) : Number(formData.customerID));
 
     if (!resolvedCustomerId) {
@@ -382,7 +380,7 @@ const SavingOpeningBalance: React.FC = () => {
   const executeSave = async (finalJointHolders?: number[], customCustomerId?: number) => {
     setLoading(true);
     try {
-      const selected = members.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
+      const selected = customers.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
       const resolvedCustomerId = customCustomerId !== undefined ? customCustomerId : (selected?.customerID || (selected?.id ? Number(selected.id) : Number(formData.customerID)));
 
       const jointIds = finalJointHolders !== undefined ? finalJointHolders : (formData.accountType === 'Joint' ? jointHolderCustomerIDs : []);
@@ -430,7 +428,7 @@ const SavingOpeningBalance: React.FC = () => {
   const handleExportExcel = () => {
     if (filteredMigrated.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा उपलब्ध नाही.');
     const rows = filteredMigrated.map((acc, i) => {
-      const jointNames = (acc.jointHolders || []).map((jh: any) => jh.memberName || `${jh.member?.firstName || ''} ${jh.member?.lastName || ''}`.trim()).filter(Boolean).join(', ');
+      const jointNames = (acc.jointHolders || []).map((jh: any) => jh.customerName || `${jh.customer?.firstName || ''} ${jh.customer?.lastName || ''}`.trim()).filter(Boolean).join(', ');
       const ledgerObj = ledgers.find(l => l.ledgerID === acc.ledgerID);
       const schemeObj = schemes.find(s => s.settingID === acc.settingID);
       return {
@@ -438,9 +436,8 @@ const SavingOpeningBalance: React.FC = () => {
         'बचत खाते क्र. (CBS)': acc.accountNo,
         'जुने बचत खाते क्र.': acc.oldAccountNo || acc.legacyAccountNumber || '-',
         'शाखा': acc.branchName || acc.branch?.branchName || '-',
-        'CIF क्र.': acc.cifNo || acc.member?.cifNo || '-',
-        'सभासद कोड': acc.memberCode || acc.member?.memberCode || '-',
-        'सभासदाचे नाव': acc.memberName || `${acc.member?.firstName || ''} ${acc.member?.lastName || ''}`.trim(),
+        'CIF क्र.': acc.cifNo || acc.customer?.cifNo || '-',
+        'खातेदाराचे नाव': acc.customerName || `${acc.customer?.firstName || ''} ${acc.customer?.lastName || ''}`.trim(),
         'खाते प्रकार': acc.accountType === 'Joint' ? 'संयुक्त (Joint)' : acc.accountType === 'Minor' ? 'अल्पवयीन (Minor)' : acc.accountType === 'Organization' ? 'संस्था (Organization)' : 'वैयक्तिक (Personal)',
         'सह-खातेदार (Joint Holders)': jointNames || '-',
         'बचत योजना': schemeObj?.schemeName || (acc.settingID ? `योजना #${acc.settingID}` : 'डिफॉल्ट दर'),
@@ -487,21 +484,21 @@ const SavingOpeningBalance: React.FC = () => {
   const formatCustomerLabel = (m: any) => {
     const fullName = `${m.firstName || ''} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName || ''}`.trim();
     const cifPart = m.cifNo ? `[CIF: ${m.cifNo}] ` : '';
-    const oldCode = m.legacyCustomerNo || m.oldMemberCode || m.legacyMemberNo;
+    const oldCode = m.legacyCustomerNo;
     const oldCodePart = oldCode ? ` (जुना CIF: ${oldCode})` : '';
     const mob = m.mobileNo ? ` (${m.mobileNo})` : '';
     return `${cifPart}${fullName}${oldCodePart}${mob}`;
   };
 
-  const selectedMember = React.useMemo(() => {
+  const selectedCustomer = React.useMemo(() => {
     if (Number(formData.customerID) > 0) {
-      const matchCust = members.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
+      const matchCust = customers.find(m => m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID));
       if (matchCust) return matchCust;
     }
     return null;
-  }, [formData.customerID, members]);
+  }, [formData.customerID, customers]);
 
-  const existingMemberAccounts = allSavingAccounts.filter((a: any) => {
+  const existingCustomerAccounts = allSavingAccounts.filter((a: any) => {
     if (a.savingAccountID === editAccountId) return false;
     if (formData.customerID && a.customerID === Number(formData.customerID)) return true;
     return false;
@@ -509,14 +506,14 @@ const SavingOpeningBalance: React.FC = () => {
 
   const filteredMigrated = migratedAccounts.filter(acc => {
     const q = searchQuery.toLowerCase().trim();
-    const jointNames = (acc.jointHolders || []).map((jh: any) => jh.memberName || `${jh.member?.firstName || ''} ${jh.member?.lastName || ''}`.trim()).join(' ').toLowerCase();
+    const jointNames = (acc.jointHolders || []).map((jh: any) => jh.customerName || `${jh.customer?.firstName || ''} ${jh.customer?.lastName || ''}`.trim()).join(' ').toLowerCase();
     
     const matchSearch = !q || (
       (acc.accountNo && acc.accountNo.toLowerCase().includes(q)) ||
       (acc.oldAccountNo && acc.oldAccountNo.toLowerCase().includes(q)) ||
       (acc.legacyAccountNumber && acc.legacyAccountNumber.toLowerCase().includes(q)) ||
-      (acc.memberName && acc.memberName.toLowerCase().includes(q)) ||
-      (acc.memberCode && acc.memberCode.toLowerCase().includes(q)) ||
+      (acc.customerName && acc.customerName.toLowerCase().includes(q)) ||
+      (acc.cifNo && acc.cifNo.toLowerCase().includes(q)) ||
       (acc.cifNo && acc.cifNo.toLowerCase().includes(q)) ||
       (acc.branchName && acc.branchName.toLowerCase().includes(q)) ||
       (acc.nomineeName && acc.nomineeName.toLowerCase().includes(q)) ||
@@ -669,11 +666,11 @@ const SavingOpeningBalance: React.FC = () => {
       >
         <form onSubmit={handleSubmit} className="space-y-3">
           
-          {/* Section 1: Member & Account Details */}
+          {/* Section 1: Customer & Account Details */}
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
             <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
               <UserCheck className="w-4 h-4 text-primary" />
-              <h2 className="text-xs font-bold text-primary">१. खाते व सभासद माहिती (Account & Member Details)</h2>
+              <h2 className="text-xs font-bold text-primary">१. खाते व खातेदार माहिती (Account & Customer Details)</h2>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -723,7 +720,7 @@ const SavingOpeningBalance: React.FC = () => {
               </label>
               <div className={isEditMode ? 'opacity-70 pointer-events-none' : ''}>
                 <CustomerSearchSelect
-                  customers={members}
+                  customers={customers}
                   value={formData.customerID || ''}
                   onChange={(val) => {
                     setFormData((prev) => ({
@@ -734,14 +731,14 @@ const SavingOpeningBalance: React.FC = () => {
                   placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
                 />
               </div>
-              {selectedMember && (
+              {selectedCustomer && (
                 <div className="mt-1 p-2 bg-primary/5 border border-primary/20 rounded-sm text-[11px] space-y-1 text-gray-800 font-medium">
                   <div className="flex justify-between items-center">
-                    <span><b>CIF No:</b> {selectedMember.cifNo || '-'}</span>
+                    <span><b>CIF No:</b> {selectedCustomer.cifNo || '-'}</span>
                     <span>
-                      {selectedMember.legacyCustomerNo || selectedMember.oldMemberCode || selectedMember.legacyMemberNo ? (
+                      {selectedCustomer.legacyCustomerNo ? (
                         <span className="text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                          जुना CIF: {selectedMember.legacyCustomerNo || selectedMember.oldMemberCode || selectedMember.legacyMemberNo}
+                          जुना CIF: {selectedCustomer.legacyCustomerNo}
                         </span>
                       ) : (
                         <span className="text-blue-800 font-bold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
@@ -751,15 +748,15 @@ const SavingOpeningBalance: React.FC = () => {
                     </span>
                   </div>
                   <div className="pt-0.5">
-                    <b>खातेदार नाव:</b> {selectedMember.firstName} {selectedMember.middleName ? selectedMember.middleName + ' ' : ''}{selectedMember.lastName}
-                    {selectedMember.mobileNo && <span className="text-gray-500 ml-2">({selectedMember.mobileNo})</span>}
+                    <b>खातेदार नाव:</b> {selectedCustomer.firstName} {selectedCustomer.middleName ? selectedCustomer.middleName + ' ' : ''}{selectedCustomer.lastName}
+                    {selectedCustomer.mobileNo && <span className="text-gray-500 ml-2">({selectedCustomer.mobileNo})</span>}
                   </div>
                 </div>
               )}
-              {existingMemberAccounts.length > 0 && !isEditMode && (
+              {existingCustomerAccounts.length > 0 && !isEditMode && (
                 <div className="mt-1 p-1.5 bg-amber-50 border border-amber-300 rounded-sm text-[10px] text-amber-900 font-semibold flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span>या खातेदाराचे आधीच {existingMemberAccounts.length} बचत खाते सुरू आहे ({existingMemberAccounts.map(a => a.accountNo || `Acc#${a.savingAccountID}`).join(', ')}).</span>
+                  <span>या खातेदाराचे आधीच {existingCustomerAccounts.length} बचत खाते सुरू आहे ({existingCustomerAccounts.map(a => a.accountNo || `Acc#${a.savingAccountID}`).join(', ')}).</span>
                 </div>
               )}
             </div>
@@ -826,11 +823,11 @@ const SavingOpeningBalance: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* Search & Add Joint Member */}
+                  {/* Search & Add Joint Customer */}
                   <div className="flex items-center gap-2">
                     <div className="flex-1">
                       <CustomerSearchSelect
-                        customers={members.filter(m => (m.customerID || m.id) !== Number(formData.customerID) && !jointHolderCustomerIDs.includes(m.customerID || m.id || 0))}
+                        customers={customers.filter(m => (m.customerID || m.id) !== Number(formData.customerID) && !jointHolderCustomerIDs.includes(m.customerID || m.id || 0))}
                         value={selectedJointCustomerID || ''}
                         onChange={handleJointCustomerSelect}
                         placeholder="-- सह-खातेदार शोधा व निवडा --"
@@ -1228,7 +1225,7 @@ const SavingOpeningBalance: React.FC = () => {
                           {/* 4. Customer Name */}
                           <td className="px-2.5 py-2 border-r border-gray-200 text-left">
                             <div className="font-bold text-gray-900 leading-snug">
-                              {acc.customerName || acc.memberName}
+                              {acc.customerName}
                             </div>
                             <div className="text-[10px] text-gray-500 font-mono mt-0.5">
                               {acc.cifNo || acc.customer?.cifNo ? `CIF: ${acc.cifNo || acc.customer?.cifNo}` : ''}
@@ -1256,7 +1253,7 @@ const SavingOpeningBalance: React.FC = () => {
                                 {acc.jointHolders.map((jh: any, jIdx: number) => (
                                   <div key={jh.savingAccountJointHolderID || jIdx} className="text-[10px] text-blue-900 bg-blue-50/90 px-1.5 py-0.5 rounded border border-blue-200 font-medium flex items-center gap-1">
                                     <span className="font-bold text-blue-700">#{jIdx + 1}</span>
-                                    <span>{jh.customerName || jh.memberName || `${jh.customer?.firstName || jh.member?.firstName || ''} ${jh.customer?.lastName || jh.member?.lastName || ''}`.trim()}</span>
+                                    <span>{jh.customerName || `${jh.customer?.firstName || ''} ${jh.customer?.lastName || ''}`.trim()}</span>
                                   </div>
                                 ))}
                               </div>

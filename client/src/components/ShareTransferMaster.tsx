@@ -242,6 +242,8 @@ export default function ShareTransferMaster() {
     setSaving(true);
     try {
       const payload = {
+        fromCustomerId: parseInt(fromMemberId),
+        toCustomerId: parseInt(toMemberId),
         fromMemberId: parseInt(fromMemberId),
         toMemberId: parseInt(toMemberId),
         numberOfShares: sharesCount,

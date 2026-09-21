@@ -215,6 +215,16 @@ export default function INamunaReport() {
     const cif = (r.cifNo || '').toLowerCase();
     const nom = (r.nomineeName || '').toLowerCase();
     return name.includes(term) || code.includes(term) || cif.includes(term) || nom.includes(term);
+  }).sort((a, b) => {
+    const getNum = (code?: string, id?: number) => {
+      if (code) {
+        const digits = code.replace(/\D/g, '');
+        const num = parseInt(digits, 10);
+        if (!isNaN(num) && num > 0) return num;
+      }
+      return id || 0;
+    };
+    return getNum(a.memberCode, a.memberID) - getNum(b.memberCode, b.memberID);
   });
 
   const exportRegisterExcel = () => {

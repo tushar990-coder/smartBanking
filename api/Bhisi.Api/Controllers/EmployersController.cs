@@ -122,11 +122,11 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
-            // Check if members are assigned to this employer
-            var isUsedInMembers = await _context.Members.AnyAsync(m => m.EmployerId == id);
+            // Check if customers/members are assigned to this employer
+            var isUsedInMembers = await _context.Customers.AnyAsync(c => c.EmployerId == id);
             if (isUsedInMembers)
             {
-                return BadRequest("या संस्थेशी/मालकाशी सभासद जोडलेले आहेत, त्यामुळे ही संस्था डिलीट करता येणार नाही.");
+                return BadRequest("या संस्थेशी/मालकाशी खातेदार किंवा सभासद जोडलेले आहेत, त्यामुळे ही संस्था डिलीट करता येणार नाही.");
             }
 
             _context.EmployerMasters.Remove(employer);

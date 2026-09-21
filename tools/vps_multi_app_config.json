@@ -1,7 +1,7 @@
 {
   "SqlServerInstance": ".",
-  "SqlUser": "Admin",
-  "SqlPassword": "Mindspace@",
+  "SqlUser": "sa",
+  "SqlPassword": "Mindspace2026",
   "TakeDbBackup": true,
   "BackupFolder": "D:\\Backups",
   "Targets": [
@@ -11,6 +11,13 @@
       "IISAppPoolName": "",
       "BackendFolderPath": "D:\\WebApps\\_template\\backend",
       "FrontendFolderPath": "D:\\WebApps\\_template\\frontend"
+    },
+    {
+      "SansthaName": "Testing1 Environment",
+      "TargetDatabase": "SmartBanking_testing1",
+      "IISAppPoolName": "testing1-backend",
+      "BackendFolderPath": "D:\\WebApps\\testing1\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\testing1\\frontend"
     },
     {
       "SansthaName": "Testing Environment",

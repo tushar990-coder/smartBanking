@@ -28,7 +28,8 @@ namespace Bhisi.Api.Controllers
 
             var query = _context.LockerAllotments
                 .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Include(a => a.LinkedSavingAccount)
                 .Where(a => a.Status == "Active" && a.ExpiryDate <= targetDate)
                 .AsQueryable();
@@ -53,8 +54,9 @@ namespace Bhisi.Api.Controllers
                 decimal lateFee = overdueMonths * (a.Locker?.LockerType?.LateFeePerMonth ?? 0);
                 decimal baseRent = a.AnnualRent;
                 decimal gstRate = a.Locker?.LockerType?.GstRate ?? 0;
-                decimal gstAmount = gstRate > 0 ? Math.Round((baseRent * gstRate) / 100, 2) : 0;
-                decimal totalPayable = baseRent + gstAmount + lateFee;
+                decimal subTotal = baseRent + lateFee;
+                decimal gstAmount = Math.Round((subTotal * gstRate) / 100, 2);
+                decimal totalPayable = subTotal + gstAmount;
 
                 return new {
                     a.AllotmentID,
@@ -65,10 +67,11 @@ namespace Bhisi.Api.Controllers
                     CabinetNo = a.Locker?.CabinetNo ?? "",
                     KeyNo = a.Locker?.KeyNo ?? "",
                     TypeName = a.Locker?.LockerType?.TypeName ?? "",
+                    a.CustomerID,
                     a.MemberID,
                     MemberNo = a.Member != null ? (a.Member.MemberCode ?? a.Member.MemberID.ToString()) : "",
-                    MemberName = a.Member != null ? $"{a.Member.FirstName} {a.Member.LastName}" : "",
-                    MemberPhone = a.Member?.MobileNo ?? "",
+                    MemberName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.LastName}" : (a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.LastName}" : ""),
+                    MemberPhone = a.Customer?.MobileNo ?? a.Member?.Customer?.MobileNo ?? "",
                     a.ExpiryDate,
                     IsOverdue = a.ExpiryDate < DateTime.Today,
                     OverdueDays = (DateTime.Today - a.ExpiryDate).Days > 0 ? (DateTime.Today - a.ExpiryDate).Days : 0,
@@ -93,7 +96,8 @@ namespace Bhisi.Api.Controllers
         {
             var allotment = await _context.LockerAllotments
                 .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Include(a => a.LinkedSavingAccount)
                 .FirstOrDefaultAsync(a => a.AllotmentID == dto.AllotmentID);
 
@@ -140,6 +144,8 @@ namespace Bhisi.Api.Controllers
             // Create GL Voucher
             if (allotment.Locker?.LockerType?.RentIncomeLedgerID.HasValue == true)
             {
+                string holderName = allotment.Customer != null ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}" : (allotment.Member?.Customer != null ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}" : "Member");
+
                 int vchCount = await _context.Vouchers.CountAsync() + 1;
                 var voucher = new Voucher
                 {
@@ -148,7 +154,7 @@ namespace Bhisi.Api.Controllers
                     VoucherDate = dto.PaymentDate,
                     VoucherType = dto.PaymentMode == "SavingDebit" ? "Journal" : "Receipt",
                     TotalAmount = dto.TotalAmount,
-                    Narration = $"Locker Rent Renewal: {allotment.LockerAccountNo} (Locker No: {allotment.Locker?.LockerNo}) for period {fromDate:dd/MM/yyyy} to {toDate:dd/MM/yyyy}. Member: {allotment.Member?.FirstName} {allotment.Member?.LastName}",
+                    Narration = $"Locker Rent Renewal: {allotment.LockerAccountNo} (Locker No: {allotment.Locker?.LockerNo}) for period {fromDate:dd/MM/yyyy} to {toDate:dd/MM/yyyy}. Member: {holderName}",
                     Status = "Approved",
                     CreatedBy = 1,
                     VoucherDetails = new List<VoucherDetail>()
@@ -218,7 +224,8 @@ namespace Bhisi.Api.Controllers
         {
             var eligibleAllotments = await _context.LockerAllotments
                 .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
-                .Include(a => a.Member)
+                .Include(a => a.Customer)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Include(a => a.LinkedSavingAccount)
                 .Where(a => a.Status == "Active" && 
                             a.IsAutoDebitEnabled && 
@@ -237,12 +244,14 @@ namespace Bhisi.Api.Controllers
 
             foreach (var a in eligibleAllotments)
             {
+                string holderName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.LastName}" : (a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.LastName}" : "Member");
+
                 if (a.LinkedSavingAccount == null || a.LinkedSavingAccount.CurrentBalance < a.AnnualRent)
                 {
                     failedCount++;
                     details.Add(new {
                         a.LockerAccountNo,
-                        MemberName = $"{a.Member?.FirstName} {a.Member?.LastName}",
+                        MemberName = holderName,
                         Status = "Failed",
                         Reason = "अपुरे शिल्लक (Insufficient Balance)"
                     });
@@ -267,7 +276,7 @@ namespace Bhisi.Api.Controllers
                     successCount++;
                     details.Add(new {
                         a.LockerAccountNo,
-                        MemberName = $"{a.Member?.FirstName} {a.Member?.LastName}",
+                        MemberName = holderName,
                         Status = "Success",
                         Amount = a.AnnualRent
                     });
@@ -277,7 +286,7 @@ namespace Bhisi.Api.Controllers
                     failedCount++;
                     details.Add(new {
                         a.LockerAccountNo,
-                        MemberName = $"{a.Member?.FirstName} {a.Member?.LastName}",
+                        MemberName = holderName,
                         Status = "Failed",
                         Reason = ex.Message
                     });

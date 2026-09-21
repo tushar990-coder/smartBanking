@@ -55,8 +55,8 @@ export default function MemberSearchSelect({
     return members.map((m: any) => {
       const rawMemProfile = m.memberProfile || m.MemberProfile;
       const memId = Number(rawMemProfile?.memberID || rawMemProfile?.MemberID || m.memberID || m.memberId || m.MemberID || 0);
-      const custId = Number(m.customerID || m.customerId || m.CustomerID || m.id || 0) || (memId > 0 ? memId : 0);
-      const primaryValueId = Number(m.memberID || m.memberId || m.MemberID || m.customerID || m.customerId || m.CustomerID || m.id || 0);
+      const custId = Number(m.customerID || m.customerId || m.CustomerID || m.id || 0);
+      const primaryValueId = custId > 0 ? custId : memId;
 
       const rawCode = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.code || m.MemberCode || m.memberNo || '').trim();
       const isNullOrEmpty = !rawCode || rawCode.toLowerCase() === 'null' || rawCode.toLowerCase() === 'undefined';
@@ -94,9 +94,9 @@ export default function MemberSearchSelect({
         label: label,
         member: {
           ...m,
-          memberID: primaryValueId,
+          memberID: memId > 0 ? memId : primaryValueId,
           memberIdOnly: memId,
-          customerID: custId,
+          customerID: custId > 0 ? custId : primaryValueId,
           memberCode: cleanMemCode,
           legacyMemberNo: rawLegacyMember,
           legacyCustomerNo: rawLegacyCust,
@@ -118,11 +118,11 @@ export default function MemberSearchSelect({
   const selectedOption = React.useMemo(() => {
     if (numericValue === '' || isNaN(numericValue as number)) return null;
     
-    // Priority 1: Exact match on primary option value (e.g. CustomerID when passed from Customer list)
+    // Priority 1: Exact match on primary option value (CustomerID)
     const exactMatch = options.find(o => o.value === numericValue);
     if (exactMatch) return exactMatch;
 
-    // Priority 2: Direct CustomerID match
+    // Priority 2: Direct CustomerID match on member object
     const custMatch = options.find(o => o.member?.customerID === numericValue);
     if (custMatch) return custMatch;
 

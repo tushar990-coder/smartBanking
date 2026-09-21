@@ -231,7 +231,6 @@ using (var scope = app.Services.CreateScope())
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgents')
             BEGIN
-                IF COL_LENGTH('PigmyAgents', 'MobileNo') IS NULL ALTER TABLE [PigmyAgents] ADD [MobileNo] nvarchar(20) NULL;
                 IF COL_LENGTH('PigmyAgents', 'Username') IS NULL ALTER TABLE [PigmyAgents] ADD [Username] nvarchar(100) NULL;
                 IF COL_LENGTH('PigmyAgents', 'PasswordHash') IS NULL ALTER TABLE [PigmyAgents] ADD [PasswordHash] nvarchar(255) NULL;
                 IF COL_LENGTH('PigmyAgents', 'Pin') IS NULL ALTER TABLE [PigmyAgents] ADD [Pin] nvarchar(10) NULL;
@@ -1137,33 +1136,6 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
-            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Members')
-            BEGIN
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'FirstNameEng')
-                BEGIN
-                    ALTER TABLE [Members] ADD [FirstNameEng] nvarchar(50) NULL;
-                    ALTER TABLE [Members] ADD [MiddleNameEng] nvarchar(50) NULL;
-                    ALTER TABLE [Members] ADD [LastNameEng] nvarchar(50) NULL;
-                    ALTER TABLE [Members] ADD [AddressEng] nvarchar(500) NULL;
-                    ALTER TABLE [Members] ADD [NomineeNameEng] nvarchar(150) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'CasteCategory')
-                BEGIN
-                    ALTER TABLE [Members] ADD [CasteCategory] nvarchar(50) NULL;
-                    ALTER TABLE [Members] ADD [Caste] nvarchar(100) NULL;
-                    ALTER TABLE [Members] ADD [Email] nvarchar(150) NULL;
-                END
-                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'IsMinor')
-                BEGIN
-                    ALTER TABLE [Members] ADD [IsMinor] bit NOT NULL DEFAULT 0;
-                    ALTER TABLE [Members] ADD [GuardianName] nvarchar(150) NULL;
-                    ALTER TABLE [Members] ADD [GuardianNameEng] nvarchar(150) NULL;
-                    ALTER TABLE [Members] ADD [GuardianRelation] nvarchar(50) NULL;
-                    ALTER TABLE [Members] ADD [GuardianAadhaarNo] nvarchar(12) NULL;
-                    ALTER TABLE [Members] ADD [GuardianMobileNo] nvarchar(15) NULL;
-                    ALTER TABLE [Members] ADD [GuardianAddress] nvarchar(500) NULL;
-                END
-            END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'AccountGroups')
             BEGIN

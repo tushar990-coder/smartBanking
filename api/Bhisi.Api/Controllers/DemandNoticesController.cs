@@ -71,7 +71,8 @@ namespace Bhisi.Api.Controllers
 
             // 1. Fetch all active members for this employer
             var members = await _context.Members
-                .Where(m => m.EmployerId == request.EmployerId && m.Status == "Active")
+                .Include(m => m.Customer)
+                .Where(m => m.Customer != null && m.Customer.EmployerId == request.EmployerId && m.Status == "Active")
                 .ToListAsync();
 
             var memberIds = members.Select(m => m.MemberID).ToList();

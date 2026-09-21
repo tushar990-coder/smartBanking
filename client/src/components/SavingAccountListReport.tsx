@@ -22,13 +22,8 @@ interface SavingAccountDto {
   customerID?: number;
   customerName?: string;
   customerNameEng?: string;
-  memberID?: number;
   cifNo?: string;
-  memberCode?: string;
-  memberName?: string;
-  memberNameEng?: string;
   customer?: { firstName: string; middleName?: string; lastName: string; cifNo?: string; mobileNo?: string };
-  member?: { firstName: string; middleName?: string; lastName: string; memberCode?: string; cifNo?: string };
   accountType: string;
   openingDate: string;
   openingBalance?: number;
@@ -138,7 +133,7 @@ export default function SavingAccountListReport() {
     window.print();
   };
 
-  const getMemberName = (acc: SavingAccountDto) => {
+  const getCustomerName = (acc: SavingAccountDto) => {
     if (acc.customerName && acc.customerName.trim() !== '') {
       return acc.customerName.trim();
     }
@@ -146,18 +141,11 @@ export default function SavingAccountListReport() {
       const c = acc.customer;
       return `${c.firstName || ''} ${c.middleName || ''} ${c.lastName || ''}`.trim();
     }
-    if (acc.memberName && acc.memberName.trim() !== '') {
-      return acc.memberName.trim();
-    }
-    if (acc.member) {
-      const m = acc.member;
-      return `${m.firstName || ''} ${m.middleName || ''} ${m.lastName || ''}`.trim();
-    }
     return '-';
   };
 
   const getCifNo = (acc: SavingAccountDto) => {
-    return acc.cifNo || acc.customer?.cifNo || acc.member?.cifNo || acc.memberCode || acc.member?.memberCode || '-';
+    return acc.cifNo || acc.customer?.cifNo || '-';
   };
 
   // Filter items
@@ -167,12 +155,11 @@ export default function SavingAccountListReport() {
     }
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase().trim();
-    const name = getMemberName(item).toLowerCase();
+    const name = getCustomerName(item).toLowerCase();
     const accNo = (item.accountNo || '').toLowerCase();
     const oldAccNo = (item.oldAccountNo || item.legacyAccountNumber || '').toLowerCase();
     const cif = getCifNo(item).toLowerCase();
-    const code = (item.memberCode || item.member?.memberCode || '').toLowerCase();
-    return name.includes(term) || accNo.includes(term) || oldAccNo.includes(term) || code.includes(term) || cif.includes(term);
+    return name.includes(term) || accNo.includes(term) || oldAccNo.includes(term) || cif.includes(term);
   });
 
   const totalBalance = filteredData.reduce((sum, a) => sum + (a.currentBalance || 0), 0);
@@ -192,8 +179,7 @@ export default function SavingAccountListReport() {
         'बचत खाते नं. (CBS)': a.accountNo,
         'जुने खाते नं.': a.oldAccountNo || a.legacyAccountNumber || '-',
         'CIF क्र.': getCifNo(a),
-        'सभासद कोड': a.memberCode || a.member?.memberCode || a.memberID || '-',
-        'खातेदाराचे नाव': getMemberName(a),
+        'खातेदाराचे नाव': getCustomerName(a),
         'खाते उघडल्याचा दिनांक': formatDisplayDate(a.openingDate),
         'सध्याची शिल्लक (₹)': a.currentBalance || 0,
         'स्थिती': a.status
@@ -417,12 +403,7 @@ export default function SavingAccountListReport() {
                       {getCifNo(acc)}
                     </td>
                     <td className="border border-gray-900 py-1 px-3 font-medium">
-                      <div className="font-bold text-gray-900 leading-snug">{getMemberName(acc)}</div>
-                      {acc.memberCode && (
-                        <div className="text-[10px] text-gray-600 font-mono print:text-black mt-0.5">
-                          सभासद कोड: <span className="font-bold text-gray-800">{acc.memberCode}</span>
-                        </div>
-                      )}
+                      <div className="font-bold text-gray-900 leading-snug">{getCustomerName(acc)}</div>
                     </td>
                     <td className="border border-gray-900 py-1 px-2 text-center font-mono text-gray-700">
                       {formatDisplayDate(acc.openingDate)}

@@ -41,9 +41,6 @@ namespace Bhisi.Api.Controllers
                     AccountNo = t.SavingAccount != null ? t.SavingAccount.AccountNo : "",
                     CustomerName = t.SavingAccount != null && t.SavingAccount.Customer != null
                         ? (t.SavingAccount.Customer.FirstName + (string.IsNullOrWhiteSpace(t.SavingAccount.Customer.MiddleName) ? "" : " " + t.SavingAccount.Customer.MiddleName) + " " + t.SavingAccount.Customer.LastName).Trim()
-                        : "",
-                    MemberName = t.SavingAccount != null && t.SavingAccount.Customer != null
-                        ? (t.SavingAccount.Customer.FirstName + (string.IsNullOrWhiteSpace(t.SavingAccount.Customer.MiddleName) ? "" : " " + t.SavingAccount.Customer.MiddleName) + " " + t.SavingAccount.Customer.LastName).Trim()
                         : ""
                 });
 
@@ -195,20 +192,20 @@ namespace Bhisi.Api.Controllers
                 // === Auto Voucher Generation ===
                 int savingControlLedgerID = account.LedgerID;
                 
-                // Get member/customer info and BranchID for narration, branch routing and numbering
-                var memberInfo = await _context.SavingAccountMasters
+                // Get customer info and BranchID for narration, branch routing and numbering
+                var customerInfo = await _context.SavingAccountMasters
                     .Include(s => s.Customer)
                     .Where(s => s.SavingAccountID == txn.SavingAccountID)
                     .Select(s => new { 
                         s.AccountNo, 
                         s.BranchID, 
-                        MemberName = s.Customer != null 
+                        CustomerName = s.Customer != null 
                             ? (s.Customer.FirstName + " " + s.Customer.LastName).Trim() 
                             : "" 
                     })
                     .FirstOrDefaultAsync();
 
-                int targetBranchId = memberInfo?.BranchID ?? 1;
+                int targetBranchId = customerInfo?.BranchID ?? 1;
                 var branch = await _context.Branches.FindAsync(targetBranchId);
                 string branchCode = branch?.BranchCode ?? "HQ";
 
@@ -256,8 +253,8 @@ namespace Bhisi.Api.Controllers
                 string voucherNo = $"{branchCode}-{typeCode}-{fy}-{count:D5}";
 
                 string narration = targetAccount != null
-                    ? $"बचत हस्तांतरण - खाते {memberInfo?.AccountNo} ({memberInfo?.MemberName}) ➔ खाते {targetAccount.AccountNo}"
-                    : $"बचत {(txn.TransactionType == "Deposit" ? "जमा" : "नावे")} - {memberInfo?.AccountNo} {memberInfo?.MemberName}";
+                    ? $"बचत हस्तांतरण - खाते {customerInfo?.AccountNo} ({customerInfo?.CustomerName}) ➔ खाते {targetAccount.AccountNo}"
+                    : $"बचत {(txn.TransactionType == "Deposit" ? "जमा" : "नावे")} - {customerInfo?.AccountNo} {customerInfo?.CustomerName}";
                 if (!string.IsNullOrEmpty(txn.Narration))
                     narration += $" | {txn.Narration}";
 

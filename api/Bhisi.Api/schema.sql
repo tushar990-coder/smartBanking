@@ -875,8 +875,6 @@ CREATE TABLE [LoanApplications] (
     [MaturityDate] datetime2 NULL,
     [RecommendedByDirectorID] int NULL,
     [Purpose] nvarchar(200) NULL,
-    [Guarantor1MemberID] int NULL,
-    [Guarantor2MemberID] int NULL,
     [SecurityDetails] nvarchar(500) NULL,
     [SecurityValue] decimal(18,2) NOT NULL,
     [LoanAccountNo] nvarchar(50) NULL,
@@ -884,8 +882,6 @@ CREATE TABLE [LoanApplications] (
     CONSTRAINT [FK_LoanApplications_LoanRates_LoanRateID] FOREIGN KEY ([LoanRateID]) REFERENCES [LoanRates] ([LoanRateID]) ON DELETE NO ACTION,
     CONSTRAINT [FK_LoanApplications_Members_CoMember2ID] FOREIGN KEY ([CoMember2ID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
     CONSTRAINT [FK_LoanApplications_Members_CoMemberID] FOREIGN KEY ([CoMemberID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
-    CONSTRAINT [FK_LoanApplications_Members_Guarantor1MemberID] FOREIGN KEY ([Guarantor1MemberID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
-    CONSTRAINT [FK_LoanApplications_Members_Guarantor2MemberID] FOREIGN KEY ([Guarantor2MemberID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
     CONSTRAINT [FK_LoanApplications_Members_MemberID] FOREIGN KEY ([MemberID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
     CONSTRAINT [FK_LoanApplications_Members_RecommendedByDirectorID] FOREIGN KEY ([RecommendedByDirectorID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION
 );
@@ -1178,8 +1174,6 @@ CREATE TABLE [LoanAccounts] (
     [LastInstallmentPaidDate] datetime2 NULL,
     [NoOfInstallments] int NOT NULL,
     [RecommendedByDirectorID] int NULL,
-    [Guarantor1MemberID] int NULL,
-    [Guarantor2MemberID] int NULL,
     [SecurityDetails] nvarchar(500) NULL,
     [SecurityValue] decimal(18,2) NOT NULL,
     [IsOpeningBalance] bit NOT NULL,
@@ -1192,8 +1186,6 @@ CREATE TABLE [LoanAccounts] (
     CONSTRAINT [FK_LoanAccounts_LoanRates_LoanRateID] FOREIGN KEY ([LoanRateID]) REFERENCES [LoanRates] ([LoanRateID]) ON DELETE NO ACTION,
     CONSTRAINT [FK_LoanAccounts_Members_CoMember2ID] FOREIGN KEY ([CoMember2ID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
     CONSTRAINT [FK_LoanAccounts_Members_CoMemberID] FOREIGN KEY ([CoMemberID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
-    CONSTRAINT [FK_LoanAccounts_Members_Guarantor1MemberID] FOREIGN KEY ([Guarantor1MemberID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
-    CONSTRAINT [FK_LoanAccounts_Members_Guarantor2MemberID] FOREIGN KEY ([Guarantor2MemberID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
     CONSTRAINT [FK_LoanAccounts_Members_MemberID] FOREIGN KEY ([MemberID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
     CONSTRAINT [FK_LoanAccounts_Members_RecommendedByDirectorID] FOREIGN KEY ([RecommendedByDirectorID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION
 );
@@ -2328,13 +2320,7 @@ GO
 
 CREATE INDEX [IX_LoanAccounts_CoMemberID] ON [LoanAccounts] ([CoMemberID]);
 GO
-
-
-CREATE INDEX [IX_LoanAccounts_Guarantor1MemberID] ON [LoanAccounts] ([Guarantor1MemberID]);
 GO
-
-
-CREATE INDEX [IX_LoanAccounts_Guarantor2MemberID] ON [LoanAccounts] ([Guarantor2MemberID]);
 GO
 
 
@@ -2360,13 +2346,7 @@ GO
 
 CREATE INDEX [IX_LoanApplications_CoMemberID] ON [LoanApplications] ([CoMemberID]);
 GO
-
-
-CREATE INDEX [IX_LoanApplications_Guarantor1MemberID] ON [LoanApplications] ([Guarantor1MemberID]);
 GO
-
-
-CREATE INDEX [IX_LoanApplications_Guarantor2MemberID] ON [LoanApplications] ([Guarantor2MemberID]);
 GO
 
 

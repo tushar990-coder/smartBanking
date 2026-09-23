@@ -249,8 +249,6 @@ namespace Bhisi.Api.Controllers
                 .Include(l => l.CoMember2).ThenInclude(m => m!.Customer)
                 .Include(l => l.Guarantor1Customer)
                 .Include(l => l.Guarantor2Customer)
-                .Include(l => l.Guarantor1Member).ThenInclude(m => m!.Customer)
-                .Include(l => l.Guarantor2Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.LoanRate)
                 .Include(l => l.Branch)
                 .FirstOrDefaultAsync(l => l.LoanAccountID == loanAccountId);
@@ -271,8 +269,8 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var borrowerCust = loan.Customer ?? loan.Member?.Customer;
-            var g1Cust = loan.Guarantor1Customer ?? loan.Guarantor1Member?.Customer ?? loan.CoCustomer ?? loan.CoMember?.Customer;
-            var g2Cust = loan.Guarantor2Customer ?? loan.Guarantor2Member?.Customer ?? loan.CoCustomer2 ?? loan.CoMember2?.Customer;
+            var g1Cust = loan.Guarantor1Customer ?? loan.CoCustomer ?? loan.CoMember?.Customer;
+            var g2Cust = loan.Guarantor2Customer ?? loan.CoCustomer2 ?? loan.CoMember2?.Customer;
 
             var formM = new
             {
@@ -299,19 +297,19 @@ namespace Bhisi.Api.Controllers
                 },
                 Guarantor1 = g1Cust != null ? new
                 {
-                    MemberID = loan.Guarantor1Member?.MemberID ?? loan.CoMember?.MemberID,
+                    MemberID = loan.CoMember?.MemberID,
                     CustomerID = g1Cust.CustomerID,
                     FullName = $"{g1Cust.FirstName} {g1Cust.MiddleName} {g1Cust.LastName}".Trim(),
-                    MemberCode = loan.Guarantor1Member?.MemberCode ?? g1Cust.CIFNo ?? loan.CoMember?.MemberCode,
+                    MemberCode = g1Cust.CIFNo ?? loan.CoMember?.MemberCode,
                     Address = $"{g1Cust.Address}, {g1Cust.Village}, {g1Cust.Taluka}, {g1Cust.District}".Trim(),
                     MobileNo = g1Cust.MobileNo
                 } : null,
                 Guarantor2 = g2Cust != null ? new
                 {
-                    MemberID = loan.Guarantor2Member?.MemberID ?? loan.CoMember2?.MemberID,
+                    MemberID = loan.CoMember2?.MemberID,
                     CustomerID = g2Cust.CustomerID,
                     FullName = $"{g2Cust.FirstName} {g2Cust.MiddleName} {g2Cust.LastName}".Trim(),
-                    MemberCode = loan.Guarantor2Member?.MemberCode ?? g2Cust.CIFNo ?? loan.CoMember2?.MemberCode,
+                    MemberCode = g2Cust.CIFNo ?? loan.CoMember2?.MemberCode,
                     Address = $"{g2Cust.Address}, {g2Cust.Village}, {g2Cust.Taluka}, {g2Cust.District}".Trim(),
                     MobileNo = g2Cust.MobileNo
                 } : null,

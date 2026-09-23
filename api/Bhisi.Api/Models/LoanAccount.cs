@@ -95,14 +95,6 @@ namespace Bhisi.Api.Models
         [ForeignKey("RecommendedByDirectorID")]
         public Member? RecommendedByDirector { get; set; }
 
-        public int? Guarantor1MemberID { get; set; }
-        [ForeignKey("Guarantor1MemberID")]
-        public Member? Guarantor1Member { get; set; }
-
-        public int? Guarantor2MemberID { get; set; }
-        [ForeignKey("Guarantor2MemberID")]
-        public Member? Guarantor2Member { get; set; }
-
         public int? Guarantor1CustomerID { get; set; }
         [ForeignKey("Guarantor1CustomerID")]
         public Customer? Guarantor1Customer { get; set; }

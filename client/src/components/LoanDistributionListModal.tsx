@@ -86,14 +86,14 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
 
     const getGuarantor1Name = (d: any) => {
         const acc = d.loanAccount || {};
-        const g1 = acc.guarantor1Member || acc.loanApplication?.guarantor1Member;
+        const g1 = acc.guarantor1Customer || acc.loanApplication?.guarantor1Customer;
         if (g1) return `${g1.firstName || ''} ${g1.middleName ? g1.middleName + ' ' : ''}${g1.lastName || ''}`.trim();
         return '-';
     };
 
     const getGuarantor2Name = (d: any) => {
         const acc = d.loanAccount || {};
-        const g2 = acc.guarantor2Member || acc.loanApplication?.guarantor2Member;
+        const g2 = acc.guarantor2Customer || acc.loanApplication?.guarantor2Customer;
         if (g2) return `${g2.firstName || ''} ${g2.middleName ? g2.middleName + ' ' : ''}${g2.lastName || ''}`.trim();
         return '-';
     };

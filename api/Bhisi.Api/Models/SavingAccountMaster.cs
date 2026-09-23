@@ -43,6 +43,16 @@ namespace Bhisi.Api.Models
         [MaxLength(50)]
         public string? OldAccountNo { get; set; }
 
+        // आधीचा ९-अंकी खाते क्रमांक (Previous 9-digit Account Number for Seamless Lookup)
+        [MaxLength(20)]
+        public string? PreviousAccountNo { get; set; }
+
+        // बचत योजना (Saving Scheme Mapping)
+        public int? SavingSchemeID { get; set; }
+
+        [ForeignKey("SavingSchemeID")]
+        public virtual SavingInterestSetting? SavingScheme { get; set; }
+
         // बचत ठेव प्रकार - Ledger mapping (विविध प्रकारच्या बचत ठेवी)
         [Required]
         public int LedgerID { get; set; } = 7; // Default: बचत ठेव ledger

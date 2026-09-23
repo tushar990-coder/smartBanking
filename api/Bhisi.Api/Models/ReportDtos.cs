@@ -285,8 +285,6 @@ namespace Bhisi.Api.Models
         public DateTime? LastInstallmentPaidDate { get; set; }
         public string Guarantor1 { get; set; } = string.Empty;
         public string Guarantor2 { get; set; } = string.Empty;
-        public int? Guarantor1MemberID { get; set; }
-        public int? Guarantor2MemberID { get; set; }
         public int? Guarantor1CustomerID { get; set; }
         public int? Guarantor2CustomerID { get; set; }
         public int? CoCustomerID { get; set; }

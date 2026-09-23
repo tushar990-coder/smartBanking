@@ -1,4 +1,4 @@
--- =========================================================================================
+﻿-- =========================================================================================
 -- SmartBanking Core ERP - 100% Pure Template Database Deployment Script
 -- Database Name   : SmartBanking_Template
 -- Generated Date  : 2026-09-08 14.30.02
@@ -1555,8 +1555,6 @@ BEGIN
         [LastInstallmentPaidDate] datetime2 NULL,
         [NoOfInstallments] int NOT NULL,
         [RecommendedByDirectorID] int NULL,
-        [Guarantor1MemberID] int NULL,
-        [Guarantor2MemberID] int NULL,
         [SecurityDetails] nvarchar(500) NULL,
         [SecurityValue] decimal(18, 2) NOT NULL,
         [IsOpeningBalance] bit NOT NULL,
@@ -1597,8 +1595,6 @@ BEGIN
         [MaturityDate] datetime2 NULL,
         [RecommendedByDirectorID] int NULL,
         [Purpose] nvarchar(200) NULL,
-        [Guarantor1MemberID] int NULL,
-        [Guarantor2MemberID] int NULL,
         [SecurityDetails] nvarchar(500) NULL,
         [SecurityValue] decimal(18, 2) NOT NULL,
         [LoanAccountNo] nvarchar(50) NULL,

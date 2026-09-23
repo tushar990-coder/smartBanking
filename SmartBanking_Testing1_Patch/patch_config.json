@@ -1,0 +1,12 @@
+﻿{
+  "SansthaName": "Testing1 Environment",
+  "TargetDatabase": "SmartBanking_testing1",
+  "SqlServerInstance": ".",
+  "SqlUser": "sa",
+  "SqlPassword": "Mindspace2026",
+  "IISAppPoolName": "testing1-backend",
+  "BackendFolderPath": "D:\\WebApps\\testing1\\backend",
+  "FrontendFolderPath": "D:\\WebApps\\testing1\\frontend",
+  "TakeDbBackup": true,
+  "BackupFolder": "D:\\Backups"
+}

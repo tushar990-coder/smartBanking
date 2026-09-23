@@ -96,21 +96,22 @@ const SavingInterestSettingMaster: React.FC = () => {
   });
 
   const generateSchemeCode = (settingList: SavingInterestSetting[]): string => {
-    let maxNum = 0;
+    let maxNum = 100;
     settingList.forEach((s) => {
       if (s.schemeCode) {
-        const match = s.schemeCode.trim().match(/SAV-?(\d+)/i) || s.schemeCode.trim().match(/SVS-?(\d+)/i) || s.schemeCode.trim().match(/SB-?(\d+)/i) || s.schemeCode.trim().match(/(\d+)/);
+        const match = s.schemeCode.trim().match(/(\d+)/);
         if (match) {
           const num = parseInt(match[1], 10);
           if (!isNaN(num) && num > maxNum) maxNum = num;
         }
       } else if (s.settingID) {
-        if (s.settingID > maxNum) maxNum = s.settingID;
+        const fallback = 100 + s.settingID;
+        if (fallback > maxNum) maxNum = fallback;
       }
     });
 
-    const nextNum = maxNum === 0 ? 1 : maxNum + 1;
-    return `SAV${String(nextNum).padStart(3, '0')}`;
+    const nextNum = maxNum < 101 ? 101 : maxNum + 1;
+    return String(nextNum).padStart(3, '0');
   };
 
   const fetchLedgers = async () => {
@@ -496,10 +497,11 @@ const SavingInterestSettingMaster: React.FC = () => {
                   type="text"
                   required
                   readOnly={!allowManualCode}
-                  placeholder="उदा. SAV001"
+                  placeholder="उदा. 101, 102"
+                  maxLength={3}
                   name="schemeCode"
                   value={formData.schemeCode}
-                  onChange={(e) => setFormData({ ...formData, schemeCode: e.target.value.toUpperCase() })}
+                  onChange={(e) => setFormData({ ...formData, schemeCode: e.target.value.replace(/\D/g, '').slice(0, 3) })}
                   className={`${inputClass} font-mono font-bold ${
                     allowManualCode ? 'bg-amber-50 text-amber-900 border-amber-400' : 'bg-slate-100 text-primary cursor-not-allowed'
                   }`}

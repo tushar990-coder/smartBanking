@@ -1,8 +1,10 @@
 {
-  "version": "2.5.0",
-  "releaseDate": "2026-09-16",
-  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.0",
+  "version": "2.5.2",
+  "releaseDate": "2026-09-23",
+  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.2",
   "changelog": [
+    "⭐ [2026-09-23] कर्ज जामीनदार युनिव्हर्सल CIF/CustomerID मानकीकरण (Universal CIF-First Loan Guarantor Engine): LoanApplications व LoanAccounts मधून अप्रचलित Guarantor1MemberID व Guarantor2MemberID चे सर्व कॉलम्स, फॉरेन की व इंडेक्सेस कायमस्वरूपी ड्रॉप, सर्व जामीनदार नोंदी थेट Customers(CustomerID) शी जोडणे, बॅकएंड मॉडेल्स, कंट्रोलर्स, फ्रंटएंड फॉर्म्स व सर्व Schema Sync / Deploy स्क्रिप्ट्सचे १००% मानकीकरण.",
+    "⭐ [2026-09-22] बचत खाते १४-अंकी आंतरराष्ट्रीय सीबीएस मानकीकरण (CBS Standard 14-Digit Saving Account Engine): [३-अंकी शाखा कोड] + [३-अंकी योजना कोड] + [७-अंकी सलग अनुक्रमांक] + [१-अंकी Luhn Modulo-10 चेक डिजिट], SavingAccountSequences अणू (Atomic) सीक्वेन्स इंजिन, मागील ९-अंकी नंबरचा PreviousAccountNo मध्ये सुरक्षित बॅकअप, बहुस्तरीय (Multi-Tier) शोध, आणि ३-अंकी शुद्ध संख्यात्मक योजना मास्टर (Pure 3-Digit Scheme Master 101, 102...).",
     "⭐ [2026-09-16] सभासद टेबल नॉर्मलायझेशन व शुद्ध CIF-First आर्किटेक्चर (Members Table Normalization & Pure CIF-First): Members टेबलमधील ४३ अनावश्यक वैयक्तिक, पत्ता व केवायसी कॉलम्स हटवून १३ कॅनोनिकल कॉलम्सवर आणणे, शेअर्स नसलेल्या अतिरिक्त नोंदींची स्वच्छता, vw_Members व्ह्यू द्वारे बॅकवर्ड कम्पॅटिबिलिटी आणि सलग MemberID/MemberCode अलाइनमेंट.",
     "⭐ [2026-09-15] दैनिक ठेव सीबीएस एंटरप्राइज सूट (CBS Pigmy Enterprise Suite): १) एजंट कार्यमुक्ती व खाते हस्तांतरण (Agent Suspension & Customer Account Reallocation - Zero Historical Loss, Cash Handover Warning व Audit Batch), २) कॅशियर नोटा मोजणी ग्रिड (Cashier Denomination Counter Grid - CashDenominations टेबल नोंद), ३) मोबाईल सिंक तपासणी व ऑडिट डॅशबोर्ड (Mobile Collections Review Queue), ४) सक्रिय कर्ज धारणाधिकार तपासणी व मुदतपूर्व बंद दंड स्लॅब्स (Loan Lien Protection & Penalty Slabs), ५) ग्राहक तात्काळ एसएमएस व सीबीएस सूचना हुक (Customer SMS & Notification Hook).",
     "⭐ [2026-09-15] शेअर ओपनिंग बॅलन्स व सभासद कोड सिंक (Share Opening Balance & Member Code Alignment): सभासद व शेअर्स वाटप झालेल्या खातेदारांसाठी सलग MemberCode (MEM0001 ते MEMxxxx) स्वयंचलित जोडणे, खातेदार शोध ड्रॉपडाऊनमध्ये CIF व MEM बॅज दुहेरी सुरक्षा आणि कोर बँकिंग मानकांनुसार ५-भागीय आधुनिक UI रचना.",

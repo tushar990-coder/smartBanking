@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="mr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>स्मार्ट मल्टिस्टेट पतसंस्था व बँकिंग सॉफ्टवेअर - ब्रोशर</title>
+  
+  <!-- Google Fonts for Devanagari & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Noto+Sans+Devanagari:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS Stylesheet -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" />
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    :root {
+      --brand-50: #f0f7ff;
+      --brand-100: #e0effe;
+      --brand-500: #0066a3;
+      --brand-600: #004a75;
+      --brand-700: #003759;
+      --brand-900: #00223b;
+    }
+    .bg-brand-50 { background-color: #f0f7ff !important; }
+    .bg-brand-50\/60 { background-color: rgba(240, 247, 255, 0.6) !important; }
+    .bg-brand-600 { background-color: #004a75 !important; }
+    .bg-brand-700 { background-color: #003759 !important; }
+    .bg-brand-900 { background-color: #00223b !important; }
+    .text-brand-600 { color: #004a75 !important; }
+    .text-brand-700 { color: #003759 !important; }
+    .text-brand-900 { color: #00223b !important; }
+    .border-brand-100 { border-color: #e0effe !important; }
+    .border-brand-200 { border-color: #bae0ff !important; }
+    .border-brand-600 { border-color: #004a75 !important; }
+
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+    
+    @media print {
+      body {
+        background: #ffffff !important;
+        padding: 0 !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .page-break {
+        page-break-before: always;
+      }
+      .a4-page {
+        box-shadow: none !important;
+        margin: 0 !important;
+        width: 210mm !important;
+        height: 297mm !important;
+        padding: 12mm 15mm !important;
+      }
+    }
+
+    body {
+      background-color: #e5e7eb;
+      font-family: 'Noto Sans Devanagari', 'Inter', sans-serif;
+    }
+
+    .a4-page {
+      width: 210mm;
+      min-height: 297mm;
+      background: white;
+      margin: 20px auto;
+      padding: 12mm 15mm;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      position: relative;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body class="text-slate-800 text-sm">
+
+  <!-- Floating Print Control Bar -->
+  <div class="fixed top-4 right-4 z-50 no-print flex gap-2">
+    <button onclick="window.print()" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 transition-all cursor-pointer">
+      <i class="fa-solid fa-print"></i>
+      <span>A4 ब्रोशर प्रिंट करा (PDF)</span>
+    </button>
+  </div>
+
+  <!-- PAGE 1 -->
+  <div class="a4-page flex flex-col justify-between">
+    <div>
+      
+      <!-- Header Section -->
+      <header class="border-b-2 border-brand-600 pb-3 mb-4">
+        <div class="flex justify-between items-center">
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 bg-gradient-to-tr from-brand-700 to-brand-500 rounded-xl flex items-center justify-center text-white shadow-md">
+              <i class="fa-solid fa-building-columns text-2xl"></i>
+            </div>
+            <div>
+              <span class="text-xs font-bold uppercase tracking-wider text-brand-600 bg-brand-50 px-2.5 py-0.5 rounded-full border border-brand-100">
+                नेक्स्ट-जेन बँकिंग सोल्यूशन
+              </span>
+              <h1 class="text-xl font-extrabold text-slate-900 leading-tight mt-0.5">
+                स्मार्ट मल्टिस्टेट पतसंस्था व बँकिंग सॉफ्टवेअर
+              </h1>
+            </div>
+          </div>
+          <div class="text-right">
+            <span class="inline-block bg-emerald-100 text-emerald-800 font-extrabold text-xs px-3 py-1 rounded-md border border-emerald-300 shadow-xs">
+              <i class="fa-solid fa-shield-halved mr-1"></i> १००% सुरक्षित व प्रमाणित
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Hero Banner -->
+      <div class="relative bg-gradient-to-r from-slate-900 via-brand-700 to-brand-900 text-white p-5 rounded-xl mb-5 shadow-sm overflow-hidden">
+        <div class="absolute -right-6 -bottom-6 text-white/5 text-9xl font-black">
+          <i class="fa-solid fa-chart-line"></i>
+        </div>
+        <h2 class="text-lg font-black tracking-wide leading-snug mb-1">
+          पतसंस्था, क्रेडिट सोसायटी आणि भिशी संस्थांसाठी संपूर्ण डिजिटल क्रांती!
+        </h2>
+        <p class="text-xs text-blue-100 opacity-90 mb-3 max-w-xl">
+          तुमच्या संस्थेचा कारभार अधिक वेगवान, पारदर्शक आणि चुकांशिवाय करा. ऑटोमॅटिक व्याज आकारणी, व्हॉट्सॲप पावती अलर्ट्स आणि ३-कॉलम खतावणी अहवालासह परिपूर्ण सॉफ्टवेअर.
+        </p>
+        <div class="flex flex-wrap gap-2 text-[11px] font-bold">
+          <span class="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-md border border-white/20">
+            <i class="fa-solid fa-check text-emerald-400 mr-1"></i> ऑटो व्याज आकारणी
+          </span>
+          <span class="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-md border border-white/20">
+            <i class="fa-solid fa-check text-emerald-400 mr-1"></i> व्हॉट्सॲप/SMS अलर्ट
+          </span>
+          <span class="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-md border border-white/20">
+            <i class="fa-solid fa-check text-emerald-400 mr-1"></i> ऑटो वाउचर लिमिट
+          </span>
+          <span class="bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-md border border-white/20">
+            <i class="fa-solid fa-check text-emerald-400 mr-1"></i> मराठी भाषा सपोर्ट
+          </span>
+        </div>
+      </div>
+
+      <!-- Core Highlights (Grid of 4) -->
+      <div class="grid grid-cols-2 gap-3 mb-5">
+        <div class="bg-brand-50/60 border border-brand-100 p-3 rounded-lg flex items-start gap-2.5">
+          <div class="w-8 h-8 bg-brand-600 text-white rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+            <i class="fa-solid fa-calculator text-sm"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-xs text-brand-900 mb-0.5">अचूक व्याज आकारणी (Accuracy)</h3>
+            <p class="text-[11px] text-slate-600 leading-snug">
+              शेवटच्या हप्त्यापासूनच्या अचूक दिवसांनुसार व्याज आकारणी. दुप्पट किंवा चुकीचे व्याज लागण्याची अजिबात शक्यता नाही.
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-emerald-50/60 border border-emerald-100 p-3 rounded-lg flex items-start gap-2.5">
+          <div class="w-8 h-8 bg-emerald-600 text-white rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+            <i class="fa-brands fa-whatsapp text-sm"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-xs text-emerald-950 mb-0.5">इन्स्टंट व्हॉट्सॲप अलर्ट्स</h3>
+            <p class="text-[11px] text-slate-600 leading-snug">
+              कर्ज वसुली, ठेव रक्कम जमा व वाउचर सेव्ह होताच ग्राहकाच्या व्हॉट्सॲपवर अधिकृत संगणकीय पावती ऑटोमॅटिक पाठवली जाते.
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-amber-50/60 border border-amber-100 p-3 rounded-lg flex items-start gap-2.5">
+          <div class="w-8 h-8 bg-amber-600 text-white rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+            <i class="fa-solid fa-lock text-sm"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-xs text-amber-950 mb-0.5">वाउचर ऑटो-पोस्ट सुरक्षा</h3>
+            <p class="text-[11px] text-slate-600 leading-snug">
+              संस्थेच्या गरजेनुसार ऑटो-पोस्ट वाउचर मर्यादा (उदा. ₹ ५०,०००) सेट करा. मर्यादेपेक्षा मोठे वाउचर मॅन्यूअल ॲप्रुव्हलला जातात.
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-indigo-50/60 border border-indigo-100 p-3 rounded-lg flex items-start gap-2.5">
+          <div class="w-8 h-8 bg-indigo-600 text-white rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+            <i class="fa-solid fa-file-invoice text-sm"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-xs text-indigo-950 mb-0.5">३-कॉलम खतावणी अहवाल</h3>
+            <p class="text-[11px] text-slate-600 leading-snug">
+              कर्जदाराचा संपूर्ण इतिहास, जामीनदार माहिती, मुद्दल, व्याज व येणेबाकीचा परिपूर्ण A4 प्रिंट व PDF अहवाल.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Core Modules Breakdown (Part 1) -->
+      <h2 class="text-xs font-black text-brand-900 border-b border-brand-200 pb-1 mb-3 uppercase tracking-wider flex items-center gap-1.5">
+        <i class="fa-solid fa-cubes text-brand-600"></i> मुख्य कार्यप्रणाली मॉड्युल्स (Core Software Modules)
+      </h2>
+
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <!-- Module 1 -->
+        <div class="border border-slate-200 rounded-lg p-3 bg-white shadow-xs">
+          <div class="flex items-center gap-2 mb-1.5">
+            <i class="fa-solid fa-users text-brand-600 text-sm"></i>
+            <h3 class="font-bold text-xs text-slate-900">१. सभासद व्यवस्थापन (Member Master)</h3>
+          </div>
+          <ul class="text-[11px] text-slate-600 space-y-1 pl-4 list-disc">
+            <li>सभासदाची संपूर्ण माहिती, आधार, पॅन व बँक खाते.</li>
+            <li>कस्टमर फोटो, सही व KYC दस्तऐवज अपलोड.</li>
+            <li>भाग भांडवल (Share Capital) व प्रवेश फी ट्रॅकिंग.</li>
+            <li>नाव, कोड किंवा मोबाईलने जलद शोध प्रणाली.</li>
+          </ul>
+        </div>
+
+        <!-- Module 2 -->
+        <div class="border border-slate-200 rounded-lg p-3 bg-white shadow-xs">
+          <div class="flex items-center gap-2 mb-1.5">
+            <i class="fa-solid fa-hand-holding-dollar text-brand-600 text-sm"></i>
+            <h3 class="font-bold text-xs text-slate-900">२. कर्ज वाटप व वसुली (Loan Master)</h3>
+          </div>
+          <ul class="text-[11px] text-slate-600 space-y-1 pl-4 list-disc">
+            <li>सोने तारण, वाहन, वैयक्तिक व तारण कर्ज योजना.</li>
+            <li>कर्जदार व multiple जामीनदार (Guarantors) नोंदणी.</li>
+            <li>मुद्दल शिल्लक पेक्षा जास्त रक्कम जमा न होण्याचे ऑटो व्हॅलिडेशन.</li>
+            <li>हप्ता परतफेड वेळापत्रक चार्ट (Installment Chart).</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Page 1 Footer Note -->
+    <div class="border-t border-slate-200 pt-2 flex justify-between items-center text-[10px] text-slate-500">
+      <span>स्मार्ट बँकिंग सॉफ्टवेअर - माहिती पत्रक (पान १/२)</span>
+      <span>अधिक माहितीसाठी कॉल करा: +९१ ९८७६५ ४३२१०</span>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- PAGE 2 -->
+  <div class="a4-page flex flex-col justify-between">
+    <div>
+      
+      <!-- Page 2 Header Mini Banner -->
+      <div class="flex justify-between items-center border-b border-brand-600 pb-2 mb-4">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-building-columns text-brand-600 text-lg"></i>
+          <span class="font-bold text-xs text-slate-900">स्मार्ट मल्टिस्टेट पतसंस्था व बँकिंग सॉफ्टवेअर</span>
+        </div>
+        <span class="text-[10px] bg-brand-50 text-brand-700 font-bold px-2 py-0.5 rounded">वैशिष्ट्ये व तुलना</span>
+      </div>
+
+      <!-- Core Modules Breakdown (Part 2) -->
+      <div class="grid grid-cols-2 gap-3 mb-5">
+        <!-- Module 3 -->
+        <div class="border border-slate-200 rounded-lg p-3 bg-white shadow-xs">
+          <div class="flex items-center gap-2 mb-1.5">
+            <i class="fa-solid fa-piggy-bank text-brand-600 text-sm"></i>
+            <h3 class="font-bold text-xs text-slate-900">३. ठेव व बचत योजना (FD / RD / Pigmy)</h3>
+          </div>
+          <ul class="text-[11px] text-slate-600 space-y-1 pl-4 list-disc">
+            <li>मुदत ठेव (FD), आवर्त ठेवी (RD) व पिग्मी कलेक्शन.</li>
+            <li>दैनिक / मासिक व्याज जमा व ऑटोमॅटिक परिपक्वता (Maturity).</li>
+            <li>पिग्मी एजंट मोबाईल ॲप एकत्रीकरण.</li>
+          </ul>
+        </div>
+
+        <!-- Module 4 -->
+        <div class="border border-slate-200 rounded-lg p-3 bg-white shadow-xs">
+          <div class="flex items-center gap-2 mb-1.5">
+            <i class="fa-solid fa-chart-pie text-brand-600 text-sm"></i>
+            <h3 class="font-bold text-xs text-slate-900">४. ताळेबंद व ऑडिट अहवाल (Reports)</h3>
+          </div>
+          <ul class="text-[11px] text-slate-600 space-y-1 pl-4 list-disc">
+            <li>तेरीज पत्रक (Trial Balance), नफा-तोटा व ताळेबंद.</li>
+            <li>कर्ज खतावणी (Loan Ledger) ३-कॉलम प्रिंट लेआउट.</li>
+            <li>कॅश बुक, बँक बुक व व्हाऊचर रजिस्टर.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Comparison Table -->
+      <h2 class="text-xs font-black text-brand-900 border-b border-brand-200 pb-1 mb-2.5 uppercase tracking-wider flex items-center gap-1.5">
+        <i class="fa-solid fa-code-compare text-brand-600"></i> तुलना: आमचे सॉफ्टवेअर वि. जुने पारंपरिक सॉफ्टवेअर
+      </h2>
+
+      <div class="overflow-hidden border border-slate-300 rounded-lg mb-5 shadow-xs">
+        <table class="w-full text-left text-[11px] border-collapse">
+          <thead>
+            <tr class="bg-slate-900 text-white font-bold">
+              <th class="p-2 border-b border-slate-800">वैशिष्ट्य (Feature)</th>
+              <th class="p-2 border-b border-slate-800 bg-brand-600 text-white">स्मार्ट बँकिंग सॉफ्टवेअर</th>
+              <th class="p-2 border-b border-slate-800 text-slate-300">इतर पारंपरिक सॉफ्टवेअर</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-200 text-slate-700">
+            <tr class="bg-white">
+              <td class="p-2 font-semibold text-slate-900">मराठी इंटरफेस व अलर्ट</td>
+              <td class="p-2 font-bold text-emerald-700 bg-emerald-50/40"><i class="fa-solid fa-circle-check mr-1"></i> संपूर्ण मराठी सपोर्ट</td>
+              <td class="p-2 text-slate-500"><i class="fa-solid fa-circle-xmark mr-1 text-red-500"></i> इंग्रजी किंवा क्लिष्ट</td>
+            </tr>
+            <tr class="bg-slate-50/50">
+              <td class="p-2 font-semibold text-slate-900">व्याज गणना अचूकता</td>
+              <td class="p-2 font-bold text-emerald-700 bg-emerald-50/40"><i class="fa-solid fa-circle-check mr-1"></i> १००% अचूक (दिवसानुसार)</td>
+              <td class="p-2 text-slate-500"><i class="fa-solid fa-triangle-exclamation mr-1 text-amber-500"></i> दुप्पट व्याजाची शक्यता</td>
+            </tr>
+            <tr class="bg-white">
+              <td class="p-2 font-semibold text-slate-900">व्हॉट्सॲप / SMS अलर्ट</td>
+              <td class="p-2 font-bold text-emerald-700 bg-emerald-50/40"><i class="fa-solid fa-circle-check mr-1"></i> इन-बिल्ट ऑटोमॅटिक मेसेज</td>
+              <td class="p-2 text-slate-500"><i class="fa-solid fa-circle-xmark mr-1 text-red-500"></i> स्वतंत्र अतिरिक्त खर्च</td>
+            </tr>
+            <tr class="bg-slate-50/50">
+              <td class="p-2 font-semibold text-slate-900">रिपोर्ट प्रिंटिंग डिझाईन</td>
+              <td class="p-2 font-bold text-emerald-700 bg-emerald-50/40"><i class="fa-solid fa-circle-check mr-1"></i> आधुनिक A4 PDF & प्रिंट</td>
+              <td class="p-2 text-slate-500"><i class="fa-solid fa-circle-xmark mr-1 text-red-500"></i> जुनी डॉट-मॅट्रिक्स प्रिंट</td>
+            </tr>
+            <tr class="bg-white">
+              <td class="p-2 font-semibold text-slate-900">वाउचर ऑटो-पोस्ट मर्यादा</td>
+              <td class="p-2 font-bold text-emerald-700 bg-emerald-50/40"><i class="fa-solid fa-circle-check mr-1"></i> कस्टम रक्कम मर्यादा सेट करा</td>
+              <td class="p-2 text-slate-500"><i class="fa-solid fa-circle-xmark mr-1 text-red-500"></i> फिक्स अथवा पर्याय नाही</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Trust Badges & Tech Stack -->
+      <div class="bg-gradient-to-r from-brand-50 to-blue-50 border border-brand-200 p-3 rounded-lg mb-5 flex justify-between items-center">
+        <div class="flex items-center gap-2 text-brand-900 font-bold text-xs">
+          <i class="fa-solid fa-server text-brand-600 text-base"></i>
+          <span>क्लाऊड डेटा बॅकअप व २४x७ सपोर्ट</span>
+        </div>
+        <div class="flex gap-4 text-xs font-semibold text-slate-700">
+          <span><i class="fa-solid fa-bolt text-amber-500 mr-1"></i> जलद गती</span>
+          <span><i class="fa-solid fa-database text-blue-600 mr-1"></i> ऑटो बॅकअप</span>
+          <span><i class="fa-solid fa-headset text-emerald-600 mr-1"></i> २४/७ हेल्पडेस्क</span>
+        </div>
+      </div>
+
+      <!-- Contact Banner / Call to Action -->
+      <div class="bg-gradient-to-r from-brand-900 via-brand-700 to-slate-900 text-white p-4 rounded-xl shadow-md text-center">
+        <h3 class="text-sm font-black tracking-wide uppercase mb-1">
+          आजच तुमच्या संस्थेसाठी मोफत लाईव्ह प्रात्यक्षिक (Free Live Demo) बुक करा!
+        </h3>
+        <p class="text-xs text-blue-100 mb-3">
+          अत्यंत माफक दरात संस्था संगणकीकृत करा आणि व्यवसायात १० पट वाढ अनुभवा.
+        </p>
+
+        <div class="grid grid-cols-3 gap-2 text-center text-xs font-bold bg-white/10 backdrop-blur-md p-2.5 rounded-lg border border-white/20">
+          <div>
+            <i class="fa-solid fa-phone text-emerald-400 mr-1"></i>
+            <span>+९१ ९८७६५ ४३२१०</span>
+          </div>
+          <div>
+            <i class="fa-solid fa-envelope text-blue-300 mr-1"></i>
+            <span>info@smartbanking.in</span>
+          </div>
+          <div>
+            <i class="fa-solid fa-globe text-amber-300 mr-1"></i>
+            <span>www.smartbanking.in</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Page 2 Footer -->
+    <div class="border-t border-slate-200 pt-2 flex justify-between items-center text-[10px] text-slate-500">
+      <span>स्मार्ट बँकिंग सोल्यूशन्स © २०२६. सर्व हक्क सुरक्षित.</span>
+      <span>माहिती पत्रक (पान २/२)</span>
+    </div>
+  </div>
+
+</body>
+</html>

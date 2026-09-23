@@ -47,15 +47,11 @@ namespace Bhisi.Api.Controllers
             return await _context.LoanDisbursements
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Member)
-                .Include(d => d.LoanAccount!).ThenInclude(l => l.Guarantor1Member)
-                .Include(d => d.LoanAccount!).ThenInclude(l => l.Guarantor2Member)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Guarantor1Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Guarantor2Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanRate)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Member)
-                .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor1Member)
-                .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor2Member)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor1Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor2Customer)
                 .Include(d => d.Deductions).ThenInclude(d => d.Ledger)
@@ -223,12 +219,6 @@ namespace Bhisi.Api.Controllers
                         if (!disbursement.LoanAccount.Guarantor2CustomerID.HasValue && app.Guarantor2CustomerID.HasValue)
                             disbursement.LoanAccount.Guarantor2CustomerID = app.Guarantor2CustomerID;
 
-                        if (!disbursement.LoanAccount.Guarantor1MemberID.HasValue && app.Guarantor1MemberID.HasValue)
-                            disbursement.LoanAccount.Guarantor1MemberID = app.Guarantor1MemberID;
-
-                        if (!disbursement.LoanAccount.Guarantor2MemberID.HasValue && app.Guarantor2MemberID.HasValue)
-                            disbursement.LoanAccount.Guarantor2MemberID = app.Guarantor2MemberID;
-
                         if (string.IsNullOrWhiteSpace(disbursement.LoanAccount.SecurityDetails) && !string.IsNullOrWhiteSpace(app.SecurityDetails))
                             disbursement.LoanAccount.SecurityDetails = app.SecurityDetails;
 
@@ -245,8 +235,6 @@ namespace Bhisi.Api.Controllers
                     if (disbursement.LoanAccount.CoMember2ID.HasValue && disbursement.LoanAccount.CoMember2ID.Value <= 0) disbursement.LoanAccount.CoMember2ID = null;
                     if (disbursement.LoanAccount.Guarantor1CustomerID.HasValue && disbursement.LoanAccount.Guarantor1CustomerID.Value <= 0) disbursement.LoanAccount.Guarantor1CustomerID = null;
                     if (disbursement.LoanAccount.Guarantor2CustomerID.HasValue && disbursement.LoanAccount.Guarantor2CustomerID.Value <= 0) disbursement.LoanAccount.Guarantor2CustomerID = null;
-                    if (disbursement.LoanAccount.Guarantor1MemberID.HasValue && disbursement.LoanAccount.Guarantor1MemberID.Value <= 0) disbursement.LoanAccount.Guarantor1MemberID = null;
-                    if (disbursement.LoanAccount.Guarantor2MemberID.HasValue && disbursement.LoanAccount.Guarantor2MemberID.Value <= 0) disbursement.LoanAccount.Guarantor2MemberID = null;
 
                     // Generate Account number: [BranchCode]02[5-digit sequence]
                     string prefix = $"{branch.BranchCode}02";

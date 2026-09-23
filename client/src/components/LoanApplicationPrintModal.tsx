@@ -30,11 +30,11 @@ const LoanApplicationPrintModal: React.FC<Props> = ({ application, onClose }) =>
     }, 1000);
   };
 
-  const borrower = application?.member || {};
-  const coMember1 = application?.coMember || {};
-  const coMember2 = application?.coMember2 || {};
-  const guarantor1 = application?.guarantor1Member || {};
-  const guarantor2 = application?.guarantor2Member || {};
+  const borrower = application?.customer || application?.member?.customer || application?.member || {};
+  const coMember1 = application?.coCustomer || application?.coMember?.customer || application?.coMember || {};
+  const coMember2 = application?.coCustomer2 || application?.coMember2?.customer || application?.coMember2 || {};
+  const guarantor1 = application?.guarantor1Customer || {};
+  const guarantor2 = application?.guarantor2Customer || {};
   const director = application?.recommendedByDirector || {};
   const loanRate = application?.loanRate || {};
 

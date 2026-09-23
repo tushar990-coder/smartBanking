@@ -2594,11 +2594,9 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(a => a!.Member)
                         .ThenInclude(m => m!.Customer)
                 .Include(d => d.LoanAccount!)
-                    .ThenInclude(a => a!.Guarantor1Member)
-                        .ThenInclude(m => m!.Customer)
+                    .ThenInclude(a => a!.Guarantor1Customer)
                 .Include(d => d.LoanAccount!)
-                    .ThenInclude(a => a!.Guarantor2Member)
-                        .ThenInclude(m => m!.Customer)
+                    .ThenInclude(a => a!.Guarantor2Customer)
                 .Include(d => d.LoanAccount!)
                     .ThenInclude(a => a!.LoanRate)
                 .AsQueryable();
@@ -2630,8 +2628,8 @@ namespace Bhisi.Api.Controllers
                 string cif = cust?.CIFNo ?? memCust?.CIFNo ?? "";
                 string mCode = mem?.MemberCode ?? "";
 
-                var g1Cust = acc?.Guarantor1Member?.Customer;
-                var g2Cust = acc?.Guarantor2Member?.Customer;
+                var g1Cust = acc?.Guarantor1Customer;
+                var g2Cust = acc?.Guarantor2Customer;
 
                 return new LoanDisbursementRegisterDto
                 {
@@ -2767,29 +2765,11 @@ namespace Bhisi.Api.Controllers
                     var gc1 = await _context.Customers.FindAsync(loanAccount.Guarantor1CustomerID.Value);
                     if (gc1 != null) report.Guarantors.Add(new LoanLedgerGuarantorDto { Name = $"{gc1.FirstName} {gc1.LastName}".Trim() });
                 }
-                else if (loanAccount.Guarantor1MemberID.HasValue && loanAccount.Guarantor1MemberID.Value > 0)
-                {
-                    var g1 = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == loanAccount.Guarantor1MemberID);
-                    if (g1 != null)
-                    {
-                        string g1Name = g1.Customer != null ? $"{g1.Customer.FirstName} {g1.Customer.LastName}".Trim() : "Guarantor 1";
-                        report.Guarantors.Add(new LoanLedgerGuarantorDto { Name = g1Name });
-                    }
-                }
 
                 if (loanAccount.Guarantor2CustomerID.HasValue && loanAccount.Guarantor2CustomerID.Value > 0)
                 {
                     var gc2 = await _context.Customers.FindAsync(loanAccount.Guarantor2CustomerID.Value);
                     if (gc2 != null) report.Guarantors.Add(new LoanLedgerGuarantorDto { Name = $"{gc2.FirstName} {gc2.LastName}".Trim() });
-                }
-                else if (loanAccount.Guarantor2MemberID.HasValue && loanAccount.Guarantor2MemberID.Value > 0)
-                {
-                    var g2 = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == loanAccount.Guarantor2MemberID);
-                    if (g2 != null)
-                    {
-                        string g2Name = g2.Customer != null ? $"{g2.Customer.FirstName} {g2.Customer.LastName}".Trim() : "Guarantor 2";
-                        report.Guarantors.Add(new LoanLedgerGuarantorDto { Name = g2Name });
-                    }
                 }
 
                 // Fetch transactions
@@ -3503,8 +3483,8 @@ namespace Bhisi.Api.Controllers
                 .Include(la => la.Customer)
                 .Include(la => la.Member).ThenInclude(m => m!.Customer)
                 .Include(la => la.LoanRate)
-                .Include(la => la.Guarantor1Member).ThenInclude(m => m!.Customer)
-                .Include(la => la.Guarantor2Member).ThenInclude(m => m!.Customer)
+                .Include(la => la.Guarantor1Customer)
+                .Include(la => la.Guarantor2Customer)
                 .Where(la => la.OpeningDate <= toDate && la.Status == "Active");
 
             if (branchId.HasValue && branchId.Value > 0)
@@ -3565,18 +3545,18 @@ namespace Bhisi.Api.Controllers
                     : (la.MaturityDate.HasValue && la.MaturityDate.Value <= toDate && la.PrincipalBalance > 0 ? la.MaturityDate.Value : (DateTime?)null);
 
                 var gList = new List<string>();
-                if (la.Guarantor1Member != null)
+                if (la.Guarantor1Customer != null)
                 {
-                    var g1Cust = la.Guarantor1Member.Customer;
-                    string g1Name = g1Cust != null ? $"{g1Cust.FirstName} {g1Cust.MiddleName} {g1Cust.LastName}".Replace("  ", " ").Trim() : "";
-                    string g1Mobile = !string.IsNullOrWhiteSpace(g1Cust?.MobileNo) ? $" ({g1Cust.MobileNo})" : "";
+                    var g1Cust = la.Guarantor1Customer;
+                    string g1Name = $"{g1Cust.FirstName} {g1Cust.MiddleName} {g1Cust.LastName}".Replace("  ", " ").Trim();
+                    string g1Mobile = !string.IsNullOrWhiteSpace(g1Cust.MobileNo) ? $" ({g1Cust.MobileNo})" : "";
                     gList.Add($"१) {g1Name}{g1Mobile}");
                 }
-                if (la.Guarantor2Member != null)
+                if (la.Guarantor2Customer != null)
                 {
-                    var g2Cust = la.Guarantor2Member.Customer;
-                    string g2Name = g2Cust != null ? $"{g2Cust.FirstName} {g2Cust.MiddleName} {g2Cust.LastName}".Replace("  ", " ").Trim() : "";
-                    string g2Mobile = !string.IsNullOrWhiteSpace(g2Cust?.MobileNo) ? $" ({g2Cust.MobileNo})" : "";
+                    var g2Cust = la.Guarantor2Customer;
+                    string g2Name = $"{g2Cust.FirstName} {g2Cust.MiddleName} {g2Cust.LastName}".Replace("  ", " ").Trim();
+                    string g2Mobile = !string.IsNullOrWhiteSpace(g2Cust.MobileNo) ? $" ({g2Cust.MobileNo})" : "";
                     gList.Add($"२) {g2Name}{g2Mobile}");
                 }
                 string guarantorDetails = string.Join("\n", gList);
@@ -4180,9 +4160,7 @@ namespace Bhisi.Api.Controllers
 
             var accountsQuery = _context.LoanAccounts
                 .Include(l => l.Customer)
-                .Include(l => l.Member)
-                .Include(l => l.Guarantor1Member).ThenInclude(m => m!.Customer)
-                .Include(l => l.Guarantor2Member).ThenInclude(m => m!.Customer)
+                .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.Guarantor1Customer)
                 .Include(l => l.Guarantor2Customer)
                 .Include(l => l.LoanRate)
@@ -4197,9 +4175,7 @@ namespace Bhisi.Api.Controllers
 
             var appsQuery = _context.LoanApplications
                 .Include(a => a.Customer)
-                .Include(a => a.Member)
-                .Include(a => a.Guarantor1Member).ThenInclude(m => m!.Customer)
-                .Include(a => a.Guarantor2Member).ThenInclude(m => m!.Customer)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Include(a => a.Guarantor1Customer)
                 .Include(a => a.Guarantor2Customer)
                 .Include(a => a.LoanRate)
@@ -4212,52 +4188,47 @@ namespace Bhisi.Api.Controllers
 
             var applications = await appsQuery.ToListAsync();
 
-            // Collect all unique guarantor entities (identified by CustomerID if available, else MemberID)
-            var guarantorProfiles = new Dictionary<string, (int? mId, int? cId, string name, string code, string cif, string mobile)>();
+            // Collect all unique guarantor entities (identified by CustomerID)
+            var guarantorProfiles = new Dictionary<int, (int? mId, int cId, string name, string code, string cif, string mobile)>();
 
-            void RegisterGuarantor(Member? m, Customer? c, int? mId, int? cId)
+            async Task RegisterGuarantor(Customer? c, int? cId)
             {
-                int? resCId = c?.CustomerID ?? (m?.CustomerID > 0 ? m.CustomerID : cId);
-                int? resMId = m?.MemberID ?? mId;
-                if (!resCId.HasValue && !resMId.HasValue) return;
+                if (c == null && cId.HasValue && cId.Value > 0)
+                {
+                    c = await _context.Customers.FindAsync(cId.Value);
+                }
+                if (c == null) return;
 
-                string key = resCId.HasValue && resCId.Value > 0 ? $"C_{resCId.Value}" : $"M_{resMId!.Value}";
-                if (guarantorProfiles.ContainsKey(key)) return;
+                int resCId = c.CustomerID;
+                if (guarantorProfiles.ContainsKey(resCId)) return;
 
-                string name = c != null 
-                    ? $"{c.FirstName} {c.MiddleName} {c.LastName}".Trim() 
-                    : (m?.Customer != null ? $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Trim() : "N/A");
-                string code = m?.MemberCode ?? c?.CIFNo ?? "";
-                string cif = c?.CIFNo ?? m?.Customer?.CIFNo ?? (resCId.HasValue ? $"CIF{resCId.Value:D6}" : $"CIF{resMId:D6}");
-                string mobile = !string.IsNullOrWhiteSpace(c?.MobileNo) ? c.MobileNo : (!string.IsNullOrWhiteSpace(m?.Customer?.MobileNo) ? m.Customer.MobileNo : "-");
+                var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == resCId);
+                int? resMId = mem?.MemberID;
 
-                guarantorProfiles[key] = (resMId, resCId, name, code, cif, mobile);
+                string name = $"{c.FirstName} {c.MiddleName} {c.LastName}".Trim();
+                string code = mem?.MemberCode ?? c.CIFNo;
+                string cif = c.CIFNo;
+                string mobile = !string.IsNullOrWhiteSpace(c.MobileNo) ? c.MobileNo : "-";
+
+                guarantorProfiles[resCId] = (resMId, resCId, name, code, cif, mobile);
             }
 
             foreach (var l in activeAccounts)
             {
                 if (l.Guarantor1Customer != null || l.Guarantor1CustomerID.HasValue)
-                    RegisterGuarantor(l.Guarantor1Member, l.Guarantor1Customer, l.Guarantor1MemberID, l.Guarantor1CustomerID);
-                else if (l.Guarantor1Member != null || l.Guarantor1MemberID.HasValue)
-                    RegisterGuarantor(l.Guarantor1Member, l.Guarantor1Member?.Customer, l.Guarantor1MemberID, l.Guarantor1Member?.CustomerID);
+                    await RegisterGuarantor(l.Guarantor1Customer, l.Guarantor1CustomerID);
 
                 if (l.Guarantor2Customer != null || l.Guarantor2CustomerID.HasValue)
-                    RegisterGuarantor(l.Guarantor2Member, l.Guarantor2Customer, l.Guarantor2MemberID, l.Guarantor2CustomerID);
-                else if (l.Guarantor2Member != null || l.Guarantor2MemberID.HasValue)
-                    RegisterGuarantor(l.Guarantor2Member, l.Guarantor2Member?.Customer, l.Guarantor2MemberID, l.Guarantor2Member?.CustomerID);
+                    await RegisterGuarantor(l.Guarantor2Customer, l.Guarantor2CustomerID);
             }
 
             foreach (var a in applications)
             {
                 if (a.Guarantor1Customer != null || a.Guarantor1CustomerID.HasValue)
-                    RegisterGuarantor(a.Guarantor1Member, a.Guarantor1Customer, a.Guarantor1MemberID, a.Guarantor1CustomerID);
-                else if (a.Guarantor1Member != null || a.Guarantor1MemberID.HasValue)
-                    RegisterGuarantor(a.Guarantor1Member, a.Guarantor1Member?.Customer, a.Guarantor1MemberID, a.Guarantor1Member?.CustomerID);
+                    await RegisterGuarantor(a.Guarantor1Customer, a.Guarantor1CustomerID);
 
                 if (a.Guarantor2Customer != null || a.Guarantor2CustomerID.HasValue)
-                    RegisterGuarantor(a.Guarantor2Member, a.Guarantor2Customer, a.Guarantor2MemberID, a.Guarantor2CustomerID);
-                else if (a.Guarantor2Member != null || a.Guarantor2MemberID.HasValue)
-                    RegisterGuarantor(a.Guarantor2Member, a.Guarantor2Member?.Customer, a.Guarantor2MemberID, a.Guarantor2Member?.CustomerID);
+                    await RegisterGuarantor(a.Guarantor2Customer, a.Guarantor2CustomerID);
             }
 
             var resultList = new List<object>();
@@ -4270,10 +4241,10 @@ namespace Bhisi.Api.Controllers
                 if (memberId.HasValue && memberId.Value > 0 && gMId != memberId.Value) continue;
                 if (customerId.HasValue && customerId.Value > 0 && gCId != customerId.Value) continue;
 
-                bool MatchesG1(LoanAccount l) => (gCId.HasValue && l.Guarantor1CustomerID == gCId.Value) || (gMId.HasValue && l.Guarantor1MemberID == gMId.Value);
-                bool MatchesG2(LoanAccount l) => (gCId.HasValue && l.Guarantor2CustomerID == gCId.Value) || (gMId.HasValue && l.Guarantor2MemberID == gMId.Value);
-                bool MatchesAppG1(LoanApplication a) => (gCId.HasValue && a.Guarantor1CustomerID == gCId.Value) || (gMId.HasValue && a.Guarantor1MemberID == gMId.Value);
-                bool MatchesAppG2(LoanApplication a) => (gCId.HasValue && a.Guarantor2CustomerID == gCId.Value) || (gMId.HasValue && a.Guarantor2MemberID == gMId.Value);
+                bool MatchesG1(LoanAccount l) => l.Guarantor1CustomerID == gCId;
+                bool MatchesG2(LoanAccount l) => l.Guarantor2CustomerID == gCId;
+                bool MatchesAppG1(LoanApplication a) => a.Guarantor1CustomerID == gCId;
+                bool MatchesAppG2(LoanApplication a) => a.Guarantor2CustomerID == gCId;
 
                 var gActiveLoans = activeAccounts
                     .Where(l => (MatchesG1(l) || MatchesG2(l)) && (l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance > 0))
@@ -4315,7 +4286,7 @@ namespace Bhisi.Api.Controllers
                 resultList.Add(new
                 {
                     guarantorMemberID = gMId ?? 0,
-                    guarantorCustomerID = gCId ?? 0,
+                    guarantorCustomerID = gCId,
                     guarantorName = gName,
                     guarantorCode = gCode,
                     cifNo = gCif,

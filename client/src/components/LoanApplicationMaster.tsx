@@ -74,8 +74,6 @@ export interface LoanApplication {
   recommendedByDirectorID?: number;
   guarantor1CustomerID?: number;
   guarantor2CustomerID?: number;
-  guarantor1MemberID?: number;
-  guarantor2MemberID?: number;
   securityDetails?: string;
   securityValue?: number;
   purpose?: string;
@@ -255,8 +253,6 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     firstInstallmentDate: '',
     maturityDate: '',
     recommendedByDirectorID: 0,
-    guarantor1MemberID: 0,
-    guarantor2MemberID: 0,
     securityDetails: '',
     securityValue: 0,
     purpose: ''
@@ -285,24 +281,24 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
   }, []);
 
   useEffect(() => {
-    if (formData.guarantor1MemberID) {
-      axios.get(`/api/Members/${formData.guarantor1MemberID}/guarantor-summary`)
+    if (formData.guarantor1CustomerID) {
+      axios.get(`/api/Members/${formData.guarantor1CustomerID}/guarantor-summary`)
         .then(res => setGuarantor1Summary(res.data))
         .catch(err => console.error("Failed to fetch guarantor 1 summary", err));
     } else {
       setGuarantor1Summary(null);
     }
-  }, [formData.guarantor1MemberID]);
+  }, [formData.guarantor1CustomerID]);
 
   useEffect(() => {
-    if (formData.guarantor2MemberID) {
-      axios.get(`/api/Members/${formData.guarantor2MemberID}/guarantor-summary`)
+    if (formData.guarantor2CustomerID) {
+      axios.get(`/api/Members/${formData.guarantor2CustomerID}/guarantor-summary`)
         .then(res => setGuarantor2Summary(res.data))
         .catch(err => console.error("Failed to fetch guarantor 2 summary", err));
     } else {
       setGuarantor2Summary(null);
     }
-  }, [formData.guarantor2MemberID]);
+  }, [formData.guarantor2CustomerID]);
 
   useEffect(() => {
     if (formData.recommendedByDirectorID) {
@@ -602,8 +598,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
         memberID: resolvedMemId ? Number(resolvedMemId) : null,
         coCustomerID: formData.coCustomerID && Number(formData.coCustomerID) > 0 ? Number(formData.coCustomerID) : null,
         coCustomer2ID: (formData as any).coCustomer2ID && Number((formData as any).coCustomer2ID) > 0 ? Number((formData as any).coCustomer2ID) : null,
-        guarantor1CustomerID: (formData as any).guarantor1CustomerID && Number((formData as any).guarantor1CustomerID) > 0 ? Number((formData as any).guarantor1CustomerID) : null,
-        guarantor2CustomerID: (formData as any).guarantor2CustomerID && Number((formData as any).guarantor2CustomerID) > 0 ? Number((formData as any).guarantor2CustomerID) : null,
+        guarantor1CustomerID: formData.guarantor1CustomerID && Number(formData.guarantor1CustomerID) > 0 ? Number(formData.guarantor1CustomerID) : null,
+        guarantor2CustomerID: formData.guarantor2CustomerID && Number(formData.guarantor2CustomerID) > 0 ? Number(formData.guarantor2CustomerID) : null,
         loanRateID: Number(formData.loanRateID),
         requestedAmount: parseFloat(String(formData.requestedAmount || '0')),
         interestRate: parseFloat(String(formData.interestRate || '0')),
@@ -614,8 +610,6 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
         coMemberID: formData.coMemberID && Number(formData.coMemberID) > 0 ? Number(formData.coMemberID) : null,
         coMember2ID: (formData as any).coMember2ID && Number((formData as any).coMember2ID) > 0 ? Number((formData as any).coMember2ID) : null,
         recommendedByDirectorID: formData.recommendedByDirectorID && Number(formData.recommendedByDirectorID) > 0 ? Number(formData.recommendedByDirectorID) : null,
-        guarantor1MemberID: formData.guarantor1MemberID && Number(formData.guarantor1MemberID) > 0 ? Number(formData.guarantor1MemberID) : null,
-        guarantor2MemberID: formData.guarantor2MemberID && Number(formData.guarantor2MemberID) > 0 ? Number(formData.guarantor2MemberID) : null,
         firstInstallmentDate: formData.firstInstallmentDate ? formData.firstInstallmentDate : null,
         maturityDate: formData.maturityDate ? formData.maturityDate : null,
       };
@@ -628,8 +622,6 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
       delete payload.loanRate;
       delete payload.guarantor1Customer;
       delete payload.guarantor2Customer;
-      delete payload.guarantor1Member;
-      delete payload.guarantor2Member;
       delete payload.recommendedByDirector;
 
       if (formData.loanApplicationID) {
@@ -1429,18 +1421,14 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                   <MemberSearchSelect
                     members={members.filter((m: any) => {
                       const mCustId = m.customerID || m.id || m.memberProfile?.customerID;
-                      const mMemId = m.memberID || m.memberProfile?.memberID;
-                      return (formData.customerID ? mCustId !== formData.customerID : true) &&
-                             (formData.memberID ? mMemId !== formData.memberID : true);
+                      return formData.customerID ? mCustId !== formData.customerID : true;
                     })}
-                    value={formData.guarantor1MemberID ? Number(formData.guarantor1MemberID) : ((formData as any).guarantor1CustomerID ? Number((formData as any).guarantor1CustomerID) : '')}
+                    value={formData.guarantor1CustomerID ? Number(formData.guarantor1CustomerID) : ''}
                     onChange={(val, selected) => {
                       const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
-                      const memId = selected?.memberIdOnly || selected?.memberProfile?.memberID || 0;
                       setFormData(p => ({
                         ...p,
-                        guarantor1CustomerID: custId ? Number(custId) : 0,
-                        guarantor1MemberID: memId ? Number(memId) : 0
+                        guarantor1CustomerID: custId ? Number(custId) : 0
                       }));
                     }}
                     placeholder="-- जामीनदार १ शोधा --"
@@ -1468,20 +1456,15 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                   <MemberSearchSelect
                     members={members.filter((m: any) => {
                       const mCustId = m.customerID || m.id || m.memberProfile?.customerID;
-                      const mMemId = m.memberID || m.memberProfile?.memberID;
                       return (formData.customerID ? mCustId !== formData.customerID : true) &&
-                             (formData.memberID ? mMemId !== formData.memberID : true) &&
-                             ((formData as any).guarantor1CustomerID ? mCustId !== (formData as any).guarantor1CustomerID : true) &&
-                             (formData.guarantor1MemberID ? mMemId !== formData.guarantor1MemberID : true);
+                             (formData.guarantor1CustomerID ? mCustId !== formData.guarantor1CustomerID : true);
                     })}
-                    value={formData.guarantor2MemberID ? Number(formData.guarantor2MemberID) : ((formData as any).guarantor2CustomerID ? Number((formData as any).guarantor2CustomerID) : '')}
+                    value={formData.guarantor2CustomerID ? Number(formData.guarantor2CustomerID) : ''}
                     onChange={(val, selected) => {
                       const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
-                      const memId = selected?.memberIdOnly || selected?.memberProfile?.memberID || 0;
                       setFormData(p => ({
                         ...p,
-                        guarantor2CustomerID: custId ? Number(custId) : 0,
-                        guarantor2MemberID: memId ? Number(memId) : 0
+                        guarantor2CustomerID: custId ? Number(custId) : 0
                       }));
                     }}
                     placeholder="-- जामीनदार २ शोधा --"

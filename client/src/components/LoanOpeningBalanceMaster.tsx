@@ -647,8 +647,8 @@ export default function LoanOpeningBalanceMaster() {
         installmentAmount: parseFloat(formData.installmentAmount || '0'),
         securityValue: parseFloat(formData.securityValue || '0'),
         noOfInstallments: installmentChart.length,
-        guarantor1MemberID: formData.guarantor1 ? parseInt(formData.guarantor1) : null,
-        guarantor2MemberID: formData.guarantor2 ? parseInt(formData.guarantor2) : null,
+        guarantor1CustomerID: formData.guarantor1 ? parseInt(formData.guarantor1) : null,
+        guarantor2CustomerID: formData.guarantor2 ? parseInt(formData.guarantor2) : null,
         
         loanDisbursementDate: formData.loanDisbursementDate || null,
         firstInstallmentDate: formData.firstInstallmentDate || null,
@@ -725,8 +725,8 @@ export default function LoanOpeningBalanceMaster() {
       firstInstallmentDate: balance.firstInstallmentDate ? balance.firstInstallmentDate.split('T')[0] : '',
       maturityDate: balance.maturityDate ? balance.maturityDate.split('T')[0] : '',
       lastInstallmentPaidDate: balance.lastInstallmentPaidDate ? balance.lastInstallmentPaidDate.split('T')[0] : '',
-      guarantor1: balance.guarantor1MemberID?.toString() || '',
-      guarantor2: balance.guarantor2MemberID?.toString() || '',
+      guarantor1: (balance as any).guarantor1CustomerID?.toString() || '',
+      guarantor2: (balance as any).guarantor2CustomerID?.toString() || '',
       securityDetails: balance.securityDetails || '',
       securityValue: balance.securityValue?.toString() || ''
     });

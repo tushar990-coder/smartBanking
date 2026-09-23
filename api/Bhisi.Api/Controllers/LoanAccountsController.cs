@@ -77,8 +77,6 @@ namespace Bhisi.Api.Controllers
                 .Include(l => l.CoCustomer)
                 .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
-                .Include(l => l.Guarantor1Member).ThenInclude(m => m!.Customer)
-                .Include(l => l.Guarantor2Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.Guarantor1Customer)
                 .Include(l => l.Guarantor2Customer)
                 .Include(l => l.Branch)
@@ -142,8 +140,6 @@ namespace Bhisi.Api.Controllers
                 .Include(l => l.CoCustomer)
                 .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
-                .Include(l => l.Guarantor1Member).ThenInclude(m => m!.Customer)
-                .Include(l => l.Guarantor2Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.Guarantor1Customer)
                 .Include(l => l.Guarantor2Customer)
                 .Include(l => l.Branch)
@@ -355,8 +351,6 @@ namespace Bhisi.Api.Controllers
             if (loanAccount.CoMember2ID.HasValue && loanAccount.CoMember2ID.Value <= 0) loanAccount.CoMember2ID = null;
             if (loanAccount.CoCustomerID.HasValue && loanAccount.CoCustomerID.Value <= 0) loanAccount.CoCustomerID = null;
             if (loanAccount.CoCustomer2ID.HasValue && loanAccount.CoCustomer2ID.Value <= 0) loanAccount.CoCustomer2ID = null;
-            if (loanAccount.Guarantor1MemberID.HasValue && loanAccount.Guarantor1MemberID.Value <= 0) loanAccount.Guarantor1MemberID = null;
-            if (loanAccount.Guarantor2MemberID.HasValue && loanAccount.Guarantor2MemberID.Value <= 0) loanAccount.Guarantor2MemberID = null;
             if (loanAccount.Guarantor1CustomerID.HasValue && loanAccount.Guarantor1CustomerID.Value <= 0) loanAccount.Guarantor1CustomerID = null;
             if (loanAccount.Guarantor2CustomerID.HasValue && loanAccount.Guarantor2CustomerID.Value <= 0) loanAccount.Guarantor2CustomerID = null;
 
@@ -470,8 +464,6 @@ namespace Bhisi.Api.Controllers
                     MaturityDate = dto.MaturityDate,
                     InstallmentFrequency = dto.InstallmentFrequency,
                     LastInstallmentPaidDate = dto.LastInstallmentPaidDate,
-                    Guarantor1MemberID = dto.Guarantor1MemberID > 0 ? dto.Guarantor1MemberID : null,
-                    Guarantor2MemberID = dto.Guarantor2MemberID > 0 ? dto.Guarantor2MemberID : null,
                     Guarantor1CustomerID = dto.Guarantor1CustomerID > 0 ? dto.Guarantor1CustomerID : null,
                     Guarantor2CustomerID = dto.Guarantor2CustomerID > 0 ? dto.Guarantor2CustomerID : null,
                     CoCustomerID = dto.CoCustomerID > 0 ? dto.CoCustomerID : null,
@@ -607,8 +599,8 @@ namespace Bhisi.Api.Controllers
                 loanAccount.MaturityDate = dto.MaturityDate;
                 loanAccount.InstallmentFrequency = dto.InstallmentFrequency;
                 loanAccount.LastInstallmentPaidDate = dto.LastInstallmentPaidDate;
-                loanAccount.Guarantor1MemberID = dto.Guarantor1MemberID;
-                loanAccount.Guarantor2MemberID = dto.Guarantor2MemberID;
+                loanAccount.Guarantor1CustomerID = dto.Guarantor1CustomerID;
+                loanAccount.Guarantor2CustomerID = dto.Guarantor2CustomerID;
                 loanAccount.SecurityDetails = dto.SecurityDetails;
                 loanAccount.SecurityValue = dto.SecurityValue;
                 loanAccount.NoOfInstallments = dto.NoOfInstallments;

@@ -23,63 +23,154 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
-        private async Task<string> GenerateNextSavingAccountNo(int branchId)
+        // Helper class for Modulo-10 Luhn Check Digit calculation and validation
+        public static class LuhnHelper
+        {
+            public static int CalculateCheckDigit(string digits)
+            {
+                int sum = 0;
+                bool alternate = true;
+                for (int i = digits.Length - 1; i >= 0; i--)
+                {
+                    int d = digits[i] - '0';
+                    if (alternate)
+                    {
+                        d *= 2;
+                        if (d > 9) d -= 9;
+                    }
+                    sum += d;
+                    alternate = !alternate;
+                }
+                int mod = sum % 10;
+                return (mod == 0) ? 0 : 10 - mod;
+            }
+
+            public static bool ValidateAccountNo(string fullAccountNo)
+            {
+                if (string.IsNullOrWhiteSpace(fullAccountNo)) return false;
+                var digitsOnly = new string(fullAccountNo.Where(char.IsDigit).ToArray());
+                if (digitsOnly.Length != 14) return false;
+                string prefix13 = digitsOnly.Substring(0, 13);
+                int expectedCheck = CalculateCheckDigit(prefix13);
+                return (digitsOnly[13] - '0') == expectedCheck;
+            }
+
+            public static string Format14Digit(string accountNo)
+            {
+                if (string.IsNullOrWhiteSpace(accountNo)) return "";
+                var d = new string(accountNo.Where(char.IsDigit).ToArray());
+                if (d.Length == 14)
+                {
+                    return $"{d.Substring(0, 3)}-{d.Substring(3, 3)}-{d.Substring(6, 7)}-{d.Substring(13, 1)}";
+                }
+                return accountNo;
+            }
+        }
+
+        // CBS Standard 14-digit Account Generator: [3-digit Branch] + [3-digit Scheme] + [7-digit Sequence] + [1-digit Checksum]
+        private async Task<string> GenerateNextSavingAccountNo(int branchId, int? schemeId = null, bool incrementSequence = false)
         {
             var branch = await _context.Branches.FindAsync(branchId);
             
-            // Ensure branch code is purely numeric (2 digits, e.g. 01, 02)
-            string branchCodeNumeric = branchId.ToString("D2");
+            // 1. Branch Code: 3 numeric digits (e.g. 001, 002)
+            string branchCode3 = branchId.ToString("D3");
             if (branch != null && !string.IsNullOrWhiteSpace(branch.BranchCode))
             {
                 var digitsOnly = new string(branch.BranchCode.Where(char.IsDigit).ToArray());
                 if (!string.IsNullOrEmpty(digitsOnly) && int.TryParse(digitsOnly, out int parsed) && parsed > 0)
                 {
-                    branchCodeNumeric = parsed.ToString("D2");
+                    branchCode3 = parsed.ToString("D3");
                 }
             }
 
-            // Prefix: [2-digit numeric branch] + [2-digit numeric product '01'] => e.g. 0101
-            string prefix = $"{branchCodeNumeric}01";
-
-            var existingNos = await _context.SavingAccountMasters
-                .Where(a => a.BranchID == branchId && a.AccountNo != null && a.AccountNo.StartsWith(prefix))
-                .Select(a => a.AccountNo!)
-                .ToListAsync();
-
-            int maxSeq = 0;
-            foreach (var accNo in existingNos)
+            // 2. Scheme Code: 3 numeric digits (e.g. 101, 102)
+            int schemeCodeNum = 101;
+            if (schemeId.HasValue && schemeId.Value > 0)
             {
-                if (accNo.Length > prefix.Length && int.TryParse(accNo.Substring(prefix.Length), out int num))
+                var scheme = await _context.SavingInterestSettings.FindAsync(schemeId.Value);
+                if (scheme != null && !string.IsNullOrWhiteSpace(scheme.SchemeCode))
                 {
-                    if (num > maxSeq) maxSeq = num;
+                    var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
+                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
+                    {
+                        schemeCodeNum = parsedScheme;
+                    }
+                }
+            }
+            string schemeCode3 = schemeCodeNum.ToString("D3");
+
+            // 3. Sequence: Atomic sequence per (BranchID, SchemeCodeNumeric)
+            var seq = await _context.SavingAccountSequences
+                .FirstOrDefaultAsync(s => s.BranchID == branchId && s.SchemeCodeNumeric == schemeCodeNum);
+
+            if (seq == null)
+            {
+                int existingCount = await _context.SavingAccountMasters
+                    .CountAsync(s => s.BranchID == branchId);
+                seq = new SavingAccountSequence
+                {
+                    BranchID = branchId,
+                    SchemeCodeNumeric = schemeCodeNum,
+                    LastSequenceNumber = existingCount,
+                    UpdatedOn = DateTime.UtcNow
+                };
+                _context.SavingAccountSequences.Add(seq);
+                await _context.SaveChangesAsync();
+            }
+            else
+            {
+                // Self-healing / Auto-sync: If table was wiped clean, reset sequence counter
+                int totalExistingInBranch = await _context.SavingAccountMasters
+                    .CountAsync(s => s.BranchID == branchId);
+                if (totalExistingInBranch == 0 && seq.LastSequenceNumber > 0)
+                {
+                    seq.LastSequenceNumber = 0;
+                    seq.UpdatedOn = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
                 }
             }
 
-            int nextSeq = maxSeq + 1;
-            string nextAccNo = $"{prefix}{nextSeq:D5}";
-
-            while (existingNos.Contains(nextAccNo))
+            int nextSeqNumber = seq.LastSequenceNumber + 1;
+            if (incrementSequence)
             {
-                nextSeq++;
-                nextAccNo = $"{prefix}{nextSeq:D5}";
+                seq.LastSequenceNumber++;
+                seq.UpdatedOn = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                nextSeqNumber = seq.LastSequenceNumber;
             }
 
-            return nextAccNo;
+            string thirteenDigits = $"{branchCode3}{schemeCode3}{nextSeqNumber:D7}";
+            int checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
+            return $"{thirteenDigits}{checkDigit}";
         }
 
-        // GET: api/SavingAccounts/next-account-no?branchId=1 or api/SavingAccounts/next-account-no/1
+        // GET: api/SavingAccounts/next-account-no?branchId=1&schemeId=1
         [HttpGet("next-account-no")]
         [HttpGet("next-account-no/{branchId:int?}")]
-        public async Task<ActionResult<object>> GetNextAccountNo(int? branchId = null, [FromQuery(Name = "branchId")] int? queryBranchId = null)
+        public async Task<ActionResult<object>> GetNextAccountNo(
+            int? branchId = null, 
+            [FromQuery(Name = "branchId")] int? queryBranchId = null,
+            [FromQuery(Name = "schemeId")] int? schemeId = null,
+            [FromQuery(Name = "settingId")] int? settingId = null)
         {
             int targetBranchId = branchId ?? queryBranchId ?? 1;
-            string nextNo = await GenerateNextSavingAccountNo(targetBranchId);
-            return Ok(new { nextAccountNo = nextNo, accountNo = nextNo });
+            int? targetSchemeId = schemeId ?? settingId;
+            string nextNo = await GenerateNextSavingAccountNo(targetBranchId, targetSchemeId, incrementSequence: false);
+            string formattedNo = LuhnHelper.Format14Digit(nextNo);
+            return Ok(new { 
+                nextAccountNo = nextNo, 
+                accountNo = nextNo,
+                formattedAccountNo = formattedNo,
+                displayAccountNo = formattedNo
+            });
         }
 
         // GET: api/SavingAccounts
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetSavingAccountMasters([FromQuery] int? branchId = null, [FromQuery] int? customerId = null)
+        public async Task<ActionResult<IEnumerable<object>>> GetSavingAccountMasters(
+            [FromQuery] int? branchId = null, 
+            [FromQuery] int? customerId = null,
+            [FromQuery] string? search = null)
         {
             var query = _context.SavingAccountMasters.AsQueryable();
             if (branchId.HasValue && branchId.Value > 0)
@@ -91,10 +182,32 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(s => s.CustomerID == customerId.Value);
             }
 
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                string sTerm = search.Trim();
+                // Clean formatted number digits if searching with dashes
+                string digitsOnly = new string(sTerm.Where(char.IsDigit).ToArray());
+
+                query = query.Where(s => 
+                    s.AccountNo.Contains(sTerm) ||
+                    (digitsOnly.Length >= 4 && s.AccountNo.Contains(digitsOnly)) ||
+                    (s.PreviousAccountNo != null && s.PreviousAccountNo.Contains(sTerm)) ||
+                    (s.OldAccountNo != null && s.OldAccountNo.Contains(sTerm)) ||
+                    (s.LegacyAccountNumber != null && s.LegacyAccountNumber.Contains(sTerm)) ||
+                    (s.Customer != null && (
+                        s.Customer.FirstName.Contains(sTerm) || 
+                        s.Customer.LastName.Contains(sTerm) || 
+                        (s.Customer.MobileNo != null && s.Customer.MobileNo.Contains(sTerm)) || 
+                        (s.Customer.CIFNo != null && s.Customer.CIFNo.Contains(sTerm))
+                    ))
+                );
+            }
+
             var accounts = await query
                 .Include(s => s.Customer)
                 .Include(s => s.Branch)
                 .Include(s => s.Ledger)
+                .Include(s => s.SavingScheme)
                 .Include(s => s.JointHolders)
                     .ThenInclude(jh => jh.Customer)
                 .Select(s => new {
@@ -103,6 +216,10 @@ namespace Bhisi.Api.Controllers
                     BranchName = s.Branch != null ? s.Branch.BranchName : "",
                     BranchCode = s.Branch != null ? s.Branch.BranchCode : "",
                     s.AccountNo,
+                    FormattedAccountNo = LuhnHelper.Format14Digit(s.AccountNo),
+                    s.PreviousAccountNo,
+                    s.SavingSchemeID,
+                    SchemeName = s.SavingScheme != null ? s.SavingScheme.SchemeName : "सर्वसाधारण बचत ठेव",
                     s.CustomerID,
                     CIFNo = s.Customer != null ? s.Customer.CIFNo : "",
                     CustomerName = s.Customer != null 
@@ -177,6 +294,10 @@ namespace Bhisi.Api.Controllers
                 BranchName = s.Branch != null ? s.Branch.BranchName : "",
                 BranchCode = s.Branch != null ? s.Branch.BranchCode : "",
                 s.AccountNo,
+                FormattedAccountNo = LuhnHelper.Format14Digit(s.AccountNo),
+                s.PreviousAccountNo,
+                s.SavingSchemeID,
+                SchemeName = s.SavingScheme != null ? s.SavingScheme.SchemeName : "सर्वसाधारण बचत ठेव",
                 s.CustomerID,
                 CIFNo = s.Customer != null ? s.Customer.CIFNo : "",
                 CustomerName = s.Customer != null 
@@ -227,6 +348,7 @@ namespace Bhisi.Api.Controllers
             public string AccountType { get; set; } = "Personal";
             public DateTime OpeningDate { get; set; } = DateTime.Today;
             public bool IsLegacyAccount { get; set; } = false;
+            public string? PreviousAccountNo { get; set; }
             public string? OldAccountNo { get; set; }
             public string? LegacyAccountNumber { get; set; }
             public int LedgerID { get; set; }
@@ -240,6 +362,7 @@ namespace Bhisi.Api.Controllers
             public string? NomineeRelation { get; set; }
             public string? NomineeAddress { get; set; }
             public int? SettingID { get; set; }
+            public int? SavingSchemeID { get; set; }
             public DateTime? LastInterestPostingDate { get; set; }
             public decimal? LastInterestAmount { get; set; }
             public List<int>? JointHolderCustomerIDs { get; set; }
@@ -269,9 +392,11 @@ namespace Bhisi.Api.Controllers
             if (branch == null) return BadRequest("निवडलेली शाखा सापडली नाही.");
 
             int targetLedgerId = dto.LedgerID;
-            if (targetLedgerId <= 0 && dto.SettingID.HasValue && dto.SettingID.Value > 0)
+            int? targetSchemeId = dto.SavingSchemeID ?? dto.SettingID;
+
+            if (targetLedgerId <= 0 && targetSchemeId.HasValue && targetSchemeId.Value > 0)
             {
-                var scheme = await _context.SavingInterestSettings.FindAsync(dto.SettingID.Value);
+                var scheme = await _context.SavingInterestSettings.FindAsync(targetSchemeId.Value);
                 if (scheme != null)
                 {
                     targetLedgerId = scheme.SavingLiabilityLedgerID ?? scheme.LedgerID ?? 7;
@@ -308,13 +433,15 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"या खातेदाराचे स्टेटस '{customer.Status}' असल्यामुळे नवीन बचत खाते उघडता येत नाही. केवळ सक्रिय (Active) खातेदारांचेच खाते उघडता येते.");
             }
 
-            // Generate account number: [BranchCode]01[5-digit sequence] safely
-            string generatedAccountNo = await GenerateNextSavingAccountNo(dto.BranchID);
+            // Generate 14-digit CBS account number with atomic sequence increment
+            string generatedAccountNo = await GenerateNextSavingAccountNo(dto.BranchID, targetSchemeId, incrementSequence: true);
 
             var savingAccount = new SavingAccountMaster
             {
                 BranchID = dto.BranchID,
                 AccountNo = generatedAccountNo,
+                SavingSchemeID = targetSchemeId ?? 1,
+                PreviousAccountNo = dto.PreviousAccountNo,
                 CustomerID = customer.CustomerID,
                 AccountType = dto.AccountType,
                 OpeningDate = dto.OpeningDate,
@@ -437,9 +564,11 @@ namespace Bhisi.Api.Controllers
             }
 
             int targetLedgerId = dto.LedgerID;
-            if (targetLedgerId <= 0 && dto.SettingID.HasValue && dto.SettingID.Value > 0)
+            int? targetSchemeId = dto.SavingSchemeID ?? dto.SettingID;
+
+            if (targetLedgerId <= 0 && targetSchemeId.HasValue && targetSchemeId.Value > 0)
             {
-                var scheme = await _context.SavingInterestSettings.FindAsync(dto.SettingID.Value);
+                var scheme = await _context.SavingInterestSettings.FindAsync(targetSchemeId.Value);
                 if (scheme != null)
                 {
                     targetLedgerId = scheme.SavingLiabilityLedgerID ?? scheme.LedgerID ?? 7;
@@ -450,12 +579,14 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                string generatedAccountNo = await GenerateNextSavingAccountNo(dto.BranchID);
+                string generatedAccountNo = await GenerateNextSavingAccountNo(dto.BranchID, targetSchemeId, incrementSequence: true);
 
                 var savingAccount = new SavingAccountMaster
                 {
                     BranchID = dto.BranchID,
                     AccountNo = generatedAccountNo,
+                    SavingSchemeID = targetSchemeId ?? 1,
+                    PreviousAccountNo = dto.PreviousAccountNo ?? dto.OldAccountNo,
                     CustomerID = customer.CustomerID,
                     AccountType = string.IsNullOrWhiteSpace(dto.AccountType) ? "Personal" : dto.AccountType,
                     OpeningDate = dto.OpeningDate != default ? dto.OpeningDate : DateTime.Today,

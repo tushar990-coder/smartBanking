@@ -35,6 +35,15 @@ const formatDateDisplay = (dateVal: any) => {
   }
 };
 
+export const format14DigitDisplay = (num?: string) => {
+  if (!num) return '-';
+  const clean = num.replace(/\D/g, '');
+  if (clean.length === 14) {
+    return `${clean.substring(0, 3)}-${clean.substring(3, 3)}-${clean.substring(6, 7)}-${clean.substring(13, 1)}`;
+  }
+  return num;
+};
+
 interface JointHolder {
   customerID: number;
   customerName?: string;
@@ -43,6 +52,12 @@ interface JointHolder {
 interface SavingAccount {
   savingAccountID: number;
   accountNo: string;
+  formattedAccountNo?: string;
+  previousAccountNo?: string;
+  oldAccountNo?: string;
+  legacyAccountNumber?: string;
+  savingSchemeID?: number;
+  schemeName?: string;
   customerID: number;
   customerName?: string;
   cifNo?: string;
@@ -108,6 +123,8 @@ const SavingAccountMaster: React.FC = () => {
     branchID: user?.branchID || 1,
     customerID: 0,
     ledgerID: 7, // Default to Saving Deposit control ledger
+    savingSchemeID: 1,
+    displayAccountNo: '',
     accountType: 'Personal',
     isLegacyAccount: false,
     accountNo: '',
@@ -159,18 +176,22 @@ const SavingAccountMaster: React.FC = () => {
     }
   };
 
-  const fetchNextAccountNo = async (bId?: number) => {
+  const fetchNextAccountNo = async (bId?: number, sId?: number) => {
     try {
       const selectedBranchId = bId || formData.branchID || 1;
-      const response = await axios.get(`${API_URL}/SavingAccounts/next-account-no?branchId=${selectedBranchId}`);
+      const selectedSchemeId = sId || formData.savingSchemeID || 1;
+      const response = await axios.get(`${API_URL}/SavingAccounts/next-account-no?branchId=${selectedBranchId}&schemeId=${selectedSchemeId}`);
       if (response.data) {
         const nextNo = typeof response.data === 'string'
           ? response.data
           : (response.data.accountNo || response.data.nextAccountNo || '');
+        const formattedNo = response.data.formattedAccountNo || response.data.displayAccountNo || format14DigitDisplay(nextNo);
         if (nextNo) {
           setFormData(prev => ({
             ...prev,
-            accountNo: nextNo
+            accountNo: nextNo,
+            displayAccountNo: formattedNo,
+            savingSchemeID: selectedSchemeId
           }));
         }
       }
@@ -588,14 +609,30 @@ const SavingAccountMaster: React.FC = () => {
       label: formatCustomerLabel(c)
     }));
 
-  // Filter accounts by search query safely
-  const filteredAccounts = (accounts || []).filter((acc) => {
+  // Filter accounts by search query safely with 14-digit, 9-digit, and CIF support
+  const filteredAccounts = (accounts || []).filter((acc: any) => {
     if (!acc) return false;
-    const query = (searchQuery || '').toLowerCase();
+    const query = (searchQuery || '').toLowerCase().trim();
+    if (!query) return true;
+    const cleanDigits = query.replace(/\D/g, '');
     const accNoStr = (acc.accountNo || '').toLowerCase();
+    const fmtAccNoStr = (acc.formattedAccountNo || format14DigitDisplay(acc.accountNo) || '').toLowerCase();
+    const prevAccNoStr = (acc.previousAccountNo || '').toLowerCase();
+    const oldAccNoStr = (acc.oldAccountNo || '').toLowerCase();
+    const legacyAccNoStr = (acc.legacyAccountNumber || '').toLowerCase();
     const nameStr = (acc.customerName || '').toLowerCase();
     const cifStr = (acc.cifNo || '').toLowerCase();
-    return accNoStr.includes(query) || nameStr.includes(query) || cifStr.includes(query);
+    const mobStr = (acc.mobileNo || '').toLowerCase();
+
+    return accNoStr.includes(query) ||
+      (cleanDigits.length >= 3 && accNoStr.includes(cleanDigits)) ||
+      fmtAccNoStr.includes(query) ||
+      prevAccNoStr.includes(query) ||
+      oldAccNoStr.includes(query) ||
+      legacyAccNoStr.includes(query) ||
+      nameStr.includes(query) ||
+      cifStr.includes(query) ||
+      mobStr.includes(query);
   });
 
   // Nominee relation options
@@ -710,15 +747,15 @@ const SavingAccountMaster: React.FC = () => {
             {/* Saving Account No - 3 cols */}
             <div className="lg:col-span-3">
               <label className="block text-xs font-bold text-blue-900 mb-0.5">
-                बचत खाते क्र. (Saving A/c No) *
+                बचत खाते क्र. (14-Digit CBS A/c No) *
               </label>
               <input
                 type="text"
                 name="accountNo"
-                value={formData.accountNo}
+                value={formData.displayAccountNo || format14DigitDisplay(formData.accountNo) || formData.accountNo}
                 readOnly={true}
-                placeholder="उदा. 010100001"
-                className="w-full border border-blue-400 px-2.5 py-1 rounded-sm text-xs bg-blue-50/80 font-bold text-blue-900 shadow-xs cursor-not-allowed h-7"
+                placeholder="उदा. 001-101-0000001-4"
+                className="w-full border border-blue-400 px-2.5 py-1 rounded-sm text-xs bg-blue-50/80 font-mono font-bold text-blue-900 shadow-xs cursor-not-allowed h-7"
               />
             </div>
 
@@ -1139,8 +1176,13 @@ const SavingAccountMaster: React.FC = () => {
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-700 font-semibold whitespace-nowrap">
                           {acc.branchName || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-primary whitespace-nowrap">
-                          {acc.accountNo}
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-primary whitespace-nowrap font-mono">
+                          <div>{acc.formattedAccountNo || format14DigitDisplay(acc.accountNo)}</div>
+                          {acc.previousAccountNo && acc.previousAccountNo !== acc.accountNo && (
+                            <div className="text-[10px] text-gray-500 font-sans font-normal">
+                              जुना: {acc.previousAccountNo}
+                            </div>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-semibold text-gray-900 min-w-[180px]">
                           <div>{acc.customerName}</div>

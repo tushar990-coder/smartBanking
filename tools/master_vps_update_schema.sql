@@ -1,4 +1,4 @@
--- =========================================================================================
+﻿-- =========================================================================================
 -- SmartBanking Core ERP - Universal VPS Database Update & Schema Sync Patch
 -- Zero Data Loss Guarantee - All Existing Records (Members, Vouchers, Accounts) 100% Preserved
 -- Compatible with all VPS client databases (Padawalwadi, Gurudev, Main, etc.)
@@ -3867,10 +3867,6 @@ BEGIN
             EXEC sp_executesql N'UPDATE la SET la.CoMemberID = NULL FROM [dbo].[LoanAccounts] la INNER JOIN #DeletingMembers d ON la.CoMemberID = d.MemberID;';
         IF COL_LENGTH('dbo.LoanAccounts', 'CoMember2ID') IS NOT NULL
             EXEC sp_executesql N'UPDATE la SET la.CoMember2ID = NULL FROM [dbo].[LoanAccounts] la INNER JOIN #DeletingMembers d ON la.CoMember2ID = d.MemberID;';
-        IF COL_LENGTH('dbo.LoanAccounts', 'Guarantor1MemberID') IS NOT NULL
-            EXEC sp_executesql N'UPDATE la SET la.Guarantor1MemberID = NULL FROM [dbo].[LoanAccounts] la INNER JOIN #DeletingMembers d ON la.Guarantor1MemberID = d.MemberID;';
-        IF COL_LENGTH('dbo.LoanAccounts', 'Guarantor2MemberID') IS NOT NULL
-            EXEC sp_executesql N'UPDATE la SET la.Guarantor2MemberID = NULL FROM [dbo].[LoanAccounts] la INNER JOIN #DeletingMembers d ON la.Guarantor2MemberID = d.MemberID;';
         IF COL_LENGTH('dbo.LoanAccounts', 'RecommendedByDirectorID') IS NOT NULL
             EXEC sp_executesql N'UPDATE la SET la.RecommendedByDirectorID = NULL FROM [dbo].[LoanAccounts] la INNER JOIN #DeletingMembers d ON la.RecommendedByDirectorID = d.MemberID;';
     END
@@ -3881,10 +3877,6 @@ BEGIN
             EXEC sp_executesql N'UPDATE la SET la.CoMemberID = NULL FROM [dbo].[LoanApplications] la INNER JOIN #DeletingMembers d ON la.CoMemberID = d.MemberID;';
         IF COL_LENGTH('dbo.LoanApplications', 'CoMember2ID') IS NOT NULL
             EXEC sp_executesql N'UPDATE la SET la.CoMember2ID = NULL FROM [dbo].[LoanApplications] la INNER JOIN #DeletingMembers d ON la.CoMember2ID = d.MemberID;';
-        IF COL_LENGTH('dbo.LoanApplications', 'Guarantor1MemberID') IS NOT NULL
-            EXEC sp_executesql N'UPDATE la SET la.Guarantor1MemberID = NULL FROM [dbo].[LoanApplications] la INNER JOIN #DeletingMembers d ON la.Guarantor1MemberID = d.MemberID;';
-        IF COL_LENGTH('dbo.LoanApplications', 'Guarantor2MemberID') IS NOT NULL
-            EXEC sp_executesql N'UPDATE la SET la.Guarantor2MemberID = NULL FROM [dbo].[LoanApplications] la INNER JOIN #DeletingMembers d ON la.Guarantor2MemberID = d.MemberID;';
         IF COL_LENGTH('dbo.LoanApplications', 'RecommendedByDirectorID') IS NOT NULL
             EXEC sp_executesql N'UPDATE la SET la.RecommendedByDirectorID = NULL FROM [dbo].[LoanApplications] la INNER JOIN #DeletingMembers d ON la.RecommendedByDirectorID = d.MemberID;';
     END
@@ -3987,18 +3979,129 @@ BEGIN
 END
 GO
 
--- 7. Record Version v2.5.0 in SystemVersionHistories
+-- 7. CBS Standard 14-Digit Saving Account Standardization & Luhn Modulo-10 Checksum
+IF OBJECT_ID(N'[SavingAccountSequences]', N'U') IS NULL
+BEGIN
+    PRINT 'Creating SavingAccountSequences table...';
+    CREATE TABLE [dbo].[SavingAccountSequences] (
+        [SequenceID] INT IDENTITY(1,1) NOT NULL,
+        [BranchID] INT NOT NULL,
+        [SchemeCodeNumeric] INT NOT NULL DEFAULT 101,
+        [LastSequenceNumber] INT NOT NULL DEFAULT 0,
+        [UpdatedOn] DATETIME NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT [PK_SavingAccountSequences] PRIMARY KEY CLUSTERED ([SequenceID] ASC)
+    );
+
+    CREATE UNIQUE NONCLUSTERED INDEX [IX_SavingAccountSequences_Branch_Scheme] 
+    ON [dbo].[SavingAccountSequences] ([BranchID] ASC, [SchemeCodeNumeric] ASC);
+
+    PRINT '  -> SavingAccountSequences created successfully.';
+END
+GO
+
+-- 7.1 Standardize Branch Codes (3 Digits: 001, 002...)
+IF OBJECT_ID(N'[Branches]', N'U') IS NOT NULL
+BEGIN
+    UPDATE [dbo].[Branches] 
+    SET [BranchCode] = RIGHT('000' + LTRIM(RTRIM(CAST([BranchID] AS VARCHAR(10)))), 3)
+    WHERE [BranchCode] IS NULL OR LEN(LTRIM(RTRIM([BranchCode]))) <> 3 OR [BranchCode] NOT LIKE '[0-9][0-9][0-9]';
+
+    IF NOT EXISTS (SELECT 1 FROM [dbo].[Branches] WHERE [BranchID] = 1)
+    BEGIN
+        SET IDENTITY_INSERT [dbo].[Branches] ON;
+        INSERT INTO [dbo].[Branches] ([BranchID], [BranchName], [BranchCode], [IsActive])
+        VALUES (1, N'मुख्य शाखा', '001', 1);
+        SET IDENTITY_INSERT [dbo].[Branches] OFF;
+    END
+    ELSE
+    BEGIN
+        UPDATE [dbo].[Branches] SET [BranchCode] = '001' WHERE [BranchID] = 1 AND ([BranchCode] IS NULL OR [BranchCode] <> '001');
+    END
+    PRINT '  -> Branches standardized to 3-digit CBS format.';
+END
+GO
+
+-- 7.2 Standardize Saving Schemes
+IF OBJECT_ID(N'[SavingInterestSettings]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('SavingInterestSettings', 'SchemeCode') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[SavingInterestSettings] ADD [SchemeCode] NVARCHAR(10) NULL;
+    END
+
+    UPDATE [dbo].[SavingInterestSettings]
+    SET [SchemeCode] = '101'
+    WHERE [SchemeCode] IS NULL OR LTRIM(RTRIM([SchemeCode])) = '' OR [SchemeCode] = 'SAV001';
+
+    PRINT '  -> SavingInterestSettings standardized (SchemeCode = 101).';
+END
+GO
+
+-- 7.3 Add PreviousAccountNo & SavingSchemeID to SavingAccountMasters
+IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('SavingAccountMasters', 'PreviousAccountNo') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[SavingAccountMasters] ADD [PreviousAccountNo] NVARCHAR(20) NULL;
+        PRINT '  -> Added PreviousAccountNo column to SavingAccountMasters.';
+    END
+
+    IF COL_LENGTH('SavingAccountMasters', 'SavingSchemeID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[SavingAccountMasters] ADD [SavingSchemeID] INT NULL;
+        PRINT '  -> Added SavingSchemeID column to SavingAccountMasters.';
+    END
+END
+GO
+
+-- 7.4 Synchronize Existing Accounts & Sequence Counter
+IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
+BEGIN
+    -- Synchronize existing accounts dynamically so compile-time check succeeds on all databases
+    IF COL_LENGTH('SavingAccountMasters', 'PreviousAccountNo') IS NOT NULL
+    BEGIN
+        EXEC sp_executesql N'
+            UPDATE [dbo].[SavingAccountMasters]
+            SET [PreviousAccountNo] = [AccountNo]
+            WHERE [PreviousAccountNo] IS NULL AND [AccountNo] IS NOT NULL AND LEN(LTRIM(RTRIM([AccountNo]))) > 0 AND LEN(LTRIM(RTRIM([AccountNo]))) < 14;
+        ';
+    END
+
+    -- Sync SavingAccountSequences initial counter
+    DECLARE @MaxSavingCount INT = 0;
+    SELECT @MaxSavingCount = COUNT(*) FROM [dbo].[SavingAccountMasters];
+
+    IF OBJECT_ID(N'[SavingAccountSequences]', N'U') IS NOT NULL
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM [dbo].[SavingAccountSequences] WHERE [BranchID] = 1 AND [SchemeCodeNumeric] = 101)
+        BEGIN
+            INSERT INTO [dbo].[SavingAccountSequences] ([BranchID], [SchemeCodeNumeric], [LastSequenceNumber], [UpdatedOn])
+            VALUES (1, 101, @MaxSavingCount, GETDATE());
+        END
+        ELSE
+        BEGIN
+            UPDATE [dbo].[SavingAccountSequences] 
+            SET [LastSequenceNumber] = @MaxSavingCount, [UpdatedOn] = GETDATE()
+            WHERE [BranchID] = 1 AND [SchemeCodeNumeric] = 101;
+        END
+    END
+
+    PRINT '  -> Saving Account Sequences & Previous Numbers Synchronized!';
+END
+GO
+
+-- 8. Record Version v2.5.1 in SystemVersionHistories
 IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
 BEGIN
     EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
     VALUES (
-        ''2.5.0'', 
+        ''2.5.1'', 
         GETUTCDATE(), 
-        ''SmartBanking VPS Multi-App Master Patch v2.5.0'', 
+        ''SmartBanking VPS Multi-App Master Patch v2.5.1'', 
         ''SUCCESS'', 
-        ''Members Table Normalization (43 redundant columns dropped to 13 canonical columns), Strict 1:1 MemberCode Alignment (1 -> MEM0001), Pure CIF-First Architecture, Non-shareholder cleanup, and vw_Members backward compatibility view.'', 
+        ''Standard 14-Digit CBS Saving Account Architecture: [3-digit Branch] + [3-digit Scheme] + [7-digit Sequence] + [1-digit Luhn Modulo-10 Checksum], SavingAccountSequences atomic engine, PreviousAccountNo legacy preservation, and 3-digit scheme master.'', 
         ''VPS Administrator'',
-        ''2026-09-18''
+        ''2026-09-22''
     );');
 END
 GO

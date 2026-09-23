@@ -6,7 +6,7 @@ import {
     IndianRupee, Edit2, Trash2, FileSpreadsheet, Plus, Layers, 
     CheckCircle, XCircle, Save, Calculator, UserPlus, Clock, 
     Sparkles, Eye, FileText, Banknote, RefreshCw, CreditCard, 
-    Wallet, Receipt, ArrowRight, ChevronRight
+    Wallet, Receipt, ArrowRight, ChevronRight, Lock
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import LoanDistributionListModal from './LoanDistributionListModal';
@@ -26,12 +26,16 @@ interface LoanApplication {
     loanApplicationID: number;
     applicationNo: string;
     applicationDate: string;
-    memberID: number;
+    memberID?: number;
+    customerID?: number;
+    coCustomerID?: number;
+    coCustomer2ID?: number;
     coMemberID?: number;
-    guarantor1MemberID?: number;
-    guarantor2MemberID?: number;
-    guarantor1Member?: Member;
-    guarantor2Member?: Member;
+    coMember2ID?: number;
+    guarantor1CustomerID?: number;
+    guarantor2CustomerID?: number;
+    guarantor1Customer?: any;
+    guarantor2Customer?: any;
     securityDetails?: string;
     securityValue?: number;
     requestedAmount: number;
@@ -70,8 +74,8 @@ interface LoanAccount {
     coCustomer2ID?: number;
     guarantor1CustomerID?: number;
     guarantor2CustomerID?: number;
-    guarantor1MemberID?: number;
-    guarantor2MemberID?: number;
+    guarantor1Customer?: any;
+    guarantor2Customer?: any;
     securityDetails?: string;
     securityValue?: number;
     sanctionedAmount: number;
@@ -79,11 +83,12 @@ interface LoanAccount {
     durationMonths: number;
     installmentFrequency: string;
     coMemberID?: number;
+    coMember2ID?: number;
     loanRateID?: number;
     customer?: any;
     member?: Member;
-    guarantor1Member?: Member;
-    guarantor2Member?: Member;
+    guarantor1Customer?: any;
+    guarantor2Customer?: any;
     noOfInstallments?: number;
     installmentAmount?: number;
     openingDate?: string;
@@ -242,8 +247,13 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 setPendingSanctionedLimit(draftApplication.requestedAmount || 0);
                 setCurrentTrancheNo(1);
 
+                const autoDisbDate = draftApplication.applicationDate 
+                    ? draftApplication.applicationDate.split('T')[0] 
+                    : new Date().toISOString().split('T')[0];
+
                 setFormData(prev => ({
                     ...prev,
+                    disbursementDate: autoDisbDate,
                     sanctionedAmount: draftApplication.requestedAmount,
                     disbursementAmount: draftApplication.requestedAmount,
                     netAmountPaid: draftApplication.requestedAmount
@@ -258,10 +268,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     coCustomer2ID: (draftApplication as any).coCustomer2ID || null,
                     coMemberID: draftApplication.coMemberID,
                     coMember2ID: (draftApplication as any).coMember2ID,
-                    guarantor1CustomerID: (draftApplication as any).guarantor1CustomerID || null,
-                    guarantor2CustomerID: (draftApplication as any).guarantor2CustomerID || null,
-                    guarantor1MemberID: draftApplication.guarantor1MemberID,
-                    guarantor2MemberID: draftApplication.guarantor2MemberID,
+                    guarantor1CustomerID: draftApplication.guarantor1CustomerID || null,
+                    guarantor2CustomerID: draftApplication.guarantor2CustomerID || null,
                     securityDetails: draftApplication.securityDetails,
                     securityValue: draftApplication.securityValue,
                     loanRateID: draftApplication.loanRateID,
@@ -271,7 +279,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     noOfInstallments: draftApplication.noOfInstallments || 0,
                     installmentAmount: draftApplication.installmentAmount || 0,
                     installmentFrequency: draftApplication.installmentFrequency || 'मासिक',
-                    openingDate: formData.disbursementDate || new Date().toISOString().split('T')[0],
+                    openingDate: autoDisbDate,
                     firstInstallmentDate: draftApplication.firstInstallmentDate,
                     maturityDate: draftApplication.maturityDate,
                     status: "Active",
@@ -313,10 +321,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     coCustomer2ID: (draftApplication as any).coCustomer2ID || null,
                     coMemberID: draftApplication.coMemberID,
                     coMember2ID: (draftApplication as any).coMember2ID,
-                    guarantor1CustomerID: (draftApplication as any).guarantor1CustomerID || null,
-                    guarantor2CustomerID: (draftApplication as any).guarantor2CustomerID || null,
-                    guarantor1MemberID: draftApplication.guarantor1MemberID,
-                    guarantor2MemberID: draftApplication.guarantor2MemberID,
+                    guarantor1CustomerID: draftApplication.guarantor1CustomerID || null,
+                    guarantor2CustomerID: draftApplication.guarantor2CustomerID || null,
                     loanRateID: draftApplication.loanRateID,
                     sanctionedAmount: draftApplication.requestedAmount,
                     interestRate: draftApplication.interestRate,
@@ -517,6 +523,10 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         if (sourceType === 'Application') {
             const app = applications.find(a => a.loanApplicationID === id);
             if (app) {
+                const autoDisbDate = app.applicationDate 
+                    ? app.applicationDate.split('T')[0] 
+                    : new Date().toISOString().split('T')[0];
+
                 sancAmount = app.requestedAmount;
                 memberId = app.memberID;
                 
@@ -533,8 +543,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     loanApplicationID: app.loanApplicationID,
                     memberID: app.memberID,
                     coMemberID: app.coMemberID,
-                    guarantor1MemberID: app.guarantor1MemberID,
-                    guarantor2MemberID: app.guarantor2MemberID,
+                    guarantor1CustomerID: app.guarantor1CustomerID || null,
+                    guarantor2CustomerID: app.guarantor2CustomerID || null,
                     securityDetails: app.securityDetails,
                     securityValue: app.securityValue,
                     loanRateID: app.loanRateID,
@@ -544,7 +554,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     noOfInstallments: app.noOfInstallments || 0,
                     installmentAmount: app.installmentAmount || 0,
                     installmentFrequency: app.installmentFrequency || 'मासिक',
-                    openingDate: formData.disbursementDate || new Date().toISOString().split('T')[0],
+                    openingDate: autoDisbDate,
                     firstInstallmentDate: app.firstInstallmentDate,
                     maturityDate: app.maturityDate,
                     status: "Active",
@@ -556,7 +566,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     loanAccountID: app.linkedLoanAccountID || 0,
                     sanctionedAmount: sancAmount,
                     disbursementAmount: pendingLimit,
-                    disbursementDate: new Date().toISOString().split('T')[0]
+                    disbursementDate: autoDisbDate
                 }));
             }
         } else {
@@ -579,8 +589,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     loanAccountID: acc.loanAccountID,
                     memberID: acc.memberID,
                     coMemberID: acc.coMemberID,
-                    guarantor1MemberID: acc.guarantor1MemberID,
-                    guarantor2MemberID: acc.guarantor2MemberID,
+                    guarantor1CustomerID: acc.guarantor1CustomerID || null,
+                    guarantor2CustomerID: acc.guarantor2CustomerID || null,
                     securityDetails: acc.securityDetails,
                     securityValue: acc.securityValue,
                     loanRateID: acc.loanRateID,
@@ -849,9 +859,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         selectedCif = draftApplication.customer?.cifNo || draftApplication.member?.cifNo || '';
         selectedAccountNo = draftApplication.applicationNo || 'DRAFT';
         selectedLoanType = draftApplication.loanRate?.loanType || 'General Loan';
-        const g1 = draftApplication.guarantor1Customer || draftApplication.guarantor1Member;
+        const g1 = draftApplication.guarantor1Customer;
         selectedGuarantor1 = g1 ? `${g1.firstName || ''} ${g1.lastName || ''}`.trim() : '-';
-        const g2 = draftApplication.guarantor2Customer || draftApplication.guarantor2Member;
+        const g2 = draftApplication.guarantor2Customer;
         selectedGuarantor2 = g2 ? `${g2.firstName || ''} ${g2.lastName || ''}`.trim() : '-';
         selectedSecurity = draftApplication.securityDetails || '-';
     } else if (sourceType === 'Application' && selectedSourceId) {
@@ -862,9 +872,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             selectedCif = app.customer?.cifNo || app.member?.cifNo || '';
             selectedAccountNo = app.applicationNo || '';
             selectedLoanType = app.loanRate?.loanType || '';
-            const g1 = app.guarantor1Customer || app.guarantor1Member;
+            const g1 = app.guarantor1Customer;
             selectedGuarantor1 = g1 ? `${g1.firstName || ''} ${g1.lastName || ''}`.trim() : '-';
-            const g2 = app.guarantor2Customer || app.guarantor2Member;
+            const g2 = app.guarantor2Customer;
             selectedGuarantor2 = g2 ? `${g2.firstName || ''} ${g2.lastName || ''}`.trim() : '-';
             selectedSecurity = app.securityDetails || '-';
         }
@@ -876,9 +886,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             selectedCif = acc.customer?.cifNo || acc.member?.cifNo || '';
             selectedAccountNo = acc.loanAccountNo || '';
             selectedLoanType = acc.loanRate?.loanType || '';
-            const g1 = acc.guarantor1Customer || acc.guarantor1Member;
+            const g1 = acc.guarantor1Customer;
             selectedGuarantor1 = g1 ? `${g1.firstName || ''} ${g1.lastName || ''}`.trim() : '-';
-            const g2 = acc.guarantor2Customer || acc.guarantor2Member;
+            const g2 = acc.guarantor2Customer;
             selectedGuarantor2 = g2 ? `${g2.firstName || ''} ${g2.lastName || ''}`.trim() : '-';
             selectedSecurity = acc.securityDetails || '-';
         }
@@ -1077,7 +1087,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                         type="date" 
                                         name="disbursementDate" 
                                         value={formData.disbursementDate || ''} 
-                                        onChange={(e) => setFormData(p => ({ ...p, disbursementDate: e.target.value }))} 
+                                        onChange={(e) => {
+                                            const newDate = e.target.value;
+                                            setFormData(p => ({ ...p, disbursementDate: newDate }));
+                                            setNewAccountData(a => ({ ...a, openingDate: newDate }));
+                                        }} 
                                         required 
                                         className={inputClass} 
                                     />
@@ -1342,38 +1356,71 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                     </button>
                                 </div>
 
-                                {deductions.map((deduction, index) => (
-                                    <div key={index} className="flex gap-2 items-center mb-1.5 animate-fadeIn">
-                                        <div className="flex-1">
-                                            <SearchableSelect 
-                                                options={allLedgers.map(l => ({ value: l.ledgerID.toString(), label: `${l.ledgerID} - ${l.ledgerName}` }))}
-                                                value={deduction.ledgerID ? deduction.ledgerID.toString() : ''}
-                                                onChange={(e: any) => handleDeductionChange(index, 'ledgerID', parseInt(e.target.value, 10))}
-                                                placeholder="-- खाते (Ledger) निवडा --" 
-                                            />
+                                {deductions.map((deduction, index) => {
+                                    const currentLedger = allLedgers.find(l => l.ledgerID === deduction.ledgerID);
+                                    const ledgerDisplayName = currentLedger ? `${currentLedger.ledgerID} - ${currentLedger.ledgerName}` : (deduction.ledgerName || `खाते क्र. ${deduction.ledgerID}`);
+                                    const isFirstAutoDeduction = index === 0;
+
+                                    return (
+                                        <div key={index} className="flex gap-2 items-center mb-1.5 animate-fadeIn">
+                                            <div className="flex-1">
+                                                {isFirstAutoDeduction ? (
+                                                    <div 
+                                                        className="flex items-center justify-between px-2.5 py-1 bg-slate-100 border border-slate-300 rounded-sm text-[11px] font-bold text-slate-800 h-[28px]"
+                                                        title="हे सेटिंगमधील डीफॉल्ट अनिवार्य कपात खाते आहे (Read-Only)"
+                                                    >
+                                                        <div className="flex items-center gap-1.5 truncate">
+                                                            <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                                            <span className="truncate">{ledgerDisplayName}</span>
+                                                        </div>
+                                                        <span className="text-[9px] bg-amber-100 text-amber-800 border border-amber-200 px-1 py-0.2 rounded font-normal shrink-0 ml-1">
+                                                            (सेटिंग लेजर - Lock)
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <SearchableSelect 
+                                                        options={allLedgers.map(l => ({ value: l.ledgerID.toString(), label: `${l.ledgerID} - ${l.ledgerName}` }))}
+                                                        value={deduction.ledgerID ? deduction.ledgerID.toString() : ''}
+                                                        onChange={(e: any) => handleDeductionChange(index, 'ledgerID', parseInt(e.target.value, 10))}
+                                                        placeholder="-- इतर कपात खाते (Ledger) निवडा --" 
+                                                    />
+                                                )}
+                                            </div>
+                                            <div className="w-1/3">
+                                                <input 
+                                                    type="number" 
+                                                    value={deduction.amount || ''} 
+                                                    onChange={(e) => handleDeductionChange(index, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                                    onFocus={(e) => e.target.select()}
+                                                    placeholder="रक्कम ₹" 
+                                                    required 
+                                                    min="0"
+                                                    className={`${inputClass} text-red-600 font-bold font-mono`} 
+                                                    title="कपातीची रक्कम एडिट करू शकता"
+                                                />
+                                            </div>
+                                            {isFirstAutoDeduction ? (
+                                                <button 
+                                                    type="button" 
+                                                    disabled
+                                                    className="p-1 text-gray-300 cursor-not-allowed"
+                                                    title="डीफॉल्ट सेटिंग कपात हटवता येत नाही (रक्कम 0 करू शकता)"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            ) : (
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => removeDeductionRow(index)} 
+                                                    className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-sm transition cursor-pointer"
+                                                    title="कपात हटवा"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
                                         </div>
-                                        <div className="w-1/3">
-                                            <input 
-                                                type="number" 
-                                                value={deduction.amount || ''} 
-                                                onChange={(e) => handleDeductionChange(index, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                                onFocus={(e) => e.target.select()}
-                                                placeholder="रक्कम ₹" 
-                                                required 
-                                                min="0"
-                                                className={`${inputClass} text-red-600 font-bold font-mono`} 
-                                            />
-                                        </div>
-                                        <button 
-                                            type="button" 
-                                            onClick={() => removeDeductionRow(index)} 
-                                            className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-sm transition cursor-pointer"
-                                            title="कपात हटवा"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                ))}
+                                    );
+                                })}
 
                                 {deductions.length === 0 && (
                                     <div className="text-center text-gray-400 text-[11px] py-1.5">

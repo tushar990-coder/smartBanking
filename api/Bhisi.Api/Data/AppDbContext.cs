@@ -58,6 +58,7 @@ namespace Bhisi.Api.Data
         public DbSet<SavingPassbook> SavingPassbooks { get; set; }
         public DbSet<SavingVoucherMapping> SavingVoucherMappings { get; set; }
         public DbSet<SavingAccountJointHolder> SavingAccountJointHolders { get; set; }
+        public DbSet<SavingAccountSequence> SavingAccountSequences { get; set; }
         public DbSet<JointMember> JointMembers { get; set; }
         public DbSet<DeceasedClaimSettlement> DeceasedClaimSettlements { get; set; }
 

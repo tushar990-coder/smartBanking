@@ -1,0 +1,25 @@
+﻿{
+    "SqlServerInstance":  ".",
+    "Targets":  [
+                    {
+                        "TargetDatabase":  "SmartBanking_Testing",
+                        "BackendFolderPath":  "D:\\WebApps\\Testing\\api.testing.hellomindspace.in",
+                        "IISAppPoolName":  "apitesting",
+                        "FrontendFolderPath":  "D:\\WebApps\\Testing\\testing.hellomindspace.in",
+                        "SansthaName":  "Testing Environment"
+                    },
+                    {
+                        "TargetDatabase":  "SmartBanking_testing1",
+                        "BackendFolderPath":  "D:\\WebApps\\testing1\\backend",
+                        "IISAppPoolName":  "testing1-backend",
+                        "FrontendFolderPath":  "D:\\WebApps\\testing1\\frontend",
+                        "SansthaName":  "Testing1 Environment"
+                    }
+                ],
+    "BackupFolder":  "D:\\Backups",
+    "SqlPassword":  "Mindspace2026",
+    "ReleaseDate":  "2026-09-22 17.38.19",
+    "TakeDbBackup":  true,
+    "PatchVersion":  "2.5.1",
+    "SqlUser":  "sa"
+}

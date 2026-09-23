@@ -89,6 +89,15 @@ const formatDisplayDate = (dStr?: string | null) => {
   }
 };
 
+const format14DigitDisplay = (num?: string) => {
+  if (!num) return '-';
+  const clean = num.replace(/\D/g, '');
+  if (clean.length === 14) {
+    return `${clean.substring(0, 3)}-${clean.substring(3, 3)}-${clean.substring(6, 7)}-${clean.substring(13, 1)}`;
+  }
+  return num;
+};
+
 const SavingTransactionEntry: React.FC = () => {
   const [accounts, setAccounts] = useState<SavingAccount[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -388,15 +397,17 @@ const SavingTransactionEntry: React.FC = () => {
     ? accounts.filter(acc => (acc.ledgerID || 7) === selectedLedgerID)
     : accounts;
 
-  const accountOptions = filteredAccounts.map((acc) => {
+  const accountOptions = filteredAccounts.map((acc: any) => {
+    const accDisplay = acc.formattedAccountNo || format14DigitDisplay(acc.accountNo);
     const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : '';
+    const prevAccPart = (acc.previousAccountNo && acc.previousAccountNo !== acc.accountNo) ? ` (आधीचा: ${acc.previousAccountNo})` : '';
     const oldAccPart = (acc.oldAccountNo || acc.legacyAccountNumber) ? ` (जुने: ${acc.oldAccountNo || acc.legacyAccountNumber})` : '';
     const namePart = acc.customerName || 'अज्ञात';
     const engPart = acc.customerNameEng ? ` (${acc.customerNameEng})` : '';
     const balPart = ` - शिल्लक: ₹${(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     return {
       value: acc.savingAccountID,
-      label: `${acc.accountNo}${oldAccPart}${cifPart} - ${namePart}${engPart}${balPart}`
+      label: `${accDisplay}${prevAccPart}${oldAccPart}${cifPart} - ${namePart}${engPart}${balPart}`
     };
   });
 
@@ -405,15 +416,17 @@ const SavingTransactionEntry: React.FC = () => {
     ? accounts.filter(acc => (acc.ledgerID || 7) === selectedTargetLedgerID && acc.savingAccountID !== formData.savingAccountID)
     : accounts.filter(acc => acc.savingAccountID !== formData.savingAccountID);
 
-  const targetAccountOptions = filteredTargetAccounts.map((acc) => {
+  const targetAccountOptions = filteredTargetAccounts.map((acc: any) => {
+    const accDisplay = acc.formattedAccountNo || format14DigitDisplay(acc.accountNo);
     const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : '';
+    const prevAccPart = (acc.previousAccountNo && acc.previousAccountNo !== acc.accountNo) ? ` (आधीचा: ${acc.previousAccountNo})` : '';
     const oldAccPart = (acc.oldAccountNo || acc.legacyAccountNumber) ? ` (जुने: ${acc.oldAccountNo || acc.legacyAccountNumber})` : '';
     const namePart = acc.customerName || 'अज्ञात';
     const engPart = acc.customerNameEng ? ` (${acc.customerNameEng})` : '';
     const balPart = ` - शिल्लक: ₹${(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     return {
       value: acc.savingAccountID,
-      label: `${acc.accountNo}${oldAccPart}${cifPart} - ${namePart}${engPart}${balPart}`
+      label: `${accDisplay}${prevAccPart}${oldAccPart}${cifPart} - ${namePart}${engPart}${balPart}`
     };
   });
 

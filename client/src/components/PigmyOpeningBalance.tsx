@@ -49,6 +49,7 @@ export default function PigmyOpeningBalance() {
     branchID: '1',
     pigmySchemeID: '',
     pigmyAgentID: '',
+    legacyAccountNumber: '',
     openingDate: new Date().toISOString().split('T')[0],
     openingBalance: '',
     financialYear: '2025-2026',
@@ -146,6 +147,7 @@ export default function PigmyOpeningBalance() {
       branchID: '1',
       pigmySchemeID: '',
       pigmyAgentID: '',
+      legacyAccountNumber: '',
       openingDate: computedAsOfDate,
       openingBalance: '',
       financialYear: initialYear ? initialYear.yearCode : '2025-2026',
@@ -160,6 +162,7 @@ export default function PigmyOpeningBalance() {
       branchID: String(acc.branchID || '1'),
       pigmySchemeID: String(acc.pigmySchemeID || ''),
       pigmyAgentID: String(acc.pigmyAgentID || ''),
+      legacyAccountNumber: acc.legacyAccountNumber || '',
       openingDate: acc.openingDate ? acc.openingDate.split('T')[0] : new Date().toISOString().split('T')[0],
       openingBalance: String(acc.totalDepositedAmount || acc.openingBalance || ''),
       financialYear: acc.financialYear || '2025-2026',
@@ -198,11 +201,26 @@ export default function PigmyOpeningBalance() {
     }
   };
 
+  const maxAllowedOpeningDate = React.useMemo(() => {
+    if (formData.asOfDate) return formData.asOfDate;
+    const matchedYear = financialYears.find(y => y.yearCode === formData.financialYear);
+    if (matchedYear && matchedYear.startDate) {
+      return computeAsOfDateFromStartDate(matchedYear.startDate);
+    }
+    return '2026-03-31';
+  }, [formData.asOfDate, formData.financialYear, financialYears]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.customerID) return toast.error('कृपया खातेदार निवडा.');
     if (!formData.pigmySchemeID) return toast.error('कृपया पिग्मी योजना निवडा.');
     if (!formData.pigmyAgentID) return toast.error('कृपया एजंट निवडा.');
+    if (!formData.openingDate) return toast.error('कृपया मूळ उघडल्याची तारीख निवडा.');
+
+    if (maxAllowedOpeningDate && formData.openingDate > maxAllowedOpeningDate) {
+      const formattedMax = maxAllowedOpeningDate.split('-').reverse().join('/');
+      return toast.error(`मूळ उघडल्याची तारीख ${formattedMax} (आर्थिक वर्षाच्या आरंभा) नंतरची असू शकत नाही.`);
+    }
 
     setLoading(true);
     try {
@@ -211,6 +229,8 @@ export default function PigmyOpeningBalance() {
         branchID: parseInt(formData.branchID),
         pigmySchemeID: parseInt(formData.pigmySchemeID),
         pigmyAgentID: parseInt(formData.pigmyAgentID),
+        legacyAccountNumber: formData.legacyAccountNumber.trim() || null,
+        openingDate: formData.openingDate || formData.asOfDate,
         openingBalance: parseFloat(formData.openingBalance || '0'),
         financialYear: formData.financialYear || null,
         asOfDate: formData.asOfDate || null
@@ -229,7 +249,8 @@ export default function PigmyOpeningBalance() {
         const accNo = updatedAccount?.accountNo || `PG-${editingAccountId}`;
         setSuccessModalData({
           isEdit: true,
-          accountNo: accNo,
+          accountNo: format14DigitDisplay(accNo),
+          legacyAccountNumber: formData.legacyAccountNumber.trim() || '-',
           customerName: customerObj ? `${customerObj.firstName || ''} ${customerObj.middleName ? customerObj.middleName + ' ' : ''}${customerObj.lastName || ''}`.trim() : 'खातेदार',
           cifNo: customerObj?.cifNo || '-',
           mobileNo: customerObj?.mobileNo || '-',
@@ -244,10 +265,12 @@ export default function PigmyOpeningBalance() {
         toast.success('पिग्मी खाते माहिती यशस्वीरीत्या अद्ययावत केली!');
       } else {
         const response = await axios.post('/api/PigmyAccounts/Migrate', payload);
-        const createdAccountNo = response.data?.accountNo || 'नोंदणीकृत';
+        const rawAccountNo = response.data?.accountNo || '';
+        const displayAccNo = response.data?.formattedAccountNo || format14DigitDisplay(rawAccountNo) || rawAccountNo || 'नोंदणीकृत';
         setSuccessModalData({
           isEdit: false,
-          accountNo: createdAccountNo,
+          accountNo: displayAccNo,
+          legacyAccountNumber: formData.legacyAccountNumber.trim() || '-',
           customerName: customerObj ? `${customerObj.firstName || ''} ${customerObj.middleName ? customerObj.middleName + ' ' : ''}${customerObj.lastName || ''}`.trim() : 'खातेदार',
           cifNo: customerObj?.cifNo || '-',
           mobileNo: customerObj?.mobileNo || '-',
@@ -259,7 +282,7 @@ export default function PigmyOpeningBalance() {
           asOfDate: formData.asOfDate,
           openingDate: formData.openingDate
         });
-        toast.success(`पिग्मी खाते यशस्वीरीत्या स्थलांतरित झाले! खाते क्र.: ${createdAccountNo}`);
+        toast.success(`पिग्मी खाते यशस्वीरीत्या स्थलांतरित झाले! खाते क्र.: ${displayAccNo}`);
       }
 
       resetForm();
@@ -278,6 +301,7 @@ export default function PigmyOpeningBalance() {
     const rows = filteredAccounts.map((acc, i) => ({
       'अ.क्र.': i + 1,
       'खाते क्र.': acc.accountNo,
+      'जुना खाते क्र.': acc.legacyAccountNumber || '-',
       'खातेदार CIF': acc.customer?.cifNo || '-',
       'खातेदाराचे नाव': acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : '-',
       'पिग्मी योजना': acc.pigmyScheme?.schemeName || '-',
@@ -298,14 +322,26 @@ export default function PigmyOpeningBalance() {
     return `${cifPart}${c.firstName} ${c.middleName ? c.middleName + ' ' : ''}${c.lastName}`;
   };
 
+  const format14DigitDisplay = (accNo: string) => {
+    if (!accNo) return '';
+    const d = accNo.replace(/\D/g, '');
+    if (d.length === 14) {
+      return `${d.substring(0, 3)}-${d.substring(3, 6)}-${d.substring(6, 13)}-${d.substring(13, 14)}`;
+    }
+    return accNo;
+  };
+
   const filteredAccounts = migratedAccounts.filter(acc => {
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
     const custName = acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}`.toLowerCase() : '';
     const cifNo = acc.customer?.cifNo ? acc.customer.cifNo.toLowerCase() : '';
     const accNo = acc.accountNo ? acc.accountNo.toLowerCase() : '';
+    const formattedAccNo = format14DigitDisplay(acc.accountNo || '').toLowerCase();
+    const previousAccNo = acc.previousAccountNo ? acc.previousAccountNo.toLowerCase() : '';
+    const legacyAccNo = acc.legacyAccountNumber ? acc.legacyAccountNumber.toLowerCase() : '';
     const agentName = acc.pigmyAgent?.agentName ? acc.pigmyAgent.agentName.toLowerCase() : '';
-    return accNo.includes(term) || custName.includes(term) || cifNo.includes(term) || agentName.includes(term);
+    return accNo.includes(term) || formattedAccNo.includes(term) || previousAccNo.includes(term) || legacyAccNo.includes(term) || custName.includes(term) || cifNo.includes(term) || agentName.includes(term);
   });
 
   // KPI Calculations
@@ -441,8 +477,8 @@ export default function PigmyOpeningBalance() {
               <h2 className="text-xs font-bold text-primary">१. खाते, योजना व एजंट तपशील (Account, Scheme & Agent Details)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <div>
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              <div className="md:col-span-6 lg:col-span-6">
                 <label className={labelClass}>
                   खातेदार निवडा (Customer) <span className="text-red-500">*</span>
                 </label>
@@ -454,7 +490,7 @@ export default function PigmyOpeningBalance() {
                 />
               </div>
 
-              <div>
+              <div className="md:col-span-3 lg:col-span-3">
                 <label className={labelClass}>
                   पिग्मी योजना (Pigmy Scheme) <span className="text-red-500">*</span>
                 </label>
@@ -471,7 +507,7 @@ export default function PigmyOpeningBalance() {
                 </select>
               </div>
 
-              <div>
+              <div className="md:col-span-3 lg:col-span-3">
                 <label className={labelClass}>
                   पिग्मी एजंट (Select Agent) <span className="text-red-500">*</span>
                 </label>
@@ -497,16 +533,40 @@ export default function PigmyOpeningBalance() {
               <h2 className="text-xs font-bold text-primary">२. शिल्लक व तारीख तपशील (Balance & Date Details)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div>
-                <label className={labelClass}>मूळ उघडल्याची तारीख (Opening Date) <span className="text-red-500">*</span></label>
+                <label className={labelClass}>
+                  जुना पिग्मी खाते क्र. <span className="text-gray-500 text-[10px] font-mono">(Old/Legacy A/c No)</span>
+                </label>
+                <input 
+                  type="text" 
+                  className={`${inputClass} font-mono font-bold text-gray-800`}
+                  value={formData.legacyAccountNumber}
+                  onChange={(e) => setFormData({ ...formData, legacyAccountNumber: e.target.value })}
+                  placeholder="उदा. PG-45 किंवा 12"
+                />
+                <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                  (जुने पासबुक क्र. / जुना खाते क्र.)
+                </span>
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  मूळ उघडल्याची तारीख (Opening Date) <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="date" 
                   required
+                  max={maxAllowedOpeningDate}
                   className={inputClass}
                   value={formData.openingDate}
                   onChange={(e) => setFormData({ ...formData, openingDate: e.target.value })}
                 />
+                {maxAllowedOpeningDate && (
+                  <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                    (जास्तीत जास्त: {maxAllowedOpeningDate.split('-').reverse().join('/')} पर्यंत)
+                  </span>
+                )}
               </div>
 
               <div>
@@ -526,28 +586,6 @@ export default function PigmyOpeningBalance() {
 
               <div>
                 <label className={labelClass}>
-                  आर्थिक वर्ष (Financial Year) <span className="text-red-500">*</span>
-                </label>
-                <select 
-                  required
-                  className={`${inputClass} font-mono font-bold text-primary`}
-                  value={formData.financialYear}
-                  onChange={(e) => handleFinancialYearChange(e.target.value)}
-                >
-                  {financialYears.length > 0 ? (
-                    financialYears.map((fy: any) => (
-                      <option key={fy.financialYearID || fy.yearCode} value={fy.yearCode}>
-                        {fy.yearCode} {fy.isActive ? '(चालू वर्ष)' : ''}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="2025-2026">2025-2026</option>
-                  )}
-                </select>
-              </div>
-
-              <div>
-                <label className={labelClass}>
                   शिल्लक तारीख (As Of Date) <span className="text-red-500">*</span>
                 </label>
                 <input 
@@ -558,7 +596,7 @@ export default function PigmyOpeningBalance() {
                   onChange={(e) => setFormData({ ...formData, asOfDate: e.target.value })}
                 />
                 <span className="text-[10px] text-gray-500 block mt-0.5">
-                  * आर्थिक वर्षाच्या १ दिवस आधीची तारीख
+                  * {formData.financialYear} चे ३१ मार्च अखेर
                 </span>
               </div>
             </div>
@@ -624,7 +662,7 @@ export default function PigmyOpeningBalance() {
                 <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
                 <input 
                   type="text" 
-                  placeholder="खाते क्र, सभासद नाव किंवा एजंटने शोधा..." 
+                  placeholder="खाते क्र, जुना खाते क्र, CIF किंवा नावाने शोधा..." 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-8 pr-6 py-1 border border-gray-300 rounded-sm text-xs h-[30px] w-64 lg:w-80 focus:outline-none focus:border-primary bg-white shadow-2xs"
@@ -691,8 +729,14 @@ export default function PigmyOpeningBalance() {
                             </button>
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono font-bold text-primary">
-                          {acc.accountNo}
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-left">
+                          <div className="font-mono font-bold text-primary">{acc.formattedAccountNo || format14DigitDisplay(acc.accountNo)}</div>
+                          {acc.previousAccountNo && (
+                            <div className="text-[10px] text-slate-500 font-mono">मागील: {acc.previousAccountNo}</div>
+                          )}
+                          {acc.legacyAccountNumber && (
+                            <div className="text-[10px] text-amber-700 font-mono font-bold">जुना: {acc.legacyAccountNumber}</div>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
                           <div className="font-bold text-gray-900">{acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : `खातेदार ID: ${acc.customerID}`}</div>
@@ -786,6 +830,11 @@ export default function PigmyOpeningBalance() {
                 <div className="text-2xl font-black text-emerald-950 font-mono tracking-wider">
                   {successModalData.accountNo}
                 </div>
+                {successModalData.legacyAccountNumber && successModalData.legacyAccountNumber !== '-' && (
+                  <div className="inline-block mt-1 px-2.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 font-mono font-bold text-xs rounded-full shadow-2xs">
+                    जुना पिग्मी खाते क्र.: {successModalData.legacyAccountNumber}
+                  </div>
+                )}
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/90 rounded-full border border-emerald-300/80 shadow-2xs mt-1.5">
                   <span className="text-[11px] text-slate-500 font-semibold">आरंभिक शिल्लक (Opening Balance):</span>
                   <span className="text-sm font-black text-emerald-700 font-mono">

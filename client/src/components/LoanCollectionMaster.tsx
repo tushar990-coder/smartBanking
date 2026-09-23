@@ -4,6 +4,15 @@ import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Print
 import SearchableSelect from './SearchableSelect';
 import LoanCollectionReceiptPrint from './LoanCollectionReceiptPrint';
 
+export const format14DigitDisplay = (num?: string) => {
+    if (!num) return '-';
+    const clean = num.replace(/\D/g, '');
+    if (clean.length === 14) {
+        return `${clean.substring(0, 3)}-${clean.substring(3, 3)}-${clean.substring(6, 7)}-${clean.substring(13, 1)}`;
+    }
+    return num;
+};
+
 interface LoanAccount {
     loanAccountID: number;
     loanAccountNo: string;
@@ -26,6 +35,7 @@ interface LoanAccount {
     };
     loanRate?: {
         loanType: string;
+        
         shortName?: string;
         interestRate?: number;
         interestCalculationMethod?: string;
@@ -263,13 +273,26 @@ const LoanCollectionMaster: React.FC = () => {
     }, [accounts, selectedBorrowerKey, selectedMemberId]);
     const memberLoans = borrowerLoans;
 
-    const bankLedgers = ledgers.filter((l: any) => 
-        l.accountGroup?.groupName?.toLowerCase().includes('bank') || 
-        l.accountGroup?.groupName?.includes('बँक') ||
-        l.accountGroup?.groupName?.includes('शिल्लक') ||
-        l.ledgerName.includes('बँक') ||
-        l.ledgerName.includes('Bank')
-    );
+    const bankLedgers = ledgers.filter((l: any) => {
+        if (!l) return false;
+        const gId = l.groupID || l.accountGroupID || 0;
+        const parentGId = l.accountGroup?.parentGroupID || 0;
+        const gName = (l.accountGroup?.groupName || '').toLowerCase();
+        const lName = (l.ledgerName || '').toLowerCase();
+        const accType = (l.accountType || '').toLowerCase();
+
+        return (
+            gId === 32 || gId === 33 || gId === 34 ||
+            parentGId === 32 ||
+            gName.includes('बँक') || gName.includes('bank') ||
+            gName.includes('करंट') || gName.includes('current') ||
+            gName.includes('चालू') || gName.includes('शिल्लक') ||
+            lName.includes('बँक') || lName.includes('bank') ||
+            lName.includes('करंट') || lName.includes('current') ||
+            lName.includes('चालू') ||
+            accType.includes('bank') || accType.includes('current')
+        );
+    });
 
     const fetchNextReceiptNo = async (targetAccountId?: number) => {
         try {
@@ -1011,7 +1034,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             <option value="">{selectedBorrowerKey || selectedMemberId ? (borrowerLoans.length === 0 ? "कर्ज उपलब्ध नाही" : "-- कर्ज प्रकार व खाते निवडा --") : "आधी खातेदार निवडा..."}</option>
                                             {borrowerLoans.map((a: any) => (
                                                 <option key={a.loanAccountID} value={a.loanAccountID}>
-                                                    {a.loanAccountNo} - {a.loanRate?.shortName || a.loanRate?.loanType || 'कर्ज'} (मंजूर: ₹{a.sanctionedAmount?.toLocaleString('en-IN') || 0} | शिल्लक: ₹{a.principalBalance?.toLocaleString('en-IN') || 0})
+                                                    {format14DigitDisplay(a.loanAccountNo)} - {a.loanRate?.shortName || a.loanRate?.loanType || 'कर्ज'} (मंजूर: ₹{a.sanctionedAmount?.toLocaleString('en-IN') || 0} | शिल्लक: ₹{a.principalBalance?.toLocaleString('en-IN') || 0})
                                                 </option>
                                             ))}
                                         </select>
@@ -1065,7 +1088,9 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         className={inputClass} required>
                                         <option value="">-- बँक खाते निवडा (Select Bank A/c) --</option>
                                         {bankLedgers.map(l => (
-                                            <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
+                                            <option key={l.ledgerID} value={l.ledgerID}>
+                                                {l.ledgerName}{l.accountGroup?.groupName ? ` (${l.accountGroup.groupName})` : ''}
+                                            </option>
                                         ))}
                                     </select>
                                 )}
@@ -1084,7 +1109,9 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             className={inputClass} required>
                                             <option value="">-- बँक खाते निवडा (Select Bank A/c) --</option>
                                             {bankLedgers.map(l => (
-                                                <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
+                                                <option key={l.ledgerID} value={l.ledgerID}>
+                                                    {l.ledgerName}{l.accountGroup?.groupName ? ` (${l.accountGroup.groupName})` : ''}
+                                                </option>
                                             ))}
                                         </select>
                                         <input type="text" value={formData.chequeNo || ''} onChange={(e) => setFormData(p => ({ ...p, chequeNo: e.target.value }))} placeholder="चेक नंबर (Cheque No)" className={inputClass} required />

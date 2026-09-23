@@ -4175,7 +4175,6 @@ namespace Bhisi.Api.Controllers
 
             var appsQuery = _context.LoanApplications
                 .Include(a => a.Customer)
-                .Include(a => a.Member).ThenInclude(m => m!.Customer)
                 .Include(a => a.Guarantor1Customer)
                 .Include(a => a.Guarantor2Customer)
                 .Include(a => a.LoanRate)
@@ -4183,7 +4182,7 @@ namespace Bhisi.Api.Controllers
 
             if (branchId.HasValue && branchId.Value > 0)
             {
-                appsQuery = appsQuery.Where(a => (a.Customer != null && a.Customer.BranchID == branchId.Value) || (a.Member != null && a.Member.BranchID == branchId.Value));
+                appsQuery = appsQuery.Where(a => a.Customer != null && a.Customer.BranchID == branchId.Value);
             }
 
             var applications = await appsQuery.ToListAsync();
@@ -4272,9 +4271,9 @@ namespace Bhisi.Api.Controllers
                         applicationNo = a.ApplicationNo,
                         borrowerName = a.Customer != null 
                             ? $"{a.Customer.FirstName} {a.Customer.MiddleName} {a.Customer.LastName}".Trim() 
-                            : (a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.MiddleName} {a.Member.Customer.LastName}".Trim() : ""),
-                        borrowerCode = a.Member?.MemberCode ?? a.Customer?.CIFNo,
-                        borrowerCIF = a.Customer?.CIFNo ?? a.Member?.Customer?.CIFNo ?? "",
+                            : "",
+                        borrowerCode = a.Customer?.CIFNo ?? "",
+                        borrowerCIF = a.Customer?.CIFNo ?? "",
                         loanType = a.LoanRate?.ShortName ?? a.LoanRate?.LoanType ?? "",
                         requestedAmount = a.RequestedAmount,
                         guarantorType = MatchesAppG1(a) ? "जामीनदार १ (Guarantor 1)" : "जामीनदार २ (Guarantor 2)",

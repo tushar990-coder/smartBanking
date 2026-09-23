@@ -13,6 +13,7 @@ namespace Bhisi.Api.Controllers
     public class PigmyOpenAccountDto
     {
         public string? AccountNo { get; set; }
+        public string? LegacyAccountNumber { get; set; }
         public int CustomerID { get; set; }
         public int BranchID { get; set; }
         public int PigmySchemeID { get; set; }
@@ -36,33 +37,142 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
+        // Helper class for Modulo-10 Luhn Check Digit calculation and validation
+        public static class LuhnHelper
+        {
+            public static int CalculateCheckDigit(string digits)
+            {
+                int sum = 0;
+                bool alternate = true;
+                for (int i = digits.Length - 1; i >= 0; i--)
+                {
+                    int d = digits[i] - '0';
+                    if (alternate)
+                    {
+                        d *= 2;
+                        if (d > 9) d -= 9;
+                    }
+                    sum += d;
+                    alternate = !alternate;
+                }
+                int mod = sum % 10;
+                return (mod == 0) ? 0 : 10 - mod;
+            }
+
+            public static bool ValidateAccountNo(string fullAccountNo)
+            {
+                if (string.IsNullOrWhiteSpace(fullAccountNo)) return false;
+                var digitsOnly = new string(fullAccountNo.Where(char.IsDigit).ToArray());
+                if (digitsOnly.Length != 14) return false;
+                string prefix13 = digitsOnly.Substring(0, 13);
+                int expectedCheck = CalculateCheckDigit(prefix13);
+                return (digitsOnly[13] - '0') == expectedCheck;
+            }
+
+            public static string Format14Digit(string accountNo)
+            {
+                if (string.IsNullOrWhiteSpace(accountNo)) return "";
+                var d = new string(accountNo.Where(char.IsDigit).ToArray());
+                if (d.Length == 14)
+                {
+                    return $"{d.Substring(0, 3)}-{d.Substring(3, 3)}-{d.Substring(6, 7)}-{d.Substring(13, 1)}";
+                }
+                return accountNo;
+            }
+        }
+
+        // CBS Standard 14-digit Account Generator: [3-digit Branch] + [3-digit Scheme (301, 302...)] + [7-digit Sequence] + [1-digit Checksum]
+        private async Task<string> GenerateNextPigmyAccountNo(int branchId, int? schemeId = null, bool incrementSequence = false)
+        {
+            var branch = await _context.Branches.FindAsync(branchId);
+            
+            // 1. Branch Code: 3 numeric digits (e.g. 001, 002)
+            string branchCode3 = branchId.ToString("D3");
+            if (branch != null && !string.IsNullOrWhiteSpace(branch.BranchCode))
+            {
+                var digitsOnly = new string(branch.BranchCode.Where(char.IsDigit).ToArray());
+                if (!string.IsNullOrEmpty(digitsOnly) && int.TryParse(digitsOnly, out int parsed) && parsed > 0)
+                {
+                    branchCode3 = parsed.ToString("D3");
+                }
+            }
+
+            // 2. Scheme Code: 3 numeric digits (e.g. 301, 302)
+            int schemeCodeNum = 301;
+            if (schemeId.HasValue && schemeId.Value > 0)
+            {
+                var scheme = await _context.PigmySchemes.FindAsync(schemeId.Value);
+                if (scheme != null && !string.IsNullOrWhiteSpace(scheme.SchemeCode))
+                {
+                    var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
+                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
+                    {
+                        schemeCodeNum = parsedScheme;
+                    }
+                }
+            }
+            string schemeCode3 = schemeCodeNum.ToString("D3");
+
+            // 3. Sequence: Atomic sequence per (BranchID, SchemeCodeNumeric)
+            var seq = await _context.PigmyAccountSequences
+                .FirstOrDefaultAsync(s => s.BranchID == branchId && s.SchemeCodeNumeric == schemeCodeNum);
+
+            if (seq == null)
+            {
+                int existingCount = await _context.PigmyAccounts
+                    .CountAsync(p => p.BranchID == branchId);
+                seq = new PigmyAccountSequence
+                {
+                    BranchID = branchId,
+                    SchemeCodeNumeric = schemeCodeNum,
+                    LastSequenceNumber = existingCount,
+                    UpdatedOn = DateTime.UtcNow
+                };
+                _context.PigmyAccountSequences.Add(seq);
+                await _context.SaveChangesAsync();
+            }
+            else
+            {
+                // Self-healing / Auto-sync: If table was wiped clean, reset sequence counter
+                int totalExistingInBranch = await _context.PigmyAccounts
+                    .CountAsync(p => p.BranchID == branchId);
+                if (totalExistingInBranch == 0 && seq.LastSequenceNumber > 0)
+                {
+                    seq.LastSequenceNumber = 0;
+                    seq.UpdatedOn = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                }
+            }
+
+            int nextSeqNumber = seq.LastSequenceNumber + 1;
+            if (incrementSequence)
+            {
+                seq.LastSequenceNumber++;
+                seq.UpdatedOn = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                nextSeqNumber = seq.LastSequenceNumber;
+            }
+
+            string thirteenDigits = $"{branchCode3}{schemeCode3}{nextSeqNumber:D7}";
+            int checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
+            return $"{thirteenDigits}{checkDigit}";
+        }
+
         // GET: api/PigmyAccounts/next-account-no?branchId=1&schemeId=1
         [HttpGet("next-account-no")]
         public async Task<ActionResult<object>> GetNextAccountNo([FromQuery] int branchId = 1, [FromQuery] int schemeId = 1)
         {
-            var branch = await _context.Branches.FindAsync(branchId);
-            string branchPrefix = branch != null && !string.IsNullOrWhiteSpace(branch.BranchCode)
-                ? branch.BranchCode.Trim()
-                : $"{branchId:D2}";
-
-            var sequence = await _context.PigmyAccountSequences
-                .FirstOrDefaultAsync(s => s.BranchID == branchId);
-
-            int lastSeq = sequence != null ? sequence.LastSequenceNumber : 0;
-            if (sequence == null)
-            {
-                lastSeq = await _context.PigmyAccounts.CountAsync(p => p.BranchID == branchId);
-            }
-
-            int nextSeq = lastSeq + 1;
-            string accountNo = $"{branchPrefix}-PG-{nextSeq:D5}";
+            string nextNo = await GenerateNextPigmyAccountNo(branchId, schemeId, incrementSequence: false);
+            string formattedNo = LuhnHelper.Format14Digit(nextNo);
 
             return Ok(new
             {
-                accountNo,
-                nextSequence = nextSeq,
+                accountNo = nextNo,
+                nextAccountNo = nextNo,
+                formattedAccountNo = formattedNo,
+                displayAccountNo = formattedNo,
                 branchID = branchId,
-                branchCode = branchPrefix
+                schemeId = schemeId
             });
         }
 
@@ -101,7 +211,13 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(p => p.Status == status);
             }
 
-            return await query.OrderByDescending(p => p.PigmyAccountID).ToListAsync();
+            var accounts = await query.OrderByDescending(p => p.PigmyAccountID).ToListAsync();
+            foreach (var acc in accounts)
+            {
+                acc.FormattedAccountNo = LuhnHelper.Format14Digit(acc.AccountNo);
+            }
+
+            return accounts;
         }
 
         // GET: api/PigmyAccounts/Agent/{agentId}
@@ -117,6 +233,9 @@ namespace Bhisi.Api.Controllers
                 {
                     p.PigmyAccountID,
                     p.AccountNo,
+                    FormattedAccountNo = LuhnHelper.Format14Digit(p.AccountNo),
+                    p.PreviousAccountNo,
+                    p.LegacyAccountNumber,
                     p.CustomerID,
                     CIFNo = p.Customer != null ? p.Customer.CIFNo : "",
                     CustomerName = p.Customer != null 
@@ -145,13 +264,20 @@ namespace Bhisi.Api.Controllers
         [HttpGet("Customer/{customerId}")]
         public async Task<ActionResult<IEnumerable<PigmyAccount>>> GetAccountsByCustomer(int customerId)
         {
-            return await _context.PigmyAccounts
+            var accounts = await _context.PigmyAccounts
                 .Include(p => p.Customer)
                 .Include(p => p.PigmyScheme)
                 .Include(p => p.PigmyAgent)
                 .Where(p => p.CustomerID == customerId)
                 .OrderByDescending(p => p.PigmyAccountID)
                 .ToListAsync();
+
+            foreach (var acc in accounts)
+            {
+                acc.FormattedAccountNo = LuhnHelper.Format14Digit(acc.AccountNo);
+            }
+
+            return accounts;
         }
 
         // GET: api/PigmyAccounts/5
@@ -169,6 +295,7 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
+            pigmyAccount.FormattedAccountNo = LuhnHelper.Format14Digit(pigmyAccount.AccountNo);
             return pigmyAccount;
         }
 
@@ -202,55 +329,26 @@ namespace Bhisi.Api.Controllers
                     return BadRequest("Opening date cannot be in the future.");
 
                 // 2. Determine & Validate Account Number
-                var branch = await _context.Branches.FindAsync(request.BranchID);
-                string branchPrefix = branch != null && !string.IsNullOrWhiteSpace(branch.BranchCode)
-                    ? branch.BranchCode.Trim()
-                    : $"{request.BranchID:D2}";
-
-                var sequence = await _context.PigmyAccountSequences
-                    .FirstOrDefaultAsync(s => s.BranchID == request.BranchID);
-                
-                if (sequence == null)
-                {
-                    int existingCount = await _context.PigmyAccounts.CountAsync(p => p.BranchID == request.BranchID);
-                    sequence = new PigmyAccountSequence { BranchID = request.BranchID, LastSequenceNumber = existingCount };
-                    _context.PigmyAccountSequences.Add(sequence);
-                    await _context.SaveChangesAsync();
-                }
-
                 string accountNo;
                 if (!string.IsNullOrWhiteSpace(request.AccountNo))
                 {
                     accountNo = request.AccountNo.Trim();
-                    bool exists = await _context.PigmyAccounts.AnyAsync(p => p.AccountNo == accountNo);
+                    bool exists = await _context.PigmyAccounts.AnyAsync(p => p.AccountNo == accountNo || p.PreviousAccountNo == accountNo);
                     if (exists)
                     {
                         return BadRequest($"पिग्मी खाते क्रमांक '{accountNo}' आधीच अस्तित्वात आहे. कृपया दुसरा क्रमांक निवडा.");
                     }
-
-                    // If numeric part is greater than current sequence, advance sequence
-                    var digitsOnly = new string(accountNo.Where(char.IsDigit).ToArray());
-                    if (int.TryParse(digitsOnly, out int customSeq) && customSeq > sequence.LastSequenceNumber)
-                    {
-                        sequence.LastSequenceNumber = customSeq;
-                    }
                 }
                 else
                 {
-                    sequence.LastSequenceNumber++;
-                    accountNo = $"{branchPrefix}-PG-{sequence.LastSequenceNumber:D5}";
-
-                    while (await _context.PigmyAccounts.AnyAsync(p => p.AccountNo == accountNo))
-                    {
-                        sequence.LastSequenceNumber++;
-                        accountNo = $"{branchPrefix}-PG-{sequence.LastSequenceNumber:D5}";
-                    }
+                    accountNo = await GenerateNextPigmyAccountNo(request.BranchID, request.PigmySchemeID, incrementSequence: true);
                 }
 
                 // 3. Create Account
                 var pigmyAccount = new PigmyAccount
                 {
                     AccountNo = accountNo,
+                    LegacyAccountNumber = string.IsNullOrWhiteSpace(request.LegacyAccountNumber) ? null : request.LegacyAccountNumber.Trim(),
                     CustomerID = customer.CustomerID,
                     BranchID = request.BranchID,
                     PigmySchemeID = request.PigmySchemeID,
@@ -324,6 +422,7 @@ namespace Bhisi.Api.Controllers
 
                 await transaction.CommitAsync();
 
+                pigmyAccount.FormattedAccountNo = LuhnHelper.Format14Digit(pigmyAccount.AccountNo);
                 return CreatedAtAction("GetPigmyAccount", new { id = pigmyAccount.PigmyAccountID }, pigmyAccount);
             }
             catch (Exception ex)
@@ -355,22 +454,20 @@ namespace Bhisi.Api.Controllers
                 var agent = await _context.PigmyAgents.FindAsync(request.PigmyAgentID);
                 if (agent == null || agent.Status != "Active") return BadRequest("Invalid or inactive Agent.");
 
-                var sequence = await _context.PigmyAccountSequences
-                    .FirstOrDefaultAsync(s => s.BranchID == request.BranchID);
-                
-                if (sequence == null)
+                string accountNo;
+                if (!string.IsNullOrWhiteSpace(request.AccountNo))
                 {
-                    sequence = new PigmyAccountSequence { BranchID = request.BranchID, LastSequenceNumber = 0 };
-                    _context.PigmyAccountSequences.Add(sequence);
-                    await _context.SaveChangesAsync();
+                    accountNo = request.AccountNo.Trim();
                 }
-
-                sequence.LastSequenceNumber++;
-                string accountNo = $"{request.BranchID:D2}{request.PigmySchemeID:D2}{sequence.LastSequenceNumber:D5}";
+                else
+                {
+                    accountNo = await GenerateNextPigmyAccountNo(request.BranchID, request.PigmySchemeID, incrementSequence: true);
+                }
 
                 var pigmyAccount = new PigmyAccount
                 {
                     AccountNo = accountNo,
+                    LegacyAccountNumber = string.IsNullOrWhiteSpace(request.LegacyAccountNumber) ? null : request.LegacyAccountNumber.Trim(),
                     CustomerID = customer.CustomerID,
                     BranchID = request.BranchID,
                     PigmySchemeID = request.PigmySchemeID,
@@ -424,6 +521,7 @@ namespace Bhisi.Api.Controllers
 
                 await transaction.CommitAsync();
 
+                pigmyAccount.FormattedAccountNo = LuhnHelper.Format14Digit(pigmyAccount.AccountNo);
                 return CreatedAtAction("GetPigmyAccount", new { id = pigmyAccount.PigmyAccountID }, pigmyAccount);
             }
             catch (Exception ex)
@@ -436,6 +534,7 @@ namespace Bhisi.Api.Controllers
         public class PigmyAccountUpdateDto
         {
             public int PigmyAccountID { get; set; }
+            public string? LegacyAccountNumber { get; set; }
             public int PigmyAgentID { get; set; }
             public int PigmySchemeID { get; set; }
             public decimal TotalDepositedAmount { get; set; }
@@ -458,6 +557,10 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = "पिग्मी खाते सापडले नाही." });
             }
 
+            if (dto.LegacyAccountNumber != null)
+            {
+                existing.LegacyAccountNumber = string.IsNullOrWhiteSpace(dto.LegacyAccountNumber) ? null : dto.LegacyAccountNumber.Trim();
+            }
             if (dto.PigmyAgentID > 0) existing.PigmyAgentID = dto.PigmyAgentID;
             if (dto.PigmySchemeID > 0) existing.PigmySchemeID = dto.PigmySchemeID;
             if (!string.IsNullOrWhiteSpace(dto.Status)) existing.Status = dto.Status;
@@ -513,27 +616,27 @@ namespace Bhisi.Api.Controllers
                 if (openingBalances.Any()) _context.PigmyOpeningBalances.RemoveRange(openingBalances);
 
                 var interestLogs = await _context.PigmyInterestLogs.Where(i => i.PigmyAccountId == id).ToListAsync();
-                var seq = await _context.PigmyAccountSequences.FirstOrDefaultAsync(s => s.BranchID == pigmyAccount.BranchID);
+                if (interestLogs.Any()) _context.PigmyInterestLogs.RemoveRange(interestLogs);
+
+                var scheme = await _context.PigmySchemes.FindAsync(pigmyAccount.PigmySchemeID);
+                int schemeCodeNum = 301;
+                if (scheme != null && !string.IsNullOrWhiteSpace(scheme.SchemeCode))
+                {
+                    var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
+                    if (int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
+                        schemeCodeNum = parsedScheme;
+                }
+
+                var seq = await _context.PigmyAccountSequences.FirstOrDefaultAsync(s => s.BranchID == pigmyAccount.BranchID && s.SchemeCodeNumeric == schemeCodeNum);
                 if (seq != null)
                 {
-                    var remainingAccounts = await _context.PigmyAccounts
-                        .Where(a => a.BranchID == pigmyAccount.BranchID && a.PigmyAccountID != id)
-                        .Select(a => a.AccountNo)
-                        .ToListAsync();
-
-                    int maxSeq = 0;
-                    foreach (var accNo in remainingAccounts)
+                    int remainingCount = await _context.PigmyAccounts
+                        .CountAsync(a => a.BranchID == pigmyAccount.BranchID && a.PigmySchemeID == pigmyAccount.PigmySchemeID && a.PigmyAccountID != id);
+                    if (remainingCount == 0)
                     {
-                        if (!string.IsNullOrWhiteSpace(accNo) && accNo.Length >= 5)
-                        {
-                            var lastDigits = accNo.Substring(accNo.Length - 5);
-                            if (int.TryParse(lastDigits, out int parsed))
-                            {
-                                if (parsed > maxSeq) maxSeq = parsed;
-                            }
-                        }
+                        seq.LastSequenceNumber = 0;
                     }
-                    seq.LastSequenceNumber = maxSeq;
+                    seq.UpdatedOn = DateTime.UtcNow;
                     _context.PigmyAccountSequences.Update(seq);
                 }
 

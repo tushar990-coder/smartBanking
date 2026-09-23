@@ -21,48 +21,71 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
-        // GET: api/LoanAccounts/next-account-no?branchId=1
+        // GET: api/LoanAccounts/next-account-no?branchId=1&loanRateId=1
         [HttpGet("next-account-no")]
-        public async Task<ActionResult<string>> GetNextAccountNo([FromQuery] int? branchId = null)
+        public async Task<ActionResult<object>> GetNextAccountNo([FromQuery] int? branchId = null, [FromQuery] int? loanRateId = null)
         {
             int targetBranchId = branchId ?? 1;
-            var branch = await _context.Branches.FindAsync(targetBranchId);
-            string branchCode = branch?.BranchCode ?? "01";
-            string prefix = $"{branchCode}02";
+            int schemeCodeNum = 201;
+            if (loanRateId.HasValue && loanRateId.Value > 0)
+            {
+                var lr = await _context.LoanRates.FindAsync(loanRateId.Value);
+                if (lr != null && !string.IsNullOrWhiteSpace(lr.LoanCode))
+                {
+                    var sDigits = new string(lr.LoanCode.Where(char.IsDigit).ToArray());
+                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsed) && parsed > 0)
+                    {
+                        schemeCodeNum = parsed < 100 ? 200 + parsed : parsed;
+                    }
+                    else
+                    {
+                        schemeCodeNum = 200 + lr.LoanRateID;
+                    }
+                }
+                else if (lr != null)
+                {
+                    schemeCodeNum = 200 + lr.LoanRateID;
+                }
+            }
 
-            var existingAccNos = await _context.LoanAccounts
-                .Where(a => a.BranchID == targetBranchId && a.LoanAccountNo != null && a.LoanAccountNo.StartsWith(prefix))
+            var existingLoanAccs = await _context.LoanAccounts
+                .Where(a => a.BranchID == targetBranchId && a.LoanAccountNo != null)
                 .Select(l => l.LoanAccountNo!)
                 .ToListAsync();
 
             int maxSeq = 0;
-            foreach (var accNo in existingAccNos)
+            foreach (var accNo in existingLoanAccs)
             {
-                if (accNo.Length > prefix.Length)
+                var digitsOnly = new string(accNo.Where(char.IsDigit).ToArray());
+                if (digitsOnly.Length == 14)
                 {
-                    var suffix = accNo.Substring(prefix.Length);
-                    if (int.TryParse(suffix, out int val) && val > maxSeq)
+                    string seqPart = digitsOnly.Substring(6, 7);
+                    if (int.TryParse(seqPart, out int sVal) && sVal > maxSeq)
                     {
-                        maxSeq = val;
+                        maxSeq = sVal;
                     }
+                }
+                else
+                {
+                    maxSeq = Math.Max(maxSeq, existingLoanAccs.Count);
                 }
             }
 
-            if (maxSeq == 0 && existingAccNos.Any())
-            {
-                maxSeq = existingAccNos.Count;
-            }
-
             int nextSeq = maxSeq + 1;
-            string nextAccNo = $"{prefix}{nextSeq:D5}";
-
-            while (existingAccNos.Contains(nextAccNo))
+            string nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(targetBranchId, schemeCodeNum, nextSeq);
+            while (existingLoanAccs.Contains(nextAccNo))
             {
                 nextSeq++;
-                nextAccNo = $"{prefix}{nextSeq:D5}";
+                nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(targetBranchId, schemeCodeNum, nextSeq);
             }
 
-            return Content(nextAccNo, "text/plain");
+            string formattedNo = Helpers.AccountNumberHelper.Format14Digit(nextAccNo);
+            return Ok(new {
+                nextAccountNo = nextAccNo,
+                accountNo = nextAccNo,
+                formattedAccountNo = formattedNo,
+                displayAccountNo = formattedNo
+            });
         }
 
         // GET: api/LoanAccounts
@@ -72,8 +95,6 @@ namespace Bhisi.Api.Controllers
             var query = _context.LoanAccounts
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
-                .Include(l => l.CoMember).ThenInclude(m => m!.Customer)
-                .Include(l => l.CoMember2).ThenInclude(m => m!.Customer)
                 .Include(l => l.CoCustomer)
                 .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
@@ -135,8 +156,6 @@ namespace Bhisi.Api.Controllers
             var loanAccount = await _context.LoanAccounts
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
-                .Include(l => l.CoMember).ThenInclude(m => m!.Customer)
-                .Include(l => l.CoMember2).ThenInclude(m => m!.Customer)
                 .Include(l => l.CoCustomer)
                 .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
@@ -347,8 +366,6 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<LoanAccount>> PostLoanAccount(LoanAccount loanAccount)
         {
             // Sanitize 0 values for nullable FKs
-            if (loanAccount.CoMemberID.HasValue && loanAccount.CoMemberID.Value <= 0) loanAccount.CoMemberID = null;
-            if (loanAccount.CoMember2ID.HasValue && loanAccount.CoMember2ID.Value <= 0) loanAccount.CoMember2ID = null;
             if (loanAccount.CoCustomerID.HasValue && loanAccount.CoCustomerID.Value <= 0) loanAccount.CoCustomerID = null;
             if (loanAccount.CoCustomer2ID.HasValue && loanAccount.CoCustomer2ID.Value <= 0) loanAccount.CoCustomer2ID = null;
             if (loanAccount.Guarantor1CustomerID.HasValue && loanAccount.Guarantor1CustomerID.Value <= 0) loanAccount.Guarantor1CustomerID = null;
@@ -382,35 +399,59 @@ namespace Bhisi.Api.Controllers
             if (string.IsNullOrWhiteSpace(loanAccount.LoanAccountNo))
             {
                 int targetBranchId = loanAccount.BranchID > 0 ? loanAccount.BranchID : 1;
-                var branch = await _context.Branches.FindAsync(targetBranchId);
-                string branchCode = branch?.BranchCode ?? "01";
-                string prefix = $"{branchCode}02";
+                int schemeCodeNum = 201;
+                if (loanAccount.LoanRateID > 0)
+                {
+                    var lr = await _context.LoanRates.FindAsync(loanAccount.LoanRateID);
+                    if (lr != null && !string.IsNullOrWhiteSpace(lr.LoanCode))
+                    {
+                        var sDigits = new string(lr.LoanCode.Where(char.IsDigit).ToArray());
+                        if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsed) && parsed > 0)
+                        {
+                            schemeCodeNum = parsed < 100 ? 200 + parsed : parsed;
+                        }
+                        else
+                        {
+                            schemeCodeNum = 200 + lr.LoanRateID;
+                        }
+                    }
+                    else if (lr != null)
+                    {
+                        schemeCodeNum = 200 + lr.LoanRateID;
+                    }
+                }
 
-                var existingAccNos = await _context.LoanAccounts
-                    .Where(a => a.BranchID == targetBranchId && a.LoanAccountNo != null && a.LoanAccountNo.StartsWith(prefix))
+                var existingLoanAccs = await _context.LoanAccounts
+                    .Where(a => a.BranchID == targetBranchId && a.LoanAccountNo != null)
                     .Select(l => l.LoanAccountNo!)
                     .ToListAsync();
 
                 int maxSeq = 0;
-                foreach (var accNo in existingAccNos)
+                foreach (var accNo in existingLoanAccs)
                 {
-                    if (accNo.Length > prefix.Length)
+                    var digitsOnly = new string(accNo.Where(char.IsDigit).ToArray());
+                    if (digitsOnly.Length == 14)
                     {
-                        var suffix = accNo.Substring(prefix.Length);
-                        if (int.TryParse(suffix, out int val) && val > maxSeq)
+                        string seqPart = digitsOnly.Substring(6, 7);
+                        if (int.TryParse(seqPart, out int sVal) && sVal > maxSeq)
                         {
-                            maxSeq = val;
+                            maxSeq = sVal;
                         }
                     }
+                    else
+                    {
+                        maxSeq = Math.Max(maxSeq, existingLoanAccs.Count);
+                    }
                 }
-                if (maxSeq == 0 && existingAccNos.Any()) maxSeq = existingAccNos.Count;
+
                 int nextSeq = maxSeq + 1;
-                string nextAccNo = $"{prefix}{nextSeq:D5}";
-                while (existingAccNos.Contains(nextAccNo))
+                string nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(targetBranchId, schemeCodeNum, nextSeq);
+                while (existingLoanAccs.Contains(nextAccNo))
                 {
                     nextSeq++;
-                    nextAccNo = $"{prefix}{nextSeq:D5}";
+                    nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(targetBranchId, schemeCodeNum, nextSeq);
                 }
+
                 loanAccount.LoanAccountNo = nextAccNo;
             }
 
@@ -468,8 +509,6 @@ namespace Bhisi.Api.Controllers
                     Guarantor2CustomerID = dto.Guarantor2CustomerID > 0 ? dto.Guarantor2CustomerID : null,
                     CoCustomerID = dto.CoCustomerID > 0 ? dto.CoCustomerID : null,
                     CoCustomer2ID = dto.CoCustomer2ID > 0 ? dto.CoCustomer2ID : null,
-                    CoMemberID = dto.CoMemberID > 0 ? dto.CoMemberID : null,
-                    CoMember2ID = dto.CoMember2ID > 0 ? dto.CoMember2ID : null,
                     SecurityDetails = dto.SecurityDetails,
                     SecurityValue = dto.SecurityValue,
                     NoOfInstallments = dto.NoOfInstallments,

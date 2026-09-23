@@ -178,8 +178,6 @@ namespace Bhisi.Api.Controllers
             var query = _context.LoanAccounts
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
-                .Include(l => l.CoMember)
-                .Include(l => l.CoMember2)
                 .Include(l => l.CoCustomer)
                 .Include(l => l.CoCustomer2)
                 .Include(l => l.LoanRate)
@@ -217,10 +215,10 @@ namespace Bhisi.Api.Controllers
                         : (l.Member != null && l.Member.Customer != null ? (l.Member.Customer.Address + ", " + l.Member.Customer.Village + ", " + l.Member.Customer.Taluka + ", " + l.Member.Customer.District) : ""),
                     CoMemberName = l.CoCustomer != null 
                         ? (l.CoCustomer.FirstName + " " + l.CoCustomer.LastName).Trim() 
-                        : (l.CoMember != null && l.CoMember.Customer != null ? (l.CoMember.Customer.FirstName + " " + l.CoMember.Customer.LastName).Trim() : ""),
+                        : "",
                     CoMember2Name = l.CoCustomer2 != null 
                         ? (l.CoCustomer2.FirstName + " " + l.CoCustomer2.LastName).Trim() 
-                        : (l.CoMember2 != null && l.CoMember2.Customer != null ? (l.CoMember2.Customer.FirstName + " " + l.CoMember2.Customer.LastName).Trim() : ""),
+                        : "",
                     LoanScheme = l.LoanRate != null ? l.LoanRate.LoanType : "",
                     l.PrincipalBalance,
                     l.InterestBalance,
@@ -245,8 +243,6 @@ namespace Bhisi.Api.Controllers
                 .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.CoCustomer)
                 .Include(l => l.CoCustomer2)
-                .Include(l => l.CoMember).ThenInclude(m => m!.Customer)
-                .Include(l => l.CoMember2).ThenInclude(m => m!.Customer)
                 .Include(l => l.Guarantor1Customer)
                 .Include(l => l.Guarantor2Customer)
                 .Include(l => l.LoanRate)
@@ -269,8 +265,8 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var borrowerCust = loan.Customer ?? loan.Member?.Customer;
-            var g1Cust = loan.Guarantor1Customer ?? loan.CoCustomer ?? loan.CoMember?.Customer;
-            var g2Cust = loan.Guarantor2Customer ?? loan.CoCustomer2 ?? loan.CoMember2?.Customer;
+            var g1Cust = loan.Guarantor1Customer ?? loan.CoCustomer;
+            var g2Cust = loan.Guarantor2Customer ?? loan.CoCustomer2;
 
             var formM = new
             {
@@ -297,19 +293,19 @@ namespace Bhisi.Api.Controllers
                 },
                 Guarantor1 = g1Cust != null ? new
                 {
-                    MemberID = loan.CoMember?.MemberID,
+                    MemberID = g1Cust.MemberProfile?.MemberID,
                     CustomerID = g1Cust.CustomerID,
                     FullName = $"{g1Cust.FirstName} {g1Cust.MiddleName} {g1Cust.LastName}".Trim(),
-                    MemberCode = g1Cust.CIFNo ?? loan.CoMember?.MemberCode,
+                    MemberCode = g1Cust.MemberProfile?.MemberCode ?? g1Cust.CIFNo,
                     Address = $"{g1Cust.Address}, {g1Cust.Village}, {g1Cust.Taluka}, {g1Cust.District}".Trim(),
                     MobileNo = g1Cust.MobileNo
                 } : null,
                 Guarantor2 = g2Cust != null ? new
                 {
-                    MemberID = loan.CoMember2?.MemberID,
+                    MemberID = g2Cust.MemberProfile?.MemberID,
                     CustomerID = g2Cust.CustomerID,
                     FullName = $"{g2Cust.FirstName} {g2Cust.MiddleName} {g2Cust.LastName}".Trim(),
-                    MemberCode = g2Cust.CIFNo ?? loan.CoMember2?.MemberCode,
+                    MemberCode = g2Cust.MemberProfile?.MemberCode ?? g2Cust.CIFNo,
                     Address = $"{g2Cust.Address}, {g2Cust.Village}, {g2Cust.Taluka}, {g2Cust.District}".Trim(),
                     MobileNo = g2Cust.MobileNo
                 } : null,

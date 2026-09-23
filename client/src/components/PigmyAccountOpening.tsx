@@ -200,24 +200,30 @@ export default function PigmyAccountOpening() {
     }
   };
 
-  const fetchNextAccountNo = async (branchId: number, schemeId: number) => {
+  const format14DigitDisplay = (accNo: string) => {
+    if (!accNo) return '';
+    const d = accNo.replace(/\D/g, '');
+    if (d.length === 14) {
+      return `${d.substring(0, 3)}-${d.substring(3, 6)}-${d.substring(6, 13)}-${d.substring(13, 14)}`;
+    }
+    return accNo;
+  };
+
+  const fetchNextAccountNo = async (branchId: number, schemeId?: number) => {
     setLoadingAccountNo(true);
     try {
       const res = await axios.get('/api/PigmyAccounts/next-account-no', {
-        params: { branchId, schemeId }
+        params: { branchId, schemeId: schemeId || 1 }
       });
       if (res.data) {
-        const nextNo = res.data.accountNo || (typeof res.data === 'string' ? res.data : 'PG-00001');
-        setAutoAccountNo(nextNo);
-        setFormData(prev => ({ ...prev, accountNo: nextNo }));
-      } else {
-        setAutoAccountNo('PG-00001');
-        setFormData(prev => ({ ...prev, accountNo: 'PG-00001' }));
+        const nextNo = res.data.accountNo || res.data.nextAccountNo || (typeof res.data === 'string' ? res.data : '');
+        if (nextNo) {
+          setAutoAccountNo(nextNo);
+          setFormData(prev => ({ ...prev, accountNo: nextNo }));
+        }
       }
     } catch (err) {
       console.error('Failed to fetch next account number', err);
-      setAutoAccountNo('PG-00001');
-      setFormData(prev => ({ ...prev, accountNo: 'PG-00001' }));
     } finally {
       setLoadingAccountNo(false);
     }
@@ -225,7 +231,7 @@ export default function PigmyAccountOpening() {
 
   const adjustAccountNo = (current: string, delta: number): string => {
     if (!current || current === 'लोड होत आहे...') {
-      return delta > 0 ? 'PG-00001' : 'PG-00001';
+      return '';
     }
     const match = current.match(/^(.*?)(\d+)([^\d]*)$/);
     if (!match) {
@@ -273,6 +279,9 @@ export default function PigmyAccountOpening() {
     setFormData(prev => ({ ...prev, pigmySchemeID: schemeId }));
     const scheme = schemes.find(s => getSchemeId(s) === schemeId);
     setSelectedScheme(scheme || null);
+    if (schemeId) {
+      fetchNextAccountNo(parseInt(formData.branchID || '1'), parseInt(schemeId));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

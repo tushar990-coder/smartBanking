@@ -30,8 +30,6 @@ interface LoanApplication {
     customerID?: number;
     coCustomerID?: number;
     coCustomer2ID?: number;
-    coMemberID?: number;
-    coMember2ID?: number;
     guarantor1CustomerID?: number;
     guarantor2CustomerID?: number;
     guarantor1Customer?: any;
@@ -82,8 +80,8 @@ interface LoanAccount {
     interestRate: number;
     durationMonths: number;
     installmentFrequency: string;
-    coMemberID?: number;
-    coMember2ID?: number;
+    coCustomerID?: number;
+    coCustomer2ID?: number;
     loanRateID?: number;
     customer?: any;
     member?: Member;
@@ -160,6 +158,15 @@ const formatDateSafe = (dateVal: any): string => {
         return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     }
     return String(dateVal);
+};
+
+export const format14DigitDisplay = (num?: string) => {
+    if (!num) return '-';
+    const clean = num.replace(/\D/g, '');
+    if (clean.length === 14) {
+        return `${clean.substring(0, 3)}-${clean.substring(3, 3)}-${clean.substring(6, 7)}-${clean.substring(13, 1)}`;
+    }
+    return num;
 };
 
 const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisbursement, onRequestEditApplication, onSaveSuccess }) => {
@@ -265,9 +272,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     customerID: draftApplication.customerID || (draftApplication as any).customer?.customerID || null,
                     memberID: draftApplication.memberID,
                     coCustomerID: draftApplication.coCustomerID || null,
-                    coCustomer2ID: (draftApplication as any).coCustomer2ID || null,
-                    coMemberID: draftApplication.coMemberID,
-                    coMember2ID: (draftApplication as any).coMember2ID,
+                    coCustomer2ID: draftApplication.coCustomer2ID || (draftApplication as any).coCustomer2ID || null,
                     guarantor1CustomerID: draftApplication.guarantor1CustomerID || null,
                     guarantor2CustomerID: draftApplication.guarantor2CustomerID || null,
                     securityDetails: draftApplication.securityDetails,
@@ -318,9 +323,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     customerID: draftApplication.customerID || (draftApplication as any).customer?.customerID || null,
                     memberID: draftApplication.memberID,
                     coCustomerID: draftApplication.coCustomerID || null,
-                    coCustomer2ID: (draftApplication as any).coCustomer2ID || null,
-                    coMemberID: draftApplication.coMemberID,
-                    coMember2ID: (draftApplication as any).coMember2ID,
+                    coCustomer2ID: draftApplication.coCustomer2ID || (draftApplication as any).coCustomer2ID || null,
                     guarantor1CustomerID: draftApplication.guarantor1CustomerID || null,
                     guarantor2CustomerID: draftApplication.guarantor2CustomerID || null,
                     loanRateID: draftApplication.loanRateID,
@@ -392,7 +395,27 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             const availableApps = appsWithStatus.filter((a: any) => (a.pendingSanctionedAmount || 0) > 0);
             setApplications(availableApps);
             setAccounts((accRes.data || []).filter((a: any) => !a.isOpeningBalance));
-            setBankLedgers((ledgersRes.data || []).filter((l: any) => (l.accountGroup?.groupName?.toLowerCase() || '').includes('bank') || (l.accountGroup?.groupName || '').includes('बँक')));
+            const filteredBankLedgers = (ledgersRes.data || []).filter((l: any) => {
+                if (!l) return false;
+                const gId = l.groupID || l.accountGroupID || 0;
+                const parentGId = l.accountGroup?.parentGroupID || 0;
+                const gName = (l.accountGroup?.groupName || '').toLowerCase();
+                const lName = (l.ledgerName || '').toLowerCase();
+                const accType = (l.accountType || '').toLowerCase();
+
+                return (
+                    gId === 32 || gId === 33 || gId === 34 ||
+                    parentGId === 32 ||
+                    gName.includes('बँक') || gName.includes('bank') ||
+                    gName.includes('करंट') || gName.includes('current') ||
+                    gName.includes('चालू') || gName.includes('शिल्लक') ||
+                    lName.includes('बँक') || lName.includes('bank') ||
+                    lName.includes('करंट') || lName.includes('current') ||
+                    lName.includes('चालू') ||
+                    accType.includes('bank') || accType.includes('current')
+                );
+            });
+            setBankLedgers(filteredBankLedgers);
             setAllLedgers(ledgersRes.data || []);
             setBranches(branchesRes.data || []);
             setSavingAccounts(savingAccsRes.data || []);
@@ -542,7 +565,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     loanAccountID: app.linkedLoanAccountID,
                     loanApplicationID: app.loanApplicationID,
                     memberID: app.memberID,
-                    coMemberID: app.coMemberID,
+                    customerID: app.customerID,
+                    coCustomerID: app.coCustomerID || null,
+                    coCustomer2ID: app.coCustomer2ID || null,
                     guarantor1CustomerID: app.guarantor1CustomerID || null,
                     guarantor2CustomerID: app.guarantor2CustomerID || null,
                     securityDetails: app.securityDetails,
@@ -588,7 +613,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 setNewAccountData({
                     loanAccountID: acc.loanAccountID,
                     memberID: acc.memberID,
-                    coMemberID: acc.coMemberID,
+                    customerID: acc.customerID,
+                    coCustomerID: acc.coCustomerID || null,
+                    coCustomer2ID: acc.coCustomer2ID || null,
                     guarantor1CustomerID: acc.guarantor1CustomerID || null,
                     guarantor2CustomerID: acc.guarantor2CustomerID || null,
                     securityDetails: acc.securityDetails,
@@ -1165,7 +1192,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                     const pending = Math.max(0, (a.sanctionedAmount || 0) - accDisbursed);
                                                     return { 
                                                         value: a.loanAccountID.toString(), 
-                                                        label: `${name} (${a.loanAccountNo}) - ${a.loanRate?.shortName || a.loanRate?.loanType || ''} - मंजूर: ₹${(a.sanctionedAmount || 0).toLocaleString('en-IN')} | शिल्लक: ₹${pending.toLocaleString('en-IN')}${cif}` 
+                                                        label: `${name} (${format14DigitDisplay(a.loanAccountNo)}) - ${a.loanRate?.shortName || a.loanRate?.loanType || ''} - मंजूर: ₹${(a.sanctionedAmount || 0).toLocaleString('en-IN')} | शिल्लक: ₹${pending.toLocaleString('en-IN')}${cif}` 
                                                     };
                                                 })
                                             }
@@ -1539,7 +1566,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                             required
                                         >
                                             <option value="">-- बँक खाते निवडा --</option>
-                                            {bankLedgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
+                                            {bankLedgers.map(l => (
+                                                <option key={l.ledgerID} value={l.ledgerID}>
+                                                    {l.ledgerName}{l.accountGroup?.groupName ? ` (${l.accountGroup.groupName})` : ''}
+                                                </option>
+                                            ))}
                                         </select>
                                     </div>
                                 )}
@@ -1556,7 +1587,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                 required
                                             >
                                                 <option value="">-- बँक खाते निवडा --</option>
-                                                {bankLedgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
+                                                {bankLedgers.map(l => (
+                                                    <option key={l.ledgerID} value={l.ledgerID}>
+                                                        {l.ledgerName}{l.accountGroup?.groupName ? ` (${l.accountGroup.groupName})` : ''}
+                                                    </option>
+                                                ))}
                                             </select>
                                         </div>
                                         <div>

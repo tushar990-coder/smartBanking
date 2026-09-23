@@ -1,4 +1,4 @@
-﻿IF OBJECT_ID(N'[__EFMigrationsHistory]') IS NULL
+IF OBJECT_ID(N'[__EFMigrationsHistory]') IS NULL
 BEGIN
     CREATE TABLE [__EFMigrationsHistory] (
         [MigrationId] nvarchar(150) NOT NULL,
@@ -1202,9 +1202,12 @@ BEGIN
         [LoanAccountID] int NOT NULL IDENTITY,
         [BranchID] int NOT NULL,
         [LoanApplicationID] int NULL,
-        [MemberID] int NOT NULL,
-        [CoMemberID] int NULL,
-        [CoMember2ID] int NULL,
+        [CustomerID] int NULL,
+        [MemberID] int NULL,
+        [CoCustomerID] int NULL,
+        [CoCustomer2ID] int NULL,
+        [Guarantor1CustomerID] int NULL,
+        [Guarantor2CustomerID] int NULL,
         [LoanRateID] int NOT NULL,
         [LoanAccountNo] nvarchar(50) NOT NULL,
         [PrincipalBalance] decimal(18,2) NOT NULL,
@@ -1230,8 +1233,11 @@ BEGIN
         CONSTRAINT [FK_LoanAccounts_Branches_BranchID] FOREIGN KEY ([BranchID]) REFERENCES [Branches] ([BranchID]) ON DELETE NO ACTION,
         CONSTRAINT [FK_LoanAccounts_LoanApplications_LoanApplicationID] FOREIGN KEY ([LoanApplicationID]) REFERENCES [LoanApplications] ([LoanApplicationID]) ON DELETE NO ACTION,
         CONSTRAINT [FK_LoanAccounts_LoanRates_LoanRateID] FOREIGN KEY ([LoanRateID]) REFERENCES [LoanRates] ([LoanRateID]) ON DELETE NO ACTION,
-        CONSTRAINT [FK_LoanAccounts_Members_CoMember2ID] FOREIGN KEY ([CoMember2ID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
-        CONSTRAINT [FK_LoanAccounts_Members_CoMemberID] FOREIGN KEY ([CoMemberID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
+        CONSTRAINT [FK_LoanAccounts_Customers_CustomerID] FOREIGN KEY ([CustomerID]) REFERENCES [Customers] ([CustomerID]) ON DELETE NO ACTION,
+        CONSTRAINT [FK_LoanAccounts_Customers_CoCustomerID] FOREIGN KEY ([CoCustomerID]) REFERENCES [Customers] ([CustomerID]) ON DELETE NO ACTION,
+        CONSTRAINT [FK_LoanAccounts_Customers_CoCustomer2ID] FOREIGN KEY ([CoCustomer2ID]) REFERENCES [Customers] ([CustomerID]) ON DELETE NO ACTION,
+        CONSTRAINT [FK_LoanAccounts_Customers_Guarantor1CustomerID] FOREIGN KEY ([Guarantor1CustomerID]) REFERENCES [Customers] ([CustomerID]) ON DELETE NO ACTION,
+        CONSTRAINT [FK_LoanAccounts_Customers_Guarantor2CustomerID] FOREIGN KEY ([Guarantor2CustomerID]) REFERENCES [Customers] ([CustomerID]) ON DELETE NO ACTION,
         CONSTRAINT [FK_LoanAccounts_Members_MemberID] FOREIGN KEY ([MemberID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION,
         CONSTRAINT [FK_LoanAccounts_Members_RecommendedByDirectorID] FOREIGN KEY ([RecommendedByDirectorID]) REFERENCES [Members] ([MemberID]) ON DELETE NO ACTION
     );
@@ -2841,7 +2847,7 @@ IF NOT EXISTS (
     WHERE [MigrationId] = N'20260718174251_InitialCreateSqlServer'
 )
 BEGIN
-    CREATE INDEX [IX_LoanAccounts_CoMember2ID] ON [LoanAccounts] ([CoMember2ID]);
+    CREATE INDEX [IX_LoanAccounts_CustomerID] ON [LoanAccounts] ([CustomerID]);
 END;
 
 IF NOT EXISTS (
@@ -2849,7 +2855,7 @@ IF NOT EXISTS (
     WHERE [MigrationId] = N'20260718174251_InitialCreateSqlServer'
 )
 BEGIN
-    CREATE INDEX [IX_LoanAccounts_CoMemberID] ON [LoanAccounts] ([CoMemberID]);
+    CREATE INDEX [IX_LoanAccounts_CoCustomerID] ON [LoanAccounts] ([CoCustomerID]);
 END;
 
 IF NOT EXISTS (
@@ -5958,6 +5964,62 @@ BEGIN TRY
         INSERT INTO [SavingInterestSettings] ([SchemeName], [InterestRate], [CalculationFrequency], [PostingFrequency], [MinBalanceForInterest], [IsActive])
         VALUES (N'à¤¸à¤¾à¤§à¤¾à¤°à¤£ à¤¬à¤šà¤¤ à¤–à¤¾à¤¤à¥‡', 4.00, 'Daily', 'Half-Yearly', 500.00, 1);
     END
+END TRY BEGIN CATCH END CATCH
+GO
+
+-- 10. Phase 2: LoanAccounts Decoupling (Pure CIF & Nullable MemberID)
+BEGIN TRY
+    -- Ensure CustomerID exists
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[LoanAccounts]') AND name = 'CustomerID')
+    BEGIN
+        ALTER TABLE [dbo].[LoanAccounts] ADD [CustomerID] INT NULL;
+    END
+
+    -- Ensure CoCustomerID exists
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[LoanAccounts]') AND name = 'CoCustomerID')
+    BEGIN
+        ALTER TABLE [dbo].[LoanAccounts] ADD [CoCustomerID] INT NULL;
+    END
+
+    -- Ensure CoCustomer2ID exists
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[LoanAccounts]') AND name = 'CoCustomer2ID')
+    BEGIN
+        ALTER TABLE [dbo].[LoanAccounts] ADD [CoCustomer2ID] INT NULL;
+    END
+
+    -- Ensure Guarantor1CustomerID exists
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[LoanAccounts]') AND name = 'Guarantor1CustomerID')
+    BEGIN
+        ALTER TABLE [dbo].[LoanAccounts] ADD [Guarantor1CustomerID] INT NULL;
+    END
+
+    -- Ensure Guarantor2CustomerID exists
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[LoanAccounts]') AND name = 'Guarantor2CustomerID')
+    BEGIN
+        ALTER TABLE [dbo].[LoanAccounts] ADD [Guarantor2CustomerID] INT NULL;
+    END
+
+    -- Drop CoMember constraints and columns
+    IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_LoanAccounts_Members_CoMemberID')
+        ALTER TABLE [dbo].[LoanAccounts] DROP CONSTRAINT [FK_LoanAccounts_Members_CoMemberID];
+
+    IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_LoanAccounts_Members_CoMember2ID')
+        ALTER TABLE [dbo].[LoanAccounts] DROP CONSTRAINT [FK_LoanAccounts_Members_CoMember2ID];
+
+    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanAccounts_CoMemberID' AND object_id = OBJECT_ID(N'[dbo].[LoanAccounts]'))
+        DROP INDEX [IX_LoanAccounts_CoMemberID] ON [dbo].[LoanAccounts];
+
+    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanAccounts_CoMember2ID' AND object_id = OBJECT_ID(N'[dbo].[LoanAccounts]'))
+        DROP INDEX [IX_LoanAccounts_CoMember2ID] ON [dbo].[LoanAccounts];
+
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[LoanAccounts]') AND name = 'CoMemberID')
+        ALTER TABLE [dbo].[LoanAccounts] DROP COLUMN [CoMemberID];
+
+    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[LoanAccounts]') AND name = 'CoMember2ID')
+        ALTER TABLE [dbo].[LoanAccounts] DROP COLUMN [CoMember2ID];
+
+    -- Make MemberID Nullable
+    ALTER TABLE [dbo].[LoanAccounts] ALTER COLUMN [MemberID] INT NULL;
 END TRY BEGIN CATCH END CATCH
 GO
 

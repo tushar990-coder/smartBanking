@@ -20,21 +20,6 @@ namespace Bhisi.Api.Models
         [ForeignKey("CustomerID")]
         public Customer? Customer { get; set; }
 
-        public int? MemberID { get; set; }
-
-        [ForeignKey("MemberID")]
-        public Member? Member { get; set; }
-
-        public int? CoMemberID { get; set; }
-
-        [ForeignKey("CoMemberID")]
-        public Member? CoMember { get; set; }
-
-        public int? CoMember2ID { get; set; }
-
-        [ForeignKey("CoMember2ID")]
-        public Member? CoMember2 { get; set; }
-
         public int? CoCustomerID { get; set; }
 
         [ForeignKey("CoCustomerID")]
@@ -78,7 +63,7 @@ namespace Bhisi.Api.Models
         public int? RecommendedByDirectorID { get; set; }
 
         [ForeignKey("RecommendedByDirectorID")]
-        public Member? RecommendedByDirector { get; set; }
+        public Customer? RecommendedByDirector { get; set; }
 
         [StringLength(200)]
         public string? Purpose { get; set; }

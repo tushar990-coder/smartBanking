@@ -46,17 +46,21 @@ namespace Bhisi.Api.Controllers
         {
             return await _context.LoanDisbursements
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Customer)
-                .Include(d => d.LoanAccount!).ThenInclude(l => l.Member)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.Member!).ThenInclude(m => m.Customer)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.CoCustomer)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.CoCustomer2)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Guarantor1Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Guarantor2Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanRate)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Customer)
-                .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Member)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.CoCustomer)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.CoCustomer2)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor1Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor2Customer)
                 .Include(d => d.Deductions).ThenInclude(d => d.Ledger)
                 .Include(d => d.BankAccountLedger)
                 .OrderByDescending(d => d.DisbursementDate)
+                .ThenByDescending(d => d.LoanDisbursementID)
                 .ToListAsync();
         }
 
@@ -198,20 +202,21 @@ namespace Bhisi.Api.Controllers
                         if (!disbursement.LoanAccount.CustomerID.HasValue && app.CustomerID.HasValue)
                             disbursement.LoanAccount.CustomerID = app.CustomerID;
 
-                        if (!disbursement.LoanAccount.MemberID.HasValue && app.MemberID.HasValue)
-                            disbursement.LoanAccount.MemberID = app.MemberID;
+                        // Auto-link MemberID if Customer is a member (or has share capital)
+                        if (!disbursement.LoanAccount.MemberID.HasValue && disbursement.LoanAccount.CustomerID.HasValue)
+                        {
+                            var linkedMem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == disbursement.LoanAccount.CustomerID.Value);
+                            if (linkedMem != null)
+                            {
+                                disbursement.LoanAccount.MemberID = linkedMem.MemberID;
+                            }
+                        }
 
                         if (!disbursement.LoanAccount.CoCustomerID.HasValue && app.CoCustomerID.HasValue)
                             disbursement.LoanAccount.CoCustomerID = app.CoCustomerID;
 
                         if (!disbursement.LoanAccount.CoCustomer2ID.HasValue && app.CoCustomer2ID.HasValue)
                             disbursement.LoanAccount.CoCustomer2ID = app.CoCustomer2ID;
-
-                        if (!disbursement.LoanAccount.CoMemberID.HasValue && app.CoMemberID.HasValue)
-                            disbursement.LoanAccount.CoMemberID = app.CoMemberID;
-
-                        if (!disbursement.LoanAccount.CoMember2ID.HasValue && app.CoMember2ID.HasValue)
-                            disbursement.LoanAccount.CoMember2ID = app.CoMember2ID;
 
                         if (!disbursement.LoanAccount.Guarantor1CustomerID.HasValue && app.Guarantor1CustomerID.HasValue)
                             disbursement.LoanAccount.Guarantor1CustomerID = app.Guarantor1CustomerID;
@@ -231,39 +236,64 @@ namespace Bhisi.Api.Controllers
                     if (disbursement.LoanAccount.MemberID.HasValue && disbursement.LoanAccount.MemberID.Value <= 0) disbursement.LoanAccount.MemberID = null;
                     if (disbursement.LoanAccount.CoCustomerID.HasValue && disbursement.LoanAccount.CoCustomerID.Value <= 0) disbursement.LoanAccount.CoCustomerID = null;
                     if (disbursement.LoanAccount.CoCustomer2ID.HasValue && disbursement.LoanAccount.CoCustomer2ID.Value <= 0) disbursement.LoanAccount.CoCustomer2ID = null;
-                    if (disbursement.LoanAccount.CoMemberID.HasValue && disbursement.LoanAccount.CoMemberID.Value <= 0) disbursement.LoanAccount.CoMemberID = null;
-                    if (disbursement.LoanAccount.CoMember2ID.HasValue && disbursement.LoanAccount.CoMember2ID.Value <= 0) disbursement.LoanAccount.CoMember2ID = null;
                     if (disbursement.LoanAccount.Guarantor1CustomerID.HasValue && disbursement.LoanAccount.Guarantor1CustomerID.Value <= 0) disbursement.LoanAccount.Guarantor1CustomerID = null;
                     if (disbursement.LoanAccount.Guarantor2CustomerID.HasValue && disbursement.LoanAccount.Guarantor2CustomerID.Value <= 0) disbursement.LoanAccount.Guarantor2CustomerID = null;
 
-                    // Generate Account number: [BranchCode]02[5-digit sequence]
-                    string prefix = $"{branch.BranchCode}02";
-                    var existingNos = await _context.LoanAccounts
-                        .Where(a => a.BranchID == disbursement.LoanAccount.BranchID && a.LoanAccountNo != null && a.LoanAccountNo.StartsWith(prefix))
+                    // Generate 14-Digit Standard CBS Account Number: [3-digit Branch] + [3-digit Scheme] + [7-digit Sequence] + [1-digit Luhn Checksum]
+                    int branchIdForAcc = (disbursement.LoanAccount.BranchID > 0) ? disbursement.LoanAccount.BranchID : branch.BranchID;
+                    int schemeCodeNum = 201;
+                    if (disbursement.LoanAccount.LoanRateID > 0)
+                    {
+                        var lr = await _context.LoanRates.FindAsync(disbursement.LoanAccount.LoanRateID);
+                        if (lr != null && !string.IsNullOrWhiteSpace(lr.LoanCode))
+                        {
+                            var sDigits = new string(lr.LoanCode.Where(char.IsDigit).ToArray());
+                            if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsed) && parsed > 0)
+                            {
+                                schemeCodeNum = parsed < 100 ? 200 + parsed : parsed;
+                            }
+                            else
+                            {
+                                schemeCodeNum = 200 + lr.LoanRateID;
+                            }
+                        }
+                        else if (lr != null)
+                        {
+                            schemeCodeNum = 200 + lr.LoanRateID;
+                        }
+                    }
+
+                    var existingLoanAccs = await _context.LoanAccounts
+                        .Where(a => a.BranchID == branchIdForAcc && a.LoanAccountNo != null)
                         .Select(a => a.LoanAccountNo!)
                         .ToListAsync();
 
                     int maxSeq = 0;
-                    foreach (var accNo in existingNos)
+                    foreach (var accNo in existingLoanAccs)
                     {
-                        if (accNo.Length > prefix.Length)
+                        var digitsOnly = new string(accNo.Where(char.IsDigit).ToArray());
+                        if (digitsOnly.Length == 14)
                         {
-                            var suffix = accNo.Substring(prefix.Length);
-                            if (int.TryParse(suffix, out int val) && val > maxSeq)
+                            string seqPart = digitsOnly.Substring(6, 7);
+                            if (int.TryParse(seqPart, out int sVal) && sVal > maxSeq)
                             {
-                                maxSeq = val;
+                                maxSeq = sVal;
                             }
                         }
+                        else
+                        {
+                            maxSeq = Math.Max(maxSeq, existingLoanAccs.Count);
+                        }
                     }
-                    if (maxSeq == 0 && existingNos.Any()) maxSeq = existingNos.Count;
 
                     int nextSeq = maxSeq + 1;
-                    string nextAccNo = $"{prefix}{nextSeq:D5}";
-                    while (existingNos.Contains(nextAccNo))
+                    string nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchIdForAcc, schemeCodeNum, nextSeq);
+                    while (existingLoanAccs.Contains(nextAccNo))
                     {
                         nextSeq++;
-                        nextAccNo = $"{prefix}{nextSeq:D5}";
+                        nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchIdForAcc, schemeCodeNum, nextSeq);
                     }
+
                     disbursement.LoanAccount.LoanAccountNo = nextAccNo;
                     disbursement.LoanAccount.SanctionedAmount = sanctionedLimit;
                     disbursement.LoanAccount.PrincipalBalance = disbursement.DisbursementAmount;

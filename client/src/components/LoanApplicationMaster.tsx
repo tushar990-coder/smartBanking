@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import CustomerSearchSelect from './common/CustomerSearchSelect';
 import {
   Landmark,
   CheckCircle2,
@@ -31,7 +32,10 @@ import {
   Sparkles,
   Eye,
   FileText,
-  Printer
+  Printer,
+  User,
+  Phone,
+  MapPin
 } from 'lucide-react';
 import LoanApplicationPrintModal from './LoanApplicationPrintModal';
 
@@ -56,11 +60,8 @@ export interface LoanApplication {
   applicationNo: string;
   applicationDate: string;
   customerID?: number;
-  memberID?: number;
   coCustomerID?: number;
   coCustomer2ID?: number;
-  coMemberID?: number;
-  coMember2ID?: number;
   loanRateID: number;
   loanType?: string;
   requestedAmount: number;
@@ -78,8 +79,12 @@ export interface LoanApplication {
   securityValue?: number;
   purpose?: string;
   customer?: any;
-  member?: Member;
+  coCustomer?: any;
+  coCustomer2?: any;
   loanRate?: LoanRate;
+  guarantor1Customer?: any;
+  guarantor2Customer?: any;
+  recommendedByDirector?: any;
 }
 
 export interface GoldLoanItem {
@@ -236,11 +241,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     applicationNo: "AUTO",
     applicationDate: new Date().toISOString().split('T')[0],
     customerID: 0,
-    memberID: 0,
     coCustomerID: 0,
     coCustomer2ID: 0,
-    coMemberID: 0,
-    coMember2ID: 0,
     guarantor1CustomerID: 0,
     guarantor2CustomerID: 0,
     loanRateID: 0,
@@ -259,6 +261,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
   };
 
   const [formData, setFormData] = useState<Partial<LoanApplication>>(initialFormState);
+  const [showCoBorrowers, setShowCoBorrowers] = useState<boolean>(false);
 
   const fetchNextAppNo = async () => {
     try {
@@ -332,14 +335,14 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const memberIdStr = params.get('memberId');
-    if (memberIdStr && members.length > 0) {
-      const mId = parseInt(memberIdStr, 10);
-      const matchedMember = members.find(m => m.memberID === mId);
-      if (matchedMember) {
+    const customerIdStr = params.get('customerId') || params.get('memberId');
+    if (customerIdStr && members.length > 0) {
+      const cId = parseInt(customerIdStr, 10);
+      const matchedCust = members.find((m: any) => m.customerID === cId || m.id === cId);
+      if (matchedCust) {
         setFormData(prev => ({
           ...prev,
-          memberID: mId
+          customerID: cId
         }));
       }
     }
@@ -556,6 +559,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     setError('');
     setSuccess('');
     setScheduleData([]);
+    setShowCoBorrowers(false);
     setFormData({
       ...initialFormState,
       applicationDate: new Date().toISOString().split('T')[0]
@@ -571,8 +575,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     setError('');
     setSuccess('');
 
-    if (!formData.memberID && !formData.customerID) {
-      setError('कृपया अर्जदार खातेदार किंवा सभासद निवडा! (Please select Applicant)');
+    if (!formData.customerID) {
+      setError('कृपया अर्जदार खातेदार निवडा! (Please select Applicant Customer)');
       return;
     }
 
@@ -584,20 +588,12 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     setLoading(true);
     try {
       let savedData: any = null;
-      // Resolve applicant customer and member ID
-      const selApp = members.find((m: any) => 
-        (formData.customerID && (m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID))) ||
-        (formData.memberID && (m.memberID === Number(formData.memberID) || m.memberProfile?.memberID === Number(formData.memberID)))
-      );
-      const resolvedCustId = formData.customerID || selApp?.customerID || selApp?.id || selApp?.memberProfile?.customerID || null;
-      const resolvedMemId = formData.memberID || selApp?.memberProfile?.memberID || selApp?.memberID || null;
 
       const payload: any = {
         ...formData,
-        customerID: resolvedCustId ? Number(resolvedCustId) : null,
-        memberID: resolvedMemId ? Number(resolvedMemId) : null,
+        customerID: Number(formData.customerID),
         coCustomerID: formData.coCustomerID && Number(formData.coCustomerID) > 0 ? Number(formData.coCustomerID) : null,
-        coCustomer2ID: (formData as any).coCustomer2ID && Number((formData as any).coCustomer2ID) > 0 ? Number((formData as any).coCustomer2ID) : null,
+        coCustomer2ID: formData.coCustomer2ID && Number(formData.coCustomer2ID) > 0 ? Number(formData.coCustomer2ID) : null,
         guarantor1CustomerID: formData.guarantor1CustomerID && Number(formData.guarantor1CustomerID) > 0 ? Number(formData.guarantor1CustomerID) : null,
         guarantor2CustomerID: formData.guarantor2CustomerID && Number(formData.guarantor2CustomerID) > 0 ? Number(formData.guarantor2CustomerID) : null,
         loanRateID: Number(formData.loanRateID),
@@ -607,18 +603,13 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
         noOfInstallments: parseInt(String(formData.noOfInstallments || '12'), 10),
         installmentAmount: parseFloat(String(formData.installmentAmount || '0')),
         securityValue: parseFloat(String(formData.securityValue || '0')),
-        coMemberID: formData.coMemberID && Number(formData.coMemberID) > 0 ? Number(formData.coMemberID) : null,
-        coMember2ID: (formData as any).coMember2ID && Number((formData as any).coMember2ID) > 0 ? Number((formData as any).coMember2ID) : null,
         recommendedByDirectorID: formData.recommendedByDirectorID && Number(formData.recommendedByDirectorID) > 0 ? Number(formData.recommendedByDirectorID) : null,
         firstInstallmentDate: formData.firstInstallmentDate ? formData.firstInstallmentDate : null,
         maturityDate: formData.maturityDate ? formData.maturityDate : null,
       };
       delete payload.customer;
-      delete payload.member;
       delete payload.coCustomer;
       delete payload.coCustomer2;
-      delete payload.coMember;
-      delete payload.coMember2;
       delete payload.loanRate;
       delete payload.guarantor1Customer;
       delete payload.guarantor2Customer;
@@ -661,6 +652,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     setIsInstAmountEdited(true);
     setError('');
     setSuccess('');
+    setShowCoBorrowers(Boolean(app.coCustomerID || (app as any).coCustomer2ID || (app as any).coMemberID || (app as any).coMember2ID));
     setFormData({
       ...app,
       applicationDate: app.applicationDate ? app.applicationDate.split('T')[0] : '',
@@ -890,8 +882,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
       'अ.क्र.': i + 1,
       'अर्ज क्र.': a.applicationNo,
       'दिनांक': a.applicationDate ? new Date(a.applicationDate).toLocaleDateString('en-GB') : '-',
-      'सभासद कोड': a.member?.memberCode || '-',
-      'सभासद नाव': `${a.member?.firstName || ''} ${a.member?.lastName || ''}`.trim(),
+      'CIF क्र.': a.customer?.cifNo || '-',
+      'अर्जदार नाव': `${a.customer?.firstName || ''} ${a.customer?.lastName || ''}`.trim(),
       'कर्ज प्रकार': a.loanRate?.shortName || a.loanRate?.loanType || a.loanType || '-',
       'मागणी रक्कम (₹)': a.requestedAmount || 0,
       'व्याजदर (%)': a.interestRate || 0,
@@ -908,21 +900,27 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
   };
 
   const selectedMember = members.find((m: any) => 
-    (formData.customerID && (m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID))) ||
-    (formData.memberID && (m.memberID === Number(formData.memberID) || m.memberProfile?.memberID === Number(formData.memberID)))
+    formData.customerID && (m.customerID === Number(formData.customerID) || m.id === Number(formData.customerID))
+  );
+
+  const selectedCoMember1 = members.find((m: any) => 
+    formData.coCustomerID && (m.customerID === Number(formData.coCustomerID) || m.id === Number(formData.coCustomerID))
+  );
+
+  const selectedCoMember2 = members.find((m: any) => 
+    formData.coCustomer2ID && (m.customerID === Number(formData.coCustomer2ID) || m.id === Number(formData.coCustomer2ID))
   );
 
   const filteredApps = applications.filter(a => {
     const q = searchTerm.toLowerCase();
     const custName = a.customer ? `${a.customer.firstName || ''} ${a.customer.lastName || ''}`.toLowerCase() : '';
     const custCif = a.customer?.cifNo ? a.customer.cifNo.toLowerCase() : '';
+    const legacyCif = (a.customer as any)?.legacyCustomerNo ? String((a.customer as any).legacyCustomerNo).toLowerCase() : '';
     return (
       (a.applicationNo && a.applicationNo.toLowerCase().includes(q)) ||
-      (a.member?.firstName && a.member.firstName.toLowerCase().includes(q)) ||
-      (a.member?.lastName && a.member.lastName.toLowerCase().includes(q)) ||
-      (a.member?.memberCode && a.member.memberCode.toLowerCase().includes(q)) ||
       custName.includes(q) ||
       custCif.includes(q) ||
+      legacyCif.includes(q) ||
       (a.loanRate?.loanType && a.loanRate.loanType.toLowerCase().includes(q))
     );
   });
@@ -1084,26 +1082,29 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
         >
           <form onSubmit={handleSubmit} className="space-y-3">
             
-            {/* Section 1: Member & Co-Borrower Details */}
+            {/* Section 1: Borrower & Co-Borrower Details */}
             <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
               <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
                 <UserCheck className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">१. अर्जदार व सह-कर्जदार तपशील (Applicant & Co-Borrowers)</h2>
+                <h2 className="text-xs font-bold text-primary">१. अर्जदार व सह-कर्जदार माहिती (Applicant & Co-Borrower)</h2>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
-                <div>
-                  <label className={labelClass}>अर्ज क्र. (App No)</label>
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                <div className="sm:col-span-3 lg:col-span-2">
+                  <label className={labelClass}>
+                    अर्ज क्र. (App No) <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     name="applicationNo"
                     value={formData.applicationNo || ''}
                     readOnly
-                    className={`${inputClass} bg-slate-100 font-bold text-primary font-mono cursor-not-allowed`}
+                    className={`${inputClass} bg-slate-100 font-mono font-bold text-primary`}
+                    placeholder="AUTO"
                   />
                 </div>
 
-                <div>
+                <div className="sm:col-span-3 lg:col-span-2">
                   <label className={labelClass}>
                     अर्ज दिनांक (Date) <span className="text-red-500">*</span>
                   </label>
@@ -1117,94 +1118,189 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                   />
                 </div>
 
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-6 lg:col-span-8">
                   <label className={labelClass}>
-                    अर्जदार खातेदार / सभासद निवडा (Select Customer / Member) <span className="text-red-500">*</span>
+                    अर्जदार खातेदार निवडा (Select Applicant Customer) <span className="text-red-500">*</span>
                   </label>
                   <div className={isEditing ? 'opacity-90' : ''}>
-                    <MemberSearchSelect
-                      members={members}
-                      value={formData.memberID ? Number(formData.memberID) : (formData.customerID ? Number(formData.customerID) : '')}
-                      onChange={(val, selected) => {
-                        const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
-                        const memId = selected?.memberIdOnly || selected?.memberProfile?.memberID || (selected?.memberCode ? selected.memberID : 0) || 0;
+                    <CustomerSearchSelect
+                      customers={members}
+                      value={formData.customerID ? Number(formData.customerID) : ''}
+                      onChange={(val) => {
                         setFormData(p => ({
                           ...p,
-                          customerID: custId ? Number(custId) : (val ? Number(val) : 0),
-                          memberID: memId ? Number(memId) : (selected?.memberCode ? Number(val) : 0)
+                          customerID: val ? Number(val) : 0
                         }));
                       }}
-                      placeholder="-- सभासद/खातेदार नाव, CIF, कोड किंवा मोबाईलने शोधा --"
+                      placeholder="-- अर्जदार CIF / नाव / मोबाईलने शोधा --"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Selected Member Profile Card with Centered Name */}
+              {/* Rich Selected Customer Profile Card with Modern Theme */}
               {selectedMember && (
-                <div className="p-2 bg-primary/5 border border-primary/20 rounded-sm text-[10px] space-y-1 text-gray-800 font-medium">
-                  <div className="flex flex-wrap justify-between items-center gap-1 border-b border-primary/10 pb-1">
-                    <span><b>CIF No:</b> <span className="font-mono">{selectedMember.cifNo || (selectedMember as any).cif || '-'}</span></span>
-                    <span><b>मोबाईल:</b> <span className="font-mono">{selectedMember.mobileNo || '-'}</span></span>
-                    <span><b>सभासद कोड:</b> <span className="font-mono">{(selectedMember as any).memberCode || (selectedMember as any).memberProfile?.memberCode || 'बिगर-सभासद (Customer Only)'}</span></span>
-                  </div>
-                  <div className="text-center pt-0.5 text-xs font-bold text-gray-900">
-                    <span className="text-gray-600 font-medium">अर्जदार नाव: </span>
-                    <span className="text-primary font-black text-sm">
-                      {selectedMember.firstName} {selectedMember.middleName ? selectedMember.middleName + ' ' : ''}{selectedMember.lastName}
+                <div className="p-3 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/80 border border-primary/25 rounded-md shadow-2xs space-y-2.5">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-primary/15 pb-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-black text-gray-900 tracking-tight">
+                            {selectedMember.firstName} {selectedMember.middleName ? selectedMember.middleName + ' ' : ''}{selectedMember.lastName}
+                          </span>
+                          <span className="px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 font-mono text-[11px] rounded font-bold">
+                            CIF: {selectedMember.cifNo || (selectedMember as any).cif || '-'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 font-medium flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3 h-3 text-gray-400 shrink-0" />
+                          <span>{(selectedMember as any).village || (selectedMember as any).address || (selectedMember as any).city || 'पत्ता: नोंदवला नाही'}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold rounded text-[10px] flex items-center gap-1 shrink-0 shadow-2xs">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>अर्जदार पडताळणी पूर्ण (Applicant Verified)</span>
                     </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] pt-0.5">
+                    <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200 shadow-2xs flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <div className="min-w-0">
+                        <span className="text-[10px] text-gray-400 block font-semibold">मोबाईल नंबर:</span>
+                        <span className="font-mono font-bold text-gray-800 truncate block">
+                          {selectedMember.mobileNo || (selectedMember as any).mobile || '-'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200 shadow-2xs flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <div className="min-w-0">
+                        <span className="text-[10px] text-gray-400 block font-semibold">गाव / पत्ता:</span>
+                        <span className="font-bold text-gray-800 truncate block" title={(selectedMember as any).village || (selectedMember as any).address || '-'}>
+                          {(selectedMember as any).village || (selectedMember as any).address || '-'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200 shadow-2xs flex items-center gap-2 col-span-2 sm:col-span-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <div className="min-w-0">
+                        <span className="text-[10px] text-gray-400 block font-semibold">ओळख पुरावा / केवायसी:</span>
+                        <span className="font-mono font-bold text-gray-800 text-[10px] truncate block">
+                          {(selectedMember as any).aadhaarNo ? `UID: ${(selectedMember as any).aadhaarNo}` : (selectedMember as any).panNo ? `PAN: ${(selectedMember as any).panNo}` : 'KYC उपलब्ध'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* Co-Borrowers */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 border-t border-gray-100">
-                <div>
-                  <label className={labelClass}>सह-कर्जदार १ (Co-Borrower 1)</label>
-                  <MemberSearchSelect
-                    members={members.filter((m: any) => {
-                      const mCustId = m.customerID || m.id || m.memberProfile?.customerID;
-                      const mMemId = m.memberID || m.memberProfile?.memberID;
-                      return (formData.customerID ? mCustId !== formData.customerID : true) &&
-                             (formData.memberID ? mMemId !== formData.memberID : true);
-                    })}
-                    value={formData.coMemberID ? Number(formData.coMemberID) : (formData.coCustomerID ? Number(formData.coCustomerID) : '')}
-                    onChange={(val, selected) => {
-                      const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
-                      const memId = selected?.memberIdOnly || selected?.memberProfile?.memberID || 0;
-                      setFormData(p => ({
-                        ...p,
-                        coCustomerID: custId ? Number(custId) : 0,
-                        coMemberID: memId ? Number(memId) : 0
-                      }));
-                    }}
-                    placeholder="-- सह-कर्जदार १ शोधा --"
-                  />
-                </div>
+              {/* Co-Borrowers Collapsible Section */}
+              <div className="pt-2 border-t border-slate-200">
+                {!(showCoBorrowers || Boolean(formData.coCustomerID || formData.coCustomer2ID)) ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 py-1.5 px-2.5 bg-slate-50/70 rounded border border-dashed border-slate-300">
+                    <button
+                      type="button"
+                      onClick={() => setShowCoBorrowers(true)}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-primary/5 text-primary border border-primary/30 hover:border-primary rounded text-xs font-bold transition-all cursor-pointer shadow-2xs hover:shadow-xs group"
+                    >
+                      <div className="w-4 h-4 rounded-full bg-primary/10 group-hover:bg-primary group-hover:text-white text-primary flex items-center justify-center transition-colors">
+                        <Plus className="w-2.5 h-2.5" />
+                      </div>
+                      <span>+ सह-कर्जदार जोडा (Add Co-Borrower)</span>
+                    </button>
+                    <span className="text-[11px] text-slate-500 font-medium italic">
+                      (कर्जासाठी सह-अर्जदार जोडायचे असल्यास '+' बटनावर क्लिक करा)
+                    </span>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 bg-gradient-to-r from-slate-50 to-blue-50/40 p-3 rounded-md border border-primary/20 shadow-2xs animate-in fade-in duration-200">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-primary/15">
+                      <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                        <UserPlus className="w-3.5 h-3.5 text-primary" />
+                        सह-कर्जदार तपशील (Co-Borrower Details)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData(p => ({ ...p, coCustomerID: 0, coCustomer2ID: 0 }));
+                          setShowCoBorrowers(false);
+                        }}
+                        className="text-[11px] text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2.5 py-0.5 rounded flex items-center gap-1 transition cursor-pointer font-bold border border-rose-200 hover:border-rose-300 shadow-2xs"
+                        title="सह-कर्जदार माहिती रद्द करून लपवा"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>सह-कर्जदार रद्द करा (Remove)</span>
+                      </button>
+                    </div>
 
-                <div>
-                  <label className={labelClass}>सह-कर्जदार २ (Co-Borrower 2)</label>
-                  <MemberSearchSelect
-                    members={members.filter((m: any) => {
-                      const mCustId = m.customerID || m.id || m.memberProfile?.customerID;
-                      const mMemId = m.memberID || m.memberProfile?.memberID;
-                      return (formData.customerID ? mCustId !== formData.customerID : true) &&
-                             (formData.memberID ? mMemId !== formData.memberID : true) &&
-                             (formData.coCustomerID ? mCustId !== formData.coCustomerID : true);
-                    })}
-                    value={(formData as any).coMember2ID ? Number((formData as any).coMember2ID) : ((formData as any).coCustomer2ID ? Number((formData as any).coCustomer2ID) : '')}
-                    onChange={(val, selected) => {
-                      const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
-                      const memId = selected?.memberIdOnly || selected?.memberProfile?.memberID || 0;
-                      setFormData(p => ({
-                        ...p,
-                        coCustomer2ID: custId ? Number(custId) : 0,
-                        coMember2ID: memId ? Number(memId) : 0
-                      }));
-                    }}
-                    placeholder="-- सह-कर्जदार २ शोधा --"
-                  />
-                </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
+                      <div className="space-y-1">
+                        <label className={labelClass}>सह-कर्जदार १ (Co-Borrower 1)</label>
+                        <CustomerSearchSelect
+                          customers={members.filter((m: any) => {
+                            const mCustId = m.customerID || m.id;
+                            return formData.customerID ? mCustId !== formData.customerID : true;
+                          })}
+                          value={formData.coCustomerID ? Number(formData.coCustomerID) : ''}
+                          onChange={(val) => {
+                            setFormData(p => ({
+                              ...p,
+                              coCustomerID: val ? Number(val) : 0
+                            }));
+                          }}
+                          placeholder="-- सह-कर्जदार १ शोधा (CIF / नाव) --"
+                        />
+                        {selectedCoMember1 && (
+                          <div className="p-1.5 bg-white border border-slate-200 rounded text-[10px] text-slate-700 flex justify-between items-center shadow-2xs">
+                            <span className="font-bold text-primary truncate">
+                              👤 {selectedCoMember1.firstName} {selectedCoMember1.lastName}
+                            </span>
+                            <span className="font-mono text-slate-500 font-bold ml-1 shrink-0">
+                              CIF: {selectedCoMember1.cifNo || (selectedCoMember1 as any).cif || '-'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className={labelClass}>सह-कर्जदार २ (Co-Borrower 2)</label>
+                        <CustomerSearchSelect
+                          customers={members.filter((m: any) => {
+                            const mCustId = m.customerID || m.id;
+                            return (formData.customerID ? mCustId !== formData.customerID : true) &&
+                                   (formData.coCustomerID ? mCustId !== formData.coCustomerID : true);
+                          })}
+                          value={formData.coCustomer2ID ? Number(formData.coCustomer2ID) : ''}
+                          onChange={(val) => {
+                            setFormData(p => ({
+                              ...p,
+                              coCustomer2ID: val ? Number(val) : 0
+                            }));
+                          }}
+                          placeholder="-- सह-कर्जदार २ शोधा (CIF / नाव) --"
+                        />
+                        {selectedCoMember2 && (
+                          <div className="p-1.5 bg-white border border-slate-200 rounded text-[10px] text-slate-700 flex justify-between items-center shadow-2xs">
+                            <span className="font-bold text-primary truncate">
+                              👤 {selectedCoMember2.firstName} {selectedCoMember2.lastName}
+                            </span>
+                            <span className="font-mono text-slate-500 font-bold ml-1 shrink-0">
+                              CIF: {selectedCoMember2.cifNo || (selectedCoMember2 as any).cif || '-'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1383,11 +1479,11 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
               {/* Director Recommendation */}
               <div className="pt-1.5 border-t border-gray-100">
                 <label className={labelClass}>संचालक शिफारस (Director Recommendation)</label>
-                <MemberSearchSelect
-                  members={members}
+                <CustomerSearchSelect
+                  customers={members}
                   value={formData.recommendedByDirectorID ? Number(formData.recommendedByDirectorID) : ''}
                   onChange={(val) => setFormData(p => ({ ...p, recommendedByDirectorID: val ? Number(val) : 0 }))}
-                  placeholder="-- संचालक शिफारस शोधा --"
+                  placeholder="-- संचालक शिफारस खातेदार शोधा (CIF / नाव) --"
                 />
                 {directorSummary && (
                   <div className="mt-1 p-1.5 bg-purple-50/70 border border-purple-200 rounded-sm text-[10px] text-purple-900 flex justify-between items-center shadow-2xs">
@@ -1418,20 +1514,19 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>
                   <label className={labelClass}>जामीनदार १ (Guarantor 1)</label>
-                  <MemberSearchSelect
-                    members={members.filter((m: any) => {
-                      const mCustId = m.customerID || m.id || m.memberProfile?.customerID;
+                  <CustomerSearchSelect
+                    customers={members.filter((m: any) => {
+                      const mCustId = m.customerID || m.id;
                       return formData.customerID ? mCustId !== formData.customerID : true;
                     })}
                     value={formData.guarantor1CustomerID ? Number(formData.guarantor1CustomerID) : ''}
-                    onChange={(val, selected) => {
-                      const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
+                    onChange={(val) => {
                       setFormData(p => ({
                         ...p,
-                        guarantor1CustomerID: custId ? Number(custId) : 0
+                        guarantor1CustomerID: val ? Number(val) : 0
                       }));
                     }}
-                    placeholder="-- जामीनदार १ शोधा --"
+                    placeholder="-- जामीनदार १ शोधा (CIF / नाव) --"
                   />
                   {guarantor1Summary && (
                     <div className="mt-1 p-1.5 bg-amber-50 border border-amber-300 rounded-sm text-[10px] text-amber-900 flex justify-between items-center shadow-2xs">
@@ -1453,21 +1548,20 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
 
                 <div>
                   <label className={labelClass}>जामीनदार २ (Guarantor 2)</label>
-                  <MemberSearchSelect
-                    members={members.filter((m: any) => {
-                      const mCustId = m.customerID || m.id || m.memberProfile?.customerID;
+                  <CustomerSearchSelect
+                    customers={members.filter((m: any) => {
+                      const mCustId = m.customerID || m.id;
                       return (formData.customerID ? mCustId !== formData.customerID : true) &&
                              (formData.guarantor1CustomerID ? mCustId !== formData.guarantor1CustomerID : true);
                     })}
                     value={formData.guarantor2CustomerID ? Number(formData.guarantor2CustomerID) : ''}
-                    onChange={(val, selected) => {
-                      const custId = selected?.customerID || selected?.id || selected?.memberProfile?.customerID || 0;
+                    onChange={(val) => {
                       setFormData(p => ({
                         ...p,
-                        guarantor2CustomerID: custId ? Number(custId) : 0
+                        guarantor2CustomerID: val ? Number(val) : 0
                       }));
                     }}
-                    placeholder="-- जामीनदार २ शोधा --"
+                    placeholder="-- जामीनदार २ शोधा (CIF / नाव) --"
                   />
                   {guarantor2Summary && (
                     <div className="mt-1 p-1.5 bg-amber-50 border border-amber-300 rounded-sm text-[10px] text-amber-900 flex justify-between items-center shadow-2xs">
@@ -1763,7 +1857,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                 <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
                 <input 
                   type="text" 
-                  placeholder="अर्ज क्र., सभासद नाव किंवा कोड शोधा..." 
+                  placeholder="अर्ज क्र., खातेदार नाव किंवा CIF शोधा..." 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-8 pr-6 py-1 border border-gray-300 rounded-sm text-xs h-[30px] w-64 lg:w-80 focus:outline-none focus:border-primary bg-white shadow-2xs"
@@ -1798,7 +1892,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                     <tr>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">अर्ज क्र.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">सभासद नाव व कोड</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">अर्जदार खातेदार नाव व CIF</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज योजना</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">मागणी रक्कम</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर (%)</th>
@@ -1848,10 +1942,10 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
                           <div className="font-bold text-gray-900">
-                            {app.customer ? `${app.customer.firstName || ''} ${app.customer.lastName || ''}`.trim() : `${app.member?.firstName || ''} ${app.member?.lastName || ''}`.trim()}
+                            {app.customer ? `${app.customer.firstName || ''} ${app.customer.lastName || ''}`.trim() : '-'}
                           </div>
                           <div className="text-[10px] text-gray-500 font-mono">
-                            {app.member?.memberCode ? `कोड: ${app.member.memberCode}` : 'बिगर-सभासद'} {app.customer?.cifNo || app.member?.cifNo ? `| CIF: ${app.customer?.cifNo || app.member?.cifNo}` : ''}
+                            {app.customer?.cifNo ? `CIF: ${app.customer.cifNo}` : ''} {(app.customer as any)?.mobileNo ? `| मो.: ${(app.customer as any).mobileNo}` : ''}
                           </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-800">

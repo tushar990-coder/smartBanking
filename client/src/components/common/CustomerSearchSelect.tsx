@@ -113,25 +113,55 @@ export default function CustomerSearchSelect({
         isClearable={isClearable}
         filterOption={filterOption}
         classNamePrefix="react-select"
-        formatOptionLabel={(data: any) => {
+        formatOptionLabel={(data: any, { context }: any) => {
           const cust = data.customer;
+          if (context === 'value') {
+            const cifDisplay = cust.cifNo || (cust.legacyCustomerNo ? `जुना:${cust.legacyCustomerNo}` : `ID:${cust.customerID}`);
+            return (
+              <div className="flex items-center gap-1.5 overflow-hidden text-[11px] py-0 w-full" title={`${cust.fullName} (${cifDisplay})`}>
+                <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-900 border border-blue-300 leading-none">
+                  {cifDisplay}
+                </span>
+                <span className="font-bold text-slate-900 truncate text-[11px]">
+                  {cust.fullName}
+                </span>
+                {cust.legacyCustomerNo && cust.cifNo && (
+                  <span className="text-[10px] text-slate-500 font-medium shrink-0 hidden xl:inline">
+                    (जुना: {cust.legacyCustomerNo})
+                  </span>
+                )}
+                {cust.mobileNo && (
+                  <span className="text-[10px] text-emerald-700 font-mono shrink-0 ml-auto hidden 2xl:inline">
+                    📱 {cust.mobileNo}
+                  </span>
+                )}
+              </div>
+            );
+          }
+
           return (
-            <div className="flex items-center justify-between py-0.5 gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-slate-900">{cust.fullName}</span>
+            <div className="flex items-center justify-between py-1 px-1 w-full gap-3">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="font-bold text-slate-900 text-xs truncate max-w-[220px] sm:max-w-[280px]">
+                  {cust.fullName}
+                </span>
                 {cust.cifNo && (
-                  <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-bold">
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 shrink-0 whitespace-nowrap">
                     CIF: {cust.cifNo}
                   </span>
                 )}
                 {cust.legacyCustomerNo && (
-                  <span className="text-[10px] bg-sky-50 text-sky-700 border border-sky-200 px-1.5 py-0.5 rounded font-semibold">
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 shrink-0 whitespace-nowrap">
                     जुना CIF: {cust.legacyCustomerNo}
                   </span>
                 )}
               </div>
-              <div className="text-[10px] text-slate-500 font-medium shrink-0">
-                {cust.mobileNo ? `📱 ${cust.mobileNo}` : ''}
+              <div className="flex items-center gap-2 shrink-0">
+                {cust.mobileNo && (
+                  <span className="text-[10px] text-slate-600 font-mono shrink-0 whitespace-nowrap bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                    📱 {cust.mobileNo}
+                  </span>
+                )}
               </div>
             </div>
           );
@@ -139,43 +169,75 @@ export default function CustomerSearchSelect({
         styles={{
           control: (base: any, state: any) => ({
             ...base,
-            minHeight: '34px',
-            height: '34px',
-            fontSize: '12px',
-            borderColor: state.isFocused ? '#2563eb' : '#d1d5db',
-            boxShadow: state.isFocused ? '0 0 0 1px #2563eb' : 'none',
+            minHeight: '30px',
+            height: '30px',
+            fontSize: '11px',
+            borderRadius: '2px',
+            borderColor: state.isFocused ? '#0284c7' : '#d1d5db',
+            boxShadow: state.isFocused ? '0 0 0 1px #0284c7' : 'none',
+            backgroundColor: '#ffffff',
             '&:hover': {
               borderColor: '#9ca3af'
             }
           }),
           valueContainer: (base: any) => ({
             ...base,
-            height: '34px',
-            padding: '0 8px'
+            height: '30px',
+            padding: '0 6px',
+            display: 'flex',
+            alignItems: 'center',
+            overflow: 'hidden'
+          }),
+          singleValue: (base: any) => ({
+            ...base,
+            maxWidth: 'calc(100% - 8px)',
+            margin: '0'
           }),
           input: (base: any) => ({
             ...base,
             margin: '0px',
-            padding: '0px'
+            padding: '0px',
+            fontSize: '11px'
           }),
           indicatorsContainer: (base: any) => ({
             ...base,
-            height: '34px'
+            height: '30px'
+          }),
+          dropdownIndicator: (base: any) => ({
+            ...base,
+            padding: '2px 4px'
+          }),
+          clearIndicator: (base: any) => ({
+            ...base,
+            padding: '2px 4px'
           }),
           menu: (base: any) => ({
             ...base,
-            fontSize: '12px',
-            zIndex: 9999
+            fontSize: '11px',
+            zIndex: 9999,
+            minWidth: '480px',
+            width: 'max-content',
+            maxWidth: '90vw',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+            borderRadius: '4px',
+            border: '1px solid #cbd5e1',
+          }),
+          menuList: (base: any) => ({
+            ...base,
+            padding: '4px',
+            maxHeight: '260px',
           }),
           option: (base: any, state: any) => ({
             ...base,
-            padding: '6px 10px',
+            padding: '6px 8px',
+            borderRadius: '4px',
             backgroundColor: state.isSelected 
-              ? '#2563eb' 
+              ? '#0284c7' 
               : state.isFocused 
-                ? '#eff6ff' 
+                ? '#f0f9ff' 
                 : 'white',
-            color: state.isSelected ? 'white' : '#1f2937'
+            color: state.isSelected ? 'white' : '#1e293b',
+            cursor: 'pointer'
           })
         }}
       />

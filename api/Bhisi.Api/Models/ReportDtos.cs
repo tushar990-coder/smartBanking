@@ -289,8 +289,6 @@ namespace Bhisi.Api.Models
         public int? Guarantor2CustomerID { get; set; }
         public int? CoCustomerID { get; set; }
         public int? CoCustomer2ID { get; set; }
-        public int? CoMemberID { get; set; }
-        public int? CoMember2ID { get; set; }
         public string SecurityDetails { get; set; } = string.Empty;
         public decimal SecurityValue { get; set; }
         public int NoOfInstallments { get; set; }

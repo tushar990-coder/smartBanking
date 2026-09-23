@@ -242,6 +242,44 @@ using (var scope = app.Services.CreateScope())
                 IF COL_LENGTH('PigmyAgents', 'CreatedDate') IS NULL ALTER TABLE [PigmyAgents] ADD [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE();
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAccounts')
+            BEGIN
+                IF COL_LENGTH('PigmyAccounts', 'PreviousAccountNo') IS NULL
+                BEGIN
+                    ALTER TABLE [PigmyAccounts] ADD [PreviousAccountNo] nvarchar(50) NULL;
+                END
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAccountSequences')
+            BEGIN
+                CREATE TABLE [PigmyAccountSequences] (
+                    [SequenceID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [BranchID] int NOT NULL DEFAULT 1,
+                    [SchemeCodeNumeric] int NOT NULL DEFAULT 301,
+                    [LastSequenceNumber] int NOT NULL DEFAULT 0,
+                    [UpdatedOn] datetime2 NOT NULL DEFAULT GETDATE()
+                );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('PigmyAccountSequences', 'SequenceID') IS NULL AND COL_LENGTH('PigmyAccountSequences', 'ID') IS NOT NULL
+                BEGIN
+                    EXEC sp_rename 'PigmyAccountSequences.ID', 'SequenceID', 'COLUMN';
+                END
+                IF COL_LENGTH('PigmyAccountSequences', 'SchemeCodeNumeric') IS NULL
+                BEGIN
+                    ALTER TABLE [PigmyAccountSequences] ADD [SchemeCodeNumeric] int NOT NULL DEFAULT 301;
+                END
+                IF COL_LENGTH('PigmyAccountSequences', 'LastSequenceNumber') IS NULL AND COL_LENGTH('PigmyAccountSequences', 'CurrentSequenceNumber') IS NOT NULL
+                BEGIN
+                    EXEC sp_rename 'PigmyAccountSequences.CurrentSequenceNumber', 'LastSequenceNumber', 'COLUMN';
+                END
+                IF COL_LENGTH('PigmyAccountSequences', 'LastSequenceNumber') IS NULL
+                BEGIN
+                    ALTER TABLE [PigmyAccountSequences] ADD [LastSequenceNumber] int NOT NULL DEFAULT 0;
+                END
+            END
+
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgentAccountTransfers')
             BEGIN
                 CREATE TABLE [PigmyAgentAccountTransfers] (

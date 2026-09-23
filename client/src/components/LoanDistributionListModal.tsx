@@ -41,6 +41,15 @@ const formatDateSafe = (dateVal: any): string => {
     return String(dateVal);
 };
 
+const format14DigitDisplay = (num?: string) => {
+    if (!num) return '-';
+    const clean = num.replace(/\D/g, '');
+    if (clean.length === 14) {
+        return `${clean.substring(0, 3)}-${clean.substring(3, 3)}-${clean.substring(6, 7)}-${clean.substring(13, 1)}`;
+    }
+    return num;
+};
+
 const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete }) => {
     const [disbursements, setDisbursements] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -58,7 +67,13 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
         try {
             setLoading(true);
             const res = await axios.get('/api/LoanDisbursements');
-            setDisbursements(res.data || []);
+            const sortedData = (res.data || []).sort((a: any, b: any) => {
+                const dateA = new Date(a.disbursementDate).getTime() || 0;
+                const dateB = new Date(b.disbursementDate).getTime() || 0;
+                if (dateB !== dateA) return dateB - dateA;
+                return (b.loanDisbursementID || 0) - (a.loanDisbursementID || 0);
+            });
+            setDisbursements(sortedData);
         } catch (error) {
             console.error('Error fetching disbursements:', error);
         } finally {
@@ -84,30 +99,59 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
         }
     };
 
+    const getBorrowerName = (d: any) => {
+        const acc = d.loanAccount || {};
+        const cust = acc.customer || acc.loanApplication?.customer || acc.member?.customer;
+        if (cust) {
+            return `${cust.firstName || ''} ${cust.middleName ? cust.middleName + ' ' : ''}${cust.lastName || ''}`.trim();
+        }
+        if (acc.member?.firstName) {
+            return `${acc.member.firstName} ${acc.member.lastName || ''}`.trim();
+        }
+        return '-';
+    };
+
+    const getBorrowerCif = (d: any) => {
+        const acc = d.loanAccount || {};
+        const cust = acc.customer || acc.loanApplication?.customer || acc.member?.customer;
+        return cust?.cifNo || acc.member?.cifNo || '';
+    };
+
+    const getBorrowerCode = (d: any) => {
+        const acc = d.loanAccount || {};
+        return acc.member?.memberCode || '';
+    };
+
     const getGuarantor1Name = (d: any) => {
         const acc = d.loanAccount || {};
-        const g1 = acc.guarantor1Customer || acc.loanApplication?.guarantor1Customer;
+        const g1 = acc.guarantor1Customer || acc.loanApplication?.guarantor1Customer || acc.coCustomer || acc.loanApplication?.coCustomer;
         if (g1) return `${g1.firstName || ''} ${g1.middleName ? g1.middleName + ' ' : ''}${g1.lastName || ''}`.trim();
         return '-';
     };
 
     const getGuarantor2Name = (d: any) => {
         const acc = d.loanAccount || {};
-        const g2 = acc.guarantor2Customer || acc.loanApplication?.guarantor2Customer;
+        const g2 = acc.guarantor2Customer || acc.loanApplication?.guarantor2Customer || acc.coCustomer2 || acc.loanApplication?.coCustomer2;
         if (g2) return `${g2.firstName || ''} ${g2.middleName ? g2.middleName + ' ' : ''}${g2.lastName || ''}`.trim();
         return '-';
     };
 
     const filteredData = disbursements.filter(d => {
         const term = searchTerm.toLowerCase().trim();
+        const bName = getBorrowerName(d).toLowerCase();
+        const bCif = getBorrowerCif(d).toLowerCase();
+        const bCode = getBorrowerCode(d).toLowerCase();
+        const g1 = getGuarantor1Name(d).toLowerCase();
+        const g2 = getGuarantor2Name(d).toLowerCase();
+        const accNo = (d.loanAccount?.loanAccountNo || '').toLowerCase();
+
         const matchesTerm = !term || (
-            (d.loanAccount?.member?.firstName || '').toLowerCase().includes(term) ||
-            (d.loanAccount?.member?.lastName || '').toLowerCase().includes(term) ||
-            (d.loanAccount?.loanAccountNo || '').toLowerCase().includes(term) ||
-            getGuarantor1Name(d).toLowerCase().includes(term) ||
-            getGuarantor2Name(d).toLowerCase().includes(term) ||
-            (d.loanAccount?.member?.cifNo || '').toLowerCase().includes(term) ||
-            (d.loanAccount?.member?.memberCode || '').toLowerCase().includes(term)
+            bName.includes(term) ||
+            bCif.includes(term) ||
+            bCode.includes(term) ||
+            g1.includes(term) ||
+            g2.includes(term) ||
+            accNo.includes(term)
         );
 
         const matchesType = !selectedLoanType || (
@@ -149,9 +193,9 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                 "अ.क्र.": index + 1,
                 "वितरण क्र.": d.loanDisbursementID,
                 "कर्ज खाते क्र.": acc.loanAccountNo || `L-${d.loanAccountID}`,
-                "सभासद कोड": acc.member?.memberCode || '-',
-                "CIF क्र.": acc.member?.cifNo || '-',
-                "कर्जदार नाव": `${acc.member?.firstName || ''} ${acc.member?.lastName || ''}`.trim(),
+                "सभासद कोड": getBorrowerCode(d) || '-',
+                "CIF क्र.": getBorrowerCif(d) || '-',
+                "कर्जदार नाव": getBorrowerName(d),
                 "जामीनदार १": getGuarantor1Name(d),
                 "जामीनदार २": getGuarantor2Name(d),
                 "कर्ज योजना": acc.loanRate?.shortName || acc.loanRate?.loanType || '-',
@@ -297,10 +341,10 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                 </div>
 
                 {/* Modal Table Content */}
-                <div className="flex-1 overflow-auto p-2 bg-slate-100">
-                    <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                        <table className="w-full text-left border-collapse min-w-[1550px] text-xs">
-                            <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                <div className="flex-1 overflow-hidden flex flex-col p-2 bg-slate-100 min-h-0">
+                    <div className="flex-1 overflow-x-auto overflow-y-auto bg-white rounded-sm shadow-xs border border-gray-200">
+                        <table className="w-full text-left border-collapse min-w-[1750px] text-xs">
+                            <thead className="bg-slate-100 sticky top-0 z-10 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
                                 <tr>
                                     <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
                                     <th className="px-2 py-1.5 border-r border-gray-200 text-center w-10">अ.क्र.</th>
@@ -391,7 +435,7 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                                                     {index + 1}
                                                 </td>
                                                 <td className="px-2 py-1.5 border-r border-gray-200 font-mono">
-                                                    <div className="font-bold text-gray-900">{acc.loanAccountNo || `L-${d.loanAccountID}`}</div>
+                                                    <div className="font-bold text-gray-900 tracking-tight">{format14DigitDisplay(acc.loanAccountNo) || `L-${d.loanAccountID}`}</div>
                                                     {hasMultipleTranches && (
                                                         <span className="inline-block text-[9px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded border border-amber-300 mt-0.5">
                                                             टप्पा {trancheNo}/{accountDisbursements.length}
@@ -399,10 +443,10 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                                                     )}
                                                 </td>
                                                 <td className="px-2 py-1.5 border-r border-gray-200">
-                                                    <div className="font-bold text-primary">{acc.member?.firstName} {acc.member?.lastName}</div>
+                                                    <div className="font-bold text-primary">{getBorrowerName(d)}</div>
                                                     <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-mono mt-0.5">
-                                                        {acc.member?.memberCode && <span>कोड: {acc.member.memberCode}</span>}
-                                                        {acc.member?.cifNo && <span>CIF: {acc.member.cifNo}</span>}
+                                                        {getBorrowerCode(d) && <span>कोड: {getBorrowerCode(d)}</span>}
+                                                        {getBorrowerCif(d) && <span>CIF: {getBorrowerCif(d)}</span>}
                                                     </div>
                                                 </td>
                                                 <td className="px-2 py-1.5 border-r border-gray-200 text-amber-950 bg-amber-50/30 font-medium">

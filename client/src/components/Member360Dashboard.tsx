@@ -307,9 +307,24 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
     const formatDate = (dateStr?: string | null) => {
         if (!dateStr) return '-';
         try {
-            const d = new Date(dateStr);
-            if (isNaN(d.getTime()) || d.getFullYear() <= 1) return '-';
-            return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const cleanStr = String(dateStr).trim();
+            if (!cleanStr || cleanStr === '-' || cleanStr.startsWith('0001') || cleanStr.startsWith('1900')) return '-';
+            
+            // Check if string is already formatted as DD/MM/YYYY
+            if (/^\d{2}\/\d{2}\/\d{4}$/.test(cleanStr)) return cleanStr;
+            
+            // Handle YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss format directly
+            if (/^\d{4}-\d{2}-\d{2}/.test(cleanStr)) {
+                const [year, month, day] = cleanStr.substring(0, 10).split('-');
+                return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+            }
+
+            const d = new Date(cleanStr);
+            if (isNaN(d.getTime()) || d.getFullYear() <= 1900) return '-';
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            return `${day}/${month}/${year}`;
         } catch {
             return '-';
         }
@@ -477,343 +492,460 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     const hasShares = (data.portfolio.shares?.accounts || 0) > 0 || (data.portfolio.shares?.balance || 0) > 0 || Boolean(data.portfolio.shares?.folioNo);
 
                                     return (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2.5 items-start">
                                             
-                                            {/* Savings Deposit Card */}
-                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[450px] h-[450px] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.16)] hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 group">
-                                                <div className="p-4 border-b border-slate-100 bg-slate-50/60 rounded-t-xl border-t-4 border-t-blue-500">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-xs md:text-sm font-extrabold text-slate-800">१. बचत ठेव (Savings)</span>
-                                                        <span className={`text-[10px] px-2.5 py-0.5 rounded-full border font-bold ${getStatusBadge(data.portfolio.savings.statusColor)}`}>
+                                            {/* 1. Savings Deposit Card */}
+                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.06)] flex flex-col justify-between hover:shadow-[0_10px_24px_-4px_rgba(0,0,0,0.12)] hover:border-slate-300 transition-all duration-200 group">
+                                                <div className="p-2.5 border-b border-slate-100 bg-slate-50/80 rounded-t-xl border-t-4 border-t-blue-500">
+                                                    <div className="h-7 flex justify-between items-center">
+                                                        <span className="text-xs font-extrabold text-slate-800 truncate" title="१. बचत ठेव (Savings)">१. बचत ठेव (Savings)</span>
+                                                        <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.savings.statusColor)}`}>
                                                             {hasSavings ? 'सुरू' : 'शून्य'}
                                                         </span>
                                                     </div>
-                                                    <div className="mt-3.5 flex justify-between items-end">
+                                                    <div className="h-10 mt-1 flex justify-between items-end">
                                                         <div>
-                                                            <div className="text-xs text-slate-500 font-semibold">एकूण खाती: <span className="font-bold text-slate-700">{data.portfolio.savings.accounts}</span></div>
-                                                            <div className="text-base md:text-lg font-black text-slate-800 mt-1">₹ {data.portfolio.savings.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                                                            <div className="text-[10px] text-slate-500 font-semibold leading-none">एकूण खाती: <span className="font-bold text-slate-700">{data.portfolio.savings.accounts}</span></div>
+                                                            <div className="text-sm font-black text-slate-900 leading-none mt-1">₹ {data.portfolio.savings.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                                                         </div>
                                                         <div className="text-right">
-                                                            <div className="text-[10px] text-slate-400 font-medium">अखेरचा व्यवहार</div>
-                                                            <div className="text-xs font-bold text-slate-600 mt-0.5">{data.portfolio.savings.lastTxDate || '-'}</div>
+                                                            <div className="text-[9px] text-slate-400 font-medium leading-none">अखेरचा व्यवहार</div>
+                                                            <div className="text-[10px] font-bold text-slate-600 leading-none mt-1">{formatDate(data.portfolio.savings.lastTxDate)}</div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="p-3 flex flex-col gap-1.5 text-xs text-primary font-semibold flex-1 justify-start">
-                                                    <button onClick={() => onNavigate('saving-account', { memberId: selectedMemberId })} className={`text-left py-1.5 px-2.5 rounded-md hover:bg-blue-50 font-bold flex items-center justify-between hover:text-blue-700 cursor-pointer transition-colors ${!hasSavings ? 'bg-blue-50/80 border border-blue-200 text-blue-800' : ''}`}>
-                                                        <span>{!hasSavings ? '+ नवीन बचत खाते उघडा' : 'नवे बचत खाते उघडा'}</span> <ChevronRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
-                                                    </button>
+                                                <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
+                                                    <div className="flex flex-col gap-1">
+                                                        <button 
+                                                            onClick={() => onNavigate('saving-account', { memberId: selectedMemberId })} 
+                                                            className="w-full text-left py-1.5 px-2 rounded-md font-bold text-xs flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-blue-50/90 hover:bg-blue-100 text-blue-900 border-blue-200 hover:border-blue-300 group/btn"
+                                                        >
+                                                            <span className="truncate">{!hasSavings ? '+ नवीन बचत खाते उघडा' : 'नवे बचत खाते उघडा'}</span> 
+                                                            <ChevronRight size={13} className="text-blue-600 group-hover/btn:translate-x-0.5 transition-transform shrink-0" />
+                                                        </button>
+
+                                                        {hasSavings && (
+                                                            <>
+                                                                <button onClick={() => onNavigate('saving-transaction', { memberId: selectedMemberId, type: 'Deposit' })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-blue-50/50 border border-slate-200/90 hover:border-blue-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-blue-900">बचत जमा नोंदणी</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('saving-transaction', { memberId: selectedMemberId, type: 'Withdrawal' })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-blue-50/50 border border-slate-200/90 hover:border-blue-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-blue-900">बचत उचल नोंदणी</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('saving-posting')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-blue-50/50 border border-slate-200/90 hover:border-blue-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-blue-900">व्याज जमा पोस्टिंग</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('saving-passbook', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-blue-50/50 border border-slate-200/90 hover:border-blue-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-blue-900">पासबुक प्रिंट करा</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('saving-closing', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-blue-50/50 border border-slate-200/90 hover:border-blue-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-blue-900">खाते बंद प्रक्रिया</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
 
                                                     {hasSavings && (
-                                                        <>
-                                                            <button onClick={() => onNavigate('saving-transaction', { memberId: selectedMemberId, type: 'Deposit' })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-blue-700 cursor-pointer transition-colors">
-                                                                <span>बचत जमा नोंदणी</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('saving-transaction', { memberId: selectedMemberId, type: 'Withdrawal' })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-blue-700 cursor-pointer transition-colors">
-                                                                <span>बचत उचल नोंदणी</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('saving-posting')} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-blue-700 cursor-pointer transition-colors">
-                                                                <span>व्याज जमा पोस्टिंग</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('saving-passbook', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-blue-700 cursor-pointer transition-colors">
-                                                                <span>पासबुक प्रिंट करा</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('saving-closing', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-blue-700 cursor-pointer transition-colors">
-                                                                <span>खाते बंद प्रक्रिया</span> <ChevronRight size={13} />
-                                                            </button>
+                                                        <div className="pt-1.5 mt-auto">
                                                             <button 
                                                                 onClick={() => setActiveReportModule(prev => prev === 'savings' ? null : 'savings')} 
-                                                                className={`text-left py-1.5 px-2.5 rounded-md font-bold flex items-center justify-between cursor-pointer transition-all ${
+                                                                className={`w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between cursor-pointer transition-all duration-150 shadow-2xs ${
                                                                     activeReportModule === 'savings'
-                                                                        ? 'bg-blue-600 text-white shadow-xs' 
-                                                                        : 'bg-blue-50/80 border border-blue-200 text-blue-800 hover:bg-blue-100 hover:text-blue-900'
+                                                                        ? 'bg-blue-600 text-white shadow-blue-200' 
+                                                                        : 'bg-blue-50/90 border border-blue-200 text-blue-900 hover:bg-blue-100 hover:border-blue-300'
                                                                 }`}
                                                             >
-                                                                <span className="flex items-center gap-1.5">
-                                                                    <span>📊</span> बचत रिपोर्ट (Savings Reports)
+                                                                <span className="flex items-center gap-1 truncate">
+                                                                    <span>📊</span> बचत रिपोर्ट
                                                                 </span> 
-                                                                {activeReportModule === 'savings' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                {activeReportModule === 'savings' ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
                                                             </button>
-                                                        </>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
 
-                                            {/* Fixed Deposit Card */}
-                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[450px] h-[450px] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.16)] hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 group">
-                                                <div className="p-4 border-b border-slate-100 bg-slate-50/60 rounded-t-xl border-t-4 border-t-teal-500">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-xs md:text-sm font-extrabold text-slate-800">२. मुदत ठेव (FD)</span>
-                                                        <span className={`text-[10px] px-2.5 py-0.5 rounded-full border font-bold ${getStatusBadge(data.portfolio.fixedDeposits.statusColor)}`}>
+                                            {/* 2. Fixed Deposit Card */}
+                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.06)] flex flex-col justify-between hover:shadow-[0_10px_24px_-4px_rgba(0,0,0,0.12)] hover:border-slate-300 transition-all duration-200 group">
+                                                <div className="p-2.5 border-b border-slate-100 bg-slate-50/80 rounded-t-xl border-t-4 border-t-teal-500">
+                                                    <div className="h-7 flex justify-between items-center">
+                                                        <span className="text-xs font-extrabold text-slate-800 truncate" title="२. मुदत ठेव (FD)">२. मुदत ठेव (FD)</span>
+                                                        <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.fixedDeposits.statusColor)}`}>
                                                             {hasFD ? 'सुरू' : 'शून्य'}
                                                         </span>
                                                     </div>
-                                                    <div className="mt-3.5 flex justify-between items-end">
+                                                    <div className="h-10 mt-1 flex justify-between items-end">
                                                         <div>
-                                                            <div className="text-xs text-slate-500 font-semibold">एकूण खाती: <span className="font-bold text-slate-700">{data.portfolio.fixedDeposits.accounts}</span></div>
-                                                            <div className="text-base md:text-lg font-black text-slate-800 mt-1">₹ {data.portfolio.fixedDeposits.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                                                            <div className="text-[10px] text-slate-500 font-semibold leading-none">एकूण खाती: <span className="font-bold text-slate-700">{data.portfolio.fixedDeposits.accounts}</span></div>
+                                                            <div className="text-sm font-black text-slate-900 leading-none mt-1">₹ {data.portfolio.fixedDeposits.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                                                         </div>
                                                         <div className="text-right">
-                                                            <div className="text-[10px] text-slate-400 font-medium">अखेरचा व्यवहार</div>
-                                                            <div className="text-xs font-bold text-slate-600 mt-0.5">{data.portfolio.fixedDeposits.lastTxDate || '-'}</div>
+                                                            <div className="text-[9px] text-slate-400 font-medium leading-none">अखेरचा व्यवहार</div>
+                                                            <div className="text-[10px] font-bold text-slate-600 leading-none mt-1">{formatDate(data.portfolio.fixedDeposits.lastTxDate)}</div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="p-3 flex flex-col gap-1.5 text-xs text-primary font-semibold flex-1 justify-start">
-                                                    <button onClick={() => onNavigate('fd-account', { memberId: selectedMemberId })} className={`text-left py-1.5 px-2.5 rounded-md hover:bg-teal-50 font-bold flex items-center justify-between hover:text-teal-700 cursor-pointer transition-colors ${!hasFD ? 'bg-teal-50/80 border border-teal-200 text-teal-800' : ''}`}>
-                                                        <span>{!hasFD ? '+ नवीन FD उघडा' : 'नवे FD उघडा'}</span> <ChevronRight size={14} />
-                                                    </button>
+                                                <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
+                                                    <div className="flex flex-col gap-1">
+                                                        <button 
+                                                            onClick={() => onNavigate('fd-account', { memberId: selectedMemberId })} 
+                                                            className="w-full text-left py-1.5 px-2 rounded-md font-bold text-xs flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-teal-50/90 hover:bg-teal-100 text-teal-900 border-teal-200 hover:border-teal-300 group/btn"
+                                                        >
+                                                            <span className="truncate">{!hasFD ? '+ नवीन FD उघडा' : 'नवे FD उघडा'}</span> 
+                                                            <ChevronRight size={13} className="text-teal-600 group-hover/btn:translate-x-0.5 transition-transform shrink-0" />
+                                                        </button>
+
+                                                        {hasFD && (
+                                                            <>
+                                                                <button onClick={() => onNavigate('fd-scheme')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-teal-50/50 border border-slate-200/90 hover:border-teal-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-teal-900">ठेव योजना (Schemes)</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-teal-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('fd-migrate', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-teal-50/50 border border-slate-200/90 hover:border-teal-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-teal-900">ठेव स्थलांतर (Migration)</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-teal-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('fd-accrual')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-teal-50/50 border border-slate-200/90 hover:border-teal-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-teal-900">व्याज तरतूद (Accrual)</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-teal-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('fd-withdrawal', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-teal-50/50 border border-slate-200/90 hover:border-teal-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-teal-900">मुदतपूर्ती प्रक्रिया</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-teal-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => handleReportNavigate('fd-reports&reportType=MemberLedger')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-teal-50/50 border border-slate-200/90 hover:border-teal-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-teal-900">मुदत ठेव खतावणी</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-teal-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
 
                                                     {hasFD && (
-                                                        <>
-                                                            <button onClick={() => onNavigate('fd-scheme')} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-teal-700 cursor-pointer transition-colors">
-                                                                <span>ठेव योजना (Schemes)</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('fd-migrate', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-teal-700 cursor-pointer transition-colors">
-                                                                <span>ठेव स्थलांतर (Migration)</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('fd-accrual')} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-teal-700 cursor-pointer transition-colors">
-                                                                <span>व्याज तरतूद (Accrual)</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('fd-withdrawal', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-teal-700 cursor-pointer transition-colors">
-                                                                <span>मुदतपूर्ती प्रक्रिया</span> <ChevronRight size={13} />
-                                                            </button>
+                                                        <div className="pt-1.5 mt-auto">
                                                             <button 
                                                                 onClick={() => setActiveReportModule(prev => prev === 'fd' ? null : 'fd')} 
-                                                                className={`text-left py-1.5 px-2.5 rounded-md font-bold flex items-center justify-between cursor-pointer transition-all ${
+                                                                className={`w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between cursor-pointer transition-all duration-150 shadow-2xs ${
                                                                     activeReportModule === 'fd'
-                                                                        ? 'bg-teal-600 text-white shadow-xs' 
-                                                                        : 'bg-teal-50/80 border border-teal-200 text-teal-800 hover:bg-teal-100 hover:text-teal-900'
+                                                                        ? 'bg-teal-600 text-white shadow-teal-200' 
+                                                                        : 'bg-teal-50/90 border border-teal-200 text-teal-900 hover:bg-teal-100 hover:border-teal-300'
                                                                 }`}
                                                             >
-                                                                <span className="flex items-center gap-1.5">
-                                                                    <span>📊</span> ठेव रिपोर्ट (FD Reports)
+                                                                <span className="flex items-center gap-1 truncate">
+                                                                    <span>📊</span> मुदत ठेव रिपोर्ट
                                                                 </span> 
-                                                                {activeReportModule === 'fd' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                {activeReportModule === 'fd' ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
                                                             </button>
-                                                        </>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
 
-                                            {/* Recurring Deposit Card */}
-                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[450px] h-[450px] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.16)] hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 group">
-                                                <div className="p-4 border-b border-slate-100 bg-slate-50/60 rounded-t-xl border-t-4 border-t-amber-500">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-xs md:text-sm font-extrabold text-slate-800">३. आवर्ती ठेव (RD)</span>
-                                                        <span className={`text-[10px] px-2.5 py-0.5 rounded-full border font-bold ${getStatusBadge(data.portfolio.recurringDeposits.statusColor)}`}>
+                                            {/* 3. Recurring Deposit Card */}
+                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.06)] flex flex-col justify-between hover:shadow-[0_10px_24px_-4px_rgba(0,0,0,0.12)] hover:border-slate-300 transition-all duration-200 group">
+                                                <div className="p-2.5 border-b border-slate-100 bg-slate-50/80 rounded-t-xl border-t-4 border-t-amber-500">
+                                                    <div className="h-7 flex justify-between items-center">
+                                                        <span className="text-xs font-extrabold text-slate-800 truncate" title="३. आवर्ती ठेव (RD)">३. आवर्ती ठेव (RD)</span>
+                                                        <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.recurringDeposits.statusColor)}`}>
                                                             {hasRD ? 'सुरू' : 'शून्य'}
                                                         </span>
                                                     </div>
-                                                    <div className="mt-3.5 flex justify-between items-end">
+                                                    <div className="h-10 mt-1 flex justify-between items-end">
                                                         <div>
-                                                            <div className="text-xs text-slate-500 font-semibold">एकूण खाती: <span className="font-bold text-slate-700">{data.portfolio.recurringDeposits.accounts}</span></div>
-                                                            <div className="text-base md:text-lg font-black text-slate-800 mt-1">₹ {data.portfolio.recurringDeposits.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                                                            <div className="text-[10px] text-slate-500 font-semibold leading-none">एकूण खाती: <span className="font-bold text-slate-700">{data.portfolio.recurringDeposits.accounts}</span></div>
+                                                            <div className="text-sm font-black text-slate-900 leading-none mt-1">₹ {data.portfolio.recurringDeposits.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                                                         </div>
                                                         <div className="text-right">
-                                                            <div className="text-[10px] text-slate-400 font-medium">अखेरचा व्यवहार</div>
-                                                            <div className="text-xs font-bold text-slate-600 mt-0.5">{data.portfolio.recurringDeposits.lastTxDate || '-'}</div>
+                                                            <div className="text-[9px] text-slate-400 font-medium leading-none">अखेरचा व्यवहार</div>
+                                                            <div className="text-[10px] font-bold text-slate-600 leading-none mt-1">{formatDate(data.portfolio.recurringDeposits.lastTxDate)}</div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="p-3 flex flex-col gap-1.5 text-xs text-primary font-semibold flex-1 justify-start">
-                                                    <button onClick={() => onNavigate('rd-account', { memberId: selectedMemberId })} className={`text-left py-1.5 px-2.5 rounded-md hover:bg-amber-50 font-bold flex items-center justify-between hover:text-amber-700 cursor-pointer transition-colors ${!hasRD ? 'bg-amber-50/80 border border-amber-200 text-amber-800' : ''}`}>
-                                                        <span>{!hasRD ? '+ नवीन RD उघडा' : 'नवे RD उघडा'}</span> <ChevronRight size={14} />
-                                                    </button>
+                                                <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
+                                                    <div className="flex flex-col gap-1">
+                                                        <button 
+                                                            onClick={() => onNavigate('rd-account', { memberId: selectedMemberId })} 
+                                                            className="w-full text-left py-1.5 px-2 rounded-md font-bold text-xs flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-amber-50/90 hover:bg-amber-100 text-amber-900 border-amber-200 hover:border-amber-300 group/btn"
+                                                        >
+                                                            <span className="truncate">{!hasRD ? '+ नवीन RD उघडा' : 'नवे RD उघडा'}</span> 
+                                                            <ChevronRight size={13} className="text-amber-600 group-hover/btn:translate-x-0.5 transition-transform shrink-0" />
+                                                        </button>
+
+                                                        {hasRD && (
+                                                            <>
+                                                                <button onClick={() => onNavigate('rd-collect', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-amber-50/50 border border-slate-200/90 hover:border-amber-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-amber-900">मासिक हप्ता वसुली</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('rd-scheme')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-amber-50/50 border border-slate-200/90 hover:border-amber-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-amber-900">ठेव योजना (Schemes)</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('rd-migrate', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-amber-50/50 border border-slate-200/90 hover:border-amber-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-amber-900">ठेव स्थलांतर (Migration)</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('rd-withdrawal', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-amber-50/50 border border-slate-200/90 hover:border-amber-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-amber-900">मुदतपूर्ती प्रक्रिया</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => handleReportNavigate('rd-reports&reportType=defaulters')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-amber-50/50 border border-slate-200/90 hover:border-amber-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-amber-900">थकीत खातेदार यादी</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
 
                                                     {hasRD && (
-                                                        <>
-                                                            <button onClick={() => onNavigate('rd-collect', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-amber-700 cursor-pointer transition-colors">
-                                                                <span>मासिक हप्ता (Collection)</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('rd-scheme')} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-amber-700 cursor-pointer transition-colors">
-                                                                <span>ठेव योजना (Schemes)</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('rd-migrate', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-amber-700 cursor-pointer transition-colors">
-                                                                <span>ठेव स्थलांतर (Migration)</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('rd-withdrawal', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-amber-700 cursor-pointer transition-colors">
-                                                                <span>मुदतपूर्ती प्रक्रिया</span> <ChevronRight size={13} />
-                                                            </button>
+                                                        <div className="pt-1.5 mt-auto">
                                                             <button 
                                                                 onClick={() => setActiveReportModule(prev => prev === 'rd' ? null : 'rd')} 
-                                                                className={`text-left py-1.5 px-2.5 rounded-md font-bold flex items-center justify-between cursor-pointer transition-all ${
+                                                                className={`w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between cursor-pointer transition-all duration-150 shadow-2xs ${
                                                                     activeReportModule === 'rd'
-                                                                        ? 'bg-amber-600 text-white shadow-xs' 
-                                                                        : 'bg-amber-50/80 border border-amber-200 text-amber-800 hover:bg-amber-100 hover:text-amber-900'
+                                                                        ? 'bg-amber-600 text-white shadow-amber-200' 
+                                                                        : 'bg-amber-50/90 border border-amber-200 text-amber-900 hover:bg-amber-100 hover:border-amber-300'
                                                                 }`}
                                                             >
-                                                                <span className="flex items-center gap-1.5">
-                                                                    <span>📊</span> ठेव रिपोर्ट (RD Reports)
+                                                                <span className="flex items-center gap-1 truncate">
+                                                                    <span>📊</span> आरडी रिपोर्ट
                                                                 </span> 
-                                                                {activeReportModule === 'rd' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                {activeReportModule === 'rd' ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
                                                             </button>
-                                                        </>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
 
-                                            {/* Pigmy Deposit Card */}
-                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[450px] h-[450px] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.16)] hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 group">
-                                                <div className="p-4 border-b border-slate-100 bg-slate-50/60 rounded-t-xl border-t-4 border-t-emerald-500">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-xs md:text-sm font-extrabold text-slate-800">४. पिग्मी ठेव (Pigmy)</span>
-                                                        <span className={`text-[10px] px-2.5 py-0.5 rounded-full border font-bold ${getStatusBadge(data.portfolio.pigmy?.statusColor || 'Gray')}`}>
+                                            {/* 4. Pigmy Deposit Card */}
+                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.06)] flex flex-col justify-between hover:shadow-[0_10px_24px_-4px_rgba(0,0,0,0.12)] hover:border-slate-300 transition-all duration-200 group">
+                                                <div className="p-2.5 border-b border-slate-100 bg-slate-50/80 rounded-t-xl border-t-4 border-t-emerald-500">
+                                                    <div className="h-7 flex justify-between items-center">
+                                                        <span className="text-xs font-extrabold text-slate-800 truncate" title="४. पिग्मी ठेव (Pigmy)">४. पिग्मी ठेव (Pigmy)</span>
+                                                        <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.pigmy?.statusColor || 'Gray')}`}>
                                                             {hasPigmy ? 'सुरू' : 'शून्य'}
                                                         </span>
                                                     </div>
-                                                    <div className="mt-3.5 flex justify-between items-end">
+                                                    <div className="h-10 mt-1 flex justify-between items-end">
                                                         <div>
-                                                            <div className="text-xs text-slate-500 font-semibold">एकूण खाती: <span className="font-bold text-slate-700">{data.portfolio.pigmy?.accounts || 0}</span></div>
-                                                            <div className="text-base md:text-lg font-black text-slate-800 mt-1">₹ {(data.portfolio.pigmy?.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                                                            <div className="text-[10px] text-slate-500 font-semibold leading-none">एकूण खाती: <span className="font-bold text-slate-700">{data.portfolio.pigmy?.accounts || 0}</span></div>
+                                                            <div className="text-sm font-black text-slate-900 leading-none mt-1">₹ {(data.portfolio.pigmy?.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                                                         </div>
                                                         <div className="text-right">
-                                                            <div className="text-[10px] text-slate-400 font-medium">अखेरचा व्यवहार</div>
-                                                            <div className="text-xs font-bold text-slate-600 mt-0.5">{data.portfolio.pigmy?.lastTxDate || '-'}</div>
+                                                            <div className="text-[9px] text-slate-400 font-medium leading-none">अखेरचा व्यवहार</div>
+                                                            <div className="text-[10px] font-bold text-slate-600 leading-none mt-1">{formatDate(data.portfolio.pigmy?.lastTxDate)}</div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="p-3 flex flex-col gap-1.5 text-xs text-primary font-semibold flex-1 justify-start">
-                                                    <button onClick={() => onNavigate('pigmy-account', { memberId: selectedMemberId })} className={`text-left py-1.5 px-2.5 rounded-md hover:bg-emerald-50 font-bold flex items-center justify-between hover:text-emerald-700 cursor-pointer transition-colors ${!hasPigmy ? 'bg-emerald-50/80 border border-emerald-200 text-emerald-800' : ''}`}>
-                                                        <span>{!hasPigmy ? '+ नवीन पिग्मी खाते उघडा' : 'नवे पिग्मी खाते उघडा'}</span> <ChevronRight size={14} />
-                                                    </button>
+                                                <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
+                                                    <div className="flex flex-col gap-1">
+                                                        <button 
+                                                            onClick={() => onNavigate('pigmy-account', { memberId: selectedMemberId })} 
+                                                            className="w-full text-left py-1.5 px-2 rounded-md font-bold text-xs flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-emerald-50/90 hover:bg-emerald-100 text-emerald-900 border-emerald-200 hover:border-emerald-300 group/btn"
+                                                        >
+                                                            <span className="truncate">{!hasPigmy ? '+ नवीन पिग्मी खाते उघडा' : 'नवे पिग्मी खाते उघडा'}</span> 
+                                                            <ChevronRight size={13} className="text-emerald-600 group-hover/btn:translate-x-0.5 transition-transform shrink-0" />
+                                                        </button>
+
+                                                        {hasPigmy && (
+                                                            <>
+                                                                <button onClick={() => onNavigate('pigmy-collect', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-emerald-50/50 border border-slate-200/90 hover:border-emerald-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-emerald-900">पिग्मी जमा वसुली</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-emerald-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('pigmy-scheme')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-emerald-50/50 border border-slate-200/90 hover:border-emerald-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-emerald-900">ठेव योजना (Schemes)</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-emerald-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('pigmy-closure', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-emerald-50/50 border border-slate-200/90 hover:border-emerald-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-emerald-900">पिग्मी खाते बंद</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-emerald-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => handleReportNavigate('pigmy-reports&reportType=settlement')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-emerald-50/50 border border-slate-200/90 hover:border-emerald-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-emerald-900">एजंट रोख ताळमेळ</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-emerald-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => handleReportNavigate('pigmy-reports&reportType=ledger')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-emerald-50/50 border border-slate-200/90 hover:border-emerald-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-emerald-900">पिग्मी खाते लेजर</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-emerald-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
 
                                                     {hasPigmy && (
-                                                        <>
-                                                            <button onClick={() => onNavigate('pigmy-collect', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-emerald-700 cursor-pointer transition-colors">
-                                                                <span>पिग्मी जमा वसुली</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('pigmy-scheme')} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-emerald-700 cursor-pointer transition-colors">
-                                                                <span>ठेव योजना (Schemes)</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('pigmy-closure', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-emerald-700 cursor-pointer transition-colors">
-                                                                <span>पिग्मी खाते बंद</span> <ChevronRight size={13} />
-                                                            </button>
+                                                        <div className="pt-1.5 mt-auto">
                                                             <button 
                                                                 onClick={() => setActiveReportModule(prev => prev === 'pigmy' ? null : 'pigmy')} 
-                                                                className={`text-left py-1.5 px-2.5 rounded-md font-bold flex items-center justify-between cursor-pointer transition-all ${
+                                                                className={`w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between cursor-pointer transition-all duration-150 shadow-2xs ${
                                                                     activeReportModule === 'pigmy'
-                                                                        ? 'bg-emerald-600 text-white shadow-xs' 
-                                                                        : 'bg-emerald-50/80 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900'
+                                                                        ? 'bg-emerald-600 text-white shadow-emerald-200' 
+                                                                        : 'bg-emerald-50/90 border border-emerald-200 text-emerald-900 hover:bg-emerald-100 hover:border-emerald-300'
                                                                 }`}
                                                             >
-                                                                <span className="flex items-center gap-1.5">
-                                                                    <span>📊</span> पिग्मी रिपोर्ट (Pigmy Reports)
+                                                                <span className="flex items-center gap-1 truncate">
+                                                                    <span>📊</span> पिग्मी रिपोर्ट
                                                                 </span> 
-                                                                {activeReportModule === 'pigmy' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                {activeReportModule === 'pigmy' ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
                                                             </button>
-                                                        </>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
 
-                                            {/* Loan Card */}
-                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[450px] h-[450px] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.16)] hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 group">
-                                                <div className="p-4 border-b border-slate-100 bg-slate-50/60 rounded-t-xl border-t-4 border-t-rose-500">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-xs md:text-sm font-extrabold text-slate-800">५. कर्ज विभाग (Loans)</span>
-                                                        <span className={`text-[10px] px-2.5 py-0.5 rounded-full border font-bold ${getStatusBadge(data.portfolio.loans.statusColor)}`}>
+                                            {/* 5. Loans Card */}
+                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.06)] flex flex-col justify-between hover:shadow-[0_10px_24px_-4px_rgba(0,0,0,0.12)] hover:border-slate-300 transition-all duration-200 group">
+                                                <div className="p-2.5 border-b border-slate-100 bg-slate-50/80 rounded-t-xl border-t-4 border-t-rose-500">
+                                                    <div className="h-7 flex justify-between items-center">
+                                                        <span className="text-xs font-extrabold text-slate-800 truncate" title="५. कर्ज विभाग (Loans)">५. कर्ज विभाग (Loans)</span>
+                                                        <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.loans.statusColor)}`}>
                                                             {hasLoans ? (data.portfolio.loans.statusColor === 'Red' ? 'थकीत' : 'सुरू') : 'शून्य'}
                                                         </span>
                                                     </div>
-                                                    <div className="mt-3.5 flex justify-between items-end">
+                                                    <div className="h-10 mt-1 flex justify-between items-end">
                                                         <div>
-                                                            <div className="text-xs text-slate-500 font-semibold">एकूण खाती: <span className="font-bold text-slate-700">{data.portfolio.loans.accounts}</span></div>
-                                                            <div className="text-base md:text-lg font-black text-rose-600 mt-1">₹ {data.portfolio.loans.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                                                            <div className="text-[10px] text-slate-500 font-semibold leading-none">एकूण खाती: <span className="font-bold text-slate-700">{data.portfolio.loans.accounts}</span></div>
+                                                            <div className="text-sm font-black text-rose-600 leading-none mt-1">₹ {data.portfolio.loans.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                                                         </div>
                                                         <div className="text-right">
-                                                            <div className="text-[10px] text-slate-400 font-medium">अखेरचा व्यवहार</div>
-                                                            <div className="text-xs font-bold text-slate-600 mt-0.5">{data.portfolio.loans.lastTxDate || '-'}</div>
+                                                            <div className="text-[9px] text-slate-400 font-medium leading-none">अखेरचा व्यवहार</div>
+                                                            <div className="text-[10px] font-bold text-slate-600 leading-none mt-1">{formatDate(data.portfolio.loans.lastTxDate)}</div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="p-3 flex flex-col gap-1.5 text-xs text-primary font-semibold flex-1 justify-start">
-                                                    <button onClick={() => onNavigate('loan-process', { subTab: 1, memberId: selectedMemberId })} className={`text-left py-1.5 px-2.5 rounded-md hover:bg-rose-50 font-bold flex items-center justify-between hover:text-rose-700 cursor-pointer transition-colors ${!hasLoans ? 'bg-rose-50/80 border border-rose-200 text-rose-800' : ''}`}>
-                                                        <span>{!hasLoans ? '+ नवीन कर्ज मागणी नोंदणी' : 'कर्ज मागणी नोंदणी'}</span> <ChevronRight size={14} />
-                                                    </button>
+                                                <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
+                                                    <div className="flex flex-col gap-1">
+                                                        <button 
+                                                            onClick={() => onNavigate('loan-process', { subTab: 1, memberId: selectedMemberId })} 
+                                                            className="w-full text-left py-1.5 px-2 rounded-md font-bold text-xs flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-rose-50/90 hover:bg-rose-100 text-rose-900 border-rose-200 hover:border-rose-300 group/btn"
+                                                        >
+                                                            <span className="truncate">{!hasLoans ? '+ नवीन कर्ज मागणी नोंदणी' : 'कर्ज मागणी नोंदणी'}</span> 
+                                                            <ChevronRight size={13} className="text-rose-600 group-hover/btn:translate-x-0.5 transition-transform shrink-0" />
+                                                        </button>
+
+                                                        {hasLoans && (
+                                                            <>
+                                                                <button onClick={() => onNavigate('loan-process', { subTab: 2, memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-rose-50/50 border border-slate-200/90 hover:border-rose-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-rose-900">कर्ज मंजुरी व वितरण</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('loan-collection', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-rose-50/50 border border-slate-200/90 hover:border-rose-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-rose-900">कर्ज हप्ता वसुली</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('loan-ledger-report', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-rose-50/50 border border-slate-200/90 hover:border-rose-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-rose-900">कर्ज खाते स्टेटमेंट</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('loan-overdue-recovery', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-rose-50/50 border border-slate-200/90 hover:border-rose-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-rose-900">थकीत वसुली नोंदणी</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('loan-process', { subTab: 4, memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-rose-50/50 border border-slate-200/90 hover:border-rose-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-rose-900">कर्ज हप्ता तक्ता</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
 
                                                     {hasLoans && (
-                                                        <>
-                                                            <button onClick={() => onNavigate('loan-process', { subTab: 2, memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-rose-700 cursor-pointer transition-colors">
-                                                                <span>कर्ज मंजुरी व वितरण</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('loan-collection', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-rose-700 cursor-pointer transition-colors">
-                                                                <span>कर्ज हप्ता वसुली</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('loan-ledger-report', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-rose-700 cursor-pointer transition-colors">
-                                                                <span>कर्ज खाते स्टेटमेंट</span> <ChevronRight size={13} />
-                                                            </button>
+                                                        <div className="pt-1.5 mt-auto">
                                                             <button 
                                                                 onClick={() => setActiveReportModule(prev => prev === 'loans' ? null : 'loans')} 
-                                                                className={`text-left py-1.5 px-2.5 rounded-md font-bold flex items-center justify-between cursor-pointer transition-all ${
+                                                                className={`w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between cursor-pointer transition-all duration-150 shadow-2xs ${
                                                                     activeReportModule === 'loans' 
-                                                                        ? 'bg-rose-600 text-white shadow-xs' 
-                                                                        : 'bg-rose-50/80 border border-rose-200 text-rose-800 hover:bg-rose-100 hover:text-rose-900'
+                                                                        ? 'bg-rose-600 text-white shadow-rose-200' 
+                                                                        : 'bg-rose-50/90 border border-rose-200 text-rose-800 hover:bg-rose-100 hover:border-rose-300'
                                                                 }`}
                                                             >
-                                                                <span className="flex items-center gap-1.5">
-                                                                    <span>📊</span> कर्ज रिपोर्ट (Loan Reports)
+                                                                <span className="flex items-center gap-1 truncate">
+                                                                    <span>📊</span> कर्ज रिपोर्ट
                                                                 </span> 
-                                                                {activeReportModule === 'loans' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                {activeReportModule === 'loans' ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
                                                             </button>
-                                                        </>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
 
-                                            {/* Share Capital Card */}
-                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.08)] flex flex-col justify-between min-h-[450px] h-[450px] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.16)] hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 group">
-                                                <div className="p-4 border-b border-slate-100 bg-slate-50/60 rounded-t-xl border-t-4 border-t-purple-500">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-xs md:text-sm font-extrabold text-slate-800">६. भाग भांडवल (Shares)</span>
-                                                        <span className={`text-[10px] px-2.5 py-0.5 rounded-full border font-bold ${getStatusBadge(data.portfolio.shares.statusColor)}`}>
+                                            {/* 6. Share Capital Card */}
+                                            <div className="bg-white border border-slate-200/90 rounded-xl shadow-[0_4px_16px_rgba(0,0,0,0.06)] flex flex-col justify-between hover:shadow-[0_10px_24px_-4px_rgba(0,0,0,0.12)] hover:border-slate-300 transition-all duration-200 group">
+                                                <div className="p-2.5 border-b border-slate-100 bg-slate-50/80 rounded-t-xl border-t-4 border-t-purple-500">
+                                                    <div className="h-7 flex justify-between items-center">
+                                                        <span className="text-xs font-extrabold text-slate-800 truncate" title="६. भाग भांडवल (Shares)">६. भाग भांडवल (Shares)</span>
+                                                        <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.shares.statusColor)}`}>
                                                             {hasShares ? 'सुरू' : 'शून्य'}
                                                         </span>
                                                     </div>
-                                                    <div className="mt-3.5 flex justify-between items-end">
+                                                    <div className="h-10 mt-1 flex justify-between items-end">
                                                         <div>
-                                                            <div className="text-xs text-slate-500 font-semibold">फोलिओ: <span className="font-bold text-slate-700">{data.portfolio.shares.folioNo || '-'}</span></div>
-                                                            <div className="text-base md:text-lg font-black text-slate-800 mt-1">₹ {data.portfolio.shares.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                                                            <div className="text-[10px] text-slate-500 font-semibold leading-none">फोलिओ: <span className="font-bold text-slate-700">{data.portfolio.shares.folioNo || '-'}</span></div>
+                                                            <div className="text-sm font-black text-slate-900 leading-none mt-1">₹ {data.portfolio.shares.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                                                         </div>
                                                         <div className="text-right">
-                                                            <div className="text-[10px] text-slate-400 font-medium">शेअर्स संख्या</div>
-                                                            <div className="text-xs font-bold text-slate-600 mt-0.5 font-mono">{Math.floor(data.portfolio.shares.balance / 100)}</div>
+                                                            <div className="text-[9px] text-slate-400 font-medium leading-none">शेअर्स संख्या</div>
+                                                            <div className="text-[10px] font-bold text-slate-600 leading-none mt-1 font-mono">{Math.floor(data.portfolio.shares.balance / 100)}</div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="p-3 flex flex-col gap-1.5 text-xs text-primary font-semibold flex-1 justify-start">
-                                                    <button onClick={() => onNavigate('share-master', { memberId: selectedMemberId })} className={`text-left py-1.5 px-2.5 rounded-md hover:bg-purple-50 font-bold flex items-center justify-between hover:text-purple-700 cursor-pointer transition-colors ${!hasShares ? 'bg-purple-50/80 border border-purple-200 text-purple-800' : ''}`}>
-                                                        <span>{!hasShares ? '+ नवे भाग खरेदी / वाटप' : 'भाग खरेदी व वाटप (Allocation)'}</span> <ChevronRight size={14} />
-                                                    </button>
+                                                <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
+                                                    <div className="flex flex-col gap-1">
+                                                        <button 
+                                                            onClick={() => onNavigate('share-master', { memberId: selectedMemberId })} 
+                                                            className="w-full text-left py-1.5 px-2 rounded-md font-bold text-xs flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-purple-50/90 hover:bg-purple-100 text-purple-900 border-purple-200 hover:border-purple-300 group/btn"
+                                                        >
+                                                            <span className="truncate">{!hasShares ? '+ नवे भाग खरेदी / वाटप' : 'भाग खरेदी व वाटप'}</span> 
+                                                            <ChevronRight size={13} className="text-purple-600 group-hover/btn:translate-x-0.5 transition-transform shrink-0" />
+                                                        </button>
+
+                                                        {hasShares && (
+                                                            <>
+                                                                <button onClick={() => onNavigate('share-withdrawal', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-purple-50/50 border border-slate-200/90 hover:border-purple-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-purple-900">भाग हस्तांतरण व परतावा</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('shares-khatavani-report', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-purple-50/50 border border-slate-200/90 hover:border-purple-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-purple-900">भाग खाते खतावणी</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('sabhasad-labhansh-report', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-purple-50/50 border border-slate-200/90 hover:border-purple-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-purple-900">लाभांश जमा (Dividend)</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('i-namuna-report', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-purple-50/50 border border-slate-200/90 hover:border-purple-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-purple-900">आय नमुना शेअर रजिस्टर</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                                <button onClick={() => onNavigate('j-namuna-report', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[11px] text-slate-700 bg-white hover:bg-purple-50/50 border border-slate-200/90 hover:border-purple-200 shadow-2xs hover:shadow-xs flex items-center justify-between group/btn cursor-pointer transition-all duration-150">
+                                                                    <span className="truncate group-hover/btn:text-purple-900">जे नमुना सभासद यादी</span> 
+                                                                    <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
 
                                                     {hasShares && (
-                                                        <>
-                                                            <button onClick={() => onNavigate('share-withdrawal', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-purple-700 cursor-pointer transition-colors">
-                                                                <span>भाग हस्तांतरण व परतावा</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('shares-khatavani-report', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-purple-700 cursor-pointer transition-colors">
-                                                                <span>भाग खाते खतावणी (Ledger)</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('sabhasad-labhansh-report', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-purple-700 cursor-pointer transition-colors">
-                                                                <span>लाभांश जमा (Dividend)</span> <ChevronRight size={13} />
-                                                            </button>
-                                                            <button onClick={() => onNavigate('i-namuna-report', { memberId: selectedMemberId })} className="text-left py-1.5 px-2.5 rounded-md hover:bg-slate-100/80 flex items-center justify-between hover:text-purple-700 cursor-pointer transition-colors">
-                                                                <span>आय नमुना शेअर रजिस्टर</span> <ChevronRight size={13} />
-                                                            </button>
+                                                        <div className="pt-1.5 mt-auto">
                                                             <button 
                                                                 onClick={() => setActiveReportModule(prev => prev === 'shares' ? null : 'shares')} 
-                                                                className={`text-left py-1.5 px-2.5 rounded-md font-bold flex items-center justify-between cursor-pointer transition-all ${
+                                                                className={`w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between cursor-pointer transition-all duration-150 shadow-2xs ${
                                                                     activeReportModule === 'shares'
-                                                                        ? 'bg-purple-600 text-white shadow-xs' 
-                                                                        : 'bg-purple-50/80 border border-purple-200 text-purple-800 hover:bg-purple-100 hover:text-purple-900'
+                                                                        ? 'bg-purple-600 text-white shadow-purple-200' 
+                                                                        : 'bg-purple-50/90 border border-purple-200 text-purple-900 hover:bg-purple-100 hover:border-purple-300'
                                                                 }`}
                                                             >
-                                                                <span className="flex items-center gap-1.5">
-                                                                    <span>📊</span> शेअर्स रिपोर्ट (Shares Reports)
+                                                                <span className="flex items-center gap-1 truncate">
+                                                                    <span>📊</span> शेअर्स रिपोर्ट
                                                                 </span> 
-                                                                {activeReportModule === 'shares' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                {activeReportModule === 'shares' ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
                                                             </button>
-                                                        </>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>

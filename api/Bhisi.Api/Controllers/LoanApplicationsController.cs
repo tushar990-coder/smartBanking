@@ -76,15 +76,12 @@ namespace Bhisi.Api.Controllers
             {
                 var list = await _context.LoanApplications
                     .Include(a => a.Customer)
-                    .Include(a => a.Member)
-                    .Include(a => a.CoMember).ThenInclude(m => m!.Customer)
-                    .Include(a => a.CoMember2).ThenInclude(m => m!.Customer)
                     .Include(a => a.CoCustomer)
                     .Include(a => a.CoCustomer2)
                     .Include(a => a.LoanRate)
                     .Include(a => a.Guarantor1Customer)
                     .Include(a => a.Guarantor2Customer)
-                    .Include(a => a.RecommendedByDirector).ThenInclude(m => m!.Customer)
+                    .Include(a => a.RecommendedByDirector)
                     .OrderByDescending(a => a.ApplicationDate)
                     .ToListAsync();
 
@@ -106,15 +103,12 @@ namespace Bhisi.Api.Controllers
             {
                 var list = await _context.LoanApplications
                     .Include(a => a.Customer)
-                    .Include(a => a.Member)
-                    .Include(a => a.CoMember).ThenInclude(m => m!.Customer)
-                    .Include(a => a.CoMember2).ThenInclude(m => m!.Customer)
                     .Include(a => a.CoCustomer)
                     .Include(a => a.CoCustomer2)
                     .Include(a => a.LoanRate)
                     .Include(a => a.Guarantor1Customer)
                     .Include(a => a.Guarantor2Customer)
-                    .Include(a => a.RecommendedByDirector).ThenInclude(m => m!.Customer)
+                    .Include(a => a.RecommendedByDirector)
                     .OrderByDescending(a => a.ApplicationDate)
                     .ToListAsync();
 
@@ -135,15 +129,12 @@ namespace Bhisi.Api.Controllers
         {
             var loanApplication = await _context.LoanApplications
                 .Include(a => a.Customer)
-                .Include(a => a.Member)
-                .Include(a => a.CoMember).ThenInclude(m => m!.Customer)
-                .Include(a => a.CoMember2).ThenInclude(m => m!.Customer)
                 .Include(a => a.CoCustomer)
                 .Include(a => a.CoCustomer2)
                 .Include(a => a.LoanRate)
                 .Include(a => a.Guarantor1Customer)
                 .Include(a => a.Guarantor2Customer)
-                .Include(a => a.RecommendedByDirector).ThenInclude(m => m!.Customer)
+                .Include(a => a.RecommendedByDirector)
                 .FirstOrDefaultAsync(m => m.LoanApplicationID == id);
 
             if (loanApplication == null)
@@ -227,49 +218,60 @@ namespace Bhisi.Api.Controllers
             try
             {
                 // Sanitize 0 values to null for nullable foreign keys
-                if (loanApplication.CoMemberID.HasValue && loanApplication.CoMemberID.Value <= 0) loanApplication.CoMemberID = null;
-                if (loanApplication.CoMember2ID.HasValue && loanApplication.CoMember2ID.Value <= 0) loanApplication.CoMember2ID = null;
                 if (loanApplication.CoCustomerID.HasValue && loanApplication.CoCustomerID.Value <= 0) loanApplication.CoCustomerID = null;
                 if (loanApplication.CoCustomer2ID.HasValue && loanApplication.CoCustomer2ID.Value <= 0) loanApplication.CoCustomer2ID = null;
                 if (loanApplication.RecommendedByDirectorID.HasValue && loanApplication.RecommendedByDirectorID.Value <= 0) loanApplication.RecommendedByDirectorID = null;
                 if (loanApplication.Guarantor1CustomerID.HasValue && loanApplication.Guarantor1CustomerID.Value <= 0) loanApplication.Guarantor1CustomerID = null;
                 if (loanApplication.Guarantor2CustomerID.HasValue && loanApplication.Guarantor2CustomerID.Value <= 0) loanApplication.Guarantor2CustomerID = null;
 
-                // 1. Verify Primary Borrower Customer & Member Status
-                Customer? customer = null;
-                Member? borrower = null;
-
-                if (loanApplication.CustomerID.HasValue && loanApplication.CustomerID.Value > 0)
+                // 1. Verify Primary Borrower Customer Status
+                if (!loanApplication.CustomerID.HasValue || loanApplication.CustomerID.Value <= 0)
                 {
-                    customer = await _context.Customers.FindAsync(loanApplication.CustomerID.Value);
-                    if (customer == null) return BadRequest(new { message = "निवडलेला कर्जदार ग्राहक सिस्टीममध्ये अस्तित्वात नाही." });
-                    if (customer.Status != "Active") return BadRequest(new { message = $"कर्जदार ग्राहकाचे स्टेटस '{customer.Status}' असल्यामुळे नवीन कर्ज अर्ज करता येत नाही." });
-
-                    borrower = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
-                }
-                else if (loanApplication.MemberID.HasValue && loanApplication.MemberID.Value > 0)
-                {
-                    borrower = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == loanApplication.MemberID.Value);
-                    if (borrower == null) return BadRequest(new { message = "निवडलेला कर्जदार सभासद सिस्टीममध्ये अस्तित्वात नाही." });
-                    if (borrower.Status != "Active") return BadRequest(new { message = $"कर्जदार सभासदाचे स्टेटस '{borrower.Status}' असल्यामुळे नवीन कर्ज अर्ज करता येत नाही. केवळ सक्रिय (Active) सभासदांनाच कर्ज मंजूर करता येते." });
-
-                    if (borrower.CustomerID > 0) customer = await _context.Customers.FindAsync(borrower.CustomerID);
-                }
-                else
-                {
-                    return BadRequest(new { message = "कृपया कर्जदाराची (Customer / Member) निवड करा." });
+                    return BadRequest(new { message = "कृपया कर्जदाराची (Customer / CIF) निवड करा." });
                 }
 
-                loanApplication.CustomerID = customer?.CustomerID ?? (borrower?.CustomerID > 0 ? borrower.CustomerID : null);
-                loanApplication.MemberID = borrower?.MemberID;
+                var customer = await _context.Customers.FindAsync(loanApplication.CustomerID.Value);
+                if (customer == null) return BadRequest(new { message = "निवडलेला कर्जदार ग्राहक सिस्टीममध्ये अस्तित्वात नाही." });
+                if (customer.Status != "Active") return BadRequest(new { message = $"कर्जदार ग्राहकाचे स्टेटस '{customer.Status}' असल्यामुळे नवीन कर्ज अर्ज करता येत नाही. केवळ सक्रिय (Active) ग्राहकांनाच कर्ज अर्ज करता येतो." });
 
-                int targetBorrowerCustId = loanApplication.CustomerID ?? 0;
+                int targetBorrowerCustId = customer.CustomerID;
 
-                // 2. Prevent Self-Guarantee & Duplicate Guarantors
+                // 2. Validate Co-Borrowers
+                if (loanApplication.CoCustomerID.HasValue && loanApplication.CoCustomerID.Value > 0)
+                {
+                    if (loanApplication.CoCustomerID.Value == targetBorrowerCustId)
+                    {
+                        return BadRequest(new { message = "कर्जदार स्वतःच स्वतःचा सह-कर्जदार (Co-Borrower 1) असू शकत नाही." });
+                    }
+                    var coCust1 = await _context.Customers.FindAsync(loanApplication.CoCustomerID.Value);
+                    if (coCust1 == null || coCust1.Status != "Active")
+                    {
+                        return BadRequest(new { message = "सह-कर्जदार १ हा सक्रिय ग्राहक असणे आवश्यक आहे." });
+                    }
+                }
+
+                if (loanApplication.CoCustomer2ID.HasValue && loanApplication.CoCustomer2ID.Value > 0)
+                {
+                    if (loanApplication.CoCustomer2ID.Value == targetBorrowerCustId)
+                    {
+                        return BadRequest(new { message = "कर्जदार स्वतःच स्वतःचा सह-कर्जदार २ असू शकत नाही." });
+                    }
+                    if (loanApplication.CoCustomerID.HasValue && loanApplication.CoCustomer2ID.Value == loanApplication.CoCustomerID.Value)
+                    {
+                        return BadRequest(new { message = "सह-कर्जदार १ आणि सह-कर्जदार २ एकच व्यक्ती असू शकत नाहीत." });
+                    }
+                    var coCust2 = await _context.Customers.FindAsync(loanApplication.CoCustomer2ID.Value);
+                    if (coCust2 == null || coCust2.Status != "Active")
+                    {
+                        return BadRequest(new { message = "सह-कर्जदार २ हा सक्रिय ग्राहक असणे आवश्यक आहे." });
+                    }
+                }
+
+                // 3. Prevent Self-Guarantee & Duplicate Guarantors
                 // Check Guarantor 1
                 if (loanApplication.Guarantor1CustomerID.HasValue && loanApplication.Guarantor1CustomerID.Value > 0)
                 {
-                    if (targetBorrowerCustId > 0 && loanApplication.Guarantor1CustomerID.Value == targetBorrowerCustId)
+                    if (loanApplication.Guarantor1CustomerID.Value == targetBorrowerCustId)
                     {
                         return BadRequest(new { message = "कर्जदार स्वतःच स्वतःचा जामीनदार (Guarantor 1) असू शकत नाही." });
                     }
@@ -283,7 +285,7 @@ namespace Bhisi.Api.Controllers
                 // Check Guarantor 2
                 if (loanApplication.Guarantor2CustomerID.HasValue && loanApplication.Guarantor2CustomerID.Value > 0)
                 {
-                    if (targetBorrowerCustId > 0 && loanApplication.Guarantor2CustomerID.Value == targetBorrowerCustId)
+                    if (loanApplication.Guarantor2CustomerID.Value == targetBorrowerCustId)
                     {
                         return BadRequest(new { message = "कर्जदार स्वतःच स्वतःचा जामीनदार (Guarantor 2) असू शकत नाही." });
                     }
@@ -295,6 +297,16 @@ namespace Bhisi.Api.Controllers
                     if (gCust2 == null || gCust2.Status != "Active")
                     {
                         return BadRequest(new { message = "जामीनदार २ हा सक्रिय ग्राहक असणे आवश्यक आहे." });
+                    }
+                }
+
+                // 4. Validate Recommended Director if provided
+                if (loanApplication.RecommendedByDirectorID.HasValue && loanApplication.RecommendedByDirectorID.Value > 0)
+                {
+                    var dirCust = await _context.Customers.FindAsync(loanApplication.RecommendedByDirectorID.Value);
+                    if (dirCust == null)
+                    {
+                        return BadRequest(new { message = "शिफारस केलेले संचालक ग्राहक सिस्टीममध्ये अस्तित्वात नाहीत." });
                     }
                 }
 
@@ -345,8 +357,6 @@ namespace Bhisi.Api.Controllers
             try
             {
                 // Sanitize 0 values to null for nullable foreign keys
-                if (loanApplication.CoMemberID.HasValue && loanApplication.CoMemberID.Value <= 0) loanApplication.CoMemberID = null;
-                if (loanApplication.CoMember2ID.HasValue && loanApplication.CoMember2ID.Value <= 0) loanApplication.CoMember2ID = null;
                 if (loanApplication.CoCustomerID.HasValue && loanApplication.CoCustomerID.Value <= 0) loanApplication.CoCustomerID = null;
                 if (loanApplication.CoCustomer2ID.HasValue && loanApplication.CoCustomer2ID.Value <= 0) loanApplication.CoCustomer2ID = null;
                 if (loanApplication.RecommendedByDirectorID.HasValue && loanApplication.RecommendedByDirectorID.Value <= 0) loanApplication.RecommendedByDirectorID = null;

@@ -28,14 +28,6 @@ namespace Bhisi.Api.Models
         [ForeignKey("MemberID")]
         public Member? Member { get; set; }
 
-        public int? CoMemberID { get; set; }
-        [ForeignKey("CoMemberID")]
-        public Member? CoMember { get; set; }
-
-        public int? CoMember2ID { get; set; }
-        [ForeignKey("CoMember2ID")]
-        public Member? CoMember2 { get; set; }
-
         public int? CoCustomerID { get; set; }
         [ForeignKey("CoCustomerID")]
         public Customer? CoCustomer { get; set; }

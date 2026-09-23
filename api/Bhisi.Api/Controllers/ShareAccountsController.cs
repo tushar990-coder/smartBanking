@@ -2076,8 +2076,8 @@ namespace Bhisi.Api.Controllers
 
                     bool hasOtherShares = await _context.ShareAccounts.AnyAsync(s => s.ShareAccountId != account.ShareAccountId && s.MemberId == targetMemberId);
                     int? memCustId = member.CustomerID;
-                    bool hasLoans = await _context.LoanAccounts.AnyAsync(l => l.MemberID == targetMemberId || l.CoMemberID == targetMemberId || l.CoMember2ID == targetMemberId || (memCustId != null && (l.Guarantor1CustomerID == memCustId || l.Guarantor2CustomerID == memCustId)));
-                    bool hasLoanApps = await _context.LoanApplications.AnyAsync(l => l.MemberID == targetMemberId || l.CoMemberID == targetMemberId || (memCustId != null && (l.Guarantor1CustomerID == memCustId || l.Guarantor2CustomerID == memCustId)));
+                    bool hasLoans = await _context.LoanAccounts.AnyAsync(l => l.MemberID == targetMemberId || (memCustId != null && (l.CustomerID == memCustId || l.CoCustomerID == memCustId || l.CoCustomer2ID == memCustId || l.Guarantor1CustomerID == memCustId || l.Guarantor2CustomerID == memCustId)));
+                    bool hasLoanApps = await _context.LoanApplications.AnyAsync(l => memCustId != null && (l.CustomerID == memCustId || l.CoCustomerID == memCustId || l.CoCustomer2ID == memCustId || l.Guarantor1CustomerID == memCustId || l.Guarantor2CustomerID == memCustId));
                     bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID);
                     bool hasFds = await _context.FdAccounts.AnyAsync(f => member.CustomerID != null && f.CustomerID == member.CustomerID);
                     bool hasRds = await _context.RdAccounts.AnyAsync(r => member.CustomerID != null && r.CustomerID == member.CustomerID);

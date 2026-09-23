@@ -180,6 +180,15 @@ export default function PigmyCollectionMaster() {
     return name || '-';
   };
 
+  const format14DigitDisplay = (accNo: string) => {
+    if (!accNo) return '';
+    const d = accNo.replace(/\D/g, '');
+    if (d.length === 14) {
+      return `${d.substring(0, 3)}-${d.substring(3, 6)}-${d.substring(6, 13)}-${d.substring(13, 14)}`;
+    }
+    return accNo;
+  };
+
   // Filter accounts belonging to the selected agent
   const agentAccounts = accounts.filter(acc => {
     const accAgentId = acc.pigmyAgentID || getAgentId(acc.pigmyAgent) || getAgentId(acc.agent);
@@ -192,9 +201,12 @@ export default function PigmyCollectionMaster() {
     if (!sheetSearchTerm) return true;
     const query = sheetSearchTerm.toLowerCase();
     const accNo = (acc.accountNo || '').toLowerCase();
+    const formattedAccNo = format14DigitDisplay(acc.accountNo || '').toLowerCase();
+    const prevAccNo = ((acc as any).previousAccountNo || '').toLowerCase();
+    const legacyAccNo = ((acc as any).legacyAccountNumber || '').toLowerCase();
     const customerName = getCustomerFullName(acc.customer).toLowerCase();
     const mob = (acc.customer?.mobileNo || '').toLowerCase();
-    return accNo.includes(query) || customerName.includes(query) || mob.includes(query);
+    return accNo.includes(query) || formattedAccNo.includes(query) || prevAccNo.includes(query) || legacyAccNo.includes(query) || customerName.includes(query) || mob.includes(query);
   });
 
   // Calculate Sheet Totals
@@ -532,7 +544,10 @@ export default function PigmyCollectionMaster() {
                             {index + 1}
                           </td>
                           <td className="py-1.5 px-2.5 font-mono font-bold text-primary border-r border-gray-200">
-                            {acc.accountNo}
+                            <div>{format14DigitDisplay(acc.accountNo)}</div>
+                            {(acc as any).legacyAccountNumber && (
+                              <div className="text-[10px] text-amber-700 font-bold">जुना: {(acc as any).legacyAccountNumber}</div>
+                            )}
                           </td>
                           <td className="py-1.5 px-2.5 font-bold text-gray-900 border-r border-gray-200">
                             {customerName}

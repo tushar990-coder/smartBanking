@@ -60,6 +60,12 @@ namespace Bhisi.Api.Models
         [MaxLength(50)]
         public string? LegacyAccountNumber { get; set; }
 
+        [MaxLength(50)]
+        public string? PreviousAccountNo { get; set; }
+
+        [NotMapped]
+        public string? FormattedAccountNo { get; set; }
+
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     }

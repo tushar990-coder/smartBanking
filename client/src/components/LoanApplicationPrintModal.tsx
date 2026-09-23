@@ -213,12 +213,12 @@ const LoanApplicationPrintModal: React.FC<Props> = ({ application, onClose }) =>
               
               <div className="p-2 space-y-2">
                 {/* Co-Borrower (if present) */}
-                {(coMember1?.memberID || coMember2?.memberID) && (
+                {(coMember1?.customerID || coMember1?.cifNo || coMember1?.firstName || coMember2?.customerID || coMember2?.firstName) && (
                   <div className="bg-slate-50 p-1.5 rounded-xs border border-gray-400 text-[10px]">
                     <div className="font-bold text-black mb-0.5">सह-कर्जदार (Co-Borrower):</div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                       <div>नाव: <strong>{coMember1?.firstName} {coMember1?.lastName}</strong></div>
-                      <div>कोड: <strong className="font-mono">{coMember1?.memberCode || '-'}</strong></div>
+                      <div>CIF / कोड: <strong className="font-mono">{coMember1?.cifNo || coMember1?.memberCode || '-'}</strong></div>
                       <div>मोबाईल: <strong className="font-mono">{coMember1?.mobileNo || '-'}</strong></div>
                       <div>पत्ता: <strong>{coMember1?.address || coMember1?.village || '-'}</strong></div>
                     </div>
@@ -273,9 +273,9 @@ const LoanApplicationPrintModal: React.FC<Props> = ({ application, onClose }) =>
                   <span className="text-gray-600">तारण वर्णन / प्रकार: </span>
                   <strong className="text-black">{application?.securityDetails || 'वैयक्तिक हमी व जामीनदार बॉण्ड'}</strong>
                 </div>
-                {director?.memberID && (
+                {(director?.customerID || director?.firstName) && (
                   <div className="text-[10px] text-black bg-slate-50 p-1 rounded-xs border border-gray-400">
-                    शिफारस करणारे संचालक: <strong>{director?.firstName} {director?.lastName}</strong> (सभासद कोड: {director?.memberCode || '-'})
+                    शिफारस करणारे संचालक: <strong>{director?.firstName} {director?.lastName}</strong> {director?.cifNo ? `(CIF: ${director.cifNo})` : ''}
                   </div>
                 )}
               </div>

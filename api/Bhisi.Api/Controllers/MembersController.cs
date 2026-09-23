@@ -1163,7 +1163,7 @@ namespace Bhisi.Api.Controllers
 
             // Comprehensive active accounts & dependency check
             int? mCustId = member.CustomerID;
-            bool hasActiveLoans = await _context.LoanAccounts.AnyAsync(l => (l.MemberID == id || l.CoMemberID == id || l.CoMember2ID == id || (mCustId != null && (l.Guarantor1CustomerID == mCustId || l.Guarantor2CustomerID == mCustId))) && l.Status != "Closed");
+            bool hasActiveLoans = await _context.LoanAccounts.AnyAsync(l => (l.MemberID == id || (mCustId != null && (l.CustomerID == mCustId || l.CoCustomerID == mCustId || l.CoCustomer2ID == mCustId || l.Guarantor1CustomerID == mCustId || l.Guarantor2CustomerID == mCustId))) && l.Status != "Closed");
             bool hasActiveSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID && s.Status != "Closed");
             bool hasActiveFds = member.CustomerID != null && await _context.FdAccounts.AnyAsync(f => f.CustomerID == member.CustomerID && f.Status == "Active");
             bool hasActiveRds = member.CustomerID != null && await _context.RdAccounts.AnyAsync(r => r.CustomerID == member.CustomerID && r.Status == "Active");
@@ -1172,7 +1172,7 @@ namespace Bhisi.Api.Controllers
             bool hasActiveLockers = await _context.LockerAllotments.AnyAsync(l => l.MemberID == id && l.Status == "Allotted");
             bool isCommitteeMember = await _context.CommitteeMembers.AnyAsync(c => c.MemberID == id && c.Status == "Active");
             bool hasActiveLegalCases = await _context.Sec101CaseMasters.AnyAsync(c => c.MemberId == id && c.Status != "CLOSED_RECOVERED" && c.Status != "DISMISSED");
-            bool hasPendingLoanApps = await _context.LoanApplications.AnyAsync(a => (a.MemberID == id || (mCustId != null && (a.Guarantor1CustomerID == mCustId || a.Guarantor2CustomerID == mCustId))) && !_context.LoanAccounts.Any(l => l.LoanAccountNo == a.LoanAccountNo));
+            bool hasPendingLoanApps = await _context.LoanApplications.AnyAsync(a => mCustId != null && (a.CustomerID == mCustId || a.CoCustomerID == mCustId || a.CoCustomer2ID == mCustId || a.Guarantor1CustomerID == mCustId || a.Guarantor2CustomerID == mCustId) && !_context.LoanAccounts.Any(l => l.LoanAccountNo == a.LoanAccountNo));
             bool hasActiveJointMembers = await _context.JointMembers.AnyAsync(j => j.PrimaryMemberID == id && j.Status == "Active");
 
             if (hasActiveLoans || hasActiveSavings || hasActiveFds || hasActiveRds || hasActivePigmies || hasActiveShares || hasActiveLockers || isCommitteeMember || hasActiveLegalCases || hasPendingLoanApps || hasActiveJointMembers)
@@ -1727,60 +1727,38 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}/summary")]
         public async Task<IActionResult> GetGuarantorSummary(int id)
         {
-            var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id || m.CustomerID == id);
-            var customer = member?.Customer ?? await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == id);
-            if (member == null && customer == null)
+            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == id);
+            var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.CustomerID == id || m.MemberID == id);
+            if (customer == null && member?.Customer != null)
+            {
+                customer = member.Customer;
+            }
+
+            if (customer == null && member == null)
             {
                 return NotFound();
             }
 
-            int? targetCustId = customer?.CustomerID ?? member?.CustomerID;
+            int targetCustId = customer?.CustomerID ?? member?.CustomerID ?? id;
             int? targetMemberId = member?.MemberID;
-
-            var unlinkedAccounts = await _context.LoanAccounts
-                .Include(l => l.LoanApplication)
-                .Where(l => l.LoanApplication != null && (!l.Guarantor1CustomerID.HasValue || !l.Guarantor2CustomerID.HasValue))
-                .ToListAsync();
-
-            bool updatedUnlinked = false;
-            foreach (var acc in unlinkedAccounts)
-            {
-                if (acc.LoanApplication != null)
-                {
-                    if (!acc.Guarantor1CustomerID.HasValue && acc.LoanApplication.Guarantor1CustomerID.HasValue)
-                    {
-                        acc.Guarantor1CustomerID = acc.LoanApplication.Guarantor1CustomerID;
-                        updatedUnlinked = true;
-                    }
-                    if (!acc.Guarantor2CustomerID.HasValue && acc.LoanApplication.Guarantor2CustomerID.HasValue)
-                    {
-                        acc.Guarantor2CustomerID = acc.LoanApplication.Guarantor2CustomerID;
-                        updatedUnlinked = true;
-                    }
-                }
-            }
-            if (updatedUnlinked)
-            {
-                await _context.SaveChangesAsync();
-            }
 
             var sharesCount = targetMemberId.HasValue ? (await _context.ShareAccounts.Where(s => s.MemberId == targetMemberId.Value).SumAsync(s => (int?)s.TotalShareCount) ?? 0) : 0;
             var sharesBalance = targetMemberId.HasValue ? (await _context.ShareAccounts.Where(s => s.MemberId == targetMemberId.Value).SumAsync(s => (decimal?)s.TotalShareAmount) ?? 0) : 0;
-            var savingsBalance = targetCustId.HasValue
-                ? await _context.SavingAccountMasters.Where(s => s.CustomerID == targetCustId && s.Status == "Active").SumAsync(s => (decimal?)s.CurrentBalance) ?? 0
-                : 0;
+            var savingsBalance = await _context.SavingAccountMasters.Where(s => s.CustomerID == targetCustId && s.Status == "Active").SumAsync(s => (decimal?)s.CurrentBalance) ?? 0;
 
             var ownActiveLoans = await _context.LoanAccounts
+                .Include(l => l.Customer)
                 .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.LoanRate)
-                .Where(l => (targetCustId.HasValue && (l.CustomerID == targetCustId || l.CoCustomerID == targetCustId || l.CoCustomer2ID == targetCustId)) || (targetMemberId.HasValue && (l.MemberID == targetMemberId || l.CoMemberID == targetMemberId || l.CoMember2ID == targetMemberId)) && l.Status == "Active")
+                .Where(l => (l.CustomerID == targetCustId || l.CoCustomerID == targetCustId || l.CoCustomer2ID == targetCustId || (targetMemberId.HasValue && l.MemberID == targetMemberId)) && l.Status == "Active")
                 .ToListAsync();
 
             var activeGuaranteedLoans = await _context.LoanAccounts
+                .Include(l => l.Customer)
                 .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.LoanRate)
                 .Include(l => l.LoanApplication)
-                .Where(l => l.Status == "Active" && targetCustId != null && (
+                .Where(l => l.Status == "Active" && (
                     l.Guarantor1CustomerID == targetCustId ||
                     l.Guarantor2CustomerID == targetCustId ||
                     (l.LoanApplication != null && (l.LoanApplication.Guarantor1CustomerID == targetCustId || l.LoanApplication.Guarantor2CustomerID == targetCustId))
@@ -1793,23 +1771,25 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var ownPendingApps = await _context.LoanApplications
-                .Include(a => a.Member).ThenInclude(m => m!.Customer)
+                .Include(a => a.Customer)
                 .Include(a => a.LoanRate)
-                .Where(a => (a.MemberID == id || a.CoMemberID == id || a.CoMember2ID == id) && !disbursedLoanAppIds.Contains(a.LoanApplicationID))
+                .Where(a => (a.CustomerID == targetCustId || a.CoCustomerID == targetCustId || a.CoCustomer2ID == targetCustId) && !disbursedLoanAppIds.Contains(a.LoanApplicationID))
                 .ToListAsync();
 
             var pendingGuaranteedApps = await _context.LoanApplications
-                .Include(a => a.Member).ThenInclude(m => m!.Customer)
+                .Include(a => a.Customer)
                 .Include(a => a.LoanRate)
-                .Where(a => targetCustId != null && (a.Guarantor1CustomerID == targetCustId || a.Guarantor2CustomerID == targetCustId) && !disbursedLoanAppIds.Contains(a.LoanApplicationID))
+                .Where(a => (a.Guarantor1CustomerID == targetCustId || a.Guarantor2CustomerID == targetCustId) && !disbursedLoanAppIds.Contains(a.LoanApplicationID))
                 .ToListAsync();
 
             var ownLoansList = ownActiveLoans.Select(l => new
             {
                 loanAccountID = l.LoanAccountID,
                 loanAccountNo = l.LoanAccountNo,
-                borrowerName = l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
-                borrowerCode = l.Member?.MemberCode,
+                borrowerName = l.Customer != null 
+                    ? $"{l.Customer.FirstName} {l.Customer.MiddleName} {l.Customer.LastName}".Replace("  ", " ").Trim()
+                    : (l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Replace("  ", " ").Trim() : ""),
+                borrowerCode = l.Customer?.CIFNo ?? l.Member?.MemberCode,
                 loanType = l.LoanRate?.ShortName ?? l.LoanRate?.LoanType ?? "",
                 sanctionedAmount = l.SanctionedAmount,
                 currentBalance = l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance,
@@ -1820,8 +1800,8 @@ namespace Bhisi.Api.Controllers
             {
                 loanApplicationID = a.LoanApplicationID,
                 applicationNo = a.ApplicationNo,
-                borrowerName = a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.MiddleName} {a.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
-                borrowerCode = a.Member?.MemberCode,
+                borrowerName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.MiddleName} {a.Customer.LastName}".Replace("  ", " ").Trim() : "",
+                borrowerCode = a.Customer?.CIFNo ?? "",
                 loanType = a.LoanRate?.ShortName ?? a.LoanRate?.LoanType ?? "",
                 requestedAmount = a.RequestedAmount,
                 status = "Pending"
@@ -1831,8 +1811,10 @@ namespace Bhisi.Api.Controllers
             {
                 loanAccountID = l.LoanAccountID,
                 loanAccountNo = l.LoanAccountNo,
-                borrowerName = l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
-                borrowerCode = l.Member?.MemberCode,
+                borrowerName = l.Customer != null 
+                    ? $"{l.Customer.FirstName} {l.Customer.MiddleName} {l.Customer.LastName}".Replace("  ", " ").Trim()
+                    : (l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Replace("  ", " ").Trim() : ""),
+                borrowerCode = l.Customer?.CIFNo ?? l.Member?.MemberCode,
                 loanType = l.LoanRate?.ShortName ?? l.LoanRate?.LoanType ?? "",
                 sanctionedAmount = l.SanctionedAmount,
                 currentBalance = l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance,
@@ -1843,22 +1825,23 @@ namespace Bhisi.Api.Controllers
             {
                 loanApplicationID = a.LoanApplicationID,
                 applicationNo = a.ApplicationNo,
-                borrowerName = a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.MiddleName} {a.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
-                borrowerCode = a.Member?.MemberCode,
+                borrowerName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.MiddleName} {a.Customer.LastName}".Replace("  ", " ").Trim() : "",
+                borrowerCode = a.Customer?.CIFNo ?? "",
                 loanType = a.LoanRate?.ShortName ?? a.LoanRate?.LoanType ?? "",
                 requestedAmount = a.RequestedAmount,
                 status = "Pending"
             }).ToList();
 
-            var cust = member.Customer;
-            string memberName = cust != null ? $"{cust.FirstName} {cust.MiddleName} {cust.LastName}".Replace("  ", " ").Trim() : "Member";
+            var cust = customer ?? member?.Customer;
+            string memberName = cust != null ? $"{cust.FirstName} {cust.MiddleName} {cust.LastName}".Replace("  ", " ").Trim() : "Customer";
 
             var summary = new
             {
                 memberID = id,
+                customerID = targetCustId,
                 memberName = memberName,
-                memberCode = member.MemberCode,
-                cifNo = cust?.CIFNo ?? GenerateCifNo(member),
+                memberCode = member?.MemberCode ?? "",
+                cifNo = cust?.CIFNo ?? (member != null ? GenerateCifNo(member) : ""),
                 mobileNo = string.IsNullOrWhiteSpace(cust?.MobileNo) || cust.MobileNo == "0000000000" ? "-" : cust.MobileNo,
                 address = cust?.Address ?? "",
                 village = cust?.Village ?? "",
@@ -1888,38 +1871,30 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}/director-recommendation-summary")]
         public async Task<IActionResult> GetDirectorRecommendationSummary(int id)
         {
-            var director = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == id);
-            if (director == null)
+            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == id);
+            var director = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.CustomerID == id || m.MemberID == id);
+            if (customer == null && director?.Customer != null)
+            {
+                customer = director.Customer;
+            }
+
+            if (customer == null && director == null)
             {
                 return NotFound();
             }
 
-            var unlinkedAccounts = await _context.LoanAccounts
-                .Include(l => l.LoanApplication)
-                .Where(l => l.LoanApplication != null && !l.RecommendedByDirectorID.HasValue && l.LoanApplication.RecommendedByDirectorID.HasValue)
-                .ToListAsync();
-
-            bool updatedUnlinked = false;
-            foreach (var acc in unlinkedAccounts)
-            {
-                if (acc.LoanApplication != null && acc.LoanApplication.RecommendedByDirectorID.HasValue)
-                {
-                    acc.RecommendedByDirectorID = acc.LoanApplication.RecommendedByDirectorID;
-                    updatedUnlinked = true;
-                }
-            }
-            if (updatedUnlinked)
-            {
-                await _context.SaveChangesAsync();
-            }
+            int targetCustId = customer?.CustomerID ?? director?.CustomerID ?? id;
+            int? targetMemberId = director?.MemberID;
 
             var activeRecommendedLoans = await _context.LoanAccounts
+                .Include(l => l.Customer)
                 .Include(l => l.Member).ThenInclude(m => m!.Customer)
                 .Include(l => l.LoanRate)
                 .Include(l => l.LoanApplication)
                 .Where(l => l.Status == "Active" && (
-                    l.RecommendedByDirectorID == id ||
-                    (l.LoanApplication != null && l.LoanApplication.RecommendedByDirectorID == id)
+                    l.RecommendedByDirectorID == targetCustId ||
+                    (targetMemberId.HasValue && l.RecommendedByDirectorID == targetMemberId.Value) ||
+                    (l.LoanApplication != null && (l.LoanApplication.RecommendedByDirectorID == targetCustId || (targetMemberId.HasValue && l.LoanApplication.RecommendedByDirectorID == targetMemberId.Value)))
                 ))
                 .ToListAsync();
 
@@ -1929,17 +1904,19 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
 
             var pendingRecommendedApps = await _context.LoanApplications
-                .Include(a => a.Member).ThenInclude(m => m!.Customer)
+                .Include(a => a.Customer)
                 .Include(a => a.LoanRate)
-                .Where(a => a.RecommendedByDirectorID == id && !disbursedLoanAppIds.Contains(a.LoanApplicationID))
+                .Where(a => (a.RecommendedByDirectorID == targetCustId || (targetMemberId.HasValue && a.RecommendedByDirectorID == targetMemberId.Value)) && !disbursedLoanAppIds.Contains(a.LoanApplicationID))
                 .ToListAsync();
 
             var recommendedLoansList = activeRecommendedLoans.Select(l => new
             {
                 loanAccountID = l.LoanAccountID,
                 loanAccountNo = l.LoanAccountNo,
-                borrowerName = l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
-                borrowerCode = l.Member?.MemberCode,
+                borrowerName = l.Customer != null
+                    ? $"{l.Customer.FirstName} {l.Customer.MiddleName} {l.Customer.LastName}".Replace("  ", " ").Trim()
+                    : (l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Replace("  ", " ").Trim() : ""),
+                borrowerCode = l.Customer?.CIFNo ?? l.Member?.MemberCode,
                 loanType = l.LoanRate?.ShortName ?? l.LoanRate?.LoanType ?? "",
                 sanctionedAmount = l.SanctionedAmount,
                 currentBalance = l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance,
@@ -1950,22 +1927,23 @@ namespace Bhisi.Api.Controllers
             {
                 loanApplicationID = a.LoanApplicationID,
                 applicationNo = a.ApplicationNo,
-                borrowerName = a.Member?.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.MiddleName} {a.Member.Customer.LastName}".Replace("  ", " ").Trim() : "",
-                borrowerCode = a.Member?.MemberCode,
+                borrowerName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.MiddleName} {a.Customer.LastName}".Replace("  ", " ").Trim() : "",
+                borrowerCode = a.Customer?.CIFNo ?? "",
                 loanType = a.LoanRate?.ShortName ?? a.LoanRate?.LoanType ?? "",
                 requestedAmount = a.RequestedAmount,
                 status = "Pending"
             }).ToList();
 
-            var dCust = director.Customer;
+            var dCust = customer ?? director?.Customer;
             string directorName = dCust != null ? $"{dCust.FirstName} {dCust.MiddleName} {dCust.LastName}".Replace("  ", " ").Trim() : "Director";
 
             var summary = new
             {
                 memberID = id,
+                customerID = targetCustId,
                 directorName = directorName,
-                directorCode = director.MemberCode,
-                cifNo = dCust?.CIFNo ?? GenerateCifNo(director),
+                directorCode = director?.MemberCode ?? "",
+                cifNo = dCust?.CIFNo ?? (director != null ? GenerateCifNo(director) : ""),
                 mobileNo = string.IsNullOrWhiteSpace(dCust?.MobileNo) || dCust.MobileNo == "0000000000" ? "-" : dCust.MobileNo,
                 activeRecommendedLoansCount = activeRecommendedLoans.Count,
                 pendingRecommendedAppsCount = pendingRecommendedApps.Count,

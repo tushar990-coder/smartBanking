@@ -83,7 +83,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
     processingFeeLedgerID: '',
     interestRate: '',
     overdueInterestRate: '',
-    interestPostingType: 'कर्जावरती',
+    interestPostingType: 'कर्जावर',
     interestPostingFrequency: 'मासिक (Monthly)',
     interestCalculationMethod: 'Flat (फ्लॅट)',
     shortName: '',
@@ -204,7 +204,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       processingFeeLedgerID: '',
       interestRate: '',
       overdueInterestRate: '',
-      interestPostingType: 'कर्जावरती',
+      interestPostingType: 'कर्जावर',
       interestPostingFrequency: 'मासिक (Monthly)',
       interestCalculationMethod: 'Flat (फ्लॅट)',
       shortName: '',
@@ -305,8 +305,9 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       recoveryFeeLedgerID: rate.recoveryFeeLedgerID?.toString() || '',
       processingFeeLedgerID: rate.processingFeeLedgerID?.toString() || '',
       interestRate: rate.interestRate?.toString() || '',
-      overdueInterestRate: rate.overdueInterestRate?.toString() || '',
-      interestPostingType: rate.interestPostingType && !rate.interestPostingType.includes('?') && !rate.interestPostingType.includes('à') ? rate.interestPostingType : 'कर्जावरती',
+      interestPostingType: rate.interestPostingType && !rate.interestPostingType.includes('?') && !rate.interestPostingType.includes('à') 
+        ? (rate.interestPostingType.startsWith('कर्ज') ? 'कर्जावर' : rate.interestPostingType.includes('येणे') ? 'येणे व्याजावर' : rate.interestPostingType) 
+        : 'कर्जावर',
       interestPostingFrequency: rate.interestPostingFrequency && !rate.interestPostingFrequency.includes('?') && !rate.interestPostingFrequency.includes('à') ? rate.interestPostingFrequency : 'मासिक (Monthly)',
       interestCalculationMethod: rate.interestCalculationMethod && !rate.interestCalculationMethod.includes('?') && !rate.interestCalculationMethod.includes('à') ? rate.interestCalculationMethod : 'Reducing (घटती पद्धत)',
       shortName: rate.shortName || '',
@@ -404,7 +405,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       "कर्ज हप्ता प्रकार": rate.loanInstallmentType && !rate.loanInstallmentType.includes('?') && !rate.loanInstallmentType.includes('à') ? rate.loanInstallmentType : 'कर्जावरती',
       "व्याज आकारणी पद्धत": rate.interestCalculationMethod && !rate.interestCalculationMethod.includes('?') && !rate.interestCalculationMethod.includes('à') ? rate.interestCalculationMethod : 'Reducing (घटती पद्धत)',
       "पोस्टिंग वारंवारता": rate.interestPostingFrequency && !rate.interestPostingFrequency.includes('?') && !rate.interestPostingFrequency.includes('à') ? rate.interestPostingFrequency : 'मासिक (Monthly)',
-      "पोस्टिंग प्रकार": rate.interestPostingType && !rate.interestPostingType.includes('?') && !rate.interestPostingType.includes('à') ? rate.interestPostingType : 'कर्जावरती',
+      "पोस्टिंग प्रकार": rate.interestPostingType && !rate.interestPostingType.includes('?') && !rate.interestPostingType.includes('à') ? rate.interestPostingType : 'कर्जावर',
       "कर्ज खाते": getLedgerName(rate.loanLedgerID),
       "व्याज खाते": getLedgerName(rate.interestLedgerID),
       "थकीत व्याज खाते": getLedgerName(rate.overdueInterestLedgerID),
@@ -541,7 +542,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                         {rate.interestPostingFrequency && !rate.interestPostingFrequency.includes('?') && !rate.interestPostingFrequency.includes('à') ? rate.interestPostingFrequency : 'मासिक (Monthly)'}
                       </td>
                       <td className="p-1.5 border border-gray-800 text-left pl-2">
-                        {rate.interestPostingType && !rate.interestPostingType.includes('?') && !rate.interestPostingType.includes('à') ? rate.interestPostingType : 'कर्जावरती'}
+                        {rate.interestPostingType && !rate.interestPostingType.includes('?') && !rate.interestPostingType.includes('à') ? rate.interestPostingType : 'कर्जावर'}
                       </td>
                       <td className="p-1.5 border border-gray-800 text-left pl-2">{getLedgerName(rate.loanLedgerID)}</td>
                       <td className="p-1.5 border border-gray-800 text-left pl-2">{getLedgerName(rate.interestLedgerID)}</td>
@@ -832,10 +833,10 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
               </div>
 
               <div>
-                <label className={labelClass}>व्याज पोस्टींग प्रकार</label>
+                <label className={labelClass}>व्याज पोस्टींग प्रकार (Posting Type)</label>
                 <select name="interestPostingType" value={formData.interestPostingType} onChange={handleChange} className={inputClass}>
-                  <option value="कर्जावरती">कर्जावरती</option>
-                  <option value="मासिक">मासिक</option>
+                  <option value="कर्जावर">कर्जावर (मुद्दलामध्ये जमा / Capitalize to Loan)</option>
+                  <option value="येणे व्याजावर">येणे व्याजावर (येणे व्याज शिल्लक / Accrue to Receivable)</option>
                 </select>
               </div>
             </div>

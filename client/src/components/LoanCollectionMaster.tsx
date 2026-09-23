@@ -1280,7 +1280,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     <th className="p-1 border-r border-gray-300 text-primary font-bold">हप्त्याची रक्कम</th>
                                     <th className="p-1 border-r border-gray-300">व्याज दर (%)</th>
                                     <th className="p-1 border-r border-gray-300">येणे बाकी</th>
-                                    <th className="p-1 border-r border-gray-300">वसुलपात्र</th>
+                                    <th className="p-1 border-r border-gray-300">राहिलेला हप्ता (₹)</th>
                                     <th className="p-1 border-r border-gray-300 text-rose-700 bg-rose-50 font-bold">थकीत हफ्ते</th>
                                     <th className="p-1 border-r border-gray-300 text-rose-700">थकीत हप्ता दिनांक</th>
                                     <th className="p-1 border-r border-gray-300 bg-rose-50 text-rose-700">पैकी थकबाकी</th>
@@ -1291,7 +1291,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     <th className="p-1 border-r border-gray-300">वसुली फी</th>
                                     <th className="p-1 border-r border-gray-300">दिवस</th>
                                     <th className="p-1 border-r border-gray-300 font-bold text-primary">शिल्लक कर्ज रक्कम</th>
-                                    <th className="p-1 bg-amber-100 text-amber-900 font-bold">एकूण वसुलपात्र</th>
+                                    <th className="p-1 bg-amber-100 text-amber-900 font-bold">एकूण देय रक्कम (₹)</th>
                                 </tr>
                             </thead>
                             <tbody>

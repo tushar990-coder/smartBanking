@@ -86,6 +86,7 @@ export default function LoanOpeningBalanceMaster() {
   const [allAccounts, setAllAccounts] = useState<LoanOpeningBalance[]>([]);
   const [showAllLoans, setShowAllLoans] = useState(false);
   const [showListModal, setShowListModal] = useState(false);
+  const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [loanRates, setLoanRates] = useState<LoanRate[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
@@ -970,190 +971,214 @@ export default function LoanOpeningBalanceMaster() {
         </span>
       </div>
 
-      {/* Main Single Form Container */}
-      <div ref={formContainerRef} className="flex flex-col lg:flex-row gap-3">
-        
-        {/* Left Form Section */}
-        <div className="w-full lg:w-7/12">
-          <form onSubmit={handleSubmit} className="space-y-2.5">
-            
-            {/* Section 1: Basic Info */}
-            <div className={`p-3 rounded-sm shadow-xs border transition-all duration-300 ${
-              isEditing ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'bg-white border-gray-200 border-t-2 border-primary'
-            }`}>
-              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2.5">
-                <Users className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">१. प्राथमिक व सभासद माहिती (Basic Details)</h2>
+      {/* Main Single Form Container (Full Width Clean Layout) */}
+      <div ref={formContainerRef} className="w-full">
+        <form onSubmit={handleSubmit} className="space-y-3">
+          
+          {/* Section 1: Basic Info */}
+          <div className={`p-3 rounded-sm shadow-xs border transition-all duration-300 ${
+            isEditing ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'bg-white border-gray-200 border-t-2 border-primary'
+          }`}>
+            <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2.5">
+              <Users className="w-4 h-4 text-primary" />
+              <h2 className="text-xs font-bold text-primary">१. प्राथमिक व सभासद माहिती (Basic Details)</h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-x-2.5 gap-y-2.5">
+              <div className="lg:col-span-1 sm:col-span-1">
+                <label className={labelClass}>शाखा (Branch) <span className="text-red-500">*</span></label>
+                <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass} required disabled={isEditing}>
+                  {branches.map(b => (
+                    <option key={b.branchID} value={b.branchID.toString()}>{b.branchName}</option>
+                  ))}
+                </select>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-x-2 gap-y-2.5">
-                <div className="md:col-span-2">
-                  <label className={labelClass}>शाखा (Branch) <span className="text-red-500">*</span></label>
-                  <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass} required disabled={isEditing}>
-                    {branches.map(b => (
-                      <option key={b.branchID} value={b.branchID.toString()}>{b.branchName}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="md:col-span-4">
-                  <label className={labelClass}>सभासद (Member) <span className="text-red-500">*</span></label>
-                  <SearchableSelect name="memberID" value={formData.memberID} onChange={handleChange} options={memberOptions} disabled={isEditing} />
-                </div>
-                <div className="md:col-span-2">
-                  <label className={labelClass}>कर्ज प्रकार (Loan Type) <span className="text-red-500">*</span></label>
-                  <SearchableSelect name="loanRateID" value={formData.loanRateID} onChange={handleChange} options={loanRateOptions} disabled={isEditing} />
-                </div>
-                <div className="md:col-span-2">
-                  <label className={labelClass}>कर्ज खाते क्र. (Auto) <span className="text-red-500">*</span></label>
-                  <input type="text" name="loanAccountNo" value={format14DigitDisplay(formData.loanAccountNo)} readOnly className={`${inputClass} bg-slate-100 cursor-not-allowed font-bold text-primary`} placeholder="उदा. 001-201-0000001-0" required />
-                </div>
-                <div className="md:col-span-2">
-                  <label className={labelClass}>जुना कर्ज खाते क्र. (Old A/C)</label>
-                  <input type="text" name="legacyAccountNumber" value={formData.legacyAccountNumber} onChange={handleChange} className={inputClass} placeholder="उदा. OLD-101" />
-                </div>
+              <div className="lg:col-span-2 sm:col-span-2">
+                <label className={labelClass}>सभासद (Member) <span className="text-red-500">*</span></label>
+                <SearchableSelect name="memberID" value={formData.memberID} onChange={handleChange} options={memberOptions} disabled={isEditing} />
+              </div>
+              <div className="lg:col-span-1 sm:col-span-1">
+                <label className={labelClass}>कर्ज प्रकार (Loan Type) <span className="text-red-500">*</span></label>
+                <SearchableSelect name="loanRateID" value={formData.loanRateID} onChange={handleChange} options={loanRateOptions} disabled={isEditing} />
+              </div>
+              <div className="lg:col-span-1 sm:col-span-1">
+                <label className={labelClass}>कर्ज खाते क्र. (Auto) <span className="text-red-500">*</span></label>
+                <input type="text" name="loanAccountNo" value={format14DigitDisplay(formData.loanAccountNo)} readOnly className={`${inputClass} bg-slate-100 cursor-not-allowed font-bold text-primary`} placeholder="उदा. 001-201-0000001-0" required />
+              </div>
+              <div className="lg:col-span-1 sm:col-span-1">
+                <label className={labelClass}>जुना कर्ज खाते क्र. (Old A/C)</label>
+                <input type="text" name="legacyAccountNumber" value={formData.legacyAccountNumber} onChange={handleChange} className={inputClass} placeholder="उदा. OLD-101" />
               </div>
             </div>
+          </div>
 
-            {/* Section 2: Loan Terms */}
-            <div className="bg-white p-3 rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary">
-              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2.5">
+          {/* Section 2: Loan Terms */}
+          <div className="bg-white p-3 rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary">
+            <div className="flex flex-wrap items-center justify-between border-b border-gray-200 pb-1.5 mb-2.5 gap-2">
+              <div className="flex items-center gap-1.5">
                 <CreditCard className="w-4 h-4 text-primary" />
                 <h2 className="text-xs font-bold text-primary">२. कर्ज व परतफेड माहिती (Loan Terms)</h2>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-2.5 gap-y-2.5">
-                <div>
-                  <label className={labelClass}>कर्ज उचल दिनांक</label>
-                  <input type="date" name="loanDisbursementDate" value={formData.loanDisbursementDate} onChange={handleChange} max={cutoffDate} className={inputClass} />
-                </div>
-                <div>
-                  <label className={labelClass}>कर्ज मंजूर रक्कम</label>
-                  <input type="number" step="0.01" name="sanctionedAmount" value={formData.sanctionedAmount} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-gray-900`} placeholder="0.00" />
-                </div>
-                <div>
-                  <label className={labelClass}>व्याज दर (%)</label>
-                  <input type="number" step="0.01" name="interestRate" value={formData.interestRate} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-gray-900`} placeholder="0.00" />
-                </div>
-                <div>
-                  <label className={labelClass}>मुदत (महिने)</label>
-                  <input type="number" name="durationMonths" value={formData.durationMonths} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-gray-900`} placeholder="0" />
-                </div>
-                <div>
-                  <label className={labelClass}>हप्ता प्रकार</label>
-                  <select name="installmentFrequency" value={formData.installmentFrequency} onChange={handleChange} className={inputClass}>
-                    <option value="साप्ताहिक">साप्ताहिक</option>
-                    <option value="मासिक">मासिक</option>
-                    <option value="त्रैमासिक">त्रैमासिक</option>
-                    <option value="सहामाही">सहामाही</option>
-                    <option value="वार्षिक">वार्षिक</option>
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>हप्ता संख्या</label>
-                  <input 
-                    type="number" 
-                    name="noOfInstallments" 
-                    value={formData.noOfInstallments} 
-                    onChange={handleChange} 
-                    onFocus={(e) => e.target.select()} 
-                    className={`${inputClass} font-bold text-gray-900 font-mono`} 
-                    placeholder="0" 
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>हप्ता रक्कम</label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    name="installmentAmount" 
-                    value={formData.installmentAmount} 
-                    onChange={handleChange} 
-                    onFocus={(e) => e.target.select()} 
-                    className={`${inputClass} bg-amber-50/70 font-bold text-primary font-mono`} 
-                    placeholder="0.00" 
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>पहिली हप्ता दिनांक</label>
-                  <input type="date" name="firstInstallmentDate" value={formData.firstInstallmentDate} onChange={handleChange} className={inputClass} />
-                </div>
-                <div>
-                  <label className={labelClass}>कर्ज परतफेड दिनांक (Maturity)</label>
-                  <input type="date" name="maturityDate" value={formData.maturityDate} onChange={handleChange} className={inputClass} />
-                </div>
-                <div>
-                  <label className={labelClass}>शेवटचा हप्ता भरल्याची दिनांक</label>
-                  <input type="date" name="lastInstallmentPaidDate" value={formData.lastInstallmentPaidDate} onChange={handleChange} max={cutoffDate} className={inputClass} />
-                </div>
+              <button
+                type="button"
+                onClick={() => setShowInstallmentModal(true)}
+                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1 rounded-sm text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                title="हप्ता परतफेड वेळापत्रक व हप्ता चार्ट पहा"
+              >
+                <Scale className="w-3.5 h-3.5 text-indigo-600" />
+                <span>📊 हप्ता चार्ट पहा (Installment Chart)</span>
+                {installmentChart.length > 0 && (
+                  <span className="bg-indigo-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold">
+                    {installmentChart.length} हप्ते
+                  </span>
+                )}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-x-2.5 gap-y-2.5">
+              <div>
+                <label className={labelClass}>कर्ज उचल दिनांक</label>
+                <input type="date" name="loanDisbursementDate" value={formData.loanDisbursementDate} onChange={handleChange} max={cutoffDate} className={inputClass} />
+              </div>
+              <div>
+                <label className={labelClass}>कर्ज मंजूर रक्कम</label>
+                <input type="number" step="0.01" name="sanctionedAmount" value={formData.sanctionedAmount} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-gray-900`} placeholder="0.00" />
+              </div>
+              <div>
+                <label className={labelClass}>व्याज दर (%)</label>
+                <input type="number" step="0.01" name="interestRate" value={formData.interestRate} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-gray-900`} placeholder="0.00" />
+              </div>
+              <div>
+                <label className={labelClass}>मुदत (महिने)</label>
+                <input type="number" name="durationMonths" value={formData.durationMonths} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-gray-900`} placeholder="0" />
+              </div>
+              <div>
+                <label className={labelClass}>हप्ता प्रकार</label>
+                <select name="installmentFrequency" value={formData.installmentFrequency} onChange={handleChange} className={inputClass}>
+                  <option value="साप्ताहिक">साप्ताहिक</option>
+                  <option value="मासिक">मासिक</option>
+                  <option value="त्रैमासिक">त्रैमासिक</option>
+                  <option value="सहामाही">सहामाही</option>
+                  <option value="वार्षिक">वार्षिक</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>हप्ता संख्या</label>
+                <input 
+                  type="number" 
+                  name="noOfInstallments" 
+                  value={formData.noOfInstallments} 
+                  onChange={handleChange} 
+                  onFocus={(e) => e.target.select()} 
+                  className={`${inputClass} font-bold text-gray-900 font-mono`} 
+                  placeholder="0" 
+                />
+              </div>
+              <div>
+                <label className={labelClass}>हप्ता रक्कम</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  name="installmentAmount" 
+                  value={formData.installmentAmount} 
+                  onChange={handleChange} 
+                  onFocus={(e) => e.target.select()} 
+                  className={`${inputClass} bg-amber-50/70 font-bold text-primary font-mono`} 
+                  placeholder="0.00" 
+                />
+              </div>
+              <div>
+                <label className={labelClass}>पहिली हप्ता दिनांक</label>
+                <input type="date" name="firstInstallmentDate" value={formData.firstInstallmentDate} onChange={handleChange} className={inputClass} />
+              </div>
+              <div>
+                <label className={labelClass}>कर्ज परतफेड दिनांक (Maturity)</label>
+                <input type="date" name="maturityDate" value={formData.maturityDate} onChange={handleChange} className={inputClass} />
+              </div>
+              <div>
+                <label className={labelClass}>शेवटचा हप्ता भरल्याची दिनांक</label>
+                <input type="date" name="lastInstallmentPaidDate" value={formData.lastInstallmentPaidDate} onChange={handleChange} max={cutoffDate} className={inputClass} />
               </div>
             </div>
+          </div>
 
-            {/* Section 3: Outstanding Balances & Security */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                
-                {/* Balances */}
-                <div className="bg-primary/5 p-3 rounded-sm shadow-xs border border-primary/20">
-                    <div className="flex items-center gap-1.5 border-b border-primary/20 pb-1.5 mb-2">
-                      <Wallet className="w-4 h-4 text-primary" />
-                      <h2 className="text-xs font-bold text-primary">३. बाकी रक्कम (Outstanding Balances)</h2>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className={labelClass}>मुद्दल बाकी (Principal) <span className="text-red-500">*</span></label>
-                            <input type="number" step="0.01" name="principalBalance" value={formData.principalBalance} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-emerald-800 ${isEditing ? 'bg-slate-100' : ''}`} placeholder="0.00" required disabled={isEditing} />
-                        </div>
-                        <div>
-                            <label className={labelClass}>येणे व्याज बाकी (Interest)</label>
-                            <input 
-                              ref={interestBalanceInputRef}
-                              type="number" 
-                              step="0.01" 
-                              name="interestBalance" 
-                              value={formData.interestBalance} 
-                              onChange={handleChange} 
-                              onFocus={(e) => e.target.select()} 
-                              className={`${inputClass} font-bold text-amber-800 ${isEditing ? 'border-primary bg-amber-50/40' : ''}`} 
-                              placeholder="0.00" 
-                            />
-                        </div>
-                        <div>
-                            <label className={labelClass}>थकीत व्याज (Overdue Int)</label>
-                            <input type="number" step="0.01" name="overdueInterestBalance" value={formData.overdueInterestBalance} onChange={handleChange} onFocus={(e) => e.target.select()} className={inputClass} placeholder="0.00" />
-                        </div>
-                        <div>
-                            <label className={labelClass}>बाकी दिनांक (As of Date) <span className="text-red-500">*</span></label>
-                            <input type="date" name="openingDate" value={formData.openingDate} onChange={handleChange} max={cutoffDate} className={`${inputClass} ${isEditing ? 'bg-slate-100' : ''}`} required disabled={isEditing} />
-                        </div>
-                    </div>
-                </div>
+          {/* Section 3: Outstanding Balances & Security */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              
+              {/* Balances */}
+              <div className="bg-primary/5 p-3 rounded-sm shadow-xs border border-primary/20">
+                  <div className="flex items-center gap-1.5 border-b border-primary/20 pb-1.5 mb-2">
+                    <Wallet className="w-4 h-4 text-primary" />
+                    <h2 className="text-xs font-bold text-primary">३. बाकी रक्कम (Outstanding Balances)</h2>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                          <label className={labelClass}>मुद्दल बाकी (Principal) <span className="text-red-500">*</span></label>
+                          <input type="number" step="0.01" name="principalBalance" value={formData.principalBalance} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-emerald-800 ${isEditing ? 'bg-slate-100' : ''}`} placeholder="0.00" required disabled={isEditing} />
+                      </div>
+                      <div>
+                          <label className={labelClass}>येणे व्याज बाकी (Interest)</label>
+                          <input 
+                            ref={interestBalanceInputRef}
+                            type="number" 
+                            step="0.01" 
+                            name="interestBalance" 
+                            value={formData.interestBalance} 
+                            onChange={handleChange} 
+                            onFocus={(e) => e.target.select()} 
+                            className={`${inputClass} font-bold text-amber-800 ${isEditing ? 'border-primary bg-amber-50/40' : ''}`} 
+                            placeholder="0.00" 
+                          />
+                      </div>
+                      <div>
+                          <label className={labelClass}>थकीत व्याज (Overdue Int)</label>
+                          <input type="number" step="0.01" name="overdueInterestBalance" value={formData.overdueInterestBalance} onChange={handleChange} onFocus={(e) => e.target.select()} className={inputClass} placeholder="0.00" />
+                      </div>
+                      <div>
+                          <label className={labelClass}>बाकी दिनांक (As of Date) <span className="text-red-500">*</span></label>
+                          <input type="date" name="openingDate" value={formData.openingDate} onChange={handleChange} max={cutoffDate} className={`${inputClass} ${isEditing ? 'bg-slate-100' : ''}`} required disabled={isEditing} />
+                      </div>
+                  </div>
+              </div>
 
-                {/* Security & Guarantor */}
-                <div className="bg-white p-3 rounded-sm shadow-xs border border-gray-200">
-                    <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
-                      <ShieldCheck className="w-4 h-4 text-primary" />
-                      <h2 className="text-xs font-bold text-primary">४. तारण व जामीनदार (Guarantor & Security)</h2>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className={labelClass}>जामीनदार १ (Guarantor 1)</label>
-                            <SearchableSelect name="guarantor1" value={formData.guarantor1} onChange={handleChange} options={guarantorOptions} placeholder="जामीनदार निवडा..." />
-                        </div>
-                        <div>
-                            <label className={labelClass}>जामीनदार २ (Guarantor 2)</label>
-                            <SearchableSelect name="guarantor2" value={formData.guarantor2} onChange={handleChange} options={guarantorOptions} placeholder="जामीनदार निवडा..." />
-                        </div>
-                        <div>
-                            <label className={labelClass}>तारण (Security Item)</label>
-                            <input type="text" name="securityDetails" value={formData.securityDetails} onChange={handleChange} className={inputClass} placeholder="उदा. सोने, वाहन, घर..." />
-                        </div>
-                        <div>
-                            <label className={labelClass}>तारण मूल्य (Security Value)</label>
-                            <input type="number" step="0.01" name="securityValue" value={formData.securityValue} onChange={handleChange} className={inputClass} placeholder="0.00" />
-                        </div>
-                    </div>
-                </div>
+              {/* Security & Guarantor */}
+              <div className="bg-white p-3 rounded-sm shadow-xs border border-gray-200">
+                  <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                    <ShieldCheck className="w-4 h-4 text-primary" />
+                    <h2 className="text-xs font-bold text-primary">४. तारण व जामीनदार (Guarantor & Security)</h2>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                          <label className={labelClass}>जामीनदार १ (Guarantor 1)</label>
+                          <SearchableSelect name="guarantor1" value={formData.guarantor1} onChange={handleChange} options={guarantorOptions} placeholder="जामीनदार निवडा..." />
+                      </div>
+                      <div>
+                          <label className={labelClass}>जामीनदार २ (Guarantor 2)</label>
+                          <SearchableSelect name="guarantor2" value={formData.guarantor2} onChange={handleChange} options={guarantorOptions} placeholder="जामीनदार निवडा..." />
+                      </div>
+                      <div>
+                          <label className={labelClass}>तारण (Security Item)</label>
+                          <input type="text" name="securityDetails" value={formData.securityDetails} onChange={handleChange} className={inputClass} placeholder="उदा. सोने, वाहन, घर..." />
+                      </div>
+                      <div>
+                          <label className={labelClass}>तारण मूल्य (Security Value)</label>
+                          <input type="number" step="0.01" name="securityValue" value={formData.securityValue} onChange={handleChange} className={inputClass} placeholder="0.00" />
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          {/* Form Footer Action Buttons */}
+          <div className="pt-2 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <button 
+                type="button" 
+                onClick={() => setShowInstallmentModal(true)} 
+                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3.5 py-2 rounded-sm font-bold shadow-2xs transition-colors text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Scale className="w-3.5 h-3.5 text-indigo-600" />
+                <span>📊 हप्ता चार्ट पहा ({installmentChart.length} हप्ते)</span>
+              </button>
             </div>
-
-            {/* Form Footer Action Buttons */}
-            <div className="pt-2 border-t border-gray-200 flex flex-wrap justify-end gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button 
                 type="button" 
                 onClick={handleNew} 
@@ -1172,36 +1197,82 @@ export default function LoanOpeningBalanceMaster() {
                 <span>{isEditing ? 'बदल सेव्ह करा (Update)' : 'नोंद सेव्ह करा (Save)'}</span>
               </button>
             </div>
-
-          </form>
-        </div>
-
-        {/* Right Side: Installment Chart Preview */}
-        <div className="w-full lg:w-5/12 bg-white p-3 rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary flex flex-col h-[520px]">
-          <div className="flex items-center justify-between border-b border-gray-200 pb-1.5 mb-2">
-            <h2 className="text-xs font-bold text-primary flex items-center gap-1.5">
-              <Scale className="w-4 h-4 text-primary" />
-              <span>हप्ता चार्ट (Installment Chart)</span>
-            </h2>
-            <span className="text-[10px] text-gray-500 font-mono">
-              हप्ते: {installmentChart.length}
-            </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto border border-gray-200 rounded-sm">
-            <table className="min-w-full divide-y divide-gray-200 text-[10px] text-center">
-              <thead className="bg-slate-100 sticky top-0 shadow-2xs font-bold text-gray-700">
-                <tr>
-                  <th className="px-1 py-1.5 border-r border-gray-200 w-8">क्र.</th>
-                  <th className="px-1.5 py-1.5 border-r border-gray-200">हप्ता दिनांक</th>
-                  <th className="px-1.5 py-1.5 border-r border-gray-200 text-right">मुद्दल (₹)</th>
-                  <th className="px-1.5 py-1.5 border-r border-gray-200 text-right">व्याज (₹)</th>
-                  <th className="px-1.5 py-1.5 border-r border-gray-200 text-right">एकूण (₹)</th>
-                  <th className="px-1.5 py-1.5 text-right">बाकी शिल्लक (₹)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {installmentChart.map((row) => {
+        </form>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* POP-UP MODAL: INSTALLMENT CHART & EMI SCHEDULE                             */}
+      {/* ========================================================================= */}
+      {showInstallmentModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
+              <div className="flex items-center gap-2">
+                <Scale className="w-5 h-5 text-white" />
+                <div>
+                  <h2 className="text-sm font-bold flex items-center gap-2">
+                    <span>हप्ता परतफेड वेळापत्रक व हप्ता चार्ट (Installment Schedule & EMI Chart)</span>
+                    <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
+                      {installmentChart.length} हप्ते
+                    </span>
+                  </h2>
+                  <div className="text-[10px] text-white/80 font-normal">
+                    खाते क्र.: {format14DigitDisplay(formData.loanAccountNo) || '-'} | सभासद: {members.find(m => m.memberID.toString() === formData.memberID)?.firstName || '-'}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInstallmentModal(false)}
+                className="text-white/80 hover:text-white hover:bg-white/10 p-1 rounded-sm transition-colors cursor-pointer"
+                title="बंद करा (Close)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Summary KPI Badges */}
+            <div className="p-3 bg-slate-50 border-b border-gray-200 grid grid-cols-2 sm:grid-cols-4 gap-2 shrink-0">
+              <div className="p-2 bg-white border border-slate-200 rounded-sm shadow-2xs">
+                <div className="text-[10px] text-gray-500 font-bold uppercase">मंजूर कर्ज रक्कम</div>
+                <div className="text-xs font-black text-indigo-950 font-mono">₹ {(parseFloat(formData.sanctionedAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+              </div>
+              <div className="p-2 bg-white border border-slate-200 rounded-sm shadow-2xs">
+                <div className="text-[10px] text-gray-500 font-bold uppercase">व्याज दर / मुदत</div>
+                <div className="text-xs font-black text-slate-800 font-mono">{formData.interestRate || '0'}% | {formData.durationMonths || '0'} महिने</div>
+              </div>
+              <div className="p-2 bg-white border border-slate-200 rounded-sm shadow-2xs">
+                <div className="text-[10px] text-gray-500 font-bold uppercase">हप्ता प्रकार / हप्ता रक्कम</div>
+                <div className="text-xs font-black text-primary font-mono">{formData.installmentFrequency} | ₹ {(parseFloat(formData.installmentAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+              </div>
+              <div className="p-2 bg-white border border-slate-200 rounded-sm shadow-2xs">
+                <div className="text-[10px] text-gray-500 font-bold uppercase">एकूण परतफेड देय</div>
+                <div className="text-xs font-black text-emerald-800 font-mono">
+                  ₹ {Math.round(installmentChart.reduce((acc, curr) => acc + (parseFloat(curr.total) || 0), 0)).toLocaleString('en-IN')}
+                </div>
+              </div>
+            </div>
+
+            {/* Installment Table */}
+            <div className="flex-1 overflow-y-auto p-3">
+              <table className="min-w-full divide-y divide-gray-200 text-xs text-center border border-gray-200 rounded-sm">
+                <thead className="bg-slate-100 sticky top-0 shadow-2xs font-bold text-gray-700">
+                  <tr>
+                    <th className="px-2 py-2 border-r border-gray-200 w-12">हप्ता क्र.</th>
+                    <th className="px-2 py-2 border-r border-gray-200">हप्ता दिनांक</th>
+                    <th className="px-2 py-2 border-r border-gray-200 text-right">मुद्दल (₹)</th>
+                    <th className="px-2 py-2 border-r border-gray-200 text-right">व्याज (₹)</th>
+                    <th className="px-2 py-2 border-r border-gray-200 text-right">एकूण हप्ता (₹)</th>
+                    <th className="px-2 py-2 border-r border-gray-200 text-right">बाकी शिल्लक (₹)</th>
+                    <th className="px-2 py-2">स्थिती</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {installmentChart.map((row) => {
                     const repaidPrincipal = (parseFloat(formData.sanctionedAmount) || 0) - (parseFloat(formData.principalBalance) || 0);
                     let isPaid = false;
                     let isOverdue = false;
@@ -1233,51 +1304,50 @@ export default function LoanOpeningBalanceMaster() {
 
                     return (
                       <tr key={row.no} className={rowClass.trim()}>
-                        <td className="px-1 py-1 border-r border-gray-200 font-mono">{row.no}</td>
-                        <td className="px-1.5 py-1 border-r border-gray-200 font-mono">{row.date}</td>
-                        <td className="px-1.5 py-1 border-r border-gray-200 text-right font-mono text-gray-800">{Math.round(row.principalValue || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-1.5 py-1 border-r border-gray-200 text-right text-rose-600 font-mono">{Math.round(parseFloat(row.interest) || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-1.5 py-1 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono">{Math.round(parseFloat(row.total) || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-1.5 py-1 text-right text-gray-700 font-mono">{Math.round(parseFloat(row.balance) || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 font-mono font-bold">{row.no}</td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 font-mono">{row.date}</td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono text-gray-800">{Math.round(row.principalValue || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right text-rose-600 font-mono">{Math.round(parseFloat(row.interest) || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono">{Math.round(parseFloat(row.total) || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right text-gray-700 font-mono">{Math.round(parseFloat(row.balance) || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-1.5">
+                          {isPaid && <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">भरलेला</span>}
+                          {isOverdue && <span className="bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded-full font-bold">थकीत</span>}
+                          {!isPaid && !isOverdue && <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-full font-bold">भविष्य</span>}
+                        </td>
                       </tr>
                     );
-                })}
-                {installmentChart.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-2 py-12 text-center text-gray-400 font-medium">
-                      कर्ज मंजूर रक्कम, मुदत आणि व्याज दर प्रविष्ट करा.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {installmentChart.length > 0 && (
-            <div className="grid grid-cols-3 gap-1.5 mt-2 pt-2 border-t border-gray-200 bg-slate-50 p-1.5 rounded-sm">
-              <div className="text-center p-1 bg-white border border-slate-200 rounded-sm">
-                <span className="block text-[9px] text-gray-500 font-bold uppercase">मुद्दल</span>
-                <span className="text-[11px] font-bold text-gray-900 font-mono">
-                  ₹{Math.round(installmentChart.reduce((acc, curr) => acc + (curr.principalValue || 0), 0)).toLocaleString('en-IN')}
-                </span>
-              </div>
-              <div className="text-center p-1 bg-white border border-slate-200 rounded-sm">
-                <span className="block text-[9px] text-gray-500 font-bold uppercase">व्याज</span>
-                <span className="text-[11px] font-bold text-rose-700 font-mono">
-                  ₹{Math.round(installmentChart.reduce((acc, curr) => acc + (parseFloat(curr.interest) || 0), 0)).toLocaleString('en-IN')}
-                </span>
-              </div>
-              <div className="text-center p-1 bg-white border border-slate-200 rounded-sm">
-                <span className="block text-[9px] text-gray-500 font-bold uppercase">एकूण</span>
-                <span className="text-[11px] font-bold text-primary font-mono">
-                  ₹{Math.round(installmentChart.reduce((acc, curr) => acc + (parseFloat(curr.total) || 0), 0)).toLocaleString('en-IN')}
-                </span>
-              </div>
+                  })}
+                  {installmentChart.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center text-gray-400 font-medium">
+                        कर्ज मंजूर रक्कम, मुदत आणि व्याज दर प्रविष्ट करा.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-          )}
-        </div>
 
-      </div>
+            {/* Modal Footer Summary */}
+            <div className="p-3 bg-slate-100 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-4 text-xs font-mono">
+                <div><span className="text-gray-500 font-sans font-bold">एकूण मुद्दल:</span> <strong>₹{Math.round(installmentChart.reduce((acc, curr) => acc + (curr.principalValue || 0), 0)).toLocaleString('en-IN')}</strong></div>
+                <div><span className="text-gray-500 font-sans font-bold">एकूण व्याज:</span> <strong className="text-rose-700">₹{Math.round(installmentChart.reduce((acc, curr) => acc + (parseFloat(curr.interest) || 0), 0)).toLocaleString('en-IN')}</strong></div>
+                <div><span className="text-gray-500 font-sans font-bold">एकूण परतफेड:</span> <strong className="text-primary">₹{Math.round(installmentChart.reduce((acc, curr) => acc + (parseFloat(curr.total) || 0), 0)).toLocaleString('en-IN')}</strong></div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInstallmentModal(false)}
+                className="bg-slate-700 hover:bg-slate-800 text-white px-5 py-1.5 rounded-sm text-xs font-bold transition-all shadow-xs cursor-pointer"
+              >
+                बंद करा (Close)
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* POP-UP MODAL: SAVED LOAN OPENING BALANCES LIST                            */}

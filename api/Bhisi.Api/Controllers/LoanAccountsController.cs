@@ -485,13 +485,16 @@ namespace Bhisi.Api.Controllers
                     if (borrower != null && borrower.CustomerID > 0) customer = await _context.Customers.FindAsync(borrower.CustomerID);
                 }
 
+                string resolvedAccountNo = await ResolveValidLoanAccountNo(dto.BranchID, dto.LoanRateID, dto.LoanAccountNo);
+
                 var loanAccount = new LoanAccount
                 {
                     BranchID = dto.BranchID,
                     CustomerID = customer?.CustomerID ?? (borrower?.CustomerID > 0 ? borrower.CustomerID : null),
                     MemberID = borrower?.MemberID,
                     LoanRateID = dto.LoanRateID,
-                    LoanAccountNo = dto.LoanAccountNo,
+                    LoanAccountNo = resolvedAccountNo,
+                    LegacyAccountNumber = dto.LegacyAccountNumber,
                     PrincipalBalance = dto.PrincipalBalance,
                     InterestBalance = dto.InterestBalance,
                     OverdueInterestBalance = dto.OverdueInterestBalance,
@@ -623,7 +626,8 @@ namespace Bhisi.Api.Controllers
                 loanAccount.BranchID = dto.BranchID;
                 loanAccount.MemberID = dto.MemberID;
                 loanAccount.LoanRateID = dto.LoanRateID;
-                loanAccount.LoanAccountNo = dto.LoanAccountNo;
+                string resolvedAccountNo = await ResolveValidLoanAccountNo(dto.BranchID, dto.LoanRateID, dto.LoanAccountNo);
+                loanAccount.LoanAccountNo = resolvedAccountNo;
                 loanAccount.LegacyAccountNumber = dto.LegacyAccountNumber;
                 loanAccount.PrincipalBalance = dto.PrincipalBalance;
                 loanAccount.InterestBalance = dto.InterestBalance;
@@ -718,8 +722,64 @@ namespace Bhisi.Api.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return StatusCode(500, "Internal server error: " + ex.Message);
+                return StatusCode(500, "Internal server error: " + ex.Message + (ex.InnerException != null ? " | " + ex.InnerException.Message : ""));
             }
+        }
+
+        private async Task<string> ResolveValidLoanAccountNo(int branchId, int loanRateId, string? inputAccountNo)
+        {
+            string clean = (inputAccountNo ?? "").Trim();
+            if (clean.StartsWith("{") && clean.Contains("AccountNo"))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(clean);
+                    if (doc.RootElement.TryGetProperty("accountNo", out var pAcc) && !string.IsNullOrWhiteSpace(pAcc.GetString()))
+                        clean = pAcc.GetString()!.Trim();
+                    else if (doc.RootElement.TryGetProperty("nextAccountNo", out var pNext) && !string.IsNullOrWhiteSpace(pNext.GetString()))
+                        clean = pNext.GetString()!.Trim();
+                    else if (doc.RootElement.TryGetProperty("formattedAccountNo", out var pForm) && !string.IsNullOrWhiteSpace(pForm.GetString()))
+                        clean = pForm.GetString()!.Trim();
+                }
+                catch { }
+            }
+
+            clean = clean.Replace("\"", "").Replace("{", "").Replace("}", "").Trim();
+
+            if (string.IsNullOrWhiteSpace(clean))
+            {
+                int schemeCodeNum = 201;
+                if (loanRateId > 0)
+                {
+                    var lr = await _context.LoanRates.FindAsync(loanRateId);
+                    if (lr != null && !string.IsNullOrWhiteSpace(lr.LoanCode))
+                    {
+                        var sDigits = new string(lr.LoanCode.Where(char.IsDigit).ToArray());
+                        if (int.TryParse(sDigits, out int parsed) && parsed > 0)
+                            schemeCodeNum = parsed < 100 ? 200 + parsed : parsed;
+                        else
+                            schemeCodeNum = 200 + lr.LoanRateID;
+                    }
+                    else if (lr != null)
+                    {
+                        schemeCodeNum = 200 + lr.LoanRateID;
+                    }
+                }
+
+                var existingLoanAccs = await _context.LoanAccounts
+                    .Where(a => a.BranchID == branchId && a.LoanAccountNo != null)
+                    .Select(l => l.LoanAccountNo!)
+                    .ToListAsync();
+                int nextSeq = existingLoanAccs.Count + 1;
+                clean = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchId, schemeCodeNum, nextSeq);
+                while (existingLoanAccs.Contains(clean))
+                {
+                    nextSeq++;
+                    clean = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchId, schemeCodeNum, nextSeq);
+                }
+            }
+
+            return clean;
         }
 
         // PUT: api/LoanAccounts/5

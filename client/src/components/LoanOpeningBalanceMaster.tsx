@@ -185,12 +185,19 @@ export default function LoanOpeningBalanceMaster() {
     }
   };
 
-  const fetchNextAccountNo = async (branchId?: string | number) => {
+  const fetchNextAccountNo = async (branchId?: string | number, loanRateId?: string | number) => {
     try {
       const bId = branchId || formData.branchID || '1';
-      const res = await fetch(`/api/LoanAccounts/next-account-no?branchId=${bId}`);
+      const lrId = loanRateId || formData.loanRateID || '';
+      const url = lrId 
+        ? `/api/LoanAccounts/next-account-no?branchId=${bId}&loanRateId=${lrId}`
+        : `/api/LoanAccounts/next-account-no?branchId=${bId}`;
+      const res = await fetch(url);
       if (res.ok) {
-        const nextNo = await res.text();
+        const data = await res.json();
+        const nextNo = typeof data === 'string' 
+          ? data 
+          : (data.formattedAccountNo || data.nextAccountNo || data.accountNo || '');
         setFormData(prev => ({ ...prev, loanAccountNo: nextNo }));
       }
     } catch (err) {
@@ -264,7 +271,10 @@ export default function LoanOpeningBalanceMaster() {
     let updates: any = { [name]: value };
 
     if (name === 'branchID' && !isEditing) {
-      fetchNextAccountNo(value);
+      fetchNextAccountNo(value, formData.loanRateID);
+    }
+    if (name === 'loanRateID' && !isEditing) {
+      fetchNextAccountNo(formData.branchID, value);
     }
     
     // Prevent Principal from exceeding Sanctioned Amount

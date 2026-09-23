@@ -185,6 +185,22 @@ export default function LoanOpeningBalanceMaster() {
     }
   };
 
+  const format14DigitDisplay = (val?: string) => {
+    if (!val) return '';
+    let clean = val.trim();
+    if (clean.startsWith('{') && clean.includes('AccountNo')) {
+      try {
+        const parsed = JSON.parse(clean);
+        clean = parsed.formattedAccountNo || parsed.nextAccountNo || parsed.accountNo || '';
+      } catch {}
+    }
+    const digits = clean.replace(/\D/g, '');
+    if (digits.length === 14) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 13)}-${digits.slice(13)}`;
+    }
+    return clean;
+  };
+
   const fetchNextAccountNo = async (branchId?: string | number, loanRateId?: string | number) => {
     try {
       const bId = branchId || formData.branchID || '1';
@@ -195,10 +211,22 @@ export default function LoanOpeningBalanceMaster() {
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        const nextNo = typeof data === 'string' 
-          ? data 
-          : (data.formattedAccountNo || data.nextAccountNo || data.accountNo || '');
-        setFormData(prev => ({ ...prev, loanAccountNo: nextNo }));
+        let nextNo = '';
+        if (typeof data === 'string') {
+          if (data.startsWith('{') && data.includes('AccountNo')) {
+            try {
+              const parsed = JSON.parse(data);
+              nextNo = parsed.formattedAccountNo || parsed.nextAccountNo || parsed.accountNo || '';
+            } catch {
+              nextNo = data;
+            }
+          } else {
+            nextNo = data;
+          }
+        } else if (data && typeof data === 'object') {
+          nextNo = data.formattedAccountNo || data.nextAccountNo || data.accountNo || '';
+        }
+        setFormData(prev => ({ ...prev, loanAccountNo: format14DigitDisplay(nextNo) }));
       }
     } catch (err) {
       console.error("Error fetching next loan account no", err);
@@ -976,7 +1004,7 @@ export default function LoanOpeningBalanceMaster() {
                 </div>
                 <div className="md:col-span-2">
                   <label className={labelClass}>कर्ज खाते क्र. (Auto) <span className="text-red-500">*</span></label>
-                  <input type="text" name="loanAccountNo" value={formData.loanAccountNo} readOnly className={`${inputClass} bg-slate-100 cursor-not-allowed font-bold text-primary`} placeholder="उदा. LN-00001" required />
+                  <input type="text" name="loanAccountNo" value={format14DigitDisplay(formData.loanAccountNo)} readOnly className={`${inputClass} bg-slate-100 cursor-not-allowed font-bold text-primary`} placeholder="उदा. 001-201-0000001-0" required />
                 </div>
                 <div className="md:col-span-2">
                   <label className={labelClass}>जुना कर्ज खाते क्र. (Old A/C)</label>

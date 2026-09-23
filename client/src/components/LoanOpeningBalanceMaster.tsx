@@ -107,6 +107,7 @@ export default function LoanOpeningBalanceMaster() {
   };
 
   const [isInstAmountEdited, setIsInstAmountEdited] = useState(false);
+  const [isInterestManuallyEdited, setIsInterestManuallyEdited] = useState(false);
   const [formData, setFormData] = useState({
     loanOpeningBalanceID: 0,
     branchID: '1',
@@ -306,20 +307,8 @@ export default function LoanOpeningBalanceMaster() {
       fetchNextAccountNo(formData.branchID, value);
     }
     
-    // Prevent Principal from exceeding Sanctioned Amount
-    if (name === 'principalBalance' || name === 'sanctionedAmount') {
-      const principal = name === 'principalBalance' ? parseFloat(value || '0') : parseFloat(formData.principalBalance || '0');
-      const sanction = name === 'sanctionedAmount' ? parseFloat(value || '0') : parseFloat(formData.sanctionedAmount || '0');
-      
-      if (sanction > 0 && principal > sanction) {
-        if (name === 'principalBalance') {
-          alert("मुद्दल कर्ज बाकी ही मंजूर रक्कमेपेक्षा जास्त असू शकत नाही!");
-          updates.principalBalance = sanction.toString();
-        } else {
-          alert("मंजूर रक्कम ही मुद्दल कर्ज बाकीपेक्षा कमी असू शकत नाही! कृपया आधी मुद्दल बाकी कमी करा.");
-          updates.sanctionedAmount = principal.toString();
-        }
-      }
+    if (name === 'interestBalance') {
+      setIsInterestManuallyEdited(true);
     }
 
     if (name === 'installmentAmount') {
@@ -481,47 +470,96 @@ export default function LoanOpeningBalanceMaster() {
     }
   }, [formData.firstInstallmentDate, formData.durationMonths, formData.installmentFrequency, formData.noOfInstallments]);
 
-  useEffect(() => {
-    if (formData.openingDate && installmentChart && installmentChart.length > 0) {
-      const openDate = new Date(formData.openingDate);
-      const firstEmiDate = formData.firstInstallmentDate ? new Date(formData.firstInstallmentDate) : null;
+  const calculateAccurateInterest = (forceRecalc = false) => {
+    if (isInterestManuallyEdited && !forceRecalc) {
+      return;
+    }
+
+    const openDateStr = formData.openingDate;
+    if (!openDateStr) return;
+
+    const openDate = new Date(openDateStr);
+    const principal = parseFloat(formData.principalBalance) || 0;
+    const rate = parseFloat(formData.interestRate) || 0;
+
+    if (principal <= 0 || rate <= 0) return;
+
+    const matDateStr = formData.maturityDate;
+    const matDate = matDateStr ? new Date(matDateStr) : null;
+    const lastPaidStr = formData.lastInstallmentPaidDate;
+    const lastPaidDate = lastPaidStr ? new Date(lastPaidStr) : null;
+    const disburseStr = formData.loanDisbursementDate;
+    const disburseDate = disburseStr ? new Date(disburseStr) : null;
+
+    // Tier 1: Scheduled Pre-Maturity Unpaid Interest
+    let scheduledInterest = 0;
+    if (installmentChart && installmentChart.length > 0) {
+      const cutoffForSchedule = (matDate && openDate > matDate) ? matDate : openDate;
+      const baselineDate = lastPaidDate ? lastPaidDate : (disburseDate ? disburseDate : new Date(0));
       
-      if (firstEmiDate && openDate < firstEmiDate) {
-         return;
-      }
-
-      const principal = parseFloat(formData.principalBalance) || 0;
-      const sanction = parseFloat(formData.sanctionedAmount) || 0;
-      if (principal > sanction) {
-         return;
-      }
-
-      let lastPaidDate = new Date(0);
-      if (formData.lastInstallmentPaidDate) {
-        lastPaidDate = new Date(formData.lastInstallmentPaidDate);
-      } else if (formData.loanDisbursementDate) {
-        lastPaidDate = new Date(formData.loanDisbursementDate);
-      }
-
-      let sumInterest = 0;
-
       installmentChart.forEach(row => {
         const [day, month, year] = row.date.split('/');
         const rowDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-        
-        if (rowDate <= openDate && rowDate > lastPaidDate) {
-          sumInterest += parseFloat(row.interest || '0');
+        rowDate.setHours(0, 0, 0, 0);
+
+        const cmpBaseline = new Date(baselineDate);
+        cmpBaseline.setHours(0, 0, 0, 0);
+
+        const cmpCutoff = new Date(cutoffForSchedule);
+        cmpCutoff.setHours(23, 59, 59, 999);
+
+        if (rowDate <= cmpCutoff && rowDate > cmpBaseline) {
+          scheduledInterest += parseFloat(row.interest || '0');
         }
       });
-      
-      if (sumInterest < 0) sumInterest = 0;
+    }
 
-      const roundedInterest = Math.round(sumInterest).toString();
-      if (formData.interestBalance !== roundedInterest) {
-        setFormData(prev => ({ ...prev, interestBalance: roundedInterest }));
+    // Tier 2: Post-Maturity Overdue Interest
+    let postMaturityInterest = 0;
+    let overdueDays = 0;
+    if (matDate && openDate > matDate && principal > 0 && rate > 0) {
+      const overdueStartDate = (lastPaidDate && lastPaidDate > matDate) ? new Date(lastPaidDate) : new Date(matDate);
+      overdueStartDate.setHours(0, 0, 0, 0);
+
+      const openDateNorm = new Date(openDate);
+      openDateNorm.setHours(0, 0, 0, 0);
+
+      const diffMs = openDateNorm.getTime() - overdueStartDate.getTime();
+      overdueDays = Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+
+      if (overdueDays > 0) {
+        // Standard Banking Daily Simple Interest Formula: (P * R * Days) / (365 * 100)
+        postMaturityInterest = Math.round((principal * rate * overdueDays) / (365 * 100));
       }
     }
-  }, [formData.lastInstallmentPaidDate, formData.openingDate, formData.principalBalance, formData.sanctionedAmount, installmentChart]);
+
+    const totalInterest = Math.max(0, Math.round(scheduledInterest + postMaturityInterest));
+
+    if (forceRecalc) {
+      setIsInterestManuallyEdited(false);
+    }
+
+    setFormData(prev => {
+      const updates: any = { interestBalance: totalInterest.toString() };
+      if (postMaturityInterest > 0 && (!prev.overdueInterestBalance || prev.overdueInterestBalance === '0')) {
+        updates.overdueInterestBalance = postMaturityInterest.toString();
+      }
+      return { ...prev, ...updates };
+    });
+  };
+
+  useEffect(() => {
+    calculateAccurateInterest(false);
+  }, [
+    formData.openingDate, 
+    formData.maturityDate, 
+    formData.lastInstallmentPaidDate, 
+    formData.loanDisbursementDate, 
+    formData.principalBalance, 
+    formData.interestRate, 
+    formData.sanctionedAmount, 
+    installmentChart
+  ]);
 
   const calculateEMI = async () => {
     const principal = parseFloat(formData.sanctionedAmount) || 0;
@@ -607,6 +645,7 @@ export default function LoanOpeningBalanceMaster() {
 
   const handleNew = () => {
     setIsInstAmountEdited(false);
+    setIsInterestManuallyEdited(false);
     setFormData({
       loanOpeningBalanceID: 0,
       branchID: '1',
@@ -641,13 +680,6 @@ export default function LoanOpeningBalanceMaster() {
     e.preventDefault();
     if (!formData.memberID || !formData.loanRateID || !formData.loanAccountNo) {
         alert("कृपया आवश्यक माहिती भरा!");
-        return;
-    }
-
-    const principal = parseFloat(formData.principalBalance || '0');
-    const sanction = parseFloat(formData.sanctionedAmount || '0');
-    if (sanction > 0 && principal > sanction) {
-        alert("मुद्दल कर्ज बाकी ही मंजूर रक्कमेपेक्षा जास्त असू शकत नाही!");
         return;
     }
 
@@ -1113,9 +1145,24 @@ export default function LoanOpeningBalanceMaster() {
                       <div>
                           <label className={labelClass}>मुद्दल बाकी (Principal) <span className="text-red-500">*</span></label>
                           <input type="number" step="0.01" name="principalBalance" value={formData.principalBalance} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-emerald-800 ${isEditing ? 'bg-slate-100' : ''}`} placeholder="0.00" required disabled={isEditing} />
+                          {parseFloat(formData.principalBalance || '0') > parseFloat(formData.sanctionedAmount || '0') && parseFloat(formData.sanctionedAmount || '0') > 0 && (
+                            <div className="text-[10px] text-amber-700 font-bold mt-0.5 flex items-center gap-1">
+                              ℹ️ मुद्दलात व्याज समाविष्ट / ओव्हरड्यू
+                            </div>
+                          )}
                       </div>
                       <div>
-                          <label className={labelClass}>येणे व्याज बाकी (Interest)</label>
+                          <div className="flex items-center justify-between">
+                            <label className={labelClass}>येणे व्याज बाकी (Interest)</label>
+                            <button
+                              type="button"
+                              onClick={() => calculateAccurateInterest(true)}
+                              className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 cursor-pointer"
+                              title="बँकिंग सूत्रानुसार व्याज पुन्हा मोजा"
+                            >
+                              ⚡ स्वयं गणना
+                            </button>
+                          </div>
                           <input 
                             ref={interestBalanceInputRef}
                             type="number" 
@@ -1127,6 +1174,11 @@ export default function LoanOpeningBalanceMaster() {
                             className={`${inputClass} font-bold text-amber-800 ${isEditing ? 'border-primary bg-amber-50/40' : ''}`} 
                             placeholder="0.00" 
                           />
+                          {formData.openingDate && formData.maturityDate && new Date(formData.openingDate) > new Date(formData.maturityDate) && (
+                            <div className="text-[10px] text-indigo-700 font-semibold mt-0.5">
+                              ℹ️ मुदत संपल्यानंतरचे थकीत व्याज समाविष्ट
+                            </div>
+                          )}
                       </div>
                       <div>
                           <label className={labelClass}>थकीत व्याज (Overdue Int)</label>
@@ -1256,6 +1308,24 @@ export default function LoanOpeningBalanceMaster() {
                 </div>
               </div>
             </div>
+
+            {/* Post-Maturity Overdue Banner (If loan is past maturity date) */}
+            {formData.maturityDate && formData.openingDate && new Date(formData.openingDate) > new Date(formData.maturityDate) && (
+              <div className="mx-3 mt-2 p-2 bg-amber-50 border border-amber-300 rounded-sm text-xs flex flex-wrap items-center justify-between gap-2 text-amber-950 shrink-0 shadow-2xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold">⏰ मुदत समाप्तीनंतरचे थकीत दिवस:</span>
+                  <span className="font-mono font-bold bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded text-[11px]">
+                    {Math.max(0, Math.round((new Date(formData.openingDate).getTime() - new Date((formData.lastInstallmentPaidDate && new Date(formData.lastInstallmentPaidDate) > new Date(formData.maturityDate)) ? formData.lastInstallmentPaidDate : formData.maturityDate).getTime()) / (1000 * 60 * 60 * 24)))} दिवस
+                  </span>
+                  <span className="text-[10px] text-amber-800">
+                    ({new Date((formData.lastInstallmentPaidDate && new Date(formData.lastInstallmentPaidDate) > new Date(formData.maturityDate)) ? formData.lastInstallmentPaidDate : formData.maturityDate).toLocaleDateString('en-GB')} ते {new Date(formData.openingDate).toLocaleDateString('en-GB')})
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                  <span>मुदतीनंतरचे थकीत येणे व्याज: <strong className="text-rose-700 font-bold">₹{Math.round((parseFloat(formData.principalBalance || '0') * parseFloat(formData.interestRate || '0') * Math.max(0, Math.round((new Date(formData.openingDate).getTime() - new Date((formData.lastInstallmentPaidDate && new Date(formData.lastInstallmentPaidDate) > new Date(formData.maturityDate)) ? formData.lastInstallmentPaidDate : formData.maturityDate).getTime()) / (1000 * 60 * 60 * 24)))) / (365 * 100)).toLocaleString('en-IN')}</strong></span>
+                </div>
+              </div>
+            )}
 
             {/* Installment Table */}
             <div className="flex-1 overflow-y-auto p-3">

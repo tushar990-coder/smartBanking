@@ -981,7 +981,7 @@ export default function LoanOpeningBalanceMaster() {
           }`}>
             <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2.5">
               <Users className="w-4 h-4 text-primary" />
-              <h2 className="text-xs font-bold text-primary">१. प्राथमिक व सभासद माहिती (Basic Details)</h2>
+              <h2 className="text-xs font-bold text-primary">१. प्राथमिक व खातेदार माहिती (Basic Details)</h2>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-x-2.5 gap-y-2.5">
               <div className="lg:col-span-1 sm:col-span-1">
@@ -993,8 +993,8 @@ export default function LoanOpeningBalanceMaster() {
                 </select>
               </div>
               <div className="lg:col-span-2 sm:col-span-2">
-                <label className={labelClass}>सभासद (Member) <span className="text-red-500">*</span></label>
-                <SearchableSelect name="memberID" value={formData.memberID} onChange={handleChange} options={memberOptions} disabled={isEditing} />
+                <label className={labelClass}>खातेदार (Account Holder) <span className="text-red-500">*</span></label>
+                <SearchableSelect name="memberID" value={formData.memberID} onChange={handleChange} options={memberOptions} placeholder="खातेदार निवडा किंवा शोधा..." disabled={isEditing} />
               </div>
               <div className="lg:col-span-1 sm:col-span-1">
                 <label className={labelClass}>कर्ज प्रकार (Loan Type) <span className="text-red-500">*</span></label>
@@ -1221,7 +1221,7 @@ export default function LoanOpeningBalanceMaster() {
                     </span>
                   </h2>
                   <div className="text-[10px] text-white/80 font-normal">
-                    खाते क्र.: {format14DigitDisplay(formData.loanAccountNo) || '-'} | सभासद: {members.find(m => m.memberID.toString() === formData.memberID)?.firstName || '-'}
+                    खाते क्र.: {format14DigitDisplay(formData.loanAccountNo) || '-'} | खातेदार: {members.find(m => m.memberID.toString() === formData.memberID)?.firstName || '-'}
                   </div>
                 </div>
               </div>
@@ -1434,7 +1434,7 @@ export default function LoanOpeningBalanceMaster() {
                     <tr>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">शाखा</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">सभासद</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">खातेदार नाव</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज प्रकार</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र.</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">जुना खाते क्र.</th>

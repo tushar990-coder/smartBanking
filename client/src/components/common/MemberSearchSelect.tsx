@@ -192,21 +192,20 @@ export default function MemberSearchSelect({
         );
       }
       return (
-        <div className="flex items-center gap-1.5 overflow-hidden text-xs py-0.5 w-full" title={`${cifCode} | ${memCode ? memCode + ' | ' : ''}${fullName}`}>
-          {memCode ? (
-            <span className="text-[10px] font-mono font-bold shrink-0 px-1 py-0.2 rounded bg-emerald-100 text-emerald-950 border border-emerald-300" title={`सभासद कोड: ${memCode}`}>
+        <div className="flex items-center gap-1.5 overflow-hidden text-xs py-0.5 w-full">
+          <span className="text-[11px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-sky-100 text-sky-950 border border-sky-300">
+            {cifCode}
+          </span>
+          {memCode && (
+            <span className="text-[11px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-950 border border-emerald-300">
               {memCode}
             </span>
-          ) : (
-            <span className="text-[10px] font-mono font-bold shrink-0 px-1 py-0.2 rounded bg-sky-100 text-sky-950 border border-sky-300" title={`सीआयएफ: ${cifCode}`}>
-              {cifCode}
-            </span>
           )}
-          <span className="font-bold text-slate-900 text-xs ml-0.5 whitespace-nowrap overflow-hidden text-ellipsis flex-1">
+          <span className="font-bold text-slate-900 truncate text-xs ml-1">
             {fullName}
           </span>
           {m.mobileNo && (
-            <span className="text-[10px] text-slate-500 font-mono shrink-0 ml-auto hidden lg:inline">
+            <span className="text-[11px] text-slate-500 font-mono shrink-0 ml-auto hidden sm:inline">
               📱 {m.mobileNo}
             </span>
           )}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
-import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import {
   Landmark,
   Layers,
@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-interface Member extends MemberOption {}
+interface Customer extends CustomerOption {}
 
 interface FdScheme {
   fdSchemeID: number;
@@ -39,7 +39,10 @@ interface FdAccountRecord {
   fdAccountID: number;
   branchID: number;
   branchName?: string;
-  memberID: number;
+  customerID?: number;
+  customerName?: string;
+  cifNo?: string;
+  memberID?: number;
   memberName?: string;
   memberCode?: string;
   fdSchemeID: number;
@@ -61,7 +64,7 @@ interface FdAccountRecord {
 }
 
 const FdOpeningBalanceMigration: React.FC = () => {
-  const [members, setMembers] = useState<Member[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [schemes, setSchemes] = useState<FdScheme[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [migratedAccounts, setMigratedAccounts] = useState<FdAccountRecord[]>([]);
@@ -105,6 +108,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
   const [formData, setFormData] = useState({
     branchID: 1,
+    customerID: 0,
     memberID: 0,
     fdSchemeID: 0,
     accountNo: '',
@@ -122,7 +126,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchMembers();
+    fetchCustomers();
     fetchSchemes();
     fetchBranches();
     fetchMigratedAccounts();
@@ -162,10 +166,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
     }
   };
 
-  const fetchMembers = async () => {
+  const fetchCustomers = async () => {
     try {
       const response = await axios.get(`${API_URL}/Customers`);
-      setMembers(response.data);
+      setCustomers(response.data);
     } catch (err) {
       console.error('Error fetching customers', err);
     }
@@ -439,6 +443,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     const bId = formData.branchID || 1;
     setFormData({
       branchID: bId,
+      customerID: 0,
       memberID: 0,
       fdSchemeID: 0,
       accountNo: '',
@@ -463,9 +468,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
     setEditingAccountId(acc.fdAccountID);
     setIsManualMaturityEdited(true); // Preserve recorded value from database
     setIsManualMaturityDateEdited(true); // Preserve recorded maturity date from database
+    const custId = acc.customerID || acc.memberID || 0;
     setFormData({
       branchID: acc.branchID || 1,
-      memberID: acc.memberID || 0,
+      customerID: custId,
+      memberID: custId,
       fdSchemeID: acc.fdSchemeID || 0,
       accountNo: acc.accountNo || '',
       legacyAccountNumber: acc.legacyAccountNumber || '',
@@ -521,8 +528,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
     setError('');
     setSuccess('');
 
-    if (formData.memberID === 0) {
-      setError('कृपया सभासद निवडा.');
+    if (!formData.customerID && !formData.memberID) {
+      setError('कृपया खातेदार निवडा.');
       return;
     }
     if (formData.fdSchemeID === 0) {
@@ -570,8 +577,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
     }
 
     // [RULE-FD-001] Customer-First: resolve CustomerID
-    const selectedCust = members.find((m: any) => (m.customerID || m.memberID) === Number(formData.memberID));
-    const resolvedCustId = Number(selectedCust?.customerID || selectedCust?.id || formData.memberID);
+    const targetCustId = Number(formData.customerID || formData.memberID);
+    const selectedCust = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === targetCustId);
+    const resolvedCustId = Number(selectedCust?.customerID || selectedCust?.id || targetCustId);
 
     setLoading(true);
     try {
@@ -579,6 +587,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
         ...formData,
         legacyAccountNumber: formData.legacyAccountNumber ? formData.legacyAccountNumber.trim() : null,
         customerID: resolvedCustId,
+        memberID: resolvedCustId,
         depositAmount: depAmt,
         maturityAmount: matAmt,
         isLegacyAccount: true,
@@ -610,8 +619,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
       'अ.क्र.': i + 1,
       'पावती / खाते क्र.': acc.accountNo,
       'जुना पावती क्र.': acc.legacyAccountNumber || '-',
-      'सभासद कोड': acc.memberCode || '-',
-      'सभासदाचे नाव': acc.memberName || '-',
+      'सीआयएफ क्र.': acc.cifNo || acc.memberCode || '-',
+      'खातेदाराचे नाव': acc.customerName || acc.memberName || '-',
       'योजनेचे नाव': acc.schemeName || '-',
       'ठेव मुद्दल (₹)': acc.depositAmount || 0,
       'व्याजदर (%)': `${acc.interestRate || 0}%`,
@@ -629,21 +638,14 @@ const FdOpeningBalanceMigration: React.FC = () => {
     XLSX.writeFile(wb, `FD_Opening_Balances_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const formatMemberLabel = (m: Member) => {
-    const nameParts = [m.firstName, m.middleName, m.lastName].filter(Boolean);
+  const formatCustomerLabel = (c: Customer) => {
+    const nameParts = [c.firstName, c.middleName, c.lastName].filter(Boolean);
     let fullName = nameParts.join(' ').trim();
-    if (!fullName) {
-      const engParts = [m.firstNameEng, m.middleNameEng, m.lastNameEng].filter(Boolean);
-      fullName = engParts.join(' ').trim();
-    }
-    if (!fullName) fullName = `सभासद ID: ${m.memberID}`;
+    if (!fullName) fullName = `खातेदार ID: ${c.customerID}`;
 
-    const cifStr = m.cifNo ? `CIF: ${m.cifNo}` : '';
-    const codeStr = m.memberCode ? `सभासद नं: ${m.memberCode}` : '';
-    const oldNo = m.oldMemberCode || m.legacyMemberNo;
-    const oldNoStr = oldNo ? `जुना नं: ${oldNo}` : '';
-
-    const details = [cifStr, codeStr, oldNoStr].filter(Boolean).join(' | ');
+    const cifStr = c.cifNo ? `CIF: ${c.cifNo}` : '';
+    const mobileStr = c.mobileNo ? `मो.: ${c.mobileNo}` : '';
+    const details = [cifStr, mobileStr].filter(Boolean).join(' | ');
     return details ? `${fullName} (${details})` : fullName;
   };
 
@@ -653,7 +655,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
     return (
       (acc.accountNo && acc.accountNo.toLowerCase().includes(term)) ||
       (acc.legacyAccountNumber && acc.legacyAccountNumber.toLowerCase().includes(term)) ||
+      (acc.customerName && acc.customerName.toLowerCase().includes(term)) ||
       (acc.memberName && acc.memberName.toLowerCase().includes(term)) ||
+      (acc.cifNo && acc.cifNo.toLowerCase().includes(term)) ||
       (acc.memberCode && acc.memberCode.toLowerCase().includes(term)) ||
       (acc.schemeName && acc.schemeName.toLowerCase().includes(term))
     );
@@ -666,7 +670,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
     ? (migratedAccounts.reduce((sum, a) => sum + (a.interestRate || 0), 0) / migratedAccounts.length).toFixed(2)
     : '0.00';
 
-  const selectedMember = members.find((m: any) => (m.customerID || m.memberID) === Number(formData.memberID) || m.id === Number(formData.memberID));
+  const selectedCustomer = customers.find((c: any) => 
+    Number(c.customerID || c.id || c.customerId) === Number(formData.customerID || formData.memberID)
+  );
 
   const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
   const inputClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';
@@ -817,11 +823,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
       >
         <form onSubmit={handleSubmit} className="space-y-3">
           
-          {/* Section 1: Member & Scheme Details */}
+          {/* Section 1: Customer & Scheme Details */}
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
             <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
               <UserCheck className="w-4 h-4 text-primary" />
-              <h2 className="text-xs font-bold text-primary">१. शाखा, सभासद व ठेव योजना (Branch, Member & Scheme)</h2>
+              <h2 className="text-xs font-bold text-primary">१. शाखा, खातेदार व ठेव योजना (Branch, Customer & Scheme)</h2>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
@@ -841,31 +847,40 @@ const FdOpeningBalanceMigration: React.FC = () => {
               <div className="sm:col-span-6">
                 <div className="flex items-center justify-between min-h-[22px] mb-1">
                   <label className="text-[11px] font-bold text-gray-700">
-                    सभासद निवडा (Member) <span className="text-red-500">*</span>
+                    खातेदार निवडा (Customer / CIF) <span className="text-red-500">*</span>
                   </label>
-                  {selectedMember && (
-                    <span className="text-[10px] text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                      {selectedMember.memberCode || selectedMember.cifNo || `MEM#${selectedMember.memberID}`}
+                  {selectedCustomer && (
+                    <span className="text-[10px] text-blue-900 font-bold bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200 font-mono">
+                      {selectedCustomer.cifNo ? `CIF: ${selectedCustomer.cifNo}` : (selectedCustomer.legacyCustomerNo ? `जुना: ${selectedCustomer.legacyCustomerNo}` : `ID: ${selectedCustomer.customerID}`)}
                     </span>
                   )}
                 </div>
-                <MemberSearchSelect
-                  members={members}
-                  value={formData.memberID ? Number(formData.memberID) : ''}
-                  onChange={(val) => setFormData(prev => ({ ...prev, memberID: val ? Number(val) : 0 }))}
-                  placeholder="-- सभासद नाव, कोड किंवा मोबाईलने शोधा --"
+                <CustomerSearchSelect
+                  customers={customers}
+                  value={formData.customerID || formData.memberID || ''}
+                  onChange={(val) => setFormData(prev => ({ 
+                    ...prev, 
+                    customerID: val ? Number(val) : 0, 
+                    memberID: val ? Number(val) : 0 
+                  }))}
+                  placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
                 />
-                {selectedMember && (
+                {selectedCustomer && (
                   <div className="mt-1 flex items-center justify-between text-[11px] bg-sky-50/70 border border-sky-200 px-2 py-1 rounded text-sky-950 font-bold shadow-2xs">
                     <div className="flex items-center gap-1.5 truncate">
-                      <span className="text-sky-700">👤 पूर्ण नाव:</span>
+                      <span className="text-sky-700">👤 खातेदार:</span>
                       <span className="font-extrabold text-slate-900">
-                        {selectedMember.fullName || `${selectedMember.firstName || ''} ${selectedMember.middleName ? selectedMember.middleName + ' ' : ''}${selectedMember.lastName || ''}`}
+                        {selectedCustomer.fullName || [selectedCustomer.firstName, selectedCustomer.middleName, selectedCustomer.lastName].filter(Boolean).join(' ') || (selectedCustomer as any).customerName}
                       </span>
+                      {selectedCustomer.cifNo && (
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 border border-blue-300 ml-1">
+                          CIF: {selectedCustomer.cifNo}
+                        </span>
+                      )}
                     </div>
-                    {selectedMember.mobileNo && (
+                    {selectedCustomer.mobileNo && (
                       <span className="text-slate-600 font-mono text-[10px] shrink-0 ml-2">
-                        📱 {selectedMember.mobileNo}
+                        📱 {selectedCustomer.mobileNo}
                       </span>
                     )}
                   </div>
@@ -1271,7 +1286,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">नवीन पावती क्र.</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">जुना पावती क्र.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">सभासद नाव & कोड</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">खातेदाराचे नाव & CIF</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना नाव</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">ठेव मुद्दल (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर (%)</th>
@@ -1318,8 +1333,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
                           )}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
-                          <div className="font-bold text-gray-900">{acc.memberName}</div>
-                          <div className="text-[10px] text-gray-500 font-mono">कोड: {acc.memberCode || '-'}</div>
+                          <div className="font-bold text-gray-900">{acc.customerName || acc.memberName}</div>
+                          <div className="text-[10px] text-gray-500 font-mono">
+                            {acc.cifNo ? `CIF: ${acc.cifNo}` : (acc.memberCode ? `कोड: ${acc.memberCode}` : '-')}
+                          </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-800">
                           {acc.schemeName}

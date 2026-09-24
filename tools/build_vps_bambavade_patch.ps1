@@ -13,12 +13,38 @@ $zipOutputFile = Join-Path $workspaceRoot "SmartBanking_VPS_Bambavade_Patch.zip"
 $desktopZip = "C:\Users\tusha\OneDrive\Desktop\SmartBanking_VPS_Bambavade_Patch.zip"
 $clientDir = Join-Path $workspaceRoot "client"
 $apiDir = Join-Path $workspaceRoot "api\Bhisi.Api"
-$version = "2.5.0"
+$versionJsonPath = Join-Path $workspaceRoot "version.json"
+
+$version = "2.5.5"
+$gitHash = ""
+$gitShort = ""
+$gitBranch = ""
+$gitDate = ""
+$gitMsg = ""
+
+try {
+    $gitShort = (git rev-parse --short HEAD 2>$null).Trim()
+    $gitHash = (git rev-parse HEAD 2>$null).Trim()
+    $gitBranch = (git rev-parse --abbrev-ref HEAD 2>$null).Trim()
+    $gitDate = (git log -1 --format=%cd --date=iso 2>$null).Trim()
+    $gitMsg = (git log -1 --format=%s 2>$null).Trim()
+} catch {}
+
+if (Test-Path $versionJsonPath) {
+    try {
+        $vObj = Get-Content $versionJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($vObj.version) { $version = $vObj.version }
+        if (-not $gitShort -and $vObj.git -and $vObj.git.commit) { $gitShort = $vObj.git.commit }
+    } catch {}
+}
 $buildDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "  SmartBanking ERP - Dedicated VPS Patch Builder (Bambavade Only) " -ForegroundColor Cyan
 Write-Host "  Version: v$version ($buildDate)                                " -ForegroundColor Yellow
+if ($gitShort) {
+Write-Host "  Git Commit: $gitShort ($gitBranch) - $gitMsg                   " -ForegroundColor Gray
+}
 Write-Host "  Features: Includes 1-Click Apply + 1-Click REVERSE Patch        " -ForegroundColor Green
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -68,8 +94,14 @@ New-Item -ItemType Directory -Path $backendTempPublish -Force | Out-Null
 Push-Location $apiDir
 try {
     dotnet restore -r win-x64
-    dotnet publish -c Release -r win-x64 --no-self-contained -o $backendTempPublish
+    dotnet publish -c Release -r win-x64 --self-contained false -o $backendTempPublish
     robocopy $backendTempPublish (Join-Path $patchFolder "backend") /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null
+    
+    # Ensure web.config is present
+    $sourceWebConfig = Join-Path $workspaceRoot "api\Bhisi.Api\web.config"
+    if ((Test-Path $sourceWebConfig) -and (-not (Test-Path (Join-Path $patchFolder "backend\web.config")))) {
+        Copy-Item $sourceWebConfig (Join-Path $patchFolder "backend\web.config") -Force
+    }
     Write-Host "  -> Backend Binaries published OK!" -ForegroundColor Green
 }
 finally {
@@ -81,11 +113,41 @@ finally {
 # Step 3: Copy Database SQL Update Schema & Create Config
 # -----------------------------------------------------------------------------------------
 Write-Host "`n[3/4] Copying Database Schema Update & Generating Scripts..." -ForegroundColor Cyan
+$utf8WithBom = New-Object System.Text.UTF8Encoding($true)
+
 $sqlSource = Join-Path $workspaceRoot "tools\master_vps_update_schema.sql"
 $sqlDest = Join-Path $patchFolder "database\update_schema.sql"
-$sqlContent = [System.IO.File]::ReadAllText($sqlSource, [System.Text.Encoding]::UTF8)
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($sqlDest, $sqlContent, $utf8NoBom)
+if (Test-Path $sqlSource) {
+    $sqlContent = [System.IO.File]::ReadAllText($sqlSource, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($sqlDest, $sqlContent, $utf8WithBom)
+    Write-Host "  -> master_vps_update_schema.sql copied as database\update_schema.sql (UTF-8 BOM)." -ForegroundColor White
+}
+
+$cleanupSource = Join-Path $workspaceRoot "tools\members_normalization_and_cleanup.sql"
+if (Test-Path $cleanupSource) {
+    Copy-Item $cleanupSource (Join-Path $patchFolder "database\members_normalization_and_cleanup.sql") -Force
+    Write-Host "  -> members_normalization_and_cleanup.sql included." -ForegroundColor White
+}
+
+$universalSyncSource = Join-Path $workspaceRoot "tools\Universal_Schema_Only_Sync.sql"
+if (Test-Path $universalSyncSource) {
+    Copy-Item $universalSyncSource (Join-Path $patchFolder "database\Universal_Schema_Only_Sync.sql") -Force
+    Write-Host "  -> Universal_Schema_Only_Sync.sql included." -ForegroundColor White
+}
+
+# Copy version manifests
+if (Test-Path $versionJsonPath) {
+    Copy-Item $versionJsonPath (Join-Path $patchFolder "version.json") -Force
+    Copy-Item $versionJsonPath (Join-Path $patchFolder "backend\version.json") -Force
+    Copy-Item $versionJsonPath (Join-Path $patchFolder "frontend\version.json") -Force
+    Write-Host "  -> version.json (v$version Changelog) included in patch." -ForegroundColor White
+}
+
+$mobileApiDoc = Join-Path $workspaceRoot "MOBILE_APPLICATION_API.md"
+if (Test-Path $mobileApiDoc) {
+    Copy-Item $mobileApiDoc (Join-Path $patchFolder "MOBILE_APPLICATION_API.md") -Force
+    Write-Host "  -> MOBILE_APPLICATION_API.md included." -ForegroundColor White
+}
 
 # Bambavade-only patch configuration with multiple candidate paths for robustness
 $bambavadeConfig = @{
@@ -102,20 +164,6 @@ $bambavadeConfig = @{
     FrontendFolderCandidates = @("D:\WebApps\bambavadeurban\frontend", "D:\WebApps\bambavade\bambavade.hellomindspace.in", "D:\WebApps\bambavade\frontend")
 }
 $bambavadeConfig | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $patchFolder "patch_config.json") -Encoding UTF8
-
-# Version manifest
-$versionDoc = @{
-    version = $version
-    patchType = "Bambavade Dedicated Testing Patch"
-    releaseDate = $buildDate
-    changelog = @(
-        "Updated Loan Opening Balance & Overdue Interest calculation logic",
-        "Updated Loan Collection Waterfall recovery appropriation",
-        "Pure CustomerID Architecture and Joint Holder standardization",
-        "Includes automated working snapshot and 1-Click Reverse Rollback"
-    )
-}
-$versionDoc | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $patchFolder "version.json") -Encoding UTF8
 
 # -----------------------------------------------------------------------------------------
 # Generate apply_patch.ps1

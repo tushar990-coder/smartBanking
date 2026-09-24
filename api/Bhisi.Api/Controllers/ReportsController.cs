@@ -4822,6 +4822,322 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, new { message = "खातेदार यादी अहवाल तयार करताना त्रुटी आली.", error = ex.Message });
             }
         }
+
+        // =========================================================================
+        // FD REPORTS (मुदत ठेव अहवाल - नोंदवही, बाकी, मुदतपूर्ती देय, खातावणी)
+        // =========================================================================
+
+        // GET: api/Reports/fd-register
+        [HttpGet("fd-register")]
+        public async Task<IActionResult> GetFdRegister([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        {
+            try
+            {
+                var query = _context.FdAccounts
+                    .Include(f => f.Branch)
+                    .Include(f => f.Customer).ThenInclude(c => c!.MemberProfile)
+                    .Include(f => f.FdScheme)
+                    .AsQueryable();
+
+                if (branchID.HasValue && branchID.Value > 0)
+                    query = query.Where(f => f.BranchID == branchID.Value);
+
+                if (fromDate.HasValue)
+                    query = query.Where(f => f.OpeningDate >= fromDate.Value.Date);
+
+                if (toDate.HasValue)
+                    query = query.Where(f => f.OpeningDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+                var accounts = await query
+                    .OrderByDescending(f => f.OpeningDate)
+                    .Select(f => new
+                    {
+                        f.FdAccountID,
+                        BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
+                        MemberCode = f.Customer != null && f.Customer.MemberProfile != null ? f.Customer.MemberProfile.MemberCode : (f.Customer != null ? f.Customer.CIFNo : ""),
+                        MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
+                        f.AccountNo,
+                        SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",
+                        OpeningDate = f.OpeningDate.ToString("yyyy-MM-dd"),
+                        f.DepositAmount,
+                        f.InterestRate,
+                        MaturityDate = f.MaturityDate.ToString("yyyy-MM-dd"),
+                        MaturityAmount = f.MaturityAmount > 0 ? f.MaturityAmount : (decimal?)(f.DepositAmount + f.LegacyAccruedInt),
+                        f.LegacyAccruedInt,
+                        Status = f.Status ?? "Active"
+                    })
+                    .ToListAsync();
+
+                return Ok(accounts);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "मुदत ठेव नोंदवही लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/fd-outstanding
+        [HttpGet("fd-outstanding")]
+        public async Task<IActionResult> GetFdOutstanding([FromQuery] int? branchID)
+        {
+            try
+            {
+                var query = _context.FdAccounts
+                    .Include(f => f.Branch)
+                    .Include(f => f.Customer).ThenInclude(c => c!.MemberProfile)
+                    .Include(f => f.FdScheme)
+                    .Where(f => f.Status == "Active" || f.Status == "Matured" || string.IsNullOrEmpty(f.Status))
+                    .AsQueryable();
+
+                if (branchID.HasValue && branchID.Value > 0)
+                    query = query.Where(f => f.BranchID == branchID.Value);
+
+                var accounts = await query
+                    .OrderByDescending(f => f.OpeningDate)
+                    .Select(f => new
+                    {
+                        f.FdAccountID,
+                        BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
+                        MemberCode = f.Customer != null && f.Customer.MemberProfile != null ? f.Customer.MemberProfile.MemberCode : (f.Customer != null ? f.Customer.CIFNo : ""),
+                        MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
+                        f.AccountNo,
+                        SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",
+                        OpeningDate = f.OpeningDate.ToString("yyyy-MM-dd"),
+                        f.DepositAmount,
+                        f.InterestRate,
+                        MaturityDate = f.MaturityDate.ToString("yyyy-MM-dd"),
+                        MaturityAmount = f.MaturityAmount > 0 ? f.MaturityAmount : (decimal?)(f.DepositAmount + f.LegacyAccruedInt),
+                        f.LegacyAccruedInt,
+                        Status = f.Status ?? "Active"
+                    })
+                    .ToListAsync();
+
+                return Ok(accounts);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "मुदत ठेव बाकी अहवाल लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/fd-maturity-due
+        [HttpGet("fd-maturity-due")]
+        public async Task<IActionResult> GetFdMaturityDue([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        {
+            try
+            {
+                var query = _context.FdAccounts
+                    .Include(f => f.Branch)
+                    .Include(f => f.Customer).ThenInclude(c => c!.MemberProfile)
+                    .Include(f => f.FdScheme)
+                    .Where(f => f.Status == "Active" || f.Status == "Matured" || string.IsNullOrEmpty(f.Status))
+                    .AsQueryable();
+
+                if (branchID.HasValue && branchID.Value > 0)
+                    query = query.Where(f => f.BranchID == branchID.Value);
+
+                if (fromDate.HasValue)
+                    query = query.Where(f => f.MaturityDate >= fromDate.Value.Date);
+
+                if (toDate.HasValue)
+                    query = query.Where(f => f.MaturityDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+                var accounts = await query
+                    .OrderBy(f => f.MaturityDate)
+                    .Select(f => new
+                    {
+                        f.FdAccountID,
+                        BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
+                        MemberCode = f.Customer != null && f.Customer.MemberProfile != null ? f.Customer.MemberProfile.MemberCode : (f.Customer != null ? f.Customer.CIFNo : ""),
+                        MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
+                        f.AccountNo,
+                        SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",
+                        OpeningDate = f.OpeningDate.ToString("yyyy-MM-dd"),
+                        f.DepositAmount,
+                        f.InterestRate,
+                        MaturityDate = f.MaturityDate.ToString("yyyy-MM-dd"),
+                        MaturityAmount = f.MaturityAmount > 0 ? f.MaturityAmount : (decimal?)(f.DepositAmount + f.LegacyAccruedInt),
+                        f.LegacyAccruedInt,
+                        Status = f.Status ?? "Active"
+                    })
+                    .ToListAsync();
+
+                return Ok(accounts);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "मुदतपूर्ती देय अहवाल लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/fd-member-ledger/5
+        [HttpGet("fd-member-ledger/{memberId}")]
+        public async Task<IActionResult> GetFdMemberLedgerReport(int memberId)
+        {
+            try
+            {
+                Customer? customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == memberId);
+                Member? member = null;
+
+                if (customer != null)
+                {
+                    member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                }
+                else
+                {
+                    member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == memberId);
+                    if (member?.CustomerID != null)
+                    {
+                        customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == member.CustomerID.Value);
+                    }
+                }
+
+                if (member == null && customer == null) return NotFound("सभासद किंवा खातेदार सापडला नाही.");
+
+                int? targetCustId = customer?.CustomerID ?? member?.CustomerID;
+                int? targetMemId = member?.MemberID;
+
+                var accounts = await _context.FdAccounts
+                    .Include(a => a.FdScheme)
+                    .Where(a => targetCustId != null && a.CustomerID == targetCustId)
+                    .OrderByDescending(a => a.OpeningDate)
+                    .ToListAsync();
+
+                var accountLedgerList = new List<object>();
+
+                foreach (var acc in accounts)
+                {
+                    var transactions = await _context.FdTransactions
+                        .Include(t => t.Voucher)
+                        .Where(t => t.FdAccountID == acc.FdAccountID)
+                        .OrderBy(t => t.TransactionDate)
+                        .ThenBy(t => t.FdTransactionID)
+                        .Select(t => new
+                        {
+                            t.FdTransactionID,
+                            TransactionDate = t.TransactionDate.ToString("yyyy-MM-dd"),
+                            t.TransactionType,
+                            t.DebitCredit,
+                            t.Amount,
+                            VoucherNo = t.Voucher != null ? t.Voucher.VoucherNo : "",
+                            Narration = t.Voucher != null ? t.Voucher.Narration : (t.TransactionType == "Opening" ? "आरंभिक ठेव मुद्दल" : (t.TransactionType == "Accrual" ? "साचलेले जुने व्याज" : ""))
+                        })
+                        .ToListAsync();
+
+                    decimal totalAccruedInt = await _context.FdTransactions
+                        .Where(t => t.FdAccountID == acc.FdAccountID && t.TransactionType == "Accrual")
+                        .SumAsync(t => t.Amount) + acc.LegacyAccruedInt;
+
+                    accountLedgerList.Add(new
+                    {
+                        acc.FdAccountID,
+                        acc.AccountNo,
+                        OpeningDate = acc.OpeningDate.ToString("yyyy-MM-dd"),
+                        MaturityDate = acc.MaturityDate.ToString("yyyy-MM-dd"),
+                        acc.DepositAmount,
+                        acc.InterestRate,
+                        acc.MaturityAmount,
+                        acc.Status,
+                        acc.PaymentMode,
+                        acc.NomineeName,
+                        acc.NomineeRelation,
+                        acc.Remarks,
+                        SchemeName = acc.FdScheme != null ? acc.FdScheme.SchemeName : "Standard Scheme",
+                        DurationMonths = acc.FdScheme != null ? acc.FdScheme.DurationMonths : 12,
+                        TotalAccruedInterest = totalAccruedInt,
+                        Transactions = transactions
+                    });
+                }
+
+                string fullName = customer != null
+                    ? $"{customer.FirstName} {customer.MiddleName} {customer.LastName}".Replace("  ", " ").Trim()
+                    : (member?.Customer != null ? $"{member.Customer.FirstName} {member.Customer.MiddleName} {member.Customer.LastName}".Replace("  ", " ").Trim() : "");
+
+                return Ok(new
+                {
+                    MemberID = targetMemId ?? (customer?.CustomerID ?? 0),
+                    MemberCode = member?.MemberCode ?? (customer?.CIFNo ?? ""),
+                    CIFNo = customer?.CIFNo ?? member?.Customer?.CIFNo ?? "",
+                    MemberName = fullName,
+                    MobileNo = customer?.MobileNo ?? member?.Customer?.MobileNo ?? "",
+                    Address = customer?.Address ?? member?.Customer?.Address ?? "",
+                    BranchName = customer?.Branch?.BranchName ?? member?.Branch?.BranchName ?? "मुख्य शाखा",
+                    TotalFDAccountsCount = accounts.Count,
+                    TotalPrincipalInvested = accounts.Sum(a => a.DepositAmount),
+                    TotalMaturityValue = accounts.Sum(a => a.MaturityAmount),
+                    Accounts = accountLedgerList
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "मुदत ठेव खातावणी लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/fd-voucher-passing
+        [HttpGet("fd-voucher-passing")]
+        public async Task<IActionResult> GetFdVoucherPassing([FromQuery] int? branchId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] string? status)
+        {
+            try
+            {
+                var query = _context.Vouchers
+                    .Include(v => v.Branch)
+                    .Where(v => v.VoucherNo.StartsWith("JV-FD-") || v.Narration.Contains("मुदत ठेव") || v.Narration.ToLower().Contains("fd"))
+                    .AsQueryable();
+
+                if (branchId.HasValue && branchId.Value > 0)
+                    query = query.Where(v => v.BranchID == branchId.Value);
+
+                if (fromDate.HasValue)
+                    query = query.Where(v => v.VoucherDate >= fromDate.Value.Date);
+
+                if (toDate.HasValue)
+                    query = query.Where(v => v.VoucherDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+                if (!string.IsNullOrEmpty(status) && status != "ALL")
+                    query = query.Where(v => v.Status == status);
+
+                var list = await query
+                    .OrderByDescending(v => v.VoucherDate)
+                    .ThenByDescending(v => v.VoucherID)
+                    .Take(300)
+                    .Select(v => new
+                    {
+                        v.VoucherID,
+                        v.VoucherNo,
+                        VoucherDate = v.VoucherDate.ToString("yyyy-MM-dd"),
+                        BranchName = v.Branch != null ? v.Branch.BranchName : "मुख्य शाखा",
+                        AccountNo = v.VoucherNo.Replace("JV-FD-OP-", "").Replace("JV-FD-CLOSE-", "").Replace("JV-FD-PROV-", ""),
+                        CustomerName = v.Narration,
+                        CustomerCode = "",
+                        TransactionType = v.VoucherNo.Contains("OP") ? "आरंभिक शिल्लक" : (v.VoucherNo.Contains("CLOSE") ? "मुदत समाप्ती" : "व्याज तरतूद"),
+                        TypeBadge = v.VoucherNo.Contains("OP") ? "bg-blue-100 text-blue-800" : (v.VoucherNo.Contains("CLOSE") ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"),
+                        v.VoucherType,
+                        v.TotalAmount,
+                        Status = v.Status ?? "Approved",
+                        ScrollNo = v.ScrollNo,
+                        v.Narration,
+                        CreatedBy = "Admin",
+                        ApprovedBy = "Admin",
+                        ApprovedOn = v.CreatedOn.ToString("yyyy-MM-dd")
+                    })
+                    .ToListAsync();
+
+                return Ok(list);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "FD व्हाउचर पासिंग डेटा लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/fd-deleted-entries
+        [HttpGet("fd-deleted-entries")]
+        public async Task<IActionResult> GetFdDeletedEntries([FromQuery] int? branchId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        {
+            var list = new List<object>();
+            return Ok(list);
+        }
     }
 
 

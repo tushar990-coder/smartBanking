@@ -12,12 +12,38 @@ $patchFolder = Join-Path $workspaceRoot "VPS_Multi_App_Master_Patch"
 $zipOutputFile = Join-Path $workspaceRoot "SmartBanking_VPS_Multi_App_Master_Patch.zip"
 $clientDir = Join-Path $workspaceRoot "client"
 $apiDir = Join-Path $workspaceRoot "api\Bhisi.Api"
-$version = "2.5.0"
+$versionJsonPath = Join-Path $workspaceRoot "version.json"
+
+$version = "2.5.5"
+$gitHash = ""
+$gitShort = ""
+$gitBranch = ""
+$gitDate = ""
+$gitMsg = ""
+
+try {
+    $gitShort = (git rev-parse --short HEAD 2>$null).Trim()
+    $gitHash = (git rev-parse HEAD 2>$null).Trim()
+    $gitBranch = (git rev-parse --abbrev-ref HEAD 2>$null).Trim()
+    $gitDate = (git log -1 --format=%cd --date=iso 2>$null).Trim()
+    $gitMsg = (git log -1 --format=%s 2>$null).Trim()
+} catch {}
+
+if (Test-Path $versionJsonPath) {
+    try {
+        $vObj = Get-Content $versionJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($vObj.version) { $version = $vObj.version }
+        if (-not $gitShort -and $vObj.git -and $vObj.git.commit) { $gitShort = $vObj.git.commit }
+    } catch {}
+}
 $buildDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "   SmartBanking ERP - 1-Click Multi-App VPS Master Patch Builder  " -ForegroundColor Cyan
 Write-Host "   Version: v$version ($buildDate)                                " -ForegroundColor Yellow
+if ($gitShort) {
+Write-Host "   Git Commit: $gitShort ($gitBranch) - $gitMsg                   " -ForegroundColor Gray
+}
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -69,7 +95,7 @@ New-Item -ItemType Directory -Path $backendTempPublish -Force | Out-Null
 Push-Location $apiDir
 try {
     dotnet restore -r win-x64
-    dotnet publish -c Release -r win-x64 --no-self-contained -o $backendTempPublish
+    dotnet publish -c Release -r win-x64 --self-contained false -o $backendTempPublish
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $backendTempPublish "Bhisi.Api.dll"))) {
         Write-Host "[ERROR] Backend publish failed!" -ForegroundColor Red
         Pop-Location
@@ -132,7 +158,7 @@ $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null
 
 # Ensure web.config is included for IIS
-$sourceWebConfig = Join-Path $workspaceRoot "VPS_Deploy\web.config"
+$sourceWebConfig = Join-Path $workspaceRoot "api\Bhisi.Api\web.config"
 if ((Test-Path $sourceWebConfig) -and (-not (Test-Path (Join-Path $backendDest "web.config")))) {
     Copy-Item $sourceWebConfig (Join-Path $backendDest "web.config") -Force
 }

@@ -822,9 +822,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
               <h2 className="text-xs font-bold text-primary">१. शाखा, सभासद व ठेव योजना (Branch, Member & Scheme)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className={labelClass}>शाखा (Branch)</label>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">शाखा (Branch)</label>
+                </div>
                 <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass}>
                   {branches.map((b) => (
                     <option key={b.branchID} value={b.branchID}>
@@ -835,9 +837,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
               </div>
 
               <div>
-                <label className={labelClass}>
-                  सभासद निवडा (Member) <span className="text-red-500">*</span>
-                </label>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    सभासद निवडा (Member) <span className="text-red-500">*</span>
+                  </label>
+                </div>
                 <MemberSearchSelect
                   members={members}
                   value={formData.memberID ? Number(formData.memberID) : ''}
@@ -847,9 +851,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
               </div>
 
               <div>
-                <label className={labelClass}>
-                  मुदत ठेव योजना (FD Scheme) <span className="text-red-500">*</span>
-                </label>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    मुदत ठेव योजना (FD Scheme) <span className="text-red-500">*</span>
+                  </label>
+                </div>
                 <select name="fdSchemeID" value={formData.fdSchemeID} onChange={handleSchemeChange} className={inputClass} required>
                   <option value="0">-- योजना निवडा --</option>
                   {schemes.map((s: any) => (
@@ -862,16 +868,21 @@ const FdOpeningBalanceMigration: React.FC = () => {
             </div>
           </div>
 
-          {/* Section 2: Deposit Amount, Rates & Dates */}
-          <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
+          {/* Section 2: Deposit Amount, Rates & Dates (Standardized 3x3 Grid) */}
+          <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-3">
             <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
               <IndianRupee className="w-4 h-4 text-primary" />
               <h2 className="text-xs font-bold text-primary">२. ठेव मुद्दल, पावती क्र. व मुदतपूर्ती माहिती (Deposit & Maturity)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {/* Row 1, Col 1: नवीन खाते क्र. */}
               <div>
-                <label className={labelClass}>नवीन पावती / खाते क्र. (CBS Account No) <span className="text-red-500">*</span></label>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    नवीन पावती / खाते क्र. (CBS Account No) <span className="text-red-500">*</span>
+                  </label>
+                </div>
                 <input
                   type="text"
                   name="accountNo"
@@ -883,10 +894,14 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 />
               </div>
 
+              {/* Row 1, Col 2: जुना पावती क्र. */}
               <div>
-                <label className={labelClass}>
-                  जुना पावती क्र. (Old Receipt No - अंकात)
-                </label>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    जुना पावती क्र. (Old Receipt No)
+                  </label>
+                  <span className="text-[9px] text-amber-700 font-semibold">फक्त अंकात</span>
+                </div>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -895,13 +910,18 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   value={formData.legacyAccountNumber}
                   onChange={handleChange}
                   className={`${inputClass} font-mono font-bold text-amber-900 bg-amber-50/40 border-amber-300 focus:border-amber-500`}
-                  placeholder="उदा. 1024 किंवा 5821"
+                  placeholder="उदा. 1024"
                   title="फक्त अंक (0-9) टाका"
                 />
               </div>
 
+              {/* Row 1, Col 3: ठेव मुद्दल रक्कम */}
               <div>
-                <label className={labelClass}>ठेव मुद्दल रक्कम (Deposit Amount ₹) <span className="text-red-500">*</span></label>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    ठेव मुद्दल रक्कम (Deposit Amount ₹) <span className="text-red-500">*</span>
+                  </label>
+                </div>
                 <input
                   ref={depositAmountInputRef}
                   type="number"
@@ -911,77 +931,18 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   onFocus={(e) => e.target.select()}
                   className={`${inputClass} font-mono font-bold text-emerald-700`}
                   min="1"
+                  placeholder="उदा. 100000"
                   required
                 />
               </div>
 
+              {/* Row 2, Col 1: ठेव तारीख */}
               <div>
-                <label className={labelClass}>व्याजदर (% p.a.) <span className="text-red-500">*</span></label>
-                <input
-                  type="number"
-                  step="0.01"
-                  name="interestRate"
-                  value={formData.interestRate}
-                  onChange={handleChange}
-                  className={`${inputClass} font-mono font-bold text-primary`}
-                  required
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-0.5">
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
                   <label className="text-[11px] font-bold text-gray-700">
-                    मुदतपूर्ती रक्कम (Maturity ₹) <span className="text-red-500">*</span>
+                    ठेव तारीख (Opening Date) <span className="text-red-500">*</span>
                   </label>
-                  <div className="flex items-center gap-1">
-                    {isManualMaturityEdited ? (
-                      <span className="text-[9px] bg-amber-100 text-amber-900 px-1 py-0.2 rounded font-bold border border-amber-300" title="जुन्या छापील पावतीप्रमाणे मॅन्युअली बदललेले">
-                        ✏️ मॅन्युअल
-                      </span>
-                    ) : (
-                      <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold border border-emerald-300" title="सिस्टीमने आपोआप मोजलेले">
-                        ⚡ ऑटो
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleRecalculateMaturity}
-                      className="text-[10px] text-primary hover:text-primary-dark font-bold underline cursor-pointer flex items-center gap-0.5"
-                      title="सूत्राप्रमाणे पुन्हा स्वयं-गणना करा"
-                    >
-                      <RotateCcw className="w-2.5 h-2.5" />
-                      <span>री-कॅल्क</span>
-                    </button>
-                  </div>
                 </div>
-                <div className="relative">
-                  <input
-                    type="number"
-                    name="maturityAmount"
-                    value={formData.maturityAmount || ''}
-                    onChange={handleChange}
-                    onFocus={(e) => e.target.select()}
-                    className={`${inputClass} font-mono font-bold ${
-                      isManualMaturityEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-blue-50/20'
-                    }`}
-                    placeholder="उदा. 65000"
-                    required
-                  />
-                </div>
-                {formData.maturityAmount > 0 && formData.depositAmount > 0 && (
-                  <p className="text-[9px] text-gray-500 mt-0.5 flex justify-between font-medium">
-                    <span>एकूण अंदाजित व्याज:</span>
-                    <span className="font-bold text-emerald-700 font-mono">
-                      +₹{Math.max(0, formData.maturityAmount - formData.depositAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1.5 border-t border-gray-200">
-              <div>
-                <label className={labelClass}>ठेव तारीख (Opening Date) <span className="text-red-500">*</span></label>
                 <input
                   type="date"
                   name="openingDate"
@@ -992,8 +953,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 />
               </div>
 
+              {/* Row 2, Col 2: मुदतपूर्ती तारीख */}
               <div>
-                <div className="flex justify-between items-center mb-0.5">
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
                   <label className="text-[11px] font-bold text-gray-700">
                     मुदतपूर्ती तारीख (Maturity Date) <span className="text-red-500">*</span>
                   </label>
@@ -1004,7 +966,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                       </span>
                     ) : (
                       <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold border border-emerald-300" title="योजनेनुसार आलेली तारीख">
-                        ⚡ योजनेनुसार {schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID)?.durationMonths ? `(${schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID)?.durationMonths} म.)` : ''}
+                        ⚡ ऑटो
                       </span>
                     )}
                     <button
@@ -1030,9 +992,77 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 />
               </div>
 
+              {/* Row 2, Col 3: मुदतपूर्ती रक्कम */}
               <div>
-                <div className="flex justify-between items-center mb-0.5">
-                  <label className={labelClass}>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    मुदतपूर्ती रक्कम (Maturity ₹) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {isManualMaturityEdited ? (
+                      <span className="text-[9px] bg-amber-100 text-amber-900 px-1 py-0.2 rounded font-bold border border-amber-300" title="जुन्या छापील पावतीप्रमाणे मॅन्युअली बदललेले">
+                        ✏️ मॅन्युअल
+                      </span>
+                    ) : (
+                      <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold border border-emerald-300" title="सिस्टीमने आपोआप मोजलेले">
+                        ⚡ ऑटो
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleRecalculateMaturity}
+                      className="text-[10px] text-primary hover:text-primary-dark font-bold underline cursor-pointer flex items-center gap-0.5"
+                      title="सूत्राप्रमाणे पुन्हा स्वयं-गणना करा"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      <span>री-कॅल्क</span>
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="number"
+                  name="maturityAmount"
+                  value={formData.maturityAmount || ''}
+                  onChange={handleChange}
+                  onFocus={(e) => e.target.select()}
+                  className={`${inputClass} font-mono font-bold ${
+                    isManualMaturityEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-blue-50/20'
+                  }`}
+                  placeholder="उदा. 108243"
+                  required
+                />
+                {formData.maturityAmount > 0 && formData.depositAmount > 0 && (
+                  <p className="text-[9px] text-gray-500 mt-0.5 flex justify-between font-medium">
+                    <span>एकूण अंदाजित व्याज:</span>
+                    <span className="font-bold text-emerald-700 font-mono">
+                      +₹{Math.max(0, formData.maturityAmount - formData.depositAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              {/* Row 3, Col 1: व्याजदर */}
+              <div>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    व्याजदर (% p.a.) <span className="text-red-500">*</span>
+                  </label>
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="interestRate"
+                  value={formData.interestRate}
+                  onChange={handleChange}
+                  className={`${inputClass} font-mono font-bold text-primary`}
+                  required
+                />
+              </div>
+
+              {/* Row 3, Col 2: शेवटची व्याज तारीख */}
+              <div>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">
                     शेवटची व्याज तारीख (Last Int. Date)
                   </label>
                   {formData.lastInterestPostingDate && (
@@ -1051,14 +1081,20 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 />
               </div>
 
+              {/* Row 3, Col 3: साचलेले जुने व्याज */}
               <div>
-                <label className={labelClass}>साचलेले जुने व्याज (Accrued Int. ₹)</label>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    साचलेले जुने व्याज (Accrued Int. ₹)
+                  </label>
+                  <span className="text-[9px] text-gray-400">कट-ऑफ अखेरचे</span>
+                </div>
                 <input
                   type="number"
                   name="legacyAccruedInt"
                   value={formData.legacyAccruedInt}
                   onChange={handleChange}
-                  className={`${inputClass} font-mono`}
+                  className={`${inputClass} font-mono font-bold text-amber-800 bg-amber-50/20`}
                   placeholder="0.00"
                 />
               </div>
@@ -1072,9 +1108,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
               <h2 className="text-xs font-bold text-primary">३. वारसदार व शेरा (Nominee & Remarks)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className={labelClass}>वारसदाराचे नाव (Nominee Name)</label>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">वारसदाराचे नाव (Nominee Name)</label>
+                </div>
                 <input
                   type="text"
                   name="nomineeName"
@@ -1086,7 +1124,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
               </div>
 
               <div>
-                <label className={labelClass}>वारसदाराशी नाते (Relation)</label>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">वारसदाराशी नाते (Relation)</label>
+                </div>
                 <input
                   type="text"
                   name="nomineeRelation"
@@ -1098,7 +1138,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
               </div>
 
               <div>
-                <label className={labelClass}>शेरा (Remarks)</label>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">शेरा (Remarks)</label>
+                </div>
                 <input
                   type="text"
                   name="remarks"

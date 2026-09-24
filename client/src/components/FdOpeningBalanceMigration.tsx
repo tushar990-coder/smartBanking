@@ -666,6 +666,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
     ? (migratedAccounts.reduce((sum, a) => sum + (a.interestRate || 0), 0) / migratedAccounts.length).toFixed(2)
     : '0.00';
 
+  const selectedMember = members.find((m: any) => (m.customerID || m.memberID) === Number(formData.memberID) || m.id === Number(formData.memberID));
+
   const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
   const inputClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';
 
@@ -822,8 +824,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
               <h2 className="text-xs font-bold text-primary">१. शाखा, सभासद व ठेव योजना (Branch, Member & Scheme)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+              <div className="sm:col-span-3">
                 <div className="flex items-center justify-between min-h-[22px] mb-1">
                   <label className="text-[11px] font-bold text-gray-700">शाखा (Branch)</label>
                 </div>
@@ -836,11 +838,16 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 </select>
               </div>
 
-              <div>
+              <div className="sm:col-span-6">
                 <div className="flex items-center justify-between min-h-[22px] mb-1">
                   <label className="text-[11px] font-bold text-gray-700">
                     सभासद निवडा (Member) <span className="text-red-500">*</span>
                   </label>
+                  {selectedMember && (
+                    <span className="text-[10px] text-emerald-800 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                      {selectedMember.memberCode || selectedMember.cifNo || `MEM#${selectedMember.memberID}`}
+                    </span>
+                  )}
                 </div>
                 <MemberSearchSelect
                   members={members}
@@ -848,9 +855,24 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   onChange={(val) => setFormData(prev => ({ ...prev, memberID: val ? Number(val) : 0 }))}
                   placeholder="-- सभासद नाव, कोड किंवा मोबाईलने शोधा --"
                 />
+                {selectedMember && (
+                  <div className="mt-1 flex items-center justify-between text-[11px] bg-sky-50/70 border border-sky-200 px-2 py-1 rounded text-sky-950 font-bold shadow-2xs">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="text-sky-700">👤 पूर्ण नाव:</span>
+                      <span className="font-extrabold text-slate-900">
+                        {selectedMember.fullName || `${selectedMember.firstName || ''} ${selectedMember.middleName ? selectedMember.middleName + ' ' : ''}${selectedMember.lastName || ''}`}
+                      </span>
+                    </div>
+                    {selectedMember.mobileNo && (
+                      <span className="text-slate-600 font-mono text-[10px] shrink-0 ml-2">
+                        📱 {selectedMember.mobileNo}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
-              <div>
+              <div className="sm:col-span-3">
                 <div className="flex items-center justify-between min-h-[22px] mb-1">
                   <label className="text-[11px] font-bold text-gray-700">
                     मुदत ठेव योजना (FD Scheme) <span className="text-red-500">*</span>

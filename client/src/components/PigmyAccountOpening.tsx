@@ -343,8 +343,8 @@ export default function PigmyAccountOpening() {
           maturityDate: getMaturityDate()
         });
         toast.success(`नवीन पिग्मी खाते क्रमांक '${createdNo}' यशस्वीरीत्या उघडले गेले!`);
-        fetchSavedAccounts();
-        fetchNextAccountNo(parseInt(formData.branchID || '1'), formData.pigmySchemeID ? parseInt(formData.pigmySchemeID) : 1);
+        await fetchSavedAccounts();
+        await fetchNextAccountNo(parseInt(formData.branchID || '1'), formData.pigmySchemeID ? parseInt(formData.pigmySchemeID) : 1);
         setFormData(prev => ({
           ...prev,
           customerID: '',

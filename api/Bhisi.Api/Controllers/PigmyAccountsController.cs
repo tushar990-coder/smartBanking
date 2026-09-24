@@ -81,6 +81,41 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        private async Task SyncSequenceWithAccountNoAsync(int branchId, int schemeCodeNum, string accountNo)
+        {
+            if (string.IsNullOrWhiteSpace(accountNo)) return;
+            var digitsOnly = new string(accountNo.Where(char.IsDigit).ToArray());
+            if (digitsOnly.Length == 14)
+            {
+                string seqPart = digitsOnly.Substring(6, 7);
+                if (int.TryParse(seqPart, out int sVal) && sVal > 0)
+                {
+                    var seq = await _context.PigmyAccountSequences
+                        .FirstOrDefaultAsync(s => s.BranchID == branchId && s.SchemeCodeNumeric == schemeCodeNum);
+                    if (seq != null)
+                    {
+                        if (sVal > seq.LastSequenceNumber)
+                        {
+                            seq.LastSequenceNumber = sVal;
+                            seq.UpdatedOn = DateTime.UtcNow;
+                            await _context.SaveChangesAsync();
+                        }
+                    }
+                    else
+                    {
+                        _context.PigmyAccountSequences.Add(new PigmyAccountSequence
+                        {
+                            BranchID = branchId,
+                            SchemeCodeNumeric = schemeCodeNum,
+                            LastSequenceNumber = sVal,
+                            UpdatedOn = DateTime.UtcNow
+                        });
+                        await _context.SaveChangesAsync();
+                    }
+                }
+            }
+        }
+
         // CBS Standard 14-digit Account Generator: [3-digit Branch] + [3-digit Scheme (301, 302...)] + [7-digit Sequence] + [1-digit Checksum]
         private async Task<string> GenerateNextPigmyAccountNo(int branchId, int? schemeId = null, bool incrementSequence = false)
         {
@@ -113,49 +148,72 @@ namespace Bhisi.Api.Controllers
             }
             string schemeCode3 = schemeCodeNum.ToString("D3");
 
-            // 3. Sequence: Atomic sequence per (BranchID, SchemeCodeNumeric)
+            // 3. Scan existing PigmyAccounts in this branch for collision prevention and max sequence derivation
+            var existingPigmyAccs = await _context.PigmyAccounts
+                .Where(p => p.BranchID == branchId && p.AccountNo != null)
+                .Select(p => p.AccountNo!)
+                .ToListAsync();
+
+            var existingSet = new HashSet<string>(existingPigmyAccs, StringComparer.OrdinalIgnoreCase);
+
+            int maxSeq = 0;
+            foreach (var accNo in existingPigmyAccs)
+            {
+                var d = new string(accNo.Where(char.IsDigit).ToArray());
+                if (d.Length == 14)
+                {
+                    string seqPart = d.Substring(6, 7);
+                    if (int.TryParse(seqPart, out int sVal) && sVal > maxSeq)
+                    {
+                        maxSeq = sVal;
+                    }
+                }
+            }
+
+            // 4. Sequence: Atomic sequence per (BranchID, SchemeCodeNumeric)
             var seq = await _context.PigmyAccountSequences
                 .FirstOrDefaultAsync(s => s.BranchID == branchId && s.SchemeCodeNumeric == schemeCodeNum);
 
             if (seq == null)
             {
-                int existingCount = await _context.PigmyAccounts
-                    .CountAsync(p => p.BranchID == branchId);
                 seq = new PigmyAccountSequence
                 {
                     BranchID = branchId,
                     SchemeCodeNumeric = schemeCodeNum,
-                    LastSequenceNumber = existingCount,
+                    LastSequenceNumber = maxSeq,
                     UpdatedOn = DateTime.UtcNow
                 };
                 _context.PigmyAccountSequences.Add(seq);
                 await _context.SaveChangesAsync();
             }
-            else
+            else if (maxSeq > seq.LastSequenceNumber)
             {
-                // Self-healing / Auto-sync: If table was wiped clean, reset sequence counter
-                int totalExistingInBranch = await _context.PigmyAccounts
-                    .CountAsync(p => p.BranchID == branchId);
-                if (totalExistingInBranch == 0 && seq.LastSequenceNumber > 0)
-                {
-                    seq.LastSequenceNumber = 0;
-                    seq.UpdatedOn = DateTime.UtcNow;
-                    await _context.SaveChangesAsync();
-                }
+                seq.LastSequenceNumber = maxSeq;
+                seq.UpdatedOn = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
             }
 
             int nextSeqNumber = seq.LastSequenceNumber + 1;
-            if (incrementSequence)
-            {
-                seq.LastSequenceNumber++;
-                seq.UpdatedOn = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-                nextSeqNumber = seq.LastSequenceNumber;
-            }
-
             string thirteenDigits = $"{branchCode3}{schemeCode3}{nextSeqNumber:D7}";
             int checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
-            return $"{thirteenDigits}{checkDigit}";
+            string candidate = $"{thirteenDigits}{checkDigit}";
+
+            while (existingSet.Contains(candidate))
+            {
+                nextSeqNumber++;
+                thirteenDigits = $"{branchCode3}{schemeCode3}{nextSeqNumber:D7}";
+                checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
+                candidate = $"{thirteenDigits}{checkDigit}";
+            }
+
+            if (incrementSequence)
+            {
+                seq.LastSequenceNumber = nextSeqNumber;
+                seq.UpdatedOn = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+            }
+
+            return candidate;
         }
 
         // GET: api/PigmyAccounts/next-account-no?branchId=1&schemeId=1
@@ -329,6 +387,16 @@ namespace Bhisi.Api.Controllers
                     return BadRequest("Opening date cannot be in the future.");
 
                 // 2. Determine & Validate Account Number
+                int schemeCodeNum = 301;
+                if (scheme != null && !string.IsNullOrWhiteSpace(scheme.SchemeCode))
+                {
+                    var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
+                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
+                    {
+                        schemeCodeNum = parsedScheme;
+                    }
+                }
+
                 string accountNo;
                 if (!string.IsNullOrWhiteSpace(request.AccountNo))
                 {
@@ -338,6 +406,7 @@ namespace Bhisi.Api.Controllers
                     {
                         return BadRequest($"पिग्मी खाते क्रमांक '{accountNo}' आधीच अस्तित्वात आहे. कृपया दुसरा क्रमांक निवडा.");
                     }
+                    await SyncSequenceWithAccountNoAsync(request.BranchID, schemeCodeNum, accountNo);
                 }
                 else
                 {
@@ -454,10 +523,21 @@ namespace Bhisi.Api.Controllers
                 var agent = await _context.PigmyAgents.FindAsync(request.PigmyAgentID);
                 if (agent == null || agent.Status != "Active") return BadRequest("Invalid or inactive Agent.");
 
+                int schemeCodeNum = 301;
+                if (scheme != null && !string.IsNullOrWhiteSpace(scheme.SchemeCode))
+                {
+                    var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
+                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
+                    {
+                        schemeCodeNum = parsedScheme;
+                    }
+                }
+
                 string accountNo;
                 if (!string.IsNullOrWhiteSpace(request.AccountNo))
                 {
                     accountNo = request.AccountNo.Trim();
+                    await SyncSequenceWithAccountNoAsync(request.BranchID, schemeCodeNum, accountNo);
                 }
                 else
                 {

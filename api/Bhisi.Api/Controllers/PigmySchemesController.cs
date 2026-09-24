@@ -112,7 +112,7 @@ namespace Bhisi.Api.Controllers
                 }
             }
             int nextNum = maxNum + 1;
-            return Ok(new { nextCode = $"PGS{nextNum:D3}" });
+            return Ok(new { nextCode = nextNum.ToString() });
         }
 
         // POST: api/PigmySchemes
@@ -136,7 +136,7 @@ namespace Bhisi.Api.Controllers
                         }
                     }
                 }
-                pigmyScheme.SchemeCode = $"PGS{(maxNum + 1):D3}";
+                pigmyScheme.SchemeCode = (maxNum + 1).ToString();
             }
             else
             {

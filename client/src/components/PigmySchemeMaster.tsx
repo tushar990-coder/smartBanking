@@ -118,7 +118,7 @@ export default function PigmySchemeMaster() {
     });
 
     const nextNum = maxNum === 0 ? 1 : maxNum + 1;
-    return `PGS${String(nextNum).padStart(3, '0')}`;
+    return String(nextNum);
   };
 
   const fetchSchemesAndLedgers = async () => {
@@ -256,6 +256,9 @@ export default function PigmySchemeMaster() {
       setSchemes(updatedList);
       if (isEditMode && editSchemeId === schemeId) {
         resetForm(updatedList);
+      } else if (!isEditMode) {
+        const nextCode = generateSchemeCode(updatedList);
+        setFormData(prev => ({ ...prev, schemeCode: nextCode }));
       }
     } catch (err: any) {
       console.error('Delete failed:', err);
@@ -293,6 +296,31 @@ export default function PigmySchemeMaster() {
       return;
     }
 
+    const prematureRate = parseFloat(formData.prematureInterestRate);
+    if (isNaN(prematureRate) || prematureRate < 0) {
+      setError('कृपया मुदतपूर्व व्याजदर प्रविष्ट करा (Premature Interest Rate).');
+      return;
+    }
+
+    const minDuration = parseInt(formData.minDurationMonths, 10);
+    if (isNaN(minDuration) || minDuration <= 0) {
+      setError('कृपया किमान मुदत महिने प्रविष्ट करा (Minimum Duration Months).');
+      return;
+    }
+
+    const penaltyRate = parseFloat(formData.penaltyInterestRate);
+    if (isNaN(penaltyRate) || penaltyRate < 0) {
+      setError('कृपया दंड व्याजदर प्रविष्ट करा (Penalty Interest Rate).');
+      return;
+    }
+
+    if (!formData.interestCalculationMethod) {
+      setError('कृपया व्याज आकारणी पद्धत निवडा (Interest Calculation Method).');
+      return;
+    }
+
+
+
     setSaving(true);
     try {
       const payload = {
@@ -306,19 +334,25 @@ export default function PigmySchemeMaster() {
         interestExpenseLedgerID: formData.interestExpenseLedgerID || null,
         interestPayableLedgerID: formData.interestPayableLedgerID || null,
         commissionExpenseLedgerID: formData.commissionExpenseLedgerID || null,
+        prematureInterestRate: prematureRate,
+        minDurationMonths: minDuration,
+        penaltyInterestRate: penaltyRate,
+        interestCalculationMethod: formData.interestCalculationMethod,
         createdBy: 1,
         createdDate: new Date().toISOString()
       };
 
+      let msg = '';
       if (isEditMode && editSchemeId) {
         await axios.put(`/api/PigmySchemes/${editSchemeId}`, payload);
-        setSuccess(`पिग्मी योजना '${formData.schemeName}' (कोड: ${formData.schemeCode}) यशस्वीरीत्या अद्ययावत (Updated) झाली!`);
+        msg = `पिग्मी योजना '${formData.schemeName}' (कोड: ${formData.schemeCode}) यशस्वीरीत्या अद्ययावत (Updated) झाली!`;
       } else {
         await axios.post('/api/PigmySchemes', payload);
-        setSuccess(`नवीन पिग्मी योजना '${formData.schemeName}' (कोड: ${formData.schemeCode}) यशस्वीरीत्या सेव्ह (Saved) झाली!`);
+        msg = `नवीन पिग्मी योजना '${formData.schemeName}' (कोड: ${formData.schemeCode}) यशस्वीरीत्या सेव्ह (Saved) झाली!`;
       }
 
       resetForm();
+      setSuccess(msg);
       fetchSchemesAndLedgers();
     } catch (err: any) {
       console.error('Error saving Pigmy scheme:', err);

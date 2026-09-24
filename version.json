@@ -1,17 +1,18 @@
 {
-  "version": "2.5.4",
+  "version": "2.5.5",
   "releaseDate": "2026-09-24",
-  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.4",
+  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.5",
   "git": {
-    "commit": "fd322b3",
-    "fullCommit": "fd322b37122570a798fc3ce1771fd4ebf690e510",
+    "commit": "",
+    "fullCommit": "",
     "branch": "main",
-    "commitDate": "2026-09-24 09:06:35 +0530",
-    "commitMessage": "fix(pigmy): resolve pigmy account auto-increment and sequence sync bug (v2.5.4)",
+    "commitDate": "2026-09-24 14:30:00 +0530",
+    "commitMessage": "feat(fd): implement flexible duration (days/months/years) and tenor interest rate slabs (v2.5.5)",
     "author": "tushar990-coder <111702084+tushar990-coder@users.noreply.github.com>",
     "repository": "https://github.com/tushar990-coder/smartBanking.git"
   },
   "changelog": [
+    "⭐ [2026-09-24] मुदत ठेव (FD) कालावधी (दिवस/महिने/वर्षे) व स्लॅब व्याजदर मानकीकरण (FD Tenor Slabs & Duration Unit Engine v2.5.5): मुदत ठेव योजना मास्टरमध्ये निश्चित कालावधी (Fixed) अथवा दिवसांनुसार स्लॅब-आधारित (Slab-based) व्याजदर रचना, FdSchemeInterestSlabs डेटाबेस टेबल व मायग्रेशन, खाते उघडताना दिवस (Days), महिने (Months) किंवा वर्षे (Years) निवडण्याची लवचिकता, अचूक कॅलेंडर दिवसांनुसार स्लॅब मॅचिंग, खाते उघडताना व्याजदर पूर्णपणे लॉक (Strictly Non-Editable/Read-Only CBS Standard), ज्येष्ठ नागरिक दर स्वयंचलित लागू होणे आणि सिंगल व बल्क मुदतपूर्ती रक्कम अचूक गणना.",
     "⭐ [2026-09-24] पिग्मी खाते क्रमांक ऑटो-इन्क्रीमेंट व सीक्वेन्स सिंक्रोनायझेशन (Pigmy Account Auto-Increment & Sequence Sync): नवीन पिग्मी खाते उघडताना खाते क्रमांक आधीच वापरलेला (In Use) राहण्याची त्रुटी दूर, डेटाबेसमधील सर्वोच्च सीक्वेन्सशी स्वयंचलित जुळवणी (Auto-sync with highest sequence in PigmyAccounts), रिअल-टाइम कोलिजन प्रिव्हेन्शन लूप आणि खाते तयार होताच पुढील खाते क्रमांक अचूक लोड होणे.",
     "⭐ [2026-09-23] पिग्मी (दैनिक ठेव) खाते १४-अंकी आंतरराष्ट्रीय सीबीएस मानकीकरण (CBS Standard 14-Digit Pigmy Account Engine - 300 Series): [३-अंकी शाखा कोड] + [३-अंकी पिग्मी योजना कोड (301, 302...)] + [७-अंकी सलग अनुक्रमांक] + [१-अंकी Luhn Modulo-10 चेक डिजिट], PigmyAccountSequences अणू (Atomic) सीक्वेन्स इंजिन, मागील खात्याचा PreviousAccountNo मध्ये सुरक्षित बॅकअप (शून्य डेटा हानी), जुने LegacyAccountNumber लेजर नंबर १००% अबाधित, बहुस्तरीय (Multi-Tier) सर्च आणि रिअल-टाइम व्हॅलिडेशन.",
     "⭐ [2026-09-23] कर्ज जामीनदार युनिव्हर्सल CIF/CustomerID मानकीकरण (Universal CIF-First Loan Guarantor Engine): LoanApplications व LoanAccounts मधून अप्रचलित Guarantor1MemberID व Guarantor2MemberID चे सर्व कॉलम्स, फॉरेन की व इंडेक्सेस कायमस्वरूपी ड्रॉप, सर्व जामीनदार नोंदी थेट Customers(CustomerID) शी जोडणे, बॅकएंड मॉडेल्स, कंट्रोलर्स, फ्रंटएंड फॉर्म्स व सर्व Schema Sync / Deploy स्क्रिप्ट्सचे १००% मानकीकरण.",

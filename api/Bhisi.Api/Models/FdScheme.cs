@@ -29,6 +29,17 @@ namespace Bhisi.Api.Models
         [Required]
         public int DurationMonths { get; set; }
 
+        [StringLength(20)]
+        public string DurationType { get; set; } = "Months"; // Days, Months, Years
+
+        [StringLength(20)]
+        public string SchemeDurationModel { get; set; } = "Fixed"; // Fixed, Slab
+
+        public int? MinDurationDays { get; set; }
+        public int? MaxDurationDays { get; set; }
+
+        public virtual ICollection<FdSchemeInterestSlab> Slabs { get; set; } = new List<FdSchemeInterestSlab>();
+
         [Required]
         [Column(TypeName = "decimal(5,2)")]
         public decimal InterestRate { get; set; }

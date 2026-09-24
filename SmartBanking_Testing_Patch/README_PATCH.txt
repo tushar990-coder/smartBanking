@@ -1,9 +1,13 @@
 ﻿================================================================================
   SmartBanking ERP - 1-Click Dedicated VPS Patch Package (Testing Site)
-  Version: v2.5.3 (2026-09-24 09.02.58)
-  Target: Testing Environment (SmartBanking_Testing / apitesting)
-  Frontend: https://testing.hellomindspace.in
-  Backend : https://api.testing.hellomindspace.in
+  Version     : v2.5.4 (2026-09-24 09.12.18)
+  Git Commit  : bfda829 (main)
+  Full Commit : bfda8294acaa0291537fd39d4fccec263e5c1577
+  Commit Date : 2026-09-24 09:12:00 +0530
+  Commit Msg  : chore(build): inject git metadata and version details into testing patch builder
+  Target Site : Testing Environment (SmartBanking_Testing / apitesting)
+  Frontend    : https://testing.hellomindspace.in
+  Backend     : https://api.testing.hellomindspace.in
 ================================================================================
 
 à¤¯à¤¾ à¤ªà¥…à¤•à¥‡à¤œà¤®à¤§à¥à¤¯à¥‡ à¤–à¤¾à¤²à¥€à¤² à¤¸à¤°à¥à¤µ à¤¨à¤µà¥€à¤¨ à¤…à¤ªà¤¡à¥‡à¤Ÿà¥à¤¸ à¤¸à¤®à¤¾à¤µà¤¿à¤·à¥à¤Ÿ à¤†à¤¹à¥‡à¤¤:

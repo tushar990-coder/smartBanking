@@ -27,6 +27,7 @@ namespace Bhisi.Api.Controllers
         {
             // In Core Banking, FD Schemes are Sanstha-Wide board policies applicable across all branches
             return await _context.FdSchemes
+                .Include(s => s.Slabs.OrderBy(sl => sl.FromDays))
                 .Include(s => s.FdLiabilityLedger)
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
@@ -40,6 +41,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<FdScheme>> GetFdScheme(int id)
         {
             var fdScheme = await _context.FdSchemes
+                .Include(s => s.Slabs.OrderBy(sl => sl.FromDays))
                 .Include(s => s.FdLiabilityLedger)
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
@@ -123,8 +125,25 @@ namespace Bhisi.Api.Controllers
             fdScheme.IsActive = true;
             fdScheme.CreatedDate = DateTime.Now;
 
+            // Handle incoming Slabs
+            var incomingSlabs = fdScheme.Slabs?.ToList() ?? new List<FdSchemeInterestSlab>();
+            fdScheme.Slabs = new List<FdSchemeInterestSlab>();
+
             _context.FdSchemes.Add(fdScheme);
             await _context.SaveChangesAsync();
+
+            if (incomingSlabs.Any())
+            {
+                foreach (var slab in incomingSlabs)
+                {
+                    slab.SlabID = 0;
+                    slab.FdSchemeID = fdScheme.FdSchemeID;
+                    slab.CreatedAt = DateTime.UtcNow;
+                    _context.FdSchemeInterestSlabs.Add(slab);
+                }
+                await _context.SaveChangesAsync();
+            }
+
             return CreatedAtAction("GetFdScheme", new { id = fdScheme.FdSchemeID }, fdScheme);
         }
 
@@ -135,38 +154,78 @@ namespace Bhisi.Api.Controllers
         {
             if (id != fdScheme.FdSchemeID)
             {
-                return BadRequest();
+                return BadRequest("Scheme ID mismatch.");
             }
 
-            if (fdScheme.FdLiabilityLedgerID.HasValue && fdScheme.FdLiabilityLedgerID.Value <= 0) fdScheme.FdLiabilityLedgerID = null;
-            if (fdScheme.InterestExpenseLedgerID.HasValue && fdScheme.InterestExpenseLedgerID.Value <= 0) fdScheme.InterestExpenseLedgerID = null;
-            if (fdScheme.InterestPayableLedgerID.HasValue && fdScheme.InterestPayableLedgerID.Value <= 0) fdScheme.InterestPayableLedgerID = null;
-            if (fdScheme.PrematurePenaltyLedgerID.HasValue && fdScheme.PrematurePenaltyLedgerID.Value <= 0) fdScheme.PrematurePenaltyLedgerID = null;
+            var existingScheme = await _context.FdSchemes
+                .Include(s => s.Slabs)
+                .FirstOrDefaultAsync(s => s.FdSchemeID == id);
 
-            fdScheme.FdLiabilityLedger = null;
-            fdScheme.InterestExpenseLedger = null;
-            fdScheme.InterestPayableLedger = null;
-            fdScheme.PrematurePenaltyLedger = null;
-            fdScheme.Branch = null;
-
-            _context.Entry(fdScheme).State = EntityState.Modified;
-
-            try
+            if (existingScheme == null)
             {
-                await _context.SaveChangesAsync();
+                return NotFound();
             }
-            catch (DbUpdateConcurrencyException)
+
+            // Update Scheme fields
+            existingScheme.SchemeName = fdScheme.SchemeName;
+            existingScheme.DurationMonths = fdScheme.DurationMonths;
+            existingScheme.DurationType = string.IsNullOrWhiteSpace(fdScheme.DurationType) ? "Months" : fdScheme.DurationType;
+            existingScheme.SchemeDurationModel = string.IsNullOrWhiteSpace(fdScheme.SchemeDurationModel) ? "Fixed" : fdScheme.SchemeDurationModel;
+            existingScheme.MinDurationDays = fdScheme.MinDurationDays;
+            existingScheme.MaxDurationDays = fdScheme.MaxDurationDays;
+            existingScheme.InterestRate = fdScheme.InterestRate;
+            existingScheme.SeniorCitizenInterestRate = fdScheme.SeniorCitizenInterestRate;
+            existingScheme.InterestType = fdScheme.InterestType;
+            existingScheme.InterestPostingMethod = fdScheme.InterestPostingMethod;
+            existingScheme.InterestCompoundingFrequency = fdScheme.InterestCompoundingFrequency;
+            existingScheme.MinimumAmount = fdScheme.MinimumAmount;
+            existingScheme.MaximumAmount = fdScheme.MaximumAmount;
+            existingScheme.PrematureInterestRate = fdScheme.PrematureInterestRate;
+            existingScheme.EffectiveDate = fdScheme.EffectiveDate;
+            existingScheme.IsActive = fdScheme.IsActive;
+            existingScheme.ModifiedDate = DateTime.Now;
+
+            existingScheme.FdLiabilityLedgerID = (fdScheme.FdLiabilityLedgerID.HasValue && fdScheme.FdLiabilityLedgerID.Value > 0) ? fdScheme.FdLiabilityLedgerID : null;
+            existingScheme.InterestExpenseLedgerID = (fdScheme.InterestExpenseLedgerID.HasValue && fdScheme.InterestExpenseLedgerID.Value > 0) ? fdScheme.InterestExpenseLedgerID : null;
+            existingScheme.InterestPayableLedgerID = (fdScheme.InterestPayableLedgerID.HasValue && fdScheme.InterestPayableLedgerID.Value > 0) ? fdScheme.InterestPayableLedgerID : null;
+            existingScheme.PrematurePenaltyLedgerID = (fdScheme.PrematurePenaltyLedgerID.HasValue && fdScheme.PrematurePenaltyLedgerID.Value > 0) ? fdScheme.PrematurePenaltyLedgerID : null;
+
+            // Slabs Synchronization
+            var incomingSlabs = fdScheme.Slabs?.ToList() ?? new List<FdSchemeInterestSlab>();
+            
+            // 1. Remove deleted slabs
+            var incomingSlabIds = incomingSlabs.Where(s => s.SlabID > 0).Select(s => s.SlabID).ToHashSet();
+            var slabsToRemove = existingScheme.Slabs.Where(s => !incomingSlabIds.Contains(s.SlabID)).ToList();
+            foreach (var slab in slabsToRemove)
             {
-                if (!FdSchemeExists(id))
+                _context.FdSchemeInterestSlabs.Remove(slab);
+            }
+
+            // 2. Update existing & Add new
+            foreach (var incoming in incomingSlabs)
+            {
+                if (incoming.SlabID > 0)
                 {
-                    return NotFound();
+                    var existingSlab = existingScheme.Slabs.FirstOrDefault(s => s.SlabID == incoming.SlabID);
+                    if (existingSlab != null)
+                    {
+                        existingSlab.FromDays = incoming.FromDays;
+                        existingSlab.ToDays = incoming.ToDays;
+                        existingSlab.InterestRate = incoming.InterestRate;
+                        existingSlab.SeniorCitizenRate = incoming.SeniorCitizenRate;
+                        existingSlab.PrematureRate = incoming.PrematureRate;
+                        existingSlab.IsActive = incoming.IsActive;
+                    }
                 }
                 else
                 {
-                    throw;
+                    incoming.FdSchemeID = existingScheme.FdSchemeID;
+                    incoming.CreatedAt = DateTime.UtcNow;
+                    _context.FdSchemeInterestSlabs.Add(incoming);
                 }
             }
 
+            await _context.SaveChangesAsync();
             return NoContent();
         }
 
@@ -175,7 +234,10 @@ namespace Bhisi.Api.Controllers
         [Authorize(Roles = "Admin,Manager,SuperAdmin,HeadOffice")]
         public async Task<IActionResult> DeleteFdScheme(int id)
         {
-            var fdScheme = await _context.FdSchemes.FindAsync(id);
+            var fdScheme = await _context.FdSchemes
+                .Include(s => s.Slabs)
+                .FirstOrDefaultAsync(s => s.FdSchemeID == id);
+
             if (fdScheme == null)
             {
                 return NotFound();
@@ -194,9 +256,153 @@ namespace Bhisi.Api.Controllers
             return NoContent();
         }
 
+        // POST: api/FdSchemes/CalculateMaturity
+        [HttpPost("CalculateMaturity")]
+        public async Task<ActionResult<object>> CalculateMaturity([FromBody] FdMaturityCalculationRequest request)
+        {
+            if (request == null || request.FdSchemeID <= 0)
+            {
+                return BadRequest("Invalid scheme calculation request.");
+            }
+
+            var scheme = await _context.FdSchemes
+                .Include(s => s.Slabs.Where(sl => sl.IsActive))
+                .FirstOrDefaultAsync(s => s.FdSchemeID == request.FdSchemeID);
+
+            if (scheme == null)
+            {
+                return NotFound("Scheme not found.");
+            }
+
+            var result = CalculateFdMaturityEngine(scheme, request);
+            return Ok(result);
+        }
+
+        private static FdMaturityCalculationResult CalculateFdMaturityEngine(FdScheme scheme, FdMaturityCalculationRequest request)
+        {
+            var opDate = request.OpeningDate != default ? request.OpeningDate : DateTime.Today;
+            string durType = !string.IsNullOrWhiteSpace(request.DurationType) ? request.DurationType : (scheme.DurationType ?? "Months");
+            int durVal = request.DurationValue > 0 ? request.DurationValue : (scheme.DurationMonths > 0 ? scheme.DurationMonths : 12);
+
+            DateTime maturityDate;
+            int totalDays;
+
+            if (durType.Equals("Days", StringComparison.OrdinalIgnoreCase))
+            {
+                totalDays = durVal;
+                maturityDate = opDate.AddDays(totalDays);
+            }
+            else if (durType.Equals("Years", StringComparison.OrdinalIgnoreCase))
+            {
+                maturityDate = opDate.AddYears(durVal);
+                totalDays = (int)(maturityDate - opDate).TotalDays;
+            }
+            else // Months
+            {
+                maturityDate = opDate.AddMonths(durVal);
+                totalDays = (int)(maturityDate - opDate).TotalDays;
+            }
+
+            // Determine Applicable Interest Rate
+            decimal appliedRate;
+            FdSchemeInterestSlab? matchedSlab = null;
+
+            if (scheme.SchemeDurationModel == "Slab" && scheme.Slabs != null && scheme.Slabs.Any())
+            {
+                matchedSlab = scheme.Slabs.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
+                if (matchedSlab != null)
+                {
+                    appliedRate = request.IsSeniorCitizen ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+                }
+                else
+                {
+                    appliedRate = request.IsSeniorCitizen ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+                }
+            }
+            else
+            {
+                appliedRate = request.IsSeniorCitizen ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+            }
+
+            // Calculate Maturity Amount
+            decimal principal = request.DepositAmount;
+            decimal matAmount = 0;
+            decimal t = (decimal)totalDays / 365m;
+
+            if (principal > 0 && totalDays > 0)
+            {
+                string type = scheme.InterestType ?? "Simple";
+                if (type.Equals("Cumulative", StringComparison.OrdinalIgnoreCase))
+                {
+                    double n = 4; // Quarterly standard
+                    if (scheme.InterestCompoundingFrequency == "Monthly") n = 12;
+                    if (scheme.InterestCompoundingFrequency == "Half-Yearly") n = 2;
+                    if (scheme.InterestCompoundingFrequency == "Yearly") n = 1;
+
+                    double r = (double)appliedRate / (n * 100.0);
+                    double timeInYears = (double)totalDays / 365.0;
+                    double compound = (double)principal * Math.Pow(1.0 + r, n * timeInYears);
+                    matAmount = (decimal)compound;
+                }
+                else if (type.Equals("MIS", StringComparison.OrdinalIgnoreCase) || type.Equals("Monthly Interest", StringComparison.OrdinalIgnoreCase))
+                {
+                    matAmount = principal;
+                }
+                else // Simple Interest
+                {
+                    matAmount = principal + ((principal * appliedRate * (decimal)totalDays) / (365m * 100m));
+                }
+            }
+
+            long roundedMaturity = (long)Math.Round(matAmount, MidpointRounding.AwayFromZero);
+            long interestAmount = roundedMaturity >= (long)principal ? roundedMaturity - (long)principal : 0;
+
+            return new FdMaturityCalculationResult
+            {
+                FdSchemeID = scheme.FdSchemeID,
+                SchemeName = scheme.SchemeName,
+                DurationType = durType,
+                DurationValue = durVal,
+                DurationInDays = totalDays,
+                InterestRate = appliedRate,
+                OpeningDate = opDate,
+                MaturityDate = maturityDate,
+                DepositAmount = principal,
+                MaturityAmount = roundedMaturity,
+                InterestAmount = interestAmount,
+                MatchedSlabID = matchedSlab?.SlabID
+            };
+        }
+
         private bool FdSchemeExists(int id)
         {
             return _context.FdSchemes.Any(e => e.FdSchemeID == id);
         }
+    }
+
+    public class FdMaturityCalculationRequest
+    {
+        public int FdSchemeID { get; set; }
+        public DateTime OpeningDate { get; set; } = DateTime.Today;
+        public decimal DepositAmount { get; set; }
+        public string DurationType { get; set; } = "Months"; // Days, Months, Years
+        public int DurationValue { get; set; } = 12;
+        public bool IsSeniorCitizen { get; set; } = false;
+    }
+
+    public class FdMaturityCalculationResult
+    {
+        public int FdSchemeID { get; set; }
+        public string SchemeName { get; set; } = string.Empty;
+        public string DurationType { get; set; } = "Months";
+        public int DurationValue { get; set; }
+        public int DurationInDays { get; set; }
+        public decimal InterestRate { get; set; }
+        public DateTime OpeningDate { get; set; }
+        public DateTime MaturityDate { get; set; }
+        public decimal DepositAmount { get; set; }
+        public decimal MaturityAmount { get; set; }
+        public decimal InterestAmount { get; set; }
+        public int? MatchedSlabID { get; set; }
     }
 }

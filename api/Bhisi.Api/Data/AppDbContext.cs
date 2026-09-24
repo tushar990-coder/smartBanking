@@ -64,6 +64,7 @@ namespace Bhisi.Api.Data
 
         // Fixed Deposit Module DbSets
         public DbSet<FdScheme> FdSchemes { get; set; }
+        public DbSet<FdSchemeInterestSlab> FdSchemeInterestSlabs { get; set; }
         public DbSet<FdAccount> FdAccounts { get; set; }
         public DbSet<FdTransaction> FdTransactions { get; set; }
         public DbSet<FdInterestAccrual> FdInterestAccruals { get; set; }

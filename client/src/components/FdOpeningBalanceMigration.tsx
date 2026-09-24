@@ -44,6 +44,7 @@ interface FdAccountRecord {
   fdSchemeID: number;
   schemeName?: string;
   accountNo: string;
+  legacyAccountNumber?: string;
   openingDate: string;
   depositAmount: number;
   interestRate: number;
@@ -81,6 +82,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     memberID: 0,
     fdSchemeID: 0,
     accountNo: '',
+    legacyAccountNumber: '',
     openingDate: '',
     depositAmount: 0,
     interestRate: 0,
@@ -269,8 +271,25 @@ const FdOpeningBalanceMigration: React.FC = () => {
     }));
   };
 
+  const normalizeToNumericDigits = (input: string): string => {
+    if (!input) return '';
+    const devanagariDigits = ['०', '१', '२', '३', '४', '५', '६', '७', '८', '९'];
+    let normalized = String(input);
+    devanagariDigits.forEach((d, i) => {
+      normalized = normalized.replaceAll(d, i.toString());
+    });
+    return normalized.replace(/\D/g, '');
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
+    
+    if (name === 'legacyAccountNumber') {
+      const sanitized = normalizeToNumericDigits(value);
+      setFormData((prev) => ({ ...prev, legacyAccountNumber: sanitized }));
+      return;
+    }
+
     const parsedVal = name.includes('Amount') || name.includes('Rate') || name.includes('Int') || name === 'branchID'
       ? parseFloat(value) || 0
       : value;
@@ -397,6 +416,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       memberID: 0,
       fdSchemeID: 0,
       accountNo: '',
+      legacyAccountNumber: '',
       openingDate: '',
       depositAmount: 0,
       interestRate: 0,
@@ -422,6 +442,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       memberID: acc.memberID || 0,
       fdSchemeID: acc.fdSchemeID || 0,
       accountNo: acc.accountNo || '',
+      legacyAccountNumber: acc.legacyAccountNumber || '',
       openingDate: acc.openingDate ? acc.openingDate.split('T')[0] : '',
       depositAmount: acc.depositAmount || 0,
       interestRate: acc.interestRate || 0,
@@ -530,6 +551,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     try {
       const payload = {
         ...formData,
+        legacyAccountNumber: formData.legacyAccountNumber ? formData.legacyAccountNumber.trim() : null,
         customerID: resolvedCustId,
         depositAmount: depAmt,
         maturityAmount: matAmt,
@@ -561,6 +583,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     const rows = filteredAccounts.map((acc, i) => ({
       'अ.क्र.': i + 1,
       'पावती / खाते क्र.': acc.accountNo,
+      'जुना पावती क्र.': acc.legacyAccountNumber || '-',
       'सभासद कोड': acc.memberCode || '-',
       'सभासदाचे नाव': acc.memberName || '-',
       'योजनेचे नाव': acc.schemeName || '-',
@@ -603,6 +626,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     const term = searchTerm.toLowerCase();
     return (
       (acc.accountNo && acc.accountNo.toLowerCase().includes(term)) ||
+      (acc.legacyAccountNumber && acc.legacyAccountNumber.toLowerCase().includes(term)) ||
       (acc.memberName && acc.memberName.toLowerCase().includes(term)) ||
       (acc.memberCode && acc.memberCode.toLowerCase().includes(term)) ||
       (acc.schemeName && acc.schemeName.toLowerCase().includes(term))
@@ -807,9 +831,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
               <h2 className="text-xs font-bold text-primary">२. ठेव मुद्दल, पावती क्र. व मुदतपूर्ती माहिती (Deposit & Maturity)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
               <div>
-                <label className={labelClass}>पावती / खाते क्र. (Account / Receipt No) <span className="text-red-500">*</span></label>
+                <label className={labelClass}>नवीन पावती / खाते क्र. (CBS Account No) <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   name="accountNo"
@@ -818,6 +842,23 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   className={`${inputClass} font-mono font-bold text-primary`}
                   placeholder="उदा. FD001"
                   required
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  जुना पावती क्र. (Old Receipt No - अंकात)
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  name="legacyAccountNumber"
+                  value={formData.legacyAccountNumber}
+                  onChange={handleChange}
+                  className={`${inputClass} font-mono font-bold text-amber-900 bg-amber-50/40 border-amber-300 focus:border-amber-500`}
+                  placeholder="उदा. 1024 किंवा 5821"
+                  title="फक्त अंक (0-9) टाका"
                 />
               </div>
 
@@ -1126,7 +1167,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
                     <tr>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">पावती क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">नवीन पावती क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">जुना पावती क्र.</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">सभासद नाव & कोड</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना नाव</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">ठेव मुद्दल (₹)</th>
@@ -1164,6 +1206,15 @@ const FdOpeningBalanceMigration: React.FC = () => {
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono font-bold text-primary">
                           {acc.accountNo}
                         </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono font-bold text-amber-900">
+                          {acc.legacyAccountNumber ? (
+                            <span className="bg-amber-50 text-amber-900 px-1.5 py-0.5 rounded border border-amber-300">
+                              {acc.legacyAccountNumber}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 font-normal">-</span>
+                          )}
+                        </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
                           <div className="font-bold text-gray-900">{acc.memberName}</div>
                           <div className="text-[10px] text-gray-500 font-mono">कोड: {acc.memberCode || '-'}</div>
@@ -1194,7 +1245,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                     ))}
                     {filteredAccounts.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-10 text-center text-gray-400 font-bold">
+                        <td colSpan={10} className="px-6 py-10 text-center text-gray-400 font-bold">
                           कोणतेही स्थलांतरित मुदत ठेव खाते सापडले नाही.
                         </td>
                       </tr>

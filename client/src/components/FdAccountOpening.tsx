@@ -83,6 +83,8 @@ const FdAccountOpening: React.FC = () => {
     branchID: 1,
     memberID: 0,
     fdSchemeID: 0,
+    durationType: 'Months', // 'Days' | 'Months' | 'Years'
+    durationValue: 12,
     openingDate: new Date().toISOString().split('T')[0],
     depositAmount: 50000,
     nomineeName: '',
@@ -94,6 +96,10 @@ const FdAccountOpening: React.FC = () => {
   const [calcData, setCalcData] = useState({
     interestRate: 0,
     durationMonths: 0,
+    durationValue: 12,
+    durationType: 'Months',
+    durationInDays: 365,
+    matchedSlab: null as any,
     interestType: '',
     maturityDate: '',
     maturityAmount: 0,
@@ -216,7 +222,19 @@ const FdAccountOpening: React.FC = () => {
       const data = response.data || [];
       setSchemes(data);
       if (data.length > 0) {
-        setFormData(prev => (prev.fdSchemeID === 0 ? { ...prev, fdSchemeID: getSchemeId(data[0]) } : prev));
+        setFormData(prev => {
+          if (prev.fdSchemeID === 0) {
+            const firstScheme = data[0];
+            const isSlab = firstScheme.schemeDurationModel === 'Slab';
+            return {
+              ...prev,
+              fdSchemeID: getSchemeId(firstScheme),
+              durationType: isSlab ? (firstScheme.durationType || 'Days') : (firstScheme.durationType || 'Months'),
+              durationValue: isSlab ? (firstScheme.slabs?.[0]?.toDays || 90) : (firstScheme.durationMonths || 12),
+            };
+          }
+          return prev;
+        });
       }
     } catch (err) {
       console.error('Error fetching schemes', err);
@@ -274,27 +292,66 @@ const FdAccountOpening: React.FC = () => {
 
   const selectedScheme = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
 
-  // Maturity calculations with ROUND UP (nearest whole rupee)
+  // Dynamic Maturity & Slabs calculations with ROUND UP (nearest whole rupee)
   useEffect(() => {
     const selected = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
     if (!selected) {
-      setCalcData({ interestRate: 0, durationMonths: 0, interestType: '', maturityDate: '', maturityAmount: 0 });
+      setCalcData({
+        interestRate: 0,
+        durationMonths: 0,
+        durationValue: 0,
+        durationType: 'Months',
+        durationInDays: 0,
+        matchedSlab: null,
+        interestType: '',
+        maturityDate: '',
+        maturityAmount: 0
+      });
       return;
     }
-    const rate = Number(formData.isSeniorCitizen ? (selected.seniorCitizenInterestRate || selected.interestRate) : selected.interestRate) || 0;
-    const months = Number(selected.durationMonths) || 0;
+
+    const durType = formData.durationType || (selected.durationType ?? 'Months');
+    const durVal = Number(formData.durationValue) > 0 ? Number(formData.durationValue) : (Number(selected.durationMonths) || 12);
     const type = selected.interestType || 'Simple';
+    const opDate = new Date(formData.openingDate);
 
     let maturityDateStr = '';
-    const opDate = new Date(formData.openingDate);
-    if (!isNaN(opDate.getTime()) && months > 0) {
-      const targetMonth = opDate.getMonth() + months;
-      const targetDay = opDate.getDate();
-      opDate.setMonth(targetMonth);
-      if (opDate.getDate() !== targetDay) {
-        opDate.setDate(0); // overflow fix
+    let totalDays = 0;
+
+    if (!isNaN(opDate.getTime()) && durVal > 0) {
+      const targetDate = new Date(opDate);
+      if (durType === 'Days') {
+        targetDate.setDate(targetDate.getDate() + durVal);
+        totalDays = durVal;
+      } else if (durType === 'Years') {
+        targetDate.setFullYear(targetDate.getFullYear() + durVal);
+        totalDays = Math.round((targetDate.getTime() - opDate.getTime()) / (1000 * 60 * 60 * 24));
+      } else {
+        // Months
+        const targetMonth = targetDate.getMonth() + durVal;
+        const targetDay = targetDate.getDate();
+        targetDate.setMonth(targetMonth);
+        if (targetDate.getDate() !== targetDay) {
+          targetDate.setDate(0);
+        }
+        totalDays = Math.round((targetDate.getTime() - opDate.getTime()) / (1000 * 60 * 60 * 24));
       }
-      maturityDateStr = opDate.toISOString().split('T')[0];
+      maturityDateStr = targetDate.toISOString().split('T')[0];
+    }
+
+    // Rate Resolution from Slabs or Fixed
+    let rate = 0;
+    let matchedSlab: any = null;
+
+    if (selected.schemeDurationModel === 'Slab' && selected.slabs && selected.slabs.length > 0) {
+      matchedSlab = selected.slabs.find((s: any) => totalDays >= Number(s.fromDays) && totalDays <= Number(s.toDays) && s.isActive !== false);
+      if (matchedSlab) {
+        rate = Number(formData.isSeniorCitizen ? (matchedSlab.seniorCitizenRate || matchedSlab.interestRate) : matchedSlab.interestRate) || 0;
+      } else {
+        rate = Number(formData.isSeniorCitizen ? (selected.seniorCitizenInterestRate || selected.interestRate) : selected.interestRate) || 0;
+      }
+    } else {
+      rate = Number(formData.isSeniorCitizen ? (selected.seniorCitizenInterestRate || selected.interestRate) : selected.interestRate) || 0;
     }
 
     const currentDepositAmt = entryMode === 'bulk' 
@@ -303,40 +360,61 @@ const FdAccountOpening: React.FC = () => {
 
     let matAmount = 0;
     const p = currentDepositAmt;
-    if (p > 0 && months > 0) {
+    if (p > 0 && totalDays > 0) {
       const r = rate;
-      const t = months / 12;
       if (type === 'Cumulative') {
         let n = 4;
         if (selected.interestCompoundingFrequency === 'Half-Yearly') n = 2;
         if (selected.interestCompoundingFrequency === 'Yearly') n = 1;
         if (selected.interestCompoundingFrequency === 'Monthly') n = 12;
-        matAmount = p * Math.pow(1 + r / (n * 100), n * t);
+        matAmount = p * Math.pow(1 + r / (n * 100), n * (totalDays / 365));
       } else if (type === 'MIS' || type === 'Monthly Interest') {
         matAmount = p;
       } else {
-        matAmount = p * (1 + (r * t) / 100);
+        matAmount = p * (1 + (r * totalDays) / (365 * 100));
       }
     }
+
     setCalcData({
       interestRate: rate,
-      durationMonths: months,
+      durationMonths: Math.round(totalDays / 30.416),
+      durationValue: durVal,
+      durationType: durType,
+      durationInDays: totalDays,
+      matchedSlab: matchedSlab,
       interestType: type,
       maturityDate: maturityDateStr,
-      maturityAmount: Math.round(matAmount), // Round up to nearest whole rupee
+      maturityAmount: Math.round(matAmount),
     });
-  }, [formData.depositAmount, formData.fdSchemeID, formData.openingDate, formData.isSeniorCitizen, entryMode, amountPerReceipt, schemes]);
+  }, [formData.depositAmount, formData.fdSchemeID, formData.durationType, formData.durationValue, formData.openingDate, formData.isSeniorCitizen, entryMode, amountPerReceipt, schemes]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | any) => {
     const { name, value, type, checked } = e.target;
     let val: any = value;
     if (type === 'checkbox') {
       val = checked;
-    } else if (name === 'depositAmount') {
+    } else if (name === 'depositAmount' || name === 'durationValue') {
       val = value === '' ? '' : value;
     } else if (name.endsWith('ID') || name === 'branchID' || name === 'fdSchemeID' || name === 'memberID') {
       val = value === '' ? '' : (parseInt(value, 10) || 0);
     }
+
+    // Auto-update duration defaults when changing scheme
+    if (name === 'fdSchemeID') {
+      const schemeId = parseInt(value, 10) || 0;
+      const s = schemes.find((sc: any) => getSchemeId(sc) === schemeId);
+      if (s) {
+        const isSlab = s.schemeDurationModel === 'Slab';
+        setFormData(prev => ({
+          ...prev,
+          fdSchemeID: schemeId,
+          durationType: isSlab ? (s.durationType || 'Days') : (s.durationType || 'Months'),
+          durationValue: isSlab ? (s.slabs?.[0]?.toDays || 90) : (s.durationMonths || 12),
+        }));
+        return;
+      }
+    }
+
     setFormData((prev) => ({
       ...prev,
       [name]: val,
@@ -377,6 +455,9 @@ const FdAccountOpening: React.FC = () => {
           ...formData,
           customerID: resolvedCustId,
           depositAmount: depAmt,
+          durationType: calcData.durationType,
+          durationValue: calcData.durationValue,
+          durationInDays: calcData.durationInDays,
           accountNo: 'AUTO',
           interestRate: calcData.interestRate,
           maturityDate: calcData.maturityDate,
@@ -410,6 +491,8 @@ const FdAccountOpening: React.FC = () => {
           totalAmount: totalAmt,
           splitCount: count,
           amountPerReceipt: perReceipt,
+          durationType: calcData.durationType,
+          durationValue: calcData.durationValue,
           nomineeName: formData.nomineeName,
           nomineeRelation: formData.nomineeRelation,
           remarks: formData.remarks,
@@ -434,6 +517,9 @@ const FdAccountOpening: React.FC = () => {
               fdSchemeID: formData.fdSchemeID,
               openingDate: formData.openingDate,
               depositAmount: perReceipt,
+              durationType: calcData.durationType,
+              durationValue: calcData.durationValue,
+              durationInDays: calcData.durationInDays,
               accountNo: 'AUTO',
               interestRate: calcData.interestRate,
               maturityDate: calcData.maturityDate,
@@ -670,16 +756,18 @@ const FdAccountOpening: React.FC = () => {
               {/* Section 2: ठेव रक्कम व मुदत माहिती */}
               <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 mb-3">
                 <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-2 pb-1 border-b border-gray-200 flex items-center justify-between">
-                  <span>२. ठेव रक्कम व मुदत गणित (Deposit & Calculations)</span>
+                  <span>२. ठेव रक्कम व मुदत गणित (Deposit & Duration Calculations)</span>
                   {selectedScheme && (
-                    <span className="text-[10px] font-bold text-blue-900 bg-blue-100 border border-blue-300 px-2 py-0.2 rounded">
-                      मुदत: {selectedScheme.durationMonths} महिने ({selectedScheme.interestType})
+                    <span className="text-[10px] font-bold text-blue-900 bg-blue-100 border border-blue-300 px-2 py-0.5 rounded">
+                      {selectedScheme.schemeDurationModel === 'Slab' 
+                        ? `स्लॅब आधारित योजना (${selectedScheme.slabs?.length || 0} स्लॅब्स) | ${selectedScheme.interestType}` 
+                        : `निश्चित मुदत: ${selectedScheme.durationMonths} महिने | ${selectedScheme.interestType}`}
                     </span>
                   )}
                 </div>
 
                 {entryMode === 'single' && (
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5">
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-2.5">
                     <div>
                       <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खाते उघडल्याची तारीख *</label>
                       <input type="date" name="openingDate" value={formData.openingDate} onChange={handleChange} required
@@ -687,25 +775,69 @@ const FdAccountOpening: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">ठेव रक्कम (Deposit Amount ₹) *</label>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">ठेव रक्कम (Deposit ₹) *</label>
                       <input type="number" name="depositAmount" value={formData.depositAmount} onChange={handleChange} onFocus={(e) => e.target.select()} required
                         className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-blue-900" />
                     </div>
 
+                    {/* Duration input depending on scheme model */}
+                    {selectedScheme?.schemeDurationModel === 'Slab' ? (
+                      <div>
+                        <div className="flex justify-between items-center mb-0.5">
+                          <label className="text-[11px] font-medium text-gray-600">कालावधी (Duration) *</label>
+                          <span className="text-[10px] text-blue-700 font-semibold font-mono">({calcData.durationInDays || 0} दिवस)</span>
+                        </div>
+                        <div className="flex gap-1">
+                          <input 
+                            type="number" 
+                            name="durationValue" 
+                            value={formData.durationValue} 
+                            onChange={handleChange} 
+                            onFocus={(e) => e.target.select()}
+                            required 
+                            min="1"
+                            className="w-1/2 border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" 
+                            placeholder="संख्या"
+                          />
+                          <select 
+                            name="durationType" 
+                            value={formData.durationType} 
+                            onChange={handleChange}
+                            className="w-1/2 border border-gray-300 rounded-sm px-1 py-1 text-xs bg-white font-medium focus:outline-none focus:ring-1 focus:ring-blue-400">
+                            <option value="Days">दिवस (Days)</option>
+                            <option value="Months">महिने (Months)</option>
+                            <option value="Years">वर्षे (Years)</option>
+                          </select>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">कालावधी (Duration)</label>
+                        <input 
+                          type="text" 
+                          value={selectedScheme ? `${selectedScheme.durationMonths} महिने (${calcData.durationInDays || 0} दिवस)` : 'योजना निवडा'} 
+                          readOnly
+                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-slate-100 text-slate-800 cursor-not-allowed font-medium" 
+                        />
+                      </div>
+                    )}
+
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">वार्षिक व्याजदर (%)</label>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
+                        व्याजदर (%) <span className="text-[10px] text-emerald-600">(Locked)</span>
+                      </label>
                       <input type="text" value={formData.fdSchemeID === 0 ? 'योजना निवडा' : `${calcData.interestRate} %`} readOnly
-                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-emerald-50 font-bold text-emerald-800 cursor-not-allowed border-emerald-200" />
+                        className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-50 font-bold text-emerald-800 cursor-not-allowed" />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">मुदतपूर्ती तारीख (Maturity Date)</label>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">मुदतपूर्ती तारीख (Maturity)</label>
                       <input type="text" value={calcData.maturityDate ? new Date(calcData.maturityDate).toLocaleDateString('en-GB') : (formData.fdSchemeID === 0 ? 'योजना निवडा' : '-')} readOnly
-                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-blue-50 font-bold text-blue-900 cursor-not-allowed border-blue-200 font-mono" />
+                        className="w-full border border-blue-200 rounded-sm px-2 py-1 text-xs bg-blue-50 font-bold text-blue-900 cursor-not-allowed font-mono" />
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">अंदाजित मुदतपूर्ती रक्कम (Maturity ₹)</label>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">मुदतपूर्ती रक्कम (Maturity ₹)</label>
                       <input type="text" value={formData.fdSchemeID === 0 ? 'योजना निवडा' : (calcData.maturityAmount > 0 ? `₹ ${Math.round(calcData.maturityAmount).toLocaleString('en-IN')}` : '₹ 0')} readOnly
                         className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-100 font-extrabold text-emerald-950 cursor-not-allowed font-mono shadow-2xs" />
                     </div>
@@ -714,7 +846,7 @@ const FdAccountOpening: React.FC = () => {
 
                 {entryMode === 'bulk' && (
                   <div className="space-y-2">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5">
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2.5">
                       <div>
                         <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खाते उघडल्याची तारीख *</label>
                         <input type="date" name="openingDate" value={formData.openingDate} onChange={handleChange} required
@@ -733,11 +865,56 @@ const FdAccountOpening: React.FC = () => {
                           className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-center" />
                       </div>
 
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">प्रति पावती रक्कम (₹)</label>
-                        <input type="number" value={amountPerReceipt} onChange={(e) => handleAmountPerReceiptChange(e.target.value === '' ? '' : parseFloat(e.target.value))} required
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-emerald-50 font-extrabold text-emerald-900 border-emerald-300" />
-                      </div>
+                      {/* Duration in bulk mode */}
+                      {selectedScheme?.schemeDurationModel === 'Slab' ? (
+                        <div>
+                          <div className="flex justify-between items-center mb-0.5">
+                            <label className="text-[11px] font-medium text-gray-600">कालावधी (Duration) *</label>
+                            <span className="text-[10px] text-blue-700 font-semibold font-mono">({calcData.durationInDays || 0}d)</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <input 
+                              type="number" 
+                              name="durationValue" 
+                              value={formData.durationValue} 
+                              onChange={handleChange} 
+                              onFocus={(e) => e.target.select()}
+                              required 
+                              min="1"
+                              className="w-1/2 border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" 
+                            />
+                            <select 
+                              name="durationType" 
+                              value={formData.durationType} 
+                              onChange={handleChange}
+                              className="w-1/2 border border-gray-300 rounded-sm px-1 py-1 text-xs bg-white font-medium">
+                              <option value="Days">दिवस</option>
+                              <option value="Months">महिने</option>
+                              <option value="Years">वर्षे</option>
+                            </select>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-[11px] font-medium text-gray-600 mb-0.5">प्रति पावती रक्कम (₹)</label>
+                          <input type="number" value={amountPerReceipt} onChange={(e) => handleAmountPerReceiptChange(e.target.value === '' ? '' : parseFloat(e.target.value))} required
+                            className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-emerald-50 font-extrabold text-emerald-900 border-emerald-300" />
+                        </div>
+                      )}
+
+                      {selectedScheme?.schemeDurationModel === 'Slab' ? (
+                        <div>
+                          <label className="block text-[11px] font-medium text-gray-600 mb-0.5">प्रति पावती रक्कम (₹)</label>
+                          <input type="number" value={amountPerReceipt} onChange={(e) => handleAmountPerReceiptChange(e.target.value === '' ? '' : parseFloat(e.target.value))} required
+                            className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-emerald-50 font-extrabold text-emerald-900 border-emerald-300" />
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-[11px] font-medium text-gray-600 mb-0.5">व्याजदर (%)</label>
+                          <input type="text" value={`${calcData.interestRate} %`} readOnly
+                            className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-50 font-bold text-emerald-800 cursor-not-allowed" />
+                        </div>
+                      )}
 
                       <div>
                         <label className="block text-[11px] font-medium text-gray-600 mb-0.5">प्रति पावती मुदतपूर्ती (₹)</label>
@@ -755,7 +932,14 @@ const FdAccountOpening: React.FC = () => {
                       <span className="text-base">📊</span>
                       <div>
                         <span className="font-bold text-slate-800">{selectedScheme.schemeName} ({selectedScheme.schemeCode})</span>
-                        <span className="ml-2 text-[11px] text-slate-500 font-medium">मुदत: <b>{selectedScheme.durationMonths} महिने</b> | व्याज प्रकार: <b>{selectedScheme.interestType}</b></span>
+                        <span className="ml-2 text-[11px] text-slate-500 font-medium">
+                          कालावधी: <b>{calcData.durationValue} {calcData.durationType === 'Days' ? 'दिवस' : calcData.durationType === 'Years' ? 'वर्षे' : 'महिने'} ({calcData.durationInDays} दिवस)</b> | व्याज प्रकार: <b>{selectedScheme.interestType}</b>
+                        </span>
+                        {calcData.matchedSlab && (
+                          <span className="ml-2 bg-blue-100 text-blue-800 border border-blue-300 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                            🎯 लागू स्लॅब: {calcData.matchedSlab.fromDays} ते {calcData.matchedSlab.toDays} दिवस ({calcData.matchedSlab.interestRate}%)
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 font-semibold text-slate-700">

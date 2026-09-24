@@ -22,6 +22,8 @@ namespace Bhisi.Api.Controllers
         public decimal TotalAmount { get; set; }
         public int SplitCount { get; set; } = 1;
         public decimal AmountPerReceipt { get; set; }
+        public string? DurationType { get; set; } = "Months";
+        public int? DurationValue { get; set; }
         public string? NomineeName { get; set; }
         public string? NomineeRelation { get; set; }
         public string? Remarks { get; set; }
@@ -113,13 +115,18 @@ namespace Bhisi.Api.Controllers
                     PrematurePenaltyLedgerID = f.FdScheme != null ? f.FdScheme.PrematurePenaltyLedgerID : null,
                     PrematurePenaltyLedgerName = f.FdScheme != null && f.FdScheme.PrematurePenaltyLedger != null ? f.FdScheme.PrematurePenaltyLedger.LedgerName : "",
                     f.AccountNo,
+                    f.LegacyAccountNumber,
                     f.OpeningDate,
                     f.DepositAmount,
+                    f.DurationType,
+                    f.DurationValue,
+                    f.DurationInDays,
                     f.InterestRate,
                     f.MaturityDate,
                     f.MaturityAmount,
                     f.IsLegacyAccount,
                     f.LegacyAccruedInt,
+                    f.LastInterestPostingDate,
                     f.Status,
                     f.NomineeName,
                     f.NomineeRelation,
@@ -160,13 +167,18 @@ namespace Bhisi.Api.Controllers
                 SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "",
                 SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
                 f.AccountNo,
+                f.LegacyAccountNumber,
                 f.OpeningDate,
                 f.DepositAmount,
+                f.DurationType,
+                f.DurationValue,
+                f.DurationInDays,
                 f.InterestRate,
                 f.MaturityDate,
                 f.MaturityAmount,
                 f.IsLegacyAccount,
                 f.LegacyAccruedInt,
+                f.LastInterestPostingDate,
                 f.Status,
                 f.NomineeName,
                 f.NomineeRelation,
@@ -179,7 +191,9 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<FdAccount>> PostFdAccount(FdAccount account)
         {
             // 1. Load Scheme
-            var scheme = await _context.FdSchemes.FindAsync(account.FdSchemeID);
+            var scheme = await _context.FdSchemes
+                .Include(s => s.Slabs)
+                .FirstOrDefaultAsync(s => s.FdSchemeID == account.FdSchemeID);
             if (scheme == null)
             {
                 return BadRequest("Invalid FD Scheme.");
@@ -229,13 +243,56 @@ namespace Bhisi.Api.Controllers
                     // E.g., KOP-001-FD-000001
                     account.AccountNo = $"{branchPrefix}-{account.BranchID:D3}-FD-{seq.CurrentValue:D6}";
 
-                    // 4. Auto-Calculate Maturity Date & Amount
-                    account.InterestRate = scheme.InterestRate;
-                    account.MaturityDate = account.OpeningDate.AddMonths(scheme.DurationMonths);
+                    // 4. Auto-Calculate Maturity Date & Amount with Slabs & Duration Support
+                    string durType = !string.IsNullOrWhiteSpace(account.DurationType) ? account.DurationType : (scheme.DurationType ?? "Months");
+                    int durVal = account.DurationValue.HasValue && account.DurationValue.Value > 0 ? account.DurationValue.Value : (scheme.DurationMonths > 0 ? scheme.DurationMonths : 12);
+                    account.DurationType = durType;
+                    account.DurationValue = durVal;
+
+                    DateTime maturityDate;
+                    int totalDays;
+                    if (durType.Equals("Days", StringComparison.OrdinalIgnoreCase))
+                    {
+                        totalDays = durVal;
+                        maturityDate = account.OpeningDate.AddDays(totalDays);
+                    }
+                    else if (durType.Equals("Years", StringComparison.OrdinalIgnoreCase))
+                    {
+                        maturityDate = account.OpeningDate.AddYears(durVal);
+                        totalDays = (int)(maturityDate - account.OpeningDate).TotalDays;
+                    }
+                    else
+                    {
+                        maturityDate = account.OpeningDate.AddMonths(durVal);
+                        totalDays = (int)(maturityDate - account.OpeningDate).TotalDays;
+                    }
+                    account.DurationInDays = totalDays;
+                    account.MaturityDate = maturityDate;
+
+                    bool isSenior = customer.BirthDate.HasValue && ((DateTime.Today.Year - customer.BirthDate.Value.Year) >= 60);
+
+                    // Resolve Interest Rate based on Slabs or Scheme fixed rate
+                    decimal appliedRate;
+                    if (scheme.SchemeDurationModel == "Slab" && scheme.Slabs != null && scheme.Slabs.Any())
+                    {
+                        var matchedSlab = scheme.Slabs.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
+                        if (matchedSlab != null)
+                        {
+                            appliedRate = isSenior ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+                        }
+                        else
+                        {
+                            appliedRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+                        }
+                    }
+                    else
+                    {
+                        appliedRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+                    }
+                    account.InterestRate = appliedRate;
 
                     decimal p = account.DepositAmount;
-                    decimal r = scheme.InterestRate;
-                    decimal t = (decimal)scheme.DurationMonths / 12.0m;
+                    decimal r = appliedRate;
 
                     if (scheme.InterestType == "Cumulative")
                     {
@@ -245,13 +302,17 @@ namespace Bhisi.Api.Controllers
                         if (scheme.InterestCompoundingFrequency == "Monthly") n = 12;
 
                         double baseVal = 1.0 + ((double)r / (n * 100.0));
-                        double exponent = n * (double)t;
+                        double exponent = n * ((double)totalDays / 365.0);
                         account.MaturityAmount = Math.Round(p * (decimal)Math.Pow(baseVal, exponent), 0, MidpointRounding.AwayFromZero);
+                    }
+                    else if (scheme.InterestType == "MIS" || scheme.InterestType == "Monthly Interest")
+                    {
+                        account.MaturityAmount = p;
                     }
                     else
                     {
                         // Simple Interest: A = P * (1 + R*T/100)
-                        account.MaturityAmount = Math.Round(p * (1.0m + (r * t / 100.0m)), 0, MidpointRounding.AwayFromZero);
+                        account.MaturityAmount = Math.Round(p * (1.0m + ((r * (decimal)totalDays) / (365.0m * 100.0m))), 0, MidpointRounding.AwayFromZero);
                     }
 
                     // 5. Default attributes
@@ -596,7 +657,9 @@ namespace Bhisi.Api.Controllers
             if (req.FdSchemeID <= 0) return BadRequest("कृपया ठेव योजना निवडा.");
             if (req.SplitCount <= 0) return BadRequest("पावत्यांची संख्या १ किंवा अधिक असावी.");
 
-            var scheme = await _context.FdSchemes.FindAsync(req.FdSchemeID);
+            var scheme = await _context.FdSchemes
+                .Include(s => s.Slabs)
+                .FirstOrDefaultAsync(s => s.FdSchemeID == req.FdSchemeID);
             if (scheme == null) return BadRequest("निवडलेली ठेव योजना अमान्य आहे.");
 
             decimal perReceiptAmount = req.AmountPerReceipt > 0 ? req.AmountPerReceipt : Math.Round(req.TotalAmount / req.SplitCount, 2);
@@ -626,13 +689,49 @@ namespace Bhisi.Api.Controllers
                         await _context.SaveChangesAsync();
                     }
 
-                    // Calculate maturity metrics for perReceiptAmount
-                    decimal rate = req.IsSeniorCitizen ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
-                    DateTime matDate = req.OpeningDate.AddMonths(scheme.DurationMonths);
+                    // 4. Calculate Duration and Maturity metrics with Slabs Support
+                    string durType = !string.IsNullOrWhiteSpace(req.DurationType) ? req.DurationType : (scheme.DurationType ?? "Months");
+                    int durVal = req.DurationValue.HasValue && req.DurationValue.Value > 0 ? req.DurationValue.Value : (scheme.DurationMonths > 0 ? scheme.DurationMonths : 12);
+
+                    DateTime matDate;
+                    int totalDays;
+                    if (durType.Equals("Days", StringComparison.OrdinalIgnoreCase))
+                    {
+                        totalDays = durVal;
+                        matDate = req.OpeningDate.AddDays(totalDays);
+                    }
+                    else if (durType.Equals("Years", StringComparison.OrdinalIgnoreCase))
+                    {
+                        matDate = req.OpeningDate.AddYears(durVal);
+                        totalDays = (int)(matDate - req.OpeningDate).TotalDays;
+                    }
+                    else
+                    {
+                        matDate = req.OpeningDate.AddMonths(durVal);
+                        totalDays = (int)(matDate - req.OpeningDate).TotalDays;
+                    }
+
+                    // Resolve Rate
+                    decimal appliedRate;
+                    if (scheme.SchemeDurationModel == "Slab" && scheme.Slabs != null && scheme.Slabs.Any())
+                    {
+                        var matchedSlab = scheme.Slabs.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
+                        if (matchedSlab != null)
+                        {
+                            appliedRate = req.IsSeniorCitizen ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+                        }
+                        else
+                        {
+                            appliedRate = req.IsSeniorCitizen ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+                        }
+                    }
+                    else
+                    {
+                        appliedRate = req.IsSeniorCitizen ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+                    }
 
                     decimal p = perReceiptAmount;
-                    decimal r = rate;
-                    decimal t = (decimal)scheme.DurationMonths / 12.0m;
+                    decimal r = appliedRate;
                     decimal matAmount = 0;
 
                     if (scheme.InterestType == "Cumulative")
@@ -643,12 +742,16 @@ namespace Bhisi.Api.Controllers
                         if (scheme.InterestCompoundingFrequency == "Monthly") n = 12;
 
                         double baseVal = 1.0 + ((double)r / (n * 100.0));
-                        double exponent = n * (double)t;
+                        double exponent = n * ((double)totalDays / 365.0);
                         matAmount = Math.Round(p * (decimal)Math.Pow(baseVal, exponent), 0, MidpointRounding.AwayFromZero);
+                    }
+                    else if (scheme.InterestType == "MIS" || scheme.InterestType == "Monthly Interest")
+                    {
+                        matAmount = p;
                     }
                     else
                     {
-                        matAmount = Math.Round(p * (1.0m + (r * t / 100.0m)), 0, MidpointRounding.AwayFromZero);
+                        matAmount = Math.Round(p * (1.0m + ((r * (decimal)totalDays) / (365.0m * 100.0m))), 0, MidpointRounding.AwayFromZero);
                     }
 
                     var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive);
@@ -734,7 +837,10 @@ namespace Bhisi.Api.Controllers
                             AccountNo = accNo,
                             OpeningDate = req.OpeningDate,
                             DepositAmount = perReceiptAmount,
-                            InterestRate = rate,
+                            DurationType = durType,
+                            DurationValue = durVal,
+                            DurationInDays = totalDays,
+                            InterestRate = appliedRate,
                             MaturityDate = matDate,
                             MaturityAmount = matAmount,
                             IsLegacyAccount = false,
@@ -1653,8 +1759,12 @@ namespace Bhisi.Api.Controllers
             existing.CustomerID = account.CustomerID;
             existing.FdSchemeID = account.FdSchemeID;
             if (!string.IsNullOrWhiteSpace(account.AccountNo)) existing.AccountNo = account.AccountNo;
+            existing.LegacyAccountNumber = !string.IsNullOrWhiteSpace(account.LegacyAccountNumber) ? account.LegacyAccountNumber.Trim() : null;
             existing.OpeningDate = account.OpeningDate;
             existing.DepositAmount = account.DepositAmount;
+            if (!string.IsNullOrWhiteSpace(account.DurationType)) existing.DurationType = account.DurationType;
+            if (account.DurationValue.HasValue) existing.DurationValue = account.DurationValue;
+            if (account.DurationInDays.HasValue) existing.DurationInDays = account.DurationInDays;
             existing.InterestRate = account.InterestRate;
             existing.MaturityDate = account.MaturityDate;
             existing.MaturityAmount = account.MaturityAmount;

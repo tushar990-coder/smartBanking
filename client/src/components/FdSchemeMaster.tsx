@@ -32,12 +32,27 @@ interface Ledger {
   accountGroup?: { groupName: string };
 }
 
+export interface FdSchemeInterestSlab {
+  slabID?: number;
+  fdSchemeID?: number;
+  fromDays: number | string;
+  toDays: number | string;
+  interestRate: number | string;
+  seniorCitizenRate: number | string;
+  prematureRate?: number | string;
+  isActive?: boolean;
+}
+
 interface FdScheme {
   fdSchemeID: number;
   branchID: number;
   schemeCode: string;
   schemeName: string;
   durationMonths: number;
+  durationType?: string; // 'Days' | 'Months' | 'Years'
+  schemeDurationModel?: string; // 'Fixed' | 'Slab'
+  minDurationDays?: number | null;
+  maxDurationDays?: number | null;
   interestRate: number;
   seniorCitizenInterestRate: number;
   interestType: string;
@@ -56,6 +71,7 @@ interface FdScheme {
   interestPayableLedger?: Ledger | null;
   prematurePenaltyLedgerID?: number | null;
   prematurePenaltyLedger?: Ledger | null;
+  slabs?: FdSchemeInterestSlab[];
 }
 
 interface FdSchemeFormData {
@@ -63,6 +79,10 @@ interface FdSchemeFormData {
   schemeCode: string;
   schemeName: string;
   durationMonths: number | string;
+  durationType: string; // 'Days' | 'Months' | 'Years'
+  schemeDurationModel: string; // 'Fixed' | 'Slab'
+  minDurationDays: number | string;
+  maxDurationDays: number | string;
   interestRate: number | string;
   seniorCitizenInterestRate: number | string;
   interestType: string;
@@ -97,11 +117,17 @@ const FdSchemeMaster: React.FC = () => {
 
   const API_URL = '/api';
 
+  const [slabs, setSlabs] = useState<FdSchemeInterestSlab[]>([]);
+
   const [formData, setFormData] = useState<FdSchemeFormData>({
     branchID: 1,
     schemeCode: '',
     schemeName: '',
     durationMonths: 12,
+    durationType: 'Months', // 'Days' | 'Months' | 'Years'
+    schemeDurationModel: 'Fixed', // 'Fixed' | 'Slab'
+    minDurationDays: 7,
+    maxDurationDays: 3650,
     interestRate: 8.0,
     seniorCitizenInterestRate: 8.5,
     interestType: 'Simple',
@@ -117,6 +143,51 @@ const FdSchemeMaster: React.FC = () => {
     interestPayableLedgerID: 0,
     prematurePenaltyLedgerID: 0,
   });
+
+  const STANDARD_SLABS: FdSchemeInterestSlab[] = [
+    { fromDays: 7, toDays: 45, interestRate: 4.5, seniorCitizenRate: 5.0, prematureRate: 3.5, isActive: true },
+    { fromDays: 46, toDays: 90, interestRate: 5.25, seniorCitizenRate: 5.75, prematureRate: 4.25, isActive: true },
+    { fromDays: 91, toDays: 180, interestRate: 6.0, seniorCitizenRate: 6.5, prematureRate: 5.0, isActive: true },
+    { fromDays: 181, toDays: 365, interestRate: 7.0, seniorCitizenRate: 7.5, prematureRate: 6.0, isActive: true },
+    { fromDays: 366, toDays: 730, interestRate: 7.75, seniorCitizenRate: 8.25, prematureRate: 6.75, isActive: true },
+    { fromDays: 731, toDays: 1095, interestRate: 7.25, seniorCitizenRate: 7.75, prematureRate: 6.25, isActive: true },
+  ];
+
+  const handleAddSlab = () => {
+    let nextFrom = 1;
+    if (slabs.length > 0) {
+      const lastTo = Number(slabs[slabs.length - 1].toDays) || 0;
+      nextFrom = lastTo + 1;
+    }
+    setSlabs([
+      ...slabs,
+      {
+        fromDays: nextFrom,
+        toDays: nextFrom + 89,
+        interestRate: 7.0,
+        seniorCitizenRate: 7.5,
+        prematureRate: 5.5,
+        isActive: true,
+      }
+    ]);
+  };
+
+  const handleRemoveSlab = (index: number) => {
+    setSlabs(slabs.filter((_, idx) => idx !== index));
+  };
+
+  const handleSlabChange = (index: number, field: keyof FdSchemeInterestSlab, value: any) => {
+    const updated = [...slabs];
+    updated[index] = {
+      ...updated[index],
+      [field]: value
+    };
+    setSlabs(updated);
+  };
+
+  const handleLoadStandardSlabs = () => {
+    setSlabs(STANDARD_SLABS.map(s => ({ ...s })));
+  };
 
   useEffect(() => {
     fetchSchemes();
@@ -214,11 +285,37 @@ const FdSchemeMaster: React.FC = () => {
       return;
     }
 
+    // Validate Slabs if Slab model
+    if (formData.schemeDurationModel === 'Slab') {
+      if (slabs.length === 0) {
+        setError('कालावधी स्लॅब पद्धतीसाठी किमान १ स्लॅब जोडणे आवश्यक आहे (+ Add Slab).');
+        return;
+      }
+      for (let i = 0; i < slabs.length; i++) {
+        const s = slabs[i];
+        const from = Number(s.fromDays);
+        const to = Number(s.toDays);
+        const rate = Number(s.interestRate);
+        if (from <= 0 || to <= 0 || from > to) {
+          setError(`स्लॅब क्र. ${i + 1} मध्ये From Days (${from}) हे To Days (${to}) पेक्षा लहान किंवा बरोबर असणे आवश्यक आहे.`);
+          return;
+        }
+        if (rate <= 0) {
+          setError(`स्लॅब क्र. ${i + 1} चा व्याजदर ० पेक्षा जास्त असणे आवश्यक आहे.`);
+          return;
+        }
+      }
+    }
+
     const payload = {
       branchID: 1, // Sanstha-wide master
       schemeCode: formData.schemeCode.trim(),
       schemeName: formData.schemeName.trim(),
       durationMonths: parseInt(formData.durationMonths.toString(), 10) || 12,
+      durationType: formData.durationType || 'Months',
+      schemeDurationModel: formData.schemeDurationModel || 'Fixed',
+      minDurationDays: formData.schemeDurationModel === 'Slab' && slabs.length > 0 ? Number(slabs[0].fromDays) : null,
+      maxDurationDays: formData.schemeDurationModel === 'Slab' && slabs.length > 0 ? Number(slabs[slabs.length - 1].toDays) : null,
       interestRate: parseFloat(formData.interestRate.toString()) || 0,
       seniorCitizenInterestRate: parseFloat(formData.seniorCitizenInterestRate.toString()) || 0,
       interestType: formData.interestType,
@@ -233,6 +330,15 @@ const FdSchemeMaster: React.FC = () => {
       interestExpenseLedgerID: Number(formData.interestExpenseLedgerID) || null,
       interestPayableLedgerID: Number(formData.interestPayableLedgerID) || null,
       prematurePenaltyLedgerID: Number(formData.prematurePenaltyLedgerID) || null,
+      slabs: formData.schemeDurationModel === 'Slab' ? slabs.map(s => ({
+        slabID: s.slabID || 0,
+        fromDays: Number(s.fromDays) || 0,
+        toDays: Number(s.toDays) || 0,
+        interestRate: Number(s.interestRate) || 0,
+        seniorCitizenRate: Number(s.seniorCitizenRate) || 0,
+        prematureRate: Number(s.prematureRate) || 0,
+        isActive: s.isActive ?? true
+      })) : []
     };
 
     setSaving(true);
@@ -266,6 +372,10 @@ const FdSchemeMaster: React.FC = () => {
       schemeCode: scheme.schemeCode || '',
       schemeName: scheme.schemeName || '',
       durationMonths: scheme.durationMonths || 12,
+      durationType: scheme.durationType || 'Months',
+      schemeDurationModel: scheme.schemeDurationModel || 'Fixed',
+      minDurationDays: scheme.minDurationDays || 7,
+      maxDurationDays: scheme.maxDurationDays || 3650,
       interestRate: scheme.interestRate || 0,
       seniorCitizenInterestRate: scheme.seniorCitizenInterestRate || 0,
       interestType: scheme.interestType || 'Simple',
@@ -281,6 +391,7 @@ const FdSchemeMaster: React.FC = () => {
       interestPayableLedgerID: scheme.interestPayableLedgerID || 0,
       prematurePenaltyLedgerID: scheme.prematurePenaltyLedgerID || 0,
     });
+    setSlabs(scheme.slabs ? scheme.slabs.map(s => ({ ...s })) : []);
     setError('');
     setSuccess('');
     setShowListModal(false);
@@ -317,6 +428,10 @@ const FdSchemeMaster: React.FC = () => {
       schemeCode: autoCode,
       schemeName: '',
       durationMonths: 12,
+      durationType: 'Months',
+      schemeDurationModel: 'Fixed',
+      minDurationDays: 7,
+      maxDurationDays: 3650,
       interestRate: 8.0,
       seniorCitizenInterestRate: 8.5,
       interestType: 'Simple',
@@ -332,6 +447,7 @@ const FdSchemeMaster: React.FC = () => {
       interestPayableLedgerID: 0,
       prematurePenaltyLedgerID: 0,
     });
+    setSlabs([]);
     setError('');
     setSuccess('');
   };
@@ -342,9 +458,12 @@ const FdSchemeMaster: React.FC = () => {
       'अ.क्र.': i + 1,
       'योजना कोड': s.schemeCode,
       'योजनेचे नाव': s.schemeName,
-      'कालावधी (महिने)': s.durationMonths,
-      'व्याजदर (%)': s.interestRate,
-      'ज्येष्ठ नागरिक दर (%)': s.seniorCitizenInterestRate,
+      'कालावधी मॉडेल': s.schemeDurationModel === 'Slab' ? 'स्लॅबनिहाय (Slab Matrix)' : 'निश्चित (Fixed)',
+      'कालावधी': s.schemeDurationModel === 'Slab' 
+        ? `${s.slabs?.length || 0} स्लॅब्स (${s.minDurationDays || 7} ते ${s.maxDurationDays || 3650} दिवस)` 
+        : `${s.durationMonths} ${s.durationType === 'Days' ? 'दिवस' : s.durationType === 'Years' ? 'वर्षे' : 'महिने'}`,
+      'व्याजदर (%)': s.schemeDurationModel === 'Slab' ? 'स्लॅबनिहाय' : `${s.interestRate}%`,
+      'ज्येष्ठ नागरिक दर (%)': s.schemeDurationModel === 'Slab' ? 'स्लॅबनिहाय' : `${s.seniorCitizenInterestRate}%`,
       'व्याज प्रकार': s.interestType,
       'किमान रक्कम (₹)': s.minimumAmount,
       'कमाल रक्कम (₹)': s.maximumAmount,
@@ -570,62 +689,266 @@ const FdSchemeMaster: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1.5 border-t border-gray-200">
-            <div>
-              <label className={labelClass}>कालावधी (महिने - Duration) <span className="text-red-500">*</span></label>
-              <input
-                type="number"
-                name="durationMonths"
-                value={formData.durationMonths}
-                onChange={handleChange}
-                onFocus={(e) => e.target.select()}
-                className={`${inputClass} font-bold text-gray-900 font-mono`}
-                required
-              />
-            </div>
+          {/* Tenor Model Selector: Fixed vs Slab */}
+          <div className="pt-2 border-t border-gray-200">
+            <label className="block text-[11px] font-bold text-gray-800 mb-1">
+              कालावधी व व्याजदर पद्धत (Tenor & Interest Structure) <span className="text-red-500">*</span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 bg-slate-50 border border-slate-200 rounded-sm">
+              <label className={`flex items-start gap-2 p-2 rounded border cursor-pointer transition-all ${
+                formData.schemeDurationModel === 'Fixed' ? 'bg-primary/10 border-primary shadow-2xs' : 'bg-white border-gray-200 hover:bg-slate-100'
+              }`}>
+                <input
+                  type="radio"
+                  name="schemeDurationModel"
+                  value="Fixed"
+                  checked={formData.schemeDurationModel === 'Fixed'}
+                  onChange={handleChange}
+                  className="mt-0.5 text-primary focus:ring-primary"
+                />
+                <div>
+                  <span className="font-bold text-xs text-gray-900 block">१. निश्चित कालावधी (Fixed Duration)</span>
+                  <span className="text-[10px] text-gray-500">उदा. फिक्स १२ महिने, ३३३ दिवस किंवा ५ वर्षे करबचत ठेव.</span>
+                </div>
+              </label>
 
-            <div>
-              <label className={labelClass}>नियमित व्याजदर (% p.a.) <span className="text-red-500">*</span></label>
-              <input
-                type="number"
-                step="0.01"
-                name="interestRate"
-                value={formData.interestRate}
-                onChange={handleChange}
-                onFocus={(e) => e.target.select()}
-                className={`${inputClass} text-emerald-700 font-bold font-mono`}
-                required
-              />
-            </div>
-
-            <div>
-              <label className={labelClass}>ज्येष्ठ नागरिक दर (% p.a.)</label>
-              <input
-                type="number"
-                step="0.01"
-                name="seniorCitizenInterestRate"
-                value={formData.seniorCitizenInterestRate}
-                onChange={handleChange}
-                onFocus={(e) => e.target.select()}
-                className={`${inputClass} text-amber-700 font-bold font-mono`}
-                required
-              />
-            </div>
-
-            <div>
-              <label className={labelClass}>मुदतीपूर्व बंद कपात दर (%)</label>
-              <input
-                type="number"
-                step="0.01"
-                name="prematureInterestRate"
-                value={formData.prematureInterestRate}
-                onChange={handleChange}
-                onFocus={(e) => e.target.select()}
-                className={`${inputClass} text-rose-700 font-bold font-mono`}
-                required
-              />
+              <label className={`flex items-start gap-2 p-2 rounded border cursor-pointer transition-all ${
+                formData.schemeDurationModel === 'Slab' ? 'bg-primary/10 border-primary shadow-2xs' : 'bg-white border-gray-200 hover:bg-slate-100'
+              }`}>
+                <input
+                  type="radio"
+                  name="schemeDurationModel"
+                  value="Slab"
+                  checked={formData.schemeDurationModel === 'Slab'}
+                  onChange={handleChange}
+                  className="mt-0.5 text-primary focus:ring-primary"
+                />
+                <div>
+                  <span className="font-bold text-xs text-gray-900 block">२. कालावधी स्लॅब पद्धत (Tenor Rate Slabs)</span>
+                  <span className="text-[10px] text-gray-500">उदा. १५-४५ दिवस (५%), ९१-१८० दिवस (६.५%), १८१-३६५ दिवस (७.५%).</span>
+                </div>
+              </label>
             </div>
           </div>
+
+          {/* Conditional View: Fixed Duration Scheme Form */}
+          {formData.schemeDurationModel === 'Fixed' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 pt-1.5 border-t border-gray-200 animate-in fade-in duration-150">
+              <div>
+                <label className={labelClass}>कालावधी एकक (Unit) <span className="text-red-500">*</span></label>
+                <select
+                  name="durationType"
+                  value={formData.durationType}
+                  onChange={handleChange}
+                  className={`${inputClass} font-bold text-primary`}
+                >
+                  <option value="Months">महिने (Months)</option>
+                  <option value="Days">दिवस (Days)</option>
+                  <option value="Years">वर्षे (Years)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  कालावधी ({formData.durationType === 'Days' ? 'दिवस' : formData.durationType === 'Years' ? 'वर्षे' : 'महिने'}) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  name="durationMonths"
+                  value={formData.durationMonths}
+                  onChange={handleChange}
+                  onFocus={(e) => e.target.select()}
+                  className={`${inputClass} font-bold text-gray-900 font-mono`}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>नियमित व्याजदर (% p.a.) <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="interestRate"
+                  value={formData.interestRate}
+                  onChange={handleChange}
+                  onFocus={(e) => e.target.select()}
+                  className={`${inputClass} text-emerald-700 font-bold font-mono`}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>ज्येष्ठ नागरिक दर (% p.a.)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="seniorCitizenInterestRate"
+                  value={formData.seniorCitizenInterestRate}
+                  onChange={handleChange}
+                  onFocus={(e) => e.target.select()}
+                  className={`${inputClass} text-amber-700 font-bold font-mono`}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>मुदतीपूर्व बंद कपात दर (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="prematureInterestRate"
+                  value={formData.prematureInterestRate}
+                  onChange={handleChange}
+                  onFocus={(e) => e.target.select()}
+                  className={`${inputClass} text-rose-700 font-bold font-mono`}
+                  required
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Conditional View: Tenor Slabs Grid Table */}
+          {formData.schemeDurationModel === 'Slab' && (
+            <div className="pt-2 border-t border-gray-200 space-y-2 animate-in fade-in duration-150">
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-blue-50/70 border border-blue-200 rounded-sm">
+                <div className="text-[11px] text-blue-900 font-medium">
+                  📊 <span className="font-bold">मुदत स्लॅबनिहाय व्याजदर रचना (Tenor Slab Matrix):</span> ठेवीचा कालावधी ज्या स्लॅबमध्ये बसेल, तो व्याजदर खाते उघडताना आपोआप लागू होईल.
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleLoadStandardSlabs}
+                    className="px-2.5 py-1 bg-white hover:bg-slate-50 text-blue-700 border border-blue-300 rounded text-[10px] font-bold shadow-2xs flex items-center gap-1 transition-colors cursor-pointer"
+                    title="सहकारी बँकांचे मानक स्लॅब्स (7 ते 1095 दिवस) आपोआप लोड करा"
+                  >
+                    ⚡ मानक स्लॅब्स लोड करा
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddSlab}
+                    className="px-2.5 py-1 bg-primary hover:opacity-90 text-white rounded text-[10px] font-bold shadow-2xs flex items-center gap-1 transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ नवीन स्लॅब जोडा</span>
+                  </button>
+                </div>
+              </div>
+
+              {slabs.length === 0 ? (
+                <div className="p-4 bg-slate-50 border border-dashed border-gray-300 rounded text-center text-gray-500">
+                  <p className="font-bold text-xs">सध्या कोणताही स्लॅब जोडलेला नाही.</p>
+                  <p className="text-[11px] mt-0.5">कृपया <strong>'+ नवीन स्लॅब जोडा'</strong> किंवा <strong>'⚡ मानक स्लॅब्स लोड करा'</strong> बटणावर क्लिक करा.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-gray-200 rounded-sm">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 text-gray-700 font-bold border-b border-gray-300">
+                      <tr>
+                        <th className="px-2 py-1.5 text-center w-10 border-r border-gray-200">#</th>
+                        <th className="px-2 py-1.5 text-center border-r border-gray-200 w-28">किमान दिवस (From) *</th>
+                        <th className="px-2 py-1.5 text-center border-r border-gray-200 w-28">कमाल दिवस (To) *</th>
+                        <th className="px-2 py-1.5 text-center border-r border-gray-200 w-32">सामान्य दर (% p.a.) *</th>
+                        <th className="px-2 py-1.5 text-center border-r border-gray-200 w-36">ज्येष्ठ नागरिक दर (%) *</th>
+                        <th className="px-2 py-1.5 text-center border-r border-gray-200 w-32">मुदतपूर्व कपात (%)</th>
+                        <th className="px-2 py-1.5 text-center w-16">कृती</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 bg-white text-[11px]">
+                      {slabs.map((slab, index) => (
+                        <tr key={index} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="px-2 py-1 text-center font-bold text-gray-500 border-r border-gray-200">
+                            {index + 1}
+                          </td>
+                          <td className="px-2 py-1 border-r border-gray-200">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="1"
+                                value={slab.fromDays}
+                                onChange={(e) => handleSlabChange(index, 'fromDays', e.target.value)}
+                                className="w-full text-center font-mono font-bold border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary"
+                                placeholder="From"
+                                required
+                              />
+                              <span className="text-[10px] text-gray-400">दिवस</span>
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 border-r border-gray-200">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="1"
+                                value={slab.toDays}
+                                onChange={(e) => handleSlabChange(index, 'toDays', e.target.value)}
+                                className="w-full text-center font-mono font-bold border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary"
+                                placeholder="To"
+                                required
+                              />
+                              <span className="text-[10px] text-gray-400">दिवस</span>
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 border-r border-gray-200">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={slab.interestRate}
+                                onChange={(e) => handleSlabChange(index, 'interestRate', e.target.value)}
+                                className="w-full text-center font-mono font-bold text-emerald-700 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary"
+                                placeholder="%"
+                                required
+                              />
+                              <span className="text-[10px] text-emerald-600 font-bold">%</span>
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 border-r border-gray-200">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={slab.seniorCitizenRate}
+                                onChange={(e) => handleSlabChange(index, 'seniorCitizenRate', e.target.value)}
+                                className="w-full text-center font-mono font-bold text-amber-700 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary"
+                                placeholder="%"
+                                required
+                              />
+                              <span className="text-[10px] text-amber-600 font-bold">%</span>
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 border-r border-gray-200">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={slab.prematureRate || 0}
+                                onChange={(e) => handleSlabChange(index, 'prematureRate', e.target.value)}
+                                className="w-full text-center font-mono font-bold text-rose-700 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary"
+                                placeholder="%"
+                              />
+                              <span className="text-[10px] text-rose-600 font-bold">%</span>
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSlab(index)}
+                              className="text-rose-600 hover:text-rose-800 p-1 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                              title="हा स्लॅब काढून टाका"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Section 2: Interest Calculation Rules & Limits */}
@@ -929,8 +1252,21 @@ const FdSchemeMaster: React.FC = () => {
                           <div className="text-gray-600 font-medium">{s.schemeName}</div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center">
-                          <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>
-                          <div className="text-gray-500 text-[10px]">{s.durationMonths} महिने</div>
+                          {s.schemeDurationModel === 'Slab' ? (
+                            <div>
+                              <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-300">
+                                📊 {s.slabs?.length || 0} स्लॅब्स
+                              </span>
+                              <div className="text-emerald-700 font-bold font-mono text-[10px] mt-0.5">स्लॅबनिहाय दर</div>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>
+                              <div className="text-gray-500 text-[10px]">
+                                {s.durationMonths} {s.durationType === 'Days' ? 'दिवस' : s.durationType === 'Years' ? 'वर्षे' : 'महिने'}
+                              </div>
+                            </div>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center font-medium text-gray-700">
                           {s.interestType}

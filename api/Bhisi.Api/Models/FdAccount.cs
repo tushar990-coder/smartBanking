@@ -50,6 +50,13 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(5,2)")]
         public decimal InterestRate { get; set; }
 
+        [StringLength(20)]
+        public string? DurationType { get; set; } = "Months"; // Days, Months, Years
+
+        public int? DurationValue { get; set; }
+
+        public int? DurationInDays { get; set; }
+
         [Required]
         public DateTime MaturityDate { get; set; }
 

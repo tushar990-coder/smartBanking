@@ -553,8 +553,14 @@ namespace Bhisi.Api.Controllers
                 if (fdAccruals.Any()) _context.FdInterestAccruals.RemoveRange(fdAccruals);
 
                 // 4. Remove FdAccount itself
+                bool isLegacy = account.IsLegacyAccount;
                 _context.FdAccounts.Remove(account);
                 await _context.SaveChangesAsync();
+
+                if (isLegacy)
+                {
+                    try { await SyncFdOpeningBalancesInternalAsync(); } catch { }
+                }
 
                 // 5. Rollback FdAccountSequences by -1 (Sync to max remaining sequence in this branch)
                 var branchSeq = await _context.FdAccountSequences
@@ -1035,6 +1041,17 @@ namespace Bhisi.Api.Controllers
             }
 
             await _context.SaveChangesAsync();
+
+            // Automatically sync with CustomerOpeningBalances & Ledgers (Financial Statements)
+            try
+            {
+                await SyncFdOpeningBalancesInternalAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error auto-syncing FD opening balances: {ex.Message}");
+            }
+
             return Ok(account);
         }
 
@@ -1777,6 +1794,10 @@ namespace Bhisi.Api.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                if (existing.IsLegacyAccount)
+                {
+                    try { await SyncFdOpeningBalancesInternalAsync(); } catch { }
+                }
                 return Ok(existing);
             }
             catch (Exception ex)
@@ -2134,6 +2155,297 @@ namespace Bhisi.Api.Controllers
                 TotalMaturityValue = accounts.Sum(a => a.MaturityAmount),
                 Accounts = accountLedgerList
             });
+        }
+
+        // POST: api/FdAccounts/SyncOpeningBalances
+        [HttpPost("SyncOpeningBalances")]
+        public async Task<IActionResult> SyncOpeningBalances()
+        {
+            try
+            {
+                var result = await SyncFdOpeningBalancesInternalAsync();
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = "आर्थिक पत्रक सिंक करताना त्रुटी आली: " + ex.Message });
+            }
+        }
+
+        private async Task<object> SyncFdOpeningBalancesInternalAsync()
+        {
+            // 1. Fetch all active legacy FD accounts
+            var legacyAccounts = await _context.FdAccounts
+                .Include(a => a.FdScheme)
+                .Where(a => a.IsLegacyAccount && a.Status == "Active")
+                .ToListAsync();
+
+            var schemes = await _context.FdSchemes.ToListAsync();
+            var allLedgers = await _context.Ledgers.ToListAsync();
+            var allCustObs = await _context.CustomerOpeningBalances.ToListAsync();
+            var allMemObs = await _context.MemberOpeningBalances.ToListAsync();
+            var allMembers = await _context.Members.Where(m => m.CustomerID.HasValue).ToListAsync();
+            var memberByCustId = allMembers.GroupBy(m => m.CustomerID!.Value).ToDictionary(g => g.Key, g => g.First());
+
+            var affectedLedgerIds = new HashSet<int>();
+            decimal totalDepositsSynced = 0;
+            decimal totalAccruedSynced = 0;
+
+            // Map each scheme to its Liability and Payable Ledgers
+            var schemeLiabilityMap = new Dictionary<int, Ledger>();
+            var schemePayableMap = new Dictionary<int, Ledger>();
+
+            foreach (var scheme in schemes)
+            {
+                // Resolve Liability Ledger (मुदत ठेव मुख्य खाते)
+                Ledger? liabilityLedger = null;
+                if (scheme.FdLiabilityLedgerID.HasValue && scheme.FdLiabilityLedgerID.Value > 0)
+                {
+                    liabilityLedger = allLedgers.FirstOrDefault(l => l.LedgerID == scheme.FdLiabilityLedgerID.Value);
+                }
+                if (liabilityLedger == null)
+                {
+                    liabilityLedger = allLedgers.FirstOrDefault(l =>
+                        (l.LedgerName != null && l.LedgerName.Trim() == scheme.SchemeName.Trim()) ||
+                        (l.LedgerName != null && (l.LedgerName.Contains("मुदत बंद ठेव") || l.LedgerName.Contains("मुदत ठेव") || l.LedgerName.Contains("दामदुप्पट ठेव"))) ||
+                        (l.AccountType == "FD" || l.AccountType == "FixedDeposit"));
+
+                    if (liabilityLedger != null && (!scheme.FdLiabilityLedgerID.HasValue || scheme.FdLiabilityLedgerID == 0))
+                    {
+                        scheme.FdLiabilityLedgerID = liabilityLedger.LedgerID;
+                        _context.Entry(scheme).State = EntityState.Modified;
+                    }
+                }
+                if (liabilityLedger != null)
+                {
+                    schemeLiabilityMap[scheme.FdSchemeID] = liabilityLedger;
+                    affectedLedgerIds.Add(liabilityLedger.LedgerID);
+                }
+
+                // Resolve Payable Ledger (मुदत ठेव देणे व्याज खाते)
+                Ledger? payableLedger = null;
+                if (scheme.InterestPayableLedgerID.HasValue && scheme.InterestPayableLedgerID.Value > 0)
+                {
+                    payableLedger = allLedgers.FirstOrDefault(l => l.LedgerID == scheme.InterestPayableLedgerID.Value);
+                }
+                if (payableLedger == null)
+                {
+                    payableLedger = allLedgers.FirstOrDefault(l =>
+                        l.LedgerName != null && (
+                            l.LedgerName.Contains("देणे मुदत") ||
+                            (l.LedgerName.Contains("देणे") && l.LedgerName.Contains("ठेव") && l.LedgerName.Contains("व्याज")) ||
+                            l.LedgerName.Contains("देणे सभासद ठेव व्याज") ||
+                            l.LedgerName.Contains("देय व्याज") ||
+                            l.LedgerName.ToLower().Contains("interest payable")));
+
+                    if (payableLedger != null && (!scheme.InterestPayableLedgerID.HasValue || scheme.InterestPayableLedgerID == 0))
+                    {
+                        scheme.InterestPayableLedgerID = payableLedger.LedgerID;
+                        _context.Entry(scheme).State = EntityState.Modified;
+                    }
+                }
+                if (payableLedger != null)
+                {
+                    schemePayableMap[scheme.FdSchemeID] = payableLedger;
+                    affectedLedgerIds.Add(payableLedger.LedgerID);
+                }
+            }
+
+            // Group legacy accounts by resolved Liability Ledger and Customer
+            var accountsWithLiabilityLedger = legacyAccounts
+                .Where(a => schemeLiabilityMap.ContainsKey(a.FdSchemeID))
+                .Select(a => new { Account = a, Ledger = schemeLiabilityMap[a.FdSchemeID] })
+                .ToList();
+
+            var liabilityLedgerGroups = accountsWithLiabilityLedger
+                .GroupBy(x => x.Ledger.LedgerID)
+                .ToList();
+
+            foreach (var lGrp in liabilityLedgerGroups)
+            {
+                int ledgerId = lGrp.Key;
+                var custGroups = lGrp.GroupBy(x => x.Account.CustomerID).ToList();
+
+                foreach (var cGrp in custGroups)
+                {
+                    int custId = cGrp.Key;
+                    decimal custDepositTotal = cGrp.Sum(x => x.Account.DepositAmount);
+                    totalDepositsSynced += custDepositTotal;
+
+                    // Sync CustomerOpeningBalances
+                    var custOb = allCustObs.FirstOrDefault(c => c.CustomerID == custId && c.LedgerID == ledgerId);
+                    if (custOb != null)
+                    {
+                        custOb.Amount = custDepositTotal;
+                        custOb.BalanceType = "Cr";
+                        custOb.UpdatedOn = DateTime.Now;
+                        _context.Entry(custOb).State = EntityState.Modified;
+                    }
+                    else if (custDepositTotal > 0)
+                    {
+                        var newOb = new CustomerOpeningBalance
+                        {
+                            CustomerID = custId,
+                            LedgerID = ledgerId,
+                            Amount = custDepositTotal,
+                            BalanceType = "Cr",
+                            CreatedBy = 1,
+                            CreatedOn = DateTime.Now
+                        };
+                        _context.CustomerOpeningBalances.Add(newOb);
+                        allCustObs.Add(newOb);
+                    }
+
+                    // Sync MemberOpeningBalances
+                    if (memberByCustId.TryGetValue(custId, out var mem))
+                    {
+                        var memOb = allMemObs.FirstOrDefault(m => m.MemberID == mem.MemberID && m.LedgerID == ledgerId);
+                        if (memOb != null)
+                        {
+                            memOb.Amount = custDepositTotal;
+                            memOb.BalanceType = "Cr";
+                            memOb.UpdatedOn = DateTime.Now;
+                            _context.Entry(memOb).State = EntityState.Modified;
+                        }
+                        else if (custDepositTotal > 0)
+                        {
+                            var newMemOb = new MemberOpeningBalance
+                            {
+                                MemberID = mem.MemberID,
+                                CustomerID = custId,
+                                LedgerID = ledgerId,
+                                Amount = custDepositTotal,
+                                BalanceType = "Cr",
+                                CreatedBy = 1,
+                                CreatedOn = DateTime.Now
+                            };
+                            _context.MemberOpeningBalances.Add(newMemOb);
+                            allMemObs.Add(newMemOb);
+                        }
+                    }
+                }
+            }
+
+            // Group legacy accounts with Accrued Interest by resolved Payable Ledger and Customer
+            var accountsWithPayableLedger = legacyAccounts
+                .Where(a => a.LegacyAccruedInt > 0 && schemePayableMap.ContainsKey(a.FdSchemeID))
+                .Select(a => new { Account = a, Ledger = schemePayableMap[a.FdSchemeID] })
+                .ToList();
+
+            var payableLedgerGroups = accountsWithPayableLedger
+                .GroupBy(x => x.Ledger.LedgerID)
+                .ToList();
+
+            foreach (var pGrp in payableLedgerGroups)
+            {
+                int ledgerId = pGrp.Key;
+                var custGroups = pGrp.GroupBy(x => x.Account.CustomerID).ToList();
+
+                foreach (var cGrp in custGroups)
+                {
+                    int custId = cGrp.Key;
+                    decimal custAccruedTotal = cGrp.Sum(x => x.Account.LegacyAccruedInt);
+                    totalAccruedSynced += custAccruedTotal;
+
+                    // Sync CustomerOpeningBalances
+                    var custOb = allCustObs.FirstOrDefault(c => c.CustomerID == custId && c.LedgerID == ledgerId);
+                    if (custOb != null)
+                    {
+                        custOb.Amount = custAccruedTotal;
+                        custOb.BalanceType = "Cr";
+                        custOb.UpdatedOn = DateTime.Now;
+                        _context.Entry(custOb).State = EntityState.Modified;
+                    }
+                    else if (custAccruedTotal > 0)
+                    {
+                        var newOb = new CustomerOpeningBalance
+                        {
+                            CustomerID = custId,
+                            LedgerID = ledgerId,
+                            Amount = custAccruedTotal,
+                            BalanceType = "Cr",
+                            CreatedBy = 1,
+                            CreatedOn = DateTime.Now
+                        };
+                        _context.CustomerOpeningBalances.Add(newOb);
+                        allCustObs.Add(newOb);
+                    }
+
+                    // Sync MemberOpeningBalances
+                    if (memberByCustId.TryGetValue(custId, out var mem))
+                    {
+                        var memOb = allMemObs.FirstOrDefault(m => m.MemberID == mem.MemberID && m.LedgerID == ledgerId);
+                        if (memOb != null)
+                        {
+                            memOb.Amount = custAccruedTotal;
+                            memOb.BalanceType = "Cr";
+                            memOb.UpdatedOn = DateTime.Now;
+                            _context.Entry(memOb).State = EntityState.Modified;
+                        }
+                        else if (custAccruedTotal > 0)
+                        {
+                            var newMemOb = new MemberOpeningBalance
+                            {
+                                MemberID = mem.MemberID,
+                                CustomerID = custId,
+                                LedgerID = ledgerId,
+                                Amount = custAccruedTotal,
+                                BalanceType = "Cr",
+                                CreatedBy = 1,
+                                CreatedOn = DateTime.Now
+                            };
+                            _context.MemberOpeningBalances.Add(newMemOb);
+                            allMemObs.Add(newMemOb);
+                        }
+                    }
+                }
+            }
+
+            // Save all Customer/Member Opening Balances changes
+            await _context.SaveChangesAsync();
+
+            // 3. Update Ledgers Opening Balance
+            var updatedLedgers = new List<object>();
+            foreach (var lId in affectedLedgerIds)
+            {
+                var ledger = allLedgers.FirstOrDefault(l => l.LedgerID == lId);
+                if (ledger == null) continue;
+
+                var custObsForLedger = await _context.CustomerOpeningBalances.Where(b => b.LedgerID == lId).ToListAsync();
+                decimal totalDr = custObsForLedger.Where(b => b.BalanceType == "Dr").Sum(b => b.Amount);
+                decimal totalCr = custObsForLedger.Where(b => b.BalanceType == "Cr").Sum(b => b.Amount);
+
+                if (totalCr >= totalDr)
+                {
+                    ledger.OpeningBalance = totalCr - totalDr;
+                    ledger.OpeningBalanceType = "Cr";
+                }
+                else
+                {
+                    ledger.OpeningBalance = totalDr - totalCr;
+                    ledger.OpeningBalanceType = "Dr";
+                }
+
+                _context.Entry(ledger).State = EntityState.Modified;
+                updatedLedgers.Add(new {
+                    ledgerId = ledger.LedgerID,
+                    ledgerName = ledger.LedgerName,
+                    openingBalance = ledger.OpeningBalance,
+                    openingBalanceType = ledger.OpeningBalanceType
+                });
+            }
+
+            await _context.SaveChangesAsync();
+
+            return new
+            {
+                success = true,
+                message = "मुदत ठेव सुरुवातीची शिल्लक आणि साचलेले जुने व्याज आर्थिक पत्रके (ताळेबंद / तेरीज) सह यशस्वीरीत्या सिंक करण्यात आले आहे.",
+                totalLegacyAccounts = legacyAccounts.Count,
+                totalDepositsSynced,
+                totalAccruedSynced,
+                affectedLedgers = updatedLedgers
+            };
         }
     }
 

@@ -19,7 +19,8 @@ import {
   Percent,
   Calendar,
   UserCheck,
-  BookOpen
+  BookOpen,
+  Scale
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -74,8 +75,33 @@ const FdOpeningBalanceMigration: React.FC = () => {
   const [isManualMaturityDateEdited, setIsManualMaturityDateEdited] = useState(false);
   const formContainerRef = useRef<HTMLDivElement>(null);
   const depositAmountInputRef = useRef<HTMLInputElement>(null);
+  const [syncingFinancials, setSyncingFinancials] = useState(false);
+  const [syncResult, setSyncResult] = useState<any>(null);
 
   const API_URL = '/api';
+
+  const handleSyncFinancialStatements = async () => {
+    try {
+      setSyncingFinancials(true);
+      setError('');
+      setSuccess('');
+      const res = await axios.post(`${API_URL}/FdAccounts/SyncOpeningBalances`);
+      if (res.data?.success) {
+        setSyncResult(res.data);
+        const depStr = Number(res.data.totalDepositsSynced || 0).toLocaleString('en-IN');
+        const intStr = Number(res.data.totalAccruedSynced || 0).toLocaleString('en-IN');
+        setSuccess(`✅ मुदत ठेव सुरुवातीची शिल्लक आणि साचलेले जुने व्याज आर्थिक पत्रके (ताळेबंद / तेरीज) सह यशस्वीरीत्या सिंक करण्यात आले आहे! (एकूण मुद्दल: ₹${depStr}, साचलेले व्याज: ₹${intStr})`);
+        fetchMigratedAccounts();
+      } else {
+        setSuccess(res.data?.message || 'सिंक पूर्ण झाले.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.response?.data?.message || 'आर्थिक पत्रक सिंक करताना त्रुटी आली.');
+    } finally {
+      setSyncingFinancials(false);
+    }
+  };
 
   const [formData, setFormData] = useState({
     branchID: 1,
@@ -690,6 +716,18 @@ const FdOpeningBalanceMigration: React.FC = () => {
           >
             <Plus className="w-3.5 h-3.5" />
             <span>नवीन नोंद</span>
+          </button>
+
+          {/* SYNC WITH FINANCIAL STATEMENTS BUTTON */}
+          <button
+            type="button"
+            onClick={handleSyncFinancialStatements}
+            disabled={syncingFinancials}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+            title="मुदत ठेव सुरुवातीची शिल्लक व साचलेले व्याज आर्थिक पत्रके (ताळेबंद / तेरीज) सह सिंक करा"
+          >
+            <Scale className={`w-3.5 h-3.5 ${syncingFinancials ? 'animate-spin' : ''}`} />
+            <span>{syncingFinancials ? 'सिंक होत आहे...' : '📊 आर्थिक पत्रक सिंक करा'}</span>
           </button>
 
           {/* VIEW LIST BUTTON -> Opens Pop-up List Modal */}

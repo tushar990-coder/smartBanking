@@ -1,10 +1,10 @@
 ﻿================================================================================
   SmartBanking ERP - 1-Click Dedicated VPS Patch Package (Testing Site)
-  Version     : v2.5.5 (2026-09-24 15.05.15)
-  Git Commit  : 3864e30 (main)
-  Full Commit : 3864e303f01fb55ec06f58a068da2a41b9f6788f
-  Commit Date : 2026-09-24 14:31:28 +0530
-  Commit Msg  : feat(fd): implement flexible duration (days/months/years) and tenor interest rate slabs (v2.5.5)
+  Version     : v2.5.5 (2026-09-24 17.37.28)
+  Git Commit  : 6a53015 (main)
+  Full Commit : 6a53015ee8ddde2a4c47801efc6dd6a4090bf8c2
+  Commit Date : 2026-09-24 17:36:49 +0530
+  Commit Msg  : Update testing patch build artifacts and version info
   Target Site : Testing Environment (SmartBanking_Testing / apitesting)
   Frontend    : https://testing.hellomindspace.in
   Backend     : https://api.testing.hellomindspace.in

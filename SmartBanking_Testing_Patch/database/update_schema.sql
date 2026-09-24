@@ -457,6 +457,75 @@ BEGIN
 END
 GO
 
+IF COL_LENGTH('FdSchemes', 'DurationType') IS NULL
+BEGIN
+    ALTER TABLE [FdSchemes] ADD [DurationType] NVARCHAR(20) NOT NULL DEFAULT 'Months';
+    PRINT 'Added DurationType to FdSchemes';
+END
+GO
+
+IF COL_LENGTH('FdSchemes', 'SchemeDurationModel') IS NULL
+BEGIN
+    ALTER TABLE [FdSchemes] ADD [SchemeDurationModel] NVARCHAR(20) NOT NULL DEFAULT 'Fixed';
+    PRINT 'Added SchemeDurationModel to FdSchemes';
+END
+GO
+
+IF COL_LENGTH('FdSchemes', 'MinDurationDays') IS NULL
+BEGIN
+    ALTER TABLE [FdSchemes] ADD [MinDurationDays] INT NULL;
+    PRINT 'Added MinDurationDays to FdSchemes';
+END
+GO
+
+IF COL_LENGTH('FdSchemes', 'MaxDurationDays') IS NULL
+BEGIN
+    ALTER TABLE [FdSchemes] ADD [MaxDurationDays] INT NULL;
+    PRINT 'Added MaxDurationDays to FdSchemes';
+END
+GO
+
+IF COL_LENGTH('FdAccounts', 'DurationType') IS NULL
+BEGIN
+    ALTER TABLE [FdAccounts] ADD [DurationType] NVARCHAR(20) NULL DEFAULT 'Months';
+    PRINT 'Added DurationType to FdAccounts';
+END
+GO
+
+IF COL_LENGTH('FdAccounts', 'DurationValue') IS NULL
+BEGIN
+    ALTER TABLE [FdAccounts] ADD [DurationValue] INT NULL;
+    PRINT 'Added DurationValue to FdAccounts';
+END
+GO
+
+IF COL_LENGTH('FdAccounts', 'DurationInDays') IS NULL
+BEGIN
+    ALTER TABLE [FdAccounts] ADD [DurationInDays] INT NULL;
+    PRINT 'Added DurationInDays to FdAccounts';
+END
+GO
+
+IF OBJECT_ID(N'[dbo].[FdSchemeInterestSlabs]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[FdSchemeInterestSlabs] (
+        [SlabID] INT IDENTITY(1,1) NOT NULL,
+        [FdSchemeID] INT NOT NULL,
+        [FromDays] INT NOT NULL,
+        [ToDays] INT NOT NULL,
+        [InterestRate] DECIMAL(5,2) NOT NULL,
+        [SeniorCitizenRate] DECIMAL(5,2) NOT NULL,
+        [PrematureRate] DECIMAL(5,2) NOT NULL DEFAULT 0,
+        [IsActive] BIT NOT NULL DEFAULT 1,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT [PK_FdSchemeInterestSlabs] PRIMARY KEY CLUSTERED ([SlabID] ASC),
+        CONSTRAINT [FK_FdSchemeInterestSlabs_FdSchemes] FOREIGN KEY ([FdSchemeID]) 
+            REFERENCES [dbo].[FdSchemes]([FdSchemeID]) ON DELETE CASCADE
+    );
+    PRINT 'Created Table [dbo].[FdSchemeInterestSlabs]';
+END
+GO
+
 -- RdSchemes
 IF COL_LENGTH('RdSchemes', 'RdLiabilityLedgerID') IS NULL
 BEGIN

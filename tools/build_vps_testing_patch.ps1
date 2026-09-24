@@ -14,11 +14,26 @@ $clientDir = Join-Path $workspaceRoot "client"
 $apiDir = Join-Path $workspaceRoot "api\Bhisi.Api"
 $versionJsonPath = Join-Path $workspaceRoot "version.json"
 
-$version = "2.5.0"
+$version = "2.5.4"
+$gitHash = ""
+$gitShort = ""
+$gitBranch = ""
+$gitDate = ""
+$gitMsg = ""
+
+try {
+    $gitShort = (git rev-parse --short HEAD 2>$null).Trim()
+    $gitHash = (git rev-parse HEAD 2>$null).Trim()
+    $gitBranch = (git rev-parse --abbrev-ref HEAD 2>$null).Trim()
+    $gitDate = (git log -1 --format=%cd --date=iso 2>$null).Trim()
+    $gitMsg = (git log -1 --format=%s 2>$null).Trim()
+} catch {}
+
 if (Test-Path $versionJsonPath) {
     try {
         $vObj = Get-Content $versionJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($vObj.version) { $version = $vObj.version }
+        if (-not $gitShort -and $vObj.git -and $vObj.git.commit) { $gitShort = $vObj.git.commit }
     } catch {}
 }
 $buildDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
@@ -28,6 +43,10 @@ $desktopDest = Join-Path $desktop "SmartBanking_Testing_Patch.zip"
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "   SmartBanking ERP - Dedicated Testing Application Patch Builder  " -ForegroundColor Cyan
 Write-Host "   Target Version: v$version ($buildDate)                         " -ForegroundColor Yellow
+if ($gitShort) {
+Write-Host "   Git Commit    : $gitShort ($gitBranch)                         " -ForegroundColor Green
+Write-Host "   Git Message   : $gitMsg                                        " -ForegroundColor Gray
+}
 Write-Host "   Target Site   : Testing Environment (SmartBanking_Testing)     " -ForegroundColor Yellow
 Write-Host "   API Domain    : https://api.testing.hellomindspace.in          " -ForegroundColor Yellow
 Write-Host "   Web Domain    : https://testing.hellomindspace.in              " -ForegroundColor Yellow
@@ -418,10 +437,14 @@ pause
 $readmeContent = @"
 ================================================================================
   SmartBanking ERP - 1-Click Dedicated VPS Patch Package (Testing Site)
-  Version: v$version ($buildDate)
-  Target: Testing Environment (SmartBanking_Testing / apitesting)
-  Frontend: https://testing.hellomindspace.in
-  Backend : https://api.testing.hellomindspace.in
+  Version     : v$version ($buildDate)
+  Git Commit  : $gitShort ($gitBranch)
+  Full Commit : $gitHash
+  Commit Date : $gitDate
+  Commit Msg  : $gitMsg
+  Target Site : Testing Environment (SmartBanking_Testing / apitesting)
+  Frontend    : https://testing.hellomindspace.in
+  Backend     : https://api.testing.hellomindspace.in
 ================================================================================
 
 या पॅकेजमध्ये खालील सर्व नवीन अपडेट्स समाविष्ट आहेत:

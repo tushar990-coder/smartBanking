@@ -370,7 +370,10 @@ const FdWithdrawalMaturity: React.FC = () => {
 
     if (actionType === 'MaturityClose') {
       const principal = selectedAccount.depositAmount;
-      const accruedInt = Math.max(0, (selectedAccount.maturityAmount || selectedAccount.depositAmount) - selectedAccount.depositAmount + selectedAccount.legacyAccruedInt);
+      const totalMaturity = selectedAccount.maturityAmount && selectedAccount.maturityAmount > selectedAccount.depositAmount
+        ? selectedAccount.maturityAmount
+        : (selectedAccount.depositAmount + (selectedAccount.legacyAccruedInt || 0));
+      const accruedInt = Math.max(0, totalMaturity - principal);
       const totalPayout = principal + accruedInt;
 
       entries.push({
@@ -459,7 +462,10 @@ const FdWithdrawalMaturity: React.FC = () => {
         || `${targetScheme?.schemeName || 'नवीन योजना'} - मुदत ठेव देयता खाते`;
 
       const principal = selectedAccount.depositAmount;
-      const accruedInt = Math.max(0, (selectedAccount.maturityAmount || selectedAccount.depositAmount) - selectedAccount.depositAmount + selectedAccount.legacyAccruedInt);
+      const totalMaturity = selectedAccount.maturityAmount && selectedAccount.maturityAmount > selectedAccount.depositAmount
+        ? selectedAccount.maturityAmount
+        : (selectedAccount.depositAmount + (selectedAccount.legacyAccruedInt || 0));
+      const accruedInt = Math.max(0, totalMaturity - principal);
       const totalVal = principal + accruedInt;
 
       const newDepositAmount = renewalType === 'PrincipalPlusInterest' ? totalVal : principal;

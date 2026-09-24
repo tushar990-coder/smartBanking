@@ -1225,11 +1225,15 @@ namespace Bhisi.Api.Controllers
             }
 
             // Fetch accrued interest
-            var accruedInt = await _context.FdTransactions
+            var accruedFromTx = await _context.FdTransactions
                 .Where(t => t.FdAccountID == id && t.TransactionType == "Accrual")
                 .SumAsync(t => t.Amount);
 
-            decimal totalMaturityPayout = account.DepositAmount + accruedInt + account.LegacyAccruedInt;
+            decimal totalInterest = (account.MaturityAmount > account.DepositAmount)
+                ? (account.MaturityAmount - account.DepositAmount)
+                : Math.Max(accruedFromTx, account.LegacyAccruedInt);
+
+            decimal totalMaturityPayout = account.DepositAmount + totalInterest;
             DateTime closureDate = req?.ClosureDate ?? DateTime.Today;
             string paymentMode = string.IsNullOrWhiteSpace(req?.PaymentMode) ? "Cash" : req.PaymentMode;
 
@@ -1316,9 +1320,9 @@ namespace Bhisi.Api.Controllers
                     _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                     
                     // Dr Interest Payable (Interest)
-                    if (payableLedger != null && (accruedInt + account.LegacyAccruedInt) > 0)
+                    if (payableLedger != null && totalInterest > 0)
                     {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = accruedInt + account.LegacyAccruedInt, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = totalInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                     }
 
                     // Cr Payout Ledger (Cash, Bank, or Saving)
@@ -1387,9 +1391,10 @@ namespace Bhisi.Api.Controllers
                     decimal recalculatedInterest = Math.Round((account.DepositAmount * prematureRate * actualDays) / 36500.0m, 2);
 
                     // 4. Determine already provisioned/paid interest
-                    decimal alreadyAccruedInt = await _context.FdTransactions
+                    decimal dbAccrued = await _context.FdTransactions
                         .Where(t => t.FdAccountID == id && t.TransactionType == "Accrual")
-                        .SumAsync(t => t.Amount) + account.LegacyAccruedInt;
+                        .SumAsync(t => t.Amount);
+                    decimal alreadyAccruedInt = Math.Max(dbAccrued, account.LegacyAccruedInt);
 
                     // 5. Final payable calculations
                     decimal penaltyClawback = 0;
@@ -1565,9 +1570,13 @@ namespace Bhisi.Api.Controllers
                 try
                 {
                     // 1. Calculate Old Interest
-                    var accruedInt = await _context.FdTransactions
+                    var accruedFromTx = await _context.FdTransactions
                         .Where(t => t.FdAccountID == id && t.TransactionType == "Accrual")
-                        .SumAsync(t => t.Amount) + oldAccount.LegacyAccruedInt;
+                        .SumAsync(t => t.Amount);
+
+                    decimal accruedInt = (oldAccount.MaturityAmount > oldAccount.DepositAmount)
+                        ? (oldAccount.MaturityAmount - oldAccount.DepositAmount)
+                        : Math.Max(accruedFromTx, oldAccount.LegacyAccruedInt);
 
                     decimal totalMaturityAmount = oldAccount.DepositAmount + accruedInt;
                     decimal newDepositAmount = request.RenewalType == "PrincipalOnly" ? oldAccount.DepositAmount : totalMaturityAmount;

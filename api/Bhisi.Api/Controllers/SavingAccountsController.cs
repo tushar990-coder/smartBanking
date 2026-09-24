@@ -191,7 +191,6 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(s => 
                     s.AccountNo.Contains(sTerm) ||
                     (digitsOnly.Length >= 4 && s.AccountNo.Contains(digitsOnly)) ||
-                    (s.PreviousAccountNo != null && s.PreviousAccountNo.Contains(sTerm)) ||
                     (s.OldAccountNo != null && s.OldAccountNo.Contains(sTerm)) ||
                     (s.LegacyAccountNumber != null && s.LegacyAccountNumber.Contains(sTerm)) ||
                     (s.Customer != null && (
@@ -217,7 +216,7 @@ namespace Bhisi.Api.Controllers
                     BranchCode = s.Branch != null ? s.Branch.BranchCode : "",
                     s.AccountNo,
                     FormattedAccountNo = LuhnHelper.Format14Digit(s.AccountNo),
-                    s.PreviousAccountNo,
+                    PreviousAccountNo = s.OldAccountNo,
                     s.SavingSchemeID,
                     SchemeName = s.SavingScheme != null ? s.SavingScheme.SchemeName : "सर्वसाधारण बचत ठेव",
                     s.CustomerID,
@@ -295,7 +294,7 @@ namespace Bhisi.Api.Controllers
                 BranchCode = s.Branch != null ? s.Branch.BranchCode : "",
                 s.AccountNo,
                 FormattedAccountNo = LuhnHelper.Format14Digit(s.AccountNo),
-                s.PreviousAccountNo,
+                PreviousAccountNo = s.OldAccountNo,
                 s.SavingSchemeID,
                 SchemeName = s.SavingScheme != null ? s.SavingScheme.SchemeName : "सर्वसाधारण बचत ठेव",
                 s.CustomerID,
@@ -441,13 +440,12 @@ namespace Bhisi.Api.Controllers
                 BranchID = dto.BranchID,
                 AccountNo = generatedAccountNo,
                 SavingSchemeID = targetSchemeId ?? 1,
-                PreviousAccountNo = dto.PreviousAccountNo,
                 CustomerID = customer.CustomerID,
                 AccountType = dto.AccountType,
                 OpeningDate = dto.OpeningDate,
                 IsLegacyAccount = dto.IsLegacyAccount,
-                OldAccountNo = dto.OldAccountNo ?? dto.LegacyAccountNumber,
-                LegacyAccountNumber = dto.OldAccountNo ?? dto.LegacyAccountNumber,
+                OldAccountNo = dto.OldAccountNo ?? dto.PreviousAccountNo ?? dto.LegacyAccountNumber,
+                LegacyAccountNumber = dto.OldAccountNo ?? dto.PreviousAccountNo ?? dto.LegacyAccountNumber,
                 LedgerID = targetLedgerId,
                 OpeningBalance = dto.OpeningBalance,
                 CurrentBalance = dto.OpeningBalance,
@@ -586,13 +584,12 @@ namespace Bhisi.Api.Controllers
                     BranchID = dto.BranchID,
                     AccountNo = generatedAccountNo,
                     SavingSchemeID = targetSchemeId ?? 1,
-                    PreviousAccountNo = dto.PreviousAccountNo ?? dto.OldAccountNo,
                     CustomerID = customer.CustomerID,
                     AccountType = string.IsNullOrWhiteSpace(dto.AccountType) ? "Personal" : dto.AccountType,
                     OpeningDate = dto.OpeningDate != default ? dto.OpeningDate : DateTime.Today,
                     IsLegacyAccount = true,
-                    OldAccountNo = dto.OldAccountNo ?? dto.LegacyAccountNumber,
-                    LegacyAccountNumber = dto.OldAccountNo ?? dto.LegacyAccountNumber,
+                    OldAccountNo = dto.OldAccountNo ?? dto.PreviousAccountNo ?? dto.LegacyAccountNumber,
+                    LegacyAccountNumber = dto.OldAccountNo ?? dto.PreviousAccountNo ?? dto.LegacyAccountNumber,
                     LedgerID = targetLedgerId,
                     OpeningBalance = dto.OpeningBalance,
                     CurrentBalance = dto.OpeningBalance,

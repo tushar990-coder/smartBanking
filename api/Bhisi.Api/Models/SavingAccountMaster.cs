@@ -43,8 +43,8 @@ namespace Bhisi.Api.Models
         [MaxLength(50)]
         public string? OldAccountNo { get; set; }
 
-        // आधीचा ९-अंकी खाते क्रमांक (Previous 9-digit Account Number for Seamless Lookup)
-        [MaxLength(20)]
+        // आधीचा ९-अंकी खाते क्रमांक (Deprecated - use OldAccountNo instead)
+        [NotMapped]
         public string? PreviousAccountNo { get; set; }
 
         // बचत योजना (Saving Scheme Mapping)

@@ -4275,14 +4275,24 @@ BEGIN
     IF COL_LENGTH(N'[dbo].[PigmyAccounts]', N'PreviousAccountNo') IS NULL
     BEGIN
         ALTER TABLE [dbo].[PigmyAccounts] ADD [PreviousAccountNo] NVARCHAR(50) NULL;
+        PRINT '  -> Added [PreviousAccountNo] column to [dbo].[PigmyAccounts].';
     END
+END
+GO
 
-    UPDATE [dbo].[PigmyAccounts]
-    SET [PreviousAccountNo] = LTRIM(RTRIM([AccountNo]))
-    WHERE ([PreviousAccountNo] IS NULL OR LTRIM(RTRIM([PreviousAccountNo])) = '')
-      AND [AccountNo] IS NOT NULL 
-      AND LTRIM(RTRIM([AccountNo])) <> ''
-      AND (LEN(LTRIM(RTRIM([AccountNo]))) <> 14 OR [AccountNo] NOT LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]');
+IF OBJECT_ID(N'[dbo].[PigmyAccounts]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'[dbo].[PigmyAccounts]', N'PreviousAccountNo') IS NOT NULL
+    BEGIN
+        EXEC sp_executesql N'
+            UPDATE [dbo].[PigmyAccounts]
+            SET [PreviousAccountNo] = LTRIM(RTRIM([AccountNo]))
+            WHERE ([PreviousAccountNo] IS NULL OR LTRIM(RTRIM([PreviousAccountNo])) = '''')
+              AND [AccountNo] IS NOT NULL 
+              AND LTRIM(RTRIM([AccountNo])) <> ''''
+              AND (LEN(LTRIM(RTRIM([AccountNo]))) <> 14 OR [AccountNo] NOT LIKE ''[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'');
+        ';
+    END
 
     ;WITH NumberedAccounts AS (
         SELECT 

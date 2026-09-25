@@ -1,4 +1,4 @@
-﻿-- =========================================================================================
+-- =========================================================================================
 -- SmartBanking Core ERP - Universal VPS Database Update & Schema Sync Patch
 -- Zero Data Loss Guarantee - All Existing Records (Members, Vouchers, Accounts) 100% Preserved
 -- Compatible with all VPS client databases (Padawalwadi, Gurudev, Main, etc.)
@@ -4020,17 +4020,47 @@ BEGIN
     PRINT 'Starting Strict 1:1 MemberID & MemberCode Alignment (1 -> MEM0001)...';
     PRINT '------------------------------------------------------------------------';
     BEGIN TRY
-        -- Step 1: Temporary code to prevent unique index collision
+        -- Step 1: Clear MemberCode and set Nominal for non-shareholders (Zero shares)
+        UPDATE [dbo].[Members]
+        SET [MemberCode] = NULL,
+            [MembershipType] = 'Nominal'
+        WHERE [MemberID] NOT IN (
+            SELECT DISTINCT sa.[MemberId] 
+            FROM [dbo].[ShareAccounts] sa 
+            WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+        );
+
+        -- Step 2: Temporary code for active shareholders to prevent unique index collision
         UPDATE [dbo].[Members]
         SET [MemberCode] = 'TMP_' + CAST([MemberID] AS VARCHAR(10)) + '_' + SUBSTRING(CONVERT(VARCHAR(40), NEWID()), 1, 8)
-        WHERE [MemberID] > 0;
+        WHERE [MemberID] IN (
+            SELECT DISTINCT sa.[MemberId] 
+            FROM [dbo].[ShareAccounts] sa 
+            WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+        );
 
-        -- Step 2: Set exact 1:1 MemberCode
-        UPDATE [dbo].[Members]
-        SET [MemberCode] = 'MEM' + RIGHT('0000' + CAST([MemberID] AS VARCHAR(10)), 4)
-        WHERE [MemberID] > 0;
+        -- Step 3: Resequence active shareholders sequentially (MEM0001, MEM0002...)
+        ;WITH ActiveShareholders AS (
+            SELECT sa.[MemberId], sa.[ShareAccountId],
+                   ROW_NUMBER() OVER (
+                       ORDER BY TRY_CAST(m.[LegacyMemberNo] AS INT) ASC,
+                                TRY_CAST(REPLACE(REPLACE(COALESCE(sc.[CertificateNo], ''), 'CERT-', ''), 'CERT', '') AS INT) ASC,
+                                sa.[ShareAccountId] ASC
+                   ) as SeqNo
+            FROM [dbo].[ShareAccounts] sa
+            INNER JOIN [dbo].[Members] m ON sa.[MemberId] = m.[MemberID]
+            OUTER APPLY (
+                SELECT TOP 1 [CertificateNo] FROM [dbo].[ShareCertificates] WHERE [ShareAccountId] = sa.[ShareAccountId] ORDER BY [CertificateId] ASC
+            ) sc
+            WHERE sa.[TotalShareCount] > 0
+        )
+        UPDATE m
+        SET m.[MemberCode] = 'MEM' + RIGHT('0000' + CAST(ash.SeqNo AS VARCHAR(10)), 4),
+            m.[MembershipType] = 'Regular'
+        FROM [dbo].[Members] m
+        INNER JOIN ActiveShareholders ash ON m.[MemberID] = ash.[MemberId];
 
-        -- Step 3: Synchronize ShareAccounts.AccountNo = 'SA-' + MemberCode
+        -- Step 4: Synchronize ShareAccounts.AccountNo = 'SA-' + MemberCode
         IF OBJECT_ID(N'[ShareAccounts]', N'U') IS NOT NULL
         BEGIN
             UPDATE sa
@@ -4040,7 +4070,7 @@ BEGIN
             WHERE m.[MemberCode] IS NOT NULL;
         END
 
-        PRINT '  -> Strict 1:1 MemberCode (1 -> MEM0001) & Share Accounts Synced Successfully!';
+        PRINT '  -> Strict Active Shareholder MemberCode Alignment & Share Accounts Synced Successfully!';
     END TRY
     BEGIN CATCH
         PRINT '  -> Notice during 1:1 MemberCode alignment: ' + ERROR_MESSAGE();

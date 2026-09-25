@@ -61,9 +61,6 @@ export default function MemberSearchSelect({
       const rawCode = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.code || m.MemberCode || m.memberNo || '').trim();
       const isNullOrEmpty = !rawCode || rawCode.toLowerCase() === 'null' || rawCode.toLowerCase() === 'undefined';
       let cleanMemCode = isNullOrEmpty ? '' : rawCode;
-      if (!cleanMemCode && memId > 0) {
-        cleanMemCode = `MEM${String(memId).padStart(4, '0')}`;
-      }
 
       const rawLegacyMember = String(rawMemProfile?.legacyMemberNo || rawMemProfile?.LegacyMemberNo || m.legacyMemberNo || m.oldMemberCode || m.oldMemberNo || m.LegacyMemberNo || '').trim();
       const rawLegacyCust = String(m.legacyCustomerNo || m.LegacyCustomerNo || (m as any)?.customerProfile?.legacyCustomerNo || '').trim();

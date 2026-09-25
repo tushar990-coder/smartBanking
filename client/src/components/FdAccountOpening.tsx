@@ -24,8 +24,10 @@ interface FdScheme {
 interface FdAccount {
   fdAccountID: number;
   accountNo: string;
+  customerName?: string;
   memberName: string;
   memberCode: string;
+  cifNo?: string;
   schemeName: string;
   depositAmount: number;
   interestRate: number;
@@ -39,7 +41,7 @@ interface FdAccount {
 
 const FdAccountOpening: React.FC = () => {
   const [view, setView] = useState<'form' | 'list'>('form');
-  const [members, setMembers] = useState<Member[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [schemes, setSchemes] = useState<FdScheme[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [bankLedgers, setBankLedgers] = useState<any[]>([]);
@@ -53,12 +55,12 @@ const FdAccountOpening: React.FC = () => {
   const [splitCount, setSplitCount] = useState<number | ''>(10);
   const [amountPerReceipt, setAmountPerReceipt] = useState<number | ''>(100000);
 
-  // Payment Mode & Member SB Accounts State
+  // Payment Mode & Customer SB Accounts State
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank' | 'Transfer'>('Cash');
   const [bankAccountLedgerID, setBankAccountLedgerID] = useState<number>(0);
   const [chequeNo, setChequeNo] = useState<string>('');
   const [chequeDate, setChequeDate] = useState<string>('');
-  const [memberSavingsAccounts, setMemberSavingsAccounts] = useState<any[]>([]);
+  const [customerSavingsAccounts, setCustomerSavingsAccounts] = useState<any[]>([]);
   const [selectedSavingAccountID, setSelectedSavingAccountID] = useState<number>(0);
 
   // Next account number preview (branch-specific)
@@ -81,6 +83,7 @@ const FdAccountOpening: React.FC = () => {
 
   const [formData, setFormData] = useState({
     branchID: 1,
+    customerID: 0,
     memberID: 0,
     fdSchemeID: 0,
     durationType: 'Months', // 'Days' | 'Months' | 'Years'
@@ -106,7 +109,7 @@ const FdAccountOpening: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchMembers();
+    fetchCustomers();
     fetchSchemes();
     fetchBranches();
     fetchBankLedgers();
@@ -124,32 +127,33 @@ const FdAccountOpening: React.FC = () => {
     }
   }, [view]);
 
-  // Fetch Member's Savings Accounts when memberID changes
+  // Fetch Customer's Savings Accounts when customerID changes
   useEffect(() => {
-    if (formData.memberID > 0) {
-      fetchMemberSavingsAccounts(formData.memberID);
+    const custId = formData.customerID || formData.memberID;
+    if (custId > 0) {
+      fetchCustomerSavingsAccounts(custId);
     } else {
-      setMemberSavingsAccounts([]);
+      setCustomerSavingsAccounts([]);
       setSelectedSavingAccountID(0);
     }
-  }, [formData.memberID]);
+  }, [formData.customerID, formData.memberID]);
 
-  const fetchMemberSavingsAccounts = async (mId: number) => {
+  const fetchCustomerSavingsAccounts = async (cId: number) => {
     try {
-      const selected = members.find((m: any) => (m.customerID || m.memberID) === mId);
-      const cId = selected?.customerID || mId;
-      const memId = selected?.memberProfile?.memberID || selected?.memberID || mId;
+      const selected = customers.find((c: any) => (c.customerID || c.memberID || c.id) === cId);
+      const custId = selected?.customerID || selected?.id || cId;
+      const memId = selected?.memberProfile?.memberID || selected?.memberID || custId;
 
-      const response = await axios.get(`${API_URL}/SavingAccounts?customerId=${cId}&memberId=${memId}`);
+      const response = await axios.get(`${API_URL}/SavingAccounts?customerId=${custId}&memberId=${memId}`);
       const accs = response.data || [];
-      setMemberSavingsAccounts(accs);
+      setCustomerSavingsAccounts(accs);
       if (accs.length > 0) {
         setSelectedSavingAccountID(accs[0].savingAccountID || accs[0].savingAccountId || 0);
       } else {
         setSelectedSavingAccountID(0);
       }
     } catch (err) {
-      console.error('Error fetching member savings accounts', err);
+      console.error('Error fetching customer savings accounts', err);
     }
   };
 
@@ -200,17 +204,17 @@ const FdAccountOpening: React.FC = () => {
     }
   };
 
-  const fetchMembers = async () => {
+  const fetchCustomers = async () => {
     try {
       const response = await axios.get(`${API_URL}/Customers`);
-      setMembers(response.data);
+      setCustomers(response.data || []);
       const params = new URLSearchParams(window.location.search);
-      const memberIdStr = params.get('memberId');
-      if (memberIdStr && response.data.length > 0) {
-        const mId = parseInt(memberIdStr, 10);
-        const matchedMember = response.data.find((m: any) => (m.customerID || m.memberID) === mId);
-        if (matchedMember) {
-          setFormData((prev) => ({ ...prev, memberID: mId }));
+      const custIdStr = params.get('customerId') || params.get('memberId');
+      if (custIdStr && response.data.length > 0) {
+        const cId = parseInt(custIdStr, 10);
+        const matchedCustomer = response.data.find((m: any) => (m.customerID || m.memberID || m.id) === cId);
+        if (matchedCustomer) {
+          setFormData((prev) => ({ ...prev, customerID: cId, memberID: cId }));
         }
       }
     } catch (err) {
@@ -399,7 +403,7 @@ const FdAccountOpening: React.FC = () => {
       val = checked;
     } else if (name === 'depositAmount' || name === 'durationValue') {
       val = value === '' ? '' : value;
-    } else if (name.endsWith('ID') || name === 'branchID' || name === 'fdSchemeID' || name === 'memberID') {
+    } else if (name.endsWith('ID') || name === 'branchID' || name === 'fdSchemeID' || name === 'customerID' || name === 'memberID') {
       val = value === '' ? '' : (parseInt(value, 10) || 0);
     }
 
@@ -430,16 +434,17 @@ const FdAccountOpening: React.FC = () => {
     setError('');
     setSuccess('');
 
-    if (formData.memberID === 0) { setError('कृपया सभासद निवडा.'); return; }
+    const activeCustId = formData.customerID || formData.memberID;
+    if (!activeCustId || activeCustId === 0) { setError('कृपया खातेदार निवडा.'); return; }
     if (formData.fdSchemeID === 0) { setError('कृपया ठेव योजना निवडा.'); return; }
     if (paymentMode === 'Bank' && bankAccountLedgerID === 0) { setError('कृपया बँक खातावणी लेजर निवडा.'); return; }
     if (paymentMode === 'Transfer') {
       if (selectedSavingAccountID === 0) {
-        setError('कृपया वर्ग करण्यासाठी सभासदाचे बचत खाते निवडा.');
+        setError('कृपया वर्ग करण्यासाठी खातेदाराचे बचत खाते निवडा.');
         return;
       }
       const requiredTotal = entryMode === 'bulk' ? (Number(totalDepositAmount) || 0) : (parseFloat(formData.depositAmount as any) || 0);
-      const selectedSb = memberSavingsAccounts.find(a => (a.savingAccountID || a.savingAccountId) === selectedSavingAccountID);
+      const selectedSb = customerSavingsAccounts.find(a => (a.savingAccountID || a.savingAccountId) === selectedSavingAccountID);
       if (selectedSb && Number(selectedSb.currentBalance || 0) < requiredTotal) {
         setError(`अपुऱ्या शिल्लकेमुळे बचत खात्यातून वर्ग करता येणार नाही! निवडलेल्या बचत खात्यात फक्त ₹${Number(selectedSb.currentBalance).toLocaleString('en-IN', {minimumFractionDigits: 2})} शिल्लक आहेत (हवी असलेली एकूण रक्कम ₹${requiredTotal.toLocaleString('en-IN', {minimumFractionDigits: 2})}).`);
         return;
@@ -448,8 +453,8 @@ const FdAccountOpening: React.FC = () => {
 
     setLoading(true);
     try {
-      const selectedMem = members.find((m: any) => (m.customerID || m.memberID) === Number(formData.memberID));
-      const resolvedCustId = Number(selectedMem?.customerID || selectedMem?.id || formData.memberID);
+      const selectedCust = customers.find((c: any) => (c.customerID || c.memberID || c.id) === Number(activeCustId));
+      const resolvedCustId = Number(selectedCust?.customerID || selectedCust?.id || activeCustId);
 
       if (entryMode === 'single') {
         const depAmt = parseFloat(formData.depositAmount as any) || 0;
@@ -458,6 +463,7 @@ const FdAccountOpening: React.FC = () => {
         const payload = {
           ...formData,
           customerID: resolvedCustId,
+          memberID: resolvedCustId,
           depositAmount: depAmt,
           durationType: calcData.durationType,
           durationValue: calcData.durationValue,
@@ -517,7 +523,8 @@ const FdAccountOpening: React.FC = () => {
           for (let i = 1; i <= count; i++) {
             const singleRes = await axios.post(`${API_URL}/FdAccounts`, {
               branchID: formData.branchID,
-              memberID: formData.memberID,
+              customerID: resolvedCustId,
+              memberID: resolvedCustId,
               fdSchemeID: formData.fdSchemeID,
               openingDate: formData.openingDate,
               depositAmount: perReceipt,
@@ -563,8 +570,8 @@ const FdAccountOpening: React.FC = () => {
       setChequeDate('');
       fetchNextAccountNo(formData.branchID);
       fetchFdList(formData.branchID);
-      if (formData.memberID > 0) {
-        fetchMemberSavingsAccounts(formData.memberID);
+      if (activeCustId > 0) {
+        fetchCustomerSavingsAccounts(activeCustId);
       }
 
     } catch (err: any) {
@@ -585,10 +592,10 @@ const FdAccountOpening: React.FC = () => {
   const labelClass = 'block text-xs font-bold text-gray-700 mb-1';
   const inputClass = 'w-full text-xs border border-gray-300 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary bg-white shadow-sm transition-all';
 
-  const filteredList = fdList.filter((fd) =>
+  const filteredList = fdList.filter((fd: any) =>
     fd.accountNo?.toLowerCase().includes(listSearch.toLowerCase()) ||
-    fd.memberName?.toLowerCase().includes(listSearch.toLowerCase()) ||
-    fd.memberCode?.toLowerCase().includes(listSearch.toLowerCase()) ||
+    (fd.customerName || fd.memberName)?.toLowerCase().includes(listSearch.toLowerCase()) ||
+    (fd.cifNo || fd.memberCode)?.toLowerCase().includes(listSearch.toLowerCase()) ||
     fd.schemeName?.toLowerCase().includes(listSearch.toLowerCase())
   );
 
@@ -613,18 +620,18 @@ const FdAccountOpening: React.FC = () => {
     return 'bg-blue-50 text-blue-700 border-blue-200';
   };
 
-  const formatMemberLabel = (m: Member) => {
+  const formatCustomerLabel = (m: any) => {
     const nameParts = [m.firstName, m.middleName, m.lastName].filter(Boolean);
     let fullName = nameParts.join(' ').trim();
     if (!fullName) {
       const engParts = [m.firstNameEng, m.middleNameEng, m.lastNameEng].filter(Boolean);
       fullName = engParts.join(' ').trim();
     }
-    if (!fullName) fullName = `सभासद ID: ${m.memberID}`;
+    if (!fullName) fullName = `खातेदार ID: ${m.customerID || m.memberID || m.id}`;
 
     const cifStr = m.cifNo ? `CIF: ${m.cifNo}` : '';
-    const codeStr = m.memberCode ? `सभासद नं: ${m.memberCode}` : '';
-    const oldNo = m.oldMemberCode || m.legacyMemberNo;
+    const codeStr = m.memberCode ? `कोड: ${m.memberCode}` : '';
+    const oldNo = m.oldMemberCode || m.legacyMemberNo || m.legacyCustomerNo;
     const oldNoStr = oldNo ? `जुना नं: ${oldNo}` : '';
 
     const details = [cifStr, codeStr, oldNoStr].filter(Boolean).join(' | ');
@@ -713,10 +720,10 @@ const FdAccountOpening: React.FC = () => {
 
             <form onSubmit={handleSubmit}>
               
-              {/* Section 1: बेसिक व सभासद माहिती */}
+              {/* Section 1: बेसिक व खातेदार माहिती */}
               <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 mb-3">
                 <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-2 pb-1 border-b border-gray-200 flex items-center justify-between">
-                  <span>१. प्राथमिक व सभासद माहिती (Basic & Member Details)</span>
+                  <span>१. प्राथमिक व खातेदार माहिती (Basic & Customer Details)</span>
                   <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.2 rounded">
                     {entryMode === 'bulk' ? 'बल्क स्प्लिट मोड' : 'एकेरी मोड'}
                   </span>
@@ -736,9 +743,12 @@ const FdAccountOpening: React.FC = () => {
                   <div className="md:col-span-2">
                     <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खातेदार निवडा (Select Customer / CIF) *</label>
                     <CustomerSearchSelect
-                      customers={members}
-                      value={formData.memberID ? Number(formData.memberID) : ''}
-                      onChange={(val) => handleChange({ target: { name: 'memberID', value: val ? Number(val) : 0 } })}
+                      customers={customers}
+                      value={formData.customerID ? Number(formData.customerID) : (formData.memberID ? Number(formData.memberID) : '')}
+                      onChange={(val) => {
+                        const numVal = val ? Number(val) : 0;
+                        setFormData((prev) => ({ ...prev, customerID: numVal, memberID: numVal }));
+                      }}
                       placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
                     />
                   </div>
@@ -1020,28 +1030,28 @@ const FdAccountOpening: React.FC = () => {
                   {paymentMode === 'Transfer' && (
                     <div className="md:col-span-3">
                       <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
-                        सभासदाचे बचत खाते निवडा (Select SB Account for Transfer) *
+                        खातेदाराचे बचत खाते निवडा (Select SB Account for Transfer) *
                       </label>
-                      {memberSavingsAccounts.length > 0 ? (
+                      {customerSavingsAccounts.length > 0 ? (
                         <select
                           value={selectedSavingAccountID}
                           onChange={(e) => setSelectedSavingAccountID(parseInt(e.target.value, 10) || 0)}
                           required
                           className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-emerald-50 font-bold text-emerald-950"
                         >
-                          {memberSavingsAccounts.map((acc: any) => {
+                          {customerSavingsAccounts.map((acc: any) => {
                             const accId = acc.savingAccountID || acc.savingAccountId;
                             const bal = Number(acc.currentBalance || 0);
                             return (
                               <option key={accId} value={accId}>
-                                {acc.accountNo} - {acc.memberName || 'बचत खाते'} | उपलब्ध शिल्लक: ₹ {bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                {acc.accountNo} - {acc.customerName || acc.memberName || 'बचत खाते'} | उपलब्ध शिल्लक: ₹ {bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </option>
                             );
                           })}
                         </select>
                       ) : (
                         <div className="p-1.5 bg-amber-50 border border-amber-200 rounded text-amber-800 text-[11px] font-semibold flex items-center justify-between">
-                          <span>⚠️ या सभासदाचे कोणतेही बचत खाते उघडलेले नाही!</span>
+                          <span>⚠️ या खातेदाराचे कोणतेही बचत खाते उघडलेले नाही!</span>
                           <span className="text-[10px] text-amber-700">कृपया रोख किंवा बँक पर्याय वापरा.</span>
                         </div>
                       )}
@@ -1082,7 +1092,7 @@ const FdAccountOpening: React.FC = () => {
                   <label className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-700 cursor-pointer">
                     <input type="checkbox" name="isSeniorCitizen" checked={formData.isSeniorCitizen} onChange={handleChange}
                       className="w-3.5 h-3.5 text-emerald-600 rounded border-gray-300" />
-                    <span>👴 सभासद ज्येष्ठ नागरिक (Senior Citizen) सवलत लागू करा</span>
+                    <span>👴 खातेदार ज्येष्ठ नागरिक (Senior Citizen) सवलत लागू करा</span>
                   </label>
 
                   {paymentMode === 'Transfer' && selectedSavingAccountID > 0 && (
@@ -1131,7 +1141,7 @@ const FdAccountOpening: React.FC = () => {
                 <thead>
                   <tr className="bg-slate-900 text-white font-semibold border-b border-slate-800">
                     <th className="px-3 py-2 text-left font-mono">पावती क्र. (Account No)</th>
-                    <th className="px-3 py-2 text-left">सभासदाचे नाव & कोड</th>
+                    <th className="px-3 py-2 text-left">खातेदाराचे नाव & CIF / कोड</th>
                     <th className="px-3 py-2 text-left">ठेव योजना (Scheme)</th>
                     <th className="px-3 py-2 text-right">ठेव रक्कम (₹)</th>
                     <th className="px-3 py-2 text-center">व्याजदर</th>
@@ -1148,10 +1158,13 @@ const FdAccountOpening: React.FC = () => {
                   ) : filteredList.length === 0 ? (
                     <tr><td colSpan={10} className="text-center py-4 text-gray-400">कोणतेही मुदत ठेव खाते सापडले नाही.</td></tr>
                   ) : (
-                    filteredList.map((fd) => (
+                    filteredList.map((fd: any) => (
                       <tr key={fd.fdAccountID} className="hover:bg-emerald-50/50 border-b border-gray-100 transition-colors">
                         <td className="px-3 py-1.5 font-mono font-bold text-blue-900">{fd.accountNo}</td>
-                        <td className="px-3 py-1.5 font-bold text-gray-800">{fd.memberName} <span className="text-[10px] text-gray-500 font-normal">({fd.memberCode})</span></td>
+                        <td className="px-3 py-1.5 font-bold text-gray-800">
+                          {fd.customerName || fd.memberName}{' '}
+                          <span className="text-[10px] text-gray-500 font-normal">({fd.cifNo || fd.memberCode || ''})</span>
+                        </td>
                         <td className="px-3 py-1.5 font-medium">{fd.schemeName}</td>
                         <td className="px-3 py-1.5 text-right font-extrabold text-emerald-800">{formatCurrency(fd.depositAmount)}</td>
                         <td className="px-3 py-1.5 text-center font-bold">{fd.interestRate}%</td>

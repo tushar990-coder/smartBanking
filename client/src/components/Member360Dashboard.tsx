@@ -11,6 +11,7 @@ interface Member360DashboardProps {
 interface MemberInfoDto {
     memberID: number;
     memberCode: string;
+    membershipType?: string;
     oldMemberCode?: string;
     cifNo?: string;
     firstName: string;
@@ -429,9 +430,15 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                                 <span className="text-amber-200 text-xs font-semibold ml-1.5 opacity-90">({data.memberInfo.nickName})</span>
                                             )}
                                         </h2>
-                                        <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-md font-mono font-bold tracking-wider uppercase border border-white/10" title="सभासद कोड">
-                                            {data.memberInfo.memberCode}
-                                        </span>
+                                        {data.memberInfo.memberCode ? (
+                                            <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-md font-mono font-bold tracking-wider uppercase border border-white/10" title="सभासद कोड">
+                                                {data.memberInfo.memberCode}
+                                            </span>
+                                        ) : (
+                                            <span className="text-[9px] bg-amber-400/25 text-amber-200 px-2 py-0.5 rounded-md font-semibold tracking-wider border border-amber-400/30" title="नाममात्र खातेदार / ठेवीदार">
+                                                नाममात्र खातेदार
+                                            </span>
+                                        )}
                                         {data.memberInfo.cifNo && (
                                             <span className="text-[9px] bg-sky-500/25 text-sky-200 px-2 py-0.5 rounded-md font-mono font-bold tracking-wider border border-sky-400/30" title="CIF नंबर">
                                                 CIF: {data.memberInfo.cifNo}

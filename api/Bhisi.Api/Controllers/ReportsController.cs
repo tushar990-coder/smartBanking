@@ -3394,8 +3394,8 @@ namespace Bhisi.Api.Controllers
                     {
                         CustomerID = targetCustId,
                         MemberID = targetMemId ?? (customer?.CustomerID ?? 0),
-                        MemberCode = member?.MemberCode ?? (customer?.CIFNo ?? ""),
-                        OldMemberCode = member?.LegacyMemberNo ?? "",
+                        MemberCode = member?.MemberCode ?? "",
+                        OldMemberCode = !string.IsNullOrWhiteSpace(member?.LegacyMemberNo) ? member.LegacyMemberNo : (customer?.LegacyCustomerNo ?? ""),
                         CIFNo = customer?.CIFNo ?? member?.Customer?.CIFNo ?? "",
                         FirstName = customer?.FirstName ?? member?.Customer?.FirstName ?? "",
                         MiddleName = customer?.MiddleName ?? member?.Customer?.MiddleName,
@@ -3407,6 +3407,7 @@ namespace Bhisi.Api.Controllers
                         BranchName = branchName,
                         JoiningDate = member?.JoiningDate ?? customer?.RegistrationDate ?? DateTime.Today,
                         Status = member?.Status ?? customer?.Status ?? "Active",
+                        MembershipType = member?.MembershipType ?? "Nominal",
                         PhotoPath = customer?.PhotoPath ?? member?.Customer?.PhotoPath
                     },
                     Balances = new BalanceSummaryDto

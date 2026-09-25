@@ -28,6 +28,7 @@ namespace Bhisi.Api.Models
         public string BranchName { get; set; } = string.Empty;
         public DateTime JoiningDate { get; set; }
         public string Status { get; set; } = "Active";
+        public string? MembershipType { get; set; }
         public string? PhotoPath { get; set; }
     }
 

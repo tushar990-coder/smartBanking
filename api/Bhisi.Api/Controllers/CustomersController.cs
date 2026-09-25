@@ -202,7 +202,7 @@ namespace Bhisi.Api.Controllers
                             MemberID = c.MemberProfile.MemberID,
                             MemberCode = !string.IsNullOrWhiteSpace(c.MemberProfile.MemberCode)
                                 ? c.MemberProfile.MemberCode
-                                : $"MEM{c.MemberProfile.MemberID:D4}",
+                                : null,
                             LegacyMemberNo = c.MemberProfile.LegacyMemberNo,
                             MembershipType = c.MemberProfile.MembershipType
                         } : null
@@ -533,6 +533,10 @@ namespace Bhisi.Api.Controllers
             }
 
             existingCustomer.LegacyCustomerNo = customer.LegacyCustomerNo;
+            if (existingCustomer.MemberProfile != null)
+            {
+                existingCustomer.MemberProfile.LegacyMemberNo = customer.LegacyCustomerNo;
+            }
             existingCustomer.RegistrationDate = customer.RegistrationDate;
             existingCustomer.FirstName = customer.FirstName;
             existingCustomer.MiddleName = customer.MiddleName;

@@ -231,10 +231,12 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
+                // Only consider codes of active shareholding members or regular members
                 var allMemberCodes = await _context.Members
                     .AsNoTracking()
-                    .Where(m => !string.IsNullOrEmpty(m.MemberCode))
-                    .Select(m => m.MemberCode)
+                    .Where(m => !string.IsNullOrEmpty(m.MemberCode) && 
+                                (_context.ShareAccounts.Any(sa => sa.MemberId == m.MemberID && sa.TotalShareCount > 0) || m.MembershipType == "Regular"))
+                    .Select(m => m.MemberCode!)
                     .ToListAsync();
 
                 int maxNum = 0;
@@ -256,7 +258,7 @@ namespace Bhisi.Api.Controllers
 
                 if (maxNum == 0)
                 {
-                    maxNum = await _context.Members.CountAsync();
+                    maxNum = await _context.ShareAccounts.CountAsync(sa => sa.TotalShareCount > 0);
                 }
 
                 int nextNum = maxNum + 1;

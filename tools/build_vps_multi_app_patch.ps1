@@ -497,6 +497,7 @@ echo.
 pause
 "@
 [System.IO.File]::WriteAllText((Join-Path $patchFolder "1_Click_Update_ALL_Apps.bat"), $batAll, [System.Text.Encoding]::ASCII)
+[System.IO.File]::WriteAllText((Join-Path $patchFolder "1_Click_Update_ALL_Sansthas.bat"), $batAll, [System.Text.Encoding]::ASCII)
 [System.IO.File]::WriteAllText((Join-Path $patchFolder "Apply_VPS_Patch.bat"), $batAll, [System.Text.Encoding]::ASCII)
 
 # 4. 1_Click_Update_Template.bat

@@ -1,17 +1,18 @@
 {
-  "version": "2.5.7",
-  "releaseDate": "2026-09-24",
-  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.7",
+  "version": "2.5.8",
+  "releaseDate": "2026-09-25",
+  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.8",
   "git": {
-    "commit": "",
-    "fullCommit": "",
+    "commit": "61c8eb1",
+    "fullCommit": "61c8eb1",
     "branch": "main",
-    "commitDate": "2026-09-24 20:20:00 +0530",
-    "commitMessage": "fix(fd): correct interest payable and payout calculation on maturity and renewal eliminating duplicate legacy interest (v2.5.7)",
+    "commitDate": "2026-09-25 07:54:00 +0530",
+    "commitMessage": "fix: update FD account list count on save, enhance closure date preview & CIF search, auto-post migration vouchers, and sort pigmy register (v2.5.8)",
     "author": "tushar990-coder <111702084+tushar990-coder@users.noreply.github.com>",
     "repository": "https://github.com/tushar990-coder/smartBanking.git"
   },
   "changelog": [
+    "⭐ [2026-09-25] मुदत ठेव अर्ज खाती यादी रिफ्रेश, क्लोजर तारीख व व्हाऊचर सुधारणा (FD Accounts Suite & Auto-Posting v2.5.8): १) नवीन मुदत ठेव खाते अर्ज (FdAccountOpening) मध्ये सुरुवातीलाच अचूक खाती संख्या लोड होणे आणि पावती सेव्ह होताच 'खाती यादी' बटनाचा काउंट तात्काळ आपोआप वाढणे; २) मुदत ठेव क्लोजर व नूतनीकरण (FdWithdrawalMaturity) मध्ये प्रत्यक्ष बंद तारीख (Transaction Date) व व्हाऊचर तारीख लाइव्ह प्रिव्ह्यू, तसेच Customer CIF द्वारे सर्च मानकीकरण; ३) मुदत ठेव सुरुवातीची शिल्लक स्थलांतर व्हाउचर्स थेट IsPosted = true ने नोंदवून व्हाउचर पासिंगमधून वगळणे व अपघाती डिलीटपासून संरक्षण; ४) पिग्मी खाते नोंदवहीत नैसर्गिक चढत्या क्रमाने (Ascending 1, 2, 3...) खाती सॉर्टिंग व खातेदार नाव सुस्पष्टता; ५) बचत खाते जुना खाते क्रमांक (oldAccountNo/previousAccountNo) अचूक प्रदर्शन.",
     "⭐ [2026-09-24] मुदत ठेव क्लोजर व नूतनीकरण व्याज गणना दुरुस्ती (FD Closures & Renewals Interest Payable Fix v2.5.7): मुदत संपलेल्या ठेवींचा परतावा (Maturity Payout) व नूतनीकरण (Renewal) करताना साचलेले जुने व्याज (Legacy Accrued Interest) आणि एकूण कालावधीचे व्याज एकत्र मिळवून होणारी व्याजाची दुहेरी गणना (Double Counting) पूर्णपणे दूर; पावतीवरील अंतिम मुदतपूर्ती रकमेतून (Maturity Amount) थेट मुद्दल वजा करून देणे मुदत बंद ठेव व्याज (Interest Payable) लेजरला १००% अचूक डेबिट नोंद, सदस्याला योग्य रोख/बँक पेआउट, रोजकीर्द व ताळेबंद ताळमेळ आणि फ्रंटएंड प्रिव्ह्यू व बॅकएंड कंट्रोलरमध्ये सीबीएस मानकीकरण.",
     "⭐ [2026-09-24] मुदत ठेव सुरुवातीची शिल्लक आर्थिक पत्रक ताळमेळ (FD Opening Balance Financial Statements Auto-Sync v2.5.6): जुन्या मुदत ठेव स्थलांतरणातील (FdOpeningBalanceMigration) ठेव मुद्दल रक्कम व साचलेले जुने व्याज (Accrued Interest) आपोआप ताळेबंद (Balance Sheet), तेरीज पत्रक (Trial Balance), व सामान्य खतावणी (General Ledger) मध्ये रिफ्लेक्ट होण्यासाठी CustomerOpeningBalances व Ledgers.OpeningBalance चे स्वयंचलित सिंक्रोनायझेशन इंजिन, FdLiabilityLedgerID व InterestPayableLedgerID स्वयं-मॅपिंग, सेव्ह/एडिट/डिलीट झाल्यावर तत्काळ रिअल-टाइम बॅलन्स अपडेट आणि १-क्लिक '📊 आर्थिक पत्रक सिंक करा' बटण.",
     "⭐ [2026-09-24] मुदत ठेव अहवाल संच (FD Reports Complete Suite): मुदत ठेव नोंदवही (FD Register), मुदत ठेव बाकी शिल्लक (FD Outstanding Register), मुदत संपणाऱ्या ठेवी (FD Maturity Due), सभासद मुदत ठेव खतावणी (Member FD Ledger), व्हाउचर पासिंग व रद्द नोंदी अहवाल बॅकएंड व फ्रंटएंड एकत्रीकरण.",

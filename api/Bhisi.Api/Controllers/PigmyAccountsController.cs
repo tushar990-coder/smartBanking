@@ -235,13 +235,14 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/PigmyAccounts
-        // GET: api/PigmyAccounts?agentId=2&branchId=1&status=Active
+        // GET: api/PigmyAccounts?agentId=2&branchId=1&status=Active&sortOrder=asc
         [HttpGet]
         public async Task<ActionResult<IEnumerable<PigmyAccount>>> GetPigmyAccounts(
             [FromQuery] int? agentId,
             [FromQuery] int? branchId,
             [FromQuery] int? customerId,
-            [FromQuery] string? status)
+            [FromQuery] string? status,
+            [FromQuery] string? sortOrder = null)
         {
             var query = _context.PigmyAccounts
                 .Include(p => p.Customer)
@@ -269,7 +270,16 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(p => p.Status == status);
             }
 
-            var accounts = await query.OrderByDescending(p => p.PigmyAccountID).ToListAsync();
+            List<PigmyAccount> accounts;
+            if (string.Equals(sortOrder, "asc", StringComparison.OrdinalIgnoreCase))
+            {
+                accounts = await query.OrderBy(p => p.AccountNo).ThenBy(p => p.PigmyAccountID).ToListAsync();
+            }
+            else
+            {
+                accounts = await query.OrderByDescending(p => p.PigmyAccountID).ToListAsync();
+            }
+
             foreach (var acc in accounts)
             {
                 acc.FormattedAccountNo = LuhnHelper.Format14Digit(acc.AccountNo);

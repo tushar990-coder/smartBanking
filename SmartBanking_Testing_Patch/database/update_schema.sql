@@ -4106,19 +4106,61 @@ BEGIN
 END
 GO
 
--- 7.3 Add PreviousAccountNo & SavingSchemeID to SavingAccountMasters
+-- 7.3 Standardize SavingAccountMasters: Ensure OldAccountNo & SavingSchemeID, Consolidate & Drop PreviousAccountNo
 IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
 BEGIN
-    IF COL_LENGTH('SavingAccountMasters', 'PreviousAccountNo') IS NULL
+    -- 1. Ensure OldAccountNo column exists
+    IF COL_LENGTH('SavingAccountMasters', 'OldAccountNo') IS NULL
     BEGIN
-        ALTER TABLE [dbo].[SavingAccountMasters] ADD [PreviousAccountNo] NVARCHAR(20) NULL;
-        PRINT '  -> Added PreviousAccountNo column to SavingAccountMasters.';
+        ALTER TABLE [dbo].[SavingAccountMasters] ADD [OldAccountNo] NVARCHAR(50) NULL;
+        PRINT '  -> Added OldAccountNo column to SavingAccountMasters.';
     END
 
+    -- 2. Ensure SavingSchemeID column exists
     IF COL_LENGTH('SavingAccountMasters', 'SavingSchemeID') IS NULL
     BEGIN
         ALTER TABLE [dbo].[SavingAccountMasters] ADD [SavingSchemeID] INT NULL;
         PRINT '  -> Added SavingSchemeID column to SavingAccountMasters.';
+    END
+
+    -- 3. Safely migrate any existing PreviousAccountNo data into OldAccountNo before dropping
+    IF COL_LENGTH('SavingAccountMasters', 'PreviousAccountNo') IS NOT NULL
+    BEGIN
+        EXEC sp_executesql N'
+            UPDATE [dbo].[SavingAccountMasters]
+            SET [OldAccountNo] = [PreviousAccountNo]
+            WHERE ([OldAccountNo] IS NULL OR LTRIM(RTRIM([OldAccountNo])) = '''')
+              AND [PreviousAccountNo] IS NOT NULL 
+              AND LTRIM(RTRIM([PreviousAccountNo])) <> '''';
+        ';
+    END
+
+    -- 4. Preserve existing legacy (< 14 digits) AccountNo into OldAccountNo
+    EXEC sp_executesql N'
+        UPDATE [dbo].[SavingAccountMasters]
+        SET [OldAccountNo] = LTRIM(RTRIM([AccountNo]))
+        WHERE ([OldAccountNo] IS NULL OR LTRIM(RTRIM([OldAccountNo])) = '''')
+          AND [AccountNo] IS NOT NULL 
+          AND LEN(LTRIM(RTRIM([AccountNo]))) > 0 
+          AND LEN(LTRIM(RTRIM([AccountNo]))) < 14;
+    ';
+
+    -- 5. Safely Drop redundant PreviousAccountNo column and its constraints if present
+    IF COL_LENGTH('SavingAccountMasters', 'PreviousAccountNo') IS NOT NULL
+    BEGIN
+        DECLARE @PrevConstraint NVARCHAR(200);
+        SELECT @PrevConstraint = d.name
+        FROM sys.default_constraints d
+        INNER JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+        WHERE d.parent_object_id = OBJECT_ID('SavingAccountMasters') AND c.name = 'PreviousAccountNo';
+
+        IF @PrevConstraint IS NOT NULL
+        BEGIN
+            EXEC('ALTER TABLE [dbo].[SavingAccountMasters] DROP CONSTRAINT [' + @PrevConstraint + '];');
+        END
+
+        ALTER TABLE [dbo].[SavingAccountMasters] DROP COLUMN [PreviousAccountNo];
+        PRINT '  -> Dropped redundant PreviousAccountNo column from SavingAccountMasters.';
     END
 END
 GO
@@ -4126,16 +4168,6 @@ GO
 -- 7.4 Synchronize Existing Accounts & Sequence Counter
 IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
 BEGIN
-    -- Synchronize existing accounts dynamically so compile-time check succeeds on all databases
-    IF COL_LENGTH('SavingAccountMasters', 'PreviousAccountNo') IS NOT NULL
-    BEGIN
-        EXEC sp_executesql N'
-            UPDATE [dbo].[SavingAccountMasters]
-            SET [PreviousAccountNo] = [AccountNo]
-            WHERE [PreviousAccountNo] IS NULL AND [AccountNo] IS NOT NULL AND LEN(LTRIM(RTRIM([AccountNo]))) > 0 AND LEN(LTRIM(RTRIM([AccountNo]))) < 14;
-        ';
-    END
-
     -- Sync SavingAccountSequences initial counter
     DECLARE @MaxSavingCount INT = 0;
     SELECT @MaxSavingCount = COUNT(*) FROM [dbo].[SavingAccountMasters];
@@ -4155,7 +4187,7 @@ BEGIN
         END
     END
 
-    PRINT '  -> Saving Account Sequences & Previous Numbers Synchronized!';
+    PRINT '  -> Saving Account Sequences & Old Numbers Synchronized!';
 END
 GO
 
@@ -4275,14 +4307,24 @@ BEGIN
     IF COL_LENGTH(N'[dbo].[PigmyAccounts]', N'PreviousAccountNo') IS NULL
     BEGIN
         ALTER TABLE [dbo].[PigmyAccounts] ADD [PreviousAccountNo] NVARCHAR(50) NULL;
+        PRINT '  -> Added [PreviousAccountNo] column to [dbo].[PigmyAccounts].';
     END
+END
+GO
 
-    UPDATE [dbo].[PigmyAccounts]
-    SET [PreviousAccountNo] = LTRIM(RTRIM([AccountNo]))
-    WHERE ([PreviousAccountNo] IS NULL OR LTRIM(RTRIM([PreviousAccountNo])) = '')
-      AND [AccountNo] IS NOT NULL 
-      AND LTRIM(RTRIM([AccountNo])) <> ''
-      AND (LEN(LTRIM(RTRIM([AccountNo]))) <> 14 OR [AccountNo] NOT LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]');
+IF OBJECT_ID(N'[dbo].[PigmyAccounts]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'[dbo].[PigmyAccounts]', N'PreviousAccountNo') IS NOT NULL
+    BEGIN
+        EXEC sp_executesql N'
+            UPDATE [dbo].[PigmyAccounts]
+            SET [PreviousAccountNo] = LTRIM(RTRIM([AccountNo]))
+            WHERE ([PreviousAccountNo] IS NULL OR LTRIM(RTRIM([PreviousAccountNo])) = '''')
+              AND [AccountNo] IS NOT NULL 
+              AND LTRIM(RTRIM([AccountNo])) <> ''''
+              AND (LEN(LTRIM(RTRIM([AccountNo]))) <> 14 OR [AccountNo] NOT LIKE ''[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'');
+        ';
+    END
 
     ;WITH NumberedAccounts AS (
         SELECT 

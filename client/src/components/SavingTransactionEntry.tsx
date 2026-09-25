@@ -400,14 +400,14 @@ const SavingTransactionEntry: React.FC = () => {
   const accountOptions = filteredAccounts.map((acc: any) => {
     const accDisplay = acc.formattedAccountNo || format14DigitDisplay(acc.accountNo);
     const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : '';
-    const prevAccPart = (acc.previousAccountNo && acc.previousAccountNo !== acc.accountNo) ? ` (आधीचा: ${acc.previousAccountNo})` : '';
-    const oldAccPart = (acc.oldAccountNo || acc.legacyAccountNumber) ? ` (जुने: ${acc.oldAccountNo || acc.legacyAccountNumber})` : '';
+    const oldNo = acc.oldAccountNo || acc.previousAccountNo || acc.legacyAccountNumber;
+    const oldAccPart = (oldNo && oldNo !== acc.accountNo) ? ` (जुना: ${oldNo})` : '';
     const namePart = acc.customerName || 'अज्ञात';
     const engPart = acc.customerNameEng ? ` (${acc.customerNameEng})` : '';
     const balPart = ` - शिल्लक: ₹${(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     return {
       value: acc.savingAccountID,
-      label: `${accDisplay}${prevAccPart}${oldAccPart}${cifPart} - ${namePart}${engPart}${balPart}`
+      label: `${accDisplay}${oldAccPart}${cifPart} - ${namePart}${engPart}${balPart}`
     };
   });
 
@@ -419,14 +419,14 @@ const SavingTransactionEntry: React.FC = () => {
   const targetAccountOptions = filteredTargetAccounts.map((acc: any) => {
     const accDisplay = acc.formattedAccountNo || format14DigitDisplay(acc.accountNo);
     const cifPart = acc.cifNo ? ` [CIF: ${acc.cifNo}]` : '';
-    const prevAccPart = (acc.previousAccountNo && acc.previousAccountNo !== acc.accountNo) ? ` (आधीचा: ${acc.previousAccountNo})` : '';
-    const oldAccPart = (acc.oldAccountNo || acc.legacyAccountNumber) ? ` (जुने: ${acc.oldAccountNo || acc.legacyAccountNumber})` : '';
+    const oldNo = acc.oldAccountNo || acc.previousAccountNo || acc.legacyAccountNumber;
+    const oldAccPart = (oldNo && oldNo !== acc.accountNo) ? ` (जुना: ${oldNo})` : '';
     const namePart = acc.customerName || 'अज्ञात';
     const engPart = acc.customerNameEng ? ` (${acc.customerNameEng})` : '';
     const balPart = ` - शिल्लक: ₹${(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     return {
       value: acc.savingAccountID,
-      label: `${accDisplay}${prevAccPart}${oldAccPart}${cifPart} - ${namePart}${engPart}${balPart}`
+      label: `${accDisplay}${oldAccPart}${cifPart} - ${namePart}${engPart}${balPart}`
     };
   });
 

@@ -153,6 +153,12 @@ if (Test-Path $alignCodesSource) {
     Write-Host "  -> align_member_codes_1to1.sql included in database package (UTF-8 BOM)." -ForegroundColor White
 }
 
+$saving14Source = Join-Path $workspaceRoot "patches\patch_migrate_saving_accounts_14digit.sql"
+if (Test-Path $saving14Source) {
+    Copy-Item $saving14Source (Join-Path $patchFolder "database\patch_migrate_saving_accounts_14digit.sql") -Force
+    Write-Host "  -> patch_migrate_saving_accounts_14digit.sql included in database package." -ForegroundColor White
+}
+
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null
@@ -290,21 +296,25 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
             $backupPath = "$($config.BackupFolder)\$($target.TargetDatabase)_PrePatch_$timestamp.bak"
             $backupSql = "BACKUP DATABASE [$($target.TargetDatabase)] TO DISK = N'$backupPath' WITH FORMAT, INIT, NAME = N'$($target.TargetDatabase)-PrePatch-Backup', SKIP, NOREWIND, NOUNLOAD, STATS = 10;"
+            $tempBkFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "sqlcmd_bk_" + [System.Guid]::NewGuid().ToString("N") + ".sql")
+            [System.IO.File]::WriteAllText($tempBkFile, $backupSql, [System.Text.Encoding]::UTF8)
             try {
                 if ($config.SqlUser -and $config.SqlPassword) {
                     try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -Q $backupSql
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -i $tempBkFile -b
                     } catch {
-                        sqlcmd -S $config.SqlServerInstance -E -Q $backupSql
+                        sqlcmd -S $config.SqlServerInstance -E -i $tempBkFile -b
                     }
                 } else {
-                    sqlcmd -S $config.SqlServerInstance -E -Q $backupSql
+                    sqlcmd -S $config.SqlServerInstance -E -i $tempBkFile -b
                 }
                 Write-Host "  -> Backup Success: $backupPath" -ForegroundColor Green
                 $statusObj.Backup = "OK"
             } catch {
                 Write-Host "  -> Backup Warning ($($_.Exception.Message)). Continuing..." -ForegroundColor DarkYellow
                 $statusObj.Backup = "Warning"
+            } finally {
+                if (Test-Path $tempBkFile) { Remove-Item $tempBkFile -Force -ErrorAction SilentlyContinue }
             }
         }
 
@@ -315,12 +325,12 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
                 $sqlOk = $false
                 if ($config.SqlUser -and $config.SqlPassword) {
                     try {
-                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d $target.TargetDatabase -i $sqlFile -f 65001 -b
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$sqlFile`"" -f 65001 -b
                         if ($LASTEXITCODE -eq 0) { $sqlOk = $true }
                     } catch {}
                 }
                 if (-not $sqlOk) {
-                    sqlcmd -S $config.SqlServerInstance -d $target.TargetDatabase -E -i $sqlFile -f 65001 -b
+                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$sqlFile`"" -f 65001 -b
                     if ($LASTEXITCODE -eq 0) { $sqlOk = $true }
                 }
 
@@ -334,6 +344,30 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             } catch {
                 Write-Host "  -> SQL Note: $($_.Exception.Message). Continuing deployment..." -ForegroundColor DarkYellow
                 $statusObj.SqlSchema = "Notice (Bypassed)"
+            }
+        }
+
+        # 2.1 Automatic 14-Digit Saving Accounts Migration
+        $saving14Sql = Join-Path $scriptDir "database\patch_migrate_saving_accounts_14digit.sql"
+        if (Test-Path $saving14Sql) {
+            Write-Host " [Step 2.1] Running 14-Digit Saving Accounts Migration on $($target.TargetDatabase)..." -ForegroundColor Yellow
+            try {
+                $m14Ok = $false
+                if ($config.SqlUser -and $config.SqlPassword) {
+                    try {
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$saving14Sql`"" -f 65001 -b
+                        if ($LASTEXITCODE -eq 0) { $m14Ok = $true }
+                    } catch {}
+                }
+                if (-not $m14Ok) {
+                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$saving14Sql`"" -f 65001 -b
+                    if ($LASTEXITCODE -eq 0) { $m14Ok = $true }
+                }
+                if ($m14Ok) {
+                    Write-Host "  -> 14-Digit Saving Accounts Migration applied successfully!" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "  -> Migration Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
             }
         }
 

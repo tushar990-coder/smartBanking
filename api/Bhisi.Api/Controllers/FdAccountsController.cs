@@ -1004,10 +1004,20 @@ namespace Bhisi.Api.Controllers
                     VoucherType = "Journal",
                     TotalAmount = account.DepositAmount,
                     Narration = $"मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): {account.AccountNo}",
-                    CreatedBy = account.CreatedBy,
+                    Status = "Approved",
+                    ApprovedBy = account.CreatedBy > 0 ? account.CreatedBy : 1,
+                    ApprovedOn = DateTime.Now,
+                    CreatedBy = account.CreatedBy > 0 ? account.CreatedBy : 1,
                     CreatedOn = DateTime.Now
                 };
                 _context.Vouchers.Add(dummyVoucher);
+                await _context.SaveChangesAsync();
+            }
+            else if (dummyVoucher.Status == "Pending")
+            {
+                dummyVoucher.Status = "Approved";
+                dummyVoucher.ApprovedBy = account.CreatedBy > 0 ? account.CreatedBy : 1;
+                dummyVoucher.ApprovedOn = DateTime.Now;
                 await _context.SaveChangesAsync();
             }
 

@@ -457,6 +457,75 @@ BEGIN
 END
 GO
 
+IF COL_LENGTH('FdSchemes', 'DurationType') IS NULL
+BEGIN
+    ALTER TABLE [FdSchemes] ADD [DurationType] NVARCHAR(20) NOT NULL DEFAULT 'Months';
+    PRINT 'Added DurationType to FdSchemes';
+END
+GO
+
+IF COL_LENGTH('FdSchemes', 'SchemeDurationModel') IS NULL
+BEGIN
+    ALTER TABLE [FdSchemes] ADD [SchemeDurationModel] NVARCHAR(20) NOT NULL DEFAULT 'Fixed';
+    PRINT 'Added SchemeDurationModel to FdSchemes';
+END
+GO
+
+IF COL_LENGTH('FdSchemes', 'MinDurationDays') IS NULL
+BEGIN
+    ALTER TABLE [FdSchemes] ADD [MinDurationDays] INT NULL;
+    PRINT 'Added MinDurationDays to FdSchemes';
+END
+GO
+
+IF COL_LENGTH('FdSchemes', 'MaxDurationDays') IS NULL
+BEGIN
+    ALTER TABLE [FdSchemes] ADD [MaxDurationDays] INT NULL;
+    PRINT 'Added MaxDurationDays to FdSchemes';
+END
+GO
+
+IF COL_LENGTH('FdAccounts', 'DurationType') IS NULL
+BEGIN
+    ALTER TABLE [FdAccounts] ADD [DurationType] NVARCHAR(20) NULL DEFAULT 'Months';
+    PRINT 'Added DurationType to FdAccounts';
+END
+GO
+
+IF COL_LENGTH('FdAccounts', 'DurationValue') IS NULL
+BEGIN
+    ALTER TABLE [FdAccounts] ADD [DurationValue] INT NULL;
+    PRINT 'Added DurationValue to FdAccounts';
+END
+GO
+
+IF COL_LENGTH('FdAccounts', 'DurationInDays') IS NULL
+BEGIN
+    ALTER TABLE [FdAccounts] ADD [DurationInDays] INT NULL;
+    PRINT 'Added DurationInDays to FdAccounts';
+END
+GO
+
+IF OBJECT_ID(N'[dbo].[FdSchemeInterestSlabs]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[FdSchemeInterestSlabs] (
+        [SlabID] INT IDENTITY(1,1) NOT NULL,
+        [FdSchemeID] INT NOT NULL,
+        [FromDays] INT NOT NULL,
+        [ToDays] INT NOT NULL,
+        [InterestRate] DECIMAL(5,2) NOT NULL,
+        [SeniorCitizenRate] DECIMAL(5,2) NOT NULL,
+        [PrematureRate] DECIMAL(5,2) NOT NULL DEFAULT 0,
+        [IsActive] BIT NOT NULL DEFAULT 1,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT [PK_FdSchemeInterestSlabs] PRIMARY KEY CLUSTERED ([SlabID] ASC),
+        CONSTRAINT [FK_FdSchemeInterestSlabs_FdSchemes] FOREIGN KEY ([FdSchemeID]) 
+            REFERENCES [dbo].[FdSchemes]([FdSchemeID]) ON DELETE CASCADE
+    );
+    PRINT 'Created Table [dbo].[FdSchemeInterestSlabs]';
+END
+GO
+
 -- RdSchemes
 IF COL_LENGTH('RdSchemes', 'RdLiabilityLedgerID') IS NULL
 BEGIN
@@ -4037,43 +4106,88 @@ BEGIN
 END
 GO
 
--- 7.3 Add PreviousAccountNo & SavingSchemeID to SavingAccountMasters
+-- 7.3 Standardize SavingAccountMasters: Ensure OldAccountNo & SavingSchemeID, Consolidate & Drop PreviousAccountNo
 IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
 BEGIN
-    IF COL_LENGTH('SavingAccountMasters', 'PreviousAccountNo') IS NULL
+    -- 1. Ensure OldAccountNo column exists
+    IF COL_LENGTH('SavingAccountMasters', 'OldAccountNo') IS NULL
     BEGIN
-        ALTER TABLE [dbo].[SavingAccountMasters] ADD [PreviousAccountNo] NVARCHAR(20) NULL;
-        PRINT '  -> Added PreviousAccountNo column to SavingAccountMasters.';
+        ALTER TABLE [dbo].[SavingAccountMasters] ADD [OldAccountNo] NVARCHAR(50) NULL;
+        PRINT '  -> Added OldAccountNo column to SavingAccountMasters.';
     END
 
+    -- 2. Ensure SavingSchemeID column exists
     IF COL_LENGTH('SavingAccountMasters', 'SavingSchemeID') IS NULL
     BEGIN
         ALTER TABLE [dbo].[SavingAccountMasters] ADD [SavingSchemeID] INT NULL;
         PRINT '  -> Added SavingSchemeID column to SavingAccountMasters.';
     END
 
-    -- Synchronize existing accounts: preserve old 9-digit in PreviousAccountNo
-    UPDATE [dbo].[SavingAccountMasters]
-    SET [PreviousAccountNo] = [AccountNo]
-    WHERE [PreviousAccountNo] IS NULL AND [AccountNo] IS NOT NULL AND LEN(LTRIM(RTRIM([AccountNo]))) > 0 AND LEN(LTRIM(RTRIM([AccountNo]))) < 14;
+    -- 3. Safely migrate any existing PreviousAccountNo data into OldAccountNo before dropping
+    IF COL_LENGTH('SavingAccountMasters', 'PreviousAccountNo') IS NOT NULL
+    BEGIN
+        EXEC sp_executesql N'
+            UPDATE [dbo].[SavingAccountMasters]
+            SET [OldAccountNo] = [PreviousAccountNo]
+            WHERE ([OldAccountNo] IS NULL OR LTRIM(RTRIM([OldAccountNo])) = '''')
+              AND [PreviousAccountNo] IS NOT NULL 
+              AND LTRIM(RTRIM([PreviousAccountNo])) <> '''';
+        ';
+    END
 
+    -- 4. Preserve existing legacy (< 14 digits) AccountNo into OldAccountNo
+    EXEC sp_executesql N'
+        UPDATE [dbo].[SavingAccountMasters]
+        SET [OldAccountNo] = LTRIM(RTRIM([AccountNo]))
+        WHERE ([OldAccountNo] IS NULL OR LTRIM(RTRIM([OldAccountNo])) = '''')
+          AND [AccountNo] IS NOT NULL 
+          AND LEN(LTRIM(RTRIM([AccountNo]))) > 0 
+          AND LEN(LTRIM(RTRIM([AccountNo]))) < 14;
+    ';
+
+    -- 5. Safely Drop redundant PreviousAccountNo column and its constraints if present
+    IF COL_LENGTH('SavingAccountMasters', 'PreviousAccountNo') IS NOT NULL
+    BEGIN
+        DECLARE @PrevConstraint NVARCHAR(200);
+        SELECT @PrevConstraint = d.name
+        FROM sys.default_constraints d
+        INNER JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+        WHERE d.parent_object_id = OBJECT_ID('SavingAccountMasters') AND c.name = 'PreviousAccountNo';
+
+        IF @PrevConstraint IS NOT NULL
+        BEGIN
+            EXEC('ALTER TABLE [dbo].[SavingAccountMasters] DROP CONSTRAINT [' + @PrevConstraint + '];');
+        END
+
+        ALTER TABLE [dbo].[SavingAccountMasters] DROP COLUMN [PreviousAccountNo];
+        PRINT '  -> Dropped redundant PreviousAccountNo column from SavingAccountMasters.';
+    END
+END
+GO
+
+-- 7.4 Synchronize Existing Accounts & Sequence Counter
+IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
+BEGIN
     -- Sync SavingAccountSequences initial counter
     DECLARE @MaxSavingCount INT = 0;
     SELECT @MaxSavingCount = COUNT(*) FROM [dbo].[SavingAccountMasters];
 
-    IF NOT EXISTS (SELECT 1 FROM [dbo].[SavingAccountSequences] WHERE [BranchID] = 1 AND [SchemeCodeNumeric] = 101)
+    IF OBJECT_ID(N'[SavingAccountSequences]', N'U') IS NOT NULL
     BEGIN
-        INSERT INTO [dbo].[SavingAccountSequences] ([BranchID], [SchemeCodeNumeric], [LastSequenceNumber], [UpdatedOn])
-        VALUES (1, 101, @MaxSavingCount, GETDATE());
-    END
-    ELSE
-    BEGIN
-        UPDATE [dbo].[SavingAccountSequences] 
-        SET [LastSequenceNumber] = @MaxSavingCount, [UpdatedOn] = GETDATE()
-        WHERE [BranchID] = 1 AND [SchemeCodeNumeric] = 101;
+        IF NOT EXISTS (SELECT 1 FROM [dbo].[SavingAccountSequences] WHERE [BranchID] = 1 AND [SchemeCodeNumeric] = 101)
+        BEGIN
+            INSERT INTO [dbo].[SavingAccountSequences] ([BranchID], [SchemeCodeNumeric], [LastSequenceNumber], [UpdatedOn])
+            VALUES (1, 101, @MaxSavingCount, GETDATE());
+        END
+        ELSE
+        BEGIN
+            UPDATE [dbo].[SavingAccountSequences] 
+            SET [LastSequenceNumber] = @MaxSavingCount, [UpdatedOn] = GETDATE()
+            WHERE [BranchID] = 1 AND [SchemeCodeNumeric] = 101;
+        END
     END
 
-    PRINT '  -> Saving Account Sequences & Previous Numbers Synchronized!';
+    PRINT '  -> Saving Account Sequences & Old Numbers Synchronized!';
 END
 GO
 
@@ -4089,6 +4203,202 @@ BEGIN
         ''Standard 14-Digit CBS Saving Account Architecture: [3-digit Branch] + [3-digit Scheme] + [7-digit Sequence] + [1-digit Luhn Modulo-10 Checksum], SavingAccountSequences atomic engine, PreviousAccountNo legacy preservation, and 3-digit scheme master.'', 
         ''VPS Administrator'',
         ''2026-09-22''
+    );');
+END
+GO
+
+-- 9. Pigmy 14-Digit Standardized Account Number Engine & Data Migration (300 Scheme Series)
+IF OBJECT_ID(N'[dbo].[fn_CalculateLuhnCheckDigit]', N'FN') IS NULL
+BEGIN
+    EXEC('CREATE FUNCTION [dbo].[fn_CalculateLuhnCheckDigit](@InputDigits VARCHAR(50))
+    RETURNS INT
+    AS
+    BEGIN
+        DECLARE @Sum INT = 0;
+        DECLARE @Alternate BIT = 1;
+        DECLARE @Len INT = LEN(@InputDigits);
+        DECLARE @i INT = @Len;
+        DECLARE @Digit INT;
+
+        WHILE @i >= 1
+        BEGIN
+            SET @Digit = CAST(SUBSTRING(@InputDigits, @i, 1) AS INT);
+            IF @Alternate = 1
+            BEGIN
+                SET @Digit = @Digit * 2;
+                IF @Digit > 9
+                BEGIN
+                    SET @Digit = @Digit - 9;
+                END
+            END
+            SET @Sum = @Sum + @Digit;
+            SET @Alternate = 1 - @Alternate;
+            SET @i = @i - 1;
+        END
+
+        DECLARE @Mod INT = @Sum % 10;
+        RETURN CASE WHEN @Mod = 0 THEN 0 ELSE 10 - @Mod END;
+    END');
+END
+GO
+
+IF OBJECT_ID(N'[dbo].[PigmySchemes]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'[dbo].[PigmySchemes]', N'SchemeCode') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[PigmySchemes] ADD [SchemeCode] NVARCHAR(50) NULL;
+    END
+
+    ;WITH SchemeSeq AS (
+        SELECT [PigmySchemeID], [SchemeCode],
+               ROW_NUMBER() OVER (ORDER BY [PigmySchemeID]) AS RowNum
+        FROM [dbo].[PigmySchemes]
+    )
+    UPDATE s
+    SET [SchemeCode] = CAST((300 + RowNum) AS NVARCHAR(10))
+    FROM [dbo].[PigmySchemes] s
+    JOIN SchemeSeq q ON s.[PigmySchemeID] = q.[PigmySchemeID]
+    WHERE s.[SchemeCode] IS NULL 
+       OR LTRIM(RTRIM(s.[SchemeCode])) = '' 
+       OR s.[SchemeCode] LIKE 'PGS%' 
+       OR LEN(LTRIM(RTRIM(s.[SchemeCode]))) <> 3
+       OR s.[SchemeCode] NOT LIKE '[0-9][0-9][0-9]';
+END
+GO
+
+IF OBJECT_ID(N'[dbo].[PigmyAccountSequences]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[PigmyAccountSequences] (
+        [SequenceID] INT IDENTITY(1,1) NOT NULL,
+        [BranchID] INT NOT NULL DEFAULT 1,
+        [SchemeCodeNumeric] INT NOT NULL DEFAULT 301,
+        [LastSequenceNumber] INT NOT NULL DEFAULT 0,
+        [UpdatedOn] DATETIME2 NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT [PK_PigmyAccountSequences] PRIMARY KEY CLUSTERED ([SequenceID] ASC)
+    );
+END
+ELSE
+BEGIN
+    IF COL_LENGTH(N'[dbo].[PigmyAccountSequences]', N'ID') IS NOT NULL AND COL_LENGTH(N'[dbo].[PigmyAccountSequences]', N'SequenceID') IS NULL
+    BEGIN
+        EXEC sp_rename 'dbo.PigmyAccountSequences.ID', 'SequenceID', 'COLUMN';
+    END
+    IF COL_LENGTH(N'[dbo].[PigmyAccountSequences]', N'SchemeCodeNumeric') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[PigmyAccountSequences] ADD [SchemeCodeNumeric] INT NOT NULL CONSTRAINT DF_PigmyAccountSequences_SchemeCodeNumeric DEFAULT 301;
+    END
+    IF COL_LENGTH(N'[dbo].[PigmyAccountSequences]', N'LastSequenceNumber') IS NULL AND COL_LENGTH(N'[dbo].[PigmyAccountSequences]', N'CurrentSequenceNumber') IS NOT NULL
+    BEGIN
+        EXEC sp_rename 'dbo.PigmyAccountSequences.CurrentSequenceNumber', 'LastSequenceNumber', 'COLUMN';
+    END
+    IF COL_LENGTH(N'[dbo].[PigmyAccountSequences]', N'LastSequenceNumber') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[PigmyAccountSequences] ADD [LastSequenceNumber] INT NOT NULL DEFAULT 0;
+    END
+    IF COL_LENGTH(N'[dbo].[PigmyAccountSequences]', N'UpdatedOn') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[PigmyAccountSequences] ADD [UpdatedOn] DATETIME2 NOT NULL CONSTRAINT DF_PigmyAccountSequences_UpdatedOn DEFAULT GETDATE();
+    END
+END
+GO
+
+IF OBJECT_ID(N'[dbo].[PigmyAccounts]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'[dbo].[PigmyAccounts]', N'PreviousAccountNo') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[PigmyAccounts] ADD [PreviousAccountNo] NVARCHAR(50) NULL;
+        PRINT '  -> Added [PreviousAccountNo] column to [dbo].[PigmyAccounts].';
+    END
+END
+GO
+
+IF OBJECT_ID(N'[dbo].[PigmyAccounts]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH(N'[dbo].[PigmyAccounts]', N'PreviousAccountNo') IS NOT NULL
+    BEGIN
+        EXEC sp_executesql N'
+            UPDATE [dbo].[PigmyAccounts]
+            SET [PreviousAccountNo] = LTRIM(RTRIM([AccountNo]))
+            WHERE ([PreviousAccountNo] IS NULL OR LTRIM(RTRIM([PreviousAccountNo])) = '''')
+              AND [AccountNo] IS NOT NULL 
+              AND LTRIM(RTRIM([AccountNo])) <> ''''
+              AND (LEN(LTRIM(RTRIM([AccountNo]))) <> 14 OR [AccountNo] NOT LIKE ''[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'');
+        ';
+    END
+
+    ;WITH NumberedAccounts AS (
+        SELECT 
+            p.[PigmyAccountID],
+            p.[BranchID],
+            COALESCE(p.[PigmySchemeID], 1) AS [PigmySchemeID],
+            COALESCE(
+                CASE WHEN ISNUMERIC(s.[SchemeCode]) = 1 THEN CAST(s.[SchemeCode] AS INT) ELSE 301 END,
+                301
+            ) AS [SchemeCodeNumeric],
+            ROW_NUMBER() OVER (
+                PARTITION BY p.[BranchID], COALESCE(CASE WHEN ISNUMERIC(s.[SchemeCode]) = 1 THEN CAST(s.[SchemeCode] AS INT) ELSE 301 END, 301)
+                ORDER BY p.[OpeningDate], p.[PigmyAccountID]
+            ) AS [AccountSequence]
+        FROM [dbo].[PigmyAccounts] p
+        LEFT JOIN [dbo].[PigmySchemes] s ON p.[PigmySchemeID] = s.[PigmySchemeID]
+        WHERE p.[AccountNo] IS NULL 
+           OR LEN(LTRIM(RTRIM(p.[AccountNo]))) <> 14 
+           OR p.[AccountNo] NOT LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+    ),
+    Calculated14Digit AS (
+        SELECT 
+            n.[PigmyAccountID],
+            RIGHT('000' + CAST(n.[BranchID] AS VARCHAR(10)), 3) +
+            RIGHT('000' + CAST(n.[SchemeCodeNumeric] AS VARCHAR(10)), 3) +
+            RIGHT('0000000' + CAST(n.[AccountSequence] AS VARCHAR(10)), 7) AS [ThirteenDigits]
+        FROM NumberedAccounts n
+    )
+    UPDATE p
+    SET p.[AccountNo] = c.[ThirteenDigits] + CAST([dbo].[fn_CalculateLuhnCheckDigit](c.[ThirteenDigits]) AS VARCHAR(1))
+    FROM [dbo].[PigmyAccounts] p
+    JOIN Calculated14Digit c ON p.[PigmyAccountID] = c.[PigmyAccountID];
+
+    ;WITH BranchSchemeStats AS (
+        SELECT 
+            p.[BranchID],
+            COALESCE(CASE WHEN ISNUMERIC(s.[SchemeCode]) = 1 THEN CAST(s.[SchemeCode] AS INT) ELSE 301 END, 301) AS [SchemeCodeNumeric],
+            COUNT(*) AS [TotalCount]
+        FROM [dbo].[PigmyAccounts] p
+        LEFT JOIN [dbo].[PigmySchemes] s ON p.[PigmySchemeID] = s.[PigmySchemeID]
+        GROUP BY p.[BranchID], COALESCE(CASE WHEN ISNUMERIC(s.[SchemeCode]) = 1 THEN CAST(s.[SchemeCode] AS INT) ELSE 301 END, 301)
+    )
+    MERGE [dbo].[PigmyAccountSequences] AS target
+    USING BranchSchemeStats AS source
+    ON (target.[BranchID] = source.[BranchID] AND target.[SchemeCodeNumeric] = source.[SchemeCodeNumeric])
+    WHEN MATCHED THEN
+        UPDATE SET target.[LastSequenceNumber] = CASE WHEN source.[TotalCount] > target.[LastSequenceNumber] THEN source.[TotalCount] ELSE target.[LastSequenceNumber] END,
+                   target.[UpdatedOn] = GETDATE()
+    WHEN NOT MATCHED THEN
+        INSERT ([BranchID], [SchemeCodeNumeric], [LastSequenceNumber], [UpdatedOn])
+        VALUES (source.[BranchID], source.[SchemeCodeNumeric], source.[TotalCount], GETDATE());
+
+    IF NOT EXISTS (SELECT 1 FROM [dbo].[PigmyAccountSequences] WHERE [BranchID] = 1 AND [SchemeCodeNumeric] = 301)
+    BEGIN
+        INSERT INTO [dbo].[PigmyAccountSequences] ([BranchID], [SchemeCodeNumeric], [LastSequenceNumber], [UpdatedOn])
+        VALUES (1, 301, 0, GETDATE());
+    END
+
+    PRINT '  -> Pigmy 14-Digit CBS Accounts & Sequences Synchronized!';
+END
+GO
+
+-- 10. Record Version v2.5.3 in SystemVersionHistories
+IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
+BEGIN
+    EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+    VALUES (
+        ''2.5.3'', 
+        GETUTCDATE(), 
+        ''SmartBanking VPS Multi-App Master Patch v2.5.3'', 
+        ''SUCCESS'', 
+        ''Standard 14-Digit CBS Pigmy & Saving Account Architecture: [3-digit Branch] + [3-digit Scheme (301 for Pigmy, 101 for Saving)] + [7-digit Sequence] + [1-digit Luhn Modulo-10 Checksum], PigmyAccountSequences atomic engine, PreviousAccountNo legacy preservation.'', 
+        ''VPS Administrator'',
+        ''2026-09-23''
     );');
 END
 GO

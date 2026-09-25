@@ -110,15 +110,17 @@ const FdAccountOpening: React.FC = () => {
     fetchSchemes();
     fetchBranches();
     fetchBankLedgers();
+    fetchFdList(formData.branchID);
   }, []);
 
   useEffect(() => {
     fetchNextAccountNo(formData.branchID);
+    fetchFdList(formData.branchID);
   }, [formData.branchID]);
 
   useEffect(() => {
     if (view === 'list') {
-      fetchFdList();
+      fetchFdList(formData.branchID);
     }
   }, [view]);
 
@@ -254,13 +256,15 @@ const FdAccountOpening: React.FC = () => {
     }
   };
 
-  const fetchFdList = async () => {
+  const fetchFdList = async (targetBranchId?: number) => {
+    const bId = targetBranchId !== undefined ? targetBranchId : formData.branchID;
     setListLoading(true);
     setListError('');
     setListSuccess('');
     try {
-      const response = await axios.get(`${API_URL}/FdAccounts?branchId=${formData.branchID}`);
-      setFdList(response.data);
+      const url = bId && bId > 0 ? `${API_URL}/FdAccounts?branchId=${bId}` : `${API_URL}/FdAccounts`;
+      const response = await axios.get(url);
+      setFdList(Array.isArray(response.data) ? response.data : []);
     } catch (err) {
       console.error('Error fetching FD list', err);
     } finally {
@@ -277,7 +281,7 @@ const FdAccountOpening: React.FC = () => {
       await axios.delete(`${API_URL}/FdAccounts/${deleteConfirm.id}`);
       setListSuccess(`✅ खाते '${deleteConfirm.accountNo}' यशस्वीरित्या डिलीट (Delete) केले.`);
       setDeleteConfirm(null);
-      fetchFdList();
+      fetchFdList(formData.branchID);
       fetchNextAccountNo(formData.branchID);
     } catch (err: any) {
       const msg = err.response?.data?.message || err.response?.data || err.message || 'Delete करताना त्रुटी आली.';
@@ -558,6 +562,7 @@ const FdAccountOpening: React.FC = () => {
       setChequeNo('');
       setChequeDate('');
       fetchNextAccountNo(formData.branchID);
+      fetchFdList(formData.branchID);
       if (formData.memberID > 0) {
         fetchMemberSavingsAccounts(formData.memberID);
       }

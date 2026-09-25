@@ -26,6 +26,9 @@ interface FdAccount {
   fdAccountID: number;
   branchID: number;
   accountNo: string;
+  customerID?: number;
+  customerName?: string;
+  cifNo?: string;
   memberID: number;
   memberName: string;
   memberCode: string;
@@ -128,15 +131,15 @@ const FdWithdrawalMaturity: React.FC = () => {
     }
   };
 
-  const fetchMemberSavingsAccounts = async (memberId: number, customerId?: number) => {
-    if ((!memberId || memberId <= 0) && (!customerId || customerId <= 0)) {
+  const fetchCustomerSavingsAccounts = async (customerId?: number, memberId?: number) => {
+    if ((!customerId || customerId <= 0) && (!memberId || memberId <= 0)) {
       setMemberSavingAccounts([]);
       setSelectedSavingAccountId('');
       return;
     }
     try {
       const url = customerId 
-        ? `${API_URL}/SavingAccounts?customerId=${customerId}&memberId=${memberId || ''}`
+        ? `${API_URL}/SavingAccounts?customerId=${customerId}`
         : `${API_URL}/SavingAccounts?memberId=${memberId}`;
       const res = await axios.get(url);
       const list: SavingAccount[] = Array.isArray(res.data)
@@ -149,7 +152,7 @@ const FdWithdrawalMaturity: React.FC = () => {
         setSelectedSavingAccountId('');
       }
     } catch (err) {
-      console.error('Error fetching member savings accounts', err);
+      console.error('Error fetching customer savings accounts', err);
       setMemberSavingAccounts([]);
       setSelectedSavingAccountId('');
     }
@@ -164,15 +167,19 @@ const FdWithdrawalMaturity: React.FC = () => {
       const params = new URLSearchParams(window.location.search);
       const entityIdStr = params.get('entityId');
       const fdAccountIdStr = params.get('fdAccountId') || params.get('id');
+      const customerIdStr = params.get('customerId') || params.get('cif');
       const memberIdStr = params.get('memberId');
 
       let matched: FdAccount | undefined = undefined;
       if (fdAccountIdStr) {
         const accId = parseInt(fdAccountIdStr);
         matched = activeList.find((a: any) => a.fdAccountID === accId);
+      } else if (customerIdStr) {
+        const cId = parseInt(customerIdStr);
+        matched = activeList.find((a: any) => a.customerID === cId || a.cifNo === customerIdStr);
       } else if (entityIdStr) {
         const eId = parseInt(entityIdStr);
-        matched = activeList.find((a: any) => a.fdAccountID === eId || a.customerID === eId || a.memberID === eId);
+        matched = activeList.find((a: any) => a.fdAccountID === eId || a.customerID === eId || a.cifNo === entityIdStr || a.memberID === eId);
       } else if (memberIdStr) {
         const mId = parseInt(memberIdStr);
         matched = activeList.find((a: any) => a.customerID === mId || a.memberID === mId);
@@ -181,7 +188,7 @@ const FdWithdrawalMaturity: React.FC = () => {
       if (matched) {
         setSelectedAccId(matched.fdAccountID);
         setSelectedAccount(matched);
-        fetchMemberSavingsAccounts(matched.memberID || 0, (matched as any).customerID);
+        fetchCustomerSavingsAccounts(matched.customerID, matched.memberID);
       }
     } catch (err) {
       console.error('Error fetching accounts', err);
@@ -209,7 +216,7 @@ const FdWithdrawalMaturity: React.FC = () => {
     setError('');
     setSuccess('');
     if (selected) {
-      fetchMemberSavingsAccounts(selected.memberID, (selected as any).customerID || (selected.member as any)?.customerID);
+      fetchCustomerSavingsAccounts(selected.customerID, selected.memberID);
     } else {
       setMemberSavingAccounts([]);
       setSelectedSavingAccountId('');
@@ -257,7 +264,7 @@ const FdWithdrawalMaturity: React.FC = () => {
     // Validation for Transfer Payment
     if ((actionType === 'MaturityClose' || actionType === 'PrematureClose' || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && paymentMode === 'Transfer') {
       if (!selectedSavingAccountId || selectedSavingAccountId <= 0) {
-        setError('⚠️ रक्कम वर्ग करण्यासाठी सभासदाचे कोणतेही सक्रिय बचत खाते निवडलेले नाही.');
+        setError('⚠️ रक्कम वर्ग करण्यासाठी खातेदाराचे कोणतेही सक्रिय बचत खाते निवडलेले नाही.');
         return;
       }
     }
@@ -331,12 +338,12 @@ const FdWithdrawalMaturity: React.FC = () => {
     const fdLiability = selectedAccount.fdLiabilityLedgerName 
       || scheme?.fdLiabilityLedger?.ledgerName 
       || scheme?.fdLiabilityLedgerName 
-      || '१२ मेंबर मुदत ठेव खाते (Fixed Deposit Liability)';
+      || '१२ मुदत ठेव देयता खाते (Fixed Deposit Liability)';
 
     const interestPayable = selectedAccount.interestPayableLedgerName 
       || scheme?.interestPayableLedger?.ledgerName 
       || scheme?.interestPayableLedgerName 
-      || '२३ देणे सभासद ठेव व्याज (Interest Payable)';
+      || '२३ देणे मुदत ठेव व्याज (Interest Payable)';
 
     const interestExpense = selectedAccount.interestExpenseLedgerName 
       || scheme?.interestExpenseLedger?.ledgerName 
@@ -354,7 +361,7 @@ const FdWithdrawalMaturity: React.FC = () => {
       payoutLedgerName = b ? `${b.ledgerID} - ${b.ledgerName} (Bank A/c)` : 'बँक खाते लेजर (Bank GL)';
     } else if (paymentMode === 'Transfer') {
       const sAcc = memberSavingAccounts.find(s => s.savingAccountID === selectedSavingAccountId);
-      payoutLedgerName = sAcc ? `७ - बचत ठेव खाते (${sAcc.accountNo})` : '७ - सभासद बचत ठेव देयता खाते (SB Liability)';
+      payoutLedgerName = sAcc ? `७ - बचत ठेव खाते (${sAcc.accountNo})` : '७ - खातेदार बचत ठेव देयता खाते (SB Liability)';
     }
 
     return { fdLiability, interestPayable, interestExpense, prematurePenalty, cashLedger: payoutLedgerName, scheme };
@@ -395,7 +402,7 @@ const FdWithdrawalMaturity: React.FC = () => {
       entries.push({
         drCr: 'Cr',
         ledgerName: ledgers.cashLedger,
-        note: paymentMode === 'Cash' ? 'सभासदास रोख पेमेंट (Cash Payout to Member)' : (paymentMode === 'Bank' ? 'बँक ट्रान्सफर / धनादेश परतावा (Bank Payout)' : 'सभासदाच्या बचत खात्यात वर्ग (SB Credit Payout)'),
+        note: paymentMode === 'Cash' ? 'खातेदारास रोख पेमेंट (Cash Payout to Customer)' : (paymentMode === 'Bank' ? 'बँक ट्रान्सफर / धनादेश परतावा (Bank Payout)' : 'खातेदाराच्या बचत खात्यात वर्ग (SB Credit Payout)'),
         amount: totalPayout
       });
 
@@ -514,10 +521,14 @@ const FdWithdrawalMaturity: React.FC = () => {
   // Format account options for SearchableSelect
   const accountOptions = [
     { value: '0', label: '--- मुदत ठेव खाते निवडा (Select FD Account) ---' },
-    ...accounts.map(a => ({
-      value: a.fdAccountID.toString(),
-      label: `${a.accountNo} - ${a.memberName} (${a.memberCode}) | ठेव: ₹${a.depositAmount.toLocaleString()} | मुदतपूर्ती: ${a.maturityDate ? a.maturityDate.split('T')[0].split('-').reverse().join('/') : ''} [${a.schemeName}]`
-    }))
+    ...accounts.map(a => {
+      const cifDisplay = a.cifNo || (a.customerID ? `CIF-${a.customerID}` : '-');
+      const custName = a.customerName || a.memberName || 'खातेदार';
+      return {
+        value: a.fdAccountID.toString(),
+        label: `${a.accountNo} - ${custName} (CIF: ${cifDisplay}) | ठेव: ₹${a.depositAmount.toLocaleString()} | मुदतपूर्ती: ${a.maturityDate ? a.maturityDate.split('T')[0].split('-').reverse().join('/') : ''} [${a.schemeName}]`
+      };
+    })
   ];
 
   return (
@@ -544,16 +555,16 @@ const FdWithdrawalMaturity: React.FC = () => {
         {/* Step 1: Account Selection */}
         <div className="space-y-3">
           <h2 className="text-xs font-bold text-primary border-b pb-1 flex items-center justify-between">
-            <span>१. मुदत ठेव खाते व व्यवहार निवडा (Select FD Account & Action)</span>
+            <span>१. मुदत ठेव खाते, व्यवहार व तारीख निवडा (Select FD Account, Action & Date)</span>
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div>
               <label className={labelClass}>मुदत ठेव खाते शोधा व निवडा *</label>
               <SearchableSelect
                 options={accountOptions}
                 value={selectedAccId.toString()}
                 onChange={handleAccountSelect}
-                placeholder="पावती क्र., नाव किंवा कोडने शोधा..."
+                placeholder="पावती क्र., खातेदार नाव किंवा CIF ने शोधा..."
               />
             </div>
 
@@ -562,12 +573,23 @@ const FdWithdrawalMaturity: React.FC = () => {
               <select
                 value={actionType}
                 onChange={(e) => setActionType(e.target.value)}
-                className="w-full text-xs font-bold border border-blue-300 bg-blue-50 rounded-sm px-2.5 py-1.5 focus:outline-none focus:border-primary text-blue-900 cursor-pointer shadow-2xs"
+                className="w-full text-xs font-bold border border-blue-300 bg-blue-50 rounded-sm px-2.5 py-1.5 focus:outline-none focus:border-primary text-blue-900 cursor-pointer shadow-2xs h-[34px]"
               >
                 <option value="MaturityClose">१. मुदतपूर्ती पेमेंट (Standard Maturity Payout)</option>
                 <option value="PrematureClose">२. मुदतपूर्व बंद (Premature Close & Clawback)</option>
                 <option value="Renewal">३. मुदत ठेव नूतनीकरण (FD Renewal)</option>
               </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>व्यवहाराची तारीख (Transaction Date) *</label>
+              <input
+                type="date"
+                value={closureDate}
+                onChange={(e) => setClosureDate(e.target.value)}
+                className="w-full text-xs font-bold border border-gray-300 bg-white rounded-sm px-2.5 py-1.5 focus:outline-none focus:border-primary text-gray-900 shadow-2xs h-[34px]"
+                required
+              />
             </div>
           </div>
         </div>
@@ -576,8 +598,11 @@ const FdWithdrawalMaturity: React.FC = () => {
         {selectedAccount && (
           <div className="bg-slate-50 p-3 rounded-sm border border-slate-200 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-700 shadow-2xs">
             <div>
-              <span className="text-gray-500 block text-[10px] uppercase font-semibold">सभासदाचे नाव:</span>
-              <strong className="text-gray-900">{selectedAccount.memberName}</strong>
+              <span className="text-gray-500 block text-[10px] uppercase font-semibold">खातेदाराचे नाव (Customer Name):</span>
+              <strong className="text-gray-900">{selectedAccount.customerName || selectedAccount.memberName}</strong>
+              <div className="text-[10px] font-mono text-primary font-bold mt-0.5">
+                CIF क्र.: {selectedAccount.cifNo || (selectedAccount.customerID ? `CIF-${selectedAccount.customerID}` : '-')}
+              </div>
             </div>
             <div>
               <span className="text-gray-500 block text-[10px] uppercase font-semibold">ठेव योजना (Scheme):</span>
@@ -637,25 +662,34 @@ const FdWithdrawalMaturity: React.FC = () => {
             )}
 
             {actionType === 'MaturityClose' && !isPendingMaturityAction && (
-              <div className="bg-yellow-50 p-3 border border-yellow-200 text-xs text-yellow-800 space-y-1 rounded-sm">
-                <strong>मुदतपूर्ती नियम:</strong> ठेवीची मुदत पूर्ण झाली आहे. मूळ मुद्दल + साचलेले व्याज रोखीने, बँकेद्वारे किंवा सभासदाच्या बचत खात्यात वर्ग केले जाईल.
+              <div className="bg-yellow-50 p-3 border border-yellow-200 text-xs text-yellow-800 space-y-1 rounded-sm flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <strong>मुदतपूर्ती नियम:</strong> ठेवीची मुदत पूर्ण झाली आहे. मूळ मुद्दल + साचलेले व्याज रोखीने, बँकेद्वारे किंवा खातेदाराच्या बचत खात्यात वर्ग केले जाईल.
+                </div>
+                <div className="text-[11px] font-bold bg-yellow-100 text-yellow-900 px-2.5 py-1 rounded border border-yellow-300 shrink-0">
+                  परतावा व्यवहार दिनांक: {closureDate ? closureDate.split('-').reverse().join('/') : '-'}
+                </div>
               </div>
             )}
 
             {actionType === 'PrematureClose' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>प्रत्यक्ष बंद केल्याची तारीख (Closure Date)</label>
-                  <input
-                    type="date"
-                    value={closureDate}
-                    onChange={(e) => setClosureDate(e.target.value)}
-                    className={inputClass}
-                    required
-                  />
+                <div className="bg-amber-50 p-2.5 rounded-sm border border-amber-200 text-xs text-amber-900 flex flex-col justify-center">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-700">प्रत्यक्ष बंद दिनांक (Closure Date):</span>
+                    <strong className="text-primary font-mono text-sm">{closureDate ? closureDate.split('-').reverse().join('/') : '-'}</strong>
+                  </div>
+                  <div className="flex items-center justify-between mt-1 text-[11px] text-gray-600">
+                    <span>एकूण ठेव कालावधी (Actual Days):</span>
+                    <strong className="font-mono font-bold text-gray-900">
+                      {selectedAccount ? Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24))) : 0} दिवस
+                    </strong>
+                  </div>
                 </div>
-                <div className="bg-red-50 p-2.5 rounded-sm border border-red-200 text-xs text-red-800">
-                  <strong>मुदतपूर्व कपात नियम:</strong> प्रत्यक्ष दिवसांनुसार व्याजाची पुनर्गणना केली जाईल आणि दंडात्मक कपात (Clawback) नंतरची रक्कम निवडलेल्या पेमेंट मोडने अदा केली जाईल.
+                <div className="bg-red-50 p-2.5 rounded-sm border border-red-200 text-xs text-red-800 flex items-center">
+                  <div>
+                    <strong>मुदतपूर्व कपात नियम:</strong> प्रत्यक्ष दिवसांनुसार व्याजाची पुनर्गणना केली जाईल आणि दंडात्मक कपात (Clawback) नंतरची रक्कम निवडलेल्या पेमेंट मोडने अदा केली जाईल.
+                  </div>
                 </div>
               </div>
             )}
@@ -692,6 +726,29 @@ const FdWithdrawalMaturity: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Display calculated dates for renewed deposit */}
+                <div className="bg-white p-2 rounded border border-indigo-200 text-xs text-indigo-950 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                  <div>
+                    <span className="text-gray-600">नवीन पावती चालू दिनांक: </span>
+                    <strong className="font-mono font-bold text-indigo-900">{closureDate ? closureDate.split('-').reverse().join('/') : '-'}</strong>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">नवीन पावती मुदतपूर्ती दिनांक: </span>
+                    <strong className="font-mono font-bold text-emerald-800">
+                      {(() => {
+                        const targetScheme = schemes.find(s => s.fdSchemeID === targetSchemeId);
+                        if (!targetScheme || !closureDate) return '-';
+                        const d = new Date(closureDate);
+                        d.setMonth(d.getMonth() + (targetScheme.durationMonths || 12));
+                        const day = String(d.getDate()).padStart(2, '0');
+                        const mon = String(d.getMonth() + 1).padStart(2, '0');
+                        const yr = d.getFullYear();
+                        return `${day}/${mon}/${yr}`;
+                      })()}
+                    </strong>
+                  </div>
+                </div>
+
                 {renewalType === 'PrincipalPlusInterest' && (
                   <div className="bg-white p-2.5 rounded border border-indigo-200 text-xs text-indigo-950 flex items-center justify-between shadow-2xs">
                     <div className="flex items-center gap-2">
@@ -724,7 +781,7 @@ const FdWithdrawalMaturity: React.FC = () => {
                     >
                       <option value="Cash">💵 रोख परतावा (Cash Payout)</option>
                       <option value="Bank">🏦 बँक ट्रान्सफर / धनादेश (Bank Transfer / Cheque)</option>
-                      <option value="Transfer">🔄 बचत खात्यात वर्ग (Transfer to Member SB Account)</option>
+                      <option value="Transfer">🔄 बचत खात्यात वर्ग (Transfer to Customer SB Account)</option>
                     </select>
                   </div>
 
@@ -797,7 +854,7 @@ const FdWithdrawalMaturity: React.FC = () => {
                 {paymentMode === 'Transfer' && (
                   <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded space-y-2">
                     <label className="block text-[10px] font-bold text-indigo-900 mb-0.5">
-                      रक्कम जमा करण्यासाठी सभासदाचे बचत खाते निवडा (Select Member Saving A/c) *
+                      रक्कम जमा करण्यासाठी खातेदाराचे बचत खाते निवडा (Select Customer Saving A/c) *
                     </label>
                     {memberSavingAccounts.length > 0 ? (
                       <select
@@ -818,7 +875,7 @@ const FdWithdrawalMaturity: React.FC = () => {
                     ) : (
                       <div className="text-xs text-red-600 font-bold bg-white p-2 rounded border border-red-200 flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                        <span>⚠️ या सभासदाचे कोणतेही सक्रिय बचत खाते उपलब्ध नाही! कृपया रोख किंवा बँक पर्याय निवडा.</span>
+                        <span>⚠️ या खातेदाराचे कोणतेही सक्रिय बचत खाते उपलब्ध नाही! कृपया रोख किंवा बँक पर्याय निवडा.</span>
                       </div>
                     )}
                   </div>
@@ -831,10 +888,16 @@ const FdWithdrawalMaturity: React.FC = () => {
         {/* Step 3: Accounting Voucher Live Preview */}
         {voucherPreview && (
           <div className="border-t pt-3 space-y-2">
-            <h2 className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
-              <BookOpen className="w-4 h-4 text-primary" />
-              <span>३. जनरेट होणाऱ्या ऑटो-व्हाउचर लेजर नोंदींचे प्रिव्ह्यू (Accounting Entries Preview)</span>
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-1">
+              <h2 className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                <BookOpen className="w-4 h-4 text-primary" />
+                <span>३. जनरेट होणाऱ्या ऑटो-व्हाउचर लेजर नोंदींचे प्रिव्ह्यू (Accounting Entries Preview)</span>
+              </h2>
+              <div className="text-[11px] font-bold bg-blue-50 text-blue-900 px-2.5 py-0.5 rounded border border-blue-200 flex items-center gap-1.5">
+                <span>व्हाऊचर दिनांक (Voucher Date):</span>
+                <span className="font-mono text-primary font-black">{closureDate ? closureDate.split('-').reverse().join('/') : '-'}</span>
+              </div>
+            </div>
             <div className="border rounded-sm overflow-hidden shadow-2xs">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>

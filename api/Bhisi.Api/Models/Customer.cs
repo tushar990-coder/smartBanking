@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -35,6 +36,13 @@ namespace Bhisi.Api.Models
 
         [MaxLength(100)]
         public string? NickName { get; set; }
+
+        [NotMapped]
+        public string FullName => string.Join(" ", new[] { FirstName, MiddleName, LastName }
+            .Where(s => !string.IsNullOrWhiteSpace(s))).Trim();
+
+        [NotMapped]
+        public string CustomerName => FullName;
 
         // English Name Details
         [MaxLength(50)]

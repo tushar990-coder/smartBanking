@@ -135,6 +135,12 @@ if (Test-Path $universalSyncSource) {
     Write-Host "  -> Universal_Schema_Only_Sync.sql included." -ForegroundColor White
 }
 
+$saving14DigitSource = Join-Path $workspaceRoot "patches\patch_migrate_saving_accounts_14digit.sql"
+if (Test-Path $saving14DigitSource) {
+    Copy-Item $saving14DigitSource (Join-Path $patchFolder "database\patch_migrate_saving_accounts_14digit.sql") -Force
+    Write-Host "  -> patch_migrate_saving_accounts_14digit.sql included." -ForegroundColor White
+}
+
 # Copy version manifests
 if (Test-Path $versionJsonPath) {
     Copy-Item $versionJsonPath (Join-Path $patchFolder "version.json") -Force
@@ -196,13 +202,43 @@ function Run-SqlCmdSafe {
         [string]$InputFile
     )
     
-    # 1. Try SQL Authentication
-    if ($User -and $Password) {
-        $cmdArgs = @("-S", $Server)
-        if ($Database) { $cmdArgs += @("-d", $Database) }
-        $cmdArgs += @("-U", $User, "-P", $Password, "-b")
-        if ($InputFile) { $cmdArgs += @("-i", $InputFile, "-f", "65001") }
-        elseif ($Query) { $cmdArgs += @("-Q", $Query) }
+    $tempSqlFile = $null
+    if ($Query) {
+        $tempSqlFile = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "sqlcmd_" + [System.Guid]::NewGuid().ToString("N") + ".sql")
+        $utf8WithBom = New-Object System.Text.UTF8Encoding($true)
+        [System.IO.File]::WriteAllText($tempSqlFile, $Query, $utf8WithBom)
+        $InputFile = $tempSqlFile
+    }
+
+    try {
+        # 1. Try SQL Authentication
+        if ($User -and $Password) {
+            $cmdArgs = @("-S", "`"$Server`"")
+            if ($Database) { $cmdArgs += @("-d", "`"$Database`"") }
+            $cmdArgs += @("-U", "`"$User`"", "-P", "`"$Password`"", "-b")
+            if ($InputFile) { $cmdArgs += @("-i", "`"$InputFile`"", "-f", "65001") }
+
+            $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+            $pinfo.FileName = "sqlcmd.exe"
+            $pinfo.Arguments = ($cmdArgs -join " ")
+            $pinfo.RedirectStandardOutput = $true
+            $pinfo.RedirectStandardError = $true
+            $pinfo.UseShellExecute = $false
+            $p = [System.Diagnostics.Process]::Start($pinfo)
+            $stdout = $p.StandardOutput.ReadToEnd()
+            $stderr = $p.StandardError.ReadToEnd()
+            $p.WaitForExit()
+
+            if ($p.ExitCode -eq 0 -and ($stderr -notmatch "Login failed")) {
+                return @{ Success = $true; Output = $stdout; AuthUsed = "SQL Auth ($User)" }
+            }
+        }
+
+        # 2. Try Windows Authentication (-E)
+        $cmdArgs = @("-S", "`"$Server`"")
+        if ($Database) { $cmdArgs += @("-d", "`"$Database`"") }
+        $cmdArgs += @("-E", "-b")
+        if ($InputFile) { $cmdArgs += @("-i", "`"$InputFile`"", "-f", "65001") }
 
         $pinfo = New-Object System.Diagnostics.ProcessStartInfo
         $pinfo.FileName = "sqlcmd.exe"
@@ -215,33 +251,16 @@ function Run-SqlCmdSafe {
         $stderr = $p.StandardError.ReadToEnd()
         $p.WaitForExit()
 
-        if ($p.ExitCode -eq 0 -and ($stderr -notmatch "Login failed")) {
-            return @{ Success = $true; Output = $stdout; AuthUsed = "SQL Auth ($User)" }
+        if ($p.ExitCode -eq 0) {
+            return @{ Success = $true; Output = $stdout; AuthUsed = "Windows Auth" }
+        } else {
+            return @{ Success = $false; Output = ($stdout + " " + $stderr); AuthUsed = "Failed" }
         }
     }
-
-    # 2. Try Windows Authentication (-E)
-    $cmdArgs = @("-S", $Server)
-    if ($Database) { $cmdArgs += @("-d", $Database) }
-    $cmdArgs += @("-E", "-b")
-    if ($InputFile) { $cmdArgs += @("-i", $InputFile, "-f", "65001") }
-    elseif ($Query) { $cmdArgs += @("-Q", $Query) }
-
-    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-    $pinfo.FileName = "sqlcmd.exe"
-    $pinfo.Arguments = ($cmdArgs -join " ")
-    $pinfo.RedirectStandardOutput = $true
-    $pinfo.RedirectStandardError = $true
-    $pinfo.UseShellExecute = $false
-    $p = [System.Diagnostics.Process]::Start($pinfo)
-    $stdout = $p.StandardOutput.ReadToEnd()
-    $stderr = $p.StandardError.ReadToEnd()
-    $p.WaitForExit()
-
-    if ($p.ExitCode -eq 0) {
-        return @{ Success = $true; Output = $stdout; AuthUsed = "Windows Auth" }
-    } else {
-        return @{ Success = $false; Output = ($stdout + " " + $stderr); AuthUsed = "Failed" }
+    finally {
+        if ($tempSqlFile -and (Test-Path $tempSqlFile)) {
+            Remove-Item $tempSqlFile -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
@@ -336,6 +355,22 @@ try {
             Write-Host "  -> Database Schema updated successfully! ($($sqlRes.AuthUsed))" -ForegroundColor Green
         } else {
             Write-Host "  -> SQL Output: $($sqlRes.Output)" -ForegroundColor DarkYellow
+        }
+    }
+
+    # 3.1 Automatic 14-Digit Saving Accounts Migration
+    $saving14Sql = Join-Path $scriptDir "database\patch_migrate_saving_accounts_14digit.sql"
+    if (Test-Path $saving14Sql) {
+        Write-Host "  -> Running 14-Digit Saving Account Migration on $targetDb..." -ForegroundColor Yellow
+        $res14 = Run-SqlCmdSafe -Server $config.SqlServerInstance -Database $targetDb -User $config.SqlUser -Password $config.SqlPassword -InputFile $saving14Sql
+        if ($res14.Success) {
+            Write-Host "  -> 14-Digit Saving Accounts Migrated Successfully! ($($res14.AuthUsed))" -ForegroundColor Green
+            if ($res14.Output) {
+                $lines = $res14.Output -split "`r?`n" | Where-Object { $_ -match "converted|already 14|Archiving|DROPPED|MIGRATION" }
+                foreach ($l in $lines) { Write-Host "     $l" -ForegroundColor Gray }
+            }
+        } else {
+            Write-Host "  -> Migration Output: $($res14.Output)" -ForegroundColor DarkYellow
         }
     }
 

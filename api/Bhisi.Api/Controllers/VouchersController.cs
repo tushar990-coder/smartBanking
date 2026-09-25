@@ -30,6 +30,10 @@ namespace Bhisi.Api.Controllers
             if (!string.IsNullOrEmpty(status))
             {
                 query = query.Where(v => v.Status == status);
+                if (status == "Pending")
+                {
+                    query = query.Where(v => !v.VoucherNo.StartsWith("JV-FD-OP-"));
+                }
             }
 
             var orderedQuery = query

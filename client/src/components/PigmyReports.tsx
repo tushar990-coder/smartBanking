@@ -17,8 +17,17 @@ interface PigmyAccountRow {
   accountNo: string;
   customerID: number;
   customerName?: string;
+  fullName?: string;
   cifNo?: string;
-  customer?: { cifNo?: string; customerName?: string; mobileNo?: string };
+  customer?: { 
+    cifNo?: string; 
+    customerName?: string; 
+    fullName?: string;
+    firstName?: string;
+    middleName?: string;
+    lastName?: string;
+    mobileNo?: string 
+  };
   pigmySchemeID: number;
   pigmyScheme?: { schemeName: string };
   pigmyAgentID: number;
@@ -29,6 +38,32 @@ interface PigmyAccountRow {
   totalDepositedAmount: number;
   status: string;
 }
+
+const getCustomerFullName = (a: any): string => {
+  if (!a) return '-';
+  const cust = a.customer || a.Customer;
+  if (cust) {
+    const fn = cust.firstName || cust.FirstName;
+    const mn = cust.middleName || cust.MiddleName;
+    const ln = cust.lastName || cust.LastName;
+    const parts = [fn, mn, ln]
+      .filter(Boolean)
+      .map((s: any) => String(s).trim())
+      .filter((s: any) => s.length > 0);
+    if (parts.length > 0) return parts.join(' ');
+    if (cust.fullName && String(cust.fullName).trim()) return String(cust.fullName).trim();
+    if (cust.FullName && String(cust.FullName).trim()) return String(cust.FullName).trim();
+    if (cust.customerName && String(cust.customerName).trim()) return String(cust.customerName).trim();
+    if (cust.CustomerName && String(cust.CustomerName).trim()) return String(cust.CustomerName).trim();
+  }
+  if (a.fullName && String(a.fullName).trim()) return String(a.fullName).trim();
+  if (a.FullName && String(a.FullName).trim()) return String(a.FullName).trim();
+  if (a.customerName && String(a.customerName).trim()) return String(a.customerName).trim();
+  if (a.CustomerName && String(a.CustomerName).trim()) return String(a.CustomerName).trim();
+  if (a.memberName && String(a.memberName).trim()) return String(a.memberName).trim();
+  if (a.MemberName && String(a.MemberName).trim()) return String(a.MemberName).trim();
+  return '-';
+};
 
 interface Agent {
   pigmyAgentID: number;
@@ -158,8 +193,10 @@ export default function PigmyReports() {
 
   const fetchAccountsMaster = async () => {
     try {
-      const res = await axios.get('/api/PigmyAccounts');
-      setAccounts(res.data || []);
+      const res = await axios.get('/api/PigmyAccounts?sortOrder=asc');
+      let data: PigmyAccountRow[] = res.data || [];
+      data.sort((a, b) => (a.accountNo || '').localeCompare(b.accountNo || '', undefined, { numeric: true }));
+      setAccounts(data);
     } catch (err) {
       console.error('Error fetching pigmy accounts', err);
     }
@@ -176,7 +213,7 @@ export default function PigmyReports() {
         const res = await axios.get(url);
         setCollections(res.data || []);
       } else if (reportType === 'account-register') {
-        const res = await axios.get('/api/PigmyAccounts');
+        const res = await axios.get('/api/PigmyAccounts?sortOrder=asc');
         let data: PigmyAccountRow[] = res.data || [];
 
         if (selectedBranchId > 0) {
@@ -185,6 +222,10 @@ export default function PigmyReports() {
         if (selectedAgentId !== 'ALL') {
           data = data.filter((a) => a.pigmyAgentID === Number(selectedAgentId));
         }
+
+        // नोंदवहीसाठी खाती नैसर्गिक चढत्या क्रमाने (Ascending Order: 1, 2, 3...) सॉर्ट करणे
+        data.sort((a, b) => (a.accountNo || '').localeCompare(b.accountNo || '', undefined, { numeric: true }));
+
         setAccounts(data);
       }
     } catch (err) {
@@ -216,7 +257,7 @@ export default function PigmyReports() {
   const filteredAccounts = accounts.filter((a) => {
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase().trim();
-    const name = (a.customer?.customerName || a.customerName || '').toLowerCase();
+    const name = getCustomerFullName(a).toLowerCase();
     const acc = (a.accountNo || '').toLowerCase();
     const cif = (a.customer?.cifNo || a.cifNo || '').toLowerCase();
     const agent = (a.pigmyAgent?.agentName || '').toLowerCase();
@@ -272,7 +313,7 @@ export default function PigmyReports() {
         'अ.क्र.': i + 1,
         'खाते क्र.': a.accountNo,
         'खातेदार CIF': a.customer?.cifNo || a.cifNo || '-',
-        'खातेदाराचे नाव': a.customer?.customerName || a.customerName || '-',
+        'खातेदाराचे नाव': getCustomerFullName(a),
         'एजंट नाव': a.pigmyAgent?.agentName || '-',
         'उघडल्याचा दिनांक': formatDisplayDate(a.openingDate),
         'शिल्लक रक्कम (₹)': a.totalDepositedAmount || 0,
@@ -653,7 +694,7 @@ export default function PigmyReports() {
                       <tr key={a.pigmyAccountID || idx} className="hover:bg-slate-50 text-gray-900 text-[11px]">
                         <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
                         <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-900">{a.accountNo}</td>
-                        <td className="border border-gray-900 py-1 px-3 font-medium">{a.customer?.customerName || a.customerName || '-'}</td>
+                        <td className="border border-gray-900 py-1 px-3 font-medium">{getCustomerFullName(a)}</td>
                         <td className="border border-gray-900 py-1 px-2 text-gray-700">{a.pigmyAgent?.agentName || '-'}</td>
                         <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(a.openingDate)}</td>
                         <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-gray-950">{fmtCurrency(a.totalDepositedAmount)}</td>

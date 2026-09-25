@@ -90,6 +90,21 @@ namespace Bhisi.Api.Controllers
                     }
                     await _context.SaveChangesAsync();
                 }
+
+                // 2.5 Auto-heal: Ensure all historical/migrated FD opening vouchers are marked Approved so they never appear in pending queue
+                var pendingMigrationVouchers = await _context.Vouchers
+                    .Where(v => v.Status == "Pending" && v.VoucherNo.StartsWith("JV-FD-OP-"))
+                    .ToListAsync();
+                if (pendingMigrationVouchers.Any())
+                {
+                    foreach (var mv in pendingMigrationVouchers)
+                    {
+                        mv.Status = "Approved";
+                        mv.ApprovedBy = mv.CreatedBy > 0 ? mv.CreatedBy : 1;
+                        mv.ApprovedOn = DateTime.Now;
+                    }
+                    await _context.SaveChangesAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -97,7 +112,7 @@ namespace Bhisi.Api.Controllers
                 Console.WriteLine("Self-healing voucher audit error: " + ex.Message);
             }
 
-            // 3. Return all pending vouchers
+            // 3. Return all pending vouchers (excluding historical FD opening migration vouchers)
             var query = _context.Vouchers.AsQueryable();
             if (branchId.HasValue && branchId.Value > 0)
             {
@@ -112,7 +127,7 @@ namespace Bhisi.Api.Controllers
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Member)
                         .ThenInclude(m => m!.Customer)
-                .Where(v => v.Status == "Pending")
+                .Where(v => v.Status == "Pending" && !v.VoucherNo.StartsWith("JV-FD-OP-"))
                 .OrderBy(v => v.VoucherDate)
                 .ThenBy(v => v.VoucherID)
                 .ToListAsync();
@@ -524,84 +539,106 @@ namespace Bhisi.Api.Controllers
 
                         if (fdAcc != null)
                         {
-                            int branchId = fdAcc.BranchID;
-                            decimal depositAmount = fdAcc.DepositAmount;
-                            string custName = fdAcc.Customer != null ? $"{fdAcc.Customer.FirstName} {fdAcc.Customer.LastName}".Trim() : "";
-
-                            // Refund SB account if PaymentMode was Transfer
-                            if (fdAcc.PaymentMode == "Transfer" && fdAcc.SavingAccountID.HasValue && fdAcc.SavingAccountID.Value > 0)
+                            if (fdAcc.IsLegacyAccount)
                             {
-                                var sbAcc = await _context.SavingAccountMasters.FindAsync(fdAcc.SavingAccountID.Value);
-                                if (sbAcc != null)
+                                // 🛡️ CRITICAL SAFEGUARD: Migrated Opening Balance accounts MUST NEVER be deleted by voucher deletion!
+                                // Remove only the transaction reference if linked, keep the FdAccount completely intact!
+                                var migTxs = await _context.FdTransactions.Where(t => t.VoucherID == id).ToListAsync();
+                                if (migTxs.Any()) _context.FdTransactions.RemoveRange(migTxs);
+
+                                _context.AuditLogs.Add(new AuditLog
                                 {
-                                    sbAcc.CurrentBalance += depositAmount;
-                                    var sbTx = await _context.SavingTransactions
-                                        .Where(st => st.SavingAccountID == sbAcc.SavingAccountID && st.Narration != null && st.Narration.Contains(fdAccNo))
-                                        .FirstOrDefaultAsync();
-                                    if (sbTx != null) _context.SavingTransactions.Remove(sbTx);
-                                }
+                                    UserID = userId > 0 ? userId : null,
+                                    Username = !string.IsNullOrWhiteSpace(username) ? username : $"User-{userId}",
+                                    Action = "FD_MIGRATION_VOUCHER_DELETED",
+                                    EntityName = "FdAccount",
+                                    EntityID = fdAccNo,
+                                    Details = $"स्थलांतरित मुदत ठेव व्हाउचर {voucher.VoucherNo} हटवले, परंतु मूळ मुदत ठेव खाते (AccountNo: {fdAccNo}) पूर्णपणे सुरक्षित ठेवले.",
+                                    Timestamp = DateTime.Now,
+                                    Status = "Success"
+                                });
                             }
-
-                            // Delete all FdTransactions and Accruals for this account
-                            var fdTxs = await _context.FdTransactions.Where(t => t.FdAccountID == fdAcc.FdAccountID).ToListAsync();
-                            if (fdTxs.Any()) _context.FdTransactions.RemoveRange(fdTxs);
-
-                            var fdAccruals = await _context.FdInterestAccruals.Where(a => a.FdAccountID == fdAcc.FdAccountID).ToListAsync();
-                            if (fdAccruals.Any()) _context.FdInterestAccruals.RemoveRange(fdAccruals);
-
-                            // Delete FdAccount from Database
-                            _context.FdAccounts.Remove(fdAcc);
-                            await _context.SaveChangesAsync();
-
-                            // Rollback FdAccountSequences by -1 (Sync to max remaining sequence in this branch)
-                            var branchSeq = await _context.FdAccountSequences
-                                .FirstOrDefaultAsync(s => s.BranchID == branchId && s.ProductType == "FD");
-
-                            int remainingMaxSeq = 0;
-                            var remainingAccounts = await _context.FdAccounts
-                                .Where(f => f.BranchID == branchId)
-                                .Select(f => f.AccountNo)
-                                .ToListAsync();
-
-                            foreach (var accStr in remainingAccounts)
+                            else
                             {
-                                var lastDash = accStr.LastIndexOf('-');
-                                if (lastDash >= 0 && lastDash < accStr.Length - 1)
+                                int branchId = fdAcc.BranchID;
+                                decimal depositAmount = fdAcc.DepositAmount;
+                                string custName = fdAcc.Customer != null ? $"{fdAcc.Customer.FirstName} {fdAcc.Customer.LastName}".Trim() : "";
+
+                                // Refund SB account if PaymentMode was Transfer
+                                if (fdAcc.PaymentMode == "Transfer" && fdAcc.SavingAccountID.HasValue && fdAcc.SavingAccountID.Value > 0)
                                 {
-                                    if (int.TryParse(accStr.Substring(lastDash + 1), out int parsedSeq))
+                                    var sbAcc = await _context.SavingAccountMasters.FindAsync(fdAcc.SavingAccountID.Value);
+                                    if (sbAcc != null)
                                     {
-                                        if (parsedSeq > remainingMaxSeq) remainingMaxSeq = parsedSeq;
+                                        sbAcc.CurrentBalance += depositAmount;
+                                        var sbTx = await _context.SavingTransactions
+                                            .Where(st => st.SavingAccountID == sbAcc.SavingAccountID && st.Narration != null && st.Narration.Contains(fdAccNo))
+                                            .FirstOrDefaultAsync();
+                                        if (sbTx != null) _context.SavingTransactions.Remove(sbTx);
                                     }
                                 }
-                            }
 
-                            if (branchSeq != null)
-                            {
-                                branchSeq.CurrentValue = remainingMaxSeq;
+                                // Delete all FdTransactions and Accruals for this account
+                                var fdTxs = await _context.FdTransactions.Where(t => t.FdAccountID == fdAcc.FdAccountID).ToListAsync();
+                                if (fdTxs.Any()) _context.FdTransactions.RemoveRange(fdTxs);
+
+                                var fdAccruals = await _context.FdInterestAccruals.Where(a => a.FdAccountID == fdAcc.FdAccountID).ToListAsync();
+                                if (fdAccruals.Any()) _context.FdInterestAccruals.RemoveRange(fdAccruals);
+
+                                // Delete FdAccount from Database
+                                _context.FdAccounts.Remove(fdAcc);
                                 await _context.SaveChangesAsync();
-                            }
 
-                            try
-                            {
-                                var maxRemainingId = await _context.FdAccounts.MaxAsync(f => (int?)f.FdAccountID) ?? 0;
-                                if (fdAcc.FdAccountID >= maxRemainingId)
+                                // Rollback FdAccountSequences by -1 (Sync to max remaining sequence in this branch)
+                                var branchSeq = await _context.FdAccountSequences
+                                    .FirstOrDefaultAsync(s => s.BranchID == branchId && s.ProductType == "FD");
+
+                                int remainingMaxSeq = 0;
+                                var remainingAccounts = await _context.FdAccounts
+                                    .Where(f => f.BranchID == branchId)
+                                    .Select(f => f.AccountNo)
+                                    .ToListAsync();
+
+                                foreach (var accStr in remainingAccounts)
                                 {
-                                    await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('FdAccounts', RESEED, {maxRemainingId});");
+                                    var lastDash = accStr.LastIndexOf('-');
+                                    if (lastDash >= 0 && lastDash < accStr.Length - 1)
+                                    {
+                                        if (int.TryParse(accStr.Substring(lastDash + 1), out int parsedSeq))
+                                        {
+                                            if (parsedSeq > remainingMaxSeq) remainingMaxSeq = parsedSeq;
+                                        }
+                                    }
                                 }
-                            }
-                            catch { }
 
-                            _context.AuditLogs.Add(new AuditLog
-                            {
-                                UserID = userId > 0 ? userId : null,
-                                Username = !string.IsNullOrWhiteSpace(username) ? username : $"User-{userId}",
-                                Action = "FD_OPENING_VOUCHER_DELETED",
-                                EntityName = "FdAccount",
-                                EntityID = fdAccNo,
-                                Details = $"मुदत ठेव आरंभिक ठेव व्हाउचर {voucher.VoucherNo} (खाते क्र. {fdAccNo}, रक्कम: ₹{depositAmount:N2}, खातेदार: {custName}) थेट रद्द करून खाते डेटाबेसमधून नष्ट केले. आरंभिक ठेव पावती क्र. रोलबॅक करून {remainingMaxSeq} केला. कारण: {reason}",
-                                Timestamp = DateTime.Now,
-                                Status = "Success"
-                            });
+                                if (branchSeq != null)
+                                {
+                                    branchSeq.CurrentValue = remainingMaxSeq;
+                                    await _context.SaveChangesAsync();
+                                }
+
+                                try
+                                {
+                                    var maxRemainingId = await _context.FdAccounts.MaxAsync(f => (int?)f.FdAccountID) ?? 0;
+                                    if (fdAcc.FdAccountID >= maxRemainingId)
+                                    {
+                                        await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('FdAccounts', RESEED, {maxRemainingId});");
+                                    }
+                                }
+                                catch { }
+
+                                _context.AuditLogs.Add(new AuditLog
+                                {
+                                    UserID = userId > 0 ? userId : null,
+                                    Username = !string.IsNullOrWhiteSpace(username) ? username : $"User-{userId}",
+                                    Action = "FD_OPENING_VOUCHER_DELETED",
+                                    EntityName = "FdAccount",
+                                    EntityID = fdAccNo,
+                                    Details = $"नवीन मुदत ठेव पावती व्हाउचर {voucher.VoucherNo} हटवल्यामुळे खाते क्र. {fdAccNo} (रक्कम: ₹{depositAmount:N2}, खातेदार: {custName}) नष्ट केले व पावती क्र. रोलबॅक करून {remainingMaxSeq} केला. कारण: {reason}",
+                                    Timestamp = DateTime.Now,
+                                    Status = "Success"
+                                });
+                            }
                         }
                     }
                 }

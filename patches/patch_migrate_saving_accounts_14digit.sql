@@ -1,22 +1,25 @@
--- ==============================================================================
--- UNIVERSAL PATCH: MIGRATE SAVING ACCOUNTS TO 14-DIGIT CBS STANDARD
+﻿-- ==============================================================================
+-- UNIVERSAL PATCH: MIGRATE SAVING ACCOUNTS TO 14-DIGIT CBS STANDARD (STARTS FROM 001)
 -- ==============================================================================
 -- Purpose:
 --   1. Safely archives legacy 9-digit account numbers into [OldAccountNo].
---   2. Generates standard 14-digit CBS account numbers:
---      [3-digit BranchCode] + [3-digit SchemeCode] + [7-digit Sequence] + [1-digit Luhn Checksum]
---   3. Synchronizes [SavingAccountSequences] to prevent sequence collisions.
+--   2. Generates standard 14-digit CBS account numbers strictly starting from sequence 1 (0000001):
+--      [3-digit BranchCode] + [3-digit SchemeCode] + [7-digit Sequence: 0000001, 0000002...] + [1-digit Luhn Checksum]
+--   3. Synchronizes [SavingAccountSequences] to the highest sequence (N), so future new accounts start from (N+1).
 --   4. Safely drops redundant [PreviousAccountNo] column.
 --
 -- Safety:
 --   - Fully transactional (atomic: commits on success, rollbacks on error).
---   - Idempotent: Can be run multiple times safely.
+--   - Idempotent: If accounts already start from 0000001, it will not renumber them again.
+--   - Self-healing: If accounts were previously misnumbered starting from 408 (e.g. on Bambavade),
+--     it detects the missing sequence 0000001 and renumbers them starting from 0000001,
+--     while keeping the original 9-digit numbers safe in [OldAccountNo].
 -- ==============================================================================
 
 SET NOCOUNT ON;
 
 PRINT '========================================================================';
-PRINT 'Starting 14-Digit Saving Account Migration Patch...';
+PRINT 'Starting 14-Digit Saving Account Migration Patch (Starting from 001)...';
 PRINT 'Timestamp: ' + CONVERT(VARCHAR(30), GETDATE(), 120);
 PRINT '========================================================================';
 
@@ -48,39 +51,73 @@ BEGIN TRY
     END
 
     -- --------------------------------------------------------------------------
-    -- 3. Check if there are any accounts that need upgrading (< 14 digits)
+    -- 3. Check if accounts need upgrading or sequence renumbering to start from 001
     -- --------------------------------------------------------------------------
-    DECLARE @TotalToUpgrade INT = 0;
-    SELECT @TotalToUpgrade = COUNT(*) 
+    DECLARE @NeedsUpgrade BIT = 0;
+    DECLARE @TotalLegacyAccounts INT = 0;
+
+    -- Condition A: Unmigrated accounts (< 14 digits)
+    SELECT @TotalLegacyAccounts = COUNT(*) 
     FROM [dbo].[SavingAccountMasters] 
     WHERE LEN(LTRIM(RTRIM(AccountNo))) < 14;
 
-    PRINT 'Total legacy accounts requiring upgrade: ' + CAST(@TotalToUpgrade AS VARCHAR(10));
-
-    IF @TotalToUpgrade = 0
+    IF @TotalLegacyAccounts > 0
     BEGIN
-        PRINT 'All saving accounts are already 14 digits! No number generation needed.';
+        SET @NeedsUpgrade = 1;
+        PRINT 'Found ' + CAST(@TotalLegacyAccounts AS VARCHAR(10)) + ' accounts with length < 14 digits. Migration required.';
+    END
+
+    -- Condition B: Accounts exist, but sequence 0000001 does not exist in any 14-digit account
+    -- (e.g. on Bambavade where accounts were mistakenly sequenced starting from 408)
+    IF @NeedsUpgrade = 0
+    BEGIN
+        DECLARE @HasSequenceOne BIT = 0;
+        IF EXISTS (
+            SELECT 1 FROM [dbo].[SavingAccountMasters] 
+            WHERE LEN(LTRIM(RTRIM(AccountNo))) = 14 
+              AND SUBSTRING(LTRIM(RTRIM(AccountNo)), 7, 7) = '0000001'
+        )
+        BEGIN
+            SET @HasSequenceOne = 1;
+        END
+
+        IF @HasSequenceOne = 0 AND EXISTS (
+            SELECT 1 FROM [dbo].[SavingAccountMasters] 
+            WHERE [IsLegacyAccount] = 1 
+               OR ([OldAccountNo] IS NOT NULL AND LTRIM(RTRIM([OldAccountNo])) <> '')
+        )
+        BEGIN
+            SET @NeedsUpgrade = 1;
+            PRINT 'Detected legacy accounts where sequence does NOT start from 0000001. Renumbering to start from 001 is required!';
+        END
+    END
+
+    IF @NeedsUpgrade = 0
+    BEGIN
+        PRINT 'All saving accounts are already 14 digits and properly sequenced starting from 0000001! No renumbering needed.';
     END
     ELSE
     BEGIN
         -- ----------------------------------------------------------------------
         -- 4. Archive existing 9-digit account numbers into [OldAccountNo]
         -- ----------------------------------------------------------------------
-        PRINT 'Archiving legacy 9-digit numbers into [OldAccountNo]...';
+        PRINT 'Safely preserving legacy numbers into [OldAccountNo] (if not already preserved)...';
         UPDATE [dbo].[SavingAccountMasters]
         SET [OldAccountNo] = LTRIM(RTRIM(AccountNo))
-        WHERE LEN(LTRIM(RTRIM(AccountNo))) < 14;
+        WHERE LEN(LTRIM(RTRIM(AccountNo))) < 14
+          AND ([OldAccountNo] IS NULL OR LTRIM(RTRIM([OldAccountNo])) = '');
 
         -- ----------------------------------------------------------------------
-        -- 5. Cursor to iterate and generate mathematically verified 14-digit numbers
+        -- 5. Cursor to iterate and generate 14-digit CBS numbers starting from 0000001
         -- ----------------------------------------------------------------------
-        PRINT 'Generating and assigning 14-digit CBS account numbers...';
+        PRINT 'Generating and assigning 14-digit CBS account numbers strictly starting from 0000001...';
 
         DECLARE @SavingAccountID INT;
         DECLARE @BranchID INT;
         DECLARE @SavingSchemeID INT;
         DECLARE @RawBranchCode NVARCHAR(50);
         DECLARE @RawSchemeCode NVARCHAR(50);
+        DECLARE @AccountOldNo NVARCHAR(50);
 
         DECLARE AccountCursor CURSOR LOCAL FAST_FORWARD FOR
             SELECT 
@@ -88,15 +125,26 @@ BEGIN TRY
                 s.[BranchID],
                 s.[SavingSchemeID],
                 b.[BranchCode],
-                sc.[SchemeCode]
+                sc.[SchemeCode],
+                s.[OldAccountNo]
             FROM [dbo].[SavingAccountMasters] s
             LEFT JOIN [dbo].[Branches] b ON s.[BranchID] = b.[BranchID]
             LEFT JOIN [dbo].[SavingInterestSettings] sc ON s.[SavingSchemeID] = sc.[SettingID]
             WHERE LEN(LTRIM(RTRIM(s.[AccountNo]))) < 14
-            ORDER BY s.[BranchID], ISNULL(s.[SavingSchemeID], 1), s.[SavingAccountID];
+               OR s.[IsLegacyAccount] = 1
+               OR (s.[OldAccountNo] IS NOT NULL AND LTRIM(RTRIM(s.[OldAccountNo])) <> '')
+            ORDER BY 
+                s.[BranchID], 
+                ISNULL(s.[SavingSchemeID], 1), 
+                CASE 
+                    WHEN TRY_CAST(s.[OldAccountNo] AS BIGINT) IS NOT NULL 
+                    THEN TRY_CAST(s.[OldAccountNo] AS BIGINT) 
+                    ELSE CAST(s.[SavingAccountID] AS BIGINT) 
+                END, 
+                s.[SavingAccountID];
 
         OPEN AccountCursor;
-        FETCH NEXT FROM AccountCursor INTO @SavingAccountID, @BranchID, @SavingSchemeID, @RawBranchCode, @RawSchemeCode;
+        FETCH NEXT FROM AccountCursor INTO @SavingAccountID, @BranchID, @SavingSchemeID, @RawBranchCode, @RawSchemeCode, @AccountOldNo;
 
         DECLARE @CurrentBranchID INT = -1;
         DECLARE @CurrentSchemeNum INT = -1;
@@ -143,23 +191,15 @@ BEGIN TRY
             END
 
             -- Manage Sequence per (BranchID, SchemeNum)
+            -- ALWAYS reset sequence counter to 0 for each branch/scheme partition so numbering starts from 0000001
             IF @BranchID <> @CurrentBranchID OR @SchemeNum <> @CurrentSchemeNum
             BEGIN
                 SET @CurrentBranchID = @BranchID;
                 SET @CurrentSchemeNum = @SchemeNum;
-                SET @CurrentSeq = 0;
-
-                -- Check if sequence row already exists in table
-                SELECT @CurrentSeq = LastSequenceNumber
-                FROM [dbo].[SavingAccountSequences]
-                WHERE [BranchID] = @CurrentBranchID AND [SchemeCodeNumeric] = @CurrentSchemeNum;
-
-                -- If not found, start from 0
-                IF @CurrentSeq IS NULL
-                    SET @CurrentSeq = 0;
+                SET @CurrentSeq = 0; -- Starts from 0 so the first account gets 0 + 1 = 1 (0000001)
             END
 
-            -- Increment sequence counter
+            -- Increment sequence counter: 1, 2, 3...
             SET @CurrentSeq = @CurrentSeq + 1;
 
             -- Construct 13 digits: [Branch 3] + [Scheme 3] + [Sequence 7]
@@ -198,7 +238,7 @@ BEGIN TRY
                 [UpdatedOn] = GETUTCDATE()
             WHERE [SavingAccountID] = @SavingAccountID;
 
-            -- Sync sequence table
+            -- Sync sequence table to reflect the latest sequence number assigned
             IF EXISTS (SELECT 1 FROM [dbo].[SavingAccountSequences] WHERE [BranchID] = @CurrentBranchID AND [SchemeCodeNumeric] = @CurrentSchemeNum)
             BEGIN
                 UPDATE [dbo].[SavingAccountSequences]
@@ -214,13 +254,28 @@ BEGIN TRY
 
             SET @UpgradedCount = @UpgradedCount + 1;
 
-            FETCH NEXT FROM AccountCursor INTO @SavingAccountID, @BranchID, @SavingSchemeID, @RawBranchCode, @RawSchemeCode;
+            FETCH NEXT FROM AccountCursor INTO @SavingAccountID, @BranchID, @SavingSchemeID, @RawBranchCode, @RawSchemeCode, @AccountOldNo;
         END
 
         CLOSE AccountCursor;
         DEALLOCATE AccountCursor;
 
-        PRINT 'Successfully converted ' + CAST(@UpgradedCount AS VARCHAR(10)) + ' accounts to 14-digit standard.';
+        PRINT 'Successfully sequenced ' + CAST(@UpgradedCount AS VARCHAR(10)) + ' accounts starting from 0000001 up to ' + CAST(@CurrentSeq AS VARCHAR(10)) + '.';
+
+        -- Final Sequence Table Verification: ensure LastSequenceNumber matches max sequence of any 14-digit account
+        UPDATE seq
+        SET seq.[LastSequenceNumber] = CASE 
+            WHEN maxAcc.MaxSeq > seq.[LastSequenceNumber] THEN maxAcc.MaxSeq 
+            ELSE seq.[LastSequenceNumber] 
+        END,
+            seq.[UpdatedOn] = GETUTCDATE()
+        FROM [dbo].[SavingAccountSequences] seq
+        CROSS APPLY (
+            SELECT ISNULL(MAX(TRY_CAST(SUBSTRING(s.[AccountNo], 7, 7) AS INT)), 0) AS MaxSeq
+            FROM [dbo].[SavingAccountMasters] s
+            WHERE s.[BranchID] = seq.[BranchID]
+              AND LEN(LTRIM(RTRIM(s.[AccountNo]))) = 14
+        ) maxAcc;
     END
 
     -- --------------------------------------------------------------------------
@@ -228,6 +283,15 @@ BEGIN TRY
     -- --------------------------------------------------------------------------
     IF COL_LENGTH('SavingAccountMasters', 'PreviousAccountNo') IS NOT NULL
     BEGIN
+        PRINT 'Backfilling any unmigrated [PreviousAccountNo] into [OldAccountNo]...';
+        EXEC sp_executesql N'
+            UPDATE [dbo].[SavingAccountMasters]
+            SET [OldAccountNo] = [PreviousAccountNo]
+            WHERE ([OldAccountNo] IS NULL OR LTRIM(RTRIM([OldAccountNo])) = '''')
+              AND [PreviousAccountNo] IS NOT NULL 
+              AND LTRIM(RTRIM([PreviousAccountNo])) <> '''';
+        ';
+
         PRINT 'Dropping redundant [PreviousAccountNo] column...';
         
         -- Drop any default constraints on PreviousAccountNo if present
@@ -253,7 +317,7 @@ BEGIN TRY
     -- Commit transaction
     COMMIT TRANSACTION;
     PRINT '========================================================================';
-    PRINT 'MIGRATION COMPLETED SUCCESSFULLY. ALL DATA IS SAFE AND VERIFIED.';
+    PRINT 'MIGRATION COMPLETED SUCCESSFULLY. ALL ACCOUNTS SEQUENCED FROM 001.';
     PRINT '========================================================================';
 
 END TRY

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -65,6 +66,15 @@ namespace Bhisi.Api.Models
 
         [NotMapped]
         public string? FormattedAccountNo { get; set; }
+
+        [NotMapped]
+        public string? CustomerName => Customer != null 
+            ? string.Join(" ", new[] { Customer.FirstName, Customer.MiddleName, Customer.LastName }
+                .Where(s => !string.IsNullOrWhiteSpace(s))).Trim() 
+            : null;
+
+        [NotMapped]
+        public string? FullName => CustomerName;
 
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;

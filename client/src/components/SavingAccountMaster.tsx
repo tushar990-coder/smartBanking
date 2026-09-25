@@ -1178,9 +1178,9 @@ const SavingAccountMaster: React.FC = () => {
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-primary whitespace-nowrap font-mono">
                           <div>{acc.formattedAccountNo || format14DigitDisplay(acc.accountNo)}</div>
-                          {acc.previousAccountNo && acc.previousAccountNo !== acc.accountNo && (
+                          {(acc.oldAccountNo || acc.previousAccountNo) && (acc.oldAccountNo || acc.previousAccountNo) !== acc.accountNo && (
                             <div className="text-[10px] text-gray-500 font-sans font-normal">
-                              जुना: {acc.previousAccountNo}
+                              जुना: {acc.oldAccountNo || acc.previousAccountNo}
                             </div>
                           )}
                         </td>

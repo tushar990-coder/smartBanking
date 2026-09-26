@@ -1,4 +1,4 @@
--- =========================================================================================
+﻿-- =========================================================================================
 -- SmartBanking Core ERP - Universal VPS Database Update & Schema Sync Patch
 -- Zero Data Loss Guarantee - All Existing Records (Members, Vouchers, Accounts) 100% Preserved
 -- Compatible with all VPS client databases (Padawalwadi, Gurudev, Main, etc.)
@@ -4198,22 +4198,36 @@ GO
 -- 7.4 Synchronize Existing Accounts & Sequence Counter
 IF OBJECT_ID(N'[SavingAccountMasters]', N'U') IS NOT NULL
 BEGIN
-    -- Sync SavingAccountSequences initial counter
-    DECLARE @MaxSavingCount INT = 0;
-    SELECT @MaxSavingCount = COUNT(*) FROM [dbo].[SavingAccountMasters];
+    -- Determine maximum sequence number currently assigned in valid 14-digit accounts
+    DECLARE @MaxSeqInAccounts INT = 0;
+
+    -- Only calculate max sequence if accounts properly start from 0000001
+    IF EXISTS (
+        SELECT 1 FROM [dbo].[SavingAccountMasters]
+        WHERE LEN(LTRIM(RTRIM(AccountNo))) = 14
+          AND SUBSTRING(LTRIM(RTRIM(AccountNo)), 7, 7) = '0000001'
+    )
+    BEGIN
+        SELECT @MaxSeqInAccounts = ISNULL(MAX(TRY_CAST(SUBSTRING(AccountNo, 7, 7) AS INT)), 0)
+        FROM [dbo].[SavingAccountMasters]
+        WHERE LEN(LTRIM(RTRIM(AccountNo))) = 14;
+    END
 
     IF OBJECT_ID(N'[SavingAccountSequences]', N'U') IS NOT NULL
     BEGIN
         IF NOT EXISTS (SELECT 1 FROM [dbo].[SavingAccountSequences] WHERE [BranchID] = 1 AND [SchemeCodeNumeric] = 101)
         BEGIN
             INSERT INTO [dbo].[SavingAccountSequences] ([BranchID], [SchemeCodeNumeric], [LastSequenceNumber], [UpdatedOn])
-            VALUES (1, 101, @MaxSavingCount, GETDATE());
+            VALUES (1, 101, @MaxSeqInAccounts, GETDATE());
         END
         ELSE
         BEGIN
-            UPDATE [dbo].[SavingAccountSequences] 
-            SET [LastSequenceNumber] = @MaxSavingCount, [UpdatedOn] = GETDATE()
-            WHERE [BranchID] = 1 AND [SchemeCodeNumeric] = 101;
+            IF @MaxSeqInAccounts > 0
+            BEGIN
+                UPDATE [dbo].[SavingAccountSequences] 
+                SET [LastSequenceNumber] = @MaxSeqInAccounts, [UpdatedOn] = GETDATE()
+                WHERE [BranchID] = 1 AND [SchemeCodeNumeric] = 101;
+            END
         END
     END
 
@@ -4429,6 +4443,126 @@ BEGIN
         ''Standard 14-Digit CBS Pigmy & Saving Account Architecture: [3-digit Branch] + [3-digit Scheme (301 for Pigmy, 101 for Saving)] + [7-digit Sequence] + [1-digit Luhn Modulo-10 Checksum], PigmyAccountSequences atomic engine, PreviousAccountNo legacy preservation.'', 
         ''VPS Administrator'',
         ''2026-09-23''
+    );');
+END
+GO
+
+-- 11. FD Tenor Slabs, Days/Months/Years Duration Model & Post-Maturity Overdue Policy
+PRINT '>>> [11/11] Synchronizing FD Scheme Tenor Slabs & Overdue Policy Schema...';
+GO
+
+-- 11.1 FdSchemes Columns
+IF COL_LENGTH('dbo.FdSchemes', 'DurationType') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdSchemes] ADD [DurationType] NVARCHAR(20) NOT NULL DEFAULT 'Months';
+    PRINT '  + Added column [DurationType] to [dbo].[FdSchemes]';
+END
+GO
+
+IF COL_LENGTH('dbo.FdSchemes', 'SchemeDurationModel') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdSchemes] ADD [SchemeDurationModel] NVARCHAR(20) NOT NULL DEFAULT 'Fixed';
+    PRINT '  + Added column [SchemeDurationModel] to [dbo].[FdSchemes]';
+END
+GO
+
+IF COL_LENGTH('dbo.FdSchemes', 'MinDurationDays') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdSchemes] ADD [MinDurationDays] INT NULL;
+    PRINT '  + Added column [MinDurationDays] to [dbo].[FdSchemes]';
+END
+GO
+
+IF COL_LENGTH('dbo.FdSchemes', 'MaxDurationDays') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdSchemes] ADD [MaxDurationDays] INT NULL;
+    PRINT '  + Added column [MaxDurationDays] to [dbo].[FdSchemes]';
+END
+GO
+
+IF COL_LENGTH('dbo.FdSchemes', 'AllowOverdueInterest') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdSchemes] ADD [AllowOverdueInterest] BIT NOT NULL DEFAULT 0;
+    PRINT '  + Added column [AllowOverdueInterest] to [dbo].[FdSchemes]';
+END
+GO
+
+IF COL_LENGTH('dbo.FdSchemes', 'OverdueInterestRate') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdSchemes] ADD [OverdueInterestRate] DECIMAL(5,2) NULL;
+    PRINT '  + Added column [OverdueInterestRate] to [dbo].[FdSchemes]';
+END
+GO
+
+IF COL_LENGTH('dbo.FdSchemes', 'OverdueGraceDays') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdSchemes] ADD [OverdueGraceDays] INT NOT NULL DEFAULT 0;
+    PRINT '  + Added column [OverdueGraceDays] to [dbo].[FdSchemes]';
+END
+GO
+
+IF COL_LENGTH('dbo.FdSchemes', 'OverdueRenewalPolicy') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdSchemes] ADD [OverdueRenewalPolicy] NVARCHAR(50) NOT NULL DEFAULT 'ClosureDate';
+    PRINT '  + Added column [OverdueRenewalPolicy] to [dbo].[FdSchemes]';
+END
+GO
+
+-- 11.2 FdAccounts Duration Columns
+IF COL_LENGTH('dbo.FdAccounts', 'DurationType') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdAccounts] ADD [DurationType] NVARCHAR(20) NULL DEFAULT 'Months';
+    PRINT '  + Added column [DurationType] to [dbo].[FdAccounts]';
+END
+GO
+
+IF COL_LENGTH('dbo.FdAccounts', 'DurationValue') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdAccounts] ADD [DurationValue] INT NULL;
+    PRINT '  + Added column [DurationValue] to [dbo].[FdAccounts]';
+END
+GO
+
+IF COL_LENGTH('dbo.FdAccounts', 'DurationInDays') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[FdAccounts] ADD [DurationInDays] INT NULL;
+    PRINT '  + Added column [DurationInDays] to [dbo].[FdAccounts]';
+END
+GO
+
+-- 11.3 FdSchemeInterestSlabs Table
+IF OBJECT_ID(N'[dbo].[FdSchemeInterestSlabs]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[FdSchemeInterestSlabs] (
+        [SlabID] INT IDENTITY(1,1) NOT NULL,
+        [FdSchemeID] INT NOT NULL,
+        [FromDays] INT NOT NULL,
+        [ToDays] INT NOT NULL,
+        [InterestRate] DECIMAL(5,2) NOT NULL,
+        [SeniorCitizenRate] DECIMAL(5,2) NOT NULL,
+        [PrematureRate] DECIMAL(5,2) NOT NULL DEFAULT 0,
+        [IsActive] BIT NOT NULL DEFAULT 1,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT [PK_FdSchemeInterestSlabs] PRIMARY KEY CLUSTERED ([SlabID] ASC),
+        CONSTRAINT [FK_FdSchemeInterestSlabs_FdSchemes] FOREIGN KEY ([FdSchemeID]) 
+            REFERENCES [dbo].[FdSchemes]([FdSchemeID]) ON DELETE CASCADE
+    );
+    PRINT '  + Created Table [dbo].[FdSchemeInterestSlabs]';
+END
+GO
+
+-- 11.4 Record Version v2.5.10 in SystemVersionHistories
+IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
+BEGIN
+    EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+    VALUES (
+        ''2.5.10'', 
+        GETUTCDATE(), 
+        ''SmartBanking VPS Multi-App Master Patch v2.5.10'', 
+        ''SUCCESS'', 
+        ''FD Tenor Slabs (Days/Months/Years), Post-Maturity Overdue Policy, Lien Protection & Statutory Right of Set-Off, MaturedClose Guard, Premature Renewal Interest Loophole Fix, Senior Citizen Rate Enforcement on Renewals.'', 
+        ''VPS Administrator'',
+        ''2026-09-26''
     );');
 END
 GO

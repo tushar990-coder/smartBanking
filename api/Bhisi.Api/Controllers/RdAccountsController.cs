@@ -1124,15 +1124,23 @@ namespace Bhisi.Api.Controllers
                     seq.CurrentValue += 1;
                     await _context.SaveChangesAsync();
 
+                    DateTime newOpeningDate = DateTime.Today;
+                    var matchingFy = await _context.FinancialYears
+                        .FirstOrDefaultAsync(fy => newOpeningDate >= fy.StartDate.Date && newOpeningDate <= fy.EndDate.Date);
+
+                    int targetFinancialYearId = matchingFy?.FinancialYearID 
+                        ?? (await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive))?.FinancialYearID 
+                        ?? (oldAccount.FinancialYearID > 0 ? oldAccount.FinancialYearID : 1);
+
                     var newFd = new FdAccount
                     {
                         InstitutionID = oldAccount.InstitutionID,
                         BranchID = oldAccount.BranchID,
-                        FinancialYearID = oldAccount.FinancialYearID,
+                        FinancialYearID = targetFinancialYearId,
                         CustomerID = resolvedCustId,
                         FdSchemeID = targetSchemeId,
                         AccountNo = $"{branchPrefix}-{oldAccount.BranchID:D3}-FD-{seq.CurrentValue:D6}",
-                        OpeningDate = DateTime.Today,
+                        OpeningDate = newOpeningDate,
                         DepositAmount = totalMaturityAmount,
                         InterestRate = fdScheme.InterestRate,
                         MaturityDate = DateTime.Today.AddMonths(fdScheme.DurationMonths),

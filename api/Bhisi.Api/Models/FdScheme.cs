@@ -75,6 +75,17 @@ namespace Bhisi.Api.Models
 
         public bool IsActive { get; set; } = true;
 
+        // Post-Maturity Overdue Policy Properties
+        public bool AllowOverdueInterest { get; set; } = false;
+
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal? OverdueInterestRate { get; set; }
+
+        public int OverdueGraceDays { get; set; } = 0;
+
+        [StringLength(50)]
+        public string OverdueRenewalPolicy { get; set; } = "ClosureDate"; // ClosureDate, MaturityDate, Flexible
+
         // Ledger Mapping Properties for Core Banking Integration
         public int? FdLiabilityLedgerID { get; set; }
         [ForeignKey("FdLiabilityLedgerID")]

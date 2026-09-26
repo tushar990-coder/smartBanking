@@ -91,6 +91,8 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(f => f.BranchID == branchId.Value);
             }
 
+            var seniorCutoffDate = DateTime.Today.AddYears(-60);
+
             var accounts = await query
                 .OrderByDescending(f => f.OpeningDate)
                 .Select(f => new {
@@ -130,7 +132,9 @@ namespace Bhisi.Api.Controllers
                     f.Status,
                     f.NomineeName,
                     f.NomineeRelation,
-                    f.Remarks
+                    f.Remarks,
+                    BirthDate = f.Customer != null ? f.Customer.BirthDate : null,
+                    IsSeniorCitizen = f.Customer != null && f.Customer.BirthDate.HasValue && f.Customer.BirthDate.Value <= seniorCutoffDate
                 })
                 .ToListAsync();
 
@@ -182,7 +186,9 @@ namespace Bhisi.Api.Controllers
                 f.Status,
                 f.NomineeName,
                 f.NomineeRelation,
-                f.Remarks
+                f.Remarks,
+                BirthDate = f.Customer != null ? f.Customer.BirthDate : null,
+                IsSeniorCitizen = f.Customer != null && f.Customer.BirthDate.HasValue && (f.Customer.BirthDate.Value.Date <= DateTime.Today.AddYears(-60))
             });
         }
 
@@ -269,7 +275,7 @@ namespace Bhisi.Api.Controllers
                     account.DurationInDays = totalDays;
                     account.MaturityDate = maturityDate;
 
-                    bool isSenior = customer.BirthDate.HasValue && ((DateTime.Today.Year - customer.BirthDate.Value.Year) >= 60);
+                    bool isSenior = customer.BirthDate.HasValue && (customer.BirthDate.Value.Date <= account.OpeningDate.Date.AddYears(-60));
 
                     // Resolve Interest Rate based on Slabs or Scheme fixed rate
                     decimal appliedRate;
@@ -490,7 +496,7 @@ namespace Bhisi.Api.Controllers
 
         // DELETE: api/FdAccounts/5
         [HttpDelete("{id}")]
-        [AllowAnonymous]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager,HeadOffice")]
         public async Task<IActionResult> DeleteFdAccount(int id)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -503,6 +509,42 @@ namespace Bhisi.Api.Controllers
                 if (account == null)
                 {
                     return NotFound(new { message = "मुदत ठेव खाते सापडले नाही." });
+                }
+
+                // 1. Status Guard: Closed किंवा Renewed खाती ऑडिट रेकॉर्ड असल्याने नष्ट करता येत नाहीत
+                if (string.Equals(account.Status, "Closed", StringComparison.OrdinalIgnoreCase) || 
+                    string.Equals(account.Status, "Renewed", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new { message = $"सदर मुदत ठेव खाते आधीच '{account.Status}' झालेले आहे. बंद किंवा नूतनीकरण झालेली खाती वैधानिक ऑडिट रेकॉर्डचा भाग असल्याने नष्ट (Delete) करता येत नाहीत." });
+                }
+
+                // 2. Lien / Loan Security Guard: जर खातेदाराकडे सक्रिय कर्ज असेल तर कर्ज वसुली सुरक्षेसाठी डिलीट करण्यास मनाई
+                if (account.CustomerID > 0)
+                {
+                    int custId = account.CustomerID;
+                    int? linkedMemId = null;
+                    var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
+                    if (mem != null) linkedMemId = mem.MemberID;
+
+                    var activeLoansQuery = _context.LoanAccounts
+                        .Where(l => l.Status == "Active" && (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0));
+
+                    if (linkedMemId.HasValue && linkedMemId.Value > 0)
+                    {
+                        activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemId.Value);
+                    }
+                    else
+                    {
+                        activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId);
+                    }
+
+                    var activeLoans = await activeLoansQuery.ToListAsync();
+
+                    if (activeLoans.Any())
+                    {
+                        decimal totalLoanLiability = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
+                        return BadRequest(new { message = $"सदर खातेदाराकडे एकूण ₹{totalLoanLiability:N2} चे सक्रिय कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) हे मुदत ठेव खाते नष्ट करता येणार नाही." });
+                    }
                 }
 
                 string accountNo = account.AccountNo;
@@ -622,7 +664,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/FdAccounts/BulkCreate (Create multiple split FD receipts sequentially)
         [HttpPost("BulkCreate")]
-        [AllowAnonymous]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager,Officer,Cashier")]
         public async Task<IActionResult> BulkCreateFdAccounts([FromBody] BulkFdAccountRequest req)
         {
             // Resolve Customer & Member
@@ -1067,8 +1109,21 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/FdAccounts/AccrueInterest
         [HttpPost("AccrueInterest")]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager")]
         public async Task<IActionResult> AccrueInterest([FromQuery] int branchId, [FromQuery] DateTime accrualDate)
         {
+            if (accrualDate.Date > DateTime.Today)
+            {
+                return BadRequest($"अवैध तारीख! भविष्यातील तारीख ({accrualDate:dd/MM/yyyy}) अनुज्ञेय नाही. व्याज तरतूद आजच्या किंवा मागील तारखेचीच असणे आवश्यक आहे.");
+            }
+
+            var closedFy = await _context.FinancialYears
+                .FirstOrDefaultAsync(fy => fy.IsClosed && accrualDate.Date >= fy.StartDate.Date && accrualDate.Date <= fy.EndDate.Date);
+            if (closedFy != null)
+            {
+                return BadRequest($"अवैध तारीख! निवडलेली व्याज तरतूद तारीख ({accrualDate:dd/MM/yyyy}) ही बंद/ऑडिट झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडते. बंद आर्थिक वर्षात थेट व्हाउचर पोस्ट करणे वैधानिक नियमांनुसार (MCS Act) प्रतिबंधित आहे.");
+            }
+
             var activeAccounts = await _context.FdAccounts
                 .Include(a => a.FdScheme)
                 .Where(a => a.BranchID == branchId && a.Status == "Active" && a.OpeningDate <= accrualDate)
@@ -1218,6 +1273,151 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        // GET: api/FdAccounts/5/ActiveLoans
+        [HttpGet("{id}/ActiveLoans")]
+        public async Task<IActionResult> GetActiveLoansForFd(int id)
+        {
+            var account = await _context.FdAccounts
+                .Include(a => a.Customer)
+                .FirstOrDefaultAsync(a => a.FdAccountID == id);
+
+            if (account == null)
+            {
+                return NotFound(new { message = "मुदत ठेव खाते सापडले नाही." });
+            }
+
+            int custId = account.CustomerID;
+            int? memberId = null;
+            if (custId > 0)
+            {
+                var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
+                if (mem != null) memberId = mem.MemberID;
+            }
+
+            var loansQuery = _context.LoanAccounts
+                .Include(l => l.LoanRate)
+                .Where(l => l.Status == "Active");
+
+            if (memberId.HasValue && memberId.Value > 0)
+            {
+                loansQuery = loansQuery.Where(l => l.CustomerID == custId || l.MemberID == memberId.Value);
+            }
+            else
+            {
+                loansQuery = loansQuery.Where(l => l.CustomerID == custId);
+            }
+
+            var activeLoans = await loansQuery
+                .Where(l => l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0)
+                .OrderBy(l => l.LoanAccountNo)
+                .ToListAsync();
+
+            var loanList = activeLoans.Select(l => new
+            {
+                loanAccountId = l.LoanAccountID,
+                loanAccountNo = l.LoanAccountNo,
+                loanType = l.LoanRate?.LoanType ?? "कर्ज खाते",
+                principalBalance = l.PrincipalBalance,
+                interestBalance = l.InterestBalance,
+                overdueInterestBalance = l.OverdueInterestBalance,
+                totalDue = l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance,
+                openingDate = l.OpeningDate,
+                sanctionedAmount = l.SanctionedAmount,
+                interestRate = l.LoanRate?.InterestRate ?? l.InterestRate
+            }).ToList();
+
+            decimal totalOutstanding = loanList.Sum(l => l.totalDue);
+
+            return Ok(new
+            {
+                hasActiveLoan = loanList.Count > 0,
+                totalOutstandingLiability = totalOutstanding,
+                loans = loanList
+            });
+        }
+
+        private async Task<(LoanAccount loan, LoanCollection collection, decimal principalPaid, decimal interestPaid, decimal penaltyPaid)> ProcessLoanSettlementAsync(
+            int targetLoanId, 
+            decimal adjustAmount, 
+            DateTime txDate, 
+            string accountNo, 
+            int branchId)
+        {
+            var targetLoan = await _context.LoanAccounts
+                .Include(l => l.LoanRate)
+                .FirstOrDefaultAsync(l => l.LoanAccountID == targetLoanId);
+
+            if (targetLoan == null)
+            {
+                throw new InvalidOperationException("निवडलेले कर्ज खाते सापडले नाही किंवा ते सक्रिय नाही.");
+            }
+
+            decimal penaltyPaid = Math.Min(adjustAmount, targetLoan.OverdueInterestBalance);
+            decimal remainingAdj = adjustAmount - penaltyPaid;
+
+            decimal interestPaid = Math.Min(remainingAdj, targetLoan.InterestBalance);
+            remainingAdj -= interestPaid;
+
+            decimal principalPaid = Math.Min(remainingAdj, targetLoan.PrincipalBalance);
+            remainingAdj -= principalPaid;
+
+            targetLoan.OverdueInterestBalance -= penaltyPaid;
+            targetLoan.InterestBalance -= interestPaid;
+            targetLoan.PrincipalBalance -= principalPaid;
+            targetLoan.LastInstallmentPaidDate = txDate;
+
+            if (targetLoan.PrincipalBalance <= 0.01m && targetLoan.InterestBalance <= 0.01m && targetLoan.OverdueInterestBalance <= 0.01m)
+            {
+                targetLoan.PrincipalBalance = 0;
+                targetLoan.InterestBalance = 0;
+                targetLoan.OverdueInterestBalance = 0;
+                targetLoan.Status = "Closed";
+            }
+            _context.Entry(targetLoan).State = EntityState.Modified;
+
+            var branch = await _context.Branches.FindAsync(branchId);
+            string branchCode = !string.IsNullOrWhiteSpace(branch?.BranchCode) ? branch.BranchCode.Trim() : "HQ";
+            string loanReceiptNo = $"{branchCode}-REC-LN-FDADJ-{accountNo}";
+
+            var loanCollection = new LoanCollection
+            {
+                LoanAccountID = targetLoan.LoanAccountID,
+                CollectionDate = txDate,
+                ReceiptNo = loanReceiptNo,
+                TotalAmountReceived = adjustAmount,
+                PenaltyInterestCollected = penaltyPaid,
+                InterestCollected = interestPaid,
+                PrincipalCollected = principalPaid,
+                PaymentMode = "FD Settlement",
+                BankName = $"मुदत ठेव वर्ग: {accountNo}",
+                ChequeNo = accountNo
+            };
+            _context.LoanCollections.Add(loanCollection);
+            await _context.SaveChangesAsync();
+
+            // Sync loan installment schedule
+            var allSchedules = await _context.LoanInstallmentSchedules
+                .Where(s => s.LoanAccountID == targetLoan.LoanAccountID)
+                .OrderBy(s => s.InstallmentNo)
+                .ToListAsync();
+
+            if (allSchedules.Any())
+            {
+                var allCollections = await _context.LoanCollections
+                    .Where(c => c.LoanAccountID == targetLoan.LoanAccountID)
+                    .ToListAsync();
+
+                Services.LoanScheduleGenerator.SynchronizeSchedules(targetLoan, allSchedules, allCollections);
+                foreach (var sch in allSchedules)
+                {
+                    _context.Entry(sch).State = EntityState.Modified;
+                }
+                await _context.SaveChangesAsync();
+            }
+
+            return (targetLoan, loanCollection, principalPaid, interestPaid, penaltyPaid);
+        }
+
         // POST: api/FdAccounts/5/MaturedClose (Standard Maturity Close)
         [HttpPost("{id}/MaturedClose")]
         public async Task<IActionResult> MaturedClose(int id, [FromBody] FdClosureRequest? req = null)
@@ -1227,11 +1427,13 @@ namespace Bhisi.Api.Controllers
                 .ThenInclude(s => s!.FdLiabilityLedger)
                 .Include(a => a.FdScheme)
                 .ThenInclude(s => s!.InterestPayableLedger)
+                .Include(a => a.FdScheme)
+                .ThenInclude(s => s!.InterestExpenseLedger)
                 .FirstOrDefaultAsync(a => a.FdAccountID == id);
 
-            if (account == null || account.Status == "Closed")
+            if (account == null || account.Status != "Active")
             {
-                return BadRequest("Account is closed or invalid.");
+                return BadRequest("मुदत ठेव खाते सक्रिय (Active) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
             }
 
             // Fetch accrued interest
@@ -1239,121 +1441,477 @@ namespace Bhisi.Api.Controllers
                 .Where(t => t.FdAccountID == id && t.TransactionType == "Accrual")
                 .SumAsync(t => t.Amount);
 
-            decimal totalInterest = (account.MaturityAmount > account.DepositAmount)
-                ? (account.MaturityAmount - account.DepositAmount)
-                : Math.Max(accruedFromTx, account.LegacyAccruedInt);
+            bool isPeriodicScheme = account.FdScheme != null && 
+                (account.FdScheme.InterestType == "MIS" || account.FdScheme.InterestType == "Monthly Interest");
 
-            decimal totalMaturityPayout = account.DepositAmount + totalInterest;
+            decimal totalInterest = isPeriodicScheme 
+                ? 0m 
+                : ((account.MaturityAmount > account.DepositAmount)
+                    ? (account.MaturityAmount - account.DepositAmount)
+                    : Math.Max(accruedFromTx, account.LegacyAccruedInt));
+
             DateTime closureDate = req?.ClosureDate ?? DateTime.Today;
+            if (closureDate.Date < account.OpeningDate.Date)
+            {
+                return BadRequest($"अवैध व्यवहाराची तारीख! व्यवहाराची तारीख ({closureDate:dd/MM/yyyy}) ही मुदत ठेव खाते उघडल्याच्या तारखेपेक्षा ({account.OpeningDate:dd/MM/yyyy}) आधीची असू शकत नाही.");
+            }
+            if (closureDate.Date > DateTime.Today)
+            {
+                return BadRequest($"अवैध व्यवहाराची तारीख! भविष्यातील तारीख ({closureDate:dd/MM/yyyy}) अनुज्ञेय नाही. व्यवहार आजच्या किंवा मागील तारखेचाच असणे आवश्यक आहे.");
+            }
+
+            // 🛡️ सर्व्हर-साइड मुदतपूर्ती तारीख गार्ड (Primary Server-Side Maturity Date Guard)
+            if (closureDate.Date < account.MaturityDate.Date)
+            {
+                return BadRequest($"अवैध क्लोजर विनंती! सदर मुदत ठेव पावती अद्याप मुदतपूर्ण (Matured) झालेली नाही. या खात्याची मुदतपूर्ती तारीख {account.MaturityDate:dd/MM/yyyy} आहे (उर्वरित कालावधी: {(account.MaturityDate.Date - closureDate.Date).Days} दिवस). मुदतीआधी ठेव बंद करण्यासाठी कृपया 'मुदतपूर्व बंद (Premature Close)' पर्याय वापरा.");
+            }
+
+            var closedFy = await _context.FinancialYears
+                .FirstOrDefaultAsync(fy => fy.IsClosed && closureDate.Date >= fy.StartDate.Date && closureDate.Date <= fy.EndDate.Date);
+            if (closedFy != null)
+            {
+                return BadRequest($"अवैध व्यवहाराची तारीख! निवडलेली तारीख ({closureDate:dd/MM/yyyy}) ही बंद/ऑडिट झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडते. बंद आर्थिक वर्षात थेट व्हाउचर पोस्ट करणे वैधानिक लेखापरीक्षण नियमांनुसार (MCS Act) प्रतिबंधित आहे.");
+            }
+
+            DateTime? lastAccrualDate = account.LastInterestPostingDate;
+            if (!lastAccrualDate.HasValue)
+            {
+                lastAccrualDate = await _context.FdInterestAccruals
+                    .Where(a => a.FdAccountID == account.FdAccountID && a.IsPosted)
+                    .OrderByDescending(a => a.AccrualDate)
+                    .Select(a => (DateTime?)a.AccrualDate)
+                    .FirstOrDefaultAsync();
+            }
+            if (!lastAccrualDate.HasValue)
+            {
+                lastAccrualDate = await _context.FdTransactions
+                    .Where(t => t.FdAccountID == account.FdAccountID && t.TransactionType == "Accrual")
+                    .OrderByDescending(t => t.TransactionDate)
+                    .Select(t => (DateTime?)t.TransactionDate)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (lastAccrualDate.HasValue && closureDate.Date < lastAccrualDate.Value.Date)
+            {
+                return BadRequest($"अवैध व्यवहाराची तारीख! या खात्यावर {lastAccrualDate.Value:dd/MM/yyyy} रोजी व्याज तरतूद (Interest Accrual) झालेली आहे. व्यवहाराची तारीख शेवटच्या व्याज तरतुदीच्या तारखेपेक्षा ({lastAccrualDate.Value:dd/MM/yyyy}) आधीची असू शकत नाही, अन्यथा देणे व्याज खात्यात (Interest Payable) अनैसर्गिक निगेटिव्ह (Debit) शिल्लक निर्माण होईल.");
+            }
             string paymentMode = string.IsNullOrWhiteSpace(req?.PaymentMode) ? "Cash" : req.PaymentMode;
+            if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
+            {
+                if (closureDate.Date < DateTime.Today)
+                {
+                    return BadRequest($"अवैध व्यवहाराची तारीख! बचत खात्यात (Saving Account Transfer) परतावा वर्ग करताना मागील तारीख ({closureDate:dd/MM/yyyy}) अनुज्ञेय नाही. ग्राहकाच्या पासबुकमधील रनिंग शिल्लक (Running Balance) विस्कळीत होणे टाळण्यासाठी आणि एसएमएस ताळमेळ राखण्यासाठी बचत खात्यातील हस्तांतरण आजच्याच तारखेने ({DateTime.Today:dd/MM/yyyy}) होणे बंधनकारक आहे. जर व्यवहार मागील तारखेने झाला असेल, तर कृपया 'रोख' किंवा इतर माध्यम निवडा.");
+                }
+                var targetSav = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == req.SavingAccountID.Value);
+                if (targetSav == null || targetSav.Status != "Active")
+                {
+                    return BadRequest($"निवडलेले बचत खाते ({targetSav?.AccountNo ?? "अज्ञात"}) सापडले नाही किंवा ते सक्रिय (Active) नाही. बंद किंवा निष्क्रिय बचत खात्यात रक्कम वर्ग करता येत नाही.");
+                }
+            }
+
+            if (req?.AdjustInLoan == true && req.SurplusPaymentMode == "Transfer" && req.SurplusSavingAccountID > 0)
+            {
+                var surplusSav = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == req.SurplusSavingAccountID.Value);
+                if (surplusSav == null || surplusSav.Status != "Active")
+                {
+                    return BadRequest($"शिल्लक परताव्यासाठी निवडलेले बचत खाते ({surplusSav?.AccountNo ?? "अज्ञात"}) सापडले नाही किंवा ते सक्रिय (Active) नाही. बंद किंवा निष्क्रिय बचत खात्यात रक्कम वर्ग करता येत नाही.");
+                }
+            }
+
+            // 🛡️ Lien & Active Loan Check: खातेदाराचे थकीत कर्ज तपासणी
+            int custId = account.CustomerID;
+            int? linkedMemberId = null;
+            if (custId > 0)
+            {
+                var linkedMem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
+                if (linkedMem != null) linkedMemberId = linkedMem.MemberID;
+            }
+
+            var loansQuery = _context.LoanAccounts
+                .Include(l => l.LoanRate)
+                .Where(l => l.Status == "Active");
+
+            if (linkedMemberId.HasValue && linkedMemberId.Value > 0)
+            {
+                loansQuery = loansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemberId.Value);
+            }
+            else
+            {
+                loansQuery = loansQuery.Where(l => l.CustomerID == custId);
+            }
+
+            var activeLoans = await loansQuery
+                .Where(l => l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0)
+                .ToListAsync();
+
+            decimal totalActiveLoanDebt = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
+
+            if (totalActiveLoanDebt > 0 && !(req?.AdjustInLoan ?? false))
+            {
+                return BadRequest(new
+                {
+                    errorCode = "LOAN_OUTSTANDING_EXISTS",
+                    message = $"सदर खातेदाराकडे एकूण ₹{totalActiveLoanDebt:N2} चे कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) हे मुदत ठेव खाते परस्पर बंद करता येणार नाही. कृपया 'कर्ज खात्यात रक्कम वर्ग करा (Adjust in Loan)' हा पर्याय निवडा किंवा कर्ज पूर्ण भरा.",
+                    totalDebt = totalActiveLoanDebt,
+                    activeLoansCount = activeLoans.Count
+                });
+            }
+
+            // Overdue post-maturity interest calculation (Strictly Governed by FdScheme Policy)
+            decimal overdueInterest = 0m;
+            int overdueDays = 0;
+            bool isSchemeOverdueAllowed = account.FdScheme?.AllowOverdueInterest ?? false;
+
+            if (isSchemeOverdueAllowed && closureDate.Date > account.MaturityDate.Date)
+            {
+                bool applyOverdue = req?.ApplyOverdueInterest ?? true;
+                if (applyOverdue)
+                {
+                    overdueDays = (closureDate.Date - account.MaturityDate.Date).Days;
+                    decimal overdueRate = account.FdScheme?.OverdueInterestRate ?? req?.OverdueInterestRate ?? 3.00m;
+                    overdueInterest = Math.Round((account.MaturityAmount * overdueRate * overdueDays) / 36500.0m, 2);
+                }
+            }
+
+            decimal totalMaturityPayout = account.DepositAmount + totalInterest + overdueInterest;
+
+            LoanAccount? targetLoan = null;
+            decimal loanAdjustAmount = 0m;
+            decimal surplusPayoutAmount = totalMaturityPayout;
+
+            if (req?.AdjustInLoan == true)
+            {
+                int targetLoanId = req.TargetLoanAccountID ?? (activeLoans.FirstOrDefault()?.LoanAccountID ?? 0);
+                if (targetLoanId == 0)
+                {
+                    return BadRequest(new { message = "कृपया मुदत ठेवीची रक्कम वर्ग करण्यासाठी कर्ज खाते निवडा." });
+                }
+
+                targetLoan = activeLoans.FirstOrDefault(l => l.LoanAccountID == targetLoanId) 
+                    ?? await _context.LoanAccounts.Include(l => l.LoanRate).FirstOrDefaultAsync(l => l.LoanAccountID == targetLoanId);
+
+                if (targetLoan == null)
+                {
+                    return BadRequest(new { message = "निवडलेले कर्ज खाते सापडले नाही किंवा ते सक्रिय नाही." });
+                }
+
+                decimal targetLoanTotalDue = targetLoan.PrincipalBalance + targetLoan.InterestBalance + targetLoan.OverdueInterestBalance;
+                decimal maxAdjustable = Math.Min(totalMaturityPayout, targetLoanTotalDue);
+                loanAdjustAmount = req.LoanAdjustmentAmount.HasValue && req.LoanAdjustmentAmount.Value > 0
+                    ? Math.Min(req.LoanAdjustmentAmount.Value, maxAdjustable)
+                    : maxAdjustable;
+
+                surplusPayoutAmount = totalMaturityPayout - loanAdjustAmount;
+            }
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
                 {
                     account.Status = "Closed";
-                    account.Remarks = (account.Remarks ?? "") + $" | बंद दिनांक: {closureDate:dd/MM/yyyy} ({paymentMode})";
+                    account.Remarks = (account.Remarks ?? "") + 
+                        (req?.AdjustInLoan == true 
+                            ? $" | बंद दिनांक: {closureDate:dd/MM/yyyy} [कर्ज वजावट: ₹{loanAdjustAmount:N2} -> कर्ज क्र: {targetLoan?.LoanAccountNo}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} ({req.SurplusPaymentMode})]"
+                            : $" | बंद दिनांक: {closureDate:dd/MM/yyyy} ({paymentMode})" + (overdueInterest > 0 ? $" [मुदत संपल्यानंतरचे (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : ""));
                     await _context.SaveChangesAsync();
 
                     var fdLiabilityLedger = account.FdScheme?.FdLiabilityLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१२ मेंबर मुदत ठेव") || l.LedgerName.ToLower().Contains("fixed deposit"));
                     var payableLedger = account.FdScheme?.InterestPayableLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("२३ देणे सभासद ठेव व्याज") || l.LedgerName.ToLower().Contains("interest payable"));
+                    var expenseLedger = account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
 
-                    int payoutLedgerId = 0;
-                    if (paymentMode == "Bank" && req?.BankAccountLedgerID > 0)
+                    if (fdLiabilityLedger == null)
                     {
-                        payoutLedgerId = req.BankAccountLedgerID.Value;
+                        return BadRequest("Required FD Liability ledger not found.");
                     }
-                    else if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
+
+                    if (overdueInterest > 0 && expenseLedger == null)
                     {
-                        var savAccount = await _context.SavingAccountMasters
-                            .Include(s => s.Ledger)
-                            .FirstOrDefaultAsync(s => s.SavingAccountID == req.SavingAccountID.Value);
+                        return BadRequest("FD Interest Expense ledger (१३२ मुदत ठेवीवरील व्याज) not configured for overdue interest.");
+                    }
 
-                        if (savAccount != null)
+                    if (req?.AdjustInLoan == true && targetLoan != null)
+                    {
+                        // 1. Process Loan Settlement via Waterfall
+                        var (settledLoan, loanColl, prinPaid, intPaid, penPaid) = await ProcessLoanSettlementAsync(
+                            targetLoan.LoanAccountID, 
+                            loanAdjustAmount, 
+                            closureDate, 
+                            account.AccountNo, 
+                            account.BranchID);
+
+                        // 2. Resolve Surplus Payout Ledger (if surplus > 0)
+                        string surplusMode = !string.IsNullOrWhiteSpace(req.SurplusPaymentMode) ? req.SurplusPaymentMode : "Cash";
+                        int surplusLedgerId = 0;
+                        if (surplusPayoutAmount > 0)
                         {
-                            savAccount.CurrentBalance += totalMaturityPayout;
-                            payoutLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
-
-                            var savTx = new SavingTransaction
+                            if (surplusMode == "Bank" && req.SurplusBankLedgerID > 0)
                             {
-                                SavingAccountID = savAccount.SavingAccountID,
-                                CustomerID = savAccount.CustomerID,
+                                surplusLedgerId = req.SurplusBankLedgerID.Value;
+                            }
+                            else if (surplusMode == "Transfer" && req.SurplusSavingAccountID > 0)
+                            {
+                                var savAccount = await _context.SavingAccountMasters
+                                    .Include(s => s.Ledger)
+                                    .FirstOrDefaultAsync(s => s.SavingAccountID == req.SurplusSavingAccountID.Value);
+
+                                if (savAccount != null)
+                                {
+                                    savAccount.CurrentBalance += surplusPayoutAmount;
+                                    surplusLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
+
+                                    var savTx = new SavingTransaction
+                                    {
+                                        SavingAccountID = savAccount.SavingAccountID,
+                                        CustomerID = savAccount.CustomerID,
+                                        TransactionDate = closureDate,
+                                        TransactionType = "Deposit",
+                                        PaymentMode = "Transfer",
+                                        Amount = surplusPayoutAmount,
+                                        BalanceAfterTxn = savAccount.CurrentBalance,
+                                        Narration = $"मुदत ठेव शिल्लक परतावा जमा (FD Settlement Surplus): {account.AccountNo}",
+                                        VoucherNo = $"JV-FD-CLOSE-{account.AccountNo}",
+                                        CreatedBy = 1,
+                                        CreatedOn = DateTime.Now
+                                    };
+                                    _context.SavingTransactions.Add(savTx);
+                                }
+                                else
+                                {
+                                    surplusLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
+                                }
+                            }
+                            else
+                            {
+                                surplusLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
+                            }
+                        }
+
+                        // 3. Create Compound Journal Voucher
+                        var voucher = new Voucher
+                        {
+                            BranchID = account.BranchID,
+                            VoucherNo = $"JV-FD-CLOSE-{account.AccountNo}",
+                            VoucherDate = closureDate,
+                            VoucherType = "Journal",
+                            TotalAmount = totalMaturityPayout,
+                            Narration = string.IsNullOrWhiteSpace(req?.Narration)
+                                ? $"मुदत ठेव परतावा व कर्ज वजावट (FD Maturity Payout & Loan Set-Off): {account.AccountNo} -> कर्ज: {settledLoan.LoanAccountNo} (कर्ज जमा: ₹{loanAdjustAmount:N2}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} {surplusMode}){(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
+                                : req.Narration,
+                            CreatedBy = 1,
+                            CreatedOn = DateTime.Now
+                        };
+                        _context.Vouchers.Add(voucher);
+                        await _context.SaveChangesAsync();
+                        loanColl.VoucherID = voucher.VoucherID;
+
+                        // Dr FD Liability (Principal)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                        // Dr Interest Payable (Contracted Matured Interest)
+                        if (payableLedger != null && totalInterest > 0)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = totalInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        }
+
+                        // Dr Interest Expense (Overdue Post-Maturity Interest)
+                        if (overdueInterest > 0 && expenseLedger != null)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = overdueInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        }
+
+                        // Cr Loan Ledgers
+                        var loanRate = settledLoan.LoanRate ?? await _context.LoanRates.FindAsync(settledLoan.LoanRateID);
+                        int loanLedgerId = loanRate?.LoanLedgerID ?? 0;
+                        int loanInterestLedgerId = loanRate?.InterestLedgerID ?? 0;
+                        int loanOverdueLedgerId = (loanRate?.OverdueInterestLedgerID ?? 0) > 0 ? loanRate!.OverdueInterestLedgerID!.Value : loanInterestLedgerId;
+
+                        if (prinPaid > 0)
+                        {
+                            if (loanLedgerId <= 0)
+                            {
+                                return BadRequest("कर्ज योजनेचे मुद्दल लेजर (Loan Principal Ledger) मॅप केलेले नाही.");
+                            }
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanLedgerId, DrCr = "Cr", Amount = prinPaid, CustomerID = settledLoan.CustomerID, MemberID = settledLoan.MemberID });
+                        }
+                        if (intPaid > 0)
+                        {
+                            if (loanInterestLedgerId <= 0)
+                            {
+                                return BadRequest("कर्ज योजनेचे व्याज लेजर (Loan Interest Ledger) मॅप केलेले नाही.");
+                            }
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanInterestLedgerId, DrCr = "Cr", Amount = intPaid, CustomerID = settledLoan.CustomerID, MemberID = settledLoan.MemberID });
+                        }
+                        if (penPaid > 0)
+                        {
+                            if (loanOverdueLedgerId <= 0)
+                            {
+                                return BadRequest("कर्ज योजनेचे दंड व्याज लेजर (Loan Overdue Interest Ledger) मॅप केलेले नाही.");
+                            }
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanOverdueLedgerId, DrCr = "Cr", Amount = penPaid, CustomerID = settledLoan.CustomerID, MemberID = settledLoan.MemberID });
+                        }
+
+                        // Cr Surplus Payout Ledger (if surplus > 0)
+                        if (surplusPayoutAmount > 0 && surplusLedgerId > 0)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = surplusLedgerId, DrCr = "Cr", Amount = surplusPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        }
+
+                        // Log Close Transaction
+                        var tx = new FdTransaction
+                        {
+                            BranchID = account.BranchID,
+                            FdAccountID = account.FdAccountID,
+                            VoucherID = voucher.VoucherID,
+                            TransactionDate = closureDate,
+                            TransactionType = "Payout",
+                            DebitCredit = "Dr",
+                            Amount = totalMaturityPayout
+                        };
+                        _context.FdTransactions.Add(tx);
+
+                        if (overdueInterest > 0)
+                        {
+                            _context.FdTransactions.Add(new FdTransaction
+                            {
+                                BranchID = account.BranchID,
+                                FdAccountID = account.FdAccountID,
+                                VoucherID = voucher.VoucherID,
                                 TransactionDate = closureDate,
-                                TransactionType = "Deposit",
-                                PaymentMode = "Transfer",
-                                Amount = totalMaturityPayout,
-                                BalanceAfterTxn = savAccount.CurrentBalance,
-                                Narration = $"मुदत ठेव परतावा जमा (FD Maturity Payout): {account.AccountNo}",
-                                VoucherNo = $"JV-FD-CLOSE-{account.AccountNo}",
-                                CreatedBy = 1,
-                                CreatedOn = DateTime.Now
-                            };
-                            _context.SavingTransactions.Add(savTx);
+                                TransactionType = "Accrual",
+                                DebitCredit = "Cr",
+                                Amount = overdueInterest
+                            });
+                        }
+
+                        await _context.SaveChangesAsync();
+                        await transaction.CommitAsync();
+
+                        return Ok(new
+                        {
+                            message = $"मुदत ठेव बंद करून कर्ज खात्यात ₹{loanAdjustAmount:N2} वर्ग करण्यात आले." + (surplusPayoutAmount > 0 ? $" शिल्लक रक्कम ₹{surplusPayoutAmount:N2} ({surplusMode}) अदा केली." : ""),
+                            loanAdjusted = loanAdjustAmount,
+                            surplusPaid = surplusPayoutAmount,
+                            loanAccountNo = settledLoan.LoanAccountNo,
+                            remainingLoanBalance = settledLoan.PrincipalBalance + settledLoan.InterestBalance + settledLoan.OverdueInterestBalance
+                        });
+                    }
+                    else
+                    {
+                        // Standard Non-Loan Closure
+                        int payoutLedgerId = 0;
+                        if (paymentMode == "Bank" && req?.BankAccountLedgerID > 0)
+                        {
+                            payoutLedgerId = req.BankAccountLedgerID.Value;
+                        }
+                        else if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
+                        {
+                            var savAccount = await _context.SavingAccountMasters
+                                .Include(s => s.Ledger)
+                                .FirstOrDefaultAsync(s => s.SavingAccountID == req.SavingAccountID.Value);
+
+                            if (savAccount != null)
+                            {
+                                savAccount.CurrentBalance += totalMaturityPayout;
+                                payoutLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
+
+                                var savTx = new SavingTransaction
+                                {
+                                    SavingAccountID = savAccount.SavingAccountID,
+                                    CustomerID = savAccount.CustomerID,
+                                    TransactionDate = closureDate,
+                                    TransactionType = "Deposit",
+                                    PaymentMode = "Transfer",
+                                    Amount = totalMaturityPayout,
+                                    BalanceAfterTxn = savAccount.CurrentBalance,
+                                    Narration = $"मुदत ठेव परतावा जमा (FD Maturity Payout): {account.AccountNo}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}",
+                                    VoucherNo = $"JV-FD-CLOSE-{account.AccountNo}",
+                                    CreatedBy = 1,
+                                    CreatedOn = DateTime.Now
+                                };
+                                _context.SavingTransactions.Add(savTx);
+                            }
+                            else
+                            {
+                                payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
+                            }
                         }
                         else
                         {
                             payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
                         }
+
+                        var payoutLedger = await _context.Ledgers.FindAsync(payoutLedgerId);
+                        if (payoutLedger == null)
+                        {
+                            return BadRequest("Required payout ledger not found.");
+                        }
+
+                        // Create Voucher
+                        var voucher = new Voucher
+                        {
+                            BranchID = account.BranchID,
+                            VoucherNo = $"JV-FD-CLOSE-{account.AccountNo}",
+                            VoucherDate = closureDate,
+                            VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
+                            TotalAmount = totalMaturityPayout,
+                            Narration = string.IsNullOrWhiteSpace(req?.Narration) 
+                                ? $"मुदत ठेव पूर्ण क्लोजर (FD Maturity Payout - {paymentMode}): {account.AccountNo} [मुदतपूर्ती: {account.MaturityDate:dd/MM/yyyy}, प्रक्रिया: {DateTime.Now:dd/MM/yyyy}{(closureDate.Date < DateTime.Today ? $", As-on: {closureDate:dd/MM/yyyy}" : "")}]{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
+                                : req.Narration,
+                            CreatedBy = 1,
+                            CreatedOn = DateTime.Now
+                        };
+                        _context.Vouchers.Add(voucher);
+                        await _context.SaveChangesAsync();
+
+                        // Dr FD Liability (Principal)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        
+                        // Dr Interest Payable (Contracted Matured Interest)
+                        if (payableLedger != null && totalInterest > 0)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = totalInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        }
+
+                        // Dr Interest Expense (Overdue Post-Maturity Interest)
+                        if (overdueInterest > 0 && expenseLedger != null)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = overdueInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        }
+
+                        // Cr Payout Ledger (Cash, Bank, or Saving)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                        // Log Close Transaction
+                        var tx = new FdTransaction
+                        {
+                            BranchID = account.BranchID,
+                            FdAccountID = account.FdAccountID,
+                            VoucherID = voucher.VoucherID,
+                            TransactionDate = closureDate,
+                            TransactionType = "Payout",
+                            DebitCredit = "Dr",
+                            Amount = totalMaturityPayout
+                        };
+                        _context.FdTransactions.Add(tx);
+
+                        if (overdueInterest > 0)
+                        {
+                            _context.FdTransactions.Add(new FdTransaction
+                            {
+                                BranchID = account.BranchID,
+                                FdAccountID = account.FdAccountID,
+                                VoucherID = voucher.VoucherID,
+                                TransactionDate = closureDate,
+                                TransactionType = "Accrual",
+                                DebitCredit = "Cr",
+                                Amount = overdueInterest
+                            });
+                        }
+
+                        await _context.SaveChangesAsync();
+                        await transaction.CommitAsync();
+                        return Ok($"FD Account matured closed ({paymentMode}). Total payout: ₹{totalMaturityPayout:F2}" + (overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : ""));
                     }
-                    else
-                    {
-                        payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
-                    }
-
-                    var payoutLedger = await _context.Ledgers.FindAsync(payoutLedgerId);
-                    if (fdLiabilityLedger == null || payoutLedger == null)
-                    {
-                        return BadRequest("Required ledgers not found.");
-                    }
-
-                    // Create Voucher
-                    var voucher = new Voucher
-                    {
-                        BranchID = account.BranchID,
-                        VoucherNo = $"JV-FD-CLOSE-{account.AccountNo}",
-                        VoucherDate = closureDate,
-                        VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
-                        TotalAmount = totalMaturityPayout,
-                        Narration = string.IsNullOrWhiteSpace(req?.Narration) 
-                            ? $"मुदत ठेव पूर्ण क्लोजर (FD Maturity Payout - {paymentMode}): {account.AccountNo}{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}"
-                            : req.Narration,
-                        CreatedBy = 1,
-                        CreatedOn = DateTime.Now
-                    };
-                    _context.Vouchers.Add(voucher);
-                    await _context.SaveChangesAsync();
-
-                    var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
-                    int? linkedMemberId = linkedMember?.MemberID;
-
-                    // Dr FD Liability (Principal)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                    
-                    // Dr Interest Payable (Interest)
-                    if (payableLedger != null && totalInterest > 0)
-                    {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = totalInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                    }
-
-                    // Cr Payout Ledger (Cash, Bank, or Saving)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-
-                    // Log Close Transaction
-                    var tx = new FdTransaction
-                    {
-                        BranchID = account.BranchID,
-                        FdAccountID = account.FdAccountID,
-                        VoucherID = voucher.VoucherID,
-                        TransactionDate = closureDate,
-                        TransactionType = "Payout",
-                        DebitCredit = "Dr",
-                        Amount = totalMaturityPayout
-                    };
-                    _context.FdTransactions.Add(tx);
-
-                    await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
-                    return Ok($"FD Account matured closed ({paymentMode}). Total payout: ₹{totalMaturityPayout:F2}");
                 }
                 catch (Exception ex)
                 {
@@ -1373,24 +1931,129 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.FdScheme)
                 .ThenInclude(s => s!.InterestPayableLedger)
                 .Include(a => a.FdScheme)
+                .ThenInclude(s => s!.InterestExpenseLedger)
+                .Include(a => a.FdScheme)
                 .ThenInclude(s => s!.PrematurePenaltyLedger)
                 .FirstOrDefaultAsync(a => a.FdAccountID == id);
 
-            if (account == null || account.Status == "Closed")
+            if (account == null || account.Status != "Active")
             {
-                return BadRequest("Account is closed or invalid.");
+                return BadRequest("मुदत ठेव खाते सक्रिय (Active) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
             }
 
             DateTime effectiveClosureDate = req?.ClosureDate ?? closureDate ?? DateTime.Today;
+            if (effectiveClosureDate.Date < account.OpeningDate.Date)
+            {
+                return BadRequest($"अवैध व्यवहाराची तारीख! व्यवहाराची तारीख ({effectiveClosureDate:dd/MM/yyyy}) ही मुदत ठेव खाते उघडल्याच्या तारखेपेक्षा ({account.OpeningDate:dd/MM/yyyy}) आधीची असू शकत नाही.");
+            }
+            if (effectiveClosureDate.Date > DateTime.Today)
+            {
+                return BadRequest($"अवैध व्यवहाराची तारीख! भविष्यातील तारीख ({effectiveClosureDate:dd/MM/yyyy}) अनुज्ञेय नाही. व्यवहार आजच्या किंवा मागील तारखेचाच असणे आवश्यक आहे.");
+            }
+
+            // 🛡️ मुदत संपलेल्या खात्यावर मुदतपूर्व दंड लागू होऊ नये यासाठी गार्ड
+            if (effectiveClosureDate.Date >= account.MaturityDate.Date)
+            {
+                return BadRequest($"अवैध विनंती! सदर मुदत ठेव खात्याची मुदत दिनांक {account.MaturityDate:dd/MM/yyyy} रोजीच पूर्ण झालेली आहे. मुदत पूर्ण झालेल्या ठेवीवर मुदतपूर्व दंड (Penalty) आकारला जाऊ नये यासाठी कृपया 'मुदतपूर्ती बंद (Matured Close)' हा पर्याय वापरा.");
+            }
+
+            var closedFy = await _context.FinancialYears
+                .FirstOrDefaultAsync(fy => fy.IsClosed && effectiveClosureDate.Date >= fy.StartDate.Date && effectiveClosureDate.Date <= fy.EndDate.Date);
+            if (closedFy != null)
+            {
+                return BadRequest($"अवैध व्यवहाराची तारीख! निवडलेली तारीख ({effectiveClosureDate:dd/MM/yyyy}) ही बंद/ऑडिट झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडते. बंद आर्थिक वर्षात थेट व्हाउचर पोस्ट करणे वैधानिक लेखापरीक्षण नियमांनुसार (MCS Act) प्रतिबंधित आहे.");
+            }
+
+            DateTime? lastAccrualDate = account.LastInterestPostingDate;
+            if (!lastAccrualDate.HasValue)
+            {
+                lastAccrualDate = await _context.FdInterestAccruals
+                    .Where(a => a.FdAccountID == account.FdAccountID && a.IsPosted)
+                    .OrderByDescending(a => a.AccrualDate)
+                    .Select(a => (DateTime?)a.AccrualDate)
+                    .FirstOrDefaultAsync();
+            }
+            if (!lastAccrualDate.HasValue)
+            {
+                lastAccrualDate = await _context.FdTransactions
+                    .Where(t => t.FdAccountID == account.FdAccountID && t.TransactionType == "Accrual")
+                    .OrderByDescending(t => t.TransactionDate)
+                    .Select(t => (DateTime?)t.TransactionDate)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (lastAccrualDate.HasValue && effectiveClosureDate.Date < lastAccrualDate.Value.Date)
+            {
+                return BadRequest($"अवैध व्यवहाराची तारीख! या खात्यावर {lastAccrualDate.Value:dd/MM/yyyy} रोजी व्याज तरतूद (Interest Accrual) झालेली आहे. व्यवहाराची तारीख शेवटच्या व्याज तरतुदीच्या तारखेपेक्षा ({lastAccrualDate.Value:dd/MM/yyyy}) आधीची असू शकत नाही, अन्यथा देणे व्याज खात्यात (Interest Payable) अनैसर्गिक निगेटिव्ह (Debit) शिल्लक निर्माण होईल.");
+            }
             string paymentMode = string.IsNullOrWhiteSpace(req?.PaymentMode) ? "Cash" : req.PaymentMode;
+            if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
+            {
+                if (effectiveClosureDate.Date < DateTime.Today)
+                {
+                    return BadRequest($"अवैध व्यवहाराची तारीख! बचत खात्यात (Saving Account Transfer) परतावा वर्ग करताना मागील तारीख ({effectiveClosureDate:dd/MM/yyyy}) अनुज्ञेय नाही. ग्राहकाच्या पासबुकमधील रनिंग शिल्लक (Running Balance) विस्कळीत होणे टाळण्यासाठी आणि एसएमएस ताळमेळ राखण्यासाठी बचत खात्यातील हस्तांतरण आजच्याच तारखेने ({DateTime.Today:dd/MM/yyyy}) होणे बंधनकारक आहे. जर व्यवहार मागील तारखेने झाला असेल, तर कृपया 'रोख' किंवा इतर माध्यम निवडा.");
+                }
+                var targetSav = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == req.SavingAccountID.Value);
+                if (targetSav == null || targetSav.Status != "Active")
+                {
+                    return BadRequest($"निवडलेले बचत खाते ({targetSav?.AccountNo ?? "अज्ञात"}) सापडले नाही किंवा ते सक्रिय (Active) नाही. बंद किंवा निष्क्रिय बचत खात्यात रक्कम वर्ग करता येत नाही.");
+                }
+            }
+
+            if (req?.AdjustInLoan == true && req.SurplusPaymentMode == "Transfer" && req.SurplusSavingAccountID > 0)
+            {
+                var surplusSav = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == req.SurplusSavingAccountID.Value);
+                if (surplusSav == null || surplusSav.Status != "Active")
+                {
+                    return BadRequest($"शिल्लक परताव्यासाठी निवडलेले बचत खाते ({surplusSav?.AccountNo ?? "अज्ञात"}) सापडले नाही किंवा ते सक्रिय (Active) नाही. बंद किंवा निष्क्रिय बचत खात्यात रक्कम वर्ग करता येत नाही.");
+                }
+            }
+
+            // 🛡️ Lien & Active Loan Check: खातेदाराचे थकीत कर्ज तपासणी
+            int custId = account.CustomerID;
+            int? linkedMemberId = null;
+            if (custId > 0)
+            {
+                var linkedMem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
+                if (linkedMem != null) linkedMemberId = linkedMem.MemberID;
+            }
+
+            var loansQuery = _context.LoanAccounts
+                .Include(l => l.LoanRate)
+                .Where(l => l.Status == "Active");
+
+            if (linkedMemberId.HasValue && linkedMemberId.Value > 0)
+            {
+                loansQuery = loansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemberId.Value);
+            }
+            else
+            {
+                loansQuery = loansQuery.Where(l => l.CustomerID == custId);
+            }
+
+            var activeLoans = await loansQuery
+                .Where(l => l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0)
+                .ToListAsync();
+
+            decimal totalActiveLoanDebt = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
+
+            if (totalActiveLoanDebt > 0 && !(req?.AdjustInLoan ?? false))
+            {
+                return BadRequest(new
+                {
+                    errorCode = "LOAN_OUTSTANDING_EXISTS",
+                    message = $"सदर खातेदाराकडे एकूण ₹{totalActiveLoanDebt:N2} चे कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) हे मुदत ठेव खाते परस्पर बंद करता येणार नाही. कृपया 'कर्ज खात्यात रक्कम वर्ग करा (Adjust in Loan)' हा पर्याय निवडा किंवा कर्ज पूर्ण भरा.",
+                    totalDebt = totalActiveLoanDebt,
+                    activeLoansCount = activeLoans.Count
+                });
+            }
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
                 {
-                    // 1. Calculate actual days held
-                    int actualDays = (effectiveClosureDate - account.OpeningDate).Days;
-                    if (actualDays <= 0) actualDays = 1;
+                    // 1. Calculate actual days held (Same-day close receives minimum 1 day)
+                    int actualDays = Math.Max(1, (effectiveClosureDate.Date - account.OpeningDate.Date).Days);
 
                     // 2. Determine premature interest rate
                     decimal originalRate = account.InterestRate;
@@ -1406,141 +2069,402 @@ namespace Bhisi.Api.Controllers
                         .SumAsync(t => t.Amount);
                     decimal alreadyAccruedInt = Math.Max(dbAccrued, account.LegacyAccruedInt);
 
+                    bool isPeriodicPayout = account.FdScheme != null && 
+                        (account.FdScheme.InterestType == "MIS" || account.FdScheme.InterestType == "Monthly Interest");
+
                     // 5. Final payable calculations
                     decimal penaltyClawback = 0;
                     decimal netPayoutAmount = account.DepositAmount + recalculatedInterest;
 
-                    // If we already paid/accrued more than recalculated, clawback from principal
-                    if (alreadyAccruedInt > recalculatedInterest)
+                    if (isPeriodicPayout)
                     {
-                        penaltyClawback = alreadyAccruedInt - recalculatedInterest;
-                        netPayoutAmount = account.DepositAmount - penaltyClawback;
+                        // In MIS: interest was physically disbursed to customer monthly.
+                        // If already paid interest exceeds recalculated interest, recover from Principal payout.
+                        if (alreadyAccruedInt > recalculatedInterest)
+                        {
+                            penaltyClawback = alreadyAccruedInt - recalculatedInterest;
+                            netPayoutAmount = account.DepositAmount - penaltyClawback;
+                        }
+                    }
+                    else
+                    {
+                        // In Cumulative / Simple FD: customer never received cash interest periodically.
+                        // Customer is legally entitled to full Principal + Recalculated Interest!
+                        // Any excess internal provision in Interest Payable is reversed to the Society's P&L / Expense.
+                        netPayoutAmount = account.DepositAmount + recalculatedInterest;
+                        if (alreadyAccruedInt > recalculatedInterest)
+                        {
+                            penaltyClawback = alreadyAccruedInt - recalculatedInterest;
+                        }
+                    }
+
+                    LoanAccount? targetLoan = null;
+                    decimal loanAdjustAmount = 0m;
+                    decimal surplusPayoutAmount = netPayoutAmount;
+
+                    if (req?.AdjustInLoan == true)
+                    {
+                        int targetLoanId = req.TargetLoanAccountID ?? (activeLoans.FirstOrDefault()?.LoanAccountID ?? 0);
+                        if (targetLoanId == 0)
+                        {
+                            return BadRequest(new { message = "कृपया मुदत ठेवीची रक्कम वर्ग करण्यासाठी कर्ज खाते निवडा." });
+                        }
+
+                        targetLoan = activeLoans.FirstOrDefault(l => l.LoanAccountID == targetLoanId) 
+                            ?? await _context.LoanAccounts.Include(l => l.LoanRate).FirstOrDefaultAsync(l => l.LoanAccountID == targetLoanId);
+
+                        if (targetLoan == null)
+                        {
+                            return BadRequest(new { message = "निवडलेले कर्ज खाते सापडले नाही किंवा ते सक्रिय नाही." });
+                        }
+
+                        decimal targetLoanTotalDue = targetLoan.PrincipalBalance + targetLoan.InterestBalance + targetLoan.OverdueInterestBalance;
+                        decimal maxAdjustable = Math.Min(netPayoutAmount, targetLoanTotalDue);
+                        loanAdjustAmount = req.LoanAdjustmentAmount.HasValue && req.LoanAdjustmentAmount.Value > 0
+                            ? Math.Min(req.LoanAdjustmentAmount.Value, maxAdjustable)
+                            : maxAdjustable;
+
+                        surplusPayoutAmount = netPayoutAmount - loanAdjustAmount;
                     }
 
                     account.Status = "Closed";
-                    account.Remarks = (account.Remarks ?? "") + $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} ({paymentMode})";
+                    account.Remarks = (account.Remarks ?? "") + 
+                        (req?.AdjustInLoan == true 
+                            ? $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} [कर्ज वजावट: ₹{loanAdjustAmount:N2} -> कर्ज क्र: {targetLoan?.LoanAccountNo}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} ({req.SurplusPaymentMode})]"
+                            : $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} ({paymentMode})");
                     await _context.SaveChangesAsync();
 
                     var fdLiabilityLedger = account.FdScheme?.FdLiabilityLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१२ मेंबर मुदत ठेव") || l.LedgerName.ToLower().Contains("fixed deposit"));
                     var payableLedger = account.FdScheme?.InterestPayableLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("२३ देणे सभासद ठेव व्याज") || l.LedgerName.ToLower().Contains("interest payable"));
                     
-                    int payoutLedgerId = 0;
-                    if (paymentMode == "Bank" && req?.BankAccountLedgerID > 0)
+                    if (fdLiabilityLedger == null)
                     {
-                        payoutLedgerId = req.BankAccountLedgerID.Value;
+                        return BadRequest("Required FD Liability ledger not found.");
                     }
-                    else if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
+
+                    if (req?.AdjustInLoan == true && targetLoan != null)
                     {
-                        var savAccount = await _context.SavingAccountMasters
-                            .Include(s => s.Ledger)
-                            .FirstOrDefaultAsync(s => s.SavingAccountID == req.SavingAccountID.Value);
+                        // 1. Process Loan Settlement via Waterfall
+                        var (settledLoan, loanColl, prinPaid, intPaid, penPaid) = await ProcessLoanSettlementAsync(
+                            targetLoan.LoanAccountID, 
+                            loanAdjustAmount, 
+                            effectiveClosureDate, 
+                            account.AccountNo, 
+                            account.BranchID);
 
-                        if (savAccount != null)
+                        // 2. Resolve Surplus Payout Ledger (if surplus > 0)
+                        string surplusMode = !string.IsNullOrWhiteSpace(req.SurplusPaymentMode) ? req.SurplusPaymentMode : "Cash";
+                        int surplusLedgerId = 0;
+                        if (surplusPayoutAmount > 0)
                         {
-                            savAccount.CurrentBalance += netPayoutAmount;
-                            payoutLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
-
-                            var savTx = new SavingTransaction
+                            if (surplusMode == "Bank" && req.SurplusBankLedgerID > 0)
                             {
-                                SavingAccountID = savAccount.SavingAccountID,
-                                CustomerID = savAccount.CustomerID,
-                                TransactionDate = effectiveClosureDate,
-                                TransactionType = "Deposit",
-                                PaymentMode = "Transfer",
-                                Amount = netPayoutAmount,
-                                BalanceAfterTxn = savAccount.CurrentBalance,
-                                Narration = $"मुदत ठेव मुदतपूर्व परतावा जमा (FD Premature Payout): {account.AccountNo}",
-                                VoucherNo = $"JV-FD-PRECLOSE-{account.AccountNo}",
-                                CreatedBy = 1,
-                                CreatedOn = DateTime.Now
-                            };
-                            _context.SavingTransactions.Add(savTx);
+                                surplusLedgerId = req.SurplusBankLedgerID.Value;
+                            }
+                            else if (surplusMode == "Transfer" && req.SurplusSavingAccountID > 0)
+                            {
+                                var savAccount = await _context.SavingAccountMasters
+                                    .Include(s => s.Ledger)
+                                    .FirstOrDefaultAsync(s => s.SavingAccountID == req.SurplusSavingAccountID.Value);
+
+                                if (savAccount != null)
+                                {
+                                    savAccount.CurrentBalance += surplusPayoutAmount;
+                                    surplusLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
+
+                                    var savTx = new SavingTransaction
+                                    {
+                                        SavingAccountID = savAccount.SavingAccountID,
+                                        CustomerID = savAccount.CustomerID,
+                                        TransactionDate = effectiveClosureDate,
+                                        TransactionType = "Deposit",
+                                        PaymentMode = "Transfer",
+                                        Amount = surplusPayoutAmount,
+                                        BalanceAfterTxn = savAccount.CurrentBalance,
+                                        Narration = $"मुदत ठेव मुदतपूर्व परतावा जमा (FD Premature Surplus): {account.AccountNo}",
+                                        VoucherNo = $"JV-FD-PRECLOSE-{account.AccountNo}",
+                                        CreatedBy = 1,
+                                        CreatedOn = DateTime.Now
+                                    };
+                                    _context.SavingTransactions.Add(savTx);
+                                }
+                                else
+                                {
+                                    surplusLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
+                                }
+                            }
+                            else
+                            {
+                                surplusLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
+                            }
+                        }
+
+                        // 3. Create Compound Journal Voucher
+                        var voucher = new Voucher
+                        {
+                            BranchID = account.BranchID,
+                            VoucherNo = $"JV-FD-PRECLOSE-{account.AccountNo}",
+                            VoucherDate = effectiveClosureDate,
+                            VoucherType = "Journal",
+                            TotalAmount = netPayoutAmount,
+                            Narration = string.IsNullOrWhiteSpace(req?.Narration)
+                                ? $"मुदतपूर्व बंद व कर्ज वजावट (FD Premature & Loan Set-Off): {account.AccountNo} -> कर्ज: {settledLoan.LoanAccountNo} (कर्ज जमा: ₹{loanAdjustAmount:N2}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} {surplusMode})"
+                                : req.Narration,
+                            CreatedBy = 1,
+                            CreatedOn = DateTime.Now
+                        };
+                        _context.Vouchers.Add(voucher);
+                        await _context.SaveChangesAsync();
+                        loanColl.VoucherID = voucher.VoucherID;
+
+                        // Dr FD Liability (Principal)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                        if (isPeriodicPayout)
+                        {
+                            // In MIS:
+                            // Cr Clawback Income / Recovery
+                            if (penaltyClawback > 0)
+                            {
+                                var clawbackLedger = account.FdScheme?.PrematurePenaltyLedger ?? account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
+                                if (clawbackLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // In Cumulative / Simple FD:
+                            if (payableLedger != null && alreadyAccruedInt > 0)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = alreadyAccruedInt, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            }
+
+                            if (recalculatedInterest > alreadyAccruedInt)
+                            {
+                                decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
+                                var expenseLedger = account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
+                                if (expenseLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+                            }
+
+                            if (penaltyClawback > 0)
+                            {
+                                var clawbackLedger = account.FdScheme?.PrematurePenaltyLedger ?? account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
+                                if (clawbackLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+                            }
+                        }
+
+                        // Cr Loan Ledgers
+                        var loanRate = settledLoan.LoanRate ?? await _context.LoanRates.FindAsync(settledLoan.LoanRateID);
+                        int loanLedgerId = loanRate?.LoanLedgerID ?? 0;
+                        int loanInterestLedgerId = loanRate?.InterestLedgerID ?? 0;
+                        int loanOverdueLedgerId = (loanRate?.OverdueInterestLedgerID ?? 0) > 0 ? loanRate!.OverdueInterestLedgerID!.Value : loanInterestLedgerId;
+
+                        if (prinPaid > 0)
+                        {
+                            if (loanLedgerId <= 0)
+                            {
+                                return BadRequest("कर्ज योजनेचे मुद्दल लेजर (Loan Principal Ledger) मॅप केलेले नाही.");
+                            }
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanLedgerId, DrCr = "Cr", Amount = prinPaid, CustomerID = settledLoan.CustomerID, MemberID = settledLoan.MemberID });
+                        }
+                        if (intPaid > 0)
+                        {
+                            if (loanInterestLedgerId <= 0)
+                            {
+                                return BadRequest("कर्ज योजनेचे व्याज लेजर (Loan Interest Ledger) मॅप केलेले नाही.");
+                            }
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanInterestLedgerId, DrCr = "Cr", Amount = intPaid, CustomerID = settledLoan.CustomerID, MemberID = settledLoan.MemberID });
+                        }
+                        if (penPaid > 0)
+                        {
+                            if (loanOverdueLedgerId <= 0)
+                            {
+                                return BadRequest("कर्ज योजनेचे दंड व्याज लेजर (Loan Overdue Interest Ledger) मॅप केलेले नाही.");
+                            }
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanOverdueLedgerId, DrCr = "Cr", Amount = penPaid, CustomerID = settledLoan.CustomerID, MemberID = settledLoan.MemberID });
+                        }
+
+                        // Cr Surplus Payout Ledger (if surplus > 0)
+                        if (surplusPayoutAmount > 0 && surplusLedgerId > 0)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = surplusLedgerId, DrCr = "Cr", Amount = surplusPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        }
+
+                        // Log Close Transaction
+                        var tx = new FdTransaction
+                        {
+                            BranchID = account.BranchID,
+                            FdAccountID = account.FdAccountID,
+                            VoucherID = voucher.VoucherID,
+                            TransactionDate = effectiveClosureDate,
+                            TransactionType = "Premature_Close",
+                            DebitCredit = "Dr",
+                            Amount = netPayoutAmount
+                        };
+                        _context.FdTransactions.Add(tx);
+
+                        await _context.SaveChangesAsync();
+                        await transaction.CommitAsync();
+
+                        return Ok(new
+                        {
+                            Message = $"मुदतपूर्व बंद करून कर्ज खात्यात ₹{loanAdjustAmount:N2} वर्ग करण्यात आले." + (surplusPayoutAmount > 0 ? $" शिल्लक रक्कम ₹{surplusPayoutAmount:N2} ({surplusMode}) अदा केली." : ""),
+                            ActualDays = actualDays,
+                            RecalcInt = recalculatedInterest,
+                            Clawback = penaltyClawback,
+                            NetPayout = netPayoutAmount,
+                            LoanAdjusted = loanAdjustAmount,
+                            SurplusPaid = surplusPayoutAmount,
+                            LoanAccountNo = settledLoan.LoanAccountNo,
+                            RemainingLoanBalance = settledLoan.PrincipalBalance + settledLoan.InterestBalance + settledLoan.OverdueInterestBalance
+                        });
+                    }
+                    else
+                    {
+                        // Standard Non-Loan Closure
+                        int payoutLedgerId = 0;
+                        if (paymentMode == "Bank" && req?.BankAccountLedgerID > 0)
+                        {
+                            payoutLedgerId = req.BankAccountLedgerID.Value;
+                        }
+                        else if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
+                        {
+                            var savAccount = await _context.SavingAccountMasters
+                                .Include(s => s.Ledger)
+                                .FirstOrDefaultAsync(s => s.SavingAccountID == req.SavingAccountID.Value);
+
+                            if (savAccount != null)
+                            {
+                                savAccount.CurrentBalance += netPayoutAmount;
+                                payoutLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
+
+                                var savTx = new SavingTransaction
+                                {
+                                    SavingAccountID = savAccount.SavingAccountID,
+                                    CustomerID = savAccount.CustomerID,
+                                    TransactionDate = effectiveClosureDate,
+                                    TransactionType = "Deposit",
+                                    PaymentMode = "Transfer",
+                                    Amount = netPayoutAmount,
+                                    BalanceAfterTxn = savAccount.CurrentBalance,
+                                    Narration = $"मुदत ठेव मुदतपूर्व परतावा जमा (FD Premature Payout): {account.AccountNo}",
+                                    VoucherNo = $"JV-FD-PRECLOSE-{account.AccountNo}",
+                                    CreatedBy = 1,
+                                    CreatedOn = DateTime.Now
+                                };
+                                _context.SavingTransactions.Add(savTx);
+                            }
+                            else
+                            {
+                                payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
+                            }
                         }
                         else
                         {
                             payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
                         }
-                    }
-                    else
-                    {
-                        payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
-                    }
 
-                    var payoutLedger = await _context.Ledgers.FindAsync(payoutLedgerId);
-                    if (fdLiabilityLedger == null || payoutLedger == null)
-                    {
-                        return BadRequest("Required ledgers not found.");
-                    }
-
-                    // Create Voucher
-                    var voucher = new Voucher
-                    {
-                        BranchID = account.BranchID,
-                        VoucherNo = $"JV-FD-PRECLOSE-{account.AccountNo}",
-                        VoucherDate = effectiveClosureDate,
-                        VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
-                        TotalAmount = netPayoutAmount,
-                        Narration = string.IsNullOrWhiteSpace(req?.Narration)
-                            ? $"मुदतपूर्व बंद (Premature Close - {paymentMode}) - Days: {actualDays}, Recalc Int: ₹{recalculatedInterest}, Clawback: ₹{penaltyClawback}{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}"
-                            : req.Narration,
-                        CreatedBy = 1,
-                        CreatedOn = DateTime.Now
-                    };
-                    _context.Vouchers.Add(voucher);
-                    await _context.SaveChangesAsync();
-
-                    var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
-                    int? linkedMemberId = linkedMember?.MemberID;
-
-                    // Dr FD Liability (Principal)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-
-                    // Dr Interest Payable (Interest already accrued is fully debited)
-                    if (payableLedger != null && alreadyAccruedInt > 0)
-                    {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = alreadyAccruedInt, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                    }
-
-                    // Dr Additional Current Interest Expense (if recalculated interest exceeds already accrued)
-                    if (recalculatedInterest > alreadyAccruedInt)
-                    {
-                        decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
-                        var expenseLedger = account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
-                        if (expenseLedger != null)
+                        var payoutLedger = await _context.Ledgers.FindAsync(payoutLedgerId);
+                        if (payoutLedger == null)
                         {
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            return BadRequest("Required payout ledger not found.");
                         }
-                    }
 
-                    // Cr Payout Ledger (Net payout)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-
-                    // Cr Interest Expense / Clawback Income
-                    if (penaltyClawback > 0)
-                    {
-                        var clawbackLedger = account.FdScheme?.PrematurePenaltyLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
-                        if (clawbackLedger != null)
+                        // Create Voucher
+                        var voucher = new Voucher
                         {
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            BranchID = account.BranchID,
+                            VoucherNo = $"JV-FD-PRECLOSE-{account.AccountNo}",
+                            VoucherDate = effectiveClosureDate,
+                            VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
+                            TotalAmount = netPayoutAmount,
+                            Narration = string.IsNullOrWhiteSpace(req?.Narration)
+                                ? $"मुदतपूर्व बंद (Premature Close - {paymentMode}) - कालावधी: {actualDays} दिवस{(effectiveClosureDate.Date < DateTime.Today ? $" ({effectiveClosureDate:dd/MM/yyyy} As-on)" : "")}, पुनर्हिशोब व्याज: ₹{recalculatedInterest}, दंड कपात: ₹{penaltyClawback}{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}"
+                                : req.Narration,
+                            CreatedBy = 1,
+                            CreatedOn = DateTime.Now
+                        };
+                        _context.Vouchers.Add(voucher);
+                        await _context.SaveChangesAsync();
+
+                        // Dr FD Liability (Principal)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                        if (isPeriodicPayout)
+                        {
+                            // In MIS: Periodic cash payouts already took place, so no Interest Payable balance to clear.
+                            // Cr Payout Ledger (Net payout)
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                            // Cr Clawback Income / Recovery
+                            if (penaltyClawback > 0)
+                            {
+                                var clawbackLedger = account.FdScheme?.PrematurePenaltyLedger ?? account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
+                                if (clawbackLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+                            }
                         }
+                        else
+                        {
+                            // In Cumulative / Simple FD:
+                            // Dr Interest Payable (Interest already accrued is fully debited to clear balance sheet liability)
+                            if (payableLedger != null && alreadyAccruedInt > 0)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = alreadyAccruedInt, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            }
+
+                            // Dr Additional Current Interest Expense (if recalculated interest exceeds already accrued)
+                            if (recalculatedInterest > alreadyAccruedInt)
+                            {
+                                decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
+                                var expenseLedger = account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
+                                if (expenseLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+                            }
+
+                            // Cr Payout Ledger (Net payout = Principal + recalculatedInterest)
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                            // Cr Interest Expense / Clawback Income (Reversing excess prior year provisions back to P&L)
+                            if (penaltyClawback > 0)
+                            {
+                                var clawbackLedger = account.FdScheme?.PrematurePenaltyLedger ?? account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
+                                if (clawbackLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+                            }
+                        }
+
+                        // Log Close Transaction
+                        var tx = new FdTransaction
+                        {
+                            BranchID = account.BranchID,
+                            FdAccountID = account.FdAccountID,
+                            VoucherID = voucher.VoucherID,
+                            TransactionDate = effectiveClosureDate,
+                            TransactionType = "Premature_Close",
+                            DebitCredit = "Dr",
+                            Amount = netPayoutAmount
+                        };
+                        _context.FdTransactions.Add(tx);
+
+                        await _context.SaveChangesAsync();
+                        await transaction.CommitAsync();
+                        return Ok(new { Message = $"FD Prematurely Closed ({paymentMode})", ActualDays = actualDays, RecalcInt = recalculatedInterest, Clawback = penaltyClawback, NetPayout = netPayoutAmount });
                     }
-
-                    // Log Close Transaction
-                    var tx = new FdTransaction
-                    {
-                        BranchID = account.BranchID,
-                        FdAccountID = account.FdAccountID,
-                        VoucherID = voucher.VoucherID,
-                        TransactionDate = effectiveClosureDate,
-                        TransactionType = "Premature_Close",
-                        DebitCredit = "Dr",
-                        Amount = netPayoutAmount
-                    };
-                    _context.FdTransactions.Add(tx);
-
-                    await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
-                    return Ok(new { Message = $"FD Prematurely Closed ({paymentMode})", ActualDays = actualDays, RecalcInt = recalculatedInterest, Clawback = penaltyClawback, NetPayout = netPayoutAmount });
                 }
                 catch (Exception ex)
                 {
@@ -1559,20 +2483,82 @@ namespace Bhisi.Api.Controllers
                 .ThenInclude(s => s!.FdLiabilityLedger)
                 .Include(a => a.FdScheme)
                 .ThenInclude(s => s!.InterestPayableLedger)
+                .Include(a => a.FdScheme)
+                .ThenInclude(s => s!.InterestExpenseLedger)
                 .FirstOrDefaultAsync(a => a.FdAccountID == id);
 
-            if (oldAccount == null || oldAccount.Status == "Closed")
+            if (oldAccount == null || oldAccount.Status != "Active")
             {
-                return BadRequest("Account is closed or invalid.");
+                return BadRequest("जुने मुदत ठेव खाते सक्रिय (Active) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
             }
 
             var scheme = await _context.FdSchemes
                 .Include(s => s.FdLiabilityLedger)
+                .Include(s => s.Slabs)
                 .FirstOrDefaultAsync(s => s.FdSchemeID == request.TargetSchemeID);
 
             if (scheme == null)
             {
                 return BadRequest("Target Scheme not found.");
+            }
+
+            DateTime closureDate = request.ClosureDate ?? DateTime.Today;
+            if (closureDate.Date < oldAccount.OpeningDate.Date)
+            {
+                return BadRequest($"अवैध नूतनीकरण तारीख! नूतनीकरणाची तारीख ({closureDate:dd/MM/yyyy}) ही जुने मुदत ठेव खाते उघडल्याच्या तारखेपेक्षा ({oldAccount.OpeningDate:dd/MM/yyyy}) आधीची असू शकत नाही.");
+            }
+            if (closureDate.Date > DateTime.Today)
+            {
+                return BadRequest($"अवैध नूतनीकरण तारीख! भविष्यातील तारीख ({closureDate:dd/MM/yyyy}) अनुज्ञेय नाही. नूतनीकरण आजच्या किंवा मागील तारखेलाच केले जाऊ शकते.");
+            }
+
+            // 🛡️ मुदतपूर्व नूतनीकरण गार्ड (Premature Renewal Guard)
+            if (closureDate.Date < oldAccount.MaturityDate.Date)
+            {
+                return BadRequest($"अवैध नूतनीकरण विनंती! सदर मुदत ठेव पावती अद्याप मुदतपूर्ण (Matured) झालेली नाही. या खात्याची मुदतपूर्ती तारीख {oldAccount.MaturityDate:dd/MM/yyyy} आहे (उर्वरित कालावधी: {(oldAccount.MaturityDate.Date - closureDate.Date).Days} दिवस). मुदतीआधी नूतनीकरण अनुज्ञेय नाही. ठेव बंद करायची असल्यास 'मुदतपूर्व बंद' पर्याय वापरा.");
+            }
+
+            var closedFy = await _context.FinancialYears
+                .FirstOrDefaultAsync(fy => fy.IsClosed && closureDate.Date >= fy.StartDate.Date && closureDate.Date <= fy.EndDate.Date);
+            if (closedFy != null)
+            {
+                return BadRequest($"अवैध नूतनीकरण तारीख! निवडलेली तारीख ({closureDate:dd/MM/yyyy}) ही बंद/ऑडिट झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडते. बंद आर्थिक वर्षात थेट व्हाउचर पोस्ट करणे वैधानिक लेखापरीक्षण नियमांनुसार (MCS Act) प्रतिबंधित आहे.");
+            }
+
+            DateTime? lastAccrualDate = oldAccount.LastInterestPostingDate;
+            if (!lastAccrualDate.HasValue)
+            {
+                lastAccrualDate = await _context.FdInterestAccruals
+                    .Where(a => a.FdAccountID == oldAccount.FdAccountID && a.IsPosted)
+                    .OrderByDescending(a => a.AccrualDate)
+                    .Select(a => (DateTime?)a.AccrualDate)
+                    .FirstOrDefaultAsync();
+            }
+            if (!lastAccrualDate.HasValue)
+            {
+                lastAccrualDate = await _context.FdTransactions
+                    .Where(t => t.FdAccountID == oldAccount.FdAccountID && t.TransactionType == "Accrual")
+                    .OrderByDescending(t => t.TransactionDate)
+                    .Select(t => (DateTime?)t.TransactionDate)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (lastAccrualDate.HasValue && closureDate.Date < lastAccrualDate.Value.Date)
+            {
+                return BadRequest($"अवैध नूतनीकरण तारीख! या जुन्या मुदत ठेव खात्यावर {lastAccrualDate.Value:dd/MM/yyyy} रोजी व्याज तरतूद (Interest Accrual) झालेली आहे. नूतनीकरणाची तारीख शेवटच्या व्याज तरतुदीच्या तारखेपेक्षा ({lastAccrualDate.Value:dd/MM/yyyy}) आधीची असू शकत नाही, अन्यथा देणे व्याज खात्यात (Interest Payable) अनैसर्गिक निगेटिव्ह (Debit) शिल्लक निर्माण होईल.");
+            }
+
+            if (request.RenewalType == "PrincipalOnly" && request.PaymentMode == "Transfer" && request.SavingAccountID.HasValue && request.SavingAccountID.Value > 0)
+            {
+                if (closureDate.Date < DateTime.Today)
+                {
+                    return BadRequest($"अवैध नूतनीकरण तारीख! मुदत ठेवीचे व्याज बचत खात्यात (Saving Account Transfer) वर्ग करताना मागील तारीख ({closureDate:dd/MM/yyyy}) अनुज्ञेय नाही. पासबुकमधील रनिंग शिल्लक विस्कळीत होणे टाळण्यासाठी आणि एसएमएस ताळमेळ राखण्यासाठी बचत खात्यातील हस्तांतरण आजच्याच तारखेने ({DateTime.Today:dd/MM/yyyy}) होणे आवश्यक आहे.");
+                }
+                var targetSav = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == request.SavingAccountID.Value);
+                if (targetSav == null || targetSav.Status != "Active")
+                {
+                    return BadRequest($"निवडलेले बचत खाते ({targetSav?.AccountNo ?? "अज्ञात"}) सापडले नाही किंवा ते सक्रिय (Active) नाही. बंद किंवा निष्क्रिय बचत खात्यात रक्कम वर्ग करता येत नाही.");
+                }
             }
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
@@ -1584,18 +2570,75 @@ namespace Bhisi.Api.Controllers
                         .Where(t => t.FdAccountID == id && t.TransactionType == "Accrual")
                         .SumAsync(t => t.Amount);
 
-                    decimal accruedInt = (oldAccount.MaturityAmount > oldAccount.DepositAmount)
-                        ? (oldAccount.MaturityAmount - oldAccount.DepositAmount)
-                        : Math.Max(accruedFromTx, oldAccount.LegacyAccruedInt);
+                    bool isOldPeriodicScheme = oldAccount.FdScheme != null && 
+                        (oldAccount.FdScheme.InterestType == "MIS" || oldAccount.FdScheme.InterestType == "Monthly Interest");
 
-                    decimal totalMaturityAmount = oldAccount.DepositAmount + accruedInt;
+                    decimal accruedInt = isOldPeriodicScheme
+                        ? 0m
+                        : ((oldAccount.MaturityAmount > oldAccount.DepositAmount)
+                            ? (oldAccount.MaturityAmount - oldAccount.DepositAmount)
+                            : Math.Max(accruedFromTx, oldAccount.LegacyAccruedInt));
+
+                    DateTime newOpeningDate = closureDate;
+                    decimal overdueInterest = 0m;
+                    int overdueDays = 0;
+
+                    bool isOverdue = closureDate.Date > oldAccount.MaturityDate.Date;
+                    bool isSchemeOverdueAllowed = oldAccount.FdScheme?.AllowOverdueInterest ?? false;
+
+                    if (isOverdue && request.RenewalEffectiveFrom == "MaturityDate")
+                    {
+                        // Retroactive renewal: new deposit starts from original maturity date
+                        newOpeningDate = oldAccount.MaturityDate.Date;
+                        overdueInterest = 0m;
+                    }
+                    else if (isOverdue && isSchemeOverdueAllowed && request.ApplyOverdueInterest)
+                    {
+                        // Renewing from closure date with overdue interest for the gap
+                        overdueDays = (closureDate.Date - oldAccount.MaturityDate.Date).Days;
+                        decimal overdueRate = oldAccount.FdScheme?.OverdueInterestRate ?? request.OverdueInterestRate ?? 3.00m;
+                        overdueInterest = Math.Round((oldAccount.MaturityAmount * overdueRate * overdueDays) / 36500.0m, 2);
+                    }
+
+                    decimal totalMaturityAmount = oldAccount.DepositAmount + accruedInt + overdueInterest;
                     decimal newDepositAmount = request.RenewalType == "PrincipalOnly" ? oldAccount.DepositAmount : totalMaturityAmount;
-                    DateTime closureDate = request.ClosureDate ?? DateTime.Today;
+                    decimal interestPayoutAmount = request.RenewalType == "PrincipalOnly" ? (accruedInt + overdueInterest) : 0m;
                     string paymentMode = string.IsNullOrWhiteSpace(request.PaymentMode) ? "Cash" : request.PaymentMode;
+
+                    // 🛡️ Lien & Active Loan Check: जर खातेदाराकडे सक्रिय कर्ज असेल तर नूतनीकरणात रोख/बँकेने व्याज देण्यास मज्जाव
+                    if (request.RenewalType == "PrincipalOnly" && interestPayoutAmount > 0)
+                    {
+                        int custId = oldAccount.CustomerID;
+                        int? linkedMemId = null;
+                        var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
+                        if (mem != null) linkedMemId = mem.MemberID;
+
+                        var activeLoansQuery = _context.LoanAccounts
+                            .Where(l => l.Status == "Active" && (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0));
+
+                        if (linkedMemId.HasValue && linkedMemId.Value > 0)
+                        {
+                            activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemId.Value);
+                        }
+                        else
+                        {
+                            activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId);
+                        }
+
+                        var activeLoans = await activeLoansQuery.ToListAsync();
+                        if (activeLoans.Any())
+                        {
+                            decimal totalLoanDebt = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
+                            return BadRequest(new {
+                                errorCode = "LOAN_OUTSTANDING_EXISTS",
+                                message = $"सदर खातेदाराकडे एकूण ₹{totalLoanDebt:N2} चे सक्रिय कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) थकीत कर्जदारास मुदत ठेवीचे व्याज (₹{interestPayoutAmount:N2}) थेट रोख/बँकेने देता येणार नाही. कृपया नूतनीकरणात संपूर्ण रक्कम (मुद्दल + व्याज) समाविष्ट करा किंवा आधी कर्ज फेडा."
+                            });
+                        }
+                    }
 
                     // Close Old Account
                     oldAccount.Status = "Closed";
-                    oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType})";
+                    oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType})" + (overdueInterest > 0 ? $" [मुदत उलटून गेलेले (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : "");
                     await _context.SaveChangesAsync();
 
                     // 2. Generate Account Number
@@ -1614,29 +2657,92 @@ namespace Bhisi.Api.Controllers
                     seq.CurrentValue += 1;
                     await _context.SaveChangesAsync();
 
+                    // Determine correct Financial Year corresponding to new deposit opening date
+                    var matchingFy = await _context.FinancialYears
+                        .FirstOrDefaultAsync(fy => newOpeningDate.Date >= fy.StartDate.Date && newOpeningDate.Date <= fy.EndDate.Date);
+
+                    int targetFinancialYearId = matchingFy?.FinancialYearID 
+                        ?? (await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive))?.FinancialYearID 
+                        ?? (oldAccount.FinancialYearID > 0 ? oldAccount.FinancialYearID : 1);
+
+                    // 🛡️ कालावधी प्रकार व मूल्य निश्चिती (Days, Months, Years Support)
+                    string durType = !string.IsNullOrWhiteSpace(request.DurationType)
+                        ? request.DurationType
+                        : (!string.IsNullOrWhiteSpace(scheme.DurationType) ? scheme.DurationType : "Months");
+
+                    int durVal = request.DurationValue.HasValue && request.DurationValue.Value > 0
+                        ? request.DurationValue.Value
+                        : (scheme.DurationMonths > 0 ? scheme.DurationMonths : 12);
+
+                    DateTime maturityDate;
+                    int totalDays;
+                    if (durType.Equals("Days", StringComparison.OrdinalIgnoreCase))
+                    {
+                        totalDays = durVal;
+                        maturityDate = newOpeningDate.AddDays(totalDays);
+                    }
+                    else if (durType.Equals("Years", StringComparison.OrdinalIgnoreCase))
+                    {
+                        maturityDate = newOpeningDate.AddYears(durVal);
+                        totalDays = (int)(maturityDate - newOpeningDate).TotalDays;
+                    }
+                    else
+                    {
+                        maturityDate = newOpeningDate.AddMonths(durVal);
+                        totalDays = (int)(maturityDate - newOpeningDate).TotalDays;
+                    }
+
+                    // Determine customer senior citizen status (exact 60th birthday check)
+                    var customer = await _context.Customers.FindAsync(oldAccount.CustomerID);
+                    bool isSenior = customer?.BirthDate.HasValue == true && (customer.BirthDate.Value.Date <= newOpeningDate.Date.AddYears(-60));
+
+                    // Resolve Interest Rate based on Slabs or Scheme fixed rate
+                    decimal appliedRate;
+                    if (scheme.SchemeDurationModel == "Slab" && scheme.Slabs != null && scheme.Slabs.Any())
+                    {
+                        var matchedSlab = scheme.Slabs.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
+                        if (matchedSlab != null)
+                        {
+                            appliedRate = isSenior ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+                        }
+                        else
+                        {
+                            appliedRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+                        }
+                    }
+                    else
+                    {
+                        appliedRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+                    }
+
                     // Create New FD Account
                     var newAccount = new FdAccount
                     {
                         InstitutionID = oldAccount.InstitutionID,
                         BranchID = oldAccount.BranchID,
-                        FinancialYearID = oldAccount.FinancialYearID,
+                        FinancialYearID = targetFinancialYearId,
                         CustomerID = oldAccount.CustomerID,
                         FdSchemeID = request.TargetSchemeID,
                         AccountNo = $"{branchPrefix}-{oldAccount.BranchID:D3}-FD-{seq.CurrentValue:D6}",
-                        OpeningDate = closureDate,
+                        OpeningDate = newOpeningDate,
                         DepositAmount = newDepositAmount,
-                        InterestRate = scheme.InterestRate,
-                        MaturityDate = closureDate.AddMonths(scheme.DurationMonths),
+                        InterestRate = appliedRate,
+                        DurationType = durType,
+                        DurationValue = durVal,
+                        DurationInDays = totalDays,
+                        MaturityDate = maturityDate,
                         Status = "Active",
                         NomineeName = oldAccount.NomineeName,
                         NomineeRelation = oldAccount.NomineeRelation,
-                        Remarks = $"नूतनीकरण खाते (Renewed from): {oldAccount.AccountNo}"
+                        Remarks = $"नूतनीकरण खाते (Renewed from): {oldAccount.AccountNo}" 
+                            + (isSenior ? $" [ज्येष्ठ नागरिक सवलत दर: {appliedRate}%]" : "")
+                            + (newOpeningDate != closureDate ? $" [सुरुवात दिनांक: {newOpeningDate:dd/MM/yyyy}]" : "") 
+                            + (overdueInterest > 0 ? $" [समाविष्ट Overdue व्याज: ₹{overdueInterest:F2}]" : "")
                     };
 
-                    // Maturity Calculations
+                    // Maturity Calculations (Exact 365-Day Banking Basis)
                     decimal p = newDepositAmount;
-                    decimal r = scheme.InterestRate;
-                    decimal t = (decimal)scheme.DurationMonths / 12.0m;
+                    decimal r = appliedRate;
 
                     if (scheme.InterestType == "Cumulative")
                     {
@@ -1646,12 +2752,17 @@ namespace Bhisi.Api.Controllers
                         if (scheme.InterestCompoundingFrequency == "Monthly") n = 12;
 
                         double baseVal = 1.0 + ((double)r / (n * 100.0));
-                        double exponent = n * (double)t;
-                        newAccount.MaturityAmount = p * (decimal)Math.Pow(baseVal, exponent);
+                        double exponent = n * ((double)totalDays / 365.0);
+                        newAccount.MaturityAmount = Math.Round(p * (decimal)Math.Pow(baseVal, exponent), 0, MidpointRounding.AwayFromZero);
+                    }
+                    else if (scheme.InterestType == "MIS" || scheme.InterestType == "Monthly Interest")
+                    {
+                        newAccount.MaturityAmount = p;
                     }
                     else
                     {
-                        newAccount.MaturityAmount = p * (1.0m + (r * t / 100.0m));
+                        // Simple Interest: A = P * (1 + (R * totalDays) / (365 * 100))
+                        newAccount.MaturityAmount = Math.Round(p * (1.0m + ((r * (decimal)totalDays) / (365.0m * 100.0m))), 0, MidpointRounding.AwayFromZero);
                     }
 
                     _context.FdAccounts.Add(newAccount);
@@ -1660,9 +2771,10 @@ namespace Bhisi.Api.Controllers
                     // 3. Post Renewal Vouchers
                     var fdLiabilityLedger = scheme.FdLiabilityLedger ?? oldAccount.FdScheme?.FdLiabilityLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१२ मेंबर मुदत ठेव") || l.LedgerName.ToLower().Contains("fixed deposit"));
                     var payableLedger = oldAccount.FdScheme?.InterestPayableLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("२३ देणे सभासद ठेव व्याज") || l.LedgerName.ToLower().Contains("interest payable"));
+                    var expenseLedger = oldAccount.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
                     
                     int interestPayoutLedgerId = 0;
-                    if (request.RenewalType == "PrincipalOnly" && accruedInt > 0)
+                    if (request.RenewalType == "PrincipalOnly" && interestPayoutAmount > 0)
                     {
                         if (paymentMode == "Bank" && request.BankAccountLedgerID > 0)
                         {
@@ -1676,7 +2788,7 @@ namespace Bhisi.Api.Controllers
 
                             if (savAccount != null)
                             {
-                                savAccount.CurrentBalance += accruedInt;
+                                savAccount.CurrentBalance += interestPayoutAmount;
                                 interestPayoutLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
 
                                 var savTx = new SavingTransaction
@@ -1686,9 +2798,9 @@ namespace Bhisi.Api.Controllers
                                     TransactionDate = closureDate,
                                     TransactionType = "Deposit",
                                     PaymentMode = "Transfer",
-                                    Amount = accruedInt,
+                                    Amount = interestPayoutAmount,
                                     BalanceAfterTxn = savAccount.CurrentBalance,
-                                    Narration = $"मुदत ठेव नूतनीकरण व्याज जमा (FD Renewal Interest): {oldAccount.AccountNo}",
+                                    Narration = $"मुदत ठेव नूतनीकरण व्याज जमा (FD Renewal Interest): {oldAccount.AccountNo}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}",
                                     VoucherNo = $"JV-FD-REN-{newAccount.AccountNo}",
                                     CreatedBy = 1,
                                     CreatedOn = DateTime.Now
@@ -1706,6 +2818,11 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
+                    if (overdueInterest > 0 && expenseLedger == null)
+                    {
+                        return BadRequest("FD Interest Expense ledger (१३२ मुदत ठेवीवरील व्याज) not configured for overdue interest.");
+                    }
+
                     var voucher = new Voucher
                     {
                         BranchID = oldAccount.BranchID,
@@ -1713,7 +2830,7 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = closureDate,
                         VoucherType = "Journal",
                         TotalAmount = totalMaturityAmount,
-                        Narration = $"मुदत ठेव नूतनीकरण (FD Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}",
+                        Narration = $"मुदत ठेव नूतनीकरण (FD Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}",
                         CreatedBy = 1,
                         CreatedOn = DateTime.Now
                     };
@@ -1726,19 +2843,25 @@ namespace Bhisi.Api.Controllers
                     // Dr Old FD Liability (Principal)
                     _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger?.LedgerID ?? 12, DrCr = "Dr", Amount = oldAccount.DepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
                     
-                    // Dr Interest Payable (Accumulated Interest)
+                    // Dr Interest Payable (Accumulated Contract Interest)
                     if (payableLedger != null && accruedInt > 0)
                     {
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = accruedInt, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                    }
+
+                    // Dr Interest Expense (Overdue Interest)
+                    if (overdueInterest > 0 && expenseLedger != null)
+                    {
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = overdueInterest, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
                     }
 
                     // Cr New FD Liability
                     _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger?.LedgerID ?? 12, DrCr = "Cr", Amount = newDepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
 
                     // Cr Interest Payout (If Principal Only, pay out interest to Cash, Bank, or Saving)
-                    if (request.RenewalType == "PrincipalOnly" && accruedInt > 0 && interestPayoutLedgerId > 0)
+                    if (request.RenewalType == "PrincipalOnly" && interestPayoutAmount > 0 && interestPayoutLedgerId > 0)
                     {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = interestPayoutLedgerId, DrCr = "Cr", Amount = accruedInt, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = interestPayoutLedgerId, DrCr = "Cr", Amount = interestPayoutAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
                     }
 
                     // Log Transactions
@@ -1753,6 +2876,20 @@ namespace Bhisi.Api.Controllers
                         Amount = totalMaturityAmount
                     });
 
+                    if (overdueInterest > 0)
+                    {
+                        _context.FdTransactions.Add(new FdTransaction
+                        {
+                            BranchID = oldAccount.BranchID,
+                            FdAccountID = oldAccount.FdAccountID,
+                            VoucherID = voucher.VoucherID,
+                            TransactionDate = closureDate,
+                            TransactionType = "Accrual",
+                            DebitCredit = "Cr",
+                            Amount = overdueInterest
+                        });
+                    }
+
                     _context.FdTransactions.Add(new FdTransaction
                     {
                         BranchID = newAccount.BranchID,
@@ -1766,7 +2903,7 @@ namespace Bhisi.Api.Controllers
 
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
-                    return Ok(new { Message = "FD Renewed successfully", NewAccountNo = newAccount.AccountNo, NewDeposit = newDepositAmount });
+                    return Ok(new { Message = "FD Renewed successfully", NewAccountNo = newAccount.AccountNo, NewDeposit = newDepositAmount, OverdueInterest = overdueInterest });
                 }
                 catch (Exception ex)
                 {
@@ -1778,6 +2915,7 @@ namespace Bhisi.Api.Controllers
 
         // PUT: api/FdAccounts/5
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager")]
         public async Task<IActionResult> PutFdAccount(int id, FdAccount account)
         {
             if (id != account.FdAccountID)
@@ -1789,6 +2927,11 @@ namespace Bhisi.Api.Controllers
             if (existing == null)
             {
                 return NotFound("मुदत ठेव खाते सापडले नाही.");
+            }
+
+            if (string.Equals(existing.Status, "Closed", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest("सदर मुदत ठेव खाते आधीच बंद (Closed) झालेले असल्याने संपादित करता येत नाही.");
             }
 
             existing.BranchID = account.BranchID;
@@ -1828,11 +2971,17 @@ namespace Bhisi.Api.Controllers
 
 
 
-        // DELETE: api/FdAccounts/ClearData (Clear all test FD records & reset sequences)
+        // DELETE: api/FdAccounts/ClearData (Clear all test FD records & reset sequences - STRICTLY DEVELOPMENT ONLY)
         [HttpDelete("ClearData")]
-        [AllowAnonymous]
+        [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> ClearData()
         {
+            var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            if (!string.Equals(env, "Development", StringComparison.OrdinalIgnoreCase))
+            {
+                return StatusCode(403, new { message = "सुरक्षा निर्बंध: संपूर्ण मुदत ठेव डेटा पुसण्याची कृती थेट उत्पादन (Production) प्रणालीमध्ये पूर्णपणे प्रतिबंधित आहे. केवळ Development मोडमध्येच ही कृती करता येऊ शकते." });
+            }
+
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
@@ -1885,7 +3034,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/FdAccounts/CalculateInterestPreview
         [HttpPost("CalculateInterestPreview")]
-        [AllowAnonymous]
+        [Authorize]
         public async Task<IActionResult> CalculateInterestPreview([FromBody] FdInterestPreviewRequestDto req)
         {
             var activeAccounts = await _context.FdAccounts
@@ -1960,12 +3109,24 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/FdAccounts/PostSelectedInterest
         [HttpPost("PostSelectedInterest")]
-        [AllowAnonymous]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager")]
         public async Task<IActionResult> PostSelectedInterest([FromBody] FdInterestPostRequestDto req)
         {
             if (req.SelectedItems == null || !req.SelectedItems.Any())
             {
                 return BadRequest("कृपया व्याज पोस्ट करण्यासाठी किमान एक खाते निवडा (Select at least one account).");
+            }
+
+            if (req.AccrualDate.Date > DateTime.Today)
+            {
+                return BadRequest($"अवैध तारीख! भविष्यातील तारीख ({req.AccrualDate:dd/MM/yyyy}) अनुज्ञेय नाही. व्याज तरतूद आजच्या किंवा मागील तारखेचीच असणे आवश्यक आहे.");
+            }
+
+            var closedFy = await _context.FinancialYears
+                .FirstOrDefaultAsync(fy => fy.IsClosed && req.AccrualDate.Date >= fy.StartDate.Date && req.AccrualDate.Date <= fy.EndDate.Date);
+            if (closedFy != null)
+            {
+                return BadRequest($"अवैध तारीख! निवडलेली व्याज तरतूद तारीख ({req.AccrualDate:dd/MM/yyyy}) ही बंद/ऑडिट झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडते. बंद आर्थिक वर्षात थेट व्हाउचर पोस्ट करणे वैधानिक नियमांनुसार (MCS Act) प्रतिबंधित आहे.");
             }
 
             var expenseLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
@@ -2523,6 +3684,21 @@ namespace Bhisi.Api.Controllers
         public DateTime? ChequeDate { get; set; }
         public int? SavingAccountID { get; set; }
         public string? Narration { get; set; }
+
+        // Overdue FD Support
+        public bool ApplyOverdueInterest { get; set; } = false;
+        public decimal? OverdueInterestRate { get; set; }
+        public decimal? OverdueInterestAmount { get; set; }
+
+        // 🛡️ Lien & Loan Recovery Support
+        public bool AdjustInLoan { get; set; } = false;
+        public int? TargetLoanAccountID { get; set; }
+        public decimal? LoanAdjustmentAmount { get; set; }
+        public string SurplusPaymentMode { get; set; } = "Cash"; // "Cash", "Bank", "Transfer"
+        public int? SurplusSavingAccountID { get; set; }
+        public int? SurplusBankLedgerID { get; set; }
+        public string? SurplusChequeNo { get; set; }
+        public DateTime? SurplusChequeDate { get; set; }
     }
 
     public class FdRenewalRequest
@@ -2536,5 +3712,14 @@ namespace Bhisi.Api.Controllers
         public DateTime? ChequeDate { get; set; }
         public int? SavingAccountID { get; set; }
         public string? Narration { get; set; }
+
+        // Flexible Duration Support
+        public string? DurationType { get; set; } // "Days", "Months", "Years"
+        public int? DurationValue { get; set; }
+
+        // Overdue Renewal Support
+        public string RenewalEffectiveFrom { get; set; } = "ClosureDate"; // "ClosureDate" or "MaturityDate"
+        public bool ApplyOverdueInterest { get; set; } = false;
+        public decimal? OverdueInterestRate { get; set; }
     }
 }

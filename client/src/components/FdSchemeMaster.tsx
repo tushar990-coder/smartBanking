@@ -21,7 +21,8 @@ import {
   FileSpreadsheet,
   X,
   Plus,
-  ShieldCheck
+  ShieldCheck,
+  Clock
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
@@ -72,6 +73,10 @@ interface FdScheme {
   prematurePenaltyLedgerID?: number | null;
   prematurePenaltyLedger?: Ledger | null;
   slabs?: FdSchemeInterestSlab[];
+  allowOverdueInterest?: boolean;
+  overdueInterestRate?: number | null;
+  overdueGraceDays?: number;
+  overdueRenewalPolicy?: string;
 }
 
 interface FdSchemeFormData {
@@ -97,6 +102,10 @@ interface FdSchemeFormData {
   interestExpenseLedgerID: number | string;
   interestPayableLedgerID: number | string;
   prematurePenaltyLedgerID: number | string;
+  allowOverdueInterest: boolean;
+  overdueInterestRate: number | string;
+  overdueGraceDays: number | string;
+  overdueRenewalPolicy: string;
 }
 
 const FdSchemeMaster: React.FC = () => {
@@ -142,6 +151,10 @@ const FdSchemeMaster: React.FC = () => {
     interestExpenseLedgerID: 0,
     interestPayableLedgerID: 0,
     prematurePenaltyLedgerID: 0,
+    allowOverdueInterest: false,
+    overdueInterestRate: 3.0,
+    overdueGraceDays: 0,
+    overdueRenewalPolicy: 'ClosureDate',
   });
 
   const STANDARD_SLABS: FdSchemeInterestSlab[] = [
@@ -330,6 +343,10 @@ const FdSchemeMaster: React.FC = () => {
       interestExpenseLedgerID: Number(formData.interestExpenseLedgerID) || null,
       interestPayableLedgerID: Number(formData.interestPayableLedgerID) || null,
       prematurePenaltyLedgerID: Number(formData.prematurePenaltyLedgerID) || null,
+      allowOverdueInterest: formData.allowOverdueInterest,
+      overdueInterestRate: formData.allowOverdueInterest ? (parseFloat(formData.overdueInterestRate.toString()) || 0) : null,
+      overdueGraceDays: parseInt(formData.overdueGraceDays.toString(), 10) || 0,
+      overdueRenewalPolicy: formData.overdueRenewalPolicy || 'ClosureDate',
       slabs: formData.schemeDurationModel === 'Slab' ? slabs.map(s => ({
         slabID: s.slabID || 0,
         fromDays: Number(s.fromDays) || 0,
@@ -390,6 +407,10 @@ const FdSchemeMaster: React.FC = () => {
       interestExpenseLedgerID: scheme.interestExpenseLedgerID || 0,
       interestPayableLedgerID: scheme.interestPayableLedgerID || 0,
       prematurePenaltyLedgerID: scheme.prematurePenaltyLedgerID || 0,
+      allowOverdueInterest: scheme.allowOverdueInterest ?? false,
+      overdueInterestRate: scheme.overdueInterestRate ?? 3.0,
+      overdueGraceDays: scheme.overdueGraceDays ?? 0,
+      overdueRenewalPolicy: scheme.overdueRenewalPolicy || 'ClosureDate',
     });
     setSlabs(scheme.slabs ? scheme.slabs.map(s => ({ ...s })) : []);
     setError('');
@@ -446,6 +467,10 @@ const FdSchemeMaster: React.FC = () => {
       interestExpenseLedgerID: 0,
       interestPayableLedgerID: 0,
       prematurePenaltyLedgerID: 0,
+      allowOverdueInterest: false,
+      overdueInterestRate: 3.0,
+      overdueGraceDays: 0,
+      overdueRenewalPolicy: 'ClosureDate',
     });
     setSlabs([]);
     setError('');
@@ -467,6 +492,7 @@ const FdSchemeMaster: React.FC = () => {
       'व्याज प्रकार': s.interestType,
       'किमान रक्कम (₹)': s.minimumAmount,
       'कमाल रक्कम (₹)': s.maximumAmount,
+      'ओव्हरड्यू व्याज नियम': s.allowOverdueInterest ? `अनुज्ञेय (${s.overdueInterestRate || 0}%)` : 'निरंक (बंद)',
       'मुदत ठेव देयता खाते': s.fdLiabilityLedger?.ledgerName || 'डिफॉल्ट',
       'स्थिती': s.isActive ? 'सक्रिय' : 'बंद'
     }));
@@ -1123,6 +1149,101 @@ const FdSchemeMaster: React.FC = () => {
           </div>
         </div>
 
+        {/* Section 4: Post-Maturity Overdue Policy */}
+        <div className="bg-amber-50/40 p-3.5 rounded-sm border border-amber-300 space-y-2.5">
+          <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
+            <div className="flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-amber-700" />
+              <h2 className="text-xs font-bold text-amber-900">४. मुदत संपल्यानंतरचे संस्थात्मक धोरण (Post-Maturity Overdue Policy)</h2>
+            </div>
+            <span className="text-[10px] text-amber-800 bg-amber-100 font-bold px-2 py-0.5 rounded border border-amber-300">
+              संचालक मंडळ ठराव नियम (Board Policy)
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            <label className="flex items-start gap-2.5 cursor-pointer bg-white p-2.5 rounded border border-amber-200 hover:bg-amber-50/80 transition-colors">
+              <input
+                type="checkbox"
+                name="allowOverdueInterest"
+                checked={formData.allowOverdueInterest}
+                onChange={handleChange as any}
+                className="h-4 w-4 mt-0.5 text-primary focus:ring-primary border-gray-300 rounded cursor-pointer"
+              />
+              <div>
+                <span className="text-xs font-bold text-gray-900 block">
+                  या ठेव योजनेवर मुदतपूर्तीनंतर ओव्हरड्यू व्याज अनुज्ञेय आहे (Allow Post-Maturity Overdue Interest)
+                </span>
+                <span className="text-[10px] text-gray-500 block mt-0.5">
+                  सदर पर्याय बंद ठेवल्यास मुदत संपल्यानंतर कितीही दिवसांनी ठेवीदार आला तरी मुदतीनंतरचे कोणतेही अतिरिक्त व्याज मिळणार नाही (ऑडिट आक्षेप टाळण्यासाठी).
+                </span>
+              </div>
+            </label>
+
+            {formData.allowOverdueInterest && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-white rounded border border-amber-200 animate-in fade-in duration-150">
+                <div>
+                  <label className={labelClass}>
+                    मान्यताप्राप्त ओव्हरड्यू व्याजदर (% p.a.) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      name="overdueInterestRate"
+                      value={formData.overdueInterestRate}
+                      onChange={handleChange}
+                      className={`${inputClass} font-mono font-bold text-emerald-800`}
+                      placeholder="उदा. 3.00"
+                      required={formData.allowOverdueInterest}
+                    />
+                    <span className="absolute right-2.5 top-1.5 text-gray-400 font-bold text-xs">%</span>
+                  </div>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">
+                    सामान्यतः संस्थेचा बचत ठेव दर (उदा. 3.00%).
+                  </span>
+                </div>
+
+                <div>
+                  <label className={labelClass}>ग्रेस पिरियड दिवस (Grace Period Days)</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      name="overdueGraceDays"
+                      value={formData.overdueGraceDays}
+                      onChange={handleChange}
+                      className={`${inputClass} font-mono`}
+                      placeholder="उदा. 0 किंवा 14"
+                    />
+                    <span className="absolute right-2.5 top-1.5 text-gray-400 font-bold text-[10px]">दिवस</span>
+                  </div>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">
+                    या कालावधीत नूतनीकरण केल्यास मुदतपूर्तीपासून नूतनीकरण ग्राह्य धरता येईल.
+                  </span>
+                </div>
+
+                <div>
+                  <label className={labelClass}>उशिरा नूतनीकरण डिफॉल्ट नियम (Renewal Policy)</label>
+                  <select
+                    name="overdueRenewalPolicy"
+                    value={formData.overdueRenewalPolicy}
+                    onChange={handleChange}
+                    className={`${inputClass} font-bold text-gray-800`}
+                  >
+                    <option value="ClosureDate">प्रत्यक्ष व्यवहाराच्या तारखेपासून (From Closure Date)</option>
+                    <option value="MaturityDate">मूळ मुदतपूर्ती तारखेपासून पूर्वलक्षी (Retroactive from Maturity)</option>
+                  </select>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">
+                    नूतनीकरण करताना स्क्रीनवर आपोआप निवडला जाणारा डीफॉल्ट पर्याय.
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Form Action Buttons */}
         <div className="pt-2 flex justify-end gap-2 border-t border-gray-200">
           <button
@@ -1250,6 +1371,18 @@ const FdSchemeMaster: React.FC = () => {
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
                           <div className="font-bold text-gray-900 font-mono">{s.schemeCode}</div>
                           <div className="text-gray-600 font-medium">{s.schemeName}</div>
+                          <div className="mt-1 flex items-center gap-1">
+                            {s.allowOverdueInterest ? (
+                              <span className="bg-amber-100 text-amber-900 text-[9px] font-bold px-1.5 py-0.5 rounded border border-amber-300 flex items-center gap-1">
+                                <Clock size={10} />
+                                <span>ओव्हरड्यू: {s.overdueInterestRate}%</span>
+                              </span>
+                            ) : (
+                              <span className="bg-slate-100 text-slate-500 text-[9px] font-medium px-1.5 py-0.5 rounded border border-slate-200">
+                                ओव्हरड्यू: बंद
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                           {s.schemeDurationModel === 'Slab' ? (

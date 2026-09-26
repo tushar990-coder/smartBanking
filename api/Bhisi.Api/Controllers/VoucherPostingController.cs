@@ -463,6 +463,16 @@ namespace Bhisi.Api.Controllers
                 if (isFdWithdrawal)
                 {
                     // === CASE 1: WITHDRAWAL / CLOSURE DELETE ===
+                    // 🛡️ Statutory Safeguard: If this closure voucher adjusted proceeds against a Loan Account,
+                    // blocking direct voucher deletion prevents uncoupling the loan reduction from the voucher!
+                    var linkedLoanColl = await _context.LoanCollections
+                        .Include(lc => lc.LoanAccount)
+                        .FirstOrDefaultAsync(lc => lc.VoucherID == id);
+                    if (linkedLoanColl != null)
+                    {
+                        throw new InvalidOperationException($"सदर व्हाउचरमध्ये कर्ज खाते क्र. {linkedLoanColl.LoanAccount?.LoanAccountNo ?? linkedLoanColl.LoanAccountID.ToString()} मधील ₹{linkedLoanColl.TotalAmountReceived:N2} ची कर्ज वसुली वजावट समाविष्ट आहे. कर्ज खात्यातील लेजर विसंगती व तारण उल्लंघन टाळण्यासाठी हे संयुक्त व्हाउचर थेट डिलीट करता येणार नाही.");
+                    }
+
                     // Rule: Only delete the withdrawal transaction & voucher; revert FdAccount to "Active".
                     // DO NOT delete FdAccount. DO NOT rollback receipt sequence counter!
                     string fdAccNo = "";
@@ -539,6 +549,33 @@ namespace Bhisi.Api.Controllers
 
                         if (fdAcc != null)
                         {
+                            // 🛡️ Lien & Active Loan Check: जर खातेदाराकडे सक्रिय कर्ज असेल तर तारण सुरक्षेसाठी डिलीट रोखा
+                            if (fdAcc.CustomerID > 0)
+                            {
+                                int custId = fdAcc.CustomerID;
+                                int? linkedMemId = null;
+                                var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
+                                if (mem != null) linkedMemId = mem.MemberID;
+
+                                var activeLoansQuery = _context.LoanAccounts
+                                    .Where(l => l.Status == "Active" && (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0));
+
+                                if (linkedMemId.HasValue && linkedMemId.Value > 0)
+                                {
+                                    activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemId.Value);
+                                }
+                                else
+                                {
+                                    activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId);
+                                }
+
+                                var activeLoans = await activeLoansQuery.ToListAsync();
+                                if (activeLoans.Any())
+                                {
+                                    decimal totalLoanLiability = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
+                                    throw new InvalidOperationException($"सदर खातेदाराकडे एकूण ₹{totalLoanLiability:N2} चे सक्रिय कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) हे मुदत ठेव खाते व त्याचे व्हाउचर नष्ट करता येणार नाही.");
+                                }
+                            }
                             if (fdAcc.IsLegacyAccount)
                             {
                                 // 🛡️ CRITICAL SAFEGUARD: Migrated Opening Balance accounts MUST NEVER be deleted by voucher deletion!

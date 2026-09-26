@@ -1,17 +1,18 @@
 {
-  "version": "2.5.9",
-  "releaseDate": "2026-09-25",
-  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.9",
+  "version": "2.5.10",
+  "releaseDate": "2026-09-26",
+  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.10",
   "git": {
-    "commit": "93ad714",
-    "fullCommit": "93ad714",
+    "commit": "25987ba",
+    "fullCommit": "25987ba",
     "branch": "main",
-    "commitDate": "2026-09-25 18:25:00 +0530",
-    "commitMessage": "fix: correct member code inconsistency for non-shareholders, resequence regular shareholders sequentially, and standardize khatedar labels (v2.5.9)",
+    "commitDate": "2026-09-26 08:00:00 +0530",
+    "commitMessage": "feat: FD Lien recovery & set-off, MaturedClose guard, renewal loophole fixes, and 4-step streamlined UI (v2.5.10)",
     "author": "tushar990-coder <111702084+tushar990-coder@users.noreply.github.com>",
     "repository": "https://github.com/tushar990-coder/smartBanking.git"
   },
   "changelog": [
+    "⭐ [2026-09-26] मुदत ठेव कर्ज तारण संरक्षण, मुदतपूर्ती सुरक्षा व सुटसुटीत फॉर्म (FD Lien Protection, Maturity Guards & UI Redesign v2.5.10): १) ठेव तारण व थेट कर्ज वसुली (Statutory Right of Set-Off): मुदत ठेव बंद अथवा नूतनीकरण करताना खातेदाराच्या थकीत कर्जाची आपोआप तपासणी, कर्ज खात्यात थेट मुद्दल/व्याज/दंड जमा करणे व परिपूर्ण संतुलित लेखा व्हाउचर्स; २) मुदतपूर्ती तारीख सर्व्हर गार्ड (MaturedClose Server Guard): खाते मुदतपूर्ण असल्याशिवाय मुदतपूर्ती क्लोजर रोखणे; ३) मुदतपूर्व नूतनीकरण व्याज पळवाट बंद (Premature Renewal Loophole Fix): मुदतीपूर्वी नूतनीकरण केल्यास मुदतपूर्व कालावधीचेच व्याज देणे; ४) नूतनीकरणात ज्येष्ठ नागरिक दर व कालावधी प्रकार (Days/Months/Years Duration Engine) १००% लागू; ५) सुलभ ४-टप्प्यांची फॉर्म पुनर्रचना (Streamlined 4-Step Guided UI): स्वयंचलित मुदतपूर्व निवड, विना-एरर कार्यप्रवाह, आणि परतावा पेमेंट पद्धतीसाठी सोपा ड्रॉपडाऊन बॉक्स.",
     "⭐ [2026-09-25] नाममात्र खातेदार विसंगती दुरुस्ती व प्रत्यक्ष सभासद सलग अनुक्रम मांडणी (Nominal Member Fix & Resequencing v2.5.9): १) नाममात्र खातेदार / ठेवीदारांचे (Nominal Accounts / Non-Shareholders) चुकीचे MEM कोड काढून MemberCode = NULL व MembershipType = 'Nominal' मानकीकरण; २) शेअर्स असलेल्या प्रत्यक्ष भागधारकांची (TotalShareCount > 0) सलग MEM0001 ते MEM0010 अनुक्रमिक मांडणी व शेअर खाती SA-MEM0001 ते SA-MEM0010 सिंक; ३) नवीन सभासद नोंदणीसाठी पुढील उपलब्ध कोड अचूकपणे MEM0011 मिळणे (Next Code Sequential Engine); ४) बॅकएंड API मध्ये नाममात्र ग्राहकांसाठी कृत्रिम MEM कोड निर्मिती पूर्णपणे बंद; ५) Member 360 डॅशबोर्ड व खातेदार शोध ड्रॉपडाऊनमध्ये नाममात्र खातेदारांसाठी [नाममात्र खातेदार] विशेष बॅज व स्वच्छ CIF प्रदर्शन; ६) मुदत ठेव फॉर्ममध्ये 'सभासद' ऐवजी 'खातेदार' मानकीकरण.",
     "⭐ [2026-09-25] मुदत ठेव अर्ज खाती यादी रिफ्रेश, क्लोजर तारीख व व्हाऊचर सुधारणा (FD Accounts Suite & Auto-Posting v2.5.8): १) नवीन मुदत ठेव खाते अर्ज (FdAccountOpening) मध्ये सुरुवातीलाच अचूक खाती संख्या लोड होणे आणि पावती सेव्ह होताच 'खाती यादी' बटनाचा काउंट तात्काळ आपोआप वाढणे; २) मुदत ठेव क्लोजर व नूतनीकरण (FdWithdrawalMaturity) मध्ये प्रत्यक्ष बंद तारीख (Transaction Date) व व्हाऊचर तारीख लाइव्ह प्रिव्ह्यू, तसेच Customer CIF द्वारे सर्च मानकीकरण; ३) मुदत ठेव सुरुवातीची शिल्लक स्थलांतर व्हाउचर्स थेट IsPosted = true ने नोंदवून व्हाउचर पासिंगमधून वगळणे व अपघाती डिलीटपासून संरक्षण; ४) पिग्मी खाते नोंदवहीत नैसर्गिक चढत्या क्रमाने (Ascending 1, 2, 3...) खाती सॉर्टिंग व खातेदार नाव सुस्पष्टता; ५) बचत खाते जुना खाते क्रमांक (oldAccountNo/previousAccountNo) अचूक प्रदर्शन.",
     "⭐ [2026-09-24] मुदत ठेव क्लोजर व नूतनीकरण व्याज गणना दुरुस्ती (FD Closures & Renewals Interest Payable Fix v2.5.7): मुदत संपलेल्या ठेवींचा परतावा (Maturity Payout) व नूतनीकरण (Renewal) करताना साचलेले जुने व्याज (Legacy Accrued Interest) आणि एकूण कालावधीचे व्याज एकत्र मिळवून होणारी व्याजाची दुहेरी गणना (Double Counting) पूर्णपणे दूर; पावतीवरील अंतिम मुदतपूर्ती रकमेतून (Maturity Amount) थेट मुद्दल वजा करून देणे मुदत बंद ठेव व्याज (Interest Payable) लेजरला १००% अचूक डेबिट नोंद, सदस्याला योग्य रोख/बँक पेआउट, रोजकीर्द व ताळेबंद ताळमेळ आणि फ्रंटएंड प्रिव्ह्यू व बॅकएंड कंट्रोलरमध्ये सीबीएस मानकीकरण.",

@@ -896,6 +896,13 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE [FdSchemes] ADD [InterestPayableLedgerID] int NULL;
                     ALTER TABLE [FdSchemes] ADD [PrematurePenaltyLedgerID] int NULL;
                 END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdSchemes]') AND name = 'AllowOverdueInterest')
+                BEGIN
+                    ALTER TABLE [FdSchemes] ADD [AllowOverdueInterest] bit NOT NULL CONSTRAINT [DF_FdSchemes_AllowOverdueInterest] DEFAULT 0;
+                    ALTER TABLE [FdSchemes] ADD [OverdueInterestRate] decimal(5,2) NULL;
+                    ALTER TABLE [FdSchemes] ADD [OverdueGraceDays] int NOT NULL CONSTRAINT [DF_FdSchemes_OverdueGraceDays] DEFAULT 0;
+                    ALTER TABLE [FdSchemes] ADD [OverdueRenewalPolicy] nvarchar(50) NOT NULL CONSTRAINT [DF_FdSchemes_OverdueRenewalPolicy] DEFAULT 'ClosureDate';
+                END
             END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAccounts')

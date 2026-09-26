@@ -183,6 +183,10 @@ namespace Bhisi.Api.Controllers
             existingScheme.PrematureInterestRate = fdScheme.PrematureInterestRate;
             existingScheme.EffectiveDate = fdScheme.EffectiveDate;
             existingScheme.IsActive = fdScheme.IsActive;
+            existingScheme.AllowOverdueInterest = fdScheme.AllowOverdueInterest;
+            existingScheme.OverdueInterestRate = fdScheme.OverdueInterestRate;
+            existingScheme.OverdueGraceDays = fdScheme.OverdueGraceDays;
+            existingScheme.OverdueRenewalPolicy = string.IsNullOrWhiteSpace(fdScheme.OverdueRenewalPolicy) ? "ClosureDate" : fdScheme.OverdueRenewalPolicy;
             existingScheme.ModifiedDate = DateTime.Now;
 
             existingScheme.FdLiabilityLedgerID = (fdScheme.FdLiabilityLedgerID.HasValue && fdScheme.FdLiabilityLedgerID.Value > 0) ? fdScheme.FdLiabilityLedgerID : null;

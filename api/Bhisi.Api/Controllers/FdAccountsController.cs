@@ -279,17 +279,15 @@ namespace Bhisi.Api.Controllers
 
                     // Resolve Interest Rate based on Slabs or Scheme fixed rate
                     decimal appliedRate;
-                    if (scheme.SchemeDurationModel == "Slab" && scheme.Slabs != null && scheme.Slabs.Any())
+                    if (scheme.SchemeDurationModel == "Slab")
                     {
-                        var matchedSlab = scheme.Slabs.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
-                        if (matchedSlab != null)
+                        var matchedSlab = scheme.Slabs?.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
+                        if (matchedSlab == null)
                         {
-                            appliedRate = isSenior ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+                            await transaction.RollbackAsync();
+                            return BadRequest($"निवडलेला कालावधी ({totalDays} दिवस) मुदत ठेव योजनेच्या कोणत्याही मंजूर स्लॅबमध्ये बसत नाही (योजना मर्यादा: {scheme.MinDurationDays ?? 1} ते {scheme.MaxDurationDays ?? 0} दिवस).");
                         }
-                        else
-                        {
-                            appliedRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
-                        }
+                        appliedRate = isSenior ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
                     }
                     else
                     {
@@ -761,17 +759,15 @@ namespace Bhisi.Api.Controllers
 
                     // Resolve Rate
                     decimal appliedRate;
-                    if (scheme.SchemeDurationModel == "Slab" && scheme.Slabs != null && scheme.Slabs.Any())
+                    if (scheme.SchemeDurationModel == "Slab")
                     {
-                        var matchedSlab = scheme.Slabs.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
-                        if (matchedSlab != null)
+                        var matchedSlab = scheme.Slabs?.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
+                        if (matchedSlab == null)
                         {
-                            appliedRate = req.IsSeniorCitizen ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+                            await transaction.RollbackAsync();
+                            return BadRequest($"निवडलेला कालावधी ({totalDays} दिवस) मुदत ठेव योजनेच्या कोणत्याही मंजूर स्लॅबमध्ये बसत नाही (योजना मर्यादा: {scheme.MinDurationDays ?? 1} ते {scheme.MaxDurationDays ?? 0} दिवस).");
                         }
-                        else
-                        {
-                            appliedRate = req.IsSeniorCitizen ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
-                        }
+                        appliedRate = req.IsSeniorCitizen ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
                     }
                     else
                     {
@@ -2698,17 +2694,15 @@ namespace Bhisi.Api.Controllers
 
                     // Resolve Interest Rate based on Slabs or Scheme fixed rate
                     decimal appliedRate;
-                    if (scheme.SchemeDurationModel == "Slab" && scheme.Slabs != null && scheme.Slabs.Any())
+                    if (scheme.SchemeDurationModel == "Slab")
                     {
-                        var matchedSlab = scheme.Slabs.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
-                        if (matchedSlab != null)
+                        var matchedSlab = scheme.Slabs?.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
+                        if (matchedSlab == null)
                         {
-                            appliedRate = isSenior ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+                            await transaction.RollbackAsync();
+                            return BadRequest($"निवडलेला नूतनीकरण कालावधी ({totalDays} दिवस) मुदत ठेव योजनेच्या कोणत्याही मंजूर स्लॅबमध्ये बसत नाही (योजना मर्यादा: {scheme.MinDurationDays ?? 1} ते {scheme.MaxDurationDays ?? 0} दिवस).");
                         }
-                        else
-                        {
-                            appliedRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
-                        }
+                        appliedRate = isSenior ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
                     }
                     else
                     {

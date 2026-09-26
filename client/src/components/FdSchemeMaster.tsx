@@ -22,7 +22,8 @@ import {
   X,
   Plus,
   ShieldCheck,
-  Clock
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
@@ -166,11 +167,58 @@ const FdSchemeMaster: React.FC = () => {
     { fromDays: 731, toDays: 1095, interestRate: 7.25, seniorCitizenRate: 7.75, prematureRate: 6.25, isActive: true },
   ];
 
+  const getSlabValidationIssues = (slabsList: FdSchemeInterestSlab[]): { hasError: boolean; messages: string[]; minDays: number; maxDays: number } => {
+    if (!slabsList || slabsList.length === 0) return { hasError: false, messages: [], minDays: 0, maxDays: 0 };
+    
+    const messages: string[] = [];
+    const sorted = [...slabsList].sort((a, b) => (Number(a.fromDays) || 0) - (Number(b.fromDays) || 0));
+    
+    for (let i = 0; i < sorted.length; i++) {
+      const s = sorted[i];
+      const from = Number(s.fromDays) || 0;
+      const to = Number(s.toDays) || 0;
+      const rate = Number(s.interestRate) || 0;
+      const senior = Number(s.seniorCitizenRate) || 0;
+      const premature = Number(s.prematureRate) || 0;
+      
+      if (from <= 0 || to <= 0) {
+        messages.push(`स्लॅब #${i + 1}: दिवस ० पेक्षा जास्त असणे आवश्यक आहे (From: ${from}, To: ${to}).`);
+      } else if (from > to) {
+        messages.push(`स्लॅब #${i + 1}: सुरुवातीचे दिवस (${from}) शेवटच्या दिवसांपेक्षा (${to}) लहान किंवा बरोबर असणे आवश्यक आहे.`);
+      }
+      
+      if (rate <= 0 || rate > 30) {
+        messages.push(`स्लॅब #${i + 1}: सामान्य व्याजदर ०% पेक्षा जास्त आणि ३०% पेक्षा कमी असावा (दिला: ${rate}%).`);
+      }
+      if (senior < rate) {
+        messages.push(`स्लॅब #${i + 1}: ज्येष्ठ नागरिक व्याजदर (${senior}%) नियमित दरापेक्षा (${rate}%) कमी असू शकत नाही.`);
+      }
+      if (premature > rate) {
+        messages.push(`स्लॅब #${i + 1}: मुदतपूर्व कपात दर (${premature}%) नियमित दरापेक्षा (${rate}%) जास्त असू शकत नाही.`);
+      }
+      
+      if (i > 0) {
+        const prev = sorted[i - 1];
+        const prevTo = Number(prev.toDays) || 0;
+        if (from <= prevTo) {
+          messages.push(`स्लॅब #${i} (दिवस ${prev.fromDays}-${prev.toDays}) आणि स्लॅब #${i + 1} (दिवस ${from}-${to}) मध्ये दिवस ओव्हरलॅप (Overlap) आहेत!`);
+        } else if (from !== prevTo + 1) {
+          messages.push(`स्लॅब #${i} आणि #${i + 1} मध्ये दिवसांची खंडितता (Gap) आहे! दिवस ${prevTo + 1} ते ${from - 1} सुटलेले आहेत.`);
+        }
+      }
+    }
+    
+    const minDays = sorted.length > 0 ? Number(sorted[0].fromDays) || 0 : 0;
+    const maxDays = sorted.length > 0 ? Number(sorted[sorted.length - 1].toDays) || 0 : 0;
+
+    return { hasError: messages.length > 0, messages, minDays, maxDays };
+  };
+
   const handleAddSlab = () => {
     let nextFrom = 1;
     if (slabs.length > 0) {
-      const lastTo = Number(slabs[slabs.length - 1].toDays) || 0;
-      nextFrom = lastTo + 1;
+      const maxTo = Math.max(...slabs.map(s => Number(s.toDays) || 0));
+      nextFrom = maxTo > 0 ? maxTo + 1 : 1;
     }
     setSlabs([
       ...slabs,
@@ -299,25 +347,19 @@ const FdSchemeMaster: React.FC = () => {
     }
 
     // Validate Slabs if Slab model
+    let sortedSlabs = slabs;
     if (formData.schemeDurationModel === 'Slab') {
       if (slabs.length === 0) {
         setError('कालावधी स्लॅब पद्धतीसाठी किमान १ स्लॅब जोडणे आवश्यक आहे (+ Add Slab).');
         return;
       }
-      for (let i = 0; i < slabs.length; i++) {
-        const s = slabs[i];
-        const from = Number(s.fromDays);
-        const to = Number(s.toDays);
-        const rate = Number(s.interestRate);
-        if (from <= 0 || to <= 0 || from > to) {
-          setError(`स्लॅब क्र. ${i + 1} मध्ये From Days (${from}) हे To Days (${to}) पेक्षा लहान किंवा बरोबर असणे आवश्यक आहे.`);
-          return;
-        }
-        if (rate <= 0) {
-          setError(`स्लॅब क्र. ${i + 1} चा व्याजदर ० पेक्षा जास्त असणे आवश्यक आहे.`);
-          return;
-        }
+      sortedSlabs = [...slabs].sort((a, b) => (Number(a.fromDays) || 0) - (Number(b.fromDays) || 0));
+      const issue = getSlabValidationIssues(sortedSlabs);
+      if (issue.hasError) {
+        setError(issue.messages[0]);
+        return;
       }
+      setSlabs(sortedSlabs);
     }
 
     const payload = {
@@ -327,8 +369,8 @@ const FdSchemeMaster: React.FC = () => {
       durationMonths: parseInt(formData.durationMonths.toString(), 10) || 12,
       durationType: formData.durationType || 'Months',
       schemeDurationModel: formData.schemeDurationModel || 'Fixed',
-      minDurationDays: formData.schemeDurationModel === 'Slab' && slabs.length > 0 ? Number(slabs[0].fromDays) : null,
-      maxDurationDays: formData.schemeDurationModel === 'Slab' && slabs.length > 0 ? Number(slabs[slabs.length - 1].toDays) : null,
+      minDurationDays: formData.schemeDurationModel === 'Slab' && sortedSlabs.length > 0 ? Number(sortedSlabs[0].fromDays) : null,
+      maxDurationDays: formData.schemeDurationModel === 'Slab' && sortedSlabs.length > 0 ? Number(sortedSlabs[sortedSlabs.length - 1].toDays) : null,
       interestRate: parseFloat(formData.interestRate.toString()) || 0,
       seniorCitizenInterestRate: parseFloat(formData.seniorCitizenInterestRate.toString()) || 0,
       interestType: formData.interestType,
@@ -347,7 +389,7 @@ const FdSchemeMaster: React.FC = () => {
       overdueInterestRate: formData.allowOverdueInterest ? (parseFloat(formData.overdueInterestRate.toString()) || 0) : null,
       overdueGraceDays: parseInt(formData.overdueGraceDays.toString(), 10) || 0,
       overdueRenewalPolicy: formData.overdueRenewalPolicy || 'ClosureDate',
-      slabs: formData.schemeDurationModel === 'Slab' ? slabs.map(s => ({
+      slabs: formData.schemeDurationModel === 'Slab' ? sortedSlabs.map(s => ({
         slabID: s.slabID || 0,
         fromDays: Number(s.fromDays) || 0,
         toDays: Number(s.toDays) || 0,
@@ -866,7 +908,8 @@ const FdSchemeMaster: React.FC = () => {
                   <p className="text-[11px] mt-0.5">कृपया <strong>'+ नवीन स्लॅब जोडा'</strong> किंवा <strong>'⚡ मानक स्लॅब्स लोड करा'</strong> बटणावर क्लिक करा.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto border border-gray-200 rounded-sm">
+                <>
+                  <div className="overflow-x-auto border border-gray-200 rounded-sm">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-100 text-gray-700 font-bold border-b border-gray-300">
                       <tr>
@@ -972,6 +1015,38 @@ const FdSchemeMaster: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+
+                {(() => {
+                  const slabStatus = getSlabValidationIssues(slabs);
+                  if (slabStatus.hasError) {
+                    return (
+                      <div className="p-2.5 bg-rose-50 border border-rose-200 rounded text-rose-800 text-xs">
+                        <div className="font-bold flex items-center gap-1.5 text-rose-700 mb-1">
+                          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                          स्लॅब पडताळणी त्रुटी (Slab Validation Warnings):
+                        </div>
+                        <ul className="list-disc list-inside space-y-0.5 pl-1 text-[11px]">
+                          {slabStatus.messages.map((msg, i) => (
+                            <li key={i}>{msg}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-emerald-800 text-xs flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>सर्व स्लॅब्स सलग व नियमबद्ध आहेत (एकूण व्याप्ती: <strong className="font-mono">{slabStatus.minDays}</strong> ते <strong className="font-mono">{slabStatus.maxDays}</strong> दिवस).</span>
+                        </div>
+                        <span className="text-[11px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-mono font-bold">
+                          {slabs.length} स्लॅब्स सक्रिय
+                        </span>
+                      </div>
+                    );
+                  }
+                })()}
+                </>
               )}
             </div>
           )}

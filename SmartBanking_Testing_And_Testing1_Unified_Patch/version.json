@@ -3,8 +3,8 @@
   "releaseDate": "2026-09-26",
   "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.10",
   "git": {
-    "commit": "93ad714",
-    "fullCommit": "93ad714",
+    "commit": "25987ba",
+    "fullCommit": "25987ba",
     "branch": "main",
     "commitDate": "2026-09-26 08:00:00 +0530",
     "commitMessage": "feat: FD Lien recovery & set-off, MaturedClose guard, renewal loophole fixes, and 4-step streamlined UI (v2.5.10)",

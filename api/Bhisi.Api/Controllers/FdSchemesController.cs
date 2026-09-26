@@ -129,6 +129,18 @@ namespace Bhisi.Api.Controllers
             var incomingSlabs = fdScheme.Slabs?.ToList() ?? new List<FdSchemeInterestSlab>();
             fdScheme.Slabs = new List<FdSchemeInterestSlab>();
 
+            if (fdScheme.SchemeDurationModel == "Slab")
+            {
+                var validation = ValidateSlabsEngine(incomingSlabs, fdScheme.SchemeDurationModel);
+                if (!validation.IsValid)
+                {
+                    return BadRequest(validation.ErrorMessage);
+                }
+                fdScheme.MinDurationDays = validation.MinDays;
+                fdScheme.MaxDurationDays = validation.MaxDays;
+                incomingSlabs = incomingSlabs.OrderBy(s => s.FromDays).ToList();
+            }
+
             _context.FdSchemes.Add(fdScheme);
             await _context.SaveChangesAsync();
 
@@ -196,6 +208,18 @@ namespace Bhisi.Api.Controllers
 
             // Slabs Synchronization
             var incomingSlabs = fdScheme.Slabs?.ToList() ?? new List<FdSchemeInterestSlab>();
+
+            if (fdScheme.SchemeDurationModel == "Slab")
+            {
+                var validation = ValidateSlabsEngine(incomingSlabs, fdScheme.SchemeDurationModel);
+                if (!validation.IsValid)
+                {
+                    return BadRequest(validation.ErrorMessage);
+                }
+                existingScheme.MinDurationDays = validation.MinDays;
+                existingScheme.MaxDurationDays = validation.MaxDays;
+                incomingSlabs = incomingSlabs.OrderBy(s => s.FromDays).ToList();
+            }
             
             // 1. Remove deleted slabs
             var incomingSlabIds = incomingSlabs.Where(s => s.SlabID > 0).Select(s => s.SlabID).ToHashSet();
@@ -278,8 +302,98 @@ namespace Bhisi.Api.Controllers
                 return NotFound("Scheme not found.");
             }
 
+            var opDate = request.OpeningDate != default ? request.OpeningDate : DateTime.Today;
+            string durType = !string.IsNullOrWhiteSpace(request.DurationType) ? request.DurationType : (scheme.DurationType ?? "Months");
+            int durVal = request.DurationValue > 0 ? request.DurationValue : (scheme.DurationMonths > 0 ? scheme.DurationMonths : 12);
+            int totalDays;
+            if (durType.Equals("Days", StringComparison.OrdinalIgnoreCase)) totalDays = durVal;
+            else if (durType.Equals("Years", StringComparison.OrdinalIgnoreCase)) totalDays = (int)(opDate.AddYears(durVal) - opDate).TotalDays;
+            else totalDays = (int)(opDate.AddMonths(durVal) - opDate).TotalDays;
+
+            if (scheme.SchemeDurationModel == "Slab")
+            {
+                var matched = scheme.Slabs?.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
+                if (matched == null)
+                {
+                    return BadRequest($"निवडलेला कालावधी ({totalDays} दिवस) योजनेच्या कोणत्याही मंजूर स्लॅबमध्ये बसत नाही (योजना मर्यादा: {scheme.MinDurationDays ?? 1} ते {scheme.MaxDurationDays ?? 0} दिवस).");
+                }
+            }
+
             var result = CalculateFdMaturityEngine(scheme, request);
             return Ok(result);
+        }
+
+        private static (bool IsValid, string? ErrorMessage, int? MinDays, int? MaxDays) ValidateSlabsEngine(
+            List<FdSchemeInterestSlab> incomingSlabs, 
+            string schemeDurationModel)
+        {
+            if (schemeDurationModel != "Slab")
+            {
+                return (true, null, null, null);
+            }
+
+            if (incomingSlabs == null || !incomingSlabs.Any())
+            {
+                return (false, "कालावधी स्लॅब पद्धतीसाठी (Slab Model) किमान १ स्लॅब जोडणे अनिवार्य आहे.", null, null);
+            }
+
+            // 1. Sort by FromDays ascending
+            var sorted = incomingSlabs.OrderBy(s => s.FromDays).ToList();
+
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                var s = sorted[i];
+
+                // Validate Day ranges
+                if (s.FromDays <= 0 || s.ToDays <= 0)
+                {
+                    return (false, $"स्लॅब क्र. {i + 1}: कालावधी दिवस ० पेक्षा जास्त असणे आवश्यक आहे (From: {s.FromDays}, To: {s.ToDays}).", null, null);
+                }
+
+                if (s.FromDays > s.ToDays)
+                {
+                    return (false, $"स्लॅब क्र. {i + 1}: सुरुवातीचे दिवस ({s.FromDays}) हे शेवटच्या दिवसांपेक्षा ({s.ToDays}) लहान किंवा बरोबर असणे आवश्यक आहे.", null, null);
+                }
+
+                // Validate Interest Rates
+                if (s.InterestRate <= 0 || s.InterestRate > 30)
+                {
+                    return (false, $"स्लॅब क्र. {i + 1}: सामान्य व्याजदर ०% पेक्षा जास्त आणि ३०% पेक्षा कमी असावा (दिला: {s.InterestRate}%).", null, null);
+                }
+
+                if (s.SeniorCitizenRate < s.InterestRate)
+                {
+                    return (false, $"स्लॅब क्र. {i + 1}: ज्येष्ठ नागरिक व्याजदर ({s.SeniorCitizenRate}%) हा नियमित व्याजदरापेक्षा ({s.InterestRate}%) कमी असू शकत नाही.", null, null);
+                }
+
+                if (s.PrematureRate > s.InterestRate)
+                {
+                    return (false, $"स्लॅब क्र. {i + 1}: मुदतपूर्व कपात दर ({s.PrematureRate}%) हा नियमित व्याजदरापेक्षा ({s.InterestRate}%) जास्त असू शकत नाही.", null, null);
+                }
+
+                // Continuity and Overlap check against previous slab
+                if (i > 0)
+                {
+                    var prev = sorted[i - 1];
+
+                    // Overlap check
+                    if (s.FromDays <= prev.ToDays)
+                    {
+                        return (false, $"स्लॅब क्र. {i} (दिवस {prev.FromDays}-{prev.ToDays}) आणि स्लॅब क्र. {i + 1} (दिवस {s.FromDays}-{s.ToDays}) मध्ये दिवसांचे ओव्हरलॅप (Overlap) आहे. कृपया दिवस स्वतंत्र ठेवावेत.", null, null);
+                    }
+
+                    // Gap check
+                    if (s.FromDays != prev.ToDays + 1)
+                    {
+                        return (false, $"स्लॅब क्र. {i} आणि स्लॅब क्र. {i + 1} मध्ये दिवसांची खंडितता (Gap) आहे. दिवस {prev.ToDays + 1} ते {s.FromDays - 1} सुटलेले आहेत. स्लॅब सलग (Continuous) असणे आवश्यक आहे.", null, null);
+                    }
+                }
+            }
+
+            int minDays = sorted.First().FromDays;
+            int maxDays = sorted.Last().ToDays;
+
+            return (true, null, minDays, maxDays);
         }
 
         private static FdMaturityCalculationResult CalculateFdMaturityEngine(FdScheme scheme, FdMaturityCalculationRequest request)

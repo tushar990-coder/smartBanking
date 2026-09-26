@@ -18,8 +18,8 @@
                 ],
     "BackupFolder":  "D:\\Backups",
     "SqlPassword":  "Mindspace2026",
-    "ReleaseDate":  "2026-09-26 08.18.58",
+    "ReleaseDate":  "2026-09-26 08.59.09",
     "TakeDbBackup":  true,
-    "PatchVersion":  "2.5.10",
+    "PatchVersion":  "2.5.11",
     "SqlUser":  "sa"
 }

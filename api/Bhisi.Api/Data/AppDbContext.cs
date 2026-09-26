@@ -79,6 +79,7 @@ namespace Bhisi.Api.Data
 
         // Pigmy Deposit Module DbSets
         public DbSet<PigmyScheme> PigmySchemes { get; set; }
+        public DbSet<PigmySchemeInterestSlab> PigmySchemeInterestSlabs { get; set; }
         public DbSet<PigmyAgent> PigmyAgents { get; set; }
         public DbSet<PigmyAccount> PigmyAccounts { get; set; }
         public DbSet<PigmyOpeningBalance> PigmyOpeningBalances { get; set; }
@@ -92,6 +93,7 @@ namespace Bhisi.Api.Data
         public DbSet<PigmyInterestLog> PigmyInterestLogs { get; set; }
         public DbSet<AgentCustomerRequest> AgentCustomerRequests { get; set; }
         public DbSet<PigmyAgentAccountTransfer> PigmyAgentAccountTransfers { get; set; }
+        public DbSet<PigmyWithdrawal> PigmyWithdrawals { get; set; }
 
         // Investment Module DbSets
         public DbSet<InvestmentInstitution> InvestmentInstitutions { get; set; }

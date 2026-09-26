@@ -55,6 +55,18 @@ namespace Bhisi.Api.Models
         [StringLength(20)]
         public string Status { get; set; } = "Active"; // Active, Matured, Closed
 
+        // Dynamic Cycle & Day 1 Reset Fields
+        public DateTime? EffectiveStartDate { get; set; }
+
+        public int CurrentCycleNumber { get; set; } = 1;
+
+        public DateTime? LastWithdrawalDate { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal TotalWithdrawnAmount { get; set; } = 0;
+
+        public virtual ICollection<PigmyWithdrawal> Withdrawals { get; set; } = new List<PigmyWithdrawal>();
+
         // Legacy Mapping Fields for Migration
         public int? LegacyAccountId { get; set; }
 

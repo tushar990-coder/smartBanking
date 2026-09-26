@@ -31,6 +31,17 @@ interface Ledger {
   accountGroup?: { groupName: string };
 }
 
+export interface PigmySchemeInterestSlab {
+  slabID?: number;
+  pigmySchemeID?: number;
+  fromMonths: number | string;
+  toMonths: number | string;
+  interestRate: number | string;
+  penaltyRate: number | string;
+  slabDescription?: string;
+  isActive?: boolean;
+}
+
 interface PigmyScheme {
   pigmySchemeID?: number;
   pigmySchemeId?: number;
@@ -55,6 +66,7 @@ interface PigmyScheme {
   commissionExpenseLedger?: Ledger | null;
   createdBy?: number;
   createdDate?: string;
+  slabs?: PigmySchemeInterestSlab[];
 }
 
 interface SchemeDeleteDependencyModal {
@@ -63,6 +75,47 @@ interface SchemeDeleteDependencyModal {
   accountsCount: number;
   message: string;
 }
+
+const getDefaultSlabs = (
+  penalty: number = 2.0,
+  premature: number = 5.5,
+  fullRate: number = 6.5
+): PigmySchemeInterestSlab[] => {
+  return [
+    {
+      fromMonths: 0,
+      toMonths: 3,
+      interestRate: 0.0,
+      penaltyRate: penalty,
+      slabDescription: `० ते ३ महिने (${penalty}% दंड आकारणी)`,
+      isActive: true
+    },
+    {
+      fromMonths: 3,
+      toMonths: 6,
+      interestRate: 0.0,
+      penaltyRate: 0.0,
+      slabDescription: '३ ते ६ महिने (मुद्दल परत, ०% व्याज / ०% दंड)',
+      isActive: true
+    },
+    {
+      fromMonths: 6,
+      toMonths: 11,
+      interestRate: premature,
+      penaltyRate: 0.0,
+      slabDescription: `६ ते ११ महिने (${premature}% अकाली व्याज)`,
+      isActive: true
+    },
+    {
+      fromMonths: 11,
+      toMonths: 12,
+      interestRate: fullRate,
+      penaltyRate: 0.0,
+      slabDescription: `११ ते १२ महिने (${fullRate}% पूर्ण मुदत व्याज)`,
+      isActive: true
+    }
+  ];
+};
 
 export default function PigmySchemeMaster() {
   const [schemes, setSchemes] = useState<PigmyScheme[]>([]);
@@ -84,12 +137,7 @@ export default function PigmySchemeMaster() {
   const [formData, setFormData] = useState({
     schemeCode: '',
     schemeName: '',
-    interestRate: '',
-    durationMonths: '12',
-    prematureInterestRate: '',
-    minDurationMonths: '',
     interestDays: '365',
-    penaltyInterestRate: '',
     interestCalculationMethod: 'Flat (फ्लॅट)',
     status: 'Active',
     pigmyLiabilityLedgerID: 0,
@@ -97,6 +145,8 @@ export default function PigmySchemeMaster() {
     interestPayableLedgerID: 0,
     commissionExpenseLedgerID: 0
   });
+
+  const [slabs, setSlabs] = useState<PigmySchemeInterestSlab[]>(() => getDefaultSlabs(2.0, 5.5, 6.5));
 
   const getSchemeId = (scheme: PigmyScheme): number => {
     return scheme.pigmySchemeID ?? scheme.pigmySchemeId ?? scheme.id ?? 0;
@@ -155,12 +205,7 @@ export default function PigmySchemeMaster() {
     setFormData({
       schemeCode: nextCode,
       schemeName: '',
-      interestRate: '',
-      durationMonths: '12',
-      prematureInterestRate: '',
-      minDurationMonths: '',
       interestDays: '365',
-      penaltyInterestRate: '',
       interestCalculationMethod: 'Flat (फ्लॅट)',
       status: 'Active',
       pigmyLiabilityLedgerID: 0,
@@ -168,6 +213,7 @@ export default function PigmySchemeMaster() {
       interestPayableLedgerID: 0,
       commissionExpenseLedgerID: 0
     });
+    setSlabs(getDefaultSlabs(2.0, 5.5, 6.5));
     setIsEditMode(false);
     setEditSchemeId(null);
     setAllowManualCode(false);
@@ -180,12 +226,7 @@ export default function PigmySchemeMaster() {
     setFormData({
       schemeCode: scheme.schemeCode || '',
       schemeName: scheme.schemeName || '',
-      interestRate: scheme.interestRate !== undefined ? String(scheme.interestRate) : '',
-      durationMonths: scheme.durationMonths !== undefined ? String(scheme.durationMonths) : '12',
-      prematureInterestRate: scheme.prematureInterestRate !== undefined ? String(scheme.prematureInterestRate) : '',
-      minDurationMonths: scheme.minDurationMonths !== undefined ? String(scheme.minDurationMonths) : '',
       interestDays: scheme.interestDays !== undefined ? String(scheme.interestDays) : '365',
-      penaltyInterestRate: scheme.penaltyInterestRate !== undefined ? String(scheme.penaltyInterestRate) : '',
       interestCalculationMethod: scheme.interestCalculationMethod || 'Flat (फ्लॅट)',
       status: scheme.status || 'Active',
       pigmyLiabilityLedgerID: scheme.pigmyLiabilityLedgerID || 0,
@@ -193,6 +234,27 @@ export default function PigmySchemeMaster() {
       interestPayableLedgerID: scheme.interestPayableLedgerID || 0,
       commissionExpenseLedgerID: scheme.commissionExpenseLedgerID || 0
     });
+
+    if (scheme.slabs && scheme.slabs.length > 0) {
+      setSlabs(
+        scheme.slabs.map((s) => ({
+          slabID: s.slabID,
+          pigmySchemeID: s.pigmySchemeID,
+          fromMonths: s.fromMonths,
+          toMonths: s.toMonths,
+          interestRate: s.interestRate,
+          penaltyRate: s.penaltyRate,
+          slabDescription: s.slabDescription || '',
+          isActive: s.isActive !== false
+        }))
+      );
+    } else {
+      const pen = scheme.penaltyInterestRate !== undefined ? Number(scheme.penaltyInterestRate) : 2.0;
+      const prem = scheme.prematureInterestRate !== undefined ? Number(scheme.prematureInterestRate) : 5.5;
+      const full = scheme.interestRate !== undefined ? Number(scheme.interestRate) : 6.5;
+      setSlabs(getDefaultSlabs(pen, prem, full));
+    }
+
     setIsEditMode(true);
     setEditSchemeId(sId);
     setAllowManualCode(false);
@@ -208,6 +270,174 @@ export default function PigmySchemeMaster() {
       schemeNameInputRef.current?.focus();
       schemeNameInputRef.current?.select();
     }, 120);
+  };
+
+  const handleAddSlab = () => {
+    setSlabs((prev) => {
+      const lastSlab = prev[prev.length - 1];
+      const lastTo = lastSlab ? (Number(lastSlab.toMonths) || 12) : 0;
+      const newTo = lastTo + 3;
+      const newSlab: PigmySchemeInterestSlab = {
+        fromMonths: lastTo,
+        toMonths: newTo,
+        interestRate: 0,
+        penaltyRate: 0,
+        slabDescription: `${lastTo} ते ${newTo} महिने`,
+        isActive: true
+      };
+      return [...prev, newSlab];
+    });
+  };
+
+  const handleDeleteSlab = (indexToDelete: number) => {
+    if (slabs.length <= 1) {
+      setError('पिग्मी योजनेमध्ये किमान १ स्लॅब असणे आवश्यक आहे.');
+      return;
+    }
+    setSlabs((prev) => {
+      const updated = prev.filter((_, i) => i !== indexToDelete);
+      // Re-chain continuity: ensure each slab starts where the previous one ended
+      for (let i = 0; i < updated.length; i++) {
+        if (i === 0) {
+          updated[i].fromMonths = 0;
+        } else {
+          updated[i].fromMonths = updated[i - 1].toMonths;
+        }
+        // Update description if default
+        const pen = Number(updated[i].penaltyRate) || 0;
+        const rate = Number(updated[i].interestRate) || 0;
+        const from = updated[i].fromMonths;
+        const to = updated[i].toMonths;
+        if (pen > 0) {
+          updated[i].slabDescription = `${from} ते ${to} महिने (${pen}% दंड आकारणी)`;
+        } else if (rate > 0) {
+          updated[i].slabDescription = `${from} ते ${to} महिने (${rate}% व्याज)`;
+        } else {
+          updated[i].slabDescription = `${from} ते ${to} महिने (मुद्दल परत, ०% व्याज / ०% दंड)`;
+        }
+      }
+      return updated;
+    });
+  };
+
+  const handleToMonthsChange = (index: number, rawVal: string) => {
+    let cleanVal = rawVal;
+    if (/^0[0-9]/.test(cleanVal)) {
+      cleanVal = cleanVal.replace(/^0+/, '');
+    }
+    const parsed = parseInt(cleanVal, 10);
+    const newTo = isNaN(parsed) ? 0 : parsed;
+
+    setSlabs((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        toMonths: cleanVal === '' ? '' : newTo
+      };
+
+      // If valid positive number and greater than current fromMonths, adjust subsequent fromMonths
+      if (newTo > 0 && typeof updated[index].fromMonths === 'number' && newTo > (updated[index].fromMonths as number)) {
+        if (index + 1 < updated.length) {
+          updated[index + 1] = {
+            ...updated[index + 1],
+            fromMonths: newTo
+          };
+          // If subsequent toMonths is now <= new fromMonths, bump it forward
+          const nextTo = Number(updated[index + 1].toMonths) || 0;
+          if (nextTo <= newTo) {
+            updated[index + 1].toMonths = newTo + 3;
+          }
+        }
+      }
+
+      return updated;
+    });
+  };
+
+  const handleToMonthsBlur = (index: number) => {
+    setSlabs((prev) => {
+      const updated = [...prev];
+      const curFrom = Number(updated[index].fromMonths) || 0;
+      let curTo = Number(updated[index].toMonths) || 0;
+
+      // Ensure curTo is strictly greater than curFrom
+      if (curTo <= curFrom) {
+        curTo = curFrom + 1;
+        updated[index].toMonths = curTo;
+      }
+
+      // Propagate to next slab
+      if (index + 1 < updated.length) {
+        updated[index + 1].fromMonths = curTo;
+        const nextTo = Number(updated[index + 1].toMonths) || 0;
+        if (nextTo <= curTo) {
+          updated[index + 1].toMonths = curTo + 3;
+        }
+      }
+
+      // Refresh description
+      const pen = Number(updated[index].penaltyRate) || 0;
+      const rate = Number(updated[index].interestRate) || 0;
+      const from = updated[index].fromMonths;
+      const to = updated[index].toMonths;
+      if (pen > 0) {
+        updated[index].slabDescription = `${from} ते ${to} महिने (${pen}% दंड आकारणी)`;
+      } else if (rate > 0) {
+        updated[index].slabDescription = `${from} ते ${to} महिने (${rate}% व्याज)`;
+      } else {
+        updated[index].slabDescription = `${from} ते ${to} महिने (मुद्दल परत, ०% व्याज / ०% दंड)`;
+      }
+
+      return updated;
+    });
+  };
+
+  const handleSlabChange = (index: number, field: keyof PigmySchemeInterestSlab, value: any) => {
+    setSlabs((prev) => {
+      const updated = [...prev];
+      let val = value;
+      // Strip leading zero when followed by another digit (e.g. "01" -> "1", "05" -> "5")
+      if ((field === 'interestRate' || field === 'penaltyRate') && typeof value === 'string') {
+        if (/^0[0-9]/.test(value)) {
+          val = value.replace(/^0+/, '');
+        }
+      }
+      updated[index] = {
+        ...updated[index],
+        [field]: val
+      };
+      return updated;
+    });
+  };
+
+  const handleSlabBlur = (index: number, field: 'interestRate' | 'penaltyRate') => {
+    setSlabs((prev) => {
+      const updated = [...prev];
+      const cur = updated[index];
+      const rawVal = cur[field];
+      let finalNum = 0;
+      if (rawVal !== '' && rawVal !== null && rawVal !== undefined) {
+        const parsed = parseFloat(String(rawVal));
+        finalNum = isNaN(parsed) ? 0 : parsed;
+      }
+      updated[index] = { ...cur, [field]: finalNum };
+
+      // Automatically update the default description to match current rate & penalty
+      const pen = Number(updated[index].penaltyRate) || 0;
+      const rate = Number(updated[index].interestRate) || 0;
+      const from = updated[index].fromMonths;
+      const to = updated[index].toMonths;
+      const isLast = index === updated.length - 1;
+      if (pen > 0) {
+        updated[index].slabDescription = `${from} ते ${to} महिने (${pen}% दंड आकारणी)`;
+      } else if (rate > 0) {
+        updated[index].slabDescription = `${from} ते ${to} महिने (${rate}% ${isLast ? 'पूर्ण मुदत व्याज' : 'अकाली व्याज'})`;
+      } else {
+        updated[index].slabDescription = `${from} ते ${to} महिने (मुद्दल परत, ०% व्याज / ०% दंड)`;
+      }
+
+      return updated;
+    });
   };
 
   const checkSchemeDependencies = async (schemeId: number) => {
@@ -284,34 +514,31 @@ export default function PigmySchemeMaster() {
       return;
     }
 
-    const rate = parseFloat(formData.interestRate);
-    if (isNaN(rate) || rate < 0) {
-      setError('कृपया वैध व्याजदर प्रविष्ट करा (उदा. 6.5).');
+    if (slabs.length === 0) {
+      setError('पिग्मी योजनेसाठी किमान १ परतावा स्लॅब असणे आवश्यक आहे.');
       return;
     }
 
-    const duration = parseInt(formData.durationMonths, 10);
-    if (isNaN(duration) || duration <= 0) {
-      setError('कृपया वैध मुदत महिने प्रविष्ट करा.');
-      return;
-    }
-
-    const prematureRate = parseFloat(formData.prematureInterestRate);
-    if (isNaN(prematureRate) || prematureRate < 0) {
-      setError('कृपया मुदतपूर्व व्याजदर प्रविष्ट करा (Premature Interest Rate).');
-      return;
-    }
-
-    const minDuration = parseInt(formData.minDurationMonths, 10);
-    if (isNaN(minDuration) || minDuration <= 0) {
-      setError('कृपया किमान मुदत महिने प्रविष्ट करा (Minimum Duration Months).');
-      return;
-    }
-
-    const penaltyRate = parseFloat(formData.penaltyInterestRate);
-    if (isNaN(penaltyRate) || penaltyRate < 0) {
-      setError('कृपया दंड व्याजदर प्रविष्ट करा (Penalty Interest Rate).');
-      return;
+    // Continuity and range validation
+    for (let i = 0; i < slabs.length; i++) {
+      const s = slabs[i];
+      const from = Number(s.fromMonths) || 0;
+      const to = Number(s.toMonths) || 0;
+      if (i === 0 && from !== 0) {
+        setError(`पहिला स्लॅब ० महिन्यांपासून सुरू होणे आवश्यक आहे.`);
+        return;
+      }
+      if (i > 0) {
+        const prevTo = Number(slabs[i - 1].toMonths) || 0;
+        if (from !== prevTo) {
+          setError(`स्लॅब #${i + 1} चा सुरुवातीचा महिना (${from}) मागील स्लॅबच्या शेवटच्या महिन्याशी (${prevTo}) जुळणे आवश्यक आहे.`);
+          return;
+        }
+      }
+      if (to <= from) {
+        setError(`स्लॅब #${i + 1}: शेवटचा महिना (${to}) सुरुवातीच्या महिन्यापेक्षा (${from}) जास्त असणे आवश्यक आहे.`);
+        return;
+      }
     }
 
     if (!formData.interestCalculationMethod) {
@@ -319,7 +546,19 @@ export default function PigmySchemeMaster() {
       return;
     }
 
+    // Automatically derive scheme tenure and key rates from dynamic slabs
+    const maxDuration = Math.max(...slabs.map((s) => Number(s.toMonths) || 0));
+    const lastSlab = slabs[slabs.length - 1];
+    const fullRate = Number(lastSlab.interestRate) || 0;
 
+    // Find premature interest rate and starting month
+    const prematureSlab = slabs.slice(0, -1).reverse().find((s) => (Number(s.interestRate) || 0) > 0);
+    const prematureRate = prematureSlab ? (Number(prematureSlab.interestRate) || 0) : 0;
+    const minDuration = prematureSlab ? (Number(prematureSlab.fromMonths) || 0) : 0;
+
+    // Find penalty rate
+    const penaltySlab = slabs.find((s) => (Number(s.penaltyRate) || 0) > 0);
+    const penaltyRate = penaltySlab ? (Number(penaltySlab.penaltyRate) || 0) : 0;
 
     setSaving(true);
     try {
@@ -327,8 +566,8 @@ export default function PigmySchemeMaster() {
         pigmySchemeID: isEditMode && editSchemeId ? editSchemeId : 0,
         schemeCode: formData.schemeCode.trim(),
         schemeName: formData.schemeName.trim(),
-        interestRate: rate,
-        durationMonths: duration,
+        interestRate: fullRate,
+        durationMonths: maxDuration,
         status: formData.status,
         pigmyLiabilityLedgerID: formData.pigmyLiabilityLedgerID || null,
         interestExpenseLedgerID: formData.interestExpenseLedgerID || null,
@@ -339,7 +578,17 @@ export default function PigmySchemeMaster() {
         penaltyInterestRate: penaltyRate,
         interestCalculationMethod: formData.interestCalculationMethod,
         createdBy: 1,
-        createdDate: new Date().toISOString()
+        createdDate: new Date().toISOString(),
+        slabs: slabs.map((s) => ({
+          slabID: s.slabID || 0,
+          pigmySchemeID: isEditMode && editSchemeId ? editSchemeId : 0,
+          fromMonths: Number(s.fromMonths) || 0,
+          toMonths: Number(s.toMonths) || 0,
+          interestRate: Number(s.interestRate) || 0,
+          penaltyRate: Number(s.penaltyRate) || 0,
+          slabDescription: (s.slabDescription || '').trim(),
+          isActive: s.isActive !== false
+        }))
       };
 
       let msg = '';
@@ -370,6 +619,8 @@ export default function PigmySchemeMaster() {
       'योजनेचे नाव': s.schemeName,
       'कालावधी (महिने)': s.durationMonths,
       'व्याजदर (%)': s.interestRate,
+      'स्लॅब्स संख्या': s.slabs?.length || 0,
+      'स्लॅब तपशील': s.slabs?.map(sl => `${sl.fromMonths}-${sl.toMonths}M: व्याज=${sl.interestRate}%, दंड=${sl.penaltyRate}%`).join(' | ') || '-',
       'देयता खाते': s.pigmyLiabilityLedger?.ledgerName || 'डिफॉल्ट',
       'व्याज खर्च खाते': s.interestExpenseLedger?.ledgerName || 'डिफॉल्ट',
       'कमिशन खर्च खाते': s.commissionExpenseLedger?.ledgerName || 'डिफॉल्ट',
@@ -546,10 +797,10 @@ export default function PigmySchemeMaster() {
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
             <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
               <Calendar className="w-4 h-4 text-primary" />
-              <h2 className="text-xs font-bold text-primary">१. मूलभूत योजना माहिती व व्याजदर (Basic Details & Interest)</h2>
+              <h2 className="text-xs font-bold text-primary">१. मूलभूत योजना माहिती (Basic Details)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5">
               <div>
                 <div className="flex items-center justify-between mb-0.5">
                   <label className={labelClass}>
@@ -593,78 +844,12 @@ export default function PigmySchemeMaster() {
               </div>
 
               <div>
-                <label className={labelClass}>
-                  व्याजदर (% p.a.) <span className="text-red-500">*</span>
-                </label>
+                <label className={labelClass}>व्याजाचे दिवस (Days)</label>
                 <input
                   type="number"
-                  step="0.01"
-                  required
-                  placeholder="उदा. 6.5"
-                  value={formData.interestRate}
-                  onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
-                  className={`${inputClass} font-bold text-emerald-700 font-mono`}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1.5 border-t border-gray-200">
-              <div>
-                <label className={labelClass}>
-                  कमाल कालावधी (महिने) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  required
-                  placeholder="उदा. 12"
-                  value={formData.durationMonths}
-                  onChange={(e) => setFormData({ ...formData, durationMonths: e.target.value })}
-                  className={`${inputClass} font-mono font-bold`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>अकाली व्याजदार (%)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="उदा. 5.5"
-                  value={formData.prematureInterestRate}
-                  onChange={(e) => setFormData({ ...formData, prematureInterestRate: e.target.value })}
-                  className={`${inputClass} font-mono`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>किमान कालावधी (महिने)</label>
-                <input
-                  type="number"
-                  placeholder="उदा. 6"
-                  value={formData.minDurationMonths}
-                  onChange={(e) => setFormData({ ...formData, minDurationMonths: e.target.value })}
-                  className={`${inputClass} font-mono`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>व्याजाचे दिवस</label>
-                <input
-                  type="number"
-                  placeholder="उदा. 365"
+                  placeholder="365"
                   value={formData.interestDays}
                   onChange={(e) => setFormData({ ...formData, interestDays: e.target.value })}
-                  className={`${inputClass} font-mono`}
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>दंडव्याज (%)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="उदा. 2.0"
-                  value={formData.penaltyInterestRate}
-                  onChange={(e) => setFormData({ ...formData, penaltyInterestRate: e.target.value })}
                   className={`${inputClass} font-mono`}
                 />
               </div>
@@ -677,8 +862,8 @@ export default function PigmySchemeMaster() {
                   className={`${inputClass} font-mono`}
                 >
                   <option value="Flat (फ्लॅट)">Flat (फ्लॅट)</option>
-                  <option value="Reducing (घटती पद्धत)">Reducing (घटती पद्धत)</option>
                   <option value="Daily Reducing (दैनिक घटती)">Daily Reducing (दैनिक घटती)</option>
+                  <option value="Reducing (घटती पद्धत)">Reducing (घटती पद्धत)</option>
                 </select>
               </div>
 
@@ -693,6 +878,172 @@ export default function PigmySchemeMaster() {
                   <option value="Inactive">बंद (Inactive)</option>
                 </select>
               </div>
+            </div>
+
+            {/* Tenor & Return Slabs Matrix - Dynamic Slabs with Month Selection */}
+            <div className="mt-3 pt-3 border-t-2 border-primary/20 space-y-2.5">
+              <div className="p-2.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-sm">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-blue-950">
+                  <Layers className="w-4 h-4 text-primary" />
+                  <span>कालावधीनुसार परतावा व दंड स्लॅब्स (Dynamic Return & Penalty Slabs)</span>
+                  <span className="bg-primary text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
+                    {slabs.length} स्लॅब्स
+                  </span>
+                  <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold border border-emerald-300">
+                    कमाल मुदत: {Math.max(...slabs.map((s) => Number(s.toMonths) || 0))} महिने
+                  </span>
+                </div>
+                <p className="text-[10px] text-blue-800 mt-0.5 font-medium">
+                  पिग्मी योजनेसाठी हवे तेवढे स्लॅब जोडा आणि कालावधी (महिने) निवडा. ग्राहकाने मुदतपूर्व पैसे काढल्यास (Partial Return) किंवा खाते बंद केल्यास कालावधीनुसार व्याज अथवा दंड कपात आकारली जाईल.
+                </p>
+              </div>
+
+              {/* Slabs Table */}
+              <div className="overflow-x-auto border border-gray-200 rounded-sm shadow-xs bg-white">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="bg-slate-100 text-gray-700 font-bold border-b border-gray-300 text-[11px]">
+                    <tr>
+                      <th className="px-2 py-1.5 text-center w-14 border-r border-gray-200">#</th>
+                      <th className="px-2 py-1.5 text-center border-r border-gray-200 w-36">
+                        कालावधी (महिने)
+                      </th>
+                      <th className="px-2 py-1.5 text-center border-r border-gray-200 w-28">
+                        व्याजदर (% p.a.)
+                      </th>
+                      <th className="px-2 py-1.5 text-center border-r border-gray-200 w-28">
+                        दंड दर (% Penalty)
+                      </th>
+                      <th className="px-2 py-1.5 text-left border-r border-gray-200">
+                        नियम शेरा / वर्णन (Policy Note)
+                      </th>
+                      <th className="px-2 py-1.5 text-center w-36 border-r border-gray-200">
+                        परतावा प्रकार (Outcome)
+                      </th>
+                      <th className="px-2 py-1.5 text-center w-12">
+                        कृती
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 text-[11px]">
+                    {slabs.map((slab, index) => {
+                      const isPenalty = (Number(slab.penaltyRate) || 0) > 0;
+                      const isInterest = (Number(slab.interestRate) || 0) > 0;
+                      return (
+                        <tr key={index} className="hover:bg-blue-50/30 transition-colors">
+                          <td className="px-2 py-1.5 text-center font-bold text-gray-600 border-r border-gray-200 whitespace-nowrap">
+                            स्लॅब {index + 1}
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                            <div className="flex items-center justify-center gap-1 font-mono text-[11px]">
+                              <span className="bg-slate-100 text-gray-700 px-1.5 py-0.5 rounded font-bold border border-gray-300" title="सुरुवातीचा महिना (Start Month)">
+                                {slab.fromMonths}M
+                              </span>
+                              <span className="text-gray-400 font-bold">ते</span>
+                              <div className="inline-flex items-center">
+                                <input
+                                  type="number"
+                                  min={Number(slab.fromMonths) + 1}
+                                  max={120}
+                                  value={slab.toMonths}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => handleToMonthsChange(index, e.target.value)}
+                                  onBlur={() => handleToMonthsBlur(index)}
+                                  className="w-14 text-center font-mono font-black border border-primary/50 bg-primary/5 rounded px-1 py-0.5 text-[11px] focus:ring-1 focus:ring-primary focus:bg-white text-primary"
+                                  title="या स्लॅबचा शेवटचा महिना (To Months) प्रविष्ट करा"
+                                />
+                                <span className="ml-1 text-[10px] text-gray-500 font-bold">M</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200">
+                            <div className="relative">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={slab.interestRate}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => handleSlabChange(index, 'interestRate', e.target.value)}
+                                onBlur={() => handleSlabBlur(index, 'interestRate')}
+                                className={`w-full text-center font-mono font-bold border rounded px-1.5 py-0.5 text-[11px] focus:ring-1 focus:ring-primary ${
+                                  isInterest ? 'text-emerald-700 bg-emerald-50/40 border-emerald-300' : 'border-gray-300 text-gray-700'
+                                }`}
+                              />
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200">
+                            <div className="relative">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={slab.penaltyRate}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => handleSlabChange(index, 'penaltyRate', e.target.value)}
+                                onBlur={() => handleSlabBlur(index, 'penaltyRate')}
+                                className={`w-full text-center font-mono font-bold border rounded px-1.5 py-0.5 text-[11px] focus:ring-1 focus:ring-rose-500 ${
+                                  isPenalty ? 'text-rose-700 bg-rose-50/40 border-rose-300' : 'border-gray-300 text-gray-700'
+                                }`}
+                              />
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200">
+                            <input
+                              type="text"
+                              value={slab.slabDescription || ''}
+                              onChange={(e) => handleSlabChange(index, 'slabDescription', e.target.value)}
+                              placeholder="उदा. ० ते ३ महिने दंड आकारणी"
+                              className="w-full border border-gray-300 rounded px-2 py-0.5 text-[11px] text-gray-800 focus:ring-1 focus:ring-primary focus:border-primary"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5 text-center whitespace-nowrap border-r border-gray-200">
+                            {isPenalty ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                🔴 {slab.penaltyRate}% दंड कपात
+                              </span>
+                            ) : isInterest ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                🟢 +{slab.interestRate}% व्याज परतावा
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                                ⚪ केवळ मुद्दल (No Penalty)
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSlab(index)}
+                              disabled={slabs.length <= 1}
+                              className="p-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded border border-rose-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                              title={slabs.length <= 1 ? 'किमान १ स्लॅब आवश्यक' : `स्लॅब #${index + 1} हटवा`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Bottom Add Slab Bar */}
+              <div className="flex flex-wrap justify-between items-center px-2.5 py-1.5 bg-slate-50 border border-gray-200 rounded-sm">
+                <button
+                  type="button"
+                  onClick={handleAddSlab}
+                  className="px-3 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded text-[11px] font-bold shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>+ नवीन स्लॅब जोडा (Add Next Slab)</span>
+                </button>
+                <span className="text-[10px] text-gray-500 font-medium">
+                  💡 स्लॅबचा शेवटचा महिना बदलल्यास पुढील स्लॅबचा सुरुवातीचा महिना आपोआप जोडला जातो (No Gaps / No Overlaps).
+                </span>
+              </div>
+
             </div>
           </div>
 
@@ -904,6 +1255,14 @@ export default function PigmySchemeMaster() {
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                             <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>
                             <div className="text-gray-500 text-[10px]">{s.durationMonths} महिने</div>
+                            {s.slabs && s.slabs.length > 0 && (
+                              <span
+                                className="inline-block mt-0.5 px-1.5 py-0.5 text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded"
+                                title={s.slabs.map((sl) => `${sl.fromMonths}-${sl.toMonths}M: व्याज=${sl.interestRate}%, दंड=${sl.penaltyRate}%`).join(' | ')}
+                              >
+                                📊 {s.slabs.length} स्लॅब्स
+                              </span>
+                            )}
                           </td>
                           <td className="px-2 py-1.5 border-r border-gray-200 text-left">
                             {s.pigmyLiabilityLedger?.ledgerName ? (

@@ -31,6 +31,7 @@ namespace Bhisi.Api.Controllers
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
                 .Include(s => s.CommissionExpenseLedger)
+                .Include(s => s.Slabs.OrderBy(sl => sl.FromMonths))
                 .ToListAsync();
         }
 
@@ -43,6 +44,7 @@ namespace Bhisi.Api.Controllers
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
                 .Include(s => s.CommissionExpenseLedger)
+                .Include(s => s.Slabs.OrderBy(sl => sl.FromMonths))
                 .FirstOrDefaultAsync(s => s.PigmySchemeID == id);
 
             if (pigmyScheme == null)
@@ -83,10 +85,35 @@ namespace Bhisi.Api.Controllers
             existing.PenaltyInterestRate = pigmyScheme.PenaltyInterestRate;
             existing.InterestCalculationMethod = pigmyScheme.InterestCalculationMethod;
 
+            // Synchronize Slabs
+            if (pigmyScheme.Slabs != null)
+            {
+                var currentSlabs = await _context.PigmySchemeInterestSlabs
+                    .Where(sl => sl.PigmySchemeID == id)
+                    .ToListAsync();
+
+                _context.PigmySchemeInterestSlabs.RemoveRange(currentSlabs);
+
+                foreach (var slab in pigmyScheme.Slabs)
+                {
+                    _context.PigmySchemeInterestSlabs.Add(new PigmySchemeInterestSlab
+                    {
+                        PigmySchemeID = id,
+                        FromMonths = slab.FromMonths,
+                        ToMonths = slab.ToMonths,
+                        InterestRate = slab.InterestRate,
+                        PenaltyRate = slab.PenaltyRate,
+                        SlabDescription = slab.SlabDescription,
+                        IsActive = slab.IsActive,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
             try
             {
                 await _context.SaveChangesAsync();
-                return Ok(new { message = "पिग्मी योजना यशस्वीरीत्या अद्ययावत झाली!" });
+                return Ok(new { message = "पिग्मी योजना व स्लॅब यशस्वीरीत्या अद्ययावत झाली!" });
             }
             catch (Exception ex)
             {
@@ -143,11 +170,29 @@ namespace Bhisi.Api.Controllers
                 pigmyScheme.SchemeCode = pigmyScheme.SchemeCode.Trim();
             }
 
+            // Auto-populate 4 standard default slabs if none provided
+            if (pigmyScheme.Slabs == null || !pigmyScheme.Slabs.Any())
+            {
+                int duration = pigmyScheme.DurationMonths > 0 ? pigmyScheme.DurationMonths : 12;
+                decimal pRate = pigmyScheme.PenaltyInterestRate ?? 2.00m;
+                decimal premRate = pigmyScheme.PrematureInterestRate ?? 5.50m;
+                decimal regRate = pigmyScheme.InterestRate;
+
+                pigmyScheme.Slabs = new List<PigmySchemeInterestSlab>
+                {
+                    new PigmySchemeInterestSlab { FromMonths = 0, ToMonths = 3, InterestRate = 0.00m, PenaltyRate = pRate, SlabDescription = "० ते ३ महिने (२% दंड कपात)", IsActive = true },
+                    new PigmySchemeInterestSlab { FromMonths = 3, ToMonths = 6, InterestRate = 0.00m, PenaltyRate = 1.00m, SlabDescription = "३ ते ६ महिने (१% दंड कपात)", IsActive = true },
+                    new PigmySchemeInterestSlab { FromMonths = 6, ToMonths = 11, InterestRate = premRate, PenaltyRate = 0.00m, SlabDescription = "६ ते ११ महिने (अकाली व्याजदर)", IsActive = true },
+                    new PigmySchemeInterestSlab { FromMonths = 11, ToMonths = duration, InterestRate = regRate, PenaltyRate = 0.00m, SlabDescription = "११ ते १२ महिने (पूर्ण नियमित व्याज)", IsActive = true }
+                };
+            }
+
             _context.PigmySchemes.Add(pigmyScheme);
             await _context.SaveChangesAsync();
 
             return CreatedAtAction("GetPigmyScheme", new { id = pigmyScheme.PigmySchemeID }, pigmyScheme);
         }
+
 
         // DELETE: api/PigmySchemes/5?force=false
         [HttpDelete("{id}")]

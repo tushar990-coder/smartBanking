@@ -4719,10 +4719,130 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- 12. PIGMY DEPOSIT SCHEME SLABS & PARTIAL WITHDRAWAL RESET (v2.5.15)
+-- -----------------------------------------------------------------------------------------
+PRINT '>>> 12. Updating Pigmy Deposit Modules (Dynamic Slabs, Partial Withdrawal & Day 1 Reset)...';
+
+-- 12.1 PigmySchemeInterestSlabs Table
+IF OBJECT_ID(N'[dbo].[PigmySchemeInterestSlabs]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[PigmySchemeInterestSlabs] (
+        [SlabID] INT IDENTITY(1,1) NOT NULL,
+        [PigmySchemeID] INT NOT NULL,
+        [FromMonths] INT NOT NULL,
+        [ToMonths] INT NOT NULL,
+        [InterestRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        [PenaltyRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        [SlabDescription] NVARCHAR(100) NULL,
+        [IsActive] BIT NOT NULL DEFAULT 1,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+        CONSTRAINT [PK_PigmySchemeInterestSlabs] PRIMARY KEY CLUSTERED ([SlabID] ASC),
+        CONSTRAINT [FK_PigmySchemeInterestSlabs_PigmySchemes] FOREIGN KEY ([PigmySchemeID]) 
+            REFERENCES [dbo].[PigmySchemes]([PigmySchemeID]) ON DELETE CASCADE
+    );
+    PRINT '  + Created Table [dbo].[PigmySchemeInterestSlabs]';
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_PigmySchemeInterestSlabs_Scheme' AND object_id = OBJECT_ID('dbo.PigmySchemeInterestSlabs'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_PigmySchemeInterestSlabs_Scheme] 
+        ON [dbo].[PigmySchemeInterestSlabs] ([PigmySchemeID], [FromMonths], [ToMonths]);
+    PRINT '  + Created Index [IX_PigmySchemeInterestSlabs_Scheme]';
+END
+GO
+
+-- 12.2 PigmyAccounts Cycle Tracking Columns
+IF COL_LENGTH('PigmyAccounts', 'EffectiveStartDate') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[PigmyAccounts] ADD [EffectiveStartDate] DATETIME NULL;
+    PRINT '  + Added Column [EffectiveStartDate] to [PigmyAccounts]';
+END
+GO
+
+IF COL_LENGTH('PigmyAccounts', 'CurrentCycleNumber') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[PigmyAccounts] ADD [CurrentCycleNumber] INT NOT NULL CONSTRAINT DF_PigmyAccounts_CurrentCycleNumber DEFAULT 1;
+    PRINT '  + Added Column [CurrentCycleNumber] to [PigmyAccounts]';
+END
+GO
+
+IF COL_LENGTH('PigmyAccounts', 'LastWithdrawalDate') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[PigmyAccounts] ADD [LastWithdrawalDate] DATETIME NULL;
+    PRINT '  + Added Column [LastWithdrawalDate] to [PigmyAccounts]';
+END
+GO
+
+IF COL_LENGTH('PigmyAccounts', 'TotalWithdrawnAmount') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[PigmyAccounts] ADD [TotalWithdrawnAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_PigmyAccounts_TotalWithdrawnAmount DEFAULT 0.00;
+    PRINT '  + Added Column [TotalWithdrawnAmount] to [PigmyAccounts]';
+END
+GO
+
+UPDATE [dbo].[PigmyAccounts]
+SET [EffectiveStartDate] = ISNULL([OpeningDate], GETDATE()),
+    [CurrentCycleNumber] = 1,
+    [TotalWithdrawnAmount] = 0.00
+WHERE [EffectiveStartDate] IS NULL;
+GO
+
+-- 12.3 PigmyWithdrawals Table
+IF OBJECT_ID(N'[dbo].[PigmyWithdrawals]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[PigmyWithdrawals] (
+        [WithdrawalID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [PigmyAccountID] INT NOT NULL,
+        [WithdrawalDate] DATETIME NOT NULL,
+        [CycleNumber] INT NOT NULL DEFAULT 1,
+        [CycleStartSnapshot] DATETIME NOT NULL,
+        [ElapsedDays] INT NOT NULL DEFAULT 0,
+        [ElapsedMonths] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        [RequestedAmount] DECIMAL(18,2) NOT NULL,
+        [AppliedSlabID] INT NULL,
+        [PenaltyRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        [PenaltyAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+        [InterestRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+        [InterestAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+        [NetPaidAmount] DECIMAL(18,2) NOT NULL,
+        [RemainingBalance] DECIMAL(18,2) NOT NULL,
+        [VoucherNo] NVARCHAR(50) NULL,
+        [Narration] NVARCHAR(250) NULL,
+        [CreatedBy] INT NOT NULL DEFAULT 1,
+        [CreatedDate] DATETIME NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT [FK_PigmyWithdrawals_PigmyAccounts] FOREIGN KEY ([PigmyAccountID]) 
+            REFERENCES [dbo].[PigmyAccounts]([PigmyAccountID]) ON DELETE CASCADE
+    );
+
+    CREATE NONCLUSTERED INDEX [IX_PigmyWithdrawals_PigmyAccountID] ON [dbo].[PigmyWithdrawals]([PigmyAccountID]);
+    CREATE NONCLUSTERED INDEX [IX_PigmyWithdrawals_WithdrawalDate] ON [dbo].[PigmyWithdrawals]([WithdrawalDate]);
+    PRINT '  + Created Table [dbo].[PigmyWithdrawals]';
+END
+GO
+
+-- 12.4 Record Version v2.5.15 in SystemVersionHistories
+IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
+BEGIN
+    EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+    VALUES (
+        ''2.5.15'', 
+        GETUTCDATE(), 
+        ''SmartBanking VPS Multi-App Master Patch v2.5.15'', 
+        ''SUCCESS'', 
+        ''Pigmy Deposit Dynamic Interest & Penalty Slabs, Partial Withdrawal with Day 1 Reset, Fixed Expiry Option B, and Audit Ledger.'', 
+        ''VPS Administrator'', 
+        ''2026-09-26''
+    );');
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO
+
 
 
 

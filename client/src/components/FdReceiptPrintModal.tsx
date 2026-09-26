@@ -24,6 +24,8 @@ interface FdAccountDetails {
   mobileNo?: string;
   customerName?: string;
   cifNo?: string;
+  interestType?: string;
+  monthlyInterestAmount?: number;
 }
 
 interface Props {
@@ -43,6 +45,17 @@ const FdReceiptPrintModal: React.FC<Props> = ({ account, onClose }) => {
 
   const receiptRef = useRef<HTMLDivElement>(null);
   const API_URL = '/api';
+
+  const isMis = Boolean(
+    account.interestType === 'MIS' ||
+    account.interestType === 'Monthly Interest' ||
+    account.schemeName?.toLowerCase().includes('mis') ||
+    (account.monthlyInterestAmount && account.monthlyInterestAmount > 0)
+  );
+
+  const monthlyInterest = account.monthlyInterestAmount && account.monthlyInterestAmount > 0
+    ? account.monthlyInterestAmount
+    : Math.round((account.depositAmount * account.interestRate) / 1200);
 
   useEffect(() => {
     fetchSansthaDetails();
@@ -88,17 +101,17 @@ const FdReceiptPrintModal: React.FC<Props> = ({ account, onClose }) => {
 ----------------------------------------
 *मुदत ठेव पावती (Fixed Deposit Receipt)*
 
-नमस्कार *${account.memberName}*,
+नमस्कार *${account.memberName || account.customerName}*,
 तुमचे नवीन मुदत ठेव खाते यशस्वीरित्या उघडले गेले आहे.
 
 📄 *पावती क्रमांक:* ${account.accountNo}
-👤 *सभासद कोड:* ${account.memberCode || '-'}
+👤 *सभासद / CIF:* ${account.memberCode || account.cifNo || '-'}
 💰 *ठेव रक्कम:* ₹ ${account.depositAmount?.toLocaleString('en-IN')} (${depositWords})
 📊 *मुदत ठेव योजना:* ${account.schemeName}
 📈 *वार्षिक व्याजदर:* ${account.interestRate}%
-🗓️ *ठेव दिनांक:* ${formatDate(account.openingDate)}
+${isMis ? `💵 *दरमहा व्याज परतावा:* ₹ ${monthlyInterest?.toLocaleString('en-IN')}/- (बचत खात्यात जमा)\n` : ''}🗓️ *ठेव दिनांक:* ${formatDate(account.openingDate)}
 ⏰ *मुदतपूर्ती तारीख:* ${formatDate(account.maturityDate)}
-💵 *मुदतपूर्ती रक्कम:* ₹ ${account.maturityAmount?.toLocaleString('en-IN')}
+💵 *${isMis ? 'मुदतपूर्ती मुद्दल परतावा' : 'मुदतपूर्ती रक्कम'}:* ₹ ${account.maturityAmount?.toLocaleString('en-IN')}
 ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.nomineeName} (${account.nomineeRelation || '-'})` : ''}
 
 सदर पावती संस्थेकडून प्राप्त करून घ्यावी.
@@ -228,11 +241,25 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
               <tr className="border-b border-slate-200">
                 <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200">मुदतपूर्ती दिनांक</td>
                 <td className="p-1.5 font-extrabold text-emerald-800">{formatDate(account.maturityDate)}</td>
-                <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200 border-l">मुदतपूर्ती रक्कम (₹)</td>
+                <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200 border-l">
+                  {isMis ? 'मुदतपूर्ती मुद्दल परतावा (₹)' : 'मुदतपूर्ती रक्कम (₹)'}
+                </td>
                 <td className="p-1.5 font-black text-emerald-700 text-xs">{formatCurrency(account.maturityAmount)}</td>
               </tr>
+              {isMis && (
+                <tr className="border-b border-slate-200 bg-emerald-50/70">
+                  <td className="p-1.5 font-bold text-emerald-900 border-r border-slate-200">दरमहा परतावा व्याज (MIS)</td>
+                  <td className="p-1.5 font-black text-emerald-800 text-xs">
+                    {formatCurrency(monthlyInterest)} <span className="text-[9px] font-bold text-emerald-700">/ दरमहा</span>
+                  </td>
+                  <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200 border-l">व्याज परतावा पद्धत</td>
+                  <td className="p-1.5 font-bold text-emerald-900">बचत खात्यात / रोख दरमहा जमा</td>
+                </tr>
+              )}
               <tr className="border-b border-slate-200 bg-slate-100/60">
-                <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200">मुदतपूर्ती अक्षरी रक्कम</td>
+                <td className="p-1.5 font-bold text-slate-700 border-r border-slate-200">
+                  {isMis ? 'मुदतपूर्ती परत मुद्दल अक्षरी' : 'मुदतपूर्ती अक्षरी रक्कम'}
+                </td>
                 <td className="p-1.5 font-bold text-slate-800 italic" colSpan={3}>
                   {maturityInWords}
                 </td>

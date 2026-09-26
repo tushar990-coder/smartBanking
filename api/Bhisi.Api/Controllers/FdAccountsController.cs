@@ -108,6 +108,10 @@ namespace Bhisi.Api.Controllers
                     f.FdSchemeID,
                     SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "",
                     SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
+                    InterestType = f.FdScheme != null ? f.FdScheme.InterestType : "Simple",
+                    MonthlyInterestAmount = (f.FdScheme != null && (f.FdScheme.InterestType == "MIS" || f.FdScheme.InterestType == "Monthly Interest"))
+                        ? Math.Round((f.DepositAmount * f.InterestRate) / 1200.0m, 0, MidpointRounding.AwayFromZero)
+                        : 0m,
                     FdLiabilityLedgerID = f.FdScheme != null ? f.FdScheme.FdLiabilityLedgerID : null,
                     FdLiabilityLedgerName = f.FdScheme != null && f.FdScheme.FdLiabilityLedger != null ? f.FdScheme.FdLiabilityLedger.LedgerName : "",
                     InterestExpenseLedgerID = f.FdScheme != null ? f.FdScheme.InterestExpenseLedgerID : null,
@@ -170,6 +174,10 @@ namespace Bhisi.Api.Controllers
                 f.FdSchemeID,
                 SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "",
                 SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
+                InterestType = f.FdScheme != null ? f.FdScheme.InterestType : "Simple",
+                MonthlyInterestAmount = (f.FdScheme != null && (f.FdScheme.InterestType == "MIS" || f.FdScheme.InterestType == "Monthly Interest"))
+                    ? Math.Round((f.DepositAmount * f.InterestRate) / 1200.0m, 0, MidpointRounding.AwayFromZero)
+                    : 0m,
                 f.AccountNo,
                 f.LegacyAccountNumber,
                 f.OpeningDate,

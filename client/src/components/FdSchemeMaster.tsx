@@ -1132,6 +1132,25 @@ const FdSchemeMaster: React.FC = () => {
             </div>
           </div>
 
+          {formData.interestType === 'MIS' && (
+            <div className="p-2.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100/70 border border-emerald-300 rounded text-emerald-900 text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs animate-in fade-in duration-150">
+              <div className="flex items-center gap-2">
+                <span className="text-base">💡</span>
+                <div>
+                  <span className="font-bold text-emerald-950">मासिक परतावा योजना (Monthly Income Scheme - MIS) मार्गदर्शक:</span>
+                  <p className="text-[11px] text-emerald-800">सदर योजनेत मुदतपूर्तीवेळी मूळ मुद्दल परत केली जाते व व्याज दरमहा ग्राहकाच्या खात्यात जमा केले जाते.</p>
+                </div>
+              </div>
+              <div className="bg-white px-3 py-1 rounded border border-emerald-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
+                <span className="text-slate-600">दर ₹ १,००,००० ठेवीवर अंदाजे दरमहा व्याज:</span>
+                <span className="text-emerald-700 font-extrabold font-mono text-sm">
+                  ₹ {Math.round((100000 * (Number(formData.interestRate) || 0)) / 1200).toLocaleString('en-IN')}
+                </span>
+                <span className="text-[10px] text-slate-500 font-normal">/ महा</span>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 border-t border-gray-200">
             <div>
               <label className={labelClass}>किमान ठेव रक्कम (₹ Minimum)</label>

@@ -557,10 +557,15 @@ namespace Bhisi.Api.Controllers
                 appliedRate = request.IsSeniorCitizen ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
             }
 
-            // Calculate Maturity Amount
+            // Calculate Maturity Amount & Periodic Interest
             decimal principal = request.DepositAmount;
             decimal matAmount = 0;
             decimal t = (decimal)totalDays / 365m;
+            bool isPeriodic = false;
+            string payoutFreq = "At Maturity";
+            decimal monthlyInterest = 0;
+            decimal totalInterestPayout = 0;
+            decimal totalBenefit = 0;
 
             if (principal > 0 && totalDays > 0)
             {
@@ -576,19 +581,38 @@ namespace Bhisi.Api.Controllers
                     double timeInYears = (double)totalDays / 365.0;
                     double compound = (double)principal * Math.Pow(1.0 + r, n * timeInYears);
                     matAmount = (decimal)compound;
+                    payoutFreq = "At Maturity";
                 }
                 else if (type.Equals("MIS", StringComparison.OrdinalIgnoreCase) || type.Equals("Monthly Interest", StringComparison.OrdinalIgnoreCase))
                 {
-                    matAmount = principal;
+                    matAmount = principal; // Principal returned at maturity
+                    isPeriodic = true;
+                    payoutFreq = "Monthly (दरमहा)";
+                    // Standard Banking Monthly Formula: P * R / 1200
+                    monthlyInterest = Math.Round((principal * appliedRate) / 1200.0m, 0, MidpointRounding.AwayFromZero);
+                    int monthsCount = durType.Equals("Months", StringComparison.OrdinalIgnoreCase) 
+                        ? durVal 
+                        : (durType.Equals("Years", StringComparison.OrdinalIgnoreCase) ? durVal * 12 : Math.Max(1, (int)Math.Round((double)totalDays / 30.416)));
+                    totalInterestPayout = monthlyInterest * monthsCount;
+                    totalBenefit = principal + totalInterestPayout;
                 }
                 else // Simple Interest
                 {
                     matAmount = principal + ((principal * appliedRate * (decimal)totalDays) / (365m * 100m));
+                    payoutFreq = "At Maturity";
                 }
             }
 
             long roundedMaturity = (long)Math.Round(matAmount, MidpointRounding.AwayFromZero);
-            long interestAmount = roundedMaturity >= (long)principal ? roundedMaturity - (long)principal : 0;
+            long interestAmount = isPeriodic 
+                ? (long)totalInterestPayout 
+                : (roundedMaturity >= (long)principal ? roundedMaturity - (long)principal : 0);
+
+            if (!isPeriodic)
+            {
+                totalInterestPayout = interestAmount;
+                totalBenefit = roundedMaturity;
+            }
 
             return new FdMaturityCalculationResult
             {
@@ -603,7 +627,12 @@ namespace Bhisi.Api.Controllers
                 DepositAmount = principal,
                 MaturityAmount = roundedMaturity,
                 InterestAmount = interestAmount,
-                MatchedSlabID = matchedSlab?.SlabID
+                MatchedSlabID = matchedSlab?.SlabID,
+                IsPeriodicPayout = isPeriodic,
+                PayoutFrequency = payoutFreq,
+                MonthlyInterestAmount = monthlyInterest,
+                TotalInterestPayout = totalInterestPayout,
+                TotalBenefitAmount = totalBenefit
             };
         }
 
@@ -637,5 +666,12 @@ namespace Bhisi.Api.Controllers
         public decimal MaturityAmount { get; set; }
         public decimal InterestAmount { get; set; }
         public int? MatchedSlabID { get; set; }
+
+        // Monthly Income Scheme (MIS) & Periodic Payout Transparency Fields
+        public bool IsPeriodicPayout { get; set; } = false;
+        public string PayoutFrequency { get; set; } = "At Maturity";
+        public decimal MonthlyInterestAmount { get; set; } = 0;
+        public decimal TotalInterestPayout { get; set; } = 0;
+        public decimal TotalBenefitAmount { get; set; } = 0;
     }
 }

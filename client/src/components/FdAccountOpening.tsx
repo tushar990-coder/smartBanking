@@ -106,6 +106,10 @@ const FdAccountOpening: React.FC = () => {
     interestType: '',
     maturityDate: '',
     maturityAmount: 0,
+    isPeriodicPayout: false,
+    monthlyInterestAmount: 0,
+    totalInterestPayout: 0,
+    totalBenefitAmount: 0,
   });
 
   useEffect(() => {
@@ -362,11 +366,12 @@ const FdAccountOpening: React.FC = () => {
       rate = Number(formData.isSeniorCitizen ? (selected.seniorCitizenInterestRate || selected.interestRate) : selected.interestRate) || 0;
     }
 
-    const currentDepositAmt = entryMode === 'bulk' 
-      ? (Number(amountPerReceipt) || 0) 
-      : (parseFloat(formData.depositAmount as any) || 0);
-
+    const isMis = type === 'MIS' || type === 'Monthly Interest';
     let matAmount = 0;
+    let monthlyInt = 0;
+    let totalPeriodicInt = 0;
+    let totalBenefit = 0;
+
     const p = currentDepositAmt;
     if (p > 0 && totalDays > 0) {
       const r = rate;
@@ -376,10 +381,20 @@ const FdAccountOpening: React.FC = () => {
         if (selected.interestCompoundingFrequency === 'Yearly') n = 1;
         if (selected.interestCompoundingFrequency === 'Monthly') n = 12;
         matAmount = p * Math.pow(1 + r / (n * 100), n * (totalDays / 365));
-      } else if (type === 'MIS' || type === 'Monthly Interest') {
-        matAmount = p;
+        totalPeriodicInt = Math.round(matAmount - p);
+        totalBenefit = Math.round(matAmount);
+      } else if (isMis) {
+        matAmount = p; // Principal returned at maturity
+        monthlyInt = Math.round((p * r) / 1200);
+        const monthsCount = durType === 'Months' 
+          ? durVal 
+          : (durType === 'Years' ? durVal * 12 : Math.max(1, Math.round(totalDays / 30.416)));
+        totalPeriodicInt = monthlyInt * monthsCount;
+        totalBenefit = p + totalPeriodicInt;
       } else {
         matAmount = p * (1 + (r * totalDays) / (365 * 100));
+        totalPeriodicInt = Math.round(matAmount - p);
+        totalBenefit = Math.round(matAmount);
       }
     }
 
@@ -393,6 +408,10 @@ const FdAccountOpening: React.FC = () => {
       interestType: type,
       maturityDate: maturityDateStr,
       maturityAmount: Math.round(matAmount),
+      isPeriodicPayout: isMis,
+      monthlyInterestAmount: monthlyInt,
+      totalInterestPayout: totalPeriodicInt,
+      totalBenefitAmount: totalBenefit,
     });
   }, [formData.depositAmount, formData.fdSchemeID, formData.durationType, formData.durationValue, formData.openingDate, formData.isSeniorCitizen, entryMode, amountPerReceipt, schemes]);
 
@@ -852,7 +871,9 @@ const FdAccountOpening: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">मुदतपूर्ती रक्कम (Maturity ₹)</label>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
+                        {calcData.isPeriodicPayout ? 'मुदतपूर्ती मुद्दल परतावा (Principal ₹)' : 'मुदतपूर्ती रक्कम (Maturity ₹)'}
+                      </label>
                       <input type="text" value={formData.fdSchemeID === 0 ? 'योजना निवडा' : (calcData.maturityAmount > 0 ? `₹ ${Math.round(calcData.maturityAmount).toLocaleString('en-IN')}` : '₹ 0')} readOnly
                         className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-100 font-extrabold text-emerald-950 cursor-not-allowed font-mono shadow-2xs" />
                     </div>
@@ -944,7 +965,7 @@ const FdAccountOpening: React.FC = () => {
                 {selectedScheme && (
                   <div className="mt-2.5 p-2 bg-gradient-to-r from-emerald-50 via-slate-50 to-teal-50 border border-emerald-200 rounded flex flex-wrap justify-between items-center gap-2 text-xs shadow-2xs">
                     <div className="flex items-center gap-2">
-                      <span className="text-base">📊</span>
+                      <span className="text-base">{calcData.isPeriodicPayout ? '💰' : '📊'}</span>
                       <div>
                         <span className="font-bold text-slate-800">{selectedScheme.schemeName} ({selectedScheme.schemeCode})</span>
                         <span className="ml-2 text-[11px] text-slate-500 font-medium">
@@ -955,18 +976,39 @@ const FdAccountOpening: React.FC = () => {
                             🎯 लागू स्लॅब: {calcData.matchedSlab.fromDays} ते {calcData.matchedSlab.toDays} दिवस ({calcData.matchedSlab.interestRate}%)
                           </span>
                         )}
+                        {calcData.isPeriodicPayout && (
+                          <span className="ml-2 bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.5 rounded text-[10px] font-black animate-pulse">
+                            ⚡ मासिक परतावा योजना (MIS)
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-3 font-semibold text-slate-700">
+                    <div className="flex flex-wrap items-center gap-2.5 font-semibold text-slate-700">
                       <span className="bg-white px-2 py-0.5 rounded border border-slate-200">
                         व्याजदर: <b className="text-emerald-700 font-bold">{calcData.interestRate} %</b> {formData.isSeniorCitizen && <span className="text-[10px] text-amber-700 bg-amber-100 px-1 rounded">(ज्येष्ठ नागरिक)</span>}
                       </span>
                       <span className="bg-white px-2 py-0.5 rounded border border-slate-200">
                         मुदतपूर्ती तारीख: <b className="text-indigo-950 font-bold">{calcData.maturityDate ? new Date(calcData.maturityDate).toLocaleDateString('en-GB') : '-'}</b>
                       </span>
-                      <span className="bg-emerald-700 text-white px-3 py-1 rounded font-extrabold shadow-2xs">
-                        {entryMode === 'bulk' ? `प्रति पावती मुदतपूर्ती: ₹ ${calcData.maturityAmount.toLocaleString('en-IN')}` : `एकूण मुदतपूर्ती: ₹ ${calcData.maturityAmount.toLocaleString('en-IN')}`}
-                      </span>
+                      {calcData.isPeriodicPayout ? (
+                        <>
+                          <span className="bg-emerald-600 text-white px-2.5 py-1 rounded font-extrabold shadow-2xs flex items-center gap-1">
+                            <span>दरमहा व्याज परतावा:</span>
+                            <span className="text-amber-200 text-sm font-black">₹ {calcData.monthlyInterestAmount.toLocaleString('en-IN')}</span>
+                            <span className="text-[10px] opacity-90">/महा</span>
+                          </span>
+                          <span className="bg-blue-700 text-white px-2.5 py-1 rounded font-bold shadow-2xs">
+                            मुदतपूर्ती मुद्दल परत: ₹ {calcData.maturityAmount.toLocaleString('en-IN')}
+                          </span>
+                          <span className="bg-slate-800 text-white px-2 py-1 rounded font-medium text-[11px] shadow-2xs" title="मुद्दल + एकूण कालावधीत मिळालेले मासिक व्याज">
+                            एकूण परतावा लाभ: ₹ {calcData.totalBenefitAmount.toLocaleString('en-IN')}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="bg-emerald-700 text-white px-3 py-1 rounded font-extrabold shadow-2xs">
+                          {entryMode === 'bulk' ? `प्रति पावती मुदतपूर्ती: ₹ ${calcData.maturityAmount.toLocaleString('en-IN')}` : `एकूण मुदतपूर्ती: ₹ ${calcData.maturityAmount.toLocaleString('en-IN')}`}
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1169,7 +1211,14 @@ const FdAccountOpening: React.FC = () => {
                         <td className="px-3 py-1.5 text-right font-extrabold text-emerald-800">{formatCurrency(fd.depositAmount)}</td>
                         <td className="px-3 py-1.5 text-center font-bold">{fd.interestRate}%</td>
                         <td className="px-3 py-1.5 text-center font-bold text-gray-700">{fd.paymentMode || 'Cash'}</td>
-                        <td className="px-3 py-1.5 text-right font-extrabold text-blue-900">{formatCurrency(fd.maturityAmount)}</td>
+                        <td className="px-3 py-1.5 text-right font-extrabold text-blue-900">
+                          <div>{formatCurrency(fd.maturityAmount)}</div>
+                          {(fd.monthlyInterestAmount > 0 || fd.interestType === 'MIS' || fd.interestType === 'Monthly Interest') && (
+                            <div className="text-[10px] text-emerald-700 font-bold">
+                              +₹{Math.round(fd.monthlyInterestAmount || (fd.depositAmount * fd.interestRate / 1200)).toLocaleString('en-IN')}/महा
+                            </div>
+                          )}
+                        </td>
                         <td className="px-3 py-1.5 text-center text-[10px]">{formatDate(fd.openingDate)}</td>
                         <td className="px-3 py-1.5 text-center">
                           <span className={`inline-block px-2 py-0.2 rounded-full text-[10px] font-bold ${getStatusColor(fd.status)}`}>

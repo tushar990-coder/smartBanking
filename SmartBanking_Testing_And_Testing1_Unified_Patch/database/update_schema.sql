@@ -1,4 +1,4 @@
--- =========================================================================================
+﻿-- =========================================================================================
 -- SmartBanking Core ERP - Universal VPS Database Update & Schema Sync Patch
 -- Zero Data Loss Guarantee - All Existing Records (Members, Vouchers, Accounts) 100% Preserved
 -- Compatible with all VPS client databases (Padawalwadi, Gurudev, Main, etc.)

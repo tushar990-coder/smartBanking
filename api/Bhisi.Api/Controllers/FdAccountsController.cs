@@ -328,22 +328,7 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     // 6. Post Accounting Voucher (Only if it's a NEW account, not Legacy)
-                    Ledger? fdLiabilityLedger = null;
-
-                    if (scheme.FdLiabilityLedgerID.HasValue && scheme.FdLiabilityLedgerID.Value > 0)
-                    {
-                        fdLiabilityLedger = await _context.Ledgers.FindAsync(scheme.FdLiabilityLedgerID.Value);
-                    }
-
-                    if (fdLiabilityLedger == null)
-                    {
-                        fdLiabilityLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
-                            l.AccountType == "FD" ||
-                            l.AccountType == "FixedDeposit" ||
-                            l.LedgerName.Contains("मुदत ठेव") || 
-                            l.LedgerName.ToLower().Contains("fixed deposit") || 
-                            l.LedgerName.ToLower().Contains("fd"));
-                    }
+                    Ledger? fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(scheme);
 
                     Ledger? debitLedger = null;
                     if (account.PaymentMode == "Bank" && account.BankAccountLedgerID.HasValue && account.BankAccountLedgerID.Value > 0)
@@ -407,8 +392,20 @@ namespace Bhisi.Api.Controllers
 
                     var (voucherStatus, approvedBy, approvedOn) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, account.DepositAmount, account.CreatedBy);
 
-                    if (!account.IsLegacyAccount && fdLiabilityLedger != null && debitLedger != null)
+                    if (!account.IsLegacyAccount)
                     {
+                        if (fdLiabilityLedger == null)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही. कृपया योजनेमध्ये लेजर खाते मॅप केले असल्याची खात्री करा.");
+                        }
+
+                        if (debitLedger == null)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest("डिपॉझिट जमा करण्यासाठी डेबिट लेजर (Cash/Bank/SB) सापडले नाही.");
+                        }
+
                         var voucher = new Voucher
                         {
                             BranchID = account.BranchID,
@@ -1137,12 +1134,12 @@ namespace Bhisi.Api.Controllers
                     decimal totalProvisionAmount = 0;
                     var provisionLogs = new List<FdInterestAccrual>();
 
-                    var expenseLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
-                    var payableLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("२३ देणे सभासद ठेव व्याज") || l.LedgerName.ToLower().Contains("interest payable"));
+                    var expenseLedger = await ResolveInterestExpenseLedgerAsync(null);
+                    var payableLedger = await ResolveInterestPayableLedgerAsync(null);
                     
                     if (expenseLedger == null || payableLedger == null)
                     {
-                        return BadRequest("FD Interest expense or payable ledgers not configured.");
+                        return BadRequest("व्याज खर्च (Interest Expense) किंवा देय व्याज (Interest Payable) लेजर कॉन्फिगर केलेले नाही.");
                     }
 
                     // Create provision voucher
@@ -1611,18 +1608,18 @@ namespace Bhisi.Api.Controllers
                             : $" | बंद दिनांक: {closureDate:dd/MM/yyyy} ({paymentMode})" + (overdueInterest > 0 ? $" [मुदत संपल्यानंतरचे (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : ""));
                     await _context.SaveChangesAsync();
 
-                    var fdLiabilityLedger = account.FdScheme?.FdLiabilityLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१२ मेंबर मुदत ठेव") || l.LedgerName.ToLower().Contains("fixed deposit"));
-                    var payableLedger = account.FdScheme?.InterestPayableLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("२३ देणे सभासद ठेव व्याज") || l.LedgerName.ToLower().Contains("interest payable"));
-                    var expenseLedger = account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
+                    var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(account.FdScheme);
+                    var payableLedger = await ResolveInterestPayableLedgerAsync(account.FdScheme);
+                    var expenseLedger = await ResolveInterestExpenseLedgerAsync(account.FdScheme);
 
                     if (fdLiabilityLedger == null)
                     {
-                        return BadRequest("Required FD Liability ledger not found.");
+                        return BadRequest("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
                     if (overdueInterest > 0 && expenseLedger == null)
                     {
-                        return BadRequest("FD Interest Expense ledger (१३२ मुदत ठेवीवरील व्याज) not configured for overdue interest.");
+                        return BadRequest("मुदत संपल्यानंतरच्या (Overdue) व्याजासाठी व्याज खर्च लेजर (FD Interest Expense Ledger) उपलब्ध नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
                     if (req?.AdjustInLoan == true && targetLoan != null)
@@ -2130,12 +2127,14 @@ namespace Bhisi.Api.Controllers
                             : $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} ({paymentMode})");
                     await _context.SaveChangesAsync();
 
-                    var fdLiabilityLedger = account.FdScheme?.FdLiabilityLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१२ मेंबर मुदत ठेव") || l.LedgerName.ToLower().Contains("fixed deposit"));
-                    var payableLedger = account.FdScheme?.InterestPayableLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("२३ देणे सभासद ठेव व्याज") || l.LedgerName.ToLower().Contains("interest payable"));
+                    var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(account.FdScheme);
+                    var payableLedger = await ResolveInterestPayableLedgerAsync(account.FdScheme);
+                    var expenseLedger = await ResolveInterestExpenseLedgerAsync(account.FdScheme);
+                    var clawbackLedger = await ResolveClawbackLedgerAsync(account.FdScheme);
                     
                     if (fdLiabilityLedger == null)
                     {
-                        return BadRequest("Required FD Liability ledger not found.");
+                        return BadRequest("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
                     if (req?.AdjustInLoan == true && targetLoan != null)
@@ -2220,13 +2219,9 @@ namespace Bhisi.Api.Controllers
                         {
                             // In MIS:
                             // Cr Clawback Income / Recovery
-                            if (penaltyClawback > 0)
+                            if (penaltyClawback > 0 && clawbackLedger != null)
                             {
-                                var clawbackLedger = account.FdScheme?.PrematurePenaltyLedger ?? account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
-                                if (clawbackLedger != null)
-                                {
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                             }
                         }
                         else
@@ -2237,23 +2232,15 @@ namespace Bhisi.Api.Controllers
                                 _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = alreadyAccruedInt, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                             }
 
-                            if (recalculatedInterest > alreadyAccruedInt)
+                            if (recalculatedInterest > alreadyAccruedInt && expenseLedger != null)
                             {
                                 decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
-                                var expenseLedger = account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
-                                if (expenseLedger != null)
-                                {
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                             }
 
-                            if (penaltyClawback > 0)
+                            if (penaltyClawback > 0 && clawbackLedger != null)
                             {
-                                var clawbackLedger = account.FdScheme?.PrematurePenaltyLedger ?? account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
-                                if (clawbackLedger != null)
-                                {
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                             }
                         }
 
@@ -2401,13 +2388,9 @@ namespace Bhisi.Api.Controllers
                             _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                             // Cr Clawback Income / Recovery
-                            if (penaltyClawback > 0)
+                            if (penaltyClawback > 0 && clawbackLedger != null)
                             {
-                                var clawbackLedger = account.FdScheme?.PrematurePenaltyLedger ?? account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
-                                if (clawbackLedger != null)
-                                {
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                             }
                         }
                         else
@@ -2420,27 +2403,19 @@ namespace Bhisi.Api.Controllers
                             }
 
                             // Dr Additional Current Interest Expense (if recalculated interest exceeds already accrued)
-                            if (recalculatedInterest > alreadyAccruedInt)
+                            if (recalculatedInterest > alreadyAccruedInt && expenseLedger != null)
                             {
                                 decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
-                                var expenseLedger = account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
-                                if (expenseLedger != null)
-                                {
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                             }
 
                             // Cr Payout Ledger (Net payout = Principal + recalculatedInterest)
                             _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                             // Cr Interest Expense / Clawback Income (Reversing excess prior year provisions back to P&L)
-                            if (penaltyClawback > 0)
+                            if (penaltyClawback > 0 && clawbackLedger != null)
                             {
-                                var clawbackLedger = account.FdScheme?.PrematurePenaltyLedger ?? account.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
-                                if (clawbackLedger != null)
-                                {
-                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                                }
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                             }
                         }
 
@@ -2763,9 +2738,14 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     // 3. Post Renewal Vouchers
-                    var fdLiabilityLedger = scheme.FdLiabilityLedger ?? oldAccount.FdScheme?.FdLiabilityLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१२ मेंबर मुदत ठेव") || l.LedgerName.ToLower().Contains("fixed deposit"));
-                    var payableLedger = oldAccount.FdScheme?.InterestPayableLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("२३ देणे सभासद ठेव व्याज") || l.LedgerName.ToLower().Contains("interest payable"));
-                    var expenseLedger = oldAccount.FdScheme?.InterestExpenseLedger ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
+                    var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(scheme ?? oldAccount.FdScheme);
+                    var payableLedger = await ResolveInterestPayableLedgerAsync(oldAccount.FdScheme ?? scheme);
+                    var expenseLedger = await ResolveInterestExpenseLedgerAsync(oldAccount.FdScheme ?? scheme);
+
+                    if (fdLiabilityLedger == null)
+                    {
+                        return BadRequest("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
+                    }
                     
                     int interestPayoutLedgerId = 0;
                     if (request.RenewalType == "PrincipalOnly" && interestPayoutAmount > 0)
@@ -2814,7 +2794,7 @@ namespace Bhisi.Api.Controllers
 
                     if (overdueInterest > 0 && expenseLedger == null)
                     {
-                        return BadRequest("FD Interest Expense ledger (१३२ मुदत ठेवीवरील व्याज) not configured for overdue interest.");
+                        return BadRequest("मुदत संपल्यानंतरच्या (Overdue) व्याजासाठी व्याज खर्च लेजर (FD Interest Expense Ledger) उपलब्ध नाही. कृपया योजनेत लेजर मॅपिंग तपासा.");
                     }
 
                     var voucher = new Voucher
@@ -2835,7 +2815,7 @@ namespace Bhisi.Api.Controllers
                     int? linkedMemberId = linkedMember?.MemberID;
 
                     // Dr Old FD Liability (Principal)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger?.LedgerID ?? 12, DrCr = "Dr", Amount = oldAccount.DepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = oldAccount.DepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
                     
                     // Dr Interest Payable (Accumulated Contract Interest)
                     if (payableLedger != null && accruedInt > 0)
@@ -3123,12 +3103,12 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"अवैध तारीख! निवडलेली व्याज तरतूद तारीख ({req.AccrualDate:dd/MM/yyyy}) ही बंद/ऑडिट झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडते. बंद आर्थिक वर्षात थेट व्हाउचर पोस्ट करणे वैधानिक नियमांनुसार (MCS Act) प्रतिबंधित आहे.");
             }
 
-            var expenseLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३२ मुदत ठेवीवरील व्याज") || l.LedgerName.ToLower().Contains("interest expense"));
-            var payableLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("२३ देणे सभासद ठेव व्याज") || l.LedgerName.ToLower().Contains("interest payable"));
+            var expenseLedger = await ResolveInterestExpenseLedgerAsync(null);
+            var payableLedger = await ResolveInterestPayableLedgerAsync(null);
 
             if (expenseLedger == null || payableLedger == null)
             {
-                return BadRequest("FD Interest expense or payable ledgers not configured.");
+                return BadRequest("व्याज खर्च (Interest Expense) किंवा देय व्याज (Interest Payable) लेजर कॉन्फिगर केलेले नाही.");
             }
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
@@ -3620,6 +3600,77 @@ namespace Bhisi.Api.Controllers
                 totalAccruedSynced,
                 affectedLedgers = updatedLedgers
             };
+        }
+
+        private async Task<Ledger?> ResolveFdLiabilityLedgerAsync(FdScheme? scheme)
+        {
+            if (scheme?.FdLiabilityLedger != null && scheme.FdLiabilityLedger.IsActive)
+                return scheme.FdLiabilityLedger;
+
+            if (scheme?.FdLiabilityLedgerID.HasValue == true && scheme.FdLiabilityLedgerID.Value > 0)
+            {
+                var ledger = await _context.Ledgers.FindAsync(scheme.FdLiabilityLedgerID.Value);
+                if (ledger != null && ledger.IsActive) return ledger;
+            }
+
+            return await _context.Ledgers.FirstOrDefaultAsync(l => l.IsActive && (
+                (l.GroupID == 4 && (l.LedgerName.Contains("मुदतबंद") || l.LedgerName.Contains("मुदत") || l.AccountType == "FD")) ||
+                l.LedgerName.Contains("मेंबर मुदतबंद ठेव") ||
+                l.LedgerName.Contains("मुदतबंद ठेव") ||
+                l.LedgerName.Contains("मुदत ठेव") ||
+                l.LedgerName.ToLower().Contains("fixed deposit")
+            ));
+        }
+
+        private async Task<Ledger?> ResolveInterestPayableLedgerAsync(FdScheme? scheme)
+        {
+            if (scheme?.InterestPayableLedger != null && scheme.InterestPayableLedger.IsActive)
+                return scheme.InterestPayableLedger;
+
+            if (scheme?.InterestPayableLedgerID.HasValue == true && scheme.InterestPayableLedgerID.Value > 0)
+            {
+                var ledger = await _context.Ledgers.FindAsync(scheme.InterestPayableLedgerID.Value);
+                if (ledger != null && ledger.IsActive) return ledger;
+            }
+
+            return await _context.Ledgers.FirstOrDefaultAsync(l => l.IsActive && (
+                (l.GroupID == 6 && l.LedgerName.Contains("देणे") && l.LedgerName.Contains("व्याज")) ||
+                l.LedgerName.Contains("देणे मुदत ठेवीवरील व्याज") ||
+                l.LedgerName.Contains("देणे सभासद ठेव व्याज") ||
+                l.LedgerName.ToLower().Contains("interest payable")
+            ));
+        }
+
+        private async Task<Ledger?> ResolveInterestExpenseLedgerAsync(FdScheme? scheme)
+        {
+            if (scheme?.InterestExpenseLedger != null && scheme.InterestExpenseLedger.IsActive)
+                return scheme.InterestExpenseLedger;
+
+            if (scheme?.InterestExpenseLedgerID.HasValue == true && scheme.InterestExpenseLedgerID.Value > 0)
+            {
+                var ledger = await _context.Ledgers.FindAsync(scheme.InterestExpenseLedgerID.Value);
+                if (ledger != null && ledger.IsActive) return ledger;
+            }
+
+            return await _context.Ledgers.FirstOrDefaultAsync(l => l.IsActive && (
+                (l.GroupID == 17 && !l.LedgerName.Contains("देणे") && (l.LedgerName.Contains("मुदत") || l.LedgerName.Contains("व्याज"))) ||
+                l.LedgerName.Contains("मुदत ठेवीवरील व्याज") ||
+                l.LedgerName.ToLower().Contains("interest expense")
+            ));
+        }
+
+        private async Task<Ledger?> ResolveClawbackLedgerAsync(FdScheme? scheme)
+        {
+            if (scheme?.PrematurePenaltyLedger != null && scheme.PrematurePenaltyLedger.IsActive)
+                return scheme.PrematurePenaltyLedger;
+
+            if (scheme?.PrematurePenaltyLedgerID.HasValue == true && scheme.PrematurePenaltyLedgerID.Value > 0)
+            {
+                var ledger = await _context.Ledgers.FindAsync(scheme.PrematurePenaltyLedgerID.Value);
+                if (ledger != null && ledger.IsActive) return ledger;
+            }
+
+            return await ResolveInterestExpenseLedgerAsync(scheme);
         }
     }
 

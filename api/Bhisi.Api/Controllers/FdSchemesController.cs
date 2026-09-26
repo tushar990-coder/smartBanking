@@ -112,10 +112,14 @@ namespace Bhisi.Api.Controllers
                 fdScheme.SchemeCode = fdScheme.SchemeCode.Trim();
             }
 
-            if (fdScheme.FdLiabilityLedgerID.HasValue && fdScheme.FdLiabilityLedgerID.Value <= 0) fdScheme.FdLiabilityLedgerID = null;
-            if (fdScheme.InterestExpenseLedgerID.HasValue && fdScheme.InterestExpenseLedgerID.Value <= 0) fdScheme.InterestExpenseLedgerID = null;
-            if (fdScheme.InterestPayableLedgerID.HasValue && fdScheme.InterestPayableLedgerID.Value <= 0) fdScheme.InterestPayableLedgerID = null;
             if (fdScheme.PrematurePenaltyLedgerID.HasValue && fdScheme.PrematurePenaltyLedgerID.Value <= 0) fdScheme.PrematurePenaltyLedgerID = null;
+
+            // Validate Mandatory Core Banking GL Ledgers
+            var ledgerValidation = await ValidateSchemeLedgersEngineAsync(fdScheme);
+            if (!ledgerValidation.IsValid)
+            {
+                return BadRequest(ledgerValidation.ErrorMessage);
+            }
 
             fdScheme.FdLiabilityLedger = null;
             fdScheme.InterestExpenseLedger = null;
@@ -178,6 +182,13 @@ namespace Bhisi.Api.Controllers
                 return NotFound();
             }
 
+            // Validate Mandatory Core Banking GL Ledgers
+            var ledgerValidation = await ValidateSchemeLedgersEngineAsync(fdScheme);
+            if (!ledgerValidation.IsValid)
+            {
+                return BadRequest(ledgerValidation.ErrorMessage);
+            }
+
             // Update Scheme fields
             existingScheme.SchemeName = fdScheme.SchemeName;
             existingScheme.DurationMonths = fdScheme.DurationMonths;
@@ -201,9 +212,9 @@ namespace Bhisi.Api.Controllers
             existingScheme.OverdueRenewalPolicy = string.IsNullOrWhiteSpace(fdScheme.OverdueRenewalPolicy) ? "ClosureDate" : fdScheme.OverdueRenewalPolicy;
             existingScheme.ModifiedDate = DateTime.Now;
 
-            existingScheme.FdLiabilityLedgerID = (fdScheme.FdLiabilityLedgerID.HasValue && fdScheme.FdLiabilityLedgerID.Value > 0) ? fdScheme.FdLiabilityLedgerID : null;
-            existingScheme.InterestExpenseLedgerID = (fdScheme.InterestExpenseLedgerID.HasValue && fdScheme.InterestExpenseLedgerID.Value > 0) ? fdScheme.InterestExpenseLedgerID : null;
-            existingScheme.InterestPayableLedgerID = (fdScheme.InterestPayableLedgerID.HasValue && fdScheme.InterestPayableLedgerID.Value > 0) ? fdScheme.InterestPayableLedgerID : null;
+            existingScheme.FdLiabilityLedgerID = fdScheme.FdLiabilityLedgerID;
+            existingScheme.InterestExpenseLedgerID = fdScheme.InterestExpenseLedgerID;
+            existingScheme.InterestPayableLedgerID = fdScheme.InterestPayableLedgerID;
             existingScheme.PrematurePenaltyLedgerID = (fdScheme.PrematurePenaltyLedgerID.HasValue && fdScheme.PrematurePenaltyLedgerID.Value > 0) ? fdScheme.PrematurePenaltyLedgerID : null;
 
             // Slabs Synchronization
@@ -321,6 +332,64 @@ namespace Bhisi.Api.Controllers
 
             var result = CalculateFdMaturityEngine(scheme, request);
             return Ok(result);
+        }
+        private async Task<(bool IsValid, string? ErrorMessage)> ValidateSchemeLedgersEngineAsync(FdScheme scheme)
+        {
+            if (!scheme.FdLiabilityLedgerID.HasValue || scheme.FdLiabilityLedgerID.Value <= 0)
+            {
+                return (false, "मुदत ठेव दायित्व लेजर (FD Liability Ledger) निवडणे अनिवार्य आहे.");
+            }
+
+            if (!scheme.InterestPayableLedgerID.HasValue || scheme.InterestPayableLedgerID.Value <= 0)
+            {
+                return (false, "देय व्याज लेजर (Interest Payable Ledger) निवडणे अनिवार्य आहे.");
+            }
+
+            if (!scheme.InterestExpenseLedgerID.HasValue || scheme.InterestExpenseLedgerID.Value <= 0)
+            {
+                return (false, "व्याज खर्च लेजर (Interest Expense Ledger) निवडणे अनिवार्य आहे.");
+            }
+
+            var ledgerIds = new List<int>
+            {
+                scheme.FdLiabilityLedgerID.Value,
+                scheme.InterestPayableLedgerID.Value,
+                scheme.InterestExpenseLedgerID.Value
+            };
+
+            if (scheme.PrematurePenaltyLedgerID.HasValue && scheme.PrematurePenaltyLedgerID.Value > 0)
+            {
+                ledgerIds.Add(scheme.PrematurePenaltyLedgerID.Value);
+            }
+
+            var ledgers = await _context.Ledgers
+                .Where(l => ledgerIds.Contains(l.LedgerID))
+                .ToDictionaryAsync(l => l.LedgerID);
+
+            if (!ledgers.TryGetValue(scheme.FdLiabilityLedgerID.Value, out var liabLedger) || !liabLedger.IsActive)
+            {
+                return (false, "निवडलेले मुदत ठेव दायित्व लेजर (FD Liability Ledger) अस्तित्वात नाही किंवा निष्क्रिय (Inactive) आहे.");
+            }
+
+            if (!ledgers.TryGetValue(scheme.InterestPayableLedgerID.Value, out var payLedger) || !payLedger.IsActive)
+            {
+                return (false, "निवडलेले देय व्याज लेजर (Interest Payable Ledger) अस्तित्वात नाही किंवा निष्क्रिय (Inactive) आहे.");
+            }
+
+            if (!ledgers.TryGetValue(scheme.InterestExpenseLedgerID.Value, out var expLedger) || !expLedger.IsActive)
+            {
+                return (false, "निवडलेले व्याज खर्च लेजर (Interest Expense Ledger) अस्तित्वात नाही किंवा निष्क्रिय (Inactive) आहे.");
+            }
+
+            if (scheme.PrematurePenaltyLedgerID.HasValue && scheme.PrematurePenaltyLedgerID.Value > 0)
+            {
+                if (!ledgers.TryGetValue(scheme.PrematurePenaltyLedgerID.Value, out var penLedger) || !penLedger.IsActive)
+                {
+                    return (false, "निवडलेले मुदतपूर्व दंड लेजर (Premature Penalty Ledger) अस्तित्वात नाही किंवा निष्क्रिय (Inactive) आहे.");
+                }
+            }
+
+            return (true, null);
         }
 
         private static (bool IsValid, string? ErrorMessage, int? MinDays, int? MaxDays) ValidateSlabsEngine(

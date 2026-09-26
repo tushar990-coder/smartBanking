@@ -4551,16 +4551,104 @@ BEGIN
 END
 GO
 
--- 11.4 Record Version v2.5.10 in SystemVersionHistories
+-- 11.4 Auto-Healing FD Scheme GL Ledgers
+PRINT '  + Running FD Scheme GL Ledgers Auto-Healing...';
+DECLARE @vpsLiabilityLedgerID INT;
+DECLARE @vpsPayableLedgerID INT;
+DECLARE @vpsExpenseLedgerID INT;
+
+SELECT TOP 1 @vpsLiabilityLedgerID = LedgerID 
+FROM Ledgers 
+WHERE IsActive = 1 
+  AND (
+      (GroupID = 4 AND (LedgerName LIKE N'%मुदतबंद ठेव%' OR LedgerName LIKE N'%मुदत ठेव%' OR LedgerName LIKE N'%मुदत%'))
+      OR LedgerName LIKE N'%मेंबर मुदतबंद ठेव%'
+      OR LedgerName LIKE N'%मुदतबंद ठेव%'
+  )
+ORDER BY 
+    CASE 
+        WHEN GroupID = 4 AND LedgerName LIKE N'%मेंबर मुदतबंद ठेव%' THEN 1
+        WHEN GroupID = 4 AND LedgerName LIKE N'%मुदतबंद ठेव%' THEN 2
+        WHEN GroupID = 4 AND LedgerName LIKE N'%मुदत ठेव%' THEN 3
+        WHEN GroupID = 4 THEN 4
+        ELSE 5
+    END,
+    LedgerID ASC;
+
+SELECT TOP 1 @vpsPayableLedgerID = LedgerID 
+FROM Ledgers 
+WHERE IsActive = 1 
+  AND (
+      (GroupID = 6 AND LedgerName LIKE N'%देणे%मुदत%व्याज%')
+      OR (GroupID = 6 AND LedgerName LIKE N'%देणे%ठेव%व्याज%')
+      OR LedgerName LIKE N'%देणे मुदत ठेवीवरील व्याज%'
+      OR LedgerName LIKE N'%देणे सभासद ठेव व्याज%'
+  )
+ORDER BY 
+    CASE 
+        WHEN GroupID = 6 AND LedgerName LIKE N'%देणे मुदत ठेवीवरील व्याज%' THEN 1
+        WHEN GroupID = 6 AND LedgerName LIKE N'%देणे सभासद ठेव व्याज%' THEN 2
+        WHEN GroupID = 6 AND LedgerName LIKE N'%देणे%मुदत%व्याज%' THEN 3
+        WHEN GroupID = 6 THEN 4
+        ELSE 5
+    END,
+    LedgerID ASC;
+
+SELECT TOP 1 @vpsExpenseLedgerID = LedgerID 
+FROM Ledgers 
+WHERE IsActive = 1 
+  AND GroupID = 17
+  AND LedgerName NOT LIKE N'%देणे%'
+  AND (
+      LedgerName LIKE N'%मुदत ठेवीवरील व्याज%'
+      OR LedgerName LIKE N'%मुदत%ठेव%व्याज%'
+      OR LedgerName LIKE N'%मुदत%'
+      OR LedgerName LIKE N'%ठेवीवरील व्याज%'
+  )
+ORDER BY 
+    CASE 
+        WHEN LedgerName LIKE N'%मुदत ठेवीवरील व्याज%' THEN 1
+        WHEN LedgerName LIKE N'%मुदत%ठेव%व्याज%' THEN 2
+        WHEN LedgerName LIKE N'%मुदत%' THEN 3
+        ELSE 4
+    END,
+    LedgerID ASC;
+
+IF @vpsLiabilityLedgerID IS NOT NULL AND @vpsPayableLedgerID IS NOT NULL AND @vpsExpenseLedgerID IS NOT NULL
+BEGIN
+    UPDATE FdSchemes
+    SET 
+        FdLiabilityLedgerID = ISNULL(NULLIF(FdLiabilityLedgerID, 0), @vpsLiabilityLedgerID),
+        InterestPayableLedgerID = ISNULL(NULLIF(InterestPayableLedgerID, 0), @vpsPayableLedgerID),
+        InterestExpenseLedgerID = CASE 
+            WHEN InterestExpenseLedgerID IS NULL OR InterestExpenseLedgerID <= 0 OR InterestExpenseLedgerID = @vpsPayableLedgerID 
+            THEN @vpsExpenseLedgerID 
+            ELSE InterestExpenseLedgerID 
+        END,
+        ModifiedDate = GETDATE()
+    WHERE 
+        FdLiabilityLedgerID IS NULL 
+        OR FdLiabilityLedgerID <= 0
+        OR InterestPayableLedgerID IS NULL 
+        OR InterestPayableLedgerID <= 0
+        OR InterestExpenseLedgerID IS NULL 
+        OR InterestExpenseLedgerID <= 0
+        OR InterestExpenseLedgerID = InterestPayableLedgerID;
+
+    PRINT '  + Successfully auto-healed missing FD Scheme GL Ledgers.';
+END
+GO
+
+-- 11.5 Record Version v2.5.12 in SystemVersionHistories
 IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
 BEGIN
     EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
     VALUES (
-        ''2.5.10'', 
+        ''2.5.12'', 
         GETUTCDATE(), 
-        ''SmartBanking VPS Multi-App Master Patch v2.5.10'', 
+        ''SmartBanking VPS Multi-App Master Patch v2.5.12'', 
         ''SUCCESS'', 
-        ''FD Tenor Slabs (Days/Months/Years), Post-Maturity Overdue Policy, Lien Protection & Statutory Right of Set-Off, MaturedClose Guard, Premature Renewal Interest Loophole Fix, Senior Citizen Rate Enforcement on Renewals.'', 
+        ''Mandatory FD Scheme CBS GL Ledgers (Deposit Liability, Interest Payable, Interest Expense) Validation, Auto-healing, and Robust Group-Based Resolution in Account Closures/Renewals.'', 
         ''VPS Administrator'',
         ''2026-09-26''
     );');

@@ -346,6 +346,11 @@ const FdSchemeMaster: React.FC = () => {
       return;
     }
 
+    if (!formData.interestExpenseLedgerID || Number(formData.interestExpenseLedgerID) === 0) {
+      setError('कृपया मुदत ठेव व्याज खर्च खाते (FD Interest Expense Ledger) निवडा.');
+      return;
+    }
+
     // Validate Slabs if Slab model
     let sortedSlabs = slabs;
     if (formData.schemeDurationModel === 'Slab') {
@@ -546,7 +551,7 @@ const FdSchemeMaster: React.FC = () => {
   };
 
   const ledgerOptions = [
-    { value: 0, label: '-- डिफॉल्ट मुदत ठेव लेजर वापरा --' },
+    { value: 0, label: '-- कृपया लेजर खाते निवडा (अनिवार्य) --' },
     ...ledgers.map((l) => ({
       value: l.ledgerID,
       label: `${l.ledgerID} - ${l.ledgerName}${l.accountGroup ? ` (${l.accountGroup.groupName})` : ''}`
@@ -1167,7 +1172,7 @@ const FdSchemeMaster: React.FC = () => {
                 value={formData.fdLiabilityLedgerID}
                 onChange={handleChange}
                 options={ledgerOptions}
-                placeholder="-- उदा. १२ मेंबर मुदत ठेव खाते निवडा --"
+                placeholder="-- उदा. मेंबर मुदतबंद ठेव खाते निवडा --"
               />
               <span className="text-[10px] text-gray-500 block mt-0.5">
                 ठेवीची मूळ मुद्दल रक्कम (Principal Amount) जमा/नावे करण्यासाठी.
@@ -1183,7 +1188,7 @@ const FdSchemeMaster: React.FC = () => {
                 value={formData.interestPayableLedgerID}
                 onChange={handleChange}
                 options={ledgerOptions}
-                placeholder="-- उदा. २३ देणे सभासद ठेव व्याज खाते निवडा --"
+                placeholder="-- उदा. देणे मुदत ठेवीवरील व्याज खाते निवडा --"
               />
               <span className="text-[10px] text-gray-500 block mt-0.5">
                 साचलेले देय व्याज (Accrued Interest Liability) फेडण्यासाठी.
@@ -1192,14 +1197,14 @@ const FdSchemeMaster: React.FC = () => {
 
             <div>
               <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
-                ३. मुदत ठेव व्याज खर्च खाते (FD Interest Expense Ledger)
+                ३. मुदत ठेव व्याज खर्च खाते (FD Interest Expense Ledger) <span className="text-red-500">*</span>
               </label>
               <SearchableSelect
                 name="interestExpenseLedgerID"
                 value={formData.interestExpenseLedgerID}
                 onChange={handleChange}
                 options={ledgerOptions}
-                placeholder="-- उदा. १३२ मुदत ठेवीवरील व्याज खाते निवडा --"
+                placeholder="-- उदा. मुदत ठेवीवरील व्याज खाते निवडा --"
               />
               <span className="text-[10px] text-gray-500 block mt-0.5">
                 ठेवीवर द्यायचा दरमहा/वार्षिक नफा-तोटा व्याज खर्च.
@@ -1215,10 +1220,10 @@ const FdSchemeMaster: React.FC = () => {
                 value={formData.prematurePenaltyLedgerID}
                 onChange={handleChange}
                 options={ledgerOptions}
-                placeholder="-- उदा. १३२ मुदत पूर्व दंड कपात उत्पन्न खाते निवडा --"
+                placeholder="-- उदा. मुदत पूर्व दंड / इतर उत्पन्न खाते निवडा (ऐच्छिक) --"
               />
               <span className="text-[10px] text-gray-500 block mt-0.5">
-                मुदतपूर्व बंद कपातीची जमा नोंद करण्यासाठी.
+                मुदतपूर्व बंद कपातीची जमा नोंद करण्यासाठी (ऐच्छिक).
               </span>
             </div>
           </div>

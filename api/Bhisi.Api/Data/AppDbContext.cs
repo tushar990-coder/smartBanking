@@ -422,6 +422,13 @@ namespace Bhisi.Api.Data
                 entity.HasIndex(p => new { p.AgentId, p.CollectionDate });
             });
 
+            modelBuilder.Entity<FdScheme>(entity =>
+            {
+                entity.HasIndex(s => s.SchemeCode)
+                      .IsUnique()
+                      .HasDatabaseName("UQ_FdSchemes_SchemeCode");
+            });
+
             // Disable cascade deletes globally to prevent SQL Server multiple cascade paths error
             foreach (var relationship in modelBuilder.Model.GetEntityTypes().SelectMany(e => e.GetForeignKeys()))
             {

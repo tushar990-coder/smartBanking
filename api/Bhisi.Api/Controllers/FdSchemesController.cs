@@ -112,6 +112,14 @@ namespace Bhisi.Api.Controllers
                 fdScheme.SchemeCode = fdScheme.SchemeCode.Trim();
             }
 
+            // Check Duplicate SchemeCode
+            bool isCodeDuplicate = await _context.FdSchemes
+                .AnyAsync(s => s.SchemeCode.ToLower() == fdScheme.SchemeCode.ToLower());
+            if (isCodeDuplicate)
+            {
+                return BadRequest($"योजना कोड (Scheme Code) '{fdScheme.SchemeCode}' आधीच अस्तित्वात आहे. कृपया वेगळा योजना कोड वापरा.");
+            }
+
             if (fdScheme.PrematurePenaltyLedgerID.HasValue && fdScheme.PrematurePenaltyLedgerID.Value <= 0) fdScheme.PrematurePenaltyLedgerID = null;
 
             // Validate Mandatory Core Banking GL Ledgers
@@ -145,19 +153,31 @@ namespace Bhisi.Api.Controllers
                 incomingSlabs = incomingSlabs.OrderBy(s => s.FromDays).ToList();
             }
 
-            _context.FdSchemes.Add(fdScheme);
-            await _context.SaveChangesAsync();
-
-            if (incomingSlabs.Any())
+            try
             {
-                foreach (var slab in incomingSlabs)
-                {
-                    slab.SlabID = 0;
-                    slab.FdSchemeID = fdScheme.FdSchemeID;
-                    slab.CreatedAt = DateTime.UtcNow;
-                    _context.FdSchemeInterestSlabs.Add(slab);
-                }
+                _context.FdSchemes.Add(fdScheme);
                 await _context.SaveChangesAsync();
+
+                if (incomingSlabs.Any())
+                {
+                    foreach (var slab in incomingSlabs)
+                    {
+                        slab.SlabID = 0;
+                        slab.FdSchemeID = fdScheme.FdSchemeID;
+                        slab.CreatedAt = DateTime.UtcNow;
+                        _context.FdSchemeInterestSlabs.Add(slab);
+                    }
+                    await _context.SaveChangesAsync();
+                }
+            }
+            catch (DbUpdateException ex)
+            {
+                string detailedError = ex.InnerException?.Message ?? ex.Message;
+                if (detailedError.Contains("UQ_FdSchemes_SchemeCode") || detailedError.Contains("SchemeCode"))
+                {
+                    return BadRequest($"योजना कोड (Scheme Code) '{fdScheme.SchemeCode}' आधीच अस्तित्वात आहे. कृपया वेगळा योजना कोड वापरा.");
+                }
+                return BadRequest($"योजना सेव्ह करताना त्रुटी आली: {detailedError}");
             }
 
             return CreatedAtAction("GetFdScheme", new { id = fdScheme.FdSchemeID }, fdScheme);
@@ -180,6 +200,19 @@ namespace Bhisi.Api.Controllers
             if (existingScheme == null)
             {
                 return NotFound();
+            }
+
+            // Validate SchemeCode uniqueness if updating SchemeCode
+            if (!string.IsNullOrWhiteSpace(fdScheme.SchemeCode))
+            {
+                var trimmedCode = fdScheme.SchemeCode.Trim();
+                bool isCodeDuplicate = await _context.FdSchemes
+                    .AnyAsync(s => s.FdSchemeID != id && s.SchemeCode.ToLower() == trimmedCode.ToLower());
+                if (isCodeDuplicate)
+                {
+                    return BadRequest($"योजना कोड (Scheme Code) '{trimmedCode}' आधीच दुसऱ्या योजनेसाठी वापरण्यात आला आहे. कृपया वेगळा योजना कोड वापरा.");
+                }
+                existingScheme.SchemeCode = trimmedCode;
             }
 
             // Validate Mandatory Core Banking GL Ledgers
@@ -264,7 +297,20 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            await _context.SaveChangesAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                string detailedError = ex.InnerException?.Message ?? ex.Message;
+                if (detailedError.Contains("UQ_FdSchemes_SchemeCode") || detailedError.Contains("SchemeCode"))
+                {
+                    return BadRequest($"योजना कोड (Scheme Code) '{fdScheme.SchemeCode}' आधीच दुसऱ्या योजनेसाठी वापरण्यात आला आहे. कृपया वेगळा योजना कोड वापरा.");
+                }
+                return BadRequest($"योजना अपडेट करताना त्रुटी आली: {detailedError}");
+            }
+
             return NoContent();
         }
 

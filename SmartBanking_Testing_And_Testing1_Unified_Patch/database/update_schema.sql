@@ -1,4 +1,4 @@
-﻿-- =========================================================================================
+-- =========================================================================================
 -- SmartBanking Core ERP - Universal VPS Database Update & Schema Sync Patch
 -- Zero Data Loss Guarantee - All Existing Records (Members, Vouchers, Accounts) 100% Preserved
 -- Compatible with all VPS client databases (Padawalwadi, Gurudev, Main, etc.)
@@ -4649,6 +4649,70 @@ BEGIN
         ''SmartBanking VPS Multi-App Master Patch v2.5.12'', 
         ''SUCCESS'', 
         ''Mandatory FD Scheme CBS GL Ledgers (Deposit Liability, Interest Payable, Interest Expense) Validation, Auto-healing, and Robust Group-Based Resolution in Account Closures/Renewals.'', 
+        ''VPS Administrator'',
+        ''2026-09-26''
+    );');
+END
+GO
+
+-- -----------------------------------------------------------------------------------------
+-- 11.6 SAFE UNIQUE INDEX MIGRATION FOR FD SCHEMECODE (Zero Data Loss)
+-- -----------------------------------------------------------------------------------------
+PRINT '  + Ensuring Unique Index UQ_FdSchemes_SchemeCode for FdSchemes...';
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('dbo.FdSchemes') AND name = 'SchemeCode')
+BEGIN
+    UPDATE [dbo].[FdSchemes]
+    SET [SchemeCode] = 'FD' + RIGHT('000' + CAST([FdSchemeID] AS NVARCHAR(10)), 3)
+    WHERE [SchemeCode] IS NULL OR LTRIM(RTRIM([SchemeCode])) = '';
+
+    UPDATE [dbo].[FdSchemes]
+    SET [SchemeCode] = LTRIM(RTRIM([SchemeCode]))
+    WHERE [SchemeCode] <> LTRIM(RTRIM([SchemeCode]));
+
+    ;WITH DuplicateCTE AS (
+        SELECT 
+            [FdSchemeID],
+            [SchemeCode],
+            ROW_NUMBER() OVER (
+                PARTITION BY UPPER(LTRIM(RTRIM([SchemeCode]))) 
+                ORDER BY [FdSchemeID] ASC
+            ) AS RowNum
+        FROM [dbo].[FdSchemes]
+    )
+    UPDATE [dbo].[FdSchemes]
+    SET [SchemeCode] = LEFT([dbo].[FdSchemes].[SchemeCode], 14) + '-' + CAST([dbo].[FdSchemes].[FdSchemeID] AS NVARCHAR(5))
+    FROM [dbo].[FdSchemes]
+    INNER JOIN DuplicateCTE ON [dbo].[FdSchemes].[FdSchemeID] = DuplicateCTE.[FdSchemeID]
+    WHERE DuplicateCTE.RowNum > 1;
+
+    IF NOT EXISTS (
+        SELECT * FROM sys.indexes 
+        WHERE name = 'UQ_FdSchemes_SchemeCode' 
+          AND object_id = OBJECT_ID('dbo.FdSchemes')
+    )
+    BEGIN
+        CREATE UNIQUE NONCLUSTERED INDEX [UQ_FdSchemes_SchemeCode]
+        ON [dbo].[FdSchemes]([SchemeCode] ASC);
+
+        PRINT '  + Created Unique Index [UQ_FdSchemes_SchemeCode] on dbo.FdSchemes([SchemeCode]).';
+    END
+    ELSE
+    BEGIN
+        PRINT '  + Unique Index [UQ_FdSchemes_SchemeCode] already exists.';
+    END
+END
+GO
+
+-- 11.7 Record Version v2.5.13 in SystemVersionHistories
+IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
+BEGIN
+    EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+    VALUES (
+        ''2.5.13'', 
+        GETUTCDATE(), 
+        ''SmartBanking VPS Multi-App Master Patch v2.5.13'', 
+        ''SUCCESS'', 
+        ''Enforce Unique SchemeCode on FdSchemes with database unique index UQ_FdSchemes_SchemeCode, auto-deduplication, EF Core model configuration, and backend/frontend duplicate validation.'', 
         ''VPS Administrator'',
         ''2026-09-26''
     );');

@@ -331,6 +331,22 @@ const FdSchemeMaster: React.FC = () => {
     setError('');
     setSuccess('');
 
+    const code = (formData.schemeCode || '').trim();
+    if (!code) {
+      setError('कृपया योजना कोड (Scheme Code) टाका.');
+      return;
+    }
+
+    // Check duplicate SchemeCode across existing schemes
+    const duplicate = schemes.find(
+      (s) => (s.schemeCode || '').trim().toLowerCase() === code.toLowerCase() &&
+             (!isEditMode || s.fdSchemeID !== editSchemeId)
+    );
+    if (duplicate) {
+      setError(`योजना कोड (Scheme Code) '${code}' आधीच अस्तित्वात आहे. कृपया वेगळा योजना कोड वापरा.`);
+      return;
+    }
+
     if (!formData.schemeName.trim()) {
       setError('कृपया मुदत ठेव योजनेचे नाव टाका.');
       return;
@@ -369,7 +385,7 @@ const FdSchemeMaster: React.FC = () => {
 
     const payload = {
       branchID: 1, // Sanstha-wide master
-      schemeCode: formData.schemeCode.trim(),
+      schemeCode: code,
       schemeName: formData.schemeName.trim(),
       durationMonths: parseInt(formData.durationMonths.toString(), 10) || 12,
       durationType: formData.durationType || 'Months',
@@ -422,7 +438,10 @@ const FdSchemeMaster: React.FC = () => {
       resetForm();
     } catch (err: any) {
       console.error('Error saving scheme', err);
-      setError(typeof err.response?.data === 'string' ? err.response.data : 'मुदत ठेव योजना जतन करताना त्रुटी आली.');
+      const serverMsg = typeof err.response?.data === 'string'
+        ? err.response.data
+        : (err.response?.data?.message || err.response?.data?.title || 'मुदत ठेव योजना जतन करताना त्रुटी आली.');
+      setError(serverMsg);
     } finally {
       setSaving(false);
     }
@@ -732,15 +751,27 @@ const FdSchemeMaster: React.FC = () => {
                 <label className={labelClass}>
                   योजना कोड (Scheme Code) <span className="text-red-500">*</span>
                 </label>
-                <span className="text-[9px] font-bold text-primary bg-primary/10 px-1 rounded border border-primary/20">⚡ ऑटो (Auto)</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const autoCode = generateSchemeCode(schemes);
+                    setFormData((prev) => ({ ...prev, schemeCode: autoCode }));
+                  }}
+                  className="text-[9px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-1 py-0.5 rounded border border-primary/20 cursor-pointer flex items-center gap-1 transition"
+                  title="नवीन ऑटो कोड जनरेट करा"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" />
+                  <span>ऑटो कोड (Auto)</span>
+                </button>
               </div>
               <input
                 type="text"
                 name="schemeCode"
                 value={formData.schemeCode}
-                readOnly
-                className={`${inputClass} bg-slate-100 font-bold text-primary cursor-not-allowed font-mono`}
+                onChange={(e) => setFormData((prev) => ({ ...prev, schemeCode: e.target.value.toUpperCase() }))}
+                className={`${inputClass} font-bold text-primary font-mono uppercase`}
                 required
+                maxLength={20}
                 placeholder="उदा. FD001"
               />
             </div>

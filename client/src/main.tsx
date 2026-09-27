@@ -162,12 +162,14 @@ window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
 };
 
 import { BrowserRouter } from 'react-router-dom'
+import { Toaster } from 'react-hot-toast'
 
 ReactDOM.render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
         <App />
+        <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,

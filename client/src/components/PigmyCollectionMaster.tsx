@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 import { 
   PlusIcon, 
   ArrowPathIcon, 
@@ -13,7 +14,11 @@ import {
   ArrowRightIcon,
   SparklesIcon,
   ClockIcon,
-  ShieldCheckIcon
+  ShieldCheckIcon,
+  ArrowDownTrayIcon,
+  ArrowUpTrayIcon,
+  CalendarDaysIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 
 interface Customer {
@@ -38,6 +43,8 @@ interface Agent {
 interface PigmyAccount {
   pigmyAccountID: number;
   accountNo: string;
+  legacyAccountNumber?: string;
+  openingDate?: string;
   customerID: number;
   pigmyAgentID: number;
   totalDepositedAmount: number;
@@ -58,7 +65,7 @@ interface CollectionHistory {
 }
 
 export default function PigmyCollectionMaster() {
-  const [activeTab, setActiveTab] = useState<'bulk' | 'manual' | 'app' | 'history'>('bulk');
+  const [activeTab, setActiveTab] = useState<'bulk' | 'monthly' | 'manual' | 'app' | 'history'>('bulk');
   
   // Data States
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -72,6 +79,45 @@ export default function PigmyCollectionMaster() {
   const [collectionDate, setCollectionDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [bulkAmounts, setBulkAmounts] = useState<{ [accountId: number]: string }>({});
   const [sheetSearchTerm, setSheetSearchTerm] = useState<string>('');
+
+  // Monthly Matrix States
+  const [selectedMonthlyAgentId, setSelectedMonthlyAgentId] = useState<number | ''>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [monthlySuccessBanner, setMonthlySuccessBanner] = useState<string | null>(null);
+  const [existingMonthlyWarning, setExistingMonthlyWarning] = useState<{
+    count: number;
+    totalAmount: number;
+    accountsCount: number;
+    monthYear: string;
+  } | null>(null);
+  const [monthlyImportPreview, setMonthlyImportPreview] = useState<{
+    fileName: string;
+    totalRows: number;
+    matchedAccountsCount: number;
+    totalDepositEntries: number;
+    totalAmount: number;
+    columns: string[];
+    rows: Array<{
+      accountNo: string;
+      legacyAccountNumber?: string;
+      customerName: string;
+      pigmyAccountId: number;
+      openingDate?: string;
+      dailyAmounts: { [dateStr: string]: number };
+      rowTotal: number;
+      excelTotal?: number;
+      isValid: boolean;
+      warning?: string;
+    }>;
+    skippedRows: Array<{
+      rawAccount: string;
+      rawName: string;
+      reason: string;
+    }>;
+  } | null>(null);
+  const [monthlySaving, setMonthlySaving] = useState(false);
+  const dailyFileInputRef = useRef<HTMLInputElement>(null);
+  const monthlyFileInputRef = useRef<HTMLInputElement>(null);
 
   // Single Manual Form State
   const [manualForm, setManualForm] = useState({
@@ -189,12 +235,15 @@ export default function PigmyCollectionMaster() {
     return accNo;
   };
 
-  // Filter accounts belonging to the selected agent
+  // Filter accounts belonging to the selected agent (only opened on or before collectionDate)
   const agentAccounts = accounts.filter(acc => {
     const accAgentId = acc.pigmyAgentID || getAgentId(acc.pigmyAgent) || getAgentId(acc.agent);
     const matchesAgent = selectedAgentId ? accAgentId === Number(selectedAgentId) : false;
     const isActive = acc.status === 'Active';
-    return matchesAgent && isActive;
+    const isOpenedOnOrBeforeDate = acc.openingDate 
+      ? new Date(acc.openingDate.split('T')[0]) <= new Date(collectionDate)
+      : true;
+    return matchesAgent && isActive && isOpenedOnOrBeforeDate;
   });
 
   const filteredAgentAccounts = agentAccounts.filter(acc => {
@@ -202,11 +251,10 @@ export default function PigmyCollectionMaster() {
     const query = sheetSearchTerm.toLowerCase();
     const accNo = (acc.accountNo || '').toLowerCase();
     const formattedAccNo = format14DigitDisplay(acc.accountNo || '').toLowerCase();
-    const prevAccNo = ((acc as any).previousAccountNo || '').toLowerCase();
     const legacyAccNo = ((acc as any).legacyAccountNumber || '').toLowerCase();
     const customerName = getCustomerFullName(acc.customer).toLowerCase();
     const mob = (acc.customer?.mobileNo || '').toLowerCase();
-    return accNo.includes(query) || formattedAccNo.includes(query) || prevAccNo.includes(query) || legacyAccNo.includes(query) || customerName.includes(query) || mob.includes(query);
+    return accNo.includes(query) || formattedAccNo.includes(query) || legacyAccNo.includes(query) || customerName.includes(query) || mob.includes(query);
   });
 
   // Calculate Sheet Totals
@@ -277,6 +325,510 @@ export default function PigmyCollectionMaster() {
       toast.error(msg);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // --- DAILY EXCEL TEMPLATE & IMPORT ---
+  const handleDownloadDailyTemplate = () => {
+    if (!selectedAgentId) {
+      toast.error('कृपया आधी पिग्मी एजंट निवडा.');
+      return;
+    }
+    const currentAgent = agents.find(a => getAgentId(a) === Number(selectedAgentId));
+    const agentName = currentAgent?.agentName || `Agent_${selectedAgentId}`;
+
+    if (agentAccounts.length === 0) {
+      toast.error(`निवडलेल्या तारखेपर्यंत (${collectionDate}) या एजंटचे कोणतेही सक्रिय खाते उपलब्ध नाही.`);
+      return;
+    }
+
+    const rows = agentAccounts.map(acc => ({
+      'खाते क्र. (Account No)': format14DigitDisplay(acc.accountNo),
+      'मागील / जुना खाते क्र. (Old Acc No)': (acc as any).legacyAccountNumber || '',
+      'ग्राहक नाव (Customer Name)': getCustomerFullName(acc.customer),
+      'खाते उघडल्याची तारीख (Opening Date)': acc.openingDate ? acc.openingDate.split('T')[0] : '',
+      'चालू शिल्लक (Current Balance)': acc.totalDepositedAmount || 0,
+      'जमा रक्कम (Collection Amount)': ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Daily_Collection');
+    XLSX.writeFile(wb, `Pigmy_Daily_${agentName.replace(/\s+/g, '_')}_${collectionDate}.xlsx`);
+    toast.success('दैनिक कलेक्शन टेम्पलेट यशस्वीरीत्या डाउनलोड झाले!');
+  };
+
+  const handleDailyExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!selectedAgentId) {
+      toast.error('कृपया आधी पिग्मी एजंट निवडा.');
+      if (dailyFileInputRef.current) dailyFileInputRef.current.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const data: any[] = XLSX.utils.sheet_to_json(ws);
+
+        if (!data || data.length === 0) {
+          toast.error('एक्सेल शीटमध्ये कोणताही डेटा सापडला नाही.');
+          return;
+        }
+
+        let matchedCount = 0;
+        let skippedFuture = 0;
+        let totalAmt = 0;
+        const newAmounts: { [accId: number]: string } = { ...bulkAmounts };
+
+        data.forEach((row: any) => {
+          const keys = Object.keys(row);
+          const accKey = keys.find(k => /acc|खाते|account/i.test(k));
+          const amtKey = keys.find(k => /amount|रक्कम|जमा/i.test(k));
+
+          const rawAcc = accKey ? String(row[accKey]).trim() : '';
+          const rawAmt = amtKey ? parseFloat(row[amtKey]) : 0;
+
+          if (!rawAcc || isNaN(rawAmt) || rawAmt <= 0) return;
+
+          const matchedAcc = agentAccounts.find(a => {
+            const accClean = a.accountNo.replace(/\D/g, '');
+            const rawClean = rawAcc.replace(/\D/g, '');
+            const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
+
+            return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
+                   format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
+                   (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
+                   legacyAcc === rawAcc ||
+                   String(a.pigmyAccountID) === rawAcc;
+          });
+
+          if (matchedAcc) {
+            newAmounts[matchedAcc.pigmyAccountID] = rawAmt.toString();
+            matchedCount++;
+            totalAmt += rawAmt;
+          } else {
+            const futureAcc = accounts.find(a => {
+              const accClean = a.accountNo.replace(/\D/g, '');
+              const rawClean = rawAcc.replace(/\D/g, '');
+              const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
+              return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
+                     format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
+                     (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
+                     legacyAcc === rawAcc;
+            });
+            if (futureAcc) {
+              skippedFuture++;
+            }
+          }
+        });
+
+        setBulkAmounts(newAmounts);
+        if (matchedCount > 0) {
+          toast.success(`${matchedCount} खाती यशस्वीरीत्या भरली! एकूण रक्कम: ₹${totalAmt.toLocaleString('en-IN')}`);
+        } else {
+          toast.error('निवडलेल्या एजंटच्या खात्यांशी जुळणारी कोणतीही नोंद सापडली नाही.');
+        }
+
+        if (skippedFuture > 0) {
+          toast(`⚠️ ${skippedFuture} खाती वगळली (खाते उघडण्याची तारीख ${collectionDate} नंतरची आहे).`, { icon: 'ℹ️' });
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error('एक्सेल फाईल वाचताना त्रुटी आली.');
+      } finally {
+        if (dailyFileInputRef.current) dailyFileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // --- MONTHLY MATRIX EXCEL TEMPLATE & IMPORT ---
+  const handleDownloadMonthlyTemplate = () => {
+    if (!selectedMonthlyAgentId) {
+      toast.error('कृपया आधी पिग्मी एजंट निवडा.');
+      return;
+    }
+    if (!selectedMonth) {
+      toast.error('कृपया आधी महिना व वर्ष निवडा.');
+      return;
+    }
+    const currentAgent = agents.find(a => getAgentId(a) === Number(selectedMonthlyAgentId));
+    const agentName = currentAgent?.agentName || `Agent_${selectedMonthlyAgentId}`;
+
+    const [yearStr, monthStr] = selectedMonth.split('-');
+    const year = parseInt(yearStr);
+    const month = parseInt(monthStr);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const endOfMonth = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
+    const eligibleAccounts = accounts.filter(acc => {
+      const aId = acc.pigmyAgentID || getAgentId(acc.pigmyAgent) || getAgentId(acc.agent);
+      const isAgent = aId === Number(selectedMonthlyAgentId);
+      const isActive = acc.status === 'Active';
+      const isOpened = acc.openingDate ? new Date(acc.openingDate.split('T')[0]) <= new Date(endOfMonth) : true;
+      return isAgent && isActive && isOpened;
+    });
+
+    if (eligibleAccounts.length === 0) {
+      toast.error(`या महिन्यासाठी (${selectedMonth}) एजंटचे कोणतेही सक्रिय खाते उपलब्ध नाही.`);
+      return;
+    }
+
+    const dayHeaders: string[] = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      dayHeaders.push(`${String(d).padStart(2, '0')}/${String(month).padStart(2, '0')}`);
+    }
+
+    const rows = eligibleAccounts.map((acc) => {
+      const oldNo = (acc as any).legacyAccountNumber || '';
+      const cName = getCustomerFullName(acc.customer);
+      const rowObj: any = {
+        'पिग्मि जुना acc  no ': oldNo,
+        'खातेदाराचे नाव': cName,
+        'एजंट': agentName
+      };
+
+      dayHeaders.forEach(dh => {
+        rowObj[dh] = 0;
+      });
+
+      rowObj['TOTAL'] = 0;
+      return rowObj;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    // Inject live Excel SUM formula for the TOTAL column so it recalculates automatically when typing
+    const startColLetter = XLSX.utils.encode_col(3); // Column D (Day 1)
+    const endColLetter = XLSX.utils.encode_col(3 + daysInMonth - 1); // Column for Last Day
+    const totalColIdx = 3 + daysInMonth; // Column index for TOTAL
+
+    eligibleAccounts.forEach((_, idx) => {
+      const excelRowNumber = idx + 2; // Data rows start at 2 (Row 1 is headers)
+      const cellRef = XLSX.utils.encode_cell({ r: idx + 1, c: totalColIdx });
+      ws[cellRef] = {
+        t: 'n',
+        v: 0,
+        f: `SUM(${startColLetter}${excelRowNumber}:${endColLetter}${excelRowNumber})`
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    wb.Workbook = { WBProps: { fullCalcOnLoad: true } };
+    XLSX.utils.book_append_sheet(wb, ws, 'मासिक_कलेक्शन_चार्ट');
+    XLSX.writeFile(wb, `डेली_पिग्मि_कलेक्शन_चार्ट_${agentName.replace(/\s+/g, '_')}_${selectedMonth}.xlsx`);
+    toast.success('मासिक कलेक्शन चार्ट टेम्पलेट यशस्वीरीत्या डाउनलोड झाले!');
+  };
+
+  const handleMonthlyExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!selectedMonthlyAgentId) {
+      toast.error('कृपया आधी पिग्मी एजंट निवडा.');
+      if (monthlyFileInputRef.current) monthlyFileInputRef.current.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const rawRows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+        if (!rawRows || rawRows.length < 2) {
+          toast.error('एक्सेल शीटमध्ये डेटा ओळी सापडल्या नाहीत.');
+          return;
+        }
+
+        const headerRow = rawRows[0] || [];
+        let accColIdx = 0;
+        let nameColIdx = 1;
+        let totalColIdx = -1;
+
+        let detectedMonth: number | null = null;
+        let detectedYear: number | null = null;
+
+        // Auto-detect month and year from column headers (e.g. 01/08 or 01-08-2026 or 01/08/2026)
+        headerRow.forEach((cellVal: any) => {
+          const str = String(cellVal || '').trim();
+          const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
+          if (match) {
+            const m = parseInt(match[2]);
+            if (m >= 1 && m <= 12 && !detectedMonth) {
+              detectedMonth = m;
+            }
+            if (match[3] && !detectedYear) {
+              const y = parseInt(match[3]);
+              detectedYear = y < 100 ? 2000 + y : y;
+            }
+          }
+        });
+
+        // If not in headers, try detecting from file name (e.g. 2026-08 or 2026_08 or 08_2026)
+        if (!detectedMonth || !detectedYear) {
+          const fnMatch = file.name.match(/(\d{4})[-_](\d{1,2})/);
+          if (fnMatch) {
+            if (!detectedYear) detectedYear = parseInt(fnMatch[1]);
+            if (!detectedMonth) {
+              const m = parseInt(fnMatch[2]);
+              if (m >= 1 && m <= 12) detectedMonth = m;
+            }
+          }
+        }
+
+        const currentYear = new Date().getFullYear();
+        const effectiveYear = detectedYear || (selectedMonth ? parseInt(selectedMonth.split('-')[0]) : currentYear);
+
+        // Mismatch validation: if user already had a month selected, verify it matches
+        if (selectedMonth && detectedMonth) {
+          const [selYearStr, selMonthStr] = selectedMonth.split('-');
+          const selYear = parseInt(selYearStr);
+          const selMonth = parseInt(selMonthStr);
+
+          if (selMonth !== detectedMonth || (detectedYear && selYear !== detectedYear)) {
+            const detectedStr = `${String(detectedMonth).padStart(2, '0')}/${detectedYear || selYear}`;
+            const selectedStr = `${String(selMonth).padStart(2, '0')}/${selYear}`;
+            toast.error(
+              `महिन्यात तफावत! एक्सेल शीट महिना ${detectedStr} चा आहे, परंतु सिलेक्ट केलेला महिना ${selectedStr} आहे. कृपया योग्य महिना निवडा.`,
+              { duration: 6000 }
+            );
+            if (monthlyFileInputRef.current) monthlyFileInputRef.current.value = '';
+            return;
+          }
+        }
+
+        // Auto-detect and set selectedMonth if not already chosen
+        if (!selectedMonth) {
+          if (!detectedMonth) {
+            toast.error('एक्सेल शीटमधून महिना ओळखता आला नाही. कृपया वरील इनपुटमधून महिना व वर्ष निवडा.');
+            if (monthlyFileInputRef.current) monthlyFileInputRef.current.value = '';
+            return;
+          }
+          const autoMonthStr = `${effectiveYear}-${String(detectedMonth).padStart(2, '0')}`;
+          setSelectedMonth(autoMonthStr);
+        }
+
+        const effectiveMonth = detectedMonth || (selectedMonth ? parseInt(selectedMonth.split('-')[1]) : (new Date().getMonth() + 1));
+
+        const agentEligibleAccounts = accounts.filter(acc => {
+          const aId = acc.pigmyAgentID || getAgentId(acc.pigmyAgent) || getAgentId(acc.agent);
+          return aId === Number(selectedMonthlyAgentId) && acc.status === 'Active';
+        });
+
+        const dayColMap: { colIdx: number; day: number; dateStr: string; label: string }[] = [];
+
+        headerRow.forEach((cellVal: any, cIdx: number) => {
+          const str = String(cellVal || '').trim();
+          if (/total|एकूण/i.test(str)) {
+            totalColIdx = cIdx;
+            return;
+          }
+          if (cIdx === 0 && (/acc|खाते|जुना/i.test(str) || !str)) {
+            accColIdx = cIdx;
+            return;
+          }
+          if (cIdx === 1 && (/नाव|name|खातेदार/i.test(str) || !str)) {
+            nameColIdx = cIdx;
+            return;
+          }
+
+          const dateMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})/);
+          if (dateMatch) {
+            const d = parseInt(dateMatch[1]);
+            const m = parseInt(dateMatch[2]);
+            if (d >= 1 && d <= 31) {
+              const colMonth = (m >= 1 && m <= 12) ? m : effectiveMonth;
+              const fullDateStr = `${effectiveYear}-${String(colMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+              dayColMap.push({ colIdx: cIdx, day: d, dateStr: fullDateStr, label: str });
+            }
+          } else {
+            const num = parseInt(str);
+            if (!isNaN(num) && num >= 1 && num <= 31) {
+              const fullDateStr = `${effectiveYear}-${String(effectiveMonth).padStart(2, '0')}-${String(num).padStart(2, '0')}`;
+              dayColMap.push({ colIdx: cIdx, day: num, dateStr: fullDateStr, label: String(num) });
+            }
+          }
+        });
+
+        if (dayColMap.length === 0) {
+          toast.error('पत्रकात दिवसांचे कॉलम्स (उदा. 01/04 ते 30/04) सापडले नाहीत.');
+          return;
+        }
+
+        const previewRows: any[] = [];
+        const skippedRows: any[] = [];
+        let totalEntries = 0;
+        let grandTotal = 0;
+
+        for (let r = 1; r < rawRows.length; r++) {
+          const rowData = rawRows[r];
+          if (!rowData || rowData.length === 0) continue;
+
+          const rawAcc = String(rowData[accColIdx] || '').trim();
+          const rawName = String(rowData[nameColIdx] || '').trim();
+          if (!rawAcc && !rawName) continue;
+
+          const matchedAcc = agentEligibleAccounts.find(a => {
+            const accClean = a.accountNo.replace(/\D/g, '');
+            const rawClean = rawAcc.replace(/\D/g, '');
+            const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
+
+            return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
+                   format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
+                   (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
+                   legacyAcc === rawAcc ||
+                   String(a.pigmyAccountID) === rawAcc;
+          });
+
+          if (!matchedAcc) {
+            skippedRows.push({
+              rawAccount: rawAcc,
+              rawName: rawName,
+              reason: 'या एजंटचे सक्रिय खाते सापडले नाही'
+            });
+            continue;
+          }
+
+          const dailyAmounts: { [dateStr: string]: number } = {};
+          let rowSum = 0;
+          let warningMsg = '';
+
+          dayColMap.forEach(dCol => {
+            const cellVal = parseFloat(rowData[dCol.colIdx]) || 0;
+            if (cellVal > 0) {
+              if (matchedAcc.openingDate) {
+                const openDate = new Date(matchedAcc.openingDate.split('T')[0]);
+                const colDate = new Date(dCol.dateStr);
+                if (openDate > colDate) {
+                  warningMsg = `खाते ${matchedAcc.openingDate.split('T')[0]} रोजी उघडले असल्याने आधीच्या तारखेला रक्कम वगळली.`;
+                  return;
+                }
+              }
+              dailyAmounts[dCol.dateStr] = cellVal;
+              rowSum += cellVal;
+              totalEntries++;
+              grandTotal += cellVal;
+            }
+          });
+
+          const excelTotal = totalColIdx >= 0 ? (parseFloat(rowData[totalColIdx]) || 0) : undefined;
+
+          previewRows.push({
+            accountNo: matchedAcc.accountNo,
+            legacyAccountNumber: (matchedAcc as any).legacyAccountNumber,
+            customerName: getCustomerFullName(matchedAcc.customer),
+            pigmyAccountId: matchedAcc.pigmyAccountID,
+            openingDate: matchedAcc.openingDate?.split('T')[0],
+            dailyAmounts,
+            rowTotal: rowSum,
+            excelTotal,
+            isValid: rowSum > 0,
+            warning: warningMsg || (excelTotal !== undefined && excelTotal > 0 && Math.abs(excelTotal - rowSum) > 0.01 ? `एक्सेल Total (${excelTotal}) आणि बेरजेमध्ये (${rowSum}) फरक आहे.` : undefined)
+          });
+        }
+
+        const dayLabels = dayColMap.map(d => d.label);
+
+        setMonthlyImportPreview({
+          fileName: file.name,
+          totalRows: previewRows.length + skippedRows.length,
+          matchedAccountsCount: previewRows.length,
+          totalDepositEntries: totalEntries,
+          totalAmount: grandTotal,
+          columns: dayLabels,
+          rows: previewRows,
+          skippedRows
+        });
+
+        toast.success(`एक्सेल वाचले: ${previewRows.length} खाती, एकूण ₹${grandTotal.toLocaleString('en-IN')}`);
+
+        // Check if collection already exists in database for this agent & month
+        const checkMonthYear = `${effectiveYear}-${String(effectiveMonth).padStart(2, '0')}`;
+        axios.get(`/api/PigmyCollections/CheckMonthlyExists?agentId=${selectedMonthlyAgentId}&monthYear=${checkMonthYear}`)
+          .then(res => {
+            if (res.data?.hasExisting) {
+              setExistingMonthlyWarning({
+                count: res.data.count,
+                totalAmount: res.data.totalAmount,
+                accountsCount: res.data.accountsCount,
+                monthYear: res.data.monthYear
+              });
+              toast.error(
+                `⚠️ सावधान: या एजंटसाठी ${res.data.monthYear} चे कलेक्शन आधीच सिस्टीममध्ये जमा आहे! दुबार जमा टाळण्यासाठी सेव्ह करणे बंद केले आहे.`,
+                { duration: 8000 }
+              );
+            } else {
+              setExistingMonthlyWarning(null);
+            }
+          })
+          .catch(err => {
+            console.error('Error checking existing monthly collections', err);
+          });
+      } catch (err) {
+        console.error(err);
+        toast.error('मासिक चार्ट एक्सेल फाईल वाचताना त्रुटी आली.');
+      } finally {
+        if (monthlyFileInputRef.current) monthlyFileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleSaveMonthlyImport = async () => {
+    if (!monthlyImportPreview || monthlyImportPreview.rows.length === 0) {
+      toast.error('जमा करण्यासाठी कोणत्याही वैध नोंदी नाहीत.');
+      return;
+    }
+
+    const flatEntries: { pigmyAccountId: number; collectionDate: string; collectionAmount: number }[] = [];
+    monthlyImportPreview.rows.forEach(r => {
+      Object.entries(r.dailyAmounts).forEach(([dateStr, amt]) => {
+        if (amt > 0) {
+          flatEntries.push({
+            pigmyAccountId: r.pigmyAccountId,
+            collectionDate: dateStr,
+            collectionAmount: amt
+          });
+        }
+      });
+    });
+
+    if (flatEntries.length === 0) {
+      toast.error('कोणतीही जमा रक्कम (> 0) सापडली नाही.');
+      return;
+    }
+
+    setMonthlySaving(true);
+    try {
+      const payload = {
+        agentId: Number(selectedMonthlyAgentId),
+        monthYear: selectedMonth,
+        entries: flatEntries
+      };
+
+      const res = await axios.post('/api/PigmyCollections/BulkMonthlyChart', payload);
+      const successMsg = res.data?.message || 'मासिक कलेक्शन यशस्वीरीत्या जमा झाले!';
+      toast.success(successMsg, { duration: 6000 });
+      setMonthlySuccessBanner(successMsg);
+      setMonthlyImportPreview(null);
+      fetchHistory();
+      fetchAccounts();
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data || 'मासिक चार्ट सेव्ह करताना त्रुटी आली.';
+      toast.error(msg);
+    } finally {
+      setMonthlySaving(false);
     }
   };
 
@@ -370,7 +922,18 @@ export default function PigmyCollectionMaster() {
               }`}
             >
               <UserGroupIcon className="w-3 h-3" />
-              <span>१. बल्क कलेक्शन (Bulk Sheet)</span>
+              <span>१. दैनिक बल्क पत्रक (Daily Sheet)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('monthly')}
+              className={`px-2 py-0.5 text-[11px] font-bold rounded-sm cursor-pointer transition flex items-center gap-1 ${
+                activeTab === 'monthly' ? 'bg-primary text-white shadow-2xs' : 'text-gray-700 hover:bg-gray-200/80'
+              }`}
+            >
+              <CalendarDaysIcon className="w-3 h-3" />
+              <span>२. मासिक चार्ट आयात (Monthly Chart)</span>
             </button>
 
             <button
@@ -381,7 +944,7 @@ export default function PigmyCollectionMaster() {
               }`}
             >
               <PlusIcon className="w-3 h-3" />
-              <span>२. मॅन्युअल नोंद (Single)</span>
+              <span>३. मॅन्युअल नोंद (Single)</span>
             </button>
 
             <button
@@ -392,7 +955,7 @@ export default function PigmyCollectionMaster() {
               }`}
             >
               <DevicePhoneMobileIcon className="w-3 h-3" />
-              <span>३. अ‍ॅप सिंक (App Sync)</span>
+              <span>४. अ‍ॅप सिंक (App Sync)</span>
             </button>
 
             <button
@@ -403,7 +966,7 @@ export default function PigmyCollectionMaster() {
               }`}
             >
               <ClockIcon className="w-3 h-3" />
-              <span>४. व्यवहार इतिहास (History)</span>
+              <span>५. व्यवहार इतिहास (History)</span>
             </button>
           </div>
 
@@ -475,6 +1038,45 @@ export default function PigmyCollectionMaster() {
               </div>
             </div>
           </div>
+
+          {/* Daily Excel Tools Bar */}
+          {selectedAgentId && (
+            <div className="bg-blue-50/70 p-2 rounded border border-blue-200 flex flex-wrap items-center justify-between gap-2 print:hidden">
+              <div className="flex items-center gap-1.5 text-xs text-blue-900 font-bold">
+                <DocumentArrowUpIcon className="w-4 h-4 text-blue-600" />
+                <span>दैनिक एक्सेल टूल्स (Daily Excel Tools)</span>
+                <span className="text-[10px] text-blue-700 font-normal">
+                  (निवडलेल्या {collectionDate} तारखेपर्यंतची सक्रिय खाती)
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadDailyTemplate}
+                  className="px-2.5 py-1 bg-white hover:bg-blue-50 text-blue-700 font-bold rounded-sm border border-blue-300 shadow-2xs flex items-center gap-1.5 text-[11px] cursor-pointer"
+                >
+                  <ArrowDownTrayIcon className="w-3.5 h-3.5 text-blue-600" />
+                  <span>📥 दैनिक टेम्पलेट डाउनलोड</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => dailyFileInputRef.current?.click()}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm shadow-2xs flex items-center gap-1.5 text-[11px] cursor-pointer"
+                >
+                  <ArrowUpTrayIcon className="w-3.5 h-3.5 text-white" />
+                  <span>📤 दैनिक एक्सेल आयात करा</span>
+                </button>
+                <input
+                  type="file"
+                  ref={dailyFileInputRef}
+                  onChange={handleDailyExcelImport}
+                  accept=".xlsx, .xls"
+                  className="hidden"
+                />
+              </div>
+            </div>
+          )}
 
           {/* BULK SHEET GRID */}
           {!selectedAgentId ? (
@@ -622,7 +1224,302 @@ export default function PigmyCollectionMaster() {
         </div>
       )}
 
-      {/* TAB 2: SINGLE MANUAL ENTRY */}
+      {/* TAB 2: MONTHLY COLLECTION CHART MATRIX IMPORT */}
+      {activeTab === 'monthly' && (
+        <div className="space-y-3">
+          
+          {/* Success Banner if collection saved */}
+          {monthlySuccessBanner && (
+            <div className="bg-emerald-50 border-2 border-emerald-500 rounded p-3 text-emerald-900 flex items-center justify-between shadow-2xs">
+              <div className="flex items-center gap-2 font-bold text-xs">
+                <CheckCircleIcon className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span>{monthlySuccessBanner}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMonthlySuccessBanner(null)}
+                className="text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-sm font-bold cursor-pointer transition-colors"
+              >
+                ठीक आहे (OK)
+              </button>
+            </div>
+          )}
+
+          {/* Header Controls: Select Agent & Month */}
+          <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-2.5 items-end">
+            
+            {/* SELECT AGENT */}
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                १. पिग्मी एजंट निवडा (Select Agent) *
+              </label>
+              <select
+                value={selectedMonthlyAgentId}
+                onChange={(e) => {
+                  setSelectedMonthlyAgentId(e.target.value ? Number(e.target.value) : '');
+                  setMonthlyImportPreview(null);
+                  setExistingMonthlyWarning(null);
+                }}
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="">-- पिग्मी एजंट निवडा --</option>
+                {agents.map((a) => {
+                  const aId = getAgentId(a);
+                  const branchName = a.branch?.branchName || '';
+                  return (
+                    <option key={`monthly-ag-${aId}`} value={aId}>
+                      {a.agentName} {a.agentCode ? `(${a.agentCode})` : ''} {branchName ? `- [${branchName}]` : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            {/* SELECT MONTH & YEAR */}
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                २. महिना व वर्ष (Month & Year) <span className="text-[10px] text-gray-500 font-normal">(किंवा एक्सेलवरून आपोआप ओळखले जाईल)</span>
+              </label>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => {
+                  setSelectedMonth(e.target.value);
+                  setMonthlyImportPreview(null);
+                  setExistingMonthlyWarning(null);
+                }}
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            </div>
+
+            {/* ACTION BUTTONS: DOWNLOAD TEMPLATE & UPLOAD */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadMonthlyTemplate}
+                disabled={!selectedMonthlyAgentId}
+                className="flex-1 px-2.5 py-1.5 bg-white hover:bg-blue-50 text-blue-700 font-bold rounded-sm border border-blue-300 shadow-2xs flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ArrowDownTrayIcon className="w-4 h-4 text-blue-600" />
+                <span>📥 मासिक टेम्पलेट</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => monthlyFileInputRef.current?.click()}
+                disabled={!selectedMonthlyAgentId}
+                className="flex-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm shadow-2xs flex items-center justify-center gap-1.5 text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ArrowUpTrayIcon className="w-4 h-4 text-white" />
+                <span>📤 एक्सेल चार्ट आयात</span>
+              </button>
+              <input
+                type="file"
+                ref={monthlyFileInputRef}
+                onChange={handleMonthlyExcelImport}
+                accept=".xlsx, .xls"
+                className="hidden"
+              />
+            </div>
+          </div>
+
+          {/* Monthly Guide / Instructions when no file uploaded */}
+          {!monthlyImportPreview ? (
+            <div className="py-8 text-center bg-gray-50/80 rounded border border-dashed border-gray-300 p-6 space-y-2">
+              <TableCellsIcon className="w-10 h-10 text-gray-400 mx-auto" />
+              <h3 className="font-bold text-gray-800 text-sm">मासिक पिग्मी कलेक्शन चार्ट आयात (Monthly Chart Import)</h3>
+              <p className="text-xs text-gray-600 max-w-xl mx-auto">
+                तुम्ही संपूर्ण महिन्याचे (१ ते ३०/३१ तारखांचे) कलेक्शन एकाच एक्सेल चार्टद्वारे थेट आयात करू शकता.
+                'डेली पिग्मि कलेक्शन चार्ट format' किंवा 'मासिक टेम्पलेट' फाईल वापरून अपलोड करा.
+              </p>
+              <div className="inline-flex items-center gap-2 text-[11px] text-blue-700 bg-blue-50 px-3 py-1 rounded border border-blue-200">
+                <ShieldCheckIcon className="w-4 h-4 text-blue-600" />
+                <span>खाते उघडल्याच्या तारखेची (Opening Date) आपोआप पडताळणी केली जाते.</span>
+              </div>
+            </div>
+          ) : (
+            /* PREVIEW OF PARSED MONTHLY MATRIX */
+            <div className="space-y-3">
+              {/* Stat Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="bg-white p-2.5 rounded border border-gray-200 shadow-2xs">
+                  <span className="text-[10px] text-gray-500 font-bold block uppercase">निवडलेला महिना</span>
+                  <span className="text-sm font-extrabold text-gray-900 font-mono">{selectedMonth}</span>
+                </div>
+                <div className="bg-white p-2.5 rounded border border-gray-200 shadow-2xs">
+                  <span className="text-[10px] text-gray-500 font-bold block uppercase">एकूण खाती (Accounts)</span>
+                  <span className="text-sm font-extrabold text-blue-700 font-mono">{monthlyImportPreview.matchedAccountsCount} खाती</span>
+                </div>
+                <div className="bg-white p-2.5 rounded border border-gray-200 shadow-2xs">
+                  <span className="text-[10px] text-gray-500 font-bold block uppercase">एकूण दैनंदिन नोंदी</span>
+                  <span className="text-sm font-extrabold text-amber-700 font-mono">{monthlyImportPreview.totalDepositEntries} नोंदी</span>
+                </div>
+                <div className="bg-emerald-50/80 p-2.5 rounded border border-emerald-300 shadow-2xs">
+                  <span className="text-[10px] text-emerald-700 font-bold block uppercase">एकूण मासिक जमा रक्कम</span>
+                  <span className="text-base font-black text-emerald-800 font-mono">
+                    ₹ {monthlyImportPreview.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Skipped Rows Notification if any */}
+              {monthlyImportPreview.skippedRows.length > 0 && (
+                <div className="bg-amber-50 p-2 rounded border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
+                  <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">⚠️ {monthlyImportPreview.skippedRows.length} ओळी वगळल्या: </span>
+                    {monthlyImportPreview.skippedRows.slice(0, 3).map((sr, idx) => (
+                      <span key={idx} className="mr-2">[{sr.rawAccount || sr.rawName}: {sr.reason}]</span>
+                    ))}
+                    {monthlyImportPreview.skippedRows.length > 3 && (
+                      <span>आणि इतर {monthlyImportPreview.skippedRows.length - 3}...</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Duplicate Import Warning Banner if existing collections found */}
+              {existingMonthlyWarning && (
+                <div className="bg-red-50 border-2 border-red-500 rounded p-3 text-red-900 flex items-start gap-3 shadow-xs">
+                  <ExclamationTriangleIcon className="w-6 h-6 text-red-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-xs text-red-900 flex items-center gap-1.5">
+                      <span>⚠️ आधीच जमा झालेले कलेक्शन आढळले (Duplicate Collection Blocked)</span>
+                    </h4>
+                    <p className="text-[11px] text-red-800">
+                      या एजंटच्या खात्यांवर <strong>{existingMonthlyWarning.monthYear}</strong> महिन्यामध्ये आधीच <strong>{existingMonthlyWarning.count}</strong> दैनंदिन नोंदी (<strong>{existingMonthlyWarning.accountsCount}</strong> खाती, एकूण रक्कम <strong>₹{existingMonthlyWarning.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>) जमा आहेत.
+                    </p>
+                    <p className="text-[11px] text-red-900 font-extrabold">
+                      ⛔ खातेदारांच्या खात्यांवर दुबार (Duplicate) रक्कम जमा होऊ नये म्हणून हे मासिक पत्रक पुन्हा सेव्ह करण्यास मनाई आहे.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Matrix Table Preview */}
+              <div className="bg-white rounded border border-gray-300 shadow-2xs overflow-hidden">
+                <div className="p-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                  <span className="font-bold text-xs text-gray-800">
+                    आयात पूर्वदृश्य (Import Preview - {monthlyImportPreview.fileName})
+                  </span>
+                  <span className="text-[11px] text-gray-500">
+                    दाखवत आहे: {monthlyImportPreview.rows.length} पैकी {Math.min(monthlyImportPreview.rows.length, 50)} खाती
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto max-h-96">
+                  <table className="w-full text-left border-collapse text-[11px]">
+                    <thead className="bg-gray-100 text-gray-700 sticky top-0 border-b border-gray-300 z-10">
+                      <tr>
+                        <th className="p-1.5 font-bold border-r border-gray-300 w-8 text-center">अ.क्र.</th>
+                        <th className="p-1.5 font-bold border-r border-gray-300 min-w-[140px]">खाते क्र. (A/C No)</th>
+                        <th className="p-1.5 font-bold border-r border-gray-300 min-w-[150px]">खातेदाराचे नाव</th>
+                        {monthlyImportPreview.columns.map((col, idx) => (
+                          <th key={idx} className="p-1 font-bold border-r border-gray-300 text-center min-w-[50px] whitespace-nowrap bg-gray-100">
+                            {col}
+                          </th>
+                        ))}
+                        <th className="p-1.5 font-bold text-right min-w-[100px] bg-blue-50 text-blue-900 border-l border-gray-300 whitespace-nowrap">
+                          एकूण जमा (Total)
+                        </th>
+                        <th className="p-1.5 font-bold text-center w-20 whitespace-nowrap bg-gray-100 border-l border-gray-300">स्थिती</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {monthlyImportPreview.rows.slice(0, 50).map((row, idx) => (
+                        <tr key={idx} className="hover:bg-blue-50/40">
+                          <td className="p-1.5 text-center text-gray-500 border-r border-gray-200">{idx + 1}</td>
+                          <td className="p-1.5 font-mono text-gray-900 font-bold border-r border-gray-200 whitespace-nowrap">
+                            {format14DigitDisplay(row.accountNo)}
+                            {row.legacyAccountNumber && (
+                              <div className="text-[10px] text-amber-700 font-bold">जुना: {row.legacyAccountNumber}</div>
+                            )}
+                          </td>
+                          <td className="p-1.5 text-gray-800 border-r border-gray-200 whitespace-nowrap">
+                            {row.customerName}
+                            {row.warning && (
+                              <div className="text-[10px] text-amber-600 font-semibold">{row.warning}</div>
+                            )}
+                          </td>
+                          {monthlyImportPreview.columns.map((col, cIdx) => {
+                            const dayNum = parseInt(col.split('/')[0]) || parseInt(col);
+                            const [y, m] = selectedMonth.split('-');
+                            const targetDateStr = `${y}-${m}-${String(dayNum).padStart(2, '0')}`;
+                            const amt = row.dailyAmounts[targetDateStr] || 0;
+                            return (
+                              <td key={cIdx} className={`p-1 text-center font-mono border-r border-gray-200 whitespace-nowrap ${amt > 0 ? 'bg-emerald-50 text-emerald-800 font-bold' : 'text-gray-300'}`}>
+                                {amt > 0 ? amt : '-'}
+                              </td>
+                            );
+                          })}
+                          <td className="p-1.5 text-right font-mono font-black text-primary bg-blue-50/50 border-l border-gray-200 whitespace-nowrap">
+                            ₹ {row.rowTotal.toLocaleString('en-IN')}
+                          </td>
+                          <td className="p-1.5 text-center border-l border-gray-200 whitespace-nowrap">
+                            {row.rowTotal > 0 ? (
+                              <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-sm">
+                                वैध
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] rounded-sm">
+                                निरंक
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Footer Save Action Bar */}
+                <div className="p-3 bg-gray-50 border-t border-gray-300 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMonthlyImportPreview(null)}
+                      className="px-3 py-1 bg-white hover:bg-gray-100 text-gray-700 font-bold rounded-sm border border-gray-300 text-xs cursor-pointer"
+                    >
+                      रद्द करा (Cancel)
+                    </button>
+                    <span className="text-xs text-gray-600">
+                      एकूण <strong className="text-gray-900">{monthlyImportPreview.totalDepositEntries}</strong> नोंदी खात्यांवर जमा केल्या जातील.
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveMonthlyImport}
+                    disabled={monthlySaving || monthlyImportPreview.totalAmount <= 0 || Boolean(existingMonthlyWarning)}
+                    className={`px-4 py-1.5 font-bold rounded-sm shadow-sm flex items-center gap-2 text-xs transition-all ${
+                      existingMonthlyWarning 
+                        ? 'bg-red-100 text-red-700 border border-red-300 cursor-not-allowed' 
+                        : 'bg-primary hover:bg-blue-800 text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+                    }`}
+                  >
+                    {monthlySaving ? (
+                      <ArrowPathIcon className="w-4 h-4 animate-spin text-white" />
+                    ) : existingMonthlyWarning ? (
+                      <ExclamationTriangleIcon className="w-4 h-4 text-red-600" />
+                    ) : (
+                      <CheckCircleIcon className="w-4 h-4 text-emerald-300" />
+                    )}
+                    <span>
+                      {existingMonthlyWarning
+                        ? '🚫 दुबार नोंद बंदी: या महिन्याचे कलेक्शन आधीच जमा आहे'
+                        : `सर्व मासिक कलेक्शन खात्यांवर जमा करा (₹${monthlyImportPreview.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })})`
+                      }
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* TAB 3: SINGLE MANUAL ENTRY */}
       {activeTab === 'manual' && (
         <div className="bg-gray-50/80 p-3 rounded border border-gray-200 space-y-3">
           <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider pb-1 border-b border-gray-200 flex items-center gap-1.5">

@@ -48,6 +48,20 @@ namespace Bhisi.Api.Controllers
             public List<BulkManualItemDto> Items { get; set; } = new List<BulkManualItemDto>();
         }
 
+        public class BulkMonthlyChartEntryDto
+        {
+            public int PigmyAccountId { get; set; }
+            public DateTime CollectionDate { get; set; }
+            public decimal CollectionAmount { get; set; }
+        }
+
+        public class BulkMonthlyChartRequestDto
+        {
+            public int AgentId { get; set; }
+            public string MonthYear { get; set; } = string.Empty; // e.g. "2026-04"
+            public List<BulkMonthlyChartEntryDto> Entries { get; set; } = new List<BulkMonthlyChartEntryDto>();
+        }
+
         // GET: api/PigmyCollections
         [HttpGet]
         public async Task<ActionResult<IEnumerable<object>>> GetPigmyCollections(
@@ -587,6 +601,232 @@ namespace Bhisi.Api.Controllers
             {
                 await transaction.RollbackAsync();
                 return StatusCode(500, "बल्क कलेक्शन सेव्ह करताना सर्व्हर त्रुटी आली: " + ex.Message);
+            }
+        }
+
+        // GET: api/PigmyCollections/CheckMonthlyExists?agentId=1&monthYear=2026-08
+        [HttpGet("CheckMonthlyExists")]
+        public async Task<IActionResult> CheckMonthlyExists([FromQuery] int agentId, [FromQuery] string monthYear)
+        {
+            if (agentId <= 0 || string.IsNullOrWhiteSpace(monthYear))
+            {
+                return BadRequest("Invalid agentId or monthYear.");
+            }
+
+            var parts = monthYear.Split('-');
+            if (parts.Length != 2 || !int.TryParse(parts[0], out int year) || !int.TryParse(parts[1], out int month))
+            {
+                return BadRequest("Invalid monthYear format. Expected YYYY-MM.");
+            }
+
+            var startDate = new DateTime(year, month, 1);
+            var endDate = startDate.AddMonths(1);
+
+            var collections = await _context.PigmyCollections
+                .Where(c => c.AgentId == agentId && c.CollectionDate >= startDate && c.CollectionDate < endDate && c.CollectionAmount > 0)
+                .Select(c => new { c.PigmyAccountId, c.CollectionAmount })
+                .ToListAsync();
+
+            if (collections.Any())
+            {
+                return Ok(new
+                {
+                    hasExisting = true,
+                    count = collections.Count,
+                    totalAmount = collections.Sum(c => c.CollectionAmount),
+                    accountsCount = collections.Select(c => c.PigmyAccountId).Distinct().Count(),
+                    monthYear = $"{month:D2}/{year}"
+                });
+            }
+
+            return Ok(new
+            {
+                hasExisting = false,
+                count = 0,
+                totalAmount = 0m,
+                accountsCount = 0,
+                monthYear = $"{month:D2}/{year}"
+            });
+        }
+
+        // POST: api/PigmyCollections/BulkMonthlyChart
+        [HttpPost("BulkMonthlyChart")]
+        public async Task<IActionResult> ProcessBulkMonthlyChart([FromBody] BulkMonthlyChartRequestDto request)
+        {
+            if (request == null || request.Entries == null || !request.Entries.Any(i => i.CollectionAmount > 0))
+            {
+                return BadRequest("कृपया किमान एका खात्याची वैध जमा रक्कम (Collection Amount > 0) प्रविष्ट करा.");
+            }
+
+            var validEntries = request.Entries.Where(i => i.CollectionAmount > 0).ToList();
+            var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == request.AgentId);
+            if (agent == null)
+            {
+                return BadRequest("निवडलेला पिग्मी एजंट सापडले नाही.");
+            }
+
+            // Duplicate Prevention: Check if collections already exist for this agent and month
+            var parts = request.MonthYear?.Split('-');
+            if (parts != null && parts.Length == 2 && int.TryParse(parts[0], out int year) && int.TryParse(parts[1], out int month))
+            {
+                var startDate = new DateTime(year, month, 1);
+                var endDate = startDate.AddMonths(1);
+                var existingCount = await _context.PigmyCollections.CountAsync(c => 
+                    c.AgentId == request.AgentId && 
+                    c.CollectionDate >= startDate && 
+                    c.CollectionDate < endDate && 
+                    c.CollectionAmount > 0);
+
+                if (existingCount > 0)
+                {
+                    return BadRequest($"या एजंटसाठी {month:D2}/{year} महिन्याचे कलेक्शन आधीच सिस्टीममध्ये जमा आहे ({existingCount} नोंदी आढळल्या). खात्यांवर दुबार (Duplicate) रक्कम जमा होऊ नये म्हणून आयात रोखण्यात आली आहे.");
+                }
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                int processedEntriesCount = 0;
+                decimal grandTotalAmount = 0;
+                var affectedAccounts = new HashSet<int>();
+                var processedDates = new HashSet<string>();
+
+                var groupedByDate = validEntries.GroupBy(e => e.CollectionDate.Date).OrderBy(g => g.Key);
+
+                foreach (var dateGroup in groupedByDate)
+                {
+                    var targetDate = dateGroup.Key;
+                    var nextDate = targetDate.AddDays(1);
+                    var baseSeq = await _context.PigmyCollections.CountAsync(c => c.CollectionDate >= targetDate && c.CollectionDate < nextDate);
+                    int itemIdx = 0;
+
+                    foreach (var item in dateGroup)
+                    {
+                        var account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.PigmyAccountID == item.PigmyAccountId);
+                        if (account == null || account.Status != "Active") continue;
+
+                        if (account.OpeningDate.Date > targetDate) continue;
+
+                        var branchId = account.BranchID;
+                        PigmyCollection collection;
+                        string receiptNo;
+
+                        var existingCollection = await _context.PigmyCollections.FirstOrDefaultAsync(c => 
+                            c.PigmyAccountId == item.PigmyAccountId && 
+                            c.CollectionDate >= targetDate && c.CollectionDate < nextDate);
+
+                        if (existingCollection != null)
+                        {
+                            receiptNo = existingCollection.ReceiptNo;
+                            existingCollection.CollectionAmount += item.CollectionAmount;
+                            existingCollection.ClosingBalance = existingCollection.OpeningBalance + existingCollection.CollectionAmount;
+                            _context.PigmyCollections.Update(existingCollection);
+                            collection = existingCollection;
+                        }
+                        else
+                        {
+                            itemIdx++;
+                            int currentSeq = baseSeq + itemIdx;
+                            receiptNo = $"IMP-{account.PigmyAgentID}-{targetDate:yyyyMMdd}-{currentSeq:D4}";
+
+                            var openingBal = account.TotalDepositedAmount;
+                            var closingBal = openingBal + item.CollectionAmount;
+
+                            collection = new PigmyCollection
+                            {
+                                PigmyAccountId = item.PigmyAccountId,
+                                AgentId = request.AgentId,
+                                CollectionDate = targetDate,
+                                OpeningBalance = openingBal,
+                                CollectionAmount = item.CollectionAmount,
+                                ClosingBalance = closingBal,
+                                ReceiptNo = receiptNo,
+                                CollectionSource = "IMPORT",
+                                CreatedBy = 1
+                            };
+                            _context.PigmyCollections.Add(collection);
+                        }
+
+                        var updatedAccountBalance = account.TotalDepositedAmount + item.CollectionAmount;
+
+                        var ledgerTx = new PigmyTransaction
+                        {
+                            PigmyAccountID = account.PigmyAccountID,
+                            TransactionDate = targetDate,
+                            ValueDate = targetDate,
+                            TransactionType = "DEPOSIT",
+                            DrAmount = 0,
+                            CrAmount = item.CollectionAmount,
+                            BalanceAmount = updatedAccountBalance,
+                            Narration = $"Pigmy Monthly Chart Import - Rcpt: {receiptNo}",
+                            MakerId = 1,
+                            PostedOn = DateTime.Now
+                        };
+                        _context.PigmyTransactions.Add(ledgerTx);
+
+                        account.TotalDepositedAmount = updatedAccountBalance;
+                        _context.PigmyAccounts.Update(account);
+
+                        var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.IsActive);
+                        int drLedgerId = mapping?.DebitLedgerId ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash")))?.LedgerID ?? 1;
+                        int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
+
+                        string uniqueVoucherNo = $"PV-{branchId}-{targetDate:yyyyMMdd}-IMP-{itemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+                        var voucher = new Voucher
+                        {
+                            BranchID = branchId,
+                            VoucherNo = uniqueVoucherNo,
+                            VoucherDate = targetDate,
+                            VoucherType = "Receipt",
+                            Status = "Pending",
+                            Narration = $"Pigmy Chart Import for A/C {account.AccountNo}",
+                            TotalAmount = item.CollectionAmount
+                        };
+
+                        voucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = drLedgerId,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Dr",
+                            Amount = item.CollectionAmount
+                        });
+
+                        voucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = crLedgerId,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Cr",
+                            Amount = item.CollectionAmount
+                        });
+
+                        _context.Vouchers.Add(voucher);
+                        await _context.SaveChangesAsync();
+
+                        collection.VoucherId = voucher.VoucherID;
+                        collection.IsVoucherGenerated = true;
+
+                        await _context.SaveChangesAsync();
+
+                        processedEntriesCount++;
+                        grandTotalAmount += item.CollectionAmount;
+                        affectedAccounts.Add(account.PigmyAccountID);
+                        processedDates.Add(targetDate.ToString("yyyy-MM-dd"));
+                    }
+                }
+
+                await transaction.CommitAsync();
+                return Ok(new { 
+                    message = $"एजंट '{agent.AgentName}' अंतर्गत {affectedAccounts.Count} खात्यांच्या एकूण {processedEntriesCount} दैनंदिन नोंदी (एकूण रक्कम ₹{grandTotalAmount:N2}) यशस्वीरीत्या जमा झाल्या!", 
+                    processedEntriesCount,
+                    totalAccounts = affectedAccounts.Count,
+                    totalAmount = grandTotalAmount,
+                    totalDates = processedDates.Count
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, "मासिक चार्ट आयात सेव्ह करताना सर्व्हर त्रुटी आली: " + ex.Message);
             }
         }
     }

@@ -2092,6 +2092,112 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
+        db.Database.ExecuteSqlRaw(@"
+            IF OBJECT_ID(N'[dbo].[PigmySchemeInterestSlabs]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[PigmySchemeInterestSlabs] (
+                    [SlabID] INT IDENTITY(1,1) NOT NULL,
+                    [PigmySchemeID] INT NOT NULL,
+                    [FromDays] INT NOT NULL,
+                    [ToDays] INT NOT NULL,
+                    [InterestRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+                    [PenaltyRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+                    [SlabDescription] NVARCHAR(100) NULL,
+                    [IsActive] BIT NOT NULL DEFAULT 1,
+                    [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+                    CONSTRAINT [PK_PigmySchemeInterestSlabs] PRIMARY KEY CLUSTERED ([SlabID] ASC),
+                    CONSTRAINT [FK_PigmySchemeInterestSlabs_PigmySchemes] FOREIGN KEY ([PigmySchemeID]) 
+                        REFERENCES [dbo].[PigmySchemes]([PigmySchemeID]) ON DELETE CASCADE
+                );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('PigmySchemeInterestSlabs', 'FromMonths') IS NOT NULL AND COL_LENGTH('PigmySchemeInterestSlabs', 'FromDays') IS NULL
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_PigmySchemeInterestSlabs_Scheme' AND object_id = OBJECT_ID('dbo.PigmySchemeInterestSlabs'))
+                        DROP INDEX [IX_PigmySchemeInterestSlabs_Scheme] ON [dbo].[PigmySchemeInterestSlabs];
+
+                    ALTER TABLE [dbo].[PigmySchemeInterestSlabs] ADD [FromDays] INT NULL;
+                    ALTER TABLE [dbo].[PigmySchemeInterestSlabs] ADD [ToDays] INT NULL;
+                END
+            END
+
+            IF COL_LENGTH('PigmySchemeInterestSlabs', 'FromMonths') IS NOT NULL AND COL_LENGTH('PigmySchemeInterestSlabs', 'FromDays') IS NOT NULL
+            BEGIN
+                EXEC('
+                    UPDATE [dbo].[PigmySchemeInterestSlabs]
+                    SET [FromDays] = ISNULL([FromMonths] * 30, 0),
+                        [ToDays] = CASE WHEN [ToMonths] = 12 THEN 365 ELSE ISNULL([ToMonths] * 30, 365) END
+                    WHERE [FromDays] IS NULL;
+                ');
+
+                ALTER TABLE [dbo].[PigmySchemeInterestSlabs] ALTER COLUMN [FromDays] INT NOT NULL;
+                ALTER TABLE [dbo].[PigmySchemeInterestSlabs] ALTER COLUMN [ToDays] INT NOT NULL;
+            END
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_PigmySchemeInterestSlabs_Scheme' AND object_id = OBJECT_ID('dbo.PigmySchemeInterestSlabs'))
+            BEGIN
+                CREATE NONCLUSTERED INDEX [IX_PigmySchemeInterestSlabs_Scheme] 
+                    ON [dbo].[PigmySchemeInterestSlabs] ([PigmySchemeID], [FromDays], [ToDays]);
+            END
+
+            IF COL_LENGTH('PigmyAccounts', 'EffectiveStartDate') IS NULL
+                ALTER TABLE [dbo].[PigmyAccounts] ADD [EffectiveStartDate] DATETIME NULL;
+
+            IF COL_LENGTH('PigmyAccounts', 'CurrentCycleNumber') IS NULL
+                ALTER TABLE [dbo].[PigmyAccounts] ADD [CurrentCycleNumber] INT NOT NULL CONSTRAINT DF_PigmyAccounts_CurrentCycleNumber DEFAULT 1;
+
+            IF COL_LENGTH('PigmyAccounts', 'LastWithdrawalDate') IS NULL
+                ALTER TABLE [dbo].[PigmyAccounts] ADD [LastWithdrawalDate] DATETIME NULL;
+
+            IF COL_LENGTH('PigmyAccounts', 'TotalWithdrawnAmount') IS NULL
+                ALTER TABLE [dbo].[PigmyAccounts] ADD [TotalWithdrawnAmount] DECIMAL(18,2) NOT NULL CONSTRAINT DF_PigmyAccounts_TotalWithdrawnAmount DEFAULT 0.00;
+
+            UPDATE [dbo].[PigmyAccounts]
+            SET [EffectiveStartDate] = ISNULL([OpeningDate], GETDATE()),
+                [CurrentCycleNumber] = 1,
+                [TotalWithdrawnAmount] = 0.00
+            WHERE [EffectiveStartDate] IS NULL;
+
+            IF OBJECT_ID(N'[dbo].[PigmyWithdrawals]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[PigmyWithdrawals] (
+                    [WithdrawalID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [PigmyAccountID] INT NOT NULL,
+                    [WithdrawalDate] DATETIME NOT NULL,
+                    [CycleNumber] INT NOT NULL DEFAULT 1,
+                    [CycleStartSnapshot] DATETIME NOT NULL,
+                    [ElapsedDays] INT NOT NULL DEFAULT 0,
+                    [ElapsedMonths] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+                    [RequestedAmount] DECIMAL(18,2) NOT NULL,
+                    [AppliedSlabID] INT NULL,
+                    [PenaltyRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+                    [PenaltyAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    [InterestRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+                    [InterestAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    [NetPaidAmount] DECIMAL(18,2) NOT NULL,
+                    [RemainingBalance] DECIMAL(18,2) NOT NULL,
+                    [VoucherNo] NVARCHAR(50) NULL,
+                    [Narration] NVARCHAR(250) NULL,
+                    [CreatedBy] INT NOT NULL DEFAULT 1,
+                    [CreatedDate] DATETIME NOT NULL DEFAULT GETDATE(),
+                    CONSTRAINT [FK_PigmyWithdrawals_PigmyAccounts] FOREIGN KEY ([PigmyAccountID]) 
+                        REFERENCES [dbo].[PigmyAccounts]([PigmyAccountID]) ON DELETE CASCADE
+                );
+
+                CREATE NONCLUSTERED INDEX [IX_PigmyWithdrawals_PigmyAccountID] ON [dbo].[PigmyWithdrawals]([PigmyAccountID]);
+                CREATE NONCLUSTERED INDEX [IX_PigmyWithdrawals_WithdrawalDate] ON [dbo].[PigmyWithdrawals]([WithdrawalDate]);
+            END
+        ");
+        Log.Information("Pigmy Dynamic Slabs & Partial Withdrawal schema auto-migration verified.");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Failed to apply Pigmy Dynamic Slabs auto-migrations");
+    }
+
+    try
+    {
         // Auto-heal database identity gaps and synchronize triggers across all tables
         db.Database.ExecuteSqlRaw("IF OBJECT_ID('[dbo].[sp_SyncDatabaseIdentities]', 'P') IS NOT NULL EXEC [dbo].[sp_SyncDatabaseIdentities];");
         Log.Information("Database identity synchronization and self-healing triggers verified.");

@@ -4730,8 +4730,8 @@ BEGIN
     CREATE TABLE [dbo].[PigmySchemeInterestSlabs] (
         [SlabID] INT IDENTITY(1,1) NOT NULL,
         [PigmySchemeID] INT NOT NULL,
-        [FromMonths] INT NOT NULL,
-        [ToMonths] INT NOT NULL,
+        [FromDays] INT NOT NULL,
+        [ToDays] INT NOT NULL,
         [InterestRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
         [PenaltyRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
         [SlabDescription] NVARCHAR(100) NULL,
@@ -4743,12 +4743,38 @@ BEGIN
     );
     PRINT '  + Created Table [dbo].[PigmySchemeInterestSlabs]';
 END
+ELSE
+BEGIN
+    -- Handle legacy FromMonths/ToMonths schema upgrade
+    IF COL_LENGTH('PigmySchemeInterestSlabs', 'FromMonths') IS NOT NULL AND COL_LENGTH('PigmySchemeInterestSlabs', 'FromDays') IS NULL
+    BEGIN
+        IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_PigmySchemeInterestSlabs_Scheme' AND object_id = OBJECT_ID('dbo.PigmySchemeInterestSlabs'))
+            DROP INDEX [IX_PigmySchemeInterestSlabs_Scheme] ON [dbo].[PigmySchemeInterestSlabs];
+
+        ALTER TABLE [dbo].[PigmySchemeInterestSlabs] ADD [FromDays] INT NULL;
+        ALTER TABLE [dbo].[PigmySchemeInterestSlabs] ADD [ToDays] INT NULL;
+    END
+END
+GO
+
+IF COL_LENGTH('PigmySchemeInterestSlabs', 'FromMonths') IS NOT NULL AND COL_LENGTH('PigmySchemeInterestSlabs', 'FromDays') IS NOT NULL
+BEGIN
+    EXEC('
+        UPDATE [dbo].[PigmySchemeInterestSlabs]
+        SET [FromDays] = ISNULL([FromMonths] * 30, 0),
+            [ToDays] = CASE WHEN [ToMonths] = 12 THEN 365 ELSE ISNULL([ToMonths] * 30, 365) END
+        WHERE [FromDays] IS NULL;
+    ');
+
+    ALTER TABLE [dbo].[PigmySchemeInterestSlabs] ALTER COLUMN [FromDays] INT NOT NULL;
+    ALTER TABLE [dbo].[PigmySchemeInterestSlabs] ALTER COLUMN [ToDays] INT NOT NULL;
+END
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_PigmySchemeInterestSlabs_Scheme' AND object_id = OBJECT_ID('dbo.PigmySchemeInterestSlabs'))
 BEGIN
     CREATE NONCLUSTERED INDEX [IX_PigmySchemeInterestSlabs_Scheme] 
-        ON [dbo].[PigmySchemeInterestSlabs] ([PigmySchemeID], [FromMonths], [ToMonths]);
+        ON [dbo].[PigmySchemeInterestSlabs] ([PigmySchemeID], [FromDays], [ToDays]);
     PRINT '  + Created Index [IX_PigmySchemeInterestSlabs_Scheme]';
 END
 GO
@@ -4822,7 +4848,56 @@ BEGIN
 END
 GO
 
--- 12.4 Record Version v2.5.15 in SystemVersionHistories
+-- 12.4 Data Migration: Seed Default 4 Slabs for Existing Pigmy Schemes without Slabs
+PRINT '  + Seeding default standard slabs for existing schemes without slabs...';
+
+DECLARE @SchemeID INT;
+DECLARE @InterestRate DECIMAL(5,2);
+DECLARE @PrematureRate DECIMAL(5,2);
+DECLARE @PenaltyRate DECIMAL(5,2);
+DECLARE @DurationMonths INT;
+DECLARE @SeededCount INT = 0;
+
+DECLARE scheme_cursor CURSOR LOCAL FAST_FORWARD FOR 
+    SELECT PigmySchemeID, InterestRate, ISNULL(PrematureInterestRate, 5.50), ISNULL(PenaltyInterestRate, 2.00), ISNULL(DurationMonths, 12)
+    FROM [dbo].[PigmySchemes];
+
+OPEN scheme_cursor;
+FETCH NEXT FROM scheme_cursor INTO @SchemeID, @InterestRate, @PrematureRate, @PenaltyRate, @DurationMonths;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM [dbo].[PigmySchemeInterestSlabs] WHERE PigmySchemeID = @SchemeID)
+    BEGIN
+        -- Slab 1: 0 to 90 Days (2% Penalty, 0% Interest)
+        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromDays, ToDays, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
+        VALUES (@SchemeID, 0, 90, 0.00, @PenaltyRate, N'० ते ९० दिवस (२% दंड कपात)', 1, GETUTCDATE());
+
+        -- Slab 2: 91 to 180 Days (1% Penalty, 0% Interest)
+        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromDays, ToDays, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
+        VALUES (@SchemeID, 91, 180, 0.00, 1.00, N'९१ ते १८० दिवस (१% दंड कपात)', 1, GETUTCDATE());
+
+        -- Slab 3: 181 to 335 Days (Premature Interest, 0% Penalty)
+        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromDays, ToDays, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
+        VALUES (@SchemeID, 181, 335, @PrematureRate, 0.00, N'१८१ ते ३३५ दिवस (अकाली व्याजदर)', 1, GETUTCDATE());
+
+        -- Slab 4: 336 to Duration Days (Full Regular Interest, 0% Penalty)
+        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromDays, ToDays, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
+        VALUES (@SchemeID, 336, CASE WHEN (@DurationMonths * 30) > 335 THEN (@DurationMonths * 30) ELSE 365 END, @InterestRate, 0.00, N'३३६ ते ३६५ दिवस (पूर्ण नियमित व्याज)', 1, GETUTCDATE());
+
+        SET @SeededCount = @SeededCount + 1;
+    END
+
+    FETCH NEXT FROM scheme_cursor INTO @SchemeID, @InterestRate, @PrematureRate, @PenaltyRate, @DurationMonths;
+END
+
+CLOSE scheme_cursor;
+DEALLOCATE scheme_cursor;
+
+PRINT '  + Seeded default slabs for ' + CAST(@SeededCount AS NVARCHAR(10)) + ' schemes.';
+GO
+
+-- 12.5 Record Version v2.5.15 in SystemVersionHistories
 IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
 BEGIN
     EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])

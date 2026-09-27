@@ -372,6 +372,10 @@ const FdAccountOpening: React.FC = () => {
     let totalPeriodicInt = 0;
     let totalBenefit = 0;
 
+    const currentDepositAmt = entryMode === 'bulk'
+      ? (Number(amountPerReceipt) || 0)
+      : (Number(formData.depositAmount) || 0);
+
     const p = currentDepositAmt;
     if (p > 0 && totalDays > 0) {
       const r = rate;

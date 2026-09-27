@@ -164,7 +164,7 @@ export default function PigmyOpeningBalance() {
       pigmyAgentID: String(acc.pigmyAgentID || ''),
       legacyAccountNumber: acc.legacyAccountNumber || '',
       openingDate: acc.openingDate ? acc.openingDate.split('T')[0] : new Date().toISOString().split('T')[0],
-      openingBalance: String(acc.totalDepositedAmount || acc.openingBalance || ''),
+      openingBalance: String(acc.openingBalance !== undefined && acc.openingBalance !== null && acc.openingBalance !== '' ? acc.openingBalance : (acc.totalDepositedAmount || '')),
       financialYear: acc.financialYear || '2025-2026',
       asOfDate: acc.asOfDate ? acc.asOfDate.split('T')[0] : new Date().toISOString().split('T')[0]
     });
@@ -307,7 +307,7 @@ export default function PigmyOpeningBalance() {
       'खातेदाराचे नाव': acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : '-',
       'पिग्मी योजना': acc.pigmyScheme?.schemeName || '-',
       'एजंटचे नाव': acc.pigmyAgent?.agentName || '-',
-      'आरंभिक शिल्लक (₹)': acc.totalDepositedAmount || acc.openingBalance || 0,
+      'आरंभिक शिल्लक (₹)': (acc.openingBalance !== undefined && acc.openingBalance !== null && acc.openingBalance !== '') ? acc.openingBalance : (acc.totalDepositedAmount || 0),
       'उघडल्याचा दिनांक': acc.openingDate ? acc.openingDate.split('T')[0] : '-',
       'स्थिती': acc.status || 'Active'
     }));
@@ -346,7 +346,7 @@ export default function PigmyOpeningBalance() {
   });
 
   // KPI Calculations
-  const totalBalance = migratedAccounts.reduce((sum, a) => sum + (a.totalDepositedAmount || a.openingBalance || 0), 0);
+  const totalBalance = migratedAccounts.reduce((sum, a) => sum + Number((a.openingBalance !== undefined && a.openingBalance !== null && a.openingBalance !== '') ? a.openingBalance : (a.totalDepositedAmount || 0)), 0);
   const activeAgentsCount = new Set(migratedAccounts.map(a => a.pigmyAgentID).filter(Boolean)).size;
 
   const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
@@ -750,7 +750,7 @@ export default function PigmyOpeningBalance() {
                           {acc.pigmyAgent?.agentName || '-'}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">
-                          ₹{(acc.totalDepositedAmount || acc.openingBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          ₹{Number((acc.openingBalance !== undefined && acc.openingBalance !== null && acc.openingBalance !== '') ? acc.openingBalance : (acc.totalDepositedAmount || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-gray-600">
                           {acc.openingDate ? new Date(acc.openingDate).toLocaleDateString('en-IN') : '-'}

@@ -280,9 +280,28 @@ namespace Bhisi.Api.Controllers
                 accounts = await query.OrderByDescending(p => p.PigmyAccountID).ToListAsync();
             }
 
+            var accountIds = accounts.Select(a => a.PigmyAccountID).ToList();
+            var openingBals = await _context.PigmyOpeningBalances
+                .Where(o => accountIds.Contains(o.PigmyAccountID))
+                .ToListAsync();
+
+            var opBalMap = openingBals
+                .GroupBy(o => o.PigmyAccountID)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.PigmyOpeningBalanceID).First());
+
             foreach (var acc in accounts)
             {
                 acc.FormattedAccountNo = LuhnHelper.Format14Digit(acc.AccountNo);
+                if (opBalMap.TryGetValue(acc.PigmyAccountID, out var ob))
+                {
+                    acc.OpeningBalance = ob.MigratedBalanceAmount;
+                    acc.FinancialYear = ob.FinancialYear;
+                    acc.AsOfDate = ob.AsOfDate;
+                }
+                else
+                {
+                    acc.OpeningBalance = acc.TotalDepositedAmount;
+                }
             }
 
             return accounts;
@@ -340,9 +359,28 @@ namespace Bhisi.Api.Controllers
                 .OrderByDescending(p => p.PigmyAccountID)
                 .ToListAsync();
 
+            var accountIds = accounts.Select(a => a.PigmyAccountID).ToList();
+            var openingBals = await _context.PigmyOpeningBalances
+                .Where(o => accountIds.Contains(o.PigmyAccountID))
+                .ToListAsync();
+
+            var opBalMap = openingBals
+                .GroupBy(o => o.PigmyAccountID)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.PigmyOpeningBalanceID).First());
+
             foreach (var acc in accounts)
             {
                 acc.FormattedAccountNo = LuhnHelper.Format14Digit(acc.AccountNo);
+                if (opBalMap.TryGetValue(acc.PigmyAccountID, out var ob))
+                {
+                    acc.OpeningBalance = ob.MigratedBalanceAmount;
+                    acc.FinancialYear = ob.FinancialYear;
+                    acc.AsOfDate = ob.AsOfDate;
+                }
+                else
+                {
+                    acc.OpeningBalance = acc.TotalDepositedAmount;
+                }
             }
 
             return accounts;
@@ -364,6 +402,23 @@ namespace Bhisi.Api.Controllers
             }
 
             pigmyAccount.FormattedAccountNo = LuhnHelper.Format14Digit(pigmyAccount.AccountNo);
+
+            var ob = await _context.PigmyOpeningBalances
+                .Where(o => o.PigmyAccountID == id)
+                .OrderByDescending(x => x.PigmyOpeningBalanceID)
+                .FirstOrDefaultAsync();
+
+            if (ob != null)
+            {
+                pigmyAccount.OpeningBalance = ob.MigratedBalanceAmount;
+                pigmyAccount.FinancialYear = ob.FinancialYear;
+                pigmyAccount.AsOfDate = ob.AsOfDate;
+            }
+            else
+            {
+                pigmyAccount.OpeningBalance = pigmyAccount.TotalDepositedAmount;
+            }
+
             return pigmyAccount;
         }
 
@@ -628,6 +683,10 @@ namespace Bhisi.Api.Controllers
             public int PigmyAgentID { get; set; }
             public int PigmySchemeID { get; set; }
             public decimal TotalDepositedAmount { get; set; }
+            public decimal? OpeningBalance { get; set; }
+            public string? FinancialYear { get; set; }
+            public DateTime? AsOfDate { get; set; }
+            public DateTime? OpeningDate { get; set; }
             public string Status { get; set; } = "Active";
             public DateTime? MaturityDate { get; set; }
         }
@@ -641,32 +700,184 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "अवैध डेटा पॅरामीटर." });
             }
 
-            var existing = await _context.PigmyAccounts.FindAsync(id);
+            var existing = await _context.PigmyAccounts
+                .Include(p => p.Customer)
+                .FirstOrDefaultAsync(p => p.PigmyAccountID == id);
+
             if (existing == null)
             {
                 return NotFound(new { message = "पिग्मी खाते सापडले नाही." });
             }
 
-            if (dto.LegacyAccountNumber != null)
-            {
-                existing.LegacyAccountNumber = string.IsNullOrWhiteSpace(dto.LegacyAccountNumber) ? null : dto.LegacyAccountNumber.Trim();
-            }
-            if (dto.PigmyAgentID > 0) existing.PigmyAgentID = dto.PigmyAgentID;
-            if (dto.PigmySchemeID > 0) existing.PigmySchemeID = dto.PigmySchemeID;
-            if (!string.IsNullOrWhiteSpace(dto.Status)) existing.Status = dto.Status;
-            existing.TotalDepositedAmount = dto.TotalDepositedAmount;
-            if (dto.MaturityDate.HasValue && dto.MaturityDate.Value != default)
-            {
-                existing.MaturityDate = dto.MaturityDate.Value;
-            }
-
+            using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                if (dto.LegacyAccountNumber != null)
+                {
+                    existing.LegacyAccountNumber = string.IsNullOrWhiteSpace(dto.LegacyAccountNumber) ? null : dto.LegacyAccountNumber.Trim();
+                }
+                if (dto.PigmyAgentID > 0) existing.PigmyAgentID = dto.PigmyAgentID;
+                if (dto.PigmySchemeID > 0) existing.PigmySchemeID = dto.PigmySchemeID;
+                if (!string.IsNullOrWhiteSpace(dto.Status)) existing.Status = dto.Status;
+                if (dto.OpeningDate.HasValue && dto.OpeningDate.Value != default)
+                {
+                    existing.OpeningDate = dto.OpeningDate.Value;
+                }
+                if (dto.MaturityDate.HasValue && dto.MaturityDate.Value != default)
+                {
+                    existing.MaturityDate = dto.MaturityDate.Value;
+                }
+
+                // Determine target opening balance
+                decimal? targetOpeningBal = dto.OpeningBalance;
+                if (!targetOpeningBal.HasValue && dto.TotalDepositedAmount != 0)
+                {
+                    bool hasOpBalRec = await _context.PigmyOpeningBalances.AnyAsync(o => o.PigmyAccountID == id);
+                    if (hasOpBalRec)
+                    {
+                        targetOpeningBal = dto.TotalDepositedAmount;
+                    }
+                }
+
+                if (targetOpeningBal.HasValue)
+                {
+                    DateTime effectiveAsOfDate = dto.AsOfDate ?? dto.OpeningDate ?? existing.OpeningDate;
+                    string effectiveFinYear = !string.IsNullOrWhiteSpace(dto.FinancialYear) ? dto.FinancialYear : "Legacy";
+
+                    // 1. Sync PigmyOpeningBalances (Audit table)
+                    var opBalRecord = await _context.PigmyOpeningBalances
+                        .FirstOrDefaultAsync(o => o.PigmyAccountID == id);
+
+                    if (opBalRecord != null)
+                    {
+                        opBalRecord.MigratedBalanceAmount = targetOpeningBal.Value;
+                        if (!string.IsNullOrWhiteSpace(dto.FinancialYear))
+                        {
+                            opBalRecord.FinancialYear = dto.FinancialYear;
+                        }
+                        if (dto.AsOfDate.HasValue && dto.AsOfDate.Value != default)
+                        {
+                            opBalRecord.AsOfDate = dto.AsOfDate.Value;
+                        }
+                        else if (dto.OpeningDate.HasValue && dto.OpeningDate.Value != default)
+                        {
+                            opBalRecord.AsOfDate = dto.OpeningDate.Value;
+                        }
+                        opBalRecord.MigratedOn = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        opBalRecord = new PigmyOpeningBalance
+                        {
+                            PigmyAccountID = id,
+                            FinancialYear = effectiveFinYear,
+                            AsOfDate = effectiveAsOfDate,
+                            MigratedBalanceAmount = targetOpeningBal.Value,
+                            MigrationRemarks = "Migrated from previous software/year (Updated)",
+                            IsPostedToLedger = true,
+                            MigratedOn = DateTime.UtcNow,
+                            MigratedBy = 1
+                        };
+                        _context.PigmyOpeningBalances.Add(opBalRecord);
+                    }
+
+                    // 2. Sync PigmyTransactions (Passbook opening entry)
+                    var opTx = await _context.PigmyTransactions
+                        .Where(t => t.PigmyAccountID == id)
+                        .OrderBy(t => t.TransactionDate)
+                        .ThenBy(t => t.PigmyTransactionID)
+                        .FirstOrDefaultAsync(t => t.TransactionType == "OPENING_BALANCE" 
+                                               || t.ReferenceId == "SYS-OP-BAL"
+                                               || (t.TransactionType == "DEPOSIT" && t.Narration.Contains("Initial Opening Deposit")));
+
+                    DateTime txDate = dto.AsOfDate ?? dto.OpeningDate ?? existing.OpeningDate;
+
+                    if (opTx != null)
+                    {
+                        opTx.CrAmount = targetOpeningBal.Value;
+                        opTx.DrAmount = 0;
+                        if (dto.AsOfDate.HasValue && dto.AsOfDate.Value != default)
+                        {
+                            opTx.TransactionDate = dto.AsOfDate.Value;
+                            opTx.ValueDate = dto.AsOfDate.Value;
+                            opTx.Narration = $"Account Opening Deposit / Migration (As Of {dto.AsOfDate.Value:dd/MM/yyyy})";
+                        }
+                        else if (dto.OpeningDate.HasValue && dto.OpeningDate.Value != default)
+                        {
+                            opTx.TransactionDate = dto.OpeningDate.Value;
+                            opTx.ValueDate = dto.OpeningDate.Value;
+                        }
+                    }
+                    else
+                    {
+                        opTx = new PigmyTransaction
+                        {
+                            PigmyAccountID = id,
+                            TransactionDate = txDate,
+                            ValueDate = txDate,
+                            TransactionType = "OPENING_BALANCE",
+                            CrAmount = targetOpeningBal.Value,
+                            DrAmount = 0,
+                            BalanceAmount = targetOpeningBal.Value,
+                            Narration = $"Account Opening Deposit / Migration (As Of {txDate:dd/MM/yyyy})",
+                            ReferenceId = "SYS-OP-BAL",
+                            PostedOn = DateTime.UtcNow,
+                            MakerId = 1
+                        };
+                        _context.PigmyTransactions.Add(opTx);
+                    }
+
+                    // 3. Sync Opening Voucher if existed
+                    if (!string.IsNullOrWhiteSpace(existing.AccountNo))
+                    {
+                        var opVoucher = await _context.Vouchers
+                            .Include(v => v.VoucherDetails)
+                            .FirstOrDefaultAsync(v => v.Narration != null && v.Narration.Contains($"Pigmy Initial Opening Deposit for A/C {existing.AccountNo}"));
+                        if (opVoucher != null)
+                        {
+                            opVoucher.TotalAmount = targetOpeningBal.Value;
+                            foreach (var vd in opVoucher.VoucherDetails)
+                            {
+                                vd.Amount = targetOpeningBal.Value;
+                            }
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+
+                    // 4. Recalculate running balance for all transactions and reconcile TotalDepositedAmount
+                    var allTxs = await _context.PigmyTransactions
+                        .Where(t => t.PigmyAccountID == id)
+                        .OrderBy(t => t.TransactionDate)
+                        .ThenBy(t => t.PigmyTransactionID)
+                        .ToListAsync();
+
+                    decimal runningBal = 0;
+                    foreach (var tx in allTxs)
+                    {
+                        runningBal += (tx.CrAmount - tx.DrAmount);
+                        tx.BalanceAmount = runningBal;
+                    }
+
+                    existing.TotalDepositedAmount = runningBal;
+                }
+                else
+                {
+                    existing.TotalDepositedAmount = dto.TotalDepositedAmount;
+                }
+
                 await _context.SaveChangesAsync();
-                return Ok(new { message = "पिग्मी खाते माहिती यशस्वीरीत्या अद्ययावत (Updated) झाली!" });
+                await transaction.CommitAsync();
+
+                return Ok(new { 
+                    message = "पिग्मी खाते माहिती, सुरुवातीची शिल्लक आणि व्यवहार यशस्वीरीत्या अद्ययावत (Updated) झाले!",
+                    openingBalance = targetOpeningBal ?? existing.TotalDepositedAmount,
+                    totalDepositedAmount = existing.TotalDepositedAmount
+                });
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync();
                 return StatusCode(500, new { message = "अद्ययावत करताना त्रुटी आली: " + ex.Message });
             }
         }

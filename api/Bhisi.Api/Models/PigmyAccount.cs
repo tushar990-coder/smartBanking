@@ -88,6 +88,15 @@ namespace Bhisi.Api.Models
         [NotMapped]
         public string? FullName => CustomerName;
 
+        [NotMapped]
+        public decimal OpeningBalance { get; set; }
+
+        [NotMapped]
+        public string? FinancialYear { get; set; }
+
+        [NotMapped]
+        public DateTime? AsOfDate { get; set; }
+
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     }

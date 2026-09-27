@@ -5,6 +5,8 @@ import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import { MemberOption } from './common/MemberSearchSelect';
 import FdReceiptPrintModal from './FdReceiptPrintModal';
+import { FdInterestScheduleModal } from './FdInterestScheduleModal';
+import { generateFdInterestSchedule } from '../utils/fdInterestSchedule';
 
 interface Member extends MemberOption {}
 
@@ -78,6 +80,7 @@ const FdAccountOpening: React.FC = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; accountNo: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [selectedPrintAccount, setSelectedPrintAccount] = useState<any | null>(null);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
 
   const API_URL = '/api';
 
@@ -418,6 +421,42 @@ const FdAccountOpening: React.FC = () => {
       totalBenefitAmount: totalBenefit,
     });
   }, [formData.depositAmount, formData.fdSchemeID, formData.durationType, formData.durationValue, formData.openingDate, formData.isSeniorCitizen, entryMode, amountPerReceipt, schemes]);
+
+  // Active customer details for schedule modal
+  const activeCustId = formData.customerID || formData.memberID;
+  const currentCust = customers.find((c: any) => (c.customerID || c.memberID || c.id) === Number(activeCustId));
+  const activeCustomerName = currentCust 
+    ? `${currentCust.firstName || ''} ${currentCust.middleName || ''} ${currentCust.lastName || ''}`.replace(/\s+/g, ' ').trim() || currentCust.name || currentCust.label || 'ठेवीदार'
+    : 'ठेवीदार';
+  const activeCustomerCode = currentCust?.memberCode || currentCust?.code || '';
+  const activeCustomerCif = currentCust?.cifNo || currentCust?.cif || '';
+
+  // Generate real-time interest schedule
+  const scheduleSummary = React.useMemo(() => {
+    const currentDepositAmt = entryMode === 'bulk'
+      ? (Number(amountPerReceipt) || 0)
+      : (Number(formData.depositAmount) || 0);
+
+    return generateFdInterestSchedule({
+      depositAmount: currentDepositAmt,
+      interestRate: calcData.interestRate,
+      openingDate: formData.openingDate,
+      maturityDate: calcData.maturityDate,
+      schemeType: calcData.interestType,
+      compoundingFrequency: selectedScheme?.interestCompoundingFrequency || 'Quarterly',
+      targetMaturityAmount: calcData.maturityAmount,
+    });
+  }, [
+    entryMode,
+    amountPerReceipt,
+    formData.depositAmount,
+    calcData.interestRate,
+    formData.openingDate,
+    calcData.maturityDate,
+    calcData.interestType,
+    selectedScheme?.interestCompoundingFrequency,
+    calcData.maturityAmount
+  ]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | any) => {
     const { name, value, type, checked } = e.target;
@@ -875,9 +914,21 @@ const FdAccountOpening: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
-                        {calcData.isPeriodicPayout ? 'मुदतपूर्ती मुद्दल परतावा (Principal ₹)' : 'मुदतपूर्ती रक्कम (Maturity ₹)'}
-                      </label>
+                      <div className="flex justify-between items-center mb-0.5">
+                        <label className="block text-[11px] font-medium text-gray-600">
+                          {calcData.isPeriodicPayout ? 'मुदतपूर्ती मुद्दल परतावा (Principal ₹)' : 'मुदतपूर्ती रक्कम (Maturity ₹)'}
+                        </label>
+                        {calcData.maturityAmount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setIsScheduleModalOpen(true)}
+                            className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline flex items-center gap-0.5 cursor-pointer"
+                            title="तिमाही/मासिक व्याज तक्ता पहा"
+                          >
+                            <span>📊 व्याज तक्ता</span>
+                          </button>
+                        )}
+                      </div>
                       <input type="text" value={formData.fdSchemeID === 0 ? 'योजना निवडा' : (calcData.maturityAmount > 0 ? `₹ ${Math.round(calcData.maturityAmount).toLocaleString('en-IN')}` : '₹ 0')} readOnly
                         className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-100 font-extrabold text-emerald-950 cursor-not-allowed font-mono shadow-2xs" />
                     </div>
@@ -957,7 +1008,19 @@ const FdAccountOpening: React.FC = () => {
                       )}
 
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">प्रति पावती मुदतपूर्ती (₹)</label>
+                        <div className="flex justify-between items-center mb-0.5">
+                          <label className="block text-[11px] font-medium text-gray-600">प्रति पावती मुदतपूर्ती (₹)</label>
+                          {calcData.maturityAmount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setIsScheduleModalOpen(true)}
+                              className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline flex items-center gap-0.5 cursor-pointer"
+                              title="प्रति पावती व्याज तक्ता पहा"
+                            >
+                              <span>📊 व्याज तक्ता</span>
+                            </button>
+                          )}
+                        </div>
                         <input type="text" value={formData.fdSchemeID === 0 ? 'योजना निवडा' : (calcData.maturityAmount > 0 ? `₹ ${Math.round(calcData.maturityAmount).toLocaleString('en-IN')}` : '₹ 0')} readOnly
                           className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-100 font-extrabold text-emerald-950 cursor-not-allowed font-mono shadow-2xs" />
                       </div>
@@ -1012,6 +1075,19 @@ const FdAccountOpening: React.FC = () => {
                         <span className="bg-emerald-700 text-white px-3 py-1 rounded font-extrabold shadow-2xs">
                           {entryMode === 'bulk' ? `प्रति पावती मुदतपूर्ती: ₹ ${calcData.maturityAmount.toLocaleString('en-IN')}` : `एकूण मुदतपूर्ती: ₹ ${calcData.maturityAmount.toLocaleString('en-IN')}`}
                         </span>
+                      )}
+
+                      {/* View Interest Chart Modal Button */}
+                      {calcData.maturityAmount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setIsScheduleModalOpen(true)}
+                          className="bg-gradient-to-r from-indigo-700 to-blue-700 hover:from-indigo-800 hover:to-blue-800 active:scale-95 text-white px-3 py-1 rounded font-bold shadow-xs hover:shadow-md text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-indigo-500/30"
+                          title="सविस्तर तिमाही/मासिक व्याज तक्ता व वेळापत्रक पहा"
+                        >
+                          <span>📊</span>
+                          <span>व्याज तक्ता पहा (Interest Chart)</span>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1299,6 +1375,23 @@ const FdAccountOpening: React.FC = () => {
         <FdReceiptPrintModal
           account={selectedPrintAccount}
           onClose={() => setSelectedPrintAccount(null)}
+        />
+      )}
+
+      {/* FD Interest Accrual & Amortization Chart Modal */}
+      {isScheduleModalOpen && (
+        <FdInterestScheduleModal
+          isOpen={isScheduleModalOpen}
+          onClose={() => setIsScheduleModalOpen(false)}
+          summary={scheduleSummary}
+          customerName={activeCustomerName}
+          memberCode={activeCustomerCode}
+          cifNo={activeCustomerCif}
+          schemeName={selectedScheme?.schemeName || 'मुदत ठेव योजना'}
+          isSeniorCitizen={formData.isSeniorCitizen}
+          entryMode={entryMode}
+          splitCount={Number(splitCount) || 1}
+          totalDepositAmount={Number(totalDepositAmount) || 0}
         />
       )}
     </div>

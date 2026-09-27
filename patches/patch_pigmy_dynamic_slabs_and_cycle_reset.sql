@@ -38,8 +38,8 @@ BEGIN
     CREATE TABLE [dbo].[PigmySchemeInterestSlabs] (
         [SlabID] INT IDENTITY(1,1) NOT NULL,
         [PigmySchemeID] INT NOT NULL,
-        [FromMonths] INT NOT NULL,
-        [ToMonths] INT NOT NULL,
+        [FromDays] INT NOT NULL,
+        [ToDays] INT NOT NULL,
         [InterestRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
         [PenaltyRate] DECIMAL(5,2) NOT NULL DEFAULT 0.00,
         [SlabDescription] NVARCHAR(100) NULL,
@@ -61,7 +61,7 @@ GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_PigmySchemeInterestSlabs_Scheme' AND object_id = OBJECT_ID('dbo.PigmySchemeInterestSlabs'))
 BEGIN
     CREATE NONCLUSTERED INDEX [IX_PigmySchemeInterestSlabs_Scheme] 
-        ON [dbo].[PigmySchemeInterestSlabs] ([PigmySchemeID], [FromMonths], [ToMonths]);
+        ON [dbo].[PigmySchemeInterestSlabs] ([PigmySchemeID], [FromDays], [ToDays]);
     PRINT '    [SUCCESS] Created Index [IX_PigmySchemeInterestSlabs_Scheme]';
 END
 GO
@@ -192,21 +192,21 @@ WHILE @@FETCH_STATUS = 0
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM [dbo].[PigmySchemeInterestSlabs] WHERE PigmySchemeID = @SchemeID)
     BEGIN
-        -- Slab 1: 0 to 3 Months (2% Penalty, 0% Interest)
-        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromMonths, ToMonths, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
-        VALUES (@SchemeID, 0, 3, 0.00, @PenaltyRate, N'० ते ३ महिने (२% दंड कपात)', 1, GETUTCDATE());
+        -- Slab 1: 0 to 90 Days (2% Penalty, 0% Interest)
+        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromDays, ToDays, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
+        VALUES (@SchemeID, 0, 90, 0.00, @PenaltyRate, N'० ते ९० दिवस (२% दंड कपात)', 1, GETUTCDATE());
 
-        -- Slab 2: 3 to 6 Months (1% Penalty, 0% Interest)
-        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromMonths, ToMonths, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
-        VALUES (@SchemeID, 3, 6, 0.00, 1.00, N'३ ते ६ महिने (१% दंड कपात)', 1, GETUTCDATE());
+        -- Slab 2: 91 to 180 Days (1% Penalty, 0% Interest)
+        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromDays, ToDays, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
+        VALUES (@SchemeID, 91, 180, 0.00, 1.00, N'९१ ते १८० दिवस (१% दंड कपात)', 1, GETUTCDATE());
 
-        -- Slab 3: 6 to 11 Months (Premature Interest, 0% Penalty)
-        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromMonths, ToMonths, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
-        VALUES (@SchemeID, 6, 11, @PrematureRate, 0.00, N'६ ते ११ महिने (अकाली व्याजदर)', 1, GETUTCDATE());
+        -- Slab 3: 181 to 335 Days (Premature Interest, 0% Penalty)
+        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromDays, ToDays, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
+        VALUES (@SchemeID, 181, 335, @PrematureRate, 0.00, N'१८१ ते ३३५ दिवस (अकाली व्याजदर)', 1, GETUTCDATE());
 
-        -- Slab 4: 11 to Duration Months (Full Regular Interest, 0% Penalty)
-        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromMonths, ToMonths, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
-        VALUES (@SchemeID, 11, CASE WHEN @DurationMonths > 11 THEN @DurationMonths ELSE 12 END, @InterestRate, 0.00, N'११ ते १२ महिने (पूर्ण नियमित व्याज)', 1, GETUTCDATE());
+        -- Slab 4: 336 to Duration Days (Full Regular Interest, 0% Penalty)
+        INSERT INTO [dbo].[PigmySchemeInterestSlabs] (PigmySchemeID, FromDays, ToDays, InterestRate, PenaltyRate, SlabDescription, IsActive, CreatedAt)
+        VALUES (@SchemeID, 336, CASE WHEN (@DurationMonths * 30) > 335 THEN (@DurationMonths * 30) ELSE 365 END, @InterestRate, 0.00, N'३३६ ते ३६५ दिवस (पूर्ण नियमित व्याज)', 1, GETUTCDATE());
 
         SET @SeededCount = @SeededCount + 1;
         PRINT '    + Seeded 4 default slabs for SchemeID: ' + CAST(@SchemeID AS NVARCHAR(10));

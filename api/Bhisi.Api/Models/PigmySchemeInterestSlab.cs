@@ -18,10 +18,10 @@ namespace Bhisi.Api.Models
         public virtual PigmyScheme? PigmyScheme { get; set; }
 
         [Required]
-        public int FromMonths { get; set; }
+        public int FromDays { get; set; }
 
         [Required]
-        public int ToMonths { get; set; }
+        public int ToDays { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(5,2)")]

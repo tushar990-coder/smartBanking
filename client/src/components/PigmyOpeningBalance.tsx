@@ -243,6 +243,7 @@ export default function PigmyOpeningBalance() {
       if (editingAccountId) {
         await axios.put(`/api/PigmyAccounts/${editingAccountId}`, {
           pigmyAccountID: editingAccountId,
+          totalDepositedAmount: parseFloat(formData.openingBalance || '0'),
           ...payload
         });
         const updatedAccount = migratedAccounts.find(a => a.pigmyAccountID === editingAccountId);

@@ -101,17 +101,17 @@ namespace Bhisi.Api.Controllers
 
         private static (PigmySchemeInterestSlab? slab, decimal penaltyRate, decimal interestRate, string note) GetApplicableSlab(
             PigmyScheme? scheme,
-            decimal elapsedMonths,
+            int elapsedDays,
             bool isPremature)
         {
             if (scheme?.Slabs != null && scheme.Slabs.Any())
             {
-                var sorted = scheme.Slabs.OrderBy(s => Convert.ToDecimal(s.FromMonths)).ToList();
+                var sorted = scheme.Slabs.OrderBy(s => s.FromDays).ToList();
                 var match = sorted.FirstOrDefault(s =>
-                    elapsedMonths >= Convert.ToDecimal(s.FromMonths) &&
-                    elapsedMonths < Convert.ToDecimal(s.ToMonths));
+                    elapsedDays >= s.FromDays &&
+                    elapsedDays <= s.ToDays);
 
-                if (match == null && elapsedMonths >= Convert.ToDecimal(sorted.Last().FromMonths))
+                if (match == null && elapsedDays >= sorted.Last().FromDays)
                 {
                     match = sorted.Last();
                 }
@@ -120,7 +120,7 @@ namespace Bhisi.Api.Controllers
                 {
                     decimal pen = Convert.ToDecimal(match.PenaltyRate);
                     decimal intr = Convert.ToDecimal(match.InterestRate);
-                    string desc = match.SlabDescription ?? $"{match.FromMonths} ते {match.ToMonths} महिने";
+                    string desc = match.SlabDescription ?? $"{match.FromDays} ते {match.ToDays} दिवस";
                     return (match, pen, intr, desc);
                 }
             }
@@ -133,11 +133,11 @@ namespace Bhisi.Api.Controllers
 
             if (isPremature)
             {
-                if (elapsedMonths < 3) return (null, penRate, 0.0m, $"० ते ३ महिने ({penRate}% दंड आकारणी)");
-                if (elapsedMonths < 6) return (null, 0.0m, 0.0m, "३ ते ६ महिने (मुद्दल परत, ०% व्याज)");
-                return (null, 0.0m, premRate, $"६ ते ११ महिने ({premRate}% अकाली व्याज)");
+                if (elapsedDays <= 90) return (null, penRate, 0.0m, $"० ते ९० दिवस ({penRate}% दंड आकारणी)");
+                if (elapsedDays <= 180) return (null, 0.0m, 0.0m, "९१ ते १८० दिवस (मुद्दल परत, ०% व्याज)");
+                return (null, 0.0m, premRate, $"१८१ ते ३३५ दिवस ({premRate}% अकाली व्याज)");
             }
-            return (null, 0.0m, fullRate, $"१२ महिने पूर्ण मुदत ({fullRate}% पूर्ण व्याज)");
+            return (null, 0.0m, fullRate, $"३३६ ते ३६५ दिवस ({fullRate}% पूर्ण व्याज)");
         }
 
         // GET: api/PigmyClosure/Preview/{accountNo}
@@ -158,7 +158,7 @@ namespace Bhisi.Api.Controllers
             int tenureDaysInCycle = Math.Max(0, (int)(DateTime.Today - cycleStart).TotalDays);
             decimal tenureMonthsInCycle = Math.Round((decimal)tenureDaysInCycle / 30.416m, 2);
 
-            var (appliedSlab, penaltyRate, interestRate, policyNote) = GetApplicableSlab(account.PigmyScheme, tenureMonthsInCycle, isPremature);
+            var (appliedSlab, penaltyRate, interestRate, policyNote) = GetApplicableSlab(account.PigmyScheme, tenureDaysInCycle, isPremature);
 
             decimal penaltyAmount = Math.Round(account.TotalDepositedAmount * (penaltyRate / 100m), 2);
             decimal interestAmount = Math.Round(account.TotalDepositedAmount * (interestRate / 100m), 2);
@@ -242,7 +242,7 @@ namespace Bhisi.Api.Controllers
             decimal elapsedMonths = Math.Round((decimal)elapsedDays / 30.416m, 2);
 
             bool isPremature = DateTime.Today < account.MaturityDate;
-            var (appliedSlab, penaltyRate, interestRate, policyNote) = GetApplicableSlab(account.PigmyScheme, elapsedMonths, isPremature);
+            var (appliedSlab, penaltyRate, interestRate, policyNote) = GetApplicableSlab(account.PigmyScheme, elapsedDays, isPremature);
 
             decimal penaltyAmount = Math.Round(amount * (penaltyRate / 100m), 2);
             decimal interestAmount = Math.Round(amount * (interestRate / 100m), 2);
@@ -359,7 +359,7 @@ namespace Bhisi.Api.Controllers
             decimal elapsedMonths = Math.Round((decimal)elapsedDays / 30.416m, 2);
 
             bool isPremature = DateTime.Today < account.MaturityDate;
-            var (appliedSlab, penaltyRate, interestRate, policyNote) = GetApplicableSlab(account.PigmyScheme, elapsedMonths, isPremature);
+            var (appliedSlab, penaltyRate, interestRate, policyNote) = GetApplicableSlab(account.PigmyScheme, elapsedDays, isPremature);
 
             decimal penaltyAmount = Math.Round(request.Amount * (penaltyRate / 100m), 2);
             decimal interestAmount = Math.Round(request.Amount * (interestRate / 100m), 2);
@@ -618,7 +618,7 @@ namespace Bhisi.Api.Controllers
             int tenureDaysInCycle = Math.Max(0, (int)(DateTime.Today - cycleStart).TotalDays);
             decimal tenureMonthsInCycle = Math.Round((decimal)tenureDaysInCycle / 30.416m, 2);
 
-            var (appliedSlab, penaltyRate, interestRate, policyNote) = GetApplicableSlab(account.PigmyScheme, tenureMonthsInCycle, isPremature);
+            var (appliedSlab, penaltyRate, interestRate, policyNote) = GetApplicableSlab(account.PigmyScheme, tenureDaysInCycle, isPremature);
 
             decimal penaltyAmount = Math.Round(account.TotalDepositedAmount * (penaltyRate / 100m), 2);
             decimal interestAmount = Math.Round(account.TotalDepositedAmount * (interestRate / 100m), 2);

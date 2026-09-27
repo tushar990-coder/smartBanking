@@ -31,7 +31,7 @@ namespace Bhisi.Api.Controllers
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
                 .Include(s => s.CommissionExpenseLedger)
-                .Include(s => s.Slabs.OrderBy(sl => sl.FromMonths))
+                .Include(s => s.Slabs.OrderBy(sl => sl.FromDays))
                 .ToListAsync();
         }
 
@@ -44,7 +44,7 @@ namespace Bhisi.Api.Controllers
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
                 .Include(s => s.CommissionExpenseLedger)
-                .Include(s => s.Slabs.OrderBy(sl => sl.FromMonths))
+                .Include(s => s.Slabs.OrderBy(sl => sl.FromDays))
                 .FirstOrDefaultAsync(s => s.PigmySchemeID == id);
 
             if (pigmyScheme == null)
@@ -99,8 +99,8 @@ namespace Bhisi.Api.Controllers
                     _context.PigmySchemeInterestSlabs.Add(new PigmySchemeInterestSlab
                     {
                         PigmySchemeID = id,
-                        FromMonths = slab.FromMonths,
-                        ToMonths = slab.ToMonths,
+                        FromDays = slab.FromDays,
+                        ToDays = slab.ToDays,
                         InterestRate = slab.InterestRate,
                         PenaltyRate = slab.PenaltyRate,
                         SlabDescription = slab.SlabDescription,
@@ -180,10 +180,10 @@ namespace Bhisi.Api.Controllers
 
                 pigmyScheme.Slabs = new List<PigmySchemeInterestSlab>
                 {
-                    new PigmySchemeInterestSlab { FromMonths = 0, ToMonths = 3, InterestRate = 0.00m, PenaltyRate = pRate, SlabDescription = "० ते ३ महिने (२% दंड कपात)", IsActive = true },
-                    new PigmySchemeInterestSlab { FromMonths = 3, ToMonths = 6, InterestRate = 0.00m, PenaltyRate = 1.00m, SlabDescription = "३ ते ६ महिने (१% दंड कपात)", IsActive = true },
-                    new PigmySchemeInterestSlab { FromMonths = 6, ToMonths = 11, InterestRate = premRate, PenaltyRate = 0.00m, SlabDescription = "६ ते ११ महिने (अकाली व्याजदर)", IsActive = true },
-                    new PigmySchemeInterestSlab { FromMonths = 11, ToMonths = duration, InterestRate = regRate, PenaltyRate = 0.00m, SlabDescription = "११ ते १२ महिने (पूर्ण नियमित व्याज)", IsActive = true }
+                    new PigmySchemeInterestSlab { FromDays = 0, ToDays = 90, InterestRate = 0.00m, PenaltyRate = pRate, SlabDescription = "० ते ९० दिवस (२% दंड कपात)", IsActive = true },
+                    new PigmySchemeInterestSlab { FromDays = 91, ToDays = 180, InterestRate = 0.00m, PenaltyRate = 1.00m, SlabDescription = "९१ ते १८० दिवस (१% दंड कपात)", IsActive = true },
+                    new PigmySchemeInterestSlab { FromDays = 181, ToDays = 335, InterestRate = premRate, PenaltyRate = 0.00m, SlabDescription = "१८१ ते ३३५ दिवस (अकाली व्याजदर)", IsActive = true },
+                    new PigmySchemeInterestSlab { FromDays = 336, ToDays = Math.Max(365, duration * 30), InterestRate = regRate, PenaltyRate = 0.00m, SlabDescription = "३३६ ते ३६५ दिवस (पूर्ण नियमित व्याज)", IsActive = true }
                 };
             }
 

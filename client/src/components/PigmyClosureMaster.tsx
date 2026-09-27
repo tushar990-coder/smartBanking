@@ -427,8 +427,8 @@ const PigmyClosureMaster: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end">
-                      <div className="sm:col-span-2">
+                    <div className="grid grid-cols-1 sD:grid-cols-3 gap-2.5 items-end">
+                      <div className="sD:col-span-2">
                         <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
                           काढायची रक्कम (Withdrawal Amount ₹) *
                         </label>
@@ -466,7 +466,7 @@ const PigmyClosureMaster: React.FC = () => {
                     {/* WITHDRAWAL PREVIEW BREAKDOWN */}
                     {withdrawalPreview && (
                       <div className="mt-3 pt-2.5 border-t border-blue-200 space-y-2.5">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                        <div className="grid grid-cols-1 sD:grid-cols-3 gap-2 text-xs">
                           <div className="bg-white p-2 rounded border border-gray-200">
                             <span className="text-[10px] text-gray-500 block uppercase font-bold">१. मागितलेली मुद्दल</span>
                             <span className="font-mono font-bold text-gray-900 text-sm">

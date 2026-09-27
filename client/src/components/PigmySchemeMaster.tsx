@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import {
   Save,
@@ -34,8 +34,8 @@ interface Ledger {
 export interface PigmySchemeInterestSlab {
   slabID?: number;
   pigmySchemeID?: number;
-  fromMonths: number | string;
-  toMonths: number | string;
+  fromDays: number | string;
+  toDays: number | string;
   interestRate: number | string;
   penaltyRate: number | string;
   slabDescription?: string;
@@ -83,35 +83,35 @@ const getDefaultSlabs = (
 ): PigmySchemeInterestSlab[] => {
   return [
     {
-      fromMonths: 0,
-      toMonths: 3,
+      fromDays: 0,
+      toDays: 90,
       interestRate: 0.0,
       penaltyRate: penalty,
-      slabDescription: `० ते ३ महिने (${penalty}% दंड आकारणी)`,
+      slabDescription: `० ते ९० दिवस (${penalty}% दंड आकारणी)`,
       isActive: true
     },
     {
-      fromMonths: 3,
-      toMonths: 6,
+      fromDays: 91,
+      toDays: 180,
       interestRate: 0.0,
       penaltyRate: 0.0,
-      slabDescription: '३ ते ६ महिने (मुद्दल परत, ०% व्याज / ०% दंड)',
+      slabDescription: '९१ ते १८० दिवस (मुद्दल परत, ०% व्याज / ०% दंड)',
       isActive: true
     },
     {
-      fromMonths: 6,
-      toMonths: 11,
+      fromDays: 181,
+      toDays: 335,
       interestRate: premature,
       penaltyRate: 0.0,
-      slabDescription: `६ ते ११ महिने (${premature}% अकाली व्याज)`,
+      slabDescription: `१८१ ते ३३५ दिवस (${premature}% अकाली व्याज)`,
       isActive: true
     },
     {
-      fromMonths: 11,
-      toMonths: 12,
+      fromDays: 336,
+      toDays: 365,
       interestRate: fullRate,
       penaltyRate: 0.0,
-      slabDescription: `११ ते १२ महिने (${fullRate}% पूर्ण मुदत व्याज)`,
+      slabDescription: `३३६ ते ३६५ दिवस (${fullRate}% पूर्ण मुदत व्याज)`,
       isActive: true
     }
   ];
@@ -240,8 +240,8 @@ export default function PigmySchemeMaster() {
         scheme.slabs.map((s) => ({
           slabID: s.slabID,
           pigmySchemeID: s.pigmySchemeID,
-          fromMonths: s.fromMonths,
-          toMonths: s.toMonths,
+          fromDays: s.fromDays,
+          toDays: s.toDays,
           interestRate: s.interestRate,
           penaltyRate: s.penaltyRate,
           slabDescription: s.slabDescription || '',
@@ -275,14 +275,14 @@ export default function PigmySchemeMaster() {
   const handleAddSlab = () => {
     setSlabs((prev) => {
       const lastSlab = prev[prev.length - 1];
-      const lastTo = lastSlab ? (Number(lastSlab.toMonths) || 12) : 0;
-      const newTo = lastTo + 3;
+      const lastTo = lastSlab ? (Number(lastSlab.toDays) || 12) : 0;
+      const newTo = lastTo + 90;
       const newSlab: PigmySchemeInterestSlab = {
-        fromMonths: lastTo,
-        toMonths: newTo,
+        fromDays: lastTo + 1,
+        toDays: newTo,
         interestRate: 0,
         penaltyRate: 0,
-        slabDescription: `${lastTo} ते ${newTo} महिने`,
+        slabDescription: `${lastTo + 1} ते ${newTo} दिवस`,
         isActive: true
       };
       return [...prev, newSlab];
@@ -299,28 +299,28 @@ export default function PigmySchemeMaster() {
       // Re-chain continuity: ensure each slab starts where the previous one ended
       for (let i = 0; i < updated.length; i++) {
         if (i === 0) {
-          updated[i].fromMonths = 0;
+          updated[i].fromDays = 0;
         } else {
-          updated[i].fromMonths = updated[i - 1].toMonths;
+          updated[i].fromDays = updated[i - 1].toDays + 1;
         }
         // Update description if default
         const pen = Number(updated[i].penaltyRate) || 0;
         const rate = Number(updated[i].interestRate) || 0;
-        const from = updated[i].fromMonths;
-        const to = updated[i].toMonths;
+        const from = updated[i].fromDays;
+        const to = updated[i].toDays;
         if (pen > 0) {
-          updated[i].slabDescription = `${from} ते ${to} महिने (${pen}% दंड आकारणी)`;
+          updated[i].slabDescription = `${from} ते ${to} दिवस (${pen}% दंड आकारणी)`;
         } else if (rate > 0) {
-          updated[i].slabDescription = `${from} ते ${to} महिने (${rate}% व्याज)`;
+          updated[i].slabDescription = `${from} ते ${to} दिवस (${rate}% व्याज)`;
         } else {
-          updated[i].slabDescription = `${from} ते ${to} महिने (मुद्दल परत, ०% व्याज / ०% दंड)`;
+          updated[i].slabDescription = `${from} ते ${to} दिवस (मुद्दल परत, ०% व्याज / ०% दंड)`;
         }
       }
       return updated;
     });
   };
 
-  const handleToMonthsChange = (index: number, rawVal: string) => {
+  const handletoDaysChange = (index: number, rawVal: string) => {
     let cleanVal = rawVal;
     if (/^0[0-9]/.test(cleanVal)) {
       cleanVal = cleanVal.replace(/^0+/, '');
@@ -332,20 +332,20 @@ export default function PigmySchemeMaster() {
       const updated = [...prev];
       updated[index] = {
         ...updated[index],
-        toMonths: cleanVal === '' ? '' : newTo
+        toDays: cleanVal === '' ? '' : newTo
       };
 
-      // If valid positive number and greater than current fromMonths, adjust subsequent fromMonths
-      if (newTo > 0 && typeof updated[index].fromMonths === 'number' && newTo > (updated[index].fromMonths as number)) {
+      // If valid positive number and greater than current fromDays, adjust subsequent fromDays
+      if (newTo > 0 && typeof updated[index].fromDays === 'number' && newTo > (updated[index].fromDays as number)) {
         if (index + 1 < updated.length) {
           updated[index + 1] = {
             ...updated[index + 1],
-            fromMonths: newTo
+            fromDays: newTo
           };
-          // If subsequent toMonths is now <= new fromMonths, bump it forward
-          const nextTo = Number(updated[index + 1].toMonths) || 0;
+          // If subsequent toDays is now <= new fromDays, bump it forward
+          const nextTo = Number(updated[index + 1].toDays) || 0;
           if (nextTo <= newTo) {
-            updated[index + 1].toMonths = newTo + 3;
+            updated[index + 1].toDays = newTo + 3;
           }
         }
       }
@@ -354,38 +354,38 @@ export default function PigmySchemeMaster() {
     });
   };
 
-  const handleToMonthsBlur = (index: number) => {
+  const handletoDaysBlur = (index: number) => {
     setSlabs((prev) => {
       const updated = [...prev];
-      const curFrom = Number(updated[index].fromMonths) || 0;
-      let curTo = Number(updated[index].toMonths) || 0;
+      const curFrom = Number(updated[index].fromDays) || 0;
+      let curTo = Number(updated[index].toDays) || 0;
 
       // Ensure curTo is strictly greater than curFrom
       if (curTo <= curFrom) {
         curTo = curFrom + 1;
-        updated[index].toMonths = curTo;
+        updated[index].toDays = curTo;
       }
 
       // Propagate to next slab
       if (index + 1 < updated.length) {
-        updated[index + 1].fromMonths = curTo;
-        const nextTo = Number(updated[index + 1].toMonths) || 0;
-        if (nextTo <= curTo) {
-          updated[index + 1].toMonths = curTo + 3;
+        updated[index + 1].fromDays = curTo + 1;
+        const nextTo = Number(updated[index + 1].toDays) || 0;
+        if (nextTo <= curTo + 1) {
+          updated[index + 1].toDays = curTo + 90;
         }
       }
 
       // Refresh description
       const pen = Number(updated[index].penaltyRate) || 0;
       const rate = Number(updated[index].interestRate) || 0;
-      const from = updated[index].fromMonths;
-      const to = updated[index].toMonths;
+      const from = updated[index].fromDays;
+      const to = updated[index].toDays;
       if (pen > 0) {
-        updated[index].slabDescription = `${from} ते ${to} महिने (${pen}% दंड आकारणी)`;
+        updated[index].slabDescription = `${from} ते ${to} दिवस (${pen}% दंड आकारणी)`;
       } else if (rate > 0) {
-        updated[index].slabDescription = `${from} ते ${to} महिने (${rate}% व्याज)`;
+        updated[index].slabDescription = `${from} ते ${to} दिवस (${rate}% व्याज)`;
       } else {
-        updated[index].slabDescription = `${from} ते ${to} महिने (मुद्दल परत, ०% व्याज / ०% दंड)`;
+        updated[index].slabDescription = `${from} ते ${to} दिवस (मुद्दल परत, ०% व्याज / ०% दंड)`;
       }
 
       return updated;
@@ -425,15 +425,15 @@ export default function PigmySchemeMaster() {
       // Automatically update the default description to match current rate & penalty
       const pen = Number(updated[index].penaltyRate) || 0;
       const rate = Number(updated[index].interestRate) || 0;
-      const from = updated[index].fromMonths;
-      const to = updated[index].toMonths;
+      const from = updated[index].fromDays;
+      const to = updated[index].toDays;
       const isLast = index === updated.length - 1;
       if (pen > 0) {
-        updated[index].slabDescription = `${from} ते ${to} महिने (${pen}% दंड आकारणी)`;
+        updated[index].slabDescription = `${from} ते ${to} दिवस (${pen}% दंड आकारणी)`;
       } else if (rate > 0) {
-        updated[index].slabDescription = `${from} ते ${to} महिने (${rate}% ${isLast ? 'पूर्ण मुदत व्याज' : 'अकाली व्याज'})`;
+        updated[index].slabDescription = `${from} ते ${to} दिवस (${rate}% ${isLast ? 'पूर्ण मुदत व्याज' : 'अकाली व्याज'})`;
       } else {
-        updated[index].slabDescription = `${from} ते ${to} महिने (मुद्दल परत, ०% व्याज / ०% दंड)`;
+        updated[index].slabDescription = `${from} ते ${to} दिवस (मुद्दल परत, ०% व्याज / ०% दंड)`;
       }
 
       return updated;
@@ -522,21 +522,21 @@ export default function PigmySchemeMaster() {
     // Continuity and range validation
     for (let i = 0; i < slabs.length; i++) {
       const s = slabs[i];
-      const from = Number(s.fromMonths) || 0;
-      const to = Number(s.toMonths) || 0;
+      const from = Number(s.fromDays) || 0;
+      const to = Number(s.toDays) || 0;
       if (i === 0 && from !== 0) {
         setError(`पहिला स्लॅब ० महिन्यांपासून सुरू होणे आवश्यक आहे.`);
         return;
       }
       if (i > 0) {
-        const prevTo = Number(slabs[i - 1].toMonths) || 0;
-        if (from !== prevTo) {
-          setError(`स्लॅब #${i + 1} चा सुरुवातीचा महिना (${from}) मागील स्लॅबच्या शेवटच्या महिन्याशी (${prevTo}) जुळणे आवश्यक आहे.`);
+        const prevTo = Number(slabs[i - 1].toDays) || 0;
+        if (from !== prevTo + 1) {
+          setError(`स्लॅब #${i + 1} चा सुरुवातीचा दिवस (${from}) मागील स्लॅबच्या शेवटच्या दिवसाच्या पुढील दिवस (${prevTo + 1}) असणे आवश्यक आहे.`);
           return;
         }
       }
       if (to <= from) {
-        setError(`स्लॅब #${i + 1}: शेवटचा महिना (${to}) सुरुवातीच्या महिन्यापेक्षा (${from}) जास्त असणे आवश्यक आहे.`);
+        setError(`स्लॅब #${i + 1}: शेवटचा दिवस (${to}) सुरुवातीच्या दिवसापेक्षा (${from}) जास्त असणे आवश्यक आहे.`);
         return;
       }
     }
@@ -547,14 +547,14 @@ export default function PigmySchemeMaster() {
     }
 
     // Automatically derive scheme tenure and key rates from dynamic slabs
-    const maxDuration = Math.max(...slabs.map((s) => Number(s.toMonths) || 0));
+    const maxDuration = Math.max(...slabs.map((s) => Number(s.toDays) || 0));
     const lastSlab = slabs[slabs.length - 1];
     const fullRate = Number(lastSlab.interestRate) || 0;
 
     // Find premature interest rate and starting month
     const prematureSlab = slabs.slice(0, -1).reverse().find((s) => (Number(s.interestRate) || 0) > 0);
     const prematureRate = prematureSlab ? (Number(prematureSlab.interestRate) || 0) : 0;
-    const minDuration = prematureSlab ? (Number(prematureSlab.fromMonths) || 0) : 0;
+    const minDuration = prematureSlab ? (Number(prematureSlab.fromDays) || 0) : 0;
 
     // Find penalty rate
     const penaltySlab = slabs.find((s) => (Number(s.penaltyRate) || 0) > 0);
@@ -582,8 +582,8 @@ export default function PigmySchemeMaster() {
         slabs: slabs.map((s) => ({
           slabID: s.slabID || 0,
           pigmySchemeID: isEditMode && editSchemeId ? editSchemeId : 0,
-          fromMonths: Number(s.fromMonths) || 0,
-          toMonths: Number(s.toMonths) || 0,
+          fromDays: Number(s.fromDays) || 0,
+          toDays: Number(s.toDays) || 0,
           interestRate: Number(s.interestRate) || 0,
           penaltyRate: Number(s.penaltyRate) || 0,
           slabDescription: (s.slabDescription || '').trim(),
@@ -617,10 +617,10 @@ export default function PigmySchemeMaster() {
       'अ.क्र.': i + 1,
       'योजना कोड': s.schemeCode || getSchemeId(s),
       'योजनेचे नाव': s.schemeName,
-      'कालावधी (महिने)': s.durationMonths,
+      'कालावधी (दिवस)': s.durationMonths,
       'व्याजदर (%)': s.interestRate,
       'स्लॅब्स संख्या': s.slabs?.length || 0,
-      'स्लॅब तपशील': s.slabs?.map(sl => `${sl.fromMonths}-${sl.toMonths}M: व्याज=${sl.interestRate}%, दंड=${sl.penaltyRate}%`).join(' | ') || '-',
+      'स्लॅब तपशील': s.slabs?.map(sl => `${sl.fromDays}-${sl.toDays}D: व्याज=${sl.interestRate}%, दंड=${sl.penaltyRate}%`).join(' | ') || '-',
       'देयता खाते': s.pigmyLiabilityLedger?.ledgerName || 'डिफॉल्ट',
       'व्याज खर्च खाते': s.interestExpenseLedger?.ledgerName || 'डिफॉल्ट',
       'कमिशन खर्च खाते': s.commissionExpenseLedger?.ledgerName || 'डिफॉल्ट',
@@ -660,7 +660,7 @@ export default function PigmySchemeMaster() {
   const inputClass = "w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]";
 
   return (
-    <div className="p-2 sm:p-3 max-w-6xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
+    <div className="p-2 sD:p-3 max-w-6xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
       
       {/* Top Sleek CBS Header Banner */}
       <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
@@ -671,7 +671,7 @@ export default function PigmySchemeMaster() {
           <div>
             <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
               <span>पिग्मी योजना मास्टर</span>
-              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Pigmy Scheme Master)</span>
+              <span className="text-[10px] font-semibold text-primary font-mono hidden sD:inline">(Pigmy Scheme Master)</span>
               {isEditMode && (
                 <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
                   ✏️ संपादन चालू (#{formData.schemeCode})
@@ -787,7 +787,7 @@ export default function PigmySchemeMaster() {
       {/* MAIN SINGLE UNIFIED FORM */}
       <div 
         ref={formContainerRef}
-        className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
+        className={`bg-white p-3.5 sD:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
           isEditMode ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
         }`}
       >
@@ -800,7 +800,7 @@ export default function PigmySchemeMaster() {
               <h2 className="text-xs font-bold text-primary">१. मूलभूत योजना माहिती (Basic Details)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5">
+            <div className="grid grid-cols-1 sD:grid-cols-2 md:grid-cols-6 gap-2.5">
               <div>
                 <div className="flex items-center justify-between mb-0.5">
                   <label className={labelClass}>
@@ -881,6 +881,7 @@ export default function PigmySchemeMaster() {
             </div>
 
             {/* Tenor & Return Slabs Matrix - Dynamic Slabs with Month Selection */}
+            {useMemo(() => (
             <div className="mt-3 pt-3 border-t-2 border-primary/20 space-y-2.5">
               <div className="p-2.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-sm">
                 <div className="flex items-center gap-1.5 font-bold text-xs text-blue-950">
@@ -890,11 +891,11 @@ export default function PigmySchemeMaster() {
                     {slabs.length} स्लॅब्स
                   </span>
                   <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold border border-emerald-300">
-                    कमाल मुदत: {Math.max(...slabs.map((s) => Number(s.toMonths) || 0))} महिने
+                    कमाल मुदत: {Math.max(...slabs.map((s) => Number(s.toDays) || 0))} दिवस
                   </span>
                 </div>
                 <p className="text-[10px] text-blue-800 mt-0.5 font-medium">
-                  पिग्मी योजनेसाठी हवे तेवढे स्लॅब जोडा आणि कालावधी (महिने) निवडा. ग्राहकाने मुदतपूर्व पैसे काढल्यास (Partial Return) किंवा खाते बंद केल्यास कालावधीनुसार व्याज अथवा दंड कपात आकारली जाईल.
+                  पिग्मी योजनेसाठी हवे तेवढे स्लॅब जोडा आणि कालावधी (दिवस) निवडा. ग्राहकाने मुदतपूर्व पैसे काढल्यास (Partial Return) किंवा खाते बंद केल्यास कालावधीनुसार व्याज अथवा दंड कपात आकारली जाईल.
                 </p>
               </div>
 
@@ -905,7 +906,7 @@ export default function PigmySchemeMaster() {
                     <tr>
                       <th className="px-2 py-1.5 text-center w-14 border-r border-gray-200">#</th>
                       <th className="px-2 py-1.5 text-center border-r border-gray-200 w-36">
-                        कालावधी (महिने)
+                        कालावधी (दिवस)
                       </th>
                       <th className="px-2 py-1.5 text-center border-r border-gray-200 w-28">
                         व्याजदर (% p.a.)
@@ -935,23 +936,24 @@ export default function PigmySchemeMaster() {
                           </td>
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                             <div className="flex items-center justify-center gap-1 font-mono text-[11px]">
-                              <span className="bg-slate-100 text-gray-700 px-1.5 py-0.5 rounded font-bold border border-gray-300" title="सुरुवातीचा महिना (Start Month)">
-                                {slab.fromMonths}M
+                              <span className="bg-slate-100 text-gray-700 px-1.5 py-0.5 rounded font-bold border border-gray-300" title="सुरुवातीचा दिवस (Start Day)">
+                                {slab.fromDays}
                               </span>
+                              <span className="text-[10px] text-gray-500 font-bold ml-0.5">D</span>
                               <span className="text-gray-400 font-bold">ते</span>
                               <div className="inline-flex items-center">
                                 <input
                                   type="number"
-                                  min={Number(slab.fromMonths) + 1}
-                                  max={120}
-                                  value={slab.toMonths}
+                                  min={Number(slab.fromDays) + 1}
+                                  max={36500}
+                                  value={slab.toDays}
                                   onFocus={(e) => e.target.select()}
-                                  onChange={(e) => handleToMonthsChange(index, e.target.value)}
-                                  onBlur={() => handleToMonthsBlur(index)}
+                                  onChange={(e) => handletoDaysChange(index, e.target.value)}
+                                  onBlur={() => handletoDaysBlur(index)}
                                   className="w-14 text-center font-mono font-black border border-primary/50 bg-primary/5 rounded px-1 py-0.5 text-[11px] focus:ring-1 focus:ring-primary focus:bg-white text-primary"
-                                  title="या स्लॅबचा शेवटचा महिना (To Months) प्रविष्ट करा"
+                                  title="या स्लॅबचा शेवटचा दिवस (To Days) प्रविष्ट करा"
                                 />
-                                <span className="ml-1 text-[10px] text-gray-500 font-bold">M</span>
+                                <span className="ml-1 text-[10px] text-gray-500 font-bold">D</span>
                               </div>
                             </div>
                           </td>
@@ -992,7 +994,7 @@ export default function PigmySchemeMaster() {
                               type="text"
                               value={slab.slabDescription || ''}
                               onChange={(e) => handleSlabChange(index, 'slabDescription', e.target.value)}
-                              placeholder="उदा. ० ते ३ महिने दंड आकारणी"
+                              placeholder="उदा. ० ते ३ दिवस दंड आकारणी"
                               className="w-full border border-gray-300 rounded px-2 py-0.5 text-[11px] text-gray-800 focus:ring-1 focus:ring-primary focus:border-primary"
                             />
                           </td>
@@ -1040,11 +1042,12 @@ export default function PigmySchemeMaster() {
                   <span>+ नवीन स्लॅब जोडा (Add Next Slab)</span>
                 </button>
                 <span className="text-[10px] text-gray-500 font-medium">
-                  💡 स्लॅबचा शेवटचा महिना बदलल्यास पुढील स्लॅबचा सुरुवातीचा महिना आपोआप जोडला जातो (No Gaps / No Overlaps).
+                  💡 स्लॅबचा शेवटचा दिवस बदलल्यास पुढील स्लॅबचा सुरुवातीचा दिवस (+१) आपोआप जोडला जातो (No Gaps / No Overlaps).
                 </span>
               </div>
 
             </div>
+            ), [slabs])}
           </div>
 
           {/* Section 2: GL Ledger Mappings */}
@@ -1151,7 +1154,7 @@ export default function PigmySchemeMaster() {
       {/* POP-UP MODAL: SAVED PIGMY SCHEMES LIST                                   */}
       {/* ========================================================================= */}
       {showListModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sD:p-4 overflow-y-auto animate-in fade-in duration-150">
           <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
@@ -1254,11 +1257,11 @@ export default function PigmySchemeMaster() {
                           </td>
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                             <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>
-                            <div className="text-gray-500 text-[10px]">{s.durationMonths} महिने</div>
+                            <div className="text-gray-500 text-[10px]">{s.durationMonths} दिवस</div>
                             {s.slabs && s.slabs.length > 0 && (
                               <span
                                 className="inline-block mt-0.5 px-1.5 py-0.5 text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded"
-                                title={s.slabs.map((sl) => `${sl.fromMonths}-${sl.toMonths}M: व्याज=${sl.interestRate}%, दंड=${sl.penaltyRate}%`).join(' | ')}
+                                title={s.slabs.map((sl) => `${sl.fromDays}-${sl.toDays}D: व्याज=${sl.interestRate}%, दंड=${sl.penaltyRate}%`).join(' | ')}
                               >
                                 📊 {s.slabs.length} स्लॅब्स
                               </span>

@@ -720,14 +720,36 @@ namespace Bhisi.Api.Controllers
                 var seq = await _context.PigmyAccountSequences.FirstOrDefaultAsync(s => s.BranchID == pigmyAccount.BranchID && s.SchemeCodeNumeric == schemeCodeNum);
                 if (seq != null)
                 {
-                    int remainingCount = await _context.PigmyAccounts
-                        .CountAsync(a => a.BranchID == pigmyAccount.BranchID && a.PigmySchemeID == pigmyAccount.PigmySchemeID && a.PigmyAccountID != id);
-                    if (remainingCount == 0)
+                    // Remove the current account and save
+                    _context.PigmyAccounts.Remove(pigmyAccount);
+                    await _context.SaveChangesAsync();
+
+                    // Recalculate true max sequence from remaining accounts
+                    var existingAccs = await _context.PigmyAccounts
+                        .Where(a => a.BranchID == pigmyAccount.BranchID && a.PigmySchemeID == pigmyAccount.PigmySchemeID && a.AccountNo != null)
+                        .Select(a => a.AccountNo)
+                        .ToListAsync();
+
+                    int maxSeq = 0;
+                    foreach (var accNo in existingAccs)
                     {
-                        seq.LastSequenceNumber = 0;
+                        var d = new string(accNo!.Where(char.IsDigit).ToArray());
+                        if (d.Length == 14)
+                        {
+                            string seqPart = d.Substring(6, 7);
+                            if (int.TryParse(seqPart, out int sVal) && sVal > maxSeq)
+                            {
+                                maxSeq = sVal;
+                            }
+                        }
                     }
+
+                    seq.LastSequenceNumber = maxSeq;
                     seq.UpdatedOn = DateTime.UtcNow;
                     _context.PigmyAccountSequences.Update(seq);
+                    await _context.SaveChangesAsync();
+                    
+                    return Ok(new { message = "पिग्मी खाते यशस्वीरीत्या हटवले!" });
                 }
 
                 _context.PigmyAccounts.Remove(pigmyAccount);

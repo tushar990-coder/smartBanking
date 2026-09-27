@@ -278,7 +278,7 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
 
         {/* 3-Signature Footer */}
         <div className="pt-4 flex items-end justify-between text-[10px] font-bold text-slate-900">
-          <div className="text-center w-28 border-t border-slate-400 pt-0.5">
+          <div className="text-center w-36 border-t border-slate-400 pt-0.5">
             ठेवदाराची सही<br />
             <span className="text-[8px] text-slate-500 font-normal">(Depositor Sign)</span>
           </div>
@@ -304,12 +304,12 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
       <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-5xl mb-3 p-3.5 no-print shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2.5 mb-2.5">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-lg">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-lg shadow-2xs">
               🖨️
             </div>
             <div>
               <h2 className="text-sm font-extrabold text-slate-800">मुदत ठेव पावती सेटिंग्स (Print / Save PDF / WhatsApp)</h2>
-              <p className="text-[10px] text-slate-500">अचूक मराठी फॉन्टसह पावती प्रिंंट करा, PDF सेव्ह करा किंवा WhatsApp वर पाठवा.</p>
+              <p className="text-[10px] text-slate-500">अचूक मराठी फॉन्टसह पावती प्रिंट करा, PDF सेव्ह करा किंवा WhatsApp वर पाठवा.</p>
             </div>
           </div>
           
@@ -318,7 +318,7 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
             <button
               type="button"
               onClick={handlePrintOrPdf}
-              className="bg-primary hover:bg-[#00426b] text-white px-4 py-1.5 rounded-lg font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              className="bg-primary hover:bg-[#00426b] text-white px-4 py-1.5 rounded-lg font-bold text-xs shadow-sm hover:shadow transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
               <span>🖨️</span> प्रिंट / PDF सेव्ह करा
             </button>
@@ -326,7 +326,7 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
             <button
               type="button"
               onClick={handleWhatsAppShare}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded-lg font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded-lg font-bold text-xs shadow-sm hover:shadow transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
               <span>📲</span> WhatsApp शेअर
             </button>
@@ -342,63 +342,70 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
         </div>
 
         {/* Configuration Controls Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200 items-stretch">
           {/* Copies Selection */}
-          <div>
-            <label className="block font-bold text-slate-700 mb-1 text-[11px]">१. पावती मांडणी (Layout):</label>
-            <div className="flex rounded-md border border-gray-300 overflow-hidden bg-white p-0.5 shadow-2xs">
+          <div className="flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1.5 h-4">
+              <label className="font-bold text-slate-700 text-[11px]">१. पावती मांडणी (Layout)</label>
+            </div>
+            <div className="flex h-9 rounded-md border border-gray-300 overflow-hidden bg-white p-0.5 shadow-2xs items-center">
               <button
                 type="button"
                 onClick={() => setCopies('dual')}
-                className={`flex-1 py-1 px-2 text-[10px] font-bold rounded transition-colors ${
+                className={`flex-1 h-full px-2 text-[10px] font-bold rounded flex items-center justify-center gap-1 transition-colors ${
                   copies === 'dual' ? 'bg-primary text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                📄 A4 वर २ पावत्या
+                <span>📄</span> A4 वर २ प्रती
               </button>
               <button
                 type="button"
                 onClick={() => setCopies('single')}
-                className={`flex-1 py-1 px-2 text-[10px] font-bold rounded transition-colors ${
+                className={`flex-1 h-full px-2 text-[10px] font-bold rounded flex items-center justify-center gap-1 transition-colors ${
                   copies === 'single' ? 'bg-primary text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                📑 १ पावती (A5)
+                <span>📑</span> १ प्रत (A5)
               </button>
             </div>
           </div>
 
           {/* Paper Mode Selector */}
-          <div>
-            <label className="block font-bold text-slate-700 mb-1 text-[11px]">२. कागद प्रकार (Paper Mode):</label>
-            <div className="flex rounded-md border border-gray-300 overflow-hidden bg-white p-0.5 shadow-2xs">
+          <div className="flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1.5 h-4">
+              <label className="font-bold text-slate-700 text-[11px]">२. कागद प्रकार (Paper Mode)</label>
+            </div>
+            <div className="flex h-9 rounded-md border border-gray-300 overflow-hidden bg-white p-0.5 shadow-2xs items-center">
               <button
                 type="button"
                 onClick={() => handleModeChange('blank')}
-                className={`flex-1 py-1 px-2 text-[10px] font-bold rounded transition-colors ${
+                className={`flex-1 h-full px-2 text-[10px] font-bold rounded flex items-center justify-center gap-1 transition-colors ${
                   printMode === 'blank' ? 'bg-primary text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                📜 कोरा कागद
+                <span>📜</span> कोरा कागद
               </button>
               <button
                 type="button"
                 onClick={() => handleModeChange('preprinted')}
-                className={`flex-1 py-1 px-2 text-[10px] font-bold rounded transition-colors ${
+                className={`flex-1 h-full px-2 text-[10px] font-bold rounded flex items-center justify-center gap-1 transition-colors ${
                   printMode === 'preprinted' ? 'bg-primary text-white shadow-2xs' : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                📑 छापील पावती
+                <span>📑</span> छापील पावती
               </button>
             </div>
           </div>
 
           {/* Top Offset Slider */}
-          <div>
-            <label className="block font-bold text-slate-700 mb-1 text-[11px]">
-              ३. वरचे अंतर (Top Margin): <span className="text-primary font-mono font-extrabold">{topOffset} mm</span>
-            </label>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1.5 h-4">
+              <label className="font-bold text-slate-700 text-[11px]">३. वरचे अंतर (Top Margin)</label>
+              <span className="text-primary font-mono font-extrabold bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded text-[10px]">
+                {topOffset} mm
+              </span>
+            </div>
+            <div className="flex h-9 items-center gap-2 bg-white rounded-md border border-gray-300 px-2 shadow-2xs">
               <input
                 type="range"
                 min="0"
@@ -413,17 +420,32 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
                 max="80"
                 value={topOffset}
                 onChange={(e) => setTopOffset(Number(e.target.value) || 0)}
-                className="w-12 border border-gray-300 rounded px-1 py-0.5 text-center bg-white font-mono font-bold text-xs"
+                className="w-12 h-6 border border-gray-300 rounded text-center bg-slate-50 font-mono font-bold text-xs"
               />
             </div>
           </div>
 
           {/* Left Offset Slider */}
-          <div>
-            <label className="block font-bold text-slate-700 mb-1 text-[11px]">
-              ४. डावे अंतर (Left Margin): <span className="text-primary font-mono font-extrabold">{leftOffset} mm</span>
-            </label>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-1.5 h-4">
+              <label className="font-bold text-slate-700 text-[11px]">४. डावे अंतर (Left Margin)</label>
+              <div className="flex items-center gap-1.5">
+                {(topOffset > 0 || leftOffset > 0) && (
+                  <button
+                    type="button"
+                    onClick={() => { setTopOffset(0); setLeftOffset(0); }}
+                    className="text-[10px] text-rose-600 hover:text-rose-800 font-bold underline cursor-pointer"
+                    title="अंतर ० mm वर रिसेट करा"
+                  >
+                    ↺ रिसेट
+                  </button>
+                )}
+                <span className="text-primary font-mono font-extrabold bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded text-[10px]">
+                  {leftOffset} mm
+                </span>
+              </div>
+            </div>
+            <div className="flex h-9 items-center gap-2 bg-white rounded-md border border-gray-300 px-2 shadow-2xs">
               <input
                 type="range"
                 min="0"
@@ -438,7 +460,7 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
                 max="80"
                 value={leftOffset}
                 onChange={(e) => setLeftOffset(Number(e.target.value) || 0)}
-                className="w-12 border border-gray-300 rounded px-1 py-0.5 text-center bg-white font-mono font-bold text-xs"
+                className="w-12 h-6 border border-gray-300 rounded text-center bg-slate-50 font-mono font-bold text-xs"
               />
             </div>
           </div>

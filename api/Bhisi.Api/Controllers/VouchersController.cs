@@ -376,6 +376,32 @@ namespace Bhisi.Api.Controllers
             var assetPurchases = await _context.AssetPurchases.Where(ap => ap.VoucherID == id).ToListAsync();
             foreach (var ap in assetPurchases) ap.VoucherID = null;
 
+            // FD Module unlinking & LastInterestPostingDate rollback
+            var fdAccruals = await _context.FdInterestAccruals.Where(fa => fa.VoucherID == id).ToListAsync();
+            if (fdAccruals.Any())
+            {
+                var affectedAccIds = fdAccruals.Select(a => a.FdAccountID).Distinct().ToList();
+                _context.FdInterestAccruals.RemoveRange(fdAccruals);
+                await _context.SaveChangesAsync();
+
+                foreach (var accId in affectedAccIds)
+                {
+                    var acc = await _context.FdAccounts.FindAsync(accId);
+                    if (acc != null)
+                    {
+                        var prevAccrual = await _context.FdInterestAccruals
+                            .Where(a => a.FdAccountID == accId && a.VoucherID != id)
+                            .OrderByDescending(a => a.AccrualDate)
+                            .FirstOrDefaultAsync();
+
+                        acc.LastInterestPostingDate = prevAccrual?.AccrualDate;
+                    }
+                }
+            }
+
+            var fdTxs = await _context.FdTransactions.Where(ft => ft.VoucherID == id).ToListAsync();
+            if (fdTxs.Any()) _context.FdTransactions.RemoveRange(fdTxs);
+
             // 6. Immutable Security Audit Logging
             var oldVoucherJson = System.Text.Json.JsonSerializer.Serialize(new
             {

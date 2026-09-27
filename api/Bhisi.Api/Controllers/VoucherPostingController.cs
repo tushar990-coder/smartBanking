@@ -686,7 +686,26 @@ namespace Bhisi.Api.Controllers
                     if (genericFdTxs.Any()) _context.FdTransactions.RemoveRange(genericFdTxs);
 
                     var genericFdAccruals = await _context.FdInterestAccruals.Where(fa => fa.VoucherID == id).ToListAsync();
-                    if (genericFdAccruals.Any()) _context.FdInterestAccruals.RemoveRange(genericFdAccruals);
+                    if (genericFdAccruals.Any())
+                    {
+                        var affectedAccIds = genericFdAccruals.Select(a => a.FdAccountID).Distinct().ToList();
+                        _context.FdInterestAccruals.RemoveRange(genericFdAccruals);
+                        await _context.SaveChangesAsync();
+
+                        foreach (var accId in affectedAccIds)
+                        {
+                            var acc = await _context.FdAccounts.FindAsync(accId);
+                            if (acc != null)
+                            {
+                                var prevAccrual = await _context.FdInterestAccruals
+                                    .Where(a => a.FdAccountID == accId && a.VoucherID != id)
+                                    .OrderByDescending(a => a.AccrualDate)
+                                    .FirstOrDefaultAsync();
+
+                                acc.LastInterestPostingDate = prevAccrual?.AccrualDate;
+                            }
+                        }
+                    }
                 }
 
                 // Recurring Deposit Module Unlinking

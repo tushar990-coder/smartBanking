@@ -21,6 +21,9 @@ interface FdScheme {
   interestCompoundingFrequency: string;
   minimumAmount: number;
   maximumAmount: number;
+  schemeDurationModel?: string;
+  durationType?: string;
+  slabs?: any[];
 }
 
 interface FdAccount {
@@ -320,7 +323,11 @@ const FdAccountOpening: React.FC = () => {
         matchedSlab: null,
         interestType: '',
         maturityDate: '',
-        maturityAmount: 0
+        maturityAmount: 0,
+        isPeriodicPayout: false,
+        monthlyInterestAmount: 0,
+        totalInterestPayout: 0,
+        totalBenefitAmount: 0,
       });
       return;
     }
@@ -914,21 +921,9 @@ const FdAccountOpening: React.FC = () => {
                     </div>
 
                     <div>
-                      <div className="flex justify-between items-center mb-0.5">
-                        <label className="block text-[11px] font-medium text-gray-600">
-                          {calcData.isPeriodicPayout ? 'मुदतपूर्ती मुद्दल परतावा (Principal ₹)' : 'मुदतपूर्ती रक्कम (Maturity ₹)'}
-                        </label>
-                        {calcData.maturityAmount > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setIsScheduleModalOpen(true)}
-                            className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline flex items-center gap-0.5 cursor-pointer"
-                            title="तिमाही/मासिक व्याज तक्ता पहा"
-                          >
-                            <span>📊 व्याज तक्ता</span>
-                          </button>
-                        )}
-                      </div>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5 truncate" title={calcData.isPeriodicPayout ? 'मुदतपूर्ती मुद्दल परतावा (Principal ₹)' : 'मुदतपूर्ती रक्कम (Maturity ₹)'}>
+                        {calcData.isPeriodicPayout ? 'मुदतपूर्ती मुद्दल (₹)' : 'मुदतपूर्ती रक्कम (Maturity ₹)'}
+                      </label>
                       <input type="text" value={formData.fdSchemeID === 0 ? 'योजना निवडा' : (calcData.maturityAmount > 0 ? `₹ ${Math.round(calcData.maturityAmount).toLocaleString('en-IN')}` : '₹ 0')} readOnly
                         className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-100 font-extrabold text-emerald-950 cursor-not-allowed font-mono shadow-2xs" />
                     </div>
@@ -1008,19 +1003,7 @@ const FdAccountOpening: React.FC = () => {
                       )}
 
                       <div>
-                        <div className="flex justify-between items-center mb-0.5">
-                          <label className="block text-[11px] font-medium text-gray-600">प्रति पावती मुदतपूर्ती (₹)</label>
-                          {calcData.maturityAmount > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setIsScheduleModalOpen(true)}
-                              className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline flex items-center gap-0.5 cursor-pointer"
-                              title="प्रति पावती व्याज तक्ता पहा"
-                            >
-                              <span>📊 व्याज तक्ता</span>
-                            </button>
-                          )}
-                        </div>
+                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">प्रति पावती मुदतपूर्ती (₹)</label>
                         <input type="text" value={formData.fdSchemeID === 0 ? 'योजना निवडा' : (calcData.maturityAmount > 0 ? `₹ ${Math.round(calcData.maturityAmount).toLocaleString('en-IN')}` : '₹ 0')} readOnly
                           className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-100 font-extrabold text-emerald-950 cursor-not-allowed font-mono shadow-2xs" />
                       </div>
@@ -1082,11 +1065,11 @@ const FdAccountOpening: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => setIsScheduleModalOpen(true)}
-                          className="bg-gradient-to-r from-indigo-700 to-blue-700 hover:from-indigo-800 hover:to-blue-800 active:scale-95 text-white px-3 py-1 rounded font-bold shadow-xs hover:shadow-md text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-indigo-500/30"
+                          className="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-2.5 py-1 rounded font-bold shadow-xs hover:shadow text-xs flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap"
                           title="सविस्तर तिमाही/मासिक व्याज तक्ता व वेळापत्रक पहा"
                         >
                           <span>📊</span>
-                          <span>व्याज तक्ता पहा (Interest Chart)</span>
+                          <span>व्याज तक्ता</span>
                         </button>
                       )}
                     </div>

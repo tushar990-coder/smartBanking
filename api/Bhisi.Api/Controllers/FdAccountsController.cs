@@ -1127,6 +1127,9 @@ namespace Bhisi.Api.Controllers
 
             var activeAccounts = await _context.FdAccounts
                 .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.InterestExpenseLedger)
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.InterestPayableLedger)
                 .Where(a => a.BranchID == branchId && a.Status == "Active" && a.OpeningDate <= accrualDate)
                 .ToListAsync();
 
@@ -1141,14 +1144,7 @@ namespace Bhisi.Api.Controllers
                 {
                     decimal totalProvisionAmount = 0;
                     var provisionLogs = new List<FdInterestAccrual>();
-
-                    var expenseLedger = await ResolveInterestExpenseLedgerAsync(null);
-                    var payableLedger = await ResolveInterestPayableLedgerAsync(null);
-                    
-                    if (expenseLedger == null || payableLedger == null)
-                    {
-                        return BadRequest("व्याज खर्च (Interest Expense) किंवा देय व्याज (Interest Payable) लेजर कॉन्फिगर केलेले नाही.");
-                    }
+                    var ledgerGroupSums = new Dictionary<(int ExpenseLedgerID, int PayableLedgerID), decimal>();
 
                     // Create provision voucher
                     var voucher = new Voucher
@@ -1173,9 +1169,26 @@ namespace Bhisi.Api.Controllers
                             .OrderByDescending(a => a.AccrualDate)
                             .FirstOrDefaultAsync();
 
-                        DateTime fromDate = lastAccrual?.AccrualDate 
-                            ?? acc.LastInterestPostingDate 
-                            ?? acc.OpeningDate;
+                        DateTime fromDate;
+                        if (lastAccrual != null)
+                        {
+                            fromDate = lastAccrual.AccrualDate;
+                        }
+                        else if (acc.LastInterestPostingDate.HasValue)
+                        {
+                            if (acc.LastInterestPostingDate.Value.Date == accrualDate.Date)
+                            {
+                                fromDate = acc.OpeningDate;
+                            }
+                            else
+                            {
+                                fromDate = acc.LastInterestPostingDate.Value;
+                            }
+                        }
+                        else
+                        {
+                            fromDate = acc.OpeningDate;
+                        }
                         int days = (accrualDate - fromDate).Days;
 
                         if (days <= 0) continue;
@@ -1214,6 +1227,23 @@ namespace Bhisi.Api.Controllers
 
                         if (dailyInterest > 0)
                         {
+                            var expLedger = await ResolveInterestExpenseLedgerAsync(acc.FdScheme);
+                            var payLedger = await ResolveInterestPayableLedgerAsync(acc.FdScheme);
+
+                            if (expLedger == null || payLedger == null)
+                            {
+                                string schemeInfo = acc.FdScheme != null ? $"योजना: {acc.FdScheme.SchemeName}" : "योजना सापडली नाही";
+                                await transaction.RollbackAsync();
+                                return BadRequest($"खाते क्र. {acc.AccountNo} ({schemeInfo}) साठी व्याज खर्च (Interest Expense) किंवा देय व्याज (Interest Payable) लेजर कॉन्फिगर केलेले नाही.");
+                            }
+
+                            var pairKey = (expLedger.LedgerID, payLedger.LedgerID);
+                            if (!ledgerGroupSums.ContainsKey(pairKey))
+                            {
+                                ledgerGroupSums[pairKey] = 0;
+                            }
+                            ledgerGroupSums[pairKey] += dailyInterest;
+
                             totalProvisionAmount += dailyInterest;
 
                             var log = new FdInterestAccrual
@@ -1249,12 +1279,11 @@ namespace Bhisi.Api.Controllers
                         // Update voucher amount
                         voucher.TotalAmount = totalProvisionAmount;
 
-                        // Dr Expense, Cr Payable
-                        var drDetail = new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = totalProvisionAmount };
-                        var crDetail = new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Cr", Amount = totalProvisionAmount };
-                        
-                        _context.VoucherDetails.Add(drDetail);
-                        _context.VoucherDetails.Add(crDetail);
+                        foreach (var kvp in ledgerGroupSums)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = kvp.Key.ExpenseLedgerID, DrCr = "Dr", Amount = kvp.Value });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = kvp.Key.PayableLedgerID, DrCr = "Cr", Amount = kvp.Value });
+                        }
 
                         await _context.SaveChangesAsync();
                         await transaction.CommitAsync();
@@ -3035,9 +3064,26 @@ namespace Bhisi.Api.Controllers
                     .OrderByDescending(a => a.AccrualDate)
                     .FirstOrDefaultAsync();
 
-                DateTime fromDate = lastAccrual?.AccrualDate 
-                    ?? acc.LastInterestPostingDate 
-                    ?? acc.OpeningDate;
+                DateTime fromDate;
+                if (lastAccrual != null)
+                {
+                    fromDate = lastAccrual.AccrualDate;
+                }
+                else if (acc.LastInterestPostingDate.HasValue)
+                {
+                    if (acc.LastInterestPostingDate.Value.Date == req.AccrualDate.Date)
+                    {
+                        fromDate = acc.OpeningDate;
+                    }
+                    else
+                    {
+                        fromDate = acc.LastInterestPostingDate.Value;
+                    }
+                }
+                else
+                {
+                    fromDate = acc.OpeningDate;
+                }
                 int days = (req.AccrualDate - fromDate).Days;
                 if (days <= 0) days = 0;
 
@@ -3111,24 +3157,66 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"अवैध तारीख! निवडलेली व्याज तरतूद तारीख ({req.AccrualDate:dd/MM/yyyy}) ही बंद/ऑडिट झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडते. बंद आर्थिक वर्षात थेट व्हाउचर पोस्ट करणे वैधानिक नियमांनुसार (MCS Act) प्रतिबंधित आहे.");
             }
 
-            var expenseLedger = await ResolveInterestExpenseLedgerAsync(null);
-            var payableLedger = await ResolveInterestPayableLedgerAsync(null);
+            var validItems = req.SelectedItems
+                .Where(x => Math.Round(x.CalculatedInterest, 0, MidpointRounding.AwayFromZero) > 0)
+                .ToList();
 
-            if (expenseLedger == null || payableLedger == null)
+            if (!validItems.Any())
             {
-                return BadRequest("व्याज खर्च (Interest Expense) किंवा देय व्याज (Interest Payable) लेजर कॉन्फिगर केलेले नाही.");
+                return BadRequest("निवडलेल्या खात्यांची एकूण व्याज रक्कम ० आहे.");
             }
+
+            var selectedAccountIds = validItems.Select(x => x.FdAccountID).Distinct().ToList();
+            var accounts = await _context.FdAccounts
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.InterestExpenseLedger)
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.InterestPayableLedger)
+                .Where(a => selectedAccountIds.Contains(a.FdAccountID))
+                .ToDictionaryAsync(a => a.FdAccountID);
+
+            // Pre-resolve and validate ledgers for all selected accounts
+            var accountLedgerPairs = new Dictionary<int, (Ledger ExpenseLedger, Ledger PayableLedger)>();
+            var ledgerGroupSums = new Dictionary<(int ExpenseLedgerID, int PayableLedgerID), decimal>();
+
+            foreach (var item in validItems)
+            {
+                decimal itemInterest = Math.Round(item.CalculatedInterest, 0, MidpointRounding.AwayFromZero);
+
+                if (!accounts.TryGetValue(item.FdAccountID, out var acc))
+                {
+                    return BadRequest($"खाते आयडी {item.FdAccountID} सापडले नाही.");
+                }
+
+                if (!accountLedgerPairs.TryGetValue(acc.FdAccountID, out var pair))
+                {
+                    var expLedger = await ResolveInterestExpenseLedgerAsync(acc.FdScheme);
+                    var payLedger = await ResolveInterestPayableLedgerAsync(acc.FdScheme);
+
+                    if (expLedger == null || payLedger == null)
+                    {
+                        string schemeInfo = acc.FdScheme != null ? $"योजना: {acc.FdScheme.SchemeName}" : "योजना सापडली नाही";
+                        return BadRequest($"खाते क्र. {acc.AccountNo} ({schemeInfo}) साठी व्याज खर्च (Interest Expense) किंवा देय व्याज (Interest Payable) लेजर कॉन्फिगर केलेले नाही.");
+                    }
+
+                    pair = (expLedger, payLedger);
+                    accountLedgerPairs[acc.FdAccountID] = pair;
+                }
+
+                var key = (pair.ExpenseLedger.LedgerID, pair.PayableLedger.LedgerID);
+                if (!ledgerGroupSums.ContainsKey(key))
+                {
+                    ledgerGroupSums[key] = 0;
+                }
+                ledgerGroupSums[key] += itemInterest;
+            }
+
+            decimal totalProvisionAmount = validItems.Sum(x => Math.Round(x.CalculatedInterest, 0, MidpointRounding.AwayFromZero));
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
                 {
-                    decimal totalProvisionAmount = req.SelectedItems.Sum(x => Math.Round(x.CalculatedInterest, 0, MidpointRounding.AwayFromZero));
-                    if (totalProvisionAmount <= 0)
-                    {
-                        return BadRequest("निवडलेल्या खात्यांची एकूण व्याज रक्कम ० आहे.");
-                    }
-
                     var voucher = new Voucher
                     {
                         BranchID = req.BranchID,
@@ -3144,13 +3232,10 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     int postedCount = 0;
-                    foreach (var item in req.SelectedItems)
+                    foreach (var item in validItems)
                     {
                         decimal itemInterest = Math.Round(item.CalculatedInterest, 0, MidpointRounding.AwayFromZero);
-                        if (itemInterest <= 0) continue;
-
-                        var acc = await _context.FdAccounts.FindAsync(item.FdAccountID);
-                        if (acc == null) continue;
+                        var acc = accounts[item.FdAccountID];
 
                         var log = new FdInterestAccrual
                         {
@@ -3179,9 +3264,29 @@ namespace Bhisi.Api.Controllers
                         postedCount++;
                     }
 
-                    // Dr Expense, Cr Payable
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = totalProvisionAmount });
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Cr", Amount = totalProvisionAmount });
+                    // Post scheme-wise / ledger-wise balanced Dr and Cr entries
+                    foreach (var kvp in ledgerGroupSums)
+                    {
+                        int expLedgerId = kvp.Key.ExpenseLedgerID;
+                        int payLedgerId = kvp.Key.PayableLedgerID;
+                        decimal grpAmount = kvp.Value;
+
+                        _context.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = voucher.VoucherID,
+                            LedgerID = expLedgerId,
+                            DrCr = "Dr",
+                            Amount = grpAmount
+                        });
+
+                        _context.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = voucher.VoucherID,
+                            LedgerID = payLedgerId,
+                            DrCr = "Cr",
+                            Amount = grpAmount
+                        });
+                    }
 
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
@@ -3642,9 +3747,22 @@ namespace Bhisi.Api.Controllers
                 if (ledger != null && ledger.IsActive) return ledger;
             }
 
+            var anySchemePayableId = await _context.FdSchemes
+                .Where(s => s.IsActive && s.InterestPayableLedgerID.HasValue && s.InterestPayableLedgerID.Value > 0)
+                .Select(s => s.InterestPayableLedgerID!.Value)
+                .FirstOrDefaultAsync();
+
+            if (anySchemePayableId > 0)
+            {
+                var ledger = await _context.Ledgers.FindAsync(anySchemePayableId);
+                if (ledger != null && ledger.IsActive) return ledger;
+            }
+
             return await _context.Ledgers.FirstOrDefaultAsync(l => l.IsActive && (
-                (l.GroupID == 6 && l.LedgerName.Contains("देणे") && l.LedgerName.Contains("व्याज")) ||
+                ((l.GroupID == 6 || l.GroupID == 24 || l.AccountType == "Personal Account" || l.AccountType == "Liability") && 
+                 l.LedgerName.Contains("देणे") && l.LedgerName.Contains("व्याज")) ||
                 l.LedgerName.Contains("देणे मुदत ठेवीवरील व्याज") ||
+                l.LedgerName.Contains("देणे मुदत ठेव व्याज") ||
                 l.LedgerName.Contains("देणे सभासद ठेव व्याज") ||
                 l.LedgerName.ToLower().Contains("interest payable")
             ));
@@ -3661,8 +3779,20 @@ namespace Bhisi.Api.Controllers
                 if (ledger != null && ledger.IsActive) return ledger;
             }
 
+            var anySchemeExpenseId = await _context.FdSchemes
+                .Where(s => s.IsActive && s.InterestExpenseLedgerID.HasValue && s.InterestExpenseLedgerID.Value > 0)
+                .Select(s => s.InterestExpenseLedgerID!.Value)
+                .FirstOrDefaultAsync();
+
+            if (anySchemeExpenseId > 0)
+            {
+                var ledger = await _context.Ledgers.FindAsync(anySchemeExpenseId);
+                if (ledger != null && ledger.IsActive) return ledger;
+            }
+
             return await _context.Ledgers.FirstOrDefaultAsync(l => l.IsActive && (
-                (l.GroupID == 17 && !l.LedgerName.Contains("देणे") && (l.LedgerName.Contains("मुदत") || l.LedgerName.Contains("व्याज"))) ||
+                ((l.GroupID == 17 || l.GroupID == 67 || l.AccountType == "Expenses" || l.AccountType == "Indirect Expenses") && 
+                 !l.LedgerName.Contains("देणे") && (l.LedgerName.Contains("मुदत") || l.LedgerName.Contains("व्याज"))) ||
                 l.LedgerName.Contains("मुदत ठेवीवरील व्याज") ||
                 l.LedgerName.ToLower().Contains("interest expense")
             ));

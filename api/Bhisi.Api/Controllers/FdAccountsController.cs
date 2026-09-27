@@ -1209,8 +1209,8 @@ namespace Bhisi.Api.Controllers
                             }
                         }
 
-                        // Daily Interest Formula: Interest = (Principal * Rate * Days) / 36500
-                        decimal dailyInterest = Math.Round((effectivePrincipal * acc.InterestRate * days) / 36500.0m, 2);
+                        // Daily Interest Formula: Interest = (Principal * Rate * Days) / 36500 (Rounded to nearest whole rupee)
+                        decimal dailyInterest = Math.Round((effectivePrincipal * acc.InterestRate * days) / 36500.0m, 0, MidpointRounding.AwayFromZero);
 
                         if (dailyInterest > 0)
                         {
@@ -3123,7 +3123,7 @@ namespace Bhisi.Api.Controllers
             {
                 try
                 {
-                    decimal totalProvisionAmount = req.SelectedItems.Sum(x => x.CalculatedInterest);
+                    decimal totalProvisionAmount = req.SelectedItems.Sum(x => Math.Round(x.CalculatedInterest, 0, MidpointRounding.AwayFromZero));
                     if (totalProvisionAmount <= 0)
                     {
                         return BadRequest("निवडलेल्या खात्यांची एकूण व्याज रक्कम ० आहे.");
@@ -3146,7 +3146,8 @@ namespace Bhisi.Api.Controllers
                     int postedCount = 0;
                     foreach (var item in req.SelectedItems)
                     {
-                        if (item.CalculatedInterest <= 0) continue;
+                        decimal itemInterest = Math.Round(item.CalculatedInterest, 0, MidpointRounding.AwayFromZero);
+                        if (itemInterest <= 0) continue;
 
                         var acc = await _context.FdAccounts.FindAsync(item.FdAccountID);
                         if (acc == null) continue;
@@ -3158,7 +3159,7 @@ namespace Bhisi.Api.Controllers
                             VoucherID = voucher.VoucherID,
                             AccrualDate = req.AccrualDate,
                             CalculatedDays = item.ElapsedDays,
-                            InterestAmount = item.CalculatedInterest,
+                            InterestAmount = itemInterest,
                             IsPosted = true
                         };
                         _context.FdInterestAccruals.Add(log);
@@ -3171,7 +3172,7 @@ namespace Bhisi.Api.Controllers
                             TransactionDate = req.AccrualDate,
                             TransactionType = "Accrual",
                             DebitCredit = "Cr",
-                            Amount = item.CalculatedInterest
+                            Amount = itemInterest
                         };
                         _context.FdTransactions.Add(tx);
                         acc.LastInterestPostingDate = req.AccrualDate;

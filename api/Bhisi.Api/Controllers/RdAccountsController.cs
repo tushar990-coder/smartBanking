@@ -750,7 +750,7 @@ namespace Bhisi.Api.Controllers
                         int days = (accrualDate - fromDate).Days;
                         if (days <= 0) continue;
 
-                        decimal quarterlyInt = Math.Round((acc.TotalDepositedAmount * acc.InterestRate * days) / 36500.0m, 2);
+                        decimal quarterlyInt = Math.Round((acc.TotalDepositedAmount * acc.InterestRate * days) / 36500.0m, 0, MidpointRounding.AwayFromZero);
 
                         if (quarterlyInt > 0)
                         {

@@ -151,9 +151,25 @@ namespace Bhisi.Api.Controllers
 
                 decimal pendingLimit = Math.Max(0, sanctionedLimit - alreadyDisbursed);
 
+                // Fail-Fast: Early Loan Ledger Validation before touching database
+                int rateIdToCheck = existingLoanAcc != null && existingLoanAcc.LoanRateID > 0
+                    ? existingLoanAcc.LoanRateID 
+                    : (disbursement.LoanAccount?.LoanRateID ?? 0);
+                if (rateIdToCheck > 0)
+                {
+                    var rateToCheck = await _context.LoanRates.FindAsync(rateIdToCheck);
+                    int earlyLedgerId = rateToCheck?.LoanLedgerID ?? 0;
+                    if (earlyLedgerId == 0 || !validLedgerDict.ContainsKey(earlyLedgerId))
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = $"कर्ज योजना '{rateToCheck?.LoanType ?? "अज्ञात"}' ला वैध कर्ज मुद्दल खाते (Loan Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रक (Loan Rate Master) तपासा." });
+                    }
+                }
+
                 // Multi-Tranche Strict Validation: Disbursement amount cannot exceed pending sanctioned limit
                 if (disbursement.DisbursementAmount > pendingLimit)
                 {
+                    await transaction.RollbackAsync();
                     return BadRequest($"वाटप रक्कम (₹{disbursement.DisbursementAmount:N2}) ही शिल्लक मंजूर मर्यादेपेक्षा (₹{pendingLimit:N2}) जास्त असू शकत नाही! एकूण मंजूर मर्यादा: ₹{sanctionedLimit:N2}, यापूर्वीचे वाटप: ₹{alreadyDisbursed:N2}.");
                 }
 
@@ -195,7 +211,11 @@ namespace Bhisi.Api.Controllers
                 {
                     // First Tranche: Create new LoanAccount
                     var branch = await _context.Branches.FindAsync(disbursement.LoanAccount.BranchID);
-                    if (branch == null) return BadRequest("निवडलेली शाखा सापडली नाही.");
+                    if (branch == null)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest("निवडलेली शाखा सापडली नाही.");
+                    }
 
                     if (app != null)
                     {
@@ -343,6 +363,7 @@ namespace Bhisi.Api.Controllers
                 int loanLedgerId = loanRate?.LoanLedgerID ?? 0;
                 if (loanLedgerId == 0 || !validLedgerDict.ContainsKey(loanLedgerId))
                 {
+                    await transaction.RollbackAsync();
                     return BadRequest(new { message = $"कर्ज योजना '{loanRate?.LoanType ?? "अज्ञात"}' ला वैध कर्ज मुद्दल खाते (Loan Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रक (Loan Rate Master) तपासा." });
                 }
 
@@ -473,7 +494,7 @@ namespace Bhisi.Api.Controllers
                                     CustomerID = cust.CustomerID,
                                     BranchID = loanAccFetched.BranchID,
                                     MemberCode = $"MEM{nextNum:D4}",
-                                    MembershipType = "Nominal",
+                                    MembershipType = "Regular", // Strictly Regular Member (Class A) when purchasing shares
                                     JoiningDate = DateTime.Today,
                                     Status = "Active"
                                 };
@@ -499,37 +520,56 @@ namespace Bhisi.Api.Controllers
                     int numShares = (int)Math.Floor(shareDeductionAmt / 100m);
                     if (numShares > 0 && targetMember != null && memberId.HasValue && memberId.Value > 0)
                     {
-                            // Assign official Member Code (MEM0001 format) upon Loan Share Deduction if missing
-                            if (string.IsNullOrWhiteSpace(targetMember.MemberCode) || targetMember.MemberCode.StartsWith("TEMP"))
+                        // 1. Auto-upgrade to Regular (Class A) if existing member was Nominal
+                        if (targetMember.MembershipType != "Regular")
+                        {
+                            targetMember.MembershipType = "Regular";
+                            _context.Entry(targetMember).State = EntityState.Modified;
+                        }
+
+                        // 2. Assign official Member Code (MEM0001 format) upon Loan Share Deduction if missing or temporary
+                        if (string.IsNullOrWhiteSpace(targetMember.MemberCode) || targetMember.MemberCode.StartsWith("TEMP"))
+                        {
+                            var existingCodes = await _context.Members
+                                .Where(m => !string.IsNullOrEmpty(m.MemberCode))
+                                .Select(m => m.MemberCode)
+                                .ToListAsync();
+                            var existingLegacy = await _context.Members
+                                .Where(m => !string.IsNullOrEmpty(m.LegacyMemberNo))
+                                .Select(m => m.LegacyMemberNo)
+                                .ToListAsync();
+
+                            int maxCodeNum = await _context.Members.MaxAsync(m => (int?)m.MemberID) ?? 0;
+                            foreach (var code in existingCodes)
                             {
-                                var existingCodes = await _context.Members
-                                    .Where(m => !string.IsNullOrEmpty(m.MemberCode))
-                                    .Select(m => m.MemberCode)
-                                    .ToListAsync();
-                                var existingLegacy = await _context.Members
-                                    .Where(m => !string.IsNullOrEmpty(m.LegacyMemberNo))
-                                    .Select(m => m.LegacyMemberNo)
-                                    .ToListAsync();
-
-                                int maxCodeNum = await _context.Members.MaxAsync(m => (int?)m.MemberID) ?? 0;
-                                foreach (var code in existingCodes)
-                                {
-                                    if (string.IsNullOrEmpty(code)) continue;
-                                    var digits = new string(code.Where(char.IsDigit).ToArray());
-                                    if (int.TryParse(digits, out int num) && num > maxCodeNum) maxCodeNum = num;
-                                }
-                                foreach (var code in existingLegacy)
-                                {
-                                    if (string.IsNullOrEmpty(code)) continue;
-                                    var digits = new string(code.Where(char.IsDigit).ToArray());
-                                    if (int.TryParse(digits, out int num) && num > maxCodeNum) maxCodeNum = num;
-                                }
-
-                                int nextMemberNum = maxCodeNum + 1;
-                                targetMember.MemberCode = $"MEM{nextMemberNum:D4}";
-                                targetMember.MembershipType = "Regular";
-                                _context.Entry(targetMember).State = EntityState.Modified;
+                                if (string.IsNullOrEmpty(code)) continue;
+                                var digits = new string(code.Where(char.IsDigit).ToArray());
+                                if (int.TryParse(digits, out int num) && num > maxCodeNum) maxCodeNum = num;
                             }
+                            foreach (var code in existingLegacy)
+                            {
+                                if (string.IsNullOrEmpty(code)) continue;
+                                var digits = new string(code.Where(char.IsDigit).ToArray());
+                                if (int.TryParse(digits, out int num) && num > maxCodeNum) maxCodeNum = num;
+                            }
+
+                            int nextMemberNum = maxCodeNum + 1;
+                            targetMember.MemberCode = $"MEM{nextMemberNum:D4}";
+                            _context.Entry(targetMember).State = EntityState.Modified;
+                        }
+
+                        // 3. Ensure voucher details reflect newly created or updated MemberID
+                        var detailsToUpdate = await _context.VoucherDetails
+                            .Where(vd => vd.VoucherID == voucher.VoucherID && vd.MemberID == null)
+                            .ToListAsync();
+                        if (detailsToUpdate.Any())
+                        {
+                            foreach (var d in detailsToUpdate)
+                            {
+                                d.MemberID = memberId.Value;
+                            }
+                            await _context.SaveChangesAsync();
+                        }
 
                             var shAcc = await _context.ShareAccounts.FirstOrDefaultAsync(s => s.MemberId == memberId.Value);
                             if (shAcc == null)

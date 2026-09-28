@@ -29,17 +29,20 @@ interface LoanAccount {
         memberCode?: string;
     };
     customer?: {
+        customerID?: number;
         firstName?: string;
+        middleName?: string;
         lastName?: string;
         cifNo?: string;
+        mobileNo?: string;
     };
     loanRate?: {
         loanType: string;
-        
         shortName?: string;
         interestRate?: number;
         interestCalculationMethod?: string;
         loanInstallmentType?: string;
+        interestPostingFrequency?: string;
     };
     interestRate?: number;
     loanDisbursementDate?: string;
@@ -215,7 +218,7 @@ const LoanCollectionMaster: React.FC = () => {
     });
 
     const [selectedAccount, setSelectedAccount] = useState<LoanAccount | null>(null);
-    const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
+    const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
     const [selectedBorrowerKey, setSelectedBorrowerKey] = useState<string | null>(null);
     const [accountDetails, setAccountDetails] = useState<AccountDetailsAndSchedule | null>(null);
     const [npaStatus, setNpaStatus] = useState<{ category: string, overdueDays: number, categoryMarathi: string } | null>(null);
@@ -234,17 +237,18 @@ const LoanCollectionMaster: React.FC = () => {
         }
     };
 
-    // Extract unique borrowers (Customers & Members) from active loan accounts
+    // Extract unique borrowers (Customers) from active loan accounts - Strict Customer-First
     const borrowerOptions = useMemo(() => {
         const map = new Map<string, any>();
         accounts.forEach((a: any) => {
-            const key = a.customerID ? `C_${a.customerID}` : `M_${a.memberID}`;
+            const custId = a.customerID || a.customer?.customerID;
+            const key = custId ? `C_${custId}` : (a.memberID ? `M_${a.memberID}` : `ACC_${a.loanAccountID}`);
             if (!map.has(key)) {
                 let name = '';
                 let prefix = '';
                 if (a.customer) {
                     name = `${a.customer.firstName || ''} ${a.customer.middleName ? a.customer.middleName + ' ' : ''}${a.customer.lastName || ''}`.trim();
-                    prefix = a.customer.cifNo ? `[${a.customer.cifNo}] ` : (a.member?.memberCode ? `[${a.member.memberCode}] ` : '');
+                    prefix = a.customer.cifNo ? `[${a.customer.cifNo}] ` : '';
                 } else if (a.member) {
                     name = `${a.member.firstName || ''} ${a.member.middleName ? a.member.middleName + ' ' : ''}${a.member.lastName || ''}`.trim();
                     prefix = a.member.memberCode ? `[${a.member.memberCode}] ` : '';
@@ -253,7 +257,7 @@ const LoanCollectionMaster: React.FC = () => {
                 map.set(key, {
                     value: key,
                     label: `${prefix}${name}`.trim(),
-                    customerID: a.customerID,
+                    customerID: custId || 0,
                     memberID: a.memberID
                 });
             }
@@ -264,13 +268,14 @@ const LoanCollectionMaster: React.FC = () => {
 
     // Loans of selected borrower
     const borrowerLoans = useMemo(() => {
-        if (!selectedBorrowerKey && !selectedMemberId) return [];
+        if (!selectedBorrowerKey && !selectedCustomerId) return [];
         return accounts.filter((a: any) => {
-            const key = a.customerID ? `C_${a.customerID}` : `M_${a.memberID}`;
-            return (selectedBorrowerKey && (key === selectedBorrowerKey || `M_${a.memberID}` === selectedBorrowerKey || `C_${a.customerID}` === selectedBorrowerKey || String(a.memberID) === selectedBorrowerKey)) ||
-                   (selectedMemberId && a.memberID === selectedMemberId);
+            const custId = a.customerID || a.customer?.customerID;
+            const key = custId ? `C_${custId}` : (a.memberID ? `M_${a.memberID}` : `ACC_${a.loanAccountID}`);
+            return (selectedBorrowerKey && (key === selectedBorrowerKey || (custId && `C_${custId}` === selectedBorrowerKey))) ||
+                   (selectedCustomerId && custId === selectedCustomerId);
         });
-    }, [accounts, selectedBorrowerKey, selectedMemberId]);
+    }, [accounts, selectedBorrowerKey, selectedCustomerId]);
     const memberLoans = borrowerLoans;
 
     const bankLedgers = ledgers.filter((l: any) => {
@@ -315,6 +320,8 @@ const LoanCollectionMaster: React.FC = () => {
         fetchLedgers();
         fetchNextReceiptNo();
         return () => {
+            (window as any).selectedLoanCustomerId = undefined;
+            (window as any).selectedLoanAccountId = undefined;
             (window as any).selectedLoanMemberId = undefined;
         };
     }, []);
@@ -421,9 +428,12 @@ const LoanCollectionMaster: React.FC = () => {
         if (!acc) return;
 
         setSelectedAccount(acc);
-        const bKey = acc.customerID ? `C_${acc.customerID}` : `M_${acc.memberID}`;
+        const custId = acc.customerID || acc.customer?.customerID;
+        const bKey = custId ? `C_${custId}` : (acc.memberID ? `M_${acc.memberID}` : `ACC_${acc.loanAccountID}`);
         setSelectedBorrowerKey(bKey);
-        setSelectedMemberId(acc.memberID || null);
+        setSelectedCustomerId(custId || null);
+        (window as any).selectedLoanCustomerId = custId;
+        (window as any).selectedLoanAccountId = acc.loanAccountID;
         (window as any).selectedLoanMemberId = acc.memberID;
         setFormData(p => ({ ...p, loanAccountID: acc.loanAccountID }));
         setAccountDetails(null);
@@ -471,10 +481,12 @@ const LoanCollectionMaster: React.FC = () => {
         const val = e.target.value;
         if (!val) {
             setSelectedBorrowerKey(null);
-            setSelectedMemberId(null);
+            setSelectedCustomerId(null);
             setSelectedAccount(null);
             setAccountDetails(null);
             setNpaStatus(null);
+            (window as any).selectedLoanCustomerId = undefined;
+            (window as any).selectedLoanAccountId = undefined;
             (window as any).selectedLoanMemberId = undefined;
             setFormData(p => ({ ...p, loanAccountID: undefined }));
             return;
@@ -482,17 +494,19 @@ const LoanCollectionMaster: React.FC = () => {
 
         setSelectedBorrowerKey(val);
         const matched = borrowerOptions.find(o => o.value === val);
-        if (matched?.memberID) {
-            setSelectedMemberId(matched.memberID);
-            (window as any).selectedLoanMemberId = matched.memberID;
+        if (matched?.customerID) {
+            setSelectedCustomerId(matched.customerID);
+            (window as any).selectedLoanCustomerId = matched.customerID;
         } else {
-            setSelectedMemberId(null);
-            (window as any).selectedLoanMemberId = undefined;
+            setSelectedCustomerId(null);
+            (window as any).selectedLoanCustomerId = undefined;
         }
+        (window as any).selectedLoanMemberId = matched?.memberID;
 
         const loans = accounts.filter((a: any) => {
-            const key = a.customerID ? `C_${a.customerID}` : `M_${a.memberID}`;
-            return key === val || (a.memberID && `M_${a.memberID}` === val) || (a.customerID && `C_${a.customerID}` === val);
+            const custId = a.customerID || a.customer?.customerID;
+            const key = custId ? `C_${custId}` : (a.memberID ? `M_${a.memberID}` : `ACC_${a.loanAccountID}`);
+            return key === val || (matched?.customerID && custId === matched.customerID);
         });
 
         if (loans.length === 1) {
@@ -808,9 +822,11 @@ const LoanCollectionMaster: React.FC = () => {
                 fees: []
             });
             setSelectedBorrowerKey(null);
-            setSelectedMemberId(null);
+            setSelectedCustomerId(null);
             setSelectedAccount(null);
             setAccountDetails(null);
+            (window as any).selectedLoanCustomerId = undefined;
+            (window as any).selectedLoanAccountId = undefined;
             (window as any).selectedLoanMemberId = undefined;
             fetchData();
             fetchAccounts();
@@ -824,7 +840,7 @@ const LoanCollectionMaster: React.FC = () => {
     const handleDirectWhatsAppShare = (c: any) => {
         if (!c) return;
         const sansthaName = sanstha?.sansthaName || 'स्मार्ट मल्टीस्टेट पतसंस्था लि.';
-        const borrower = c.loanAccount?.customer || c.loanAccount?.member;
+        const borrower = c.loanAccount?.customer;
         const memberName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'खातेदार';
         const mobileNo = borrower?.mobileNo || '';
 
@@ -1000,12 +1016,12 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 </div>
                                 
                                 <div className="md:col-span-2">
-                                    <label className={labelClass}>खातेदार / सभासद (Borrower / Member)</label>
+                                    <label className={labelClass}>कर्जदार खातेदार (Borrower Customer)</label>
                                     <SearchableSelect 
                                         options={borrowerOptions}
-                                        value={selectedBorrowerKey || (selectedMemberId ? `M_${selectedMemberId}` : '')} 
+                                        value={selectedBorrowerKey || (selectedCustomerId ? `C_${selectedCustomerId}` : '')} 
                                         onChange={handleMemberChange} 
-                                        placeholder="खातेदार किंवा सभासद निवडा..." required />
+                                        placeholder="कर्जदार खातेदार निवडा (CIF / नाव)..." required />
                                 </div>
                                 
                                 <div>
@@ -1028,10 +1044,10 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         <select 
                                             value={formData.loanAccountID?.toString() || ''} 
                                             onChange={handleLoanAccountSelect}
-                                            disabled={(!selectedBorrowerKey && !selectedMemberId) || borrowerLoans.length === 0}
-                                            className={`${inputClass} font-bold text-xs ${(!selectedBorrowerKey && !selectedMemberId) ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-primary/5 text-primary border-primary/30 shadow-2xs'}`}
+                                            disabled={(!selectedBorrowerKey && !selectedCustomerId) || borrowerLoans.length === 0}
+                                            className={`${inputClass} font-bold text-xs ${(!selectedBorrowerKey && !selectedCustomerId) ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-primary/5 text-primary border-primary/30 shadow-2xs'}`}
                                             required>
-                                            <option value="">{selectedBorrowerKey || selectedMemberId ? (borrowerLoans.length === 0 ? "कर्ज उपलब्ध नाही" : "-- कर्ज प्रकार व खाते निवडा --") : "आधी खातेदार निवडा..."}</option>
+                                            <option value="">{selectedBorrowerKey || selectedCustomerId ? (borrowerLoans.length === 0 ? "कर्ज उपलब्ध नाही" : "-- कर्ज प्रकार व खाते निवडा --") : "आधी कर्जदार निवडा..."}</option>
                                             {borrowerLoans.map((a: any) => (
                                                 <option key={a.loanAccountID} value={a.loanAccountID}>
                                                     {format14DigitDisplay(a.loanAccountNo)} - {a.loanRate?.shortName || a.loanRate?.loanType || 'कर्ज'} (मंजूर: ₹{a.sanctionedAmount?.toLocaleString('en-IN') || 0} | शिल्लक: ₹{a.principalBalance?.toLocaleString('en-IN') || 0})
@@ -1460,9 +1476,12 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     principalCollected: 0,
                                     fees: []
                                 });
-                                setSelectedMemberId(null);
+                                setSelectedCustomerId(null);
+                                setSelectedBorrowerKey(null);
                                 setSelectedAccount(null);
                                 setAccountDetails(null);
+                                (window as any).selectedLoanCustomerId = undefined;
+                                (window as any).selectedLoanAccountId = undefined;
                                 (window as any).selectedLoanMemberId = undefined;
                                 setLastSavedCollectionId(null);
                                 fetchNextReceiptNo();

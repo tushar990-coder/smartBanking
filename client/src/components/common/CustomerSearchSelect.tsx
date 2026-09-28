@@ -7,9 +7,14 @@ export interface CustomerOption {
   firstName: string;
   middleName?: string;
   lastName: string;
+  fullName?: string;
+  legacyCustomerNo?: string;
   mobileNo?: string;
   aadhaarNo?: string;
   status?: string;
+  id?: number;
+  customerId?: number;
+  customerName?: string;
 }
 
 interface Props {

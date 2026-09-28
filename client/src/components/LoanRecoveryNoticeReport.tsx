@@ -233,24 +233,27 @@ export default function LoanRecoveryNoticeReport() {
     const pBal = a.principalBalance ?? a.sanctionedAmount ?? 0;
     const iBal = a.interestBalance ?? a.overdueInterestBalance ?? 0;
     const tot = pBal + iBal;
+    const b = a.customer || a.member;
+    const name = b ? `${b.firstName || ''} ${b.middleName ? b.middleName + ' ' : ''}${b.lastName || ''}`.trim() : 'खातेदार';
+    const cif = a.customer?.cifNo ? `[${a.customer.cifNo}] ` : (a.member?.memberCode ? `[${a.member.memberCode}] ` : '');
     return {
       value: a.loanAccountID.toString(),
-      label: `${a.loanAccountNo} - ${a.member?.firstName || ''} ${a.member?.lastName || ''} (बाकी रू. ${tot.toLocaleString('en-IN')})`
+      label: `${a.loanAccountNo} - ${cif}${name} (बाकी रू. ${tot.toLocaleString('en-IN')})`
     };
   });
 
-  const borrower = selectedAccount?.member;
+  const borrower = selectedAccount?.customer || selectedAccount?.member;
   const borrowerAddress = borrower 
     ? `${borrower.address || ''}${borrower.village ? `, रा. ${borrower.village}` : ''}${borrower.taluka ? `, ता. ${borrower.taluka}` : ''}${borrower.district ? `, जि. ${borrower.district}` : ''}`
     : '';
 
-  const guarantor1 = guarantors.length > 0 ? guarantors[0]?.member || guarantors[0] : null;
-  const guarantor2 = guarantors.length > 1 ? guarantors[1]?.member || guarantors[1] : null;
-  const coBorrower = selectedAccount?.coMember || selectedAccount?.coBorrower || null;
+  const guarantor1 = guarantors.length > 0 ? (guarantors[0]?.customer || guarantors[0]?.member || guarantors[0]) : (selectedAccount?.guarantor1Customer || null);
+  const guarantor2 = guarantors.length > 1 ? (guarantors[1]?.customer || guarantors[1]?.member || guarantors[1]) : (selectedAccount?.guarantor2Customer || null);
+  const coBorrower = selectedAccount?.coCustomer || selectedAccount?.coCustomer2 || selectedAccount?.coMember || selectedAccount?.coBorrower || null;
 
   const getPersonAddress = (person: any): string => {
     if (!person) return '';
-    const m = person.member || person;
+    const m = person.customer || person.member || person;
     const parts: string[] = [];
     if (m.address) parts.push(m.address.trim());
     if (m.village && !m.address?.toLowerCase().includes(m.village.toLowerCase())) parts.push(m.village.trim());

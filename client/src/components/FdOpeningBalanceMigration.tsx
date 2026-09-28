@@ -24,7 +24,13 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-interface Customer extends CustomerOption {}
+interface Customer extends CustomerOption {
+  id?: number;
+  customerId?: number;
+  legacyCustomerNo?: string;
+  fullName?: string;
+  customerName?: string;
+}
 
 interface FdScheme {
   fdSchemeID: number;

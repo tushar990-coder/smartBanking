@@ -25,6 +25,15 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
+interface Customer {
+  customerID: number;
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  cifNo: string;
+  mobileNo?: string;
+}
+
 interface Member {
   memberID: number;
   firstName: string;
@@ -53,7 +62,8 @@ interface LoanOpeningBalance {
     branchName: string;
     branchCode: string;
   };
-  memberID: number;
+  customerID?: number;
+  memberID?: number;
   loanRateID: number;
   loanAccountNo: string;
   legacyAccountNumber?: string;
@@ -78,6 +88,7 @@ interface LoanOpeningBalance {
   securityDetails?: string;
   securityValue: number;
 
+  customer?: Customer;
   member?: Member;
   loanRate?: LoanRate;
 }
@@ -88,6 +99,7 @@ export default function LoanOpeningBalanceMaster() {
   const [showListModal, setShowListModal] = useState(false);
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loanRates, setLoanRates] = useState<LoanRate[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [isEditing, setIsEditing] = useState(false);
@@ -111,6 +123,7 @@ export default function LoanOpeningBalanceMaster() {
   const [formData, setFormData] = useState({
     loanOpeningBalanceID: 0,
     branchID: '1',
+    customerID: '',
     memberID: '',
     loanRateID: '',
     loanAccountNo: '',
@@ -140,6 +153,7 @@ export default function LoanOpeningBalanceMaster() {
 
   const API_URL = '/api/LoanAccounts/OpeningBalance';
   const GET_API_URL = '/api/LoanAccounts';
+  const CUSTOMERS_API = '/api/Customers';
   const MEMBERS_API = '/api/Members';
   const LOAN_RATES_API = '/api/LoanRates';
   const BRANCHES_API = '/api/Branches';
@@ -148,6 +162,7 @@ export default function LoanOpeningBalanceMaster() {
   useEffect(() => {
     fetchFinancialYears();
     fetchBalances();
+    fetchCustomers();
     fetchMembers();
     fetchLoanRates();
     fetchBranches();
@@ -253,10 +268,11 @@ export default function LoanOpeningBalanceMaster() {
 
   const filteredBalances = balances.filter(balance => {
     const term = searchTerm.toLowerCase();
-    const memberName = `${balance.member?.firstName || ''} ${balance.member?.lastName || ''}`.toLowerCase();
+    const customerName = `${balance.customer?.firstName || balance.member?.firstName || ''} ${balance.customer?.lastName || balance.member?.lastName || ''}`.toLowerCase();
+    const cifNo = (balance.customer?.cifNo || balance.member?.cifNo || '').toLowerCase();
     const loanAccountNo = (balance.loanAccountNo || '').toLowerCase();
     const oldAccountNo = (balance.legacyAccountNumber || '').toLowerCase();
-    return memberName.includes(term) || loanAccountNo.includes(term) || oldAccountNo.includes(term);
+    return customerName.includes(term) || cifNo.includes(term) || loanAccountNo.includes(term) || oldAccountNo.includes(term);
   });
 
   const fetchBalances = async () => {
@@ -268,6 +284,18 @@ export default function LoanOpeningBalanceMaster() {
       }
     } catch (error) {
       console.error("Error fetching balances", error);
+    }
+  };
+
+  const fetchCustomers = async () => {
+    try {
+      const response = await fetch(CUSTOMERS_API);
+      if (response.ok) {
+        const data = await response.json();
+        setCustomers(data);
+      }
+    } catch (error) {
+      console.error("Error fetching customers", error);
     }
   };
 
@@ -649,6 +677,7 @@ export default function LoanOpeningBalanceMaster() {
     setFormData({
       loanOpeningBalanceID: 0,
       branchID: '1',
+      customerID: '',
       memberID: '',
       loanRateID: '',
       loanAccountNo: '',
@@ -678,8 +707,8 @@ export default function LoanOpeningBalanceMaster() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.memberID || !formData.loanRateID || !formData.loanAccountNo) {
-        alert("कृपया आवश्यक माहिती भरा!");
+    if ((!formData.customerID && !formData.memberID) || !formData.loanRateID || !formData.loanAccountNo) {
+        alert("कृपया कर्जदार खातेदार व आवश्यक माहिती भरा!");
         return;
     }
 
@@ -705,7 +734,8 @@ export default function LoanOpeningBalanceMaster() {
         legacyAccountNumber: formData.legacyAccountNumber || null,
         loanOpeningBalanceID: isEditing ? formData.loanOpeningBalanceID : 0,
         branchID: parseInt(formData.branchID),
-        memberID: parseInt(formData.memberID),
+        customerID: formData.customerID ? parseInt(formData.customerID) : null,
+        memberID: formData.memberID ? parseInt(formData.memberID) : null,
         loanRateID: parseInt(formData.loanRateID),
         
         principalBalance: parseFloat(formData.principalBalance || '0'),
@@ -775,10 +805,12 @@ export default function LoanOpeningBalanceMaster() {
 
   const handleEdit = (balance: any) => {
     setIsInstAmountEdited(false);
+    const custId = balance.customerID || balance.customer?.customerID;
     setFormData({
       loanOpeningBalanceID: balance.loanOpeningBalanceID || balance.loanAccountID,
       branchID: balance.branchID.toString(),
-      memberID: balance.memberID.toString(),
+      customerID: custId ? custId.toString() : '',
+      memberID: balance.memberID ? balance.memberID.toString() : '',
       loanRateID: balance.loanRateID.toString(),
       loanAccountNo: balance.loanAccountNo,
       legacyAccountNumber: balance.legacyAccountNumber || '',
@@ -862,18 +894,28 @@ export default function LoanOpeningBalanceMaster() {
   const inputClass = "w-full border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-[11px] h-[28px] bg-white";
   const labelClass = "block text-[11px] font-bold text-gray-700 mb-0.5";
 
+  const customerOptions = customers.map(c => ({
+      value: c.customerID.toString(),
+      label: `${c.cifNo ? '[' + c.cifNo + '] ' : ''}${c.firstName} ${c.middleName ? c.middleName + ' ' : ''}${c.lastName}`.trim()
+  }));
+
   const memberOptions = members.map(m => ({ 
       value: m.memberID.toString(), 
       label: `${m.cifNo ? m.cifNo + ' - ' : ''}${m.firstName} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName}`
   }));
 
-  const guarantorOptions = members.map(m => {
-      const fullName = `${m.firstName} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName}`.trim();
-      return {
-          value: m.memberID.toString(),
-          label: `${m.cifNo ? m.cifNo + ' - ' : ''}${fullName}`
-      };
-  });
+  const guarantorOptions = customers.length > 0
+    ? customers.map(c => ({
+        value: c.customerID.toString(),
+        label: `${c.cifNo ? '[' + c.cifNo + '] ' : ''}${c.firstName} ${c.middleName ? c.middleName + ' ' : ''}${c.lastName}`.trim()
+      }))
+    : members.map(m => {
+        const fullName = `${m.firstName} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName}`.trim();
+        return {
+            value: m.memberID.toString(),
+            label: `${m.cifNo ? m.cifNo + ' - ' : ''}${fullName}`
+        };
+    });
 
   const loanRateOptions = loanRates.map(r => ({
       value: r.loanRateID.toString(),
@@ -1025,8 +1067,25 @@ export default function LoanOpeningBalanceMaster() {
                 </select>
               </div>
               <div className="lg:col-span-2 sm:col-span-2">
-                <label className={labelClass}>खातेदार (Account Holder) <span className="text-red-500">*</span></label>
-                <SearchableSelect name="memberID" value={formData.memberID} onChange={handleChange} options={memberOptions} placeholder="खातेदार निवडा किंवा शोधा..." disabled={isEditing} />
+                <label className={labelClass}>कर्जदार खातेदार (Borrower Customer) <span className="text-red-500">*</span></label>
+                <SearchableSelect 
+                  name="customerID" 
+                  value={formData.customerID} 
+                  onChange={(e: any) => {
+                    const cIdStr = e.target.value;
+                    const cId = parseInt(cIdStr);
+                    const matchedCust = customers.find(c => c.customerID === cId);
+                    const matchedMem = members.find(m => m.cifNo && matchedCust?.cifNo && m.cifNo === matchedCust.cifNo);
+                    setFormData(prev => ({
+                      ...prev,
+                      customerID: cIdStr,
+                      memberID: matchedMem ? matchedMem.memberID.toString() : ''
+                    }));
+                  }} 
+                  options={customerOptions.length > 0 ? customerOptions : memberOptions} 
+                  placeholder="कर्जदार खातेदार निवडा (CIF किंवा नाव)..." 
+                  disabled={isEditing} 
+                />
               </div>
               <div className="lg:col-span-1 sm:col-span-1">
                 <label className={labelClass}>कर्ज प्रकार (Loan Type) <span className="text-red-500">*</span></label>

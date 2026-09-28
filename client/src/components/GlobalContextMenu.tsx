@@ -135,8 +135,14 @@ const GlobalContextMenu: React.FC = () => {
                 key={item.id}
                 onClick={() => {
                   if (item.isMemberSpecific) {
+                    const customerId = (window as any).selectedLoanCustomerId;
+                    const loanAccountId = (window as any).selectedLoanAccountId;
                     const memberId = (window as any).selectedLoanMemberId;
-                    openInNewTab(item.tabName, memberId ? `&memberId=${memberId}` : '');
+                    let query = '';
+                    if (loanAccountId) query += `&loanAccountId=${loanAccountId}`;
+                    if (customerId) query += `&customerId=${customerId}`;
+                    if (memberId) query += `&memberId=${memberId}`;
+                    openInNewTab(item.tabName, query);
                   } else {
                     openInNewTab(item.tabName);
                   }

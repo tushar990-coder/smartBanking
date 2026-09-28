@@ -20,6 +20,9 @@ interface Member {
     memberCode: string;
     cifNo?: string;
     mobileNo?: string;
+    customerID?: number;
+    customerId?: number;
+    customer?: any;
 }
 
 interface LoanApplication {
@@ -28,10 +31,10 @@ interface LoanApplication {
     applicationDate: string;
     memberID?: number;
     customerID?: number;
-    coCustomerID?: number;
-    coCustomer2ID?: number;
-    guarantor1CustomerID?: number;
-    guarantor2CustomerID?: number;
+    coCustomerID?: number | null;
+    coCustomer2ID?: number | null;
+    guarantor1CustomerID?: number | null;
+    guarantor2CustomerID?: number | null;
     guarantor1Customer?: any;
     guarantor2Customer?: any;
     securityDetails?: string;
@@ -41,6 +44,9 @@ interface LoanApplication {
     durationMonths: number;
     installmentFrequency: string;
     status: string;
+    customer?: any;
+    coCustomer?: any;
+    coCustomer2?: any;
     member?: Member;
     loanRateID: number;
     noOfInstallments?: number;
@@ -65,13 +71,13 @@ interface LoanApplication {
 interface LoanAccount {
     loanAccountID: number;
     loanAccountNo: string;
-    customerID?: number;
-    memberID?: number;
+    customerID?: number | null;
+    memberID?: number | null;
     loanApplicationID?: number;
-    coCustomerID?: number;
-    coCustomer2ID?: number;
-    guarantor1CustomerID?: number;
-    guarantor2CustomerID?: number;
+    coCustomerID?: number | null;
+    coCustomer2ID?: number | null;
+    guarantor1CustomerID?: number | null;
+    guarantor2CustomerID?: number | null;
     guarantor1Customer?: any;
     guarantor2Customer?: any;
     securityDetails?: string;
@@ -80,13 +86,11 @@ interface LoanAccount {
     interestRate: number;
     durationMonths: number;
     installmentFrequency: string;
-    coCustomerID?: number;
-    coCustomer2ID?: number;
     loanRateID?: number;
     customer?: any;
+    coCustomer?: any;
+    coCustomer2?: any;
     member?: Member;
-    guarantor1Customer?: any;
-    guarantor2Customer?: any;
     noOfInstallments?: number;
     installmentAmount?: number;
     openingDate?: string;
@@ -266,7 +270,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     netAmountPaid: draftApplication.requestedAmount
                 }));
                 
-                fetchMemberShareBalance(draftApplication.memberID, draftApplication.customerID);
+                fetchCustomerShareBalance(draftApplication.customerID || draftApplication.customer?.customerID);
 
                 setNewAccountData({
                     customerID: draftApplication.customerID || (draftApplication as any).customer?.customerID || null,
@@ -316,7 +320,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 })) || [];
                 setDeductions(deds);
 
-                fetchMemberShareBalance(draftApplication.memberID, draftApplication.customerID);
+                fetchCustomerShareBalance(draftApplication.customerID || draftApplication.customer?.customerID);
 
                 setNewAccountData({
                     loanAccountID: editingDisbursement.loanAccountID,
@@ -425,11 +429,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         }
     };
 
-    const fetchMemberShareBalance = async (memberId?: number, customerId?: number) => {
-        if (!memberId && !customerId) return;
+    const fetchCustomerShareBalance = async (customerId?: number) => {
+        if (!customerId) return;
         try {
-            const url = memberId ? `/api/Reports/Member360/${memberId}` : `/api/Reports/Customer360/${customerId}`;
-            const res = await axios.get(url);
+            // Strict Customer-First: exclusively query Customer360
+            const res = await axios.get(`/api/Reports/Customer360/${customerId}`);
             if (res.data && res.data.profile && res.data.profile.shareCapital !== undefined) {
                 setMemberShareBalance(res.data.profile.shareCapital);
             } else if (res.data && res.data.portfolio && res.data.portfolio.shares) {
@@ -481,40 +485,25 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         }));
     }, [deductions, formData.disbursementAmount]);
 
-    const getCurrentApplicantMemberId = () => {
-        if (draftApplication) return draftApplication.memberID;
-        if (sourceType === 'Application' && selectedSourceId) {
-            const app = applications.find(a => a.loanApplicationID === selectedSourceId);
-            if (app) return app.memberID;
-        }
-        if (sourceType === 'ExistingAccount' && selectedSourceId) {
-            const acc = accounts.find(a => a.loanAccountID === selectedSourceId);
-            if (acc) return acc.memberID;
-        }
-        return 0;
-    };
-
     const getCurrentApplicantCustomerId = () => {
-        if (draftApplication) return draftApplication.customerID || draftApplication.member?.customerID || 0;
+        if (draftApplication) return draftApplication.customerID || draftApplication.customer?.customerID || 0;
         if (sourceType === 'Application' && selectedSourceId) {
             const app = applications.find(a => a.loanApplicationID === selectedSourceId);
-            if (app) return app.customerID || app.member?.customerID || 0;
+            if (app) return app.customerID || app.customer?.customerID || 0;
         }
         if (sourceType === 'ExistingAccount' && selectedSourceId) {
             const acc = accounts.find(a => a.loanAccountID === selectedSourceId);
-            if (acc) return acc.customerID || acc.member?.customerID || 0;
+            if (acc) return acc.customerID || acc.customer?.customerID || 0;
         }
         return 0;
     };
 
     // Auto-select applicant's primary saving account when payment mode is Saving Transfer
     useEffect(() => {
-        const applicantId = getCurrentApplicantMemberId();
         const applicantCustId = getCurrentApplicantCustomerId();
-        if (formData.paymentMode === 'Saving Transfer' && (applicantId || applicantCustId) && savingAccounts.length > 0) {
+        if (formData.paymentMode === 'Saving Transfer' && applicantCustId && savingAccounts.length > 0) {
             const appAcc = savingAccounts.find(s => 
-                ((applicantCustId && s.customerID === applicantCustId) || (applicantId && (s.memberID === applicantId || s.resolvedMemberID === applicantId))) && 
-                (s.status === 'Active' || !s.status)
+                s.customerID === applicantCustId && (s.status === 'Active' || !s.status)
             );
             if (appAcc && (!formData.transferToSavingAccountNo || !savingAccounts.some(s => s.accountNo === formData.transferToSavingAccountNo))) {
                 setFormData(prev => ({ ...prev, transferToSavingAccountNo: appAcc.accountNo }));
@@ -539,6 +528,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
 
         let sancAmount = 0;
         let memberId = 0;
+        let customerId = 0;
         let alreadyDisb = 0;
         let pendingLimit = 0;
         let trancheNo = 1;
@@ -551,7 +541,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     : new Date().toISOString().split('T')[0];
 
                 sancAmount = app.requestedAmount;
-                memberId = app.memberID;
+                memberId = app.memberID || 0;
+                customerId = app.customerID || app.customer?.customerID || 0;
                 
                 alreadyDisb = app.totalDisbursedAmount || 0;
                 pendingLimit = app.pendingSanctionedAmount !== undefined ? app.pendingSanctionedAmount : Math.max(0, sancAmount - alreadyDisb);
@@ -564,8 +555,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 setNewAccountData({
                     loanAccountID: app.linkedLoanAccountID,
                     loanApplicationID: app.loanApplicationID,
-                    memberID: app.memberID,
-                    customerID: app.customerID,
+                    memberID: app.memberID || null,
+                    customerID: app.customerID || app.customer?.customerID || null,
                     coCustomerID: app.coCustomerID || null,
                     coCustomer2ID: app.coCustomer2ID || null,
                     guarantor1CustomerID: app.guarantor1CustomerID || null,
@@ -598,7 +589,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             const acc = accounts.find(a => a.loanAccountID === id);
             if (acc) {
                 sancAmount = acc.sanctionedAmount;
-                memberId = acc.memberID;
+                memberId = acc.memberID || 0;
+                customerId = acc.customerID || acc.customer?.customerID || 0;
                 
                 alreadyDisb = disbursements
                     .filter(d => d.loanAccountID === acc.loanAccountID)
@@ -612,8 +604,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
 
                 setNewAccountData({
                     loanAccountID: acc.loanAccountID,
-                    memberID: acc.memberID,
-                    customerID: acc.customerID,
+                    memberID: acc.memberID || null,
+                    customerID: acc.customerID || acc.customer?.customerID || null,
                     coCustomerID: acc.coCustomerID || null,
                     coCustomer2ID: acc.coCustomer2ID || null,
                     guarantor1CustomerID: acc.guarantor1CustomerID || null,
@@ -643,7 +635,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             }
         }
 
-        fetchMemberShareBalance(memberId);
+        fetchCustomerShareBalance(customerId);
         setDeductions([]);
     };
 
@@ -831,18 +823,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 } as any;
             }
 
+            // Strict CBS Single-Call Atomicity: Link Draft Application ID directly into payload
+            // The unified database transaction in POST /api/LoanDisbursements commits or rolls back atomically.
             if (sourceType === 'Draft' && draftApplication) {
-                const appPayload = { ...draftApplication, status: 'Approved' };
-                delete (appPayload as any).member;
-                delete (appPayload as any).coMember;
-                delete (appPayload as any).loanRate;
-                let appRes;
-                if (appPayload.loanApplicationID) {
-                    await axios.put(`/api/LoanApplications/${appPayload.loanApplicationID}`, appPayload);
-                    payload.loanAccount!.loanApplicationID = appPayload.loanApplicationID;
-                } else {
-                    appRes = await axios.post('/api/LoanApplications', appPayload);
-                    payload.loanAccount!.loanApplicationID = appRes.data.loanApplicationID;
+                if (payload.loanAccount && draftApplication.loanApplicationID) {
+                    payload.loanAccount.loanApplicationID = draftApplication.loanApplicationID;
                 }
             }
 
@@ -878,12 +863,10 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     let selectedGuarantor2 = "-";
     let selectedSecurity = "-";
 
-    const currentApplicantMemberId = getCurrentApplicantMemberId();
-
     if (draftApplication) {
-        const borrower = draftApplication.customer || draftApplication.member;
-        selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'अर्जदार';
-        selectedCif = draftApplication.customer?.cifNo || draftApplication.member?.cifNo || '';
+        const borrower = draftApplication.customer;
+        selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (draftApplication.customerID ? `ग्राहक #${draftApplication.customerID}` : 'अर्जदार');
+        selectedCif = draftApplication.customer?.cifNo || '';
         selectedAccountNo = draftApplication.applicationNo || 'DRAFT';
         selectedLoanType = draftApplication.loanRate?.loanType || 'General Loan';
         const g1 = draftApplication.guarantor1Customer;
@@ -894,9 +877,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     } else if (sourceType === 'Application' && selectedSourceId) {
         const app = applications.find(a => a.loanApplicationID === selectedSourceId);
         if (app) {
-            const borrower = app.customer || app.member;
-            selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'अर्जदार';
-            selectedCif = app.customer?.cifNo || app.member?.cifNo || '';
+            const borrower = app.customer;
+            selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (app.customerID ? `ग्राहक #${app.customerID}` : 'अर्जदार');
+            selectedCif = app.customer?.cifNo || '';
             selectedAccountNo = app.applicationNo || '';
             selectedLoanType = app.loanRate?.loanType || '';
             const g1 = app.guarantor1Customer;
@@ -908,9 +891,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     } else if (sourceType === 'ExistingAccount' && selectedSourceId) {
         const acc = accounts.find(a => a.loanAccountID === selectedSourceId);
         if (acc) {
-            const borrower = acc.customer || acc.member;
-            selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : 'खातेदार';
-            selectedCif = acc.customer?.cifNo || acc.member?.cifNo || '';
+            const borrower = acc.customer;
+            selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (acc.customerID ? `ग्राहक #${acc.customerID}` : 'खातेदार');
+            selectedCif = acc.customer?.cifNo || '';
             selectedAccountNo = acc.loanAccountNo || '';
             selectedLoanType = acc.loanRate?.loanType || '';
             const g1 = acc.guarantor1Customer;
@@ -924,7 +907,6 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     const currentApplicantCustomerId = getCurrentApplicantCustomerId();
     const isApplicantSaving = (s: any) => {
         if (currentApplicantCustomerId && s.customerID === currentApplicantCustomerId) return true;
-        if (currentApplicantMemberId && (s.memberID === currentApplicantMemberId || s.resolvedMemberID === currentApplicantMemberId)) return true;
         return false;
     };
 
@@ -1173,9 +1155,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                         <SearchableSelect 
                                             options={sourceType === 'Application' 
                                                 ? applications.map(a => {
-                                                    const mem = a.member;
-                                                    const name = mem ? `${mem.firstName} ${mem.lastName}` : '';
-                                                    const cif = mem?.cifNo ? ` [CIF: ${mem.cifNo}]` : '';
+                                                    const borrower = a.customer;
+                                                    const name = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (a.customerID ? `ग्राहक #${a.customerID}` : 'अर्जदार');
+                                                    const cif = a.customer?.cifNo ? ` [CIF: ${a.customer.cifNo}]` : '';
                                                     const trancheTag = (a.disbursementCount || 0) > 0 
                                                         ? ` [टप्पा ${(a.disbursementCount || 0) + 1} | शिल्लक: ₹${(a.pendingSanctionedAmount || 0).toLocaleString('en-IN')}]` 
                                                         : ` - मंजूर: ₹${(a.requestedAmount || 0).toLocaleString('en-IN')}`;
@@ -1185,9 +1167,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                     };
                                                 })
                                                 : accounts.map(a => {
-                                                    const mem = a.member;
-                                                    const name = mem ? `${mem.firstName} ${mem.lastName}` : '';
-                                                    const cif = mem?.cifNo ? ` [CIF: ${mem.cifNo}]` : '';
+                                                    const borrower = a.customer;
+                                                    const name = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (a.customerID ? `ग्राहक #${a.customerID}` : 'खातेदार');
+                                                    const cif = a.customer?.cifNo ? ` [CIF: ${a.customer.cifNo}]` : '';
                                                     const accDisbursed = disbursements.filter(d => d.loanAccountID === a.loanAccountID).reduce((s, d) => s + (d.disbursementAmount || 0), 0);
                                                     const pending = Math.max(0, (a.sanctionedAmount || 0) - accDisbursed);
                                                     return { 
@@ -1465,10 +1447,24 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                 
                                 const shareAmt = shareDeductionItem ? (parseFloat(shareDeductionItem.amount as any) || 0) : 0;
                                 const qty = Math.floor(shareAmt / 100);
-                                const applicantId = getCurrentApplicantMemberId();
-                                const applicantMember = (applications.find(a => a.loanApplicationID === selectedSourceId)?.member) || (accounts.find(a => a.loanAccountID === selectedSourceId)?.member) || (draftApplication?.member);
+                                const applicantCustId = getCurrentApplicantCustomerId();
+                                const appObj = applications.find(a => a.loanApplicationID === selectedSourceId);
+                                const accObj = accounts.find(a => a.loanAccountID === selectedSourceId);
+                                const borrowerObj = appObj?.customer || accObj?.customer || draftApplication?.customer;
+                                const applicantMember = appObj?.member || accObj?.member || draftApplication?.member;
                                 
-                                if (shareAmt <= 0 || qty <= 0) return null;
+                                if (shareAmt <= 0 || qty <= 0) {
+                                    return (
+                                        <div className="p-2 bg-amber-50/80 border border-amber-200 rounded-sm text-xs text-amber-900 flex items-center justify-between animate-fadeIn">
+                                            <span className="flex items-center gap-1.5 font-medium">
+                                                ℹ️ शेअर्स कपात शून्य आहे — हे कर्ज बिगर-सभासद (Customer-Only) कर्ज म्हणून नोंदवले जाईल आणि भाग दाखला तयार होणार नाही.
+                                            </span>
+                                            <span className="text-[10px] bg-amber-200/70 text-amber-900 px-1.5 py-0.5 rounded font-semibold font-mono">
+                                                Non-Member Loan
+                                            </span>
+                                        </div>
+                                    );
+                                }
 
                                 const certNo = nextShareConfig.nextCertificateNo || `CERT-${new Date().getFullYear()}-00001`;
                                 const fromNo = nextShareConfig.nextFromShareNo || 1;
@@ -1485,7 +1481,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                 ₹{shareAmt.toLocaleString('en-IN')}
                                             </span>
                                         </div>
-                                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px]">
+                                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-[11px]">
                                             <div className="bg-white p-1.5 rounded-sm border border-blue-100">
                                                 <div className="text-gray-500 text-[10px] font-semibold">सभासद क्रमांक (Member Code)</div>
                                                 <div className="font-bold text-blue-950 mt-0.5 truncate flex items-center gap-1">
@@ -1498,13 +1494,21 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                             ★ {nextShareConfig.nextMemberCode || 'MEM000X'} <span className="text-[9px] font-normal text-blue-600">(Auto)</span>
                                                         </span>
                                                     )}
-                                                    {applicantMember ? (
+                                                    {borrowerObj ? (
                                                         <span className="text-gray-700 font-medium text-[11px] truncate">
-                                                            ({applicantMember.firstName} {applicantMember.lastName})
+                                                            ({borrowerObj.firstName || ''} {borrowerObj.lastName || ''})
                                                         </span>
-                                                    ) : applicantId ? (
-                                                        <span className="text-gray-500 text-[10px]">#{applicantId}</span>
+                                                    ) : applicantCustId ? (
+                                                        <span className="text-gray-500 text-[10px]">#ग्राहक {applicantCustId}</span>
                                                     ) : null}
+                                                </div>
+                                            </div>
+                                            <div className="bg-white p-1.5 rounded-sm border border-blue-100">
+                                                <div className="text-gray-500 text-[10px] font-semibold">सभासद वर्गवारी (Class)</div>
+                                                <div className="font-bold text-emerald-800 mt-0.5 flex items-center gap-1">
+                                                    <span className="bg-emerald-100 text-emerald-900 px-1 py-0.5 rounded text-[10px] font-bold shadow-2xs">
+                                                        🟢 नियमित (वर्ग 'अ')
+                                                    </span>
                                                 </div>
                                             </div>
                                             <div className="bg-white p-1.5 rounded-sm border border-blue-100">

@@ -90,6 +90,7 @@ interface LoanAccount {
   };
   customer?: {
     firstName: string;
+    middleName?: string;
     lastName: string;
     cifNo?: string;
   };
@@ -132,17 +133,19 @@ const LoanLedgerReport: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const memberIdStr = params.get('memberId');
+    const loanAccountIdStr = params.get('loanAccountId');
     const customerIdStr = params.get('customerId');
-    if ((!memberIdStr && !customerIdStr) || loanRates.length === 0) return;
+    const memberIdStr = params.get('memberId');
+    if ((!loanAccountIdStr && !customerIdStr && !memberIdStr) || loanRates.length === 0) return;
 
-    const mId = memberIdStr ? parseInt(memberIdStr, 10) : null;
+    const accId = loanAccountIdStr ? parseInt(loanAccountIdStr, 10) : null;
     const cId = customerIdStr ? parseInt(customerIdStr, 10) : null;
+    const mId = memberIdStr ? parseInt(memberIdStr, 10) : null;
     const autoLoad = async () => {
       try {
         const res = await fetch(`/api/LoanAccounts`);
         const data = await res.json();
-        const matchedAcc = data.find((a: any) => (mId && a.memberID === mId) || (cId && a.customerID === cId));
+        const matchedAcc = data.find((a: any) => (accId && a.loanAccountID === accId) || (cId && a.customerID === cId) || (mId && a.memberID === mId));
         if (matchedAcc) {
           const rateOption = {
             value: matchedAcc.loanRateID,
@@ -154,7 +157,7 @@ const LoanLedgerReport: React.FC = () => {
             .filter((a: any) => a.loanRateID === matchedAcc.loanRateID)
             .map((a: any) => {
               const name = a.customer
-                ? `${a.customer.firstName || ''} ${a.customer.lastName || ''}`.trim()
+                ? `${a.customer.firstName || ''} ${a.customer.middleName ? a.customer.middleName + ' ' : ''}${a.customer.lastName || ''}`.trim()
                 : `${a.member?.firstName || ''} ${a.member?.lastName || ''}`.trim();
               const code = a.customer?.cifNo ? `(CIF: ${a.customer.cifNo})` : (a.member?.memberCode ? `(सभासद: ${a.member.memberCode})` : '');
               return {
@@ -452,7 +455,7 @@ const LoanLedgerReport: React.FC = () => {
 
   const loanAccountOptions = loanAccounts.map(la => {
     const name = la.customer
-      ? `${la.customer.firstName || ''} ${la.customer.lastName || ''}`.trim()
+      ? `${la.customer.firstName || ''} ${la.customer.middleName ? la.customer.middleName + ' ' : ''}${la.customer.lastName || ''}`.trim()
       : `${la.member?.firstName || ''} ${la.member?.lastName || ''}`.trim();
     const code = la.customer?.cifNo ? `(CIF: ${la.customer.cifNo})` : (la.member?.memberCode ? `(सभासद: ${la.member.memberCode})` : '');
     return {

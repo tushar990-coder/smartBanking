@@ -101,25 +101,23 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
 
     const getBorrowerName = (d: any) => {
         const acc = d.loanAccount || {};
-        const cust = acc.customer || acc.loanApplication?.customer || acc.member?.customer;
+        const cust = acc.customer || acc.loanApplication?.customer;
         if (cust) {
             return `${cust.firstName || ''} ${cust.middleName ? cust.middleName + ' ' : ''}${cust.lastName || ''}`.trim();
-        }
-        if (acc.member?.firstName) {
-            return `${acc.member.firstName} ${acc.member.lastName || ''}`.trim();
         }
         return '-';
     };
 
     const getBorrowerCif = (d: any) => {
         const acc = d.loanAccount || {};
-        const cust = acc.customer || acc.loanApplication?.customer || acc.member?.customer;
-        return cust?.cifNo || acc.member?.cifNo || '';
+        const cust = acc.customer || acc.loanApplication?.customer;
+        return cust?.cifNo || '';
     };
 
     const getBorrowerCode = (d: any) => {
         const acc = d.loanAccount || {};
-        return acc.member?.memberCode || '';
+        const cust = acc.customer || acc.loanApplication?.customer;
+        return cust?.customerNo || cust?.cifNo || acc.member?.memberCode || '';
     };
 
     const getGuarantor1Name = (d: any) => {

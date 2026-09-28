@@ -59,6 +59,47 @@ function addMonthsSafe(d: Date, months: number): Date {
 }
 
 /**
+ * Safely parse YYYY-MM-DD string into a local Date at 00:00:00 (avoiding UTC timezone drift)
+ */
+function parseDateOnly(str: string): Date {
+  const parts = str.split('T')[0].split('-');
+  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+}
+
+/**
+ * Determine the next milestone boundary based on standard Indian financial calendar cycles:
+ * - Quarterly (3 months): Cut-offs on 30 June, 30 September, 31 December, 31 March
+ * - Half-Yearly (6 months): Cut-offs on 30 September, 31 March
+ * - Yearly (12 months): Cut-off on 31 March
+ * - Monthly (1 month): Cut-off on last day of current month
+ */
+function getNextMilestoneBoundary(d: Date, stepMonths: number): Date {
+  const y = d.getFullYear();
+  const m = d.getMonth(); // 0 to 11
+  if (stepMonths === 1) {
+    return new Date(y, m + 1, 1);
+  }
+  if (stepMonths === 6) {
+    if (m >= 3 && m <= 8) return new Date(y, 9, 1);
+    if (m >= 9) return new Date(y + 1, 3, 1);
+    return new Date(y, 3, 1);
+  }
+  if (stepMonths === 12) {
+    if (m >= 3) return new Date(y + 1, 3, 1);
+    return new Date(y, 3, 1);
+  }
+  // Default Quarterly (stepMonths === 3)
+  // Q1: Apr (3), May (4), Jun (5) -> Jul 1
+  // Q2: Jul (6), Aug (7), Sep (8) -> Oct 1
+  // Q3: Oct (9), Nov (10), Dec (11) -> Jan 1
+  // Q4: Jan (0), Feb (1), Mar (2) -> Apr 1
+  if (m >= 3 && m <= 5) return new Date(y, 6, 1);
+  if (m >= 6 && m <= 8) return new Date(y, 9, 1);
+  if (m >= 9 && m <= 11) return new Date(y + 1, 0, 1);
+  return new Date(y, 3, 1);
+}
+
+/**
  * Generates the full interest amortization schedule for an FD
  */
 export function generateFdInterestSchedule(params: {
@@ -83,8 +124,8 @@ export function generateFdInterestSchedule(params: {
   const p = Number(depositAmount) || 0;
   const r = Number(interestRate) || 0;
 
-  const start = new Date(openingDate);
-  const end = new Date(maturityDate);
+  const start = parseDateOnly(openingDate);
+  const end = parseDateOnly(maturityDate);
 
   if (isNaN(start.getTime()) || isNaN(end.getTime()) || p <= 0 || end <= start) {
     return {
@@ -131,17 +172,20 @@ export function generateFdInterestSchedule(params: {
     const monthlyInt = Math.round((p * r) / 1200);
 
     while (currFrom < end) {
-      let nextStep = addMonthsSafe(currFrom, stepMonths);
+      let nextStep = getNextMilestoneBoundary(currFrom, stepMonths);
       if (nextStep > end) nextStep = new Date(end.getTime());
 
       const periodDays = Math.max(1, Math.round((nextStep.getTime() - currFrom.getTime()) / (1000 * 60 * 60 * 24)));
       runningCumulativeInt += monthlyInt;
 
+      // The period end date for display is the day before nextStep begins (e.g. 30/06 instead of 01/07)
+      const periodToDate = nextStep > currFrom ? new Date(nextStep.getTime() - 24 * 60 * 60 * 1000) : nextStep;
+
       periods.push({
         periodNo: periodIdx,
         periodLabel: `महिना ${periodIdx} (M${periodIdx})`,
         fromDate: formatDateIso(currFrom),
-        toDate: formatDateIso(nextStep),
+        toDate: formatDateIso(periodToDate),
         days: periodDays,
         openingBalance: p,
         interestRate: r,
@@ -177,7 +221,7 @@ export function generateFdInterestSchedule(params: {
   // ==================== Cumulative / Simple Scheme ====================
   // Calculate milestone periods up to maturity date
   while (currFrom < end) {
-    let nextStep = addMonthsSafe(currFrom, stepMonths);
+    let nextStep = getNextMilestoneBoundary(currFrom, stepMonths);
     if (nextStep > end) nextStep = new Date(end.getTime());
 
     const periodDays = Math.max(1, Math.round((nextStep.getTime() - currFrom.getTime()) / (1000 * 60 * 60 * 24)));
@@ -204,11 +248,14 @@ export function generateFdInterestSchedule(params: {
 
     runningCumulativeInt += periodInt;
 
+    // The period end date for display is the day before nextStep begins (e.g. 30/06 instead of 01/07)
+    const periodToDate = nextStep > currFrom ? new Date(nextStep.getTime() - 24 * 60 * 60 * 1000) : nextStep;
+
     periods.push({
       periodNo: periodIdx,
       periodLabel,
       fromDate: formatDateIso(currFrom),
-      toDate: formatDateIso(nextStep),
+      toDate: formatDateIso(periodToDate),
       days: periodDays,
       openingBalance: runningPrincipal,
       interestRate: r,

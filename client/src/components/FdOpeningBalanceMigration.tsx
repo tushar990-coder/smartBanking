@@ -23,6 +23,17 @@ import {
   Scale
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { FdInterestScheduleModal } from './FdInterestScheduleModal';
+import { generateFdInterestSchedule, FdScheduleSummary } from '../utils/fdInterestSchedule';
+
+interface ScheduleModalData {
+  summary: FdScheduleSummary;
+  customerName: string;
+  memberCode: string;
+  cifNo: string;
+  schemeName: string;
+  isSeniorCitizen?: boolean;
+}
 
 interface Customer extends CustomerOption {
   id?: number;
@@ -57,6 +68,9 @@ interface FdAccountRecord {
   legacyAccountNumber?: string;
   openingDate: string;
   depositAmount: number;
+  durationValue?: number;
+  durationType?: string;
+  durationInDays?: number;
   interestRate: number;
   maturityDate: string;
   maturityAmount: number;
@@ -68,6 +82,38 @@ interface FdAccountRecord {
   nomineeRelation?: string;
   remarks?: string;
 }
+
+/**
+ * Format date string into Indian standard DD/MM/YYYY
+ */
+const formatDateDisplay = (dateStr?: string | null): string => {
+  if (!dateStr) return '-';
+  const clean = dateStr.split('T')[0].trim();
+  if (!clean) return '-';
+  const parts = clean.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
+  }
+  return clean;
+};
+
+/**
+ * Format duration display with units (महिने / दिवस / वर्षे)
+ */
+const formatDurationDisplay = (acc: FdAccountRecord): string => {
+  if (acc.durationValue && acc.durationValue > 0) {
+    const typeLabel = acc.durationType === 'Days' 
+      ? 'दिवस' 
+      : acc.durationType === 'Years' 
+      ? 'वर्षे' 
+      : 'महिने';
+    return `${acc.durationValue} ${typeLabel}`;
+  }
+  if (acc.durationInDays && acc.durationInDays > 0) {
+    return `${acc.durationInDays} दिवस`;
+  }
+  return '-';
+};
 
 const FdOpeningBalanceMigration: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -86,6 +132,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
   const depositAmountInputRef = useRef<HTMLInputElement>(null);
   const [syncingFinancials, setSyncingFinancials] = useState(false);
   const [syncResult, setSyncResult] = useState<any>(null);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [scheduleModalData, setScheduleModalData] = useState<ScheduleModalData | null>(null);
 
   const API_URL = '/api';
 
@@ -125,7 +173,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     maturityDate: '',
     maturityAmount: 0,
     legacyAccruedInt: 0,
-    lastInterestPostingDate: '',
+    lastInterestPostingDate: '2026-03-31',
     nomineeName: '',
     nomineeRelation: '',
     remarks: '३१/०३/२०२६ पूर्वीचे चालू मुदत ठेव स्थलांतर',
@@ -326,12 +374,24 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return;
     }
 
-    const parsedVal = name.includes('Amount') || name.includes('Rate') || name.includes('Int') || name === 'branchID'
+    const isNumericField = 
+      (name.includes('Amount') || name.includes('Rate') || name === 'legacyAccruedInt' || name === 'branchID')
+      && !name.toLowerCase().includes('date');
+
+    const parsedVal = isNumericField
       ? parseFloat(value) || 0
       : value;
     
     if (name === 'branchID') {
       fetchNextAccountNo(parsedVal as number);
+    }
+
+    if (name === 'lastInterestPostingDate') {
+      if (value && value > '2026-03-31') {
+        setError('शेवटची व्याज तारीख ३१/०३/२०२६ नंतरची असू शकत नाही.');
+        return;
+      }
+      setError('');
     }
 
     if (name === 'maturityAmount') {
@@ -442,6 +502,68 @@ const FdOpeningBalanceMigration: React.FC = () => {
     }
   };
 
+  const handleOpenFormSchedule = () => {
+    const depAmt = Number(formData.depositAmount) || 0;
+    if (depAmt <= 0 || !formData.openingDate || !formData.maturityDate) {
+      setError('कृपया आधी ठेव मुद्दल, ठेव तारीख आणि मुदतपूर्ती तारीख भरा.');
+      return;
+    }
+
+    const currentCustomer = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === Number(formData.customerID || formData.memberID));
+    const scheme = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
+
+    const summary = generateFdInterestSchedule({
+      depositAmount: depAmt,
+      interestRate: Number(formData.interestRate) || 0,
+      openingDate: formData.openingDate,
+      maturityDate: formData.maturityDate,
+      schemeType: scheme?.interestType || 'Cumulative',
+      compoundingFrequency: scheme?.interestCompoundingFrequency || 'Quarterly',
+      targetMaturityAmount: Number(formData.maturityAmount) || 0,
+    });
+
+    setScheduleModalData({
+      summary,
+      customerName: currentCustomer?.fullName || currentCustomer?.customerName || (currentCustomer?.firstName ? `${currentCustomer.firstName} ${currentCustomer.lastName || ''}`.trim() : 'खातेदार'),
+      memberCode: currentCustomer?.legacyCustomerNo || currentCustomer?.customerCode || '',
+      cifNo: currentCustomer?.cifNo || '',
+      schemeName: scheme?.schemeName || 'मुदत ठेव योजना',
+      isSeniorCitizen: false,
+    });
+    setIsScheduleModalOpen(true);
+  };
+
+  const handleOpenGridSchedule = (acc: FdAccountRecord) => {
+    const depAmt = Number(acc.depositAmount) || 0;
+    if (depAmt <= 0 || !acc.openingDate || !acc.maturityDate) {
+      return;
+    }
+
+    const matchedScheme = schemes.find((s: any) => getSchemeId(s) === Number(acc.fdSchemeID));
+    const opDate = acc.openingDate.split('T')[0];
+    const matDate = acc.maturityDate.split('T')[0];
+
+    const summary = generateFdInterestSchedule({
+      depositAmount: depAmt,
+      interestRate: Number(acc.interestRate) || 0,
+      openingDate: opDate,
+      maturityDate: matDate,
+      schemeType: matchedScheme?.interestType || 'Cumulative',
+      compoundingFrequency: matchedScheme?.interestCompoundingFrequency || 'Quarterly',
+      targetMaturityAmount: Number(acc.maturityAmount) || 0,
+    });
+
+    setScheduleModalData({
+      summary,
+      customerName: acc.customerName || acc.memberName || 'खातेदार',
+      memberCode: acc.memberCode || '',
+      cifNo: acc.cifNo || '',
+      schemeName: acc.schemeName || matchedScheme?.schemeName || 'मुदत ठेव योजना',
+      isSeniorCitizen: false,
+    });
+    setIsScheduleModalOpen(true);
+  };
+
   const resetForm = () => {
     setEditingAccountId(null);
     setIsManualMaturityEdited(false);
@@ -460,7 +582,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       maturityDate: '',
       maturityAmount: 0,
       legacyAccruedInt: 0,
-      lastInterestPostingDate: '',
+      lastInterestPostingDate: '2026-03-31',
       nomineeName: '',
       nomineeRelation: '',
       remarks: '३१/०३/२०२६ पूर्वीचे चालू मुदत ठेव स्थलांतर',
@@ -592,6 +714,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       const payload = {
         ...formData,
         legacyAccountNumber: formData.legacyAccountNumber ? formData.legacyAccountNumber.trim() : null,
+        lastInterestPostingDate: formData.lastInterestPostingDate ? formData.lastInterestPostingDate : null,
         customerID: resolvedCustId,
         memberID: resolvedCustId,
         depositAmount: depAmt,
@@ -623,25 +746,30 @@ const FdOpeningBalanceMigration: React.FC = () => {
     if (filteredAccounts.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा उपलब्ध नाही.');
     const rows = filteredAccounts.map((acc, i) => ({
       'अ.क्र.': i + 1,
-      'पावती / खाते क्र.': acc.accountNo,
+      'नवीन पावती क्र.': acc.accountNo,
       'जुना पावती क्र.': acc.legacyAccountNumber || '-',
-      'सीआयएफ क्र.': acc.cifNo || acc.memberCode || '-',
+      'सीआयएफ क्र.': acc.cifNo || '-',
+      'मेंबर कोड': acc.memberCode || '-',
       'खातेदाराचे नाव': acc.customerName || acc.memberName || '-',
       'योजनेचे नाव': acc.schemeName || '-',
+      'ठेव तारीख (DD/MM/YYYY)': formatDateDisplay(acc.openingDate),
+      'कालावधी': formatDurationDisplay(acc),
       'ठेव मुद्दल (₹)': acc.depositAmount || 0,
       'व्याजदर (%)': `${acc.interestRate || 0}%`,
+      'मुदतपूर्ती दिनांक (DD/MM/YYYY)': formatDateDisplay(acc.maturityDate),
       'मुदतपूर्ती रक्कम (₹)': acc.maturityAmount || 0,
-      'शेवटची व्याज तारीख': acc.lastInterestPostingDate ? acc.lastInterestPostingDate.split('T')[0] : '-',
-      'साचलेले जुने व्याज (₹)': acc.legacyAccruedInt || 0,
-      'उघडल्याचा दिनांक': acc.openingDate ? acc.openingDate.split('T')[0] : '-',
-      'मुदतपूर्ती दिनांक': acc.maturityDate ? acc.maturityDate.split('T')[0] : '-',
+      'मागील जमा व्याज (₹)': acc.legacyAccruedInt || 0,
+      'शेवटची व्याज तारीख (DD/MM/YYYY)': formatDateDisplay(acc.lastInterestPostingDate),
+      'वारसदार नाव': acc.nomineeName || '-',
+      'वारसदार नाते': acc.nomineeRelation || '-',
+      'शेरा': acc.remarks || '-',
       'स्थिती': acc.status === 'Active' ? 'सक्रिय' : 'बंद'
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'FdOpeningBalances');
-    XLSX.writeFile(wb, `FD_Opening_Balances_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'FD_Migrated_List');
+    XLSX.writeFile(wb, `FD_Migrated_Accounts_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const formatCustomerLabel = (c: Customer) => {
@@ -1060,6 +1188,17 @@ const FdOpeningBalanceMigration: React.FC = () => {
                       <RotateCcw className="w-2.5 h-2.5" />
                       <span>री-कॅल्क</span>
                     </button>
+                    {Number(formData.depositAmount) > 0 && formData.maturityDate && (
+                      <button
+                        type="button"
+                        onClick={handleOpenFormSchedule}
+                        className="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-1.5 py-0.5 rounded text-[10px] font-bold shadow-xs hover:shadow flex items-center gap-0.5 transition-all cursor-pointer whitespace-nowrap ml-1"
+                        title="सविस्तर तिमाही/मासिक व्याज तक्ता व वेळापत्रक पहा"
+                      >
+                        <span>📊</span>
+                        <span>व्याज तक्ता</span>
+                      </button>
+                    )}
                   </div>
                 </div>
                 <input
@@ -1075,12 +1214,22 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   required
                 />
                 {formData.maturityAmount > 0 && formData.depositAmount > 0 && (
-                  <p className="text-[9px] text-gray-500 mt-0.5 flex justify-between font-medium">
-                    <span>एकूण अंदाजित व्याज:</span>
-                    <span className="font-bold text-emerald-700 font-mono">
-                      +₹{Math.max(0, formData.maturityAmount - formData.depositAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </span>
-                  </p>
+                  <div className="flex justify-between items-center mt-1">
+                    <p className="text-[9px] text-gray-500 font-medium">
+                      <span>अंदाजित व्याज: </span>
+                      <span className="font-bold text-emerald-700 font-mono">
+                        +₹{Math.max(0, formData.maturityAmount - formData.depositAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleOpenFormSchedule}
+                      className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                      title="सविस्तर तिमाही/मासिक व्याज तक्ता पहा"
+                    >
+                      <span>📊 वेळापत्रक तक्ता</span>
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -1117,10 +1266,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 <input
                   type="date"
                   name="lastInterestPostingDate"
+                  max="2026-03-31"
                   value={formData.lastInterestPostingDate}
                   onChange={handleChange}
                   className={inputClass}
-                  title="जुन्या सॉफ्टवेअरमध्ये ज्या तारखेपर्यंत व्याज झाले होते ती तारीख (उदा. 31/03/2026)"
+                  title="जुन्या सॉफ्टवेअरमध्ये ज्या तारखेपर्यंत व्याज झाले होते ती तारीख (जास्तीत जास्त 31/03/2026)"
                 />
               </div>
 
@@ -1227,7 +1377,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       {/* ========================================================================= */}
       {showMigratedModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-[96vw] xl:max-w-7xl w-full max-h-[92vh] flex flex-col overflow-hidden">
             
             {/* Modal Header */}
             <div className="bg-primary text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-primary/20">
@@ -1256,7 +1406,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
                 <input 
                   type="text" 
-                  placeholder="पावती क्र, नाव, कोड किंवा योजना शोधा..." 
+                  placeholder="पावती क्र, नाव, कोड, वारसदार किंवा योजना शोधा..." 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-8 pr-6 py-1 border border-gray-300 rounded-sm text-xs h-[30px] w-64 lg:w-80 focus:outline-none focus:border-primary bg-white shadow-2xs"
@@ -1271,41 +1421,61 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={handleExportExcel}
-                disabled={filteredAccounts.length === 0}
-                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
-                title="एक्सेल फाइल डाउनलोड करा"
-              >
-                <FileSpreadsheet size={13} />
-                <span>एक्सेल एक्सपोर्ट</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-gray-500 font-medium hidden sm:inline">
+                  एकूण ठेव: <strong className="text-emerald-700 font-mono">₹{filteredAccounts.reduce((s, a) => s + (a.depositAmount || 0), 0).toLocaleString('en-IN')}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  disabled={filteredAccounts.length === 0}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  title="सर्व फील्ड्ससह एक्सेल फाइल डाउनलोड करा"
+                >
+                  <FileSpreadsheet size={13} />
+                  <span>एक्सेल एक्सपोर्ट</span>
+                </button>
+              </div>
             </div>
 
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
-              <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
-                <table className="w-full text-left border-collapse text-xs">
+              <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
                   <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center sticky left-0 bg-slate-100 z-10 w-28">कृती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">नवीन पावती क्र.</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">जुना पावती क्र.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">खातेदाराचे नाव & CIF</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left min-w-[170px]">खातेदाराचे नाव & CIF</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना नाव</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">ठेव तारीख</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">कालावधी</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">ठेव मुद्दल (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर (%)</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">शेवटची व्याज तारीख</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">मुदतपूर्ती दिनांक</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">मुदतपूर्ती रक्कम (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">मागील जमा व्याज (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">शेवटची व्याज तारीख</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">वारसदार व नाते</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left max-w-[200px]">शेरा</th>
                       <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
                     {filteredAccounts.map((acc) => (
                       <tr key={acc.fdAccountID} className="hover:bg-primary/5 transition-colors">
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap sticky left-0 bg-white z-10 shadow-r">
                           <div className="flex items-center justify-center gap-1">
+                            <button 
+                              type="button" 
+                              onClick={() => handleOpenGridSchedule(acc)} 
+                              className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
+                              title="व्याज वेळापत्रक तक्ता पहा (View Interest Schedule)"
+                            >
+                              <span>📊</span>
+                              <span>तक्ता</span>
+                            </button>
                             <button 
                               type="button" 
                               onClick={() => handleEdit(acc)} 
@@ -1341,11 +1511,20 @@ const FdOpeningBalanceMigration: React.FC = () => {
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
                           <div className="font-bold text-gray-900">{acc.customerName || acc.memberName}</div>
                           <div className="text-[10px] text-gray-500 font-mono">
-                            {acc.cifNo ? `CIF: ${acc.cifNo}` : (acc.memberCode ? `कोड: ${acc.memberCode}` : '-')}
+                            {acc.cifNo ? `CIF: ${acc.cifNo}` : ''}
+                            {acc.cifNo && acc.memberCode ? ' | ' : ''}
+                            {acc.memberCode ? `कोड: ${acc.memberCode}` : ''}
+                            {!acc.cifNo && !acc.memberCode ? '-' : ''}
                           </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-medium text-gray-800">
-                          {acc.schemeName}
+                          {acc.schemeName || '-'}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-medium text-slate-800">
+                          {formatDateDisplay(acc.openingDate)}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono">
+                          {formatDurationDisplay(acc)}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-emerald-700">
                           ₹{(acc.depositAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -1353,11 +1532,32 @@ const FdOpeningBalanceMigration: React.FC = () => {
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono">
                           {acc.interestRate}%
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-blue-700">
-                          {acc.lastInterestPostingDate ? acc.lastInterestPostingDate.split('T')[0] : '-'}
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-gray-700">
+                          {formatDateDisplay(acc.maturityDate)}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-gray-600">
-                          {acc.maturityDate ? acc.maturityDate.split('T')[0] : '-'}
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-primary">
+                          ₹{(acc.maturityAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-medium text-amber-800">
+                          ₹{(acc.legacyAccruedInt || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-bold text-blue-700">
+                          {formatDateDisplay(acc.lastInterestPostingDate)}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-800">
+                          {acc.nomineeName ? (
+                            <div>
+                              <span className="font-medium">{acc.nomineeName}</span>
+                              {acc.nomineeRelation && (
+                                <span className="text-[10px] text-gray-500 ml-1">({acc.nomineeRelation})</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-600 max-w-[200px] truncate" title={acc.remarks || ''}>
+                          {acc.remarks || '-'}
                         </td>
                         <td className="px-2 py-1.5 text-center">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -1370,12 +1570,32 @@ const FdOpeningBalanceMigration: React.FC = () => {
                     ))}
                     {filteredAccounts.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="px-6 py-10 text-center text-gray-400 font-bold">
+                        <td colSpan={16} className="px-6 py-10 text-center text-gray-400 font-bold">
                           कोणतेही स्थलांतरित मुदत ठेव खाते सापडले नाही.
                         </td>
                       </tr>
                     )}
                   </tbody>
+                  {filteredAccounts.length > 0 && (
+                    <tfoot className="bg-slate-50 font-bold border-t-2 border-gray-300 text-xs">
+                      <tr>
+                        <td colSpan={7} className="px-2 py-2 text-right border-r border-gray-300 font-bold text-gray-700 sticky left-0 bg-slate-50 z-10">
+                          एकूण बेरीज ({filteredAccounts.length} खाती):
+                        </td>
+                        <td className="px-2 py-2 text-right border-r border-gray-300 font-mono font-bold text-emerald-800">
+                          ₹{filteredAccounts.reduce((sum, a) => sum + (a.depositAmount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td colSpan={2} className="px-2 py-2 border-r border-gray-300 text-center text-gray-400">-</td>
+                        <td className="px-2 py-2 text-right border-r border-gray-300 font-mono font-bold text-primary">
+                          ₹{filteredAccounts.reduce((sum, a) => sum + (a.maturityAmount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-2 py-2 text-right border-r border-gray-300 font-mono font-bold text-amber-900">
+                          ₹{filteredAccounts.reduce((sum, a) => sum + (a.legacyAccruedInt || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td colSpan={4} className="px-2 py-2"></td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </div>
@@ -1396,6 +1616,20 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
           </div>
         </div>
+      )}
+
+      {/* FD Interest Accrual & Amortization Chart Modal */}
+      {isScheduleModalOpen && scheduleModalData && (
+        <FdInterestScheduleModal
+          isOpen={isScheduleModalOpen}
+          onClose={() => setIsScheduleModalOpen(false)}
+          summary={scheduleModalData.summary}
+          customerName={scheduleModalData.customerName}
+          memberCode={scheduleModalData.memberCode}
+          cifNo={scheduleModalData.cifNo}
+          schemeName={scheduleModalData.schemeName}
+          isSeniorCitizen={scheduleModalData.isSeniorCitizen}
+        />
       )}
 
     </div>

@@ -1170,26 +1170,49 @@ namespace Bhisi.Api.Controllers
                             .FirstOrDefaultAsync();
 
                         DateTime fromDate;
+                        bool isFromOpening = false;
                         if (lastAccrual != null)
                         {
-                            fromDate = lastAccrual.AccrualDate;
+                            fromDate = lastAccrual.AccrualDate.Date;
                         }
                         else if (acc.LastInterestPostingDate.HasValue)
                         {
                             if (acc.LastInterestPostingDate.Value.Date == accrualDate.Date)
                             {
-                                fromDate = acc.OpeningDate;
+                                fromDate = acc.OpeningDate.Date;
+                                isFromOpening = true;
                             }
                             else
                             {
-                                fromDate = acc.LastInterestPostingDate.Value;
+                                fromDate = acc.LastInterestPostingDate.Value.Date;
+                                if (fromDate <= acc.OpeningDate.Date)
+                                {
+                                    fromDate = acc.OpeningDate.Date;
+                                    isFromOpening = true;
+                                }
                             }
                         }
                         else
                         {
-                            fromDate = acc.OpeningDate;
+                            fromDate = acc.OpeningDate.Date;
+                            isFromOpening = true;
                         }
-                        int days = (accrualDate - fromDate).Days;
+
+                        DateTime matLastInterestDay = acc.MaturityDate.Date.AddDays(-1);
+                        DateTime toDate = accrualDate.Date;
+                        if (toDate > matLastInterestDay)
+                        {
+                            toDate = matLastInterestDay;
+                        }
+
+                        if (toDate < fromDate) continue;
+
+                        int days = (toDate - fromDate).Days;
+                        if (isFromOpening)
+                        {
+                            // In Indian banking, deposit day itself is inclusive (e.g. 01/05/2025 to 30/06/2025 = 61 days)
+                            days += 1;
+                        }
 
                         if (days <= 0) continue;
 
@@ -1218,7 +1241,7 @@ namespace Bhisi.Api.Controllers
                                              && t.TransactionDate <= lastCompoundingDate)
                                     .SumAsync(t => t.Amount);
                                     
-                                effectivePrincipal += capitalizedInterest;
+                                effectivePrincipal += (capitalizedInterest + acc.LegacyAccruedInt);
                             }
                         }
 
@@ -3065,26 +3088,51 @@ namespace Bhisi.Api.Controllers
                     .FirstOrDefaultAsync();
 
                 DateTime fromDate;
+                bool isFromOpening = false;
                 if (lastAccrual != null)
                 {
-                    fromDate = lastAccrual.AccrualDate;
+                    fromDate = lastAccrual.AccrualDate.Date;
                 }
                 else if (acc.LastInterestPostingDate.HasValue)
                 {
                     if (acc.LastInterestPostingDate.Value.Date == req.AccrualDate.Date)
                     {
-                        fromDate = acc.OpeningDate;
+                        fromDate = acc.OpeningDate.Date;
+                        isFromOpening = true;
                     }
                     else
                     {
-                        fromDate = acc.LastInterestPostingDate.Value;
+                        fromDate = acc.LastInterestPostingDate.Value.Date;
+                        if (fromDate <= acc.OpeningDate.Date)
+                        {
+                            fromDate = acc.OpeningDate.Date;
+                            isFromOpening = true;
+                        }
                     }
                 }
                 else
                 {
-                    fromDate = acc.OpeningDate;
+                    fromDate = acc.OpeningDate.Date;
+                    isFromOpening = true;
                 }
-                int days = (req.AccrualDate - fromDate).Days;
+
+                DateTime matLastInterestDay = acc.MaturityDate.Date.AddDays(-1);
+                DateTime toDate = req.AccrualDate.Date;
+                if (toDate > matLastInterestDay)
+                {
+                    toDate = matLastInterestDay;
+                }
+
+                int days = 0;
+                if (toDate >= fromDate)
+                {
+                    days = (toDate - fromDate).Days;
+                    if (isFromOpening)
+                    {
+                        // In Indian banking, deposit day itself is inclusive (e.g. 01/05/2025 to 30/06/2025 = 61 days)
+                        days += 1;
+                    }
+                }
                 if (days <= 0) days = 0;
 
                 decimal alreadyAccrued = await _context.FdTransactions

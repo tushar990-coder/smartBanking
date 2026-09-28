@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import SearchableSelect from './SearchableSelect';
+import { FdInterestScheduleModal, FdScheduleOverdueInfo } from './FdInterestScheduleModal';
+import { generateFdInterestSchedule, FdScheduleSummary } from '../utils/fdInterestSchedule';
 
 interface Ledger {
   ledgerID: number;
@@ -155,6 +157,8 @@ const FdWithdrawalMaturity: React.FC = () => {
   // UI toggle states
   const [showLoanDetails, setShowLoanDetails] = useState<boolean>(false);
   const [showVoucherPreview, setShowVoucherPreview] = useState<boolean>(true);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
+  const [showInlineSchedule, setShowInlineSchedule] = useState<boolean>(true);
 
   // Surplus Payout states
   const [surplusPaymentMode, setSurplusPaymentMode] = useState<'Cash' | 'Bank' | 'Transfer'>('Cash');
@@ -451,6 +455,41 @@ const FdWithdrawalMaturity: React.FC = () => {
   };
 
   const { isOverdue, overdueDays, overdueInterest, baseAmount: overdueBaseAmount, isAllowedByScheme, effectiveOverdueRate } = getOverdueDetails();
+
+  // Helper to format date in Indian DD/MM/YYYY standard
+  const formatDateDisplay = (dateStr?: string | null): string => {
+    if (!dateStr) return '-';
+    const clean = dateStr.split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dateStr;
+  };
+
+  // Generate Period-wise Contracted Interest Schedule
+  const scheduleSummary = React.useMemo(() => {
+    if (!selectedAccount) return null;
+    const scheme = accountScheme;
+    return generateFdInterestSchedule({
+      depositAmount: selectedAccount.depositAmount,
+      interestRate: selectedAccount.interestRate,
+      openingDate: selectedAccount.openingDate,
+      maturityDate: selectedAccount.maturityDate,
+      schemeType: scheme?.interestType || 'Cumulative',
+      compoundingFrequency: (scheme as any)?.interestCompoundingFrequency || 'Quarterly',
+      targetMaturityAmount: selectedAccount.maturityAmount,
+    });
+  }, [selectedAccount, accountScheme]);
+
+  const overdueModalDetails: FdScheduleOverdueInfo | undefined = isOverdue && overdueInterest > 0 ? {
+    isOverdue: true,
+    overdueDays,
+    overdueInterest,
+    closureDate,
+    effectiveOverdueRate,
+    baseAmount: overdueBaseAmount
+  } : undefined;
 
   // Helper to resolve mapped ledgers for selected account scheme
   const getSchemeLedgers = () => {
@@ -1146,8 +1185,21 @@ const FdWithdrawalMaturity: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  <div className="text-xs text-gray-600">
-                    योजना: <strong className="text-blue-900">{selectedAccount.schemeName}</strong>
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs text-gray-600">
+                      योजना: <strong className="text-blue-900">{selectedAccount.schemeName}</strong>
+                    </div>
+                    {scheduleSummary && (
+                      <button
+                        type="button"
+                        onClick={() => setIsScheduleModalOpen(true)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded shadow-2xs transition cursor-pointer"
+                        title="मुदत ठेव व्याज वेळापत्रक व संपूर्ण हिशोब तक्ता पहा"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-blue-700" />
+                        <span>📊 व्याज वेळापत्रक तक्ता पहा</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1610,6 +1662,245 @@ const FdWithdrawalMaturity: React.FC = () => {
               </div>
             )}
 
+            {/* INTEREST CALCULATION & AMORTIZATION CHART (मुदत ठेव व्याज वेळापत्रक व हिशोब तक्ता) */}
+            {scheduleSummary && (
+              <div className="bg-white rounded border border-slate-300 shadow-2xs overflow-hidden">
+                {/* Header with KPI badges and toggle */}
+                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 text-white p-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📊</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs sm:text-sm font-bold tracking-tight">
+                          मुदत ठेव व्याज वेळापत्रक व हिशोब तक्ता (Interest Calculation Chart)
+                        </h4>
+                        <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                          {scheduleSummary.schemeType === 'Cumulative' ? 'तिमाही चक्रवाढ' : (scheduleSummary.isPeriodicPayout ? 'मासिक परतावा' : 'साधी मुदत ठेव')}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-indigo-200/90 mt-0.5">
+                        ठेव दिनांक {formatDateDisplay(selectedAccount.openingDate)} ते मुदतपूर्ती {formatDateDisplay(selectedAccount.maturityDate)} पर्यंतचा टप्पानिहाय अधिकृत हिशोब
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsScheduleModalOpen(true)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-xs font-semibold transition cursor-pointer"
+                      title="संपूर्ण तक्ता पॉपअपमध्ये पहा किंवा प्रिंट करा"
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>🖨️ संपूर्ण तक्ता / प्रिंट</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowInlineSchedule(!showInlineSchedule)}
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-white/15 hover:bg-white/25 text-white rounded text-xs font-bold transition cursor-pointer"
+                    >
+                      {showInlineSchedule ? 'तक्ता लपवा ▲' : 'तक्ता पहा ▼'}
+                    </button>
+                  </div>
+                </div>
+
+                {showInlineSchedule && (
+                  <div className="p-3 space-y-3 bg-slate-50/50">
+                    {/* Reconciled Summary Highlights */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                      <div className="bg-white p-2 rounded border border-slate-200">
+                        <span className="text-[10px] text-gray-500 uppercase font-bold block">ठेव मुद्दल (Principal):</span>
+                        <strong className="text-sm font-bold text-gray-900 font-mono">
+                          ₹ {selectedAccount.depositAmount.toLocaleString()}
+                        </strong>
+                      </div>
+                      <div className="bg-white p-2 rounded border border-slate-200">
+                        <span className="text-[10px] text-gray-500 uppercase font-bold block">करारानुसार देय व्याज:</span>
+                        <strong className="text-sm font-bold text-blue-900 font-mono">
+                          + ₹ {scheduleSummary.totalInterest.toLocaleString()}
+                        </strong>
+                      </div>
+                      <div className="bg-white p-2 rounded border border-slate-200">
+                        <span className="text-[10px] text-gray-500 uppercase font-bold block">
+                          {isOverdue ? `ओव्हरड्यू व्याज (${overdueDays} दिवस @ ${effectiveOverdueRate}%):` : 'ओव्हरड्यू व्याज:'}
+                        </span>
+                        <strong className={`text-sm font-bold font-mono ${isOverdue && overdueInterest > 0 ? 'text-amber-800' : 'text-gray-500'}`}>
+                          {isOverdue && overdueInterest > 0 ? `+ ₹ ${overdueInterest.toLocaleString()}` : '₹ ०.००'}
+                        </strong>
+                      </div>
+                      <div className="bg-emerald-50 p-2 rounded border border-emerald-300">
+                        <span className="text-[10px] text-emerald-900 uppercase font-bold block">
+                          {actionType === 'PrematureClose' ? 'एकूण मुदतपूर्व परतावा:' : 'एकूण अंतिम देय परतावा:'}
+                        </span>
+                        <strong className="text-base font-black text-emerald-950 font-mono">
+                          ₹ {getTotalFdPayout().toLocaleString()}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {/* Premature Close Comparison Banner if Premature */}
+                    {actionType === 'PrematureClose' && (() => {
+                      const principal = selectedAccount.depositAmount;
+                      const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
+                      const ledgers = getSchemeLedgers();
+                      const prematureRate = ledgers?.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
+                      const recalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
+                      const alreadyAccrued = selectedAccount.legacyAccruedInt || 0;
+                      const clawback = alreadyAccrued > recalcInt ? (alreadyAccrued - recalcInt) : 0;
+
+                      return (
+                        <div className="p-2.5 bg-amber-50 border border-amber-300 rounded text-xs space-y-1">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>⚠️ मुदतपूर्व बंद हिशोब पुनर्गणना (Premature Closure Recalculation):</span>
+                          </div>
+                          <p className="text-[11px] text-amber-900">
+                            ठेवीदाराने करार मुदत ({formatDateDisplay(selectedAccount.maturityDate)}) पूर्ण न करता {actualDays} दिवसांतच ठेव बंद केली आहे. 
+                            नियमानुसार नियमित दर {selectedAccount.interestRate}% ऐवजी मुदतपूर्व सवलत दर <b>{prematureRate}%</b> लागू केला आहे.
+                          </p>
+                          <div className="flex flex-wrap items-center gap-4 text-[11px] font-semibold text-amber-950 pt-1 border-t border-amber-200">
+                            <span>पुनर्गणित व्याज: <b>₹ {recalcInt.toLocaleString()}</b></span>
+                            <span>लेजरमध्ये साचलेली तरतूद: <b>₹ {alreadyAccrued.toLocaleString()}</b></span>
+                            {clawback > 0 && <span className="text-red-700">P&L रिव्हर्सल / कपात: <b>₹ {clawback.toLocaleString()}</b></span>}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Amortization Table */}
+                    <div className="border border-slate-200 rounded overflow-hidden bg-white shadow-2xs">
+                      <div className="overflow-x-auto max-h-80">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead className="bg-slate-100 text-slate-700 text-[11px] uppercase font-bold sticky top-0 border-b border-slate-300">
+                            <tr>
+                              <th className="p-2 text-center w-10 border-r border-slate-200">क्र.</th>
+                              <th className="p-2 text-left border-r border-slate-200">टप्पा (Period)</th>
+                              <th className="p-2 text-center border-r border-slate-200">कालावधी (From - To)</th>
+                              <th className="p-2 text-center w-14 border-r border-slate-200">दिवस</th>
+                              <th className="p-2 text-right border-r border-slate-200">आरंभी मुद्दल (₹)</th>
+                              <th className="p-2 text-center w-16 border-r border-slate-200">दर %</th>
+                              <th className="p-2 text-right border-r border-slate-200">या टप्प्याचे व्याज (₹)</th>
+                              <th className="p-2 text-right border-r border-slate-200">एकूण साचलेले व्याज (₹)</th>
+                              <th className="p-2 text-right border-r border-slate-200">अखेर शिल्लक (₹)</th>
+                              <th className="p-2 text-left">लेखांकन नोंद / स्थिती</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {scheduleSummary.periods.map((item, idx) => {
+                              const isLast = idx === scheduleSummary.periods.length - 1;
+                              return (
+                                <tr
+                                  key={item.periodNo}
+                                  className={isLast ? 'bg-blue-50/70 font-semibold' : (idx % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50/40 hover:bg-slate-50')}
+                                >
+                                  <td className="p-2 text-center text-slate-500 font-mono border-r border-slate-100">{item.periodNo}</td>
+                                  <td className="p-2 font-bold text-slate-800 whitespace-nowrap border-r border-slate-100">{item.periodLabel}</td>
+                                  <td className="p-2 text-center font-mono text-[11px] whitespace-nowrap border-r border-slate-100">
+                                    <span className="text-slate-800">{formatDateDisplay(item.fromDate)}</span>
+                                    <span className="text-slate-400 font-sans mx-1 font-normal">ते</span>
+                                    <span className="text-slate-800">{formatDateDisplay(item.toDate)}</span>
+                                  </td>
+                                  <td className="p-2 text-center font-mono text-slate-700 border-r border-slate-100">{item.days}</td>
+                                  <td className="p-2 text-right font-mono text-slate-700 tabular-nums whitespace-nowrap border-r border-slate-100">
+                                    ₹ {item.openingBalance.toLocaleString()}
+                                  </td>
+                                  <td className="p-2 text-center font-mono text-blue-900 border-r border-slate-100">{item.interestRate}%</td>
+                                  <td className="p-2 text-right font-mono text-emerald-700 font-bold tabular-nums whitespace-nowrap border-r border-slate-100">
+                                    + ₹ {item.interestAmount.toLocaleString()}
+                                  </td>
+                                  <td className="p-2 text-right font-mono text-slate-700 tabular-nums whitespace-nowrap border-r border-slate-100">
+                                    ₹ {item.cumulativeInterest.toLocaleString()}
+                                  </td>
+                                  <td className="p-2 text-right font-mono text-slate-900 font-bold tabular-nums whitespace-nowrap border-r border-slate-100">
+                                    ₹ {item.closingBalance.toLocaleString()}
+                                  </td>
+                                  <td className="p-2 text-[11px] text-slate-600 whitespace-nowrap">
+                                    {isLast ? (
+                                      <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 border border-blue-200 px-1.5 py-0.5 rounded font-bold text-[10px]">
+                                        🎯 मुदतपूर्ती समाप्ती
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-500 font-mono text-[10px]">
+                                        {scheduleSummary.schemeType === 'Cumulative' ? 'चक्रवाढ तरतूद (Accrued)' : item.statusNote}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+
+                            {/* Overdue Period Row if applicable */}
+                            {isOverdue && overdueInterest > 0 && (
+                              <tr className="bg-amber-100/90 font-bold text-amber-950 border-t-2 border-amber-300">
+                                <td className="p-2 text-center text-amber-900 font-mono border-r border-amber-200">+</td>
+                                <td className="p-2 font-bold text-amber-950 whitespace-nowrap border-r border-amber-200">
+                                  ⚠️ ओव्हरड्यू व्याज (Overdue)
+                                </td>
+                                <td className="p-2 text-center font-mono text-[11px] whitespace-nowrap border-r border-amber-200">
+                                  <span className="text-amber-900">{formatDateDisplay(selectedAccount.maturityDate)}</span>
+                                  <span className="text-amber-600 font-sans mx-1 font-normal">ते</span>
+                                  <span className="text-amber-900">{formatDateDisplay(closureDate)}</span>
+                                </td>
+                                <td className="p-2 text-center font-mono text-amber-900 border-r border-amber-200">
+                                  {overdueDays}d
+                                </td>
+                                <td className="p-2 text-right font-mono text-amber-900 tabular-nums whitespace-nowrap border-r border-amber-200">
+                                  ₹ {overdueBaseAmount.toLocaleString()}
+                                </td>
+                                <td className="p-2 text-center font-mono text-amber-950 border-r border-amber-200">
+                                  {effectiveOverdueRate}%
+                                </td>
+                                <td className="p-2 text-right font-mono text-amber-900 font-black tabular-nums whitespace-nowrap border-r border-amber-200">
+                                  + ₹ {overdueInterest.toLocaleString()}
+                                </td>
+                                <td className="p-2 text-right font-mono text-amber-900 tabular-nums whitespace-nowrap border-r border-amber-200">
+                                  ₹ {(scheduleSummary.totalInterest + overdueInterest).toLocaleString()}
+                                </td>
+                                <td className="p-2 text-right font-mono text-amber-950 font-black tabular-nums whitespace-nowrap border-r border-amber-200">
+                                  ₹ {(scheduleSummary.maturityAmount + overdueInterest).toLocaleString()}
+                                </td>
+                                <td className="p-2 text-[11px] text-amber-900 whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1 bg-amber-200 text-amber-950 border border-amber-300 px-1.5 py-0.5 rounded font-bold text-[10px]">
+                                    ओव्हरड्यू व्याज खर्च (@ {effectiveOverdueRate}%)
+                                  </span>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                          <tfoot className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
+                            <tr>
+                              <td colSpan={3} className="p-2 text-right font-bold text-slate-800 border-r border-slate-200">
+                                {isOverdue && overdueInterest > 0 ? 'एकूण अंतिम देय परतावा (Total Reconciled):' : 'एकूण करार परतावा (Total Contracted):'}
+                              </td>
+                              <td className="p-2 text-center font-mono border-r border-slate-200">
+                                {scheduleSummary.totalDays + (isOverdue ? overdueDays : 0)}d
+                              </td>
+                              <td className="p-2 text-right font-mono tabular-nums whitespace-nowrap border-r border-slate-200">
+                                ₹ {selectedAccount.depositAmount.toLocaleString()}
+                              </td>
+                              <td className="p-2 text-center font-mono border-r border-slate-200">-</td>
+                              <td className="p-2 text-right font-mono text-emerald-800 font-black tabular-nums whitespace-nowrap border-r border-slate-200">
+                                + ₹ {(scheduleSummary.totalInterest + (isOverdue ? overdueInterest : 0)).toLocaleString()}
+                              </td>
+                              <td className="p-2 text-right font-mono text-emerald-800 tabular-nums whitespace-nowrap border-r border-slate-200">
+                                ₹ {(scheduleSummary.totalInterest + (isOverdue ? overdueInterest : 0)).toLocaleString()}
+                              </td>
+                              <td className="p-2 text-right font-mono text-indigo-950 font-black text-sm tabular-nums whitespace-nowrap border-r border-slate-200">
+                                ₹ {(scheduleSummary.maturityAmount + (isOverdue ? overdueInterest : 0)).toLocaleString()}
+                              </td>
+                              <td className="p-2 text-[11px] text-emerald-800 font-bold whitespace-nowrap">
+                                ✅ व्हाऊचर लेजर नोंदींशी तंतोतंत जुळवणी
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* D: LIEN RECOVERY & LOAN SET-OFF (Clean, Consolidated Box) */}
             {(actionType === 'MaturityClose' || actionType === 'PrematureClose') && activeLoansData?.hasActiveLoan && (
               <div className="bg-amber-50/90 border-2 border-amber-300 rounded p-3.5 space-y-3 shadow-2xs">
@@ -1952,6 +2243,16 @@ const FdWithdrawalMaturity: React.FC = () => {
                 <span className="text-[11px] font-mono text-gray-600">
                   व्हाऊचर दिनांक: <strong className="text-gray-900">{closureDate ? closureDate.split('-').reverse().join('/') : '-'}</strong>
                 </span>
+                {scheduleSummary && (
+                  <button
+                    type="button"
+                    onClick={() => setIsScheduleModalOpen(true)}
+                    className="text-[11px] font-bold text-blue-700 bg-white hover:bg-blue-50 border border-blue-300 px-2 py-0.5 rounded cursor-pointer transition shadow-2xs flex items-center gap-1"
+                    title="या व्हाऊचरमधील व्याजाचा संपूर्ण हिशोब तक्ता पहा"
+                  >
+                    <span>📊 व्याज हिशोब तक्ता पहा</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowVoucherPreview(!showVoucherPreview)}
@@ -2057,6 +2358,21 @@ const FdWithdrawalMaturity: React.FC = () => {
           </button>
         </div>
       </form>
+
+      {/* FD Interest Accrual & Amortization Chart Modal */}
+      {isScheduleModalOpen && scheduleSummary && selectedAccount && (
+        <FdInterestScheduleModal
+          isOpen={isScheduleModalOpen}
+          onClose={() => setIsScheduleModalOpen(false)}
+          summary={scheduleSummary}
+          customerName={selectedAccount.customerName || selectedAccount.memberName || 'ठेवीदार'}
+          memberCode={selectedAccount.memberCode || ''}
+          cifNo={selectedAccount.cifNo || (selectedAccount.customerID ? `CIF-${selectedAccount.customerID}` : '')}
+          schemeName={selectedAccount.schemeName || 'मुदत ठेव योजना'}
+          isSeniorCitizen={selectedAccount.isSeniorCitizen}
+          overdueDetails={overdueModalDetails}
+        />
+      )}
     </div>
   );
 };

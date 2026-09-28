@@ -108,6 +108,7 @@ export default function PigmyCollectionMaster() {
       excelTotal?: number;
       isValid: boolean;
       warning?: string;
+      isInvalidAccount?: boolean;
     }>;
     skippedRows: Array<{
       rawAccount: string;
@@ -115,6 +116,8 @@ export default function PigmyCollectionMaster() {
       reason: string;
     }>;
   } | null>(null);
+  const [previewFilter, setPreviewFilter] = useState<'all' | 'valid' | 'invalid'>('all');
+  const [dailyInvalidImports, setDailyInvalidImports] = useState<Array<{ rawAcc: string; rawAmt: number; reason: string }>>([]);
   const [monthlySaving, setMonthlySaving] = useState(false);
   const dailyFileInputRef = useRef<HTMLInputElement>(null);
   const monthlyFileInputRef = useRef<HTMLInputElement>(null);
@@ -342,17 +345,39 @@ export default function PigmyCollectionMaster() {
       return;
     }
 
-    const rows = agentAccounts.map(acc => ({
+    const rows: any[] = agentAccounts.map(acc => ({
       'खाते क्र. (Account No)': format14DigitDisplay(acc.accountNo),
       'मागील / जुना खाते क्र. (Old Acc No)': (acc as any).legacyAccountNumber || '',
       'ग्राहक नाव (Customer Name)': getCustomerFullName(acc.customer),
       'खाते उघडल्याची तारीख (Opening Date)': acc.openingDate ? acc.openingDate.split('T')[0] : '',
       'चालू शिल्लक (Current Balance)': acc.totalDepositedAmount || 0,
-      'जमा रक्कम (Collection Amount)': ''
+      'जमा रक्कम (Collection Amount)': 0
     }));
 
+    // Append summary total row at the bottom
+    rows.push({
+      'खाते क्र. (Account No)': 'एकूण (TOTAL)',
+      'मागील / जुना खाते क्र. (Old Acc No)': '',
+      'ग्राहक नाव (Customer Name)': 'एकूण दैनिक संकलन',
+      'खाते उघडल्याची तारीख (Opening Date)': '',
+      'चालू शिल्लक (Current Balance)': '',
+      'जमा रक्कम (Collection Amount)': 0
+    });
+
     const ws = XLSX.utils.json_to_sheet(rows);
+
+    // Inject live vertical SUM formula for collection amount column (Column F, index 5)
+    const lastDailyAccRow = agentAccounts.length + 1;
+    const dailySummaryRowIdx = agentAccounts.length + 1;
+    const dailyTotalCellRef = XLSX.utils.encode_cell({ r: dailySummaryRowIdx, c: 5 });
+    ws[dailyTotalCellRef] = {
+      t: 'n',
+      v: 0,
+      f: `SUM(F2:F${lastDailyAccRow})`
+    };
+
     const wb = XLSX.utils.book_new();
+    wb.Workbook = { WBProps: { fullCalcOnLoad: true } };
     XLSX.utils.book_append_sheet(wb, ws, 'Daily_Collection');
     XLSX.writeFile(wb, `Pigmy_Daily_${agentName.replace(/\s+/g, '_')}_${collectionDate}.xlsx`);
     toast.success('दैनिक कलेक्शन टेम्पलेट यशस्वीरीत्या डाउनलोड झाले!');
@@ -386,6 +411,7 @@ export default function PigmyCollectionMaster() {
         let skippedFuture = 0;
         let totalAmt = 0;
         const newAmounts: { [accId: number]: string } = { ...bulkAmounts };
+        const invalidDailyList: Array<{ rawAcc: string; rawAmt: number; reason: string }> = [];
 
         data.forEach((row: any) => {
           const keys = Object.keys(row);
@@ -396,6 +422,7 @@ export default function PigmyCollectionMaster() {
           const rawAmt = amtKey ? parseFloat(row[amtKey]) : 0;
 
           if (!rawAcc || isNaN(rawAmt) || rawAmt <= 0) return;
+          if (/^(एकूण|total)/i.test(rawAcc)) return;
 
           const matchedAcc = agentAccounts.find(a => {
             const accClean = a.accountNo.replace(/\D/g, '');
@@ -414,26 +441,44 @@ export default function PigmyCollectionMaster() {
             matchedCount++;
             totalAmt += rawAmt;
           } else {
-            const futureAcc = accounts.find(a => {
+            let reason = 'या एजंटचे सक्रिय खाते सापडले नाही';
+            const anyAcc = accounts.find(a => {
               const accClean = a.accountNo.replace(/\D/g, '');
               const rawClean = rawAcc.replace(/\D/g, '');
               const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
               return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
                      format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
                      (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
-                     legacyAcc === rawAcc;
+                     legacyAcc === rawAcc ||
+                     String(a.pigmyAccountID) === rawAcc;
             });
-            if (futureAcc) {
-              skippedFuture++;
+            if (anyAcc) {
+              if (anyAcc.openingDate && new Date(anyAcc.openingDate.split('T')[0]) > new Date(collectionDate)) {
+                reason = `खाते उघडल्याची तारीख (${anyAcc.openingDate.split('T')[0]}) ${collectionDate} नंतरची आहे`;
+                skippedFuture++;
+              } else if (anyAcc.status !== 'Active') {
+                reason = `खाते ${anyAcc.status === 'Closed' ? 'बंद' : anyAcc.status} आहे`;
+              } else {
+                reason = `हे खाते इतर एजंटचे (${anyAcc.pigmyAgent?.agentName || anyAcc.agent?.agentName || 'अन्य'}) आहे`;
+              }
+            } else {
+              reason = 'खाते क्रमांक सिस्टीममध्ये सापडले नाही';
             }
+            invalidDailyList.push({ rawAcc, rawAmt, reason });
           }
         });
 
         setBulkAmounts(newAmounts);
+        setDailyInvalidImports(invalidDailyList);
+
         if (matchedCount > 0) {
           toast.success(`${matchedCount} खाती यशस्वीरीत्या भरली! एकूण रक्कम: ₹${totalAmt.toLocaleString('en-IN')}`);
         } else {
           toast.error('निवडलेल्या एजंटच्या खात्यांशी जुळणारी कोणतीही नोंद सापडली नाही.');
+        }
+
+        if (invalidDailyList.length > 0) {
+          toast.error(`⚠️ एक्सेलमधील ${invalidDailyList.length} खाती अवैध आढळली आणि मार्किंग केली गेली.`);
         }
 
         if (skippedFuture > 0) {
@@ -503,13 +548,30 @@ export default function PigmyCollectionMaster() {
       return rowObj;
     });
 
+    // Append summary total row at the bottom for vertical column additions
+    const totalRowObj: any = {
+      'पिग्मि जुना acc  no ': 'एकूण (TOTAL)',
+      'खातेदाराचे नाव': 'एकूण दैनिक संकलन (Daily Total)',
+      'एजंट': agentName
+    };
+
+    dayHeaders.forEach(dh => {
+      totalRowObj[dh] = 0;
+    });
+
+    totalRowObj['TOTAL'] = 0;
+    rows.push(totalRowObj);
+
     const ws = XLSX.utils.json_to_sheet(rows);
 
-    // Inject live Excel SUM formula for the TOTAL column so it recalculates automatically when typing
     const startColLetter = XLSX.utils.encode_col(3); // Column D (Day 1)
     const endColLetter = XLSX.utils.encode_col(3 + daysInMonth - 1); // Column for Last Day
     const totalColIdx = 3 + daysInMonth; // Column index for TOTAL
+    const totalColLetter = XLSX.utils.encode_col(totalColIdx);
+    const lastAccountRowNumber = eligibleAccounts.length + 1; // Last data row (1-indexed in Excel)
+    const summaryRowIdx = eligibleAccounts.length + 1; // 0-indexed row for ws
 
+    // 1. Horizontal SUM formula for each account row (recalculates automatically across all days)
     eligibleAccounts.forEach((_, idx) => {
       const excelRowNumber = idx + 2; // Data rows start at 2 (Row 1 is headers)
       const cellRef = XLSX.utils.encode_cell({ r: idx + 1, c: totalColIdx });
@@ -519,6 +581,26 @@ export default function PigmyCollectionMaster() {
         f: `SUM(${startColLetter}${excelRowNumber}:${endColLetter}${excelRowNumber})`
       };
     });
+
+    // 2. Vertical SUM formula for each day column in the summary row
+    for (let dayIdx = 0; dayIdx < daysInMonth; dayIdx++) {
+      const colIdx = 3 + dayIdx;
+      const colLetter = XLSX.utils.encode_col(colIdx);
+      const dayTotalCellRef = XLSX.utils.encode_cell({ r: summaryRowIdx, c: colIdx });
+      ws[dayTotalCellRef] = {
+        t: 'n',
+        v: 0,
+        f: `SUM(${colLetter}2:${colLetter}${lastAccountRowNumber})`
+      };
+    }
+
+    // 3. Grand Total formula for the bottom-right corner cell
+    const grandTotalCellRef = XLSX.utils.encode_cell({ r: summaryRowIdx, c: totalColIdx });
+    ws[grandTotalCellRef] = {
+      t: 'n',
+      v: 0,
+      f: `SUM(${totalColLetter}2:${totalColLetter}${lastAccountRowNumber})`
+    };
 
     const wb = XLSX.utils.book_new();
     wb.Workbook = { WBProps: { fullCalcOnLoad: true } };
@@ -679,6 +761,11 @@ export default function PigmyCollectionMaster() {
           const rawName = String(rowData[nameColIdx] || '').trim();
           if (!rawAcc && !rawName) continue;
 
+          // Safely ignore bottom summary / total row
+          if (/^(एकूण|total|grand\s*total)/i.test(rawAcc) || /^(एकूण|total|grand\s*total)/i.test(rawName)) {
+            continue;
+          }
+
           const matchedAcc = agentEligibleAccounts.find(a => {
             const accClean = a.accountNo.replace(/\D/g, '');
             const rawClean = rawAcc.replace(/\D/g, '');
@@ -692,10 +779,59 @@ export default function PigmyCollectionMaster() {
           });
 
           if (!matchedAcc) {
+            let failureReason = 'या एजंटचे सक्रिय खाते सापडले नाही';
+            const anyAcc = accounts.find(a => {
+              const accClean = a.accountNo.replace(/\D/g, '');
+              const rawClean = rawAcc.replace(/\D/g, '');
+              const legacyAcc = String((a as any).legacyAccountNumber || '').trim();
+              return a.accountNo.toLowerCase() === rawAcc.toLowerCase() ||
+                     format14DigitDisplay(a.accountNo).toLowerCase() === rawAcc.toLowerCase() ||
+                     (rawClean.length >= 4 && accClean.endsWith(rawClean)) ||
+                     legacyAcc === rawAcc ||
+                     String(a.pigmyAccountID) === rawAcc;
+            });
+
+            if (anyAcc) {
+              if (anyAcc.status !== 'Active') {
+                failureReason = `खाते ${anyAcc.status === 'Closed' ? 'बंद' : anyAcc.status} आहे`;
+              } else {
+                failureReason = `हे खाते इतर एजंटचे (${anyAcc.pigmyAgent?.agentName || anyAcc.agent?.agentName || 'अन्य'}) आहे`;
+              }
+            } else {
+              failureReason = 'खाते सिस्टीममध्ये अस्तित्वात नाही';
+            }
+
             skippedRows.push({
               rawAccount: rawAcc,
               rawName: rawName,
-              reason: 'या एजंटचे सक्रिय खाते सापडले नाही'
+              reason: failureReason
+            });
+
+            // Capture entered amounts for the invalid row so operator can see what was entered
+            const dailyAmounts: { [dateStr: string]: number } = {};
+            let rowSum = 0;
+            dayColMap.forEach(dCol => {
+              const cellVal = parseFloat(rowData[dCol.colIdx]) || 0;
+              if (cellVal > 0) {
+                dailyAmounts[dCol.dateStr] = cellVal;
+                rowSum += cellVal;
+              }
+            });
+
+            const excelTotal = totalColIdx >= 0 ? (parseFloat(rowData[totalColIdx]) || 0) : undefined;
+
+            // Include in preview rows with invalid marking
+            previewRows.push({
+              accountNo: rawAcc || 'अवैध खाते',
+              legacyAccountNumber: rawAcc,
+              customerName: rawName || 'अज्ञात खातेदार',
+              pigmyAccountId: 0,
+              dailyAmounts,
+              rowTotal: rowSum,
+              excelTotal,
+              isValid: false,
+              warning: failureReason,
+              isInvalidAccount: true
             });
             continue;
           }
@@ -793,15 +929,18 @@ export default function PigmyCollectionMaster() {
 
     const flatEntries: { pigmyAccountId: number; collectionDate: string; collectionAmount: number }[] = [];
     monthlyImportPreview.rows.forEach(r => {
-      Object.entries(r.dailyAmounts).forEach(([dateStr, amt]) => {
-        if (amt > 0) {
-          flatEntries.push({
-            pigmyAccountId: r.pigmyAccountId,
-            collectionDate: dateStr,
-            collectionAmount: amt
-          });
-        }
-      });
+      // Only include valid accounts with an active pigmyAccountId
+      if (r.pigmyAccountId > 0 && r.isValid) {
+        Object.entries(r.dailyAmounts).forEach(([dateStr, amt]) => {
+          if (amt > 0) {
+            flatEntries.push({
+              pigmyAccountId: r.pigmyAccountId,
+              collectionDate: dateStr,
+              collectionAmount: amt
+            });
+          }
+        });
+      }
     });
 
     if (flatEntries.length === 0) {
@@ -1113,6 +1252,50 @@ export default function PigmyCollectionMaster() {
                 </button>
               </div>
 
+              {/* Invalid Daily Accounts Warning Alert Card */}
+              {dailyInvalidImports.length > 0 && (
+                <div className="bg-red-50 border-2 border-red-400 rounded-sm p-3 shadow-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-red-900 font-extrabold text-xs">
+                      <ExclamationTriangleIcon className="w-5 h-5 text-red-600 shrink-0" />
+                      <span>⚠️ एक्सेलमधील {dailyInvalidImports.length} खाती अवैध आढळली (Invalid Accounts Marked)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDailyInvalidImports([])}
+                      className="text-[11px] text-red-700 hover:text-red-900 underline font-bold cursor-pointer"
+                    >
+                      बंद करा (Dismiss)
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-red-800">
+                    खालील खाती या एजंटशी किंवा सिस्टीमशी जुळली नाहीत, म्हणून त्यांची रक्कम वगळली गेली आहे:
+                  </p>
+                  <div className="overflow-x-auto max-h-40 border border-red-200 rounded-sm bg-white">
+                    <table className="w-full text-left text-[11px] border-collapse">
+                      <thead className="bg-red-100/70 text-red-900 border-b border-red-200">
+                        <tr>
+                          <th className="p-1.5 font-bold border-r border-red-200">अ.क्र.</th>
+                          <th className="p-1.5 font-bold border-r border-red-200">एक्सेलमधील खाते क्र.</th>
+                          <th className="p-1.5 font-bold text-right border-r border-red-200">एक्सेल रक्कम</th>
+                          <th className="p-1.5 font-bold">अवैध असण्याचे कारण</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-red-100">
+                        {dailyInvalidImports.map((inv, i) => (
+                          <tr key={i} className="hover:bg-red-50">
+                            <td className="p-1 text-center font-mono text-gray-500 border-r border-red-100">{i + 1}</td>
+                            <td className="p-1 font-mono font-bold text-red-700 border-r border-red-100">{inv.rawAcc}</td>
+                            <td className="p-1 text-right font-mono font-bold text-red-700 border-r border-red-100">₹ {inv.rawAmt.toLocaleString('en-IN')}</td>
+                            <td className="p-1 text-red-800 font-medium">{inv.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {/* Table Sheet */}
               <div className="overflow-x-auto border border-gray-200 rounded-sm shadow-2xs">
                 <table className="w-full text-xs text-left border-collapse bg-white">
@@ -1177,6 +1360,19 @@ export default function PigmyCollectionMaster() {
                       );
                     })}
                   </tbody>
+                  <tfoot className="bg-slate-100 border-t-2 border-slate-300 text-xs font-bold text-gray-900">
+                    <tr>
+                      <td colSpan={4} className="py-2 px-3 text-right text-gray-800 uppercase tracking-wider border-r border-gray-300">
+                        एकूण दैनिक संकलन (Total Live Remittance):
+                      </td>
+                      <td className="py-2 px-2.5 text-right font-mono text-gray-800 border-r border-gray-300">
+                        ₹ {filteredAgentAccounts.reduce((sum, a) => sum + (a.totalDepositedAmount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono font-black text-emerald-800 bg-emerald-50 border-emerald-300">
+                        ₹ {totalBulkRemittance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
 
@@ -1341,15 +1537,25 @@ export default function PigmyCollectionMaster() {
             /* PREVIEW OF PARSED MONTHLY MATRIX */
             <div className="space-y-3">
               {/* Stat Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                 <div className="bg-white p-2.5 rounded border border-gray-200 shadow-2xs">
                   <span className="text-[10px] text-gray-500 font-bold block uppercase">निवडलेला महिना</span>
                   <span className="text-sm font-extrabold text-gray-900 font-mono">{selectedMonth}</span>
                 </div>
                 <div className="bg-white p-2.5 rounded border border-gray-200 shadow-2xs">
-                  <span className="text-[10px] text-gray-500 font-bold block uppercase">एकूण खाती (Accounts)</span>
-                  <span className="text-sm font-extrabold text-blue-700 font-mono">{monthlyImportPreview.matchedAccountsCount} खाती</span>
+                  <span className="text-[10px] text-gray-500 font-bold block uppercase">वैध खाती (Valid)</span>
+                  <span className="text-sm font-extrabold text-emerald-700 font-mono">
+                    {monthlyImportPreview.rows.filter(r => r.isValid && r.pigmyAccountId > 0).length} खाती
+                  </span>
                 </div>
+                {monthlyImportPreview.rows.some(r => !r.isValid || r.pigmyAccountId <= 0) && (
+                  <div className="bg-red-50 p-2.5 rounded border border-red-300 shadow-2xs">
+                    <span className="text-[10px] text-red-700 font-bold block uppercase">अवैध खाती (Invalid)</span>
+                    <span className="text-sm font-black text-red-700 font-mono">
+                      {monthlyImportPreview.rows.filter(r => !r.isValid || r.pigmyAccountId <= 0).length} खाती
+                    </span>
+                  </div>
+                )}
                 <div className="bg-white p-2.5 rounded border border-gray-200 shadow-2xs">
                   <span className="text-[10px] text-gray-500 font-bold block uppercase">एकूण दैनंदिन नोंदी</span>
                   <span className="text-sm font-extrabold text-amber-700 font-mono">{monthlyImportPreview.totalDepositEntries} नोंदी</span>
@@ -1362,17 +1568,19 @@ export default function PigmyCollectionMaster() {
                 </div>
               </div>
 
-              {/* Skipped Rows Notification if any */}
+              {/* Skipped / Invalid Rows Notification if any */}
               {monthlyImportPreview.skippedRows.length > 0 && (
-                <div className="bg-amber-50 p-2 rounded border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
-                  <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="bg-red-50 p-2.5 rounded border border-red-300 text-xs text-red-900 flex items-start gap-2 shadow-2xs">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold">⚠️ {monthlyImportPreview.skippedRows.length} ओळी वगळल्या: </span>
-                    {monthlyImportPreview.skippedRows.slice(0, 3).map((sr, idx) => (
-                      <span key={idx} className="mr-2">[{sr.rawAccount || sr.rawName}: {sr.reason}]</span>
+                    <span className="font-bold">⚠️ {monthlyImportPreview.skippedRows.length} खाती अवैध आढळली (टेबलमध्ये खाली लाल रंगात मार्किंग केली आहेत): </span>
+                    {monthlyImportPreview.skippedRows.slice(0, 4).map((sr, idx) => (
+                      <span key={idx} className="mr-2 inline-block bg-white px-1.5 py-0.5 rounded border border-red-200 text-[10px] text-red-800 font-mono mt-1">
+                        [{sr.rawAccount || sr.rawName}: {sr.reason}]
+                      </span>
                     ))}
-                    {monthlyImportPreview.skippedRows.length > 3 && (
-                      <span>आणि इतर {monthlyImportPreview.skippedRows.length - 3}...</span>
+                    {monthlyImportPreview.skippedRows.length > 4 && (
+                      <span className="font-bold ml-1">आणि इतर {monthlyImportPreview.skippedRows.length - 4}...</span>
                     )}
                   </div>
                 </div>
@@ -1398,13 +1606,57 @@ export default function PigmyCollectionMaster() {
 
               {/* Matrix Table Preview */}
               <div className="bg-white rounded border border-gray-300 shadow-2xs overflow-hidden">
-                <div className="p-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-                  <span className="font-bold text-xs text-gray-800">
-                    आयात पूर्वदृश्य (Import Preview - {monthlyImportPreview.fileName})
-                  </span>
-                  <span className="text-[11px] text-gray-500">
-                    दाखवत आहे: {monthlyImportPreview.rows.length} पैकी {Math.min(monthlyImportPreview.rows.length, 50)} खाती
-                  </span>
+                <div className="p-2 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-xs text-gray-800">
+                      आयात पूर्वदृश्य (Import Preview - {monthlyImportPreview.fileName})
+                    </span>
+                    <span className="text-[11px] text-gray-500">
+                      ({monthlyImportPreview.rows.length} पैकी {
+                        monthlyImportPreview.rows.filter(r => {
+                          if (previewFilter === 'valid') return r.isValid && r.pigmyAccountId > 0;
+                          if (previewFilter === 'invalid') return !r.isValid || r.pigmyAccountId <= 0;
+                          return true;
+                        }).length
+                      } खाती दाखवत आहे)
+                    </span>
+                  </div>
+
+                  {/* Filter tabs: All / Valid / Invalid */}
+                  <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded border border-gray-200 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewFilter('all')}
+                      className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                        previewFilter === 'all' ? 'bg-white text-gray-900 shadow-2xs' : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      सर्व खाती ({monthlyImportPreview.rows.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewFilter('valid')}
+                      className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                        previewFilter === 'valid' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-emerald-700 hover:text-emerald-900'
+                      }`}
+                    >
+                      ✓ वैध ({monthlyImportPreview.rows.filter(r => r.isValid && r.pigmyAccountId > 0).length})
+                    </button>
+                    {monthlyImportPreview.rows.some(r => !r.isValid || r.pigmyAccountId <= 0) && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFilter('invalid')}
+                        className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                          previewFilter === 'invalid' ? 'bg-red-600 text-white shadow-2xs' : 'text-red-700 bg-red-50 hover:bg-red-100'
+                        }`}
+                      >
+                        <span>❌ अवैध खाती</span>
+                        <span className="px-1 bg-white text-red-700 rounded-full text-[10px]">
+                          {monthlyImportPreview.rows.filter(r => !r.isValid || r.pigmyAccountId <= 0).length}
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto max-h-96">
@@ -1422,53 +1674,113 @@ export default function PigmyCollectionMaster() {
                         <th className="p-1.5 font-bold text-right min-w-[100px] bg-blue-50 text-blue-900 border-l border-gray-300 whitespace-nowrap">
                           एकूण जमा (Total)
                         </th>
-                        <th className="p-1.5 font-bold text-center w-20 whitespace-nowrap bg-gray-100 border-l border-gray-300">स्थिती</th>
+                        <th className="p-1.5 font-bold text-center w-24 whitespace-nowrap bg-gray-100 border-l border-gray-300">स्थिती (Status)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {monthlyImportPreview.rows.slice(0, 50).map((row, idx) => (
-                        <tr key={idx} className="hover:bg-blue-50/40">
-                          <td className="p-1.5 text-center text-gray-500 border-r border-gray-200">{idx + 1}</td>
-                          <td className="p-1.5 font-mono text-gray-900 font-bold border-r border-gray-200 whitespace-nowrap">
-                            {format14DigitDisplay(row.accountNo)}
-                            {row.legacyAccountNumber && (
-                              <div className="text-[10px] text-amber-700 font-bold">जुना: {row.legacyAccountNumber}</div>
-                            )}
-                          </td>
-                          <td className="p-1.5 text-gray-800 border-r border-gray-200 whitespace-nowrap">
-                            {row.customerName}
-                            {row.warning && (
-                              <div className="text-[10px] text-amber-600 font-semibold">{row.warning}</div>
-                            )}
-                          </td>
-                          {monthlyImportPreview.columns.map((col, cIdx) => {
-                            const dayNum = parseInt(col.split('/')[0]) || parseInt(col);
-                            const [y, m] = selectedMonth.split('-');
-                            const targetDateStr = `${y}-${m}-${String(dayNum).padStart(2, '0')}`;
-                            const amt = row.dailyAmounts[targetDateStr] || 0;
-                            return (
-                              <td key={cIdx} className={`p-1 text-center font-mono border-r border-gray-200 whitespace-nowrap ${amt > 0 ? 'bg-emerald-50 text-emerald-800 font-bold' : 'text-gray-300'}`}>
-                                {amt > 0 ? amt : '-'}
+                      {monthlyImportPreview.rows
+                        .filter(r => {
+                          if (previewFilter === 'valid') return r.isValid && r.pigmyAccountId > 0;
+                          if (previewFilter === 'invalid') return !r.isValid || r.pigmyAccountId <= 0;
+                          return true;
+                        })
+                        .map((row, idx) => {
+                          const isInvalid = !row.isValid || row.pigmyAccountId <= 0 || Boolean(row.isInvalidAccount);
+                          return (
+                            <tr key={idx} className={`transition-colors ${
+                              isInvalid 
+                                ? 'bg-red-50/70 hover:bg-red-100/70 border-l-4 border-l-red-600' 
+                                : 'hover:bg-blue-50/40'
+                            }`}>
+                              <td className="p-1.5 text-center text-gray-500 border-r border-gray-200">{idx + 1}</td>
+                              <td className="p-1.5 font-mono font-bold border-r border-gray-200 whitespace-nowrap">
+                                <span className={isInvalid ? "text-red-700 font-extrabold" : "text-gray-900"}>
+                                  {row.pigmyAccountId > 0 ? format14DigitDisplay(row.accountNo) : (row.accountNo || 'अवैध खाते')}
+                                </span>
+                                {row.legacyAccountNumber && (
+                                  <div className={`text-[10px] font-bold ${isInvalid ? 'text-red-600' : 'text-amber-700'}`}>
+                                    जुना: {row.legacyAccountNumber}
+                                  </div>
+                                )}
                               </td>
-                            );
-                          })}
-                          <td className="p-1.5 text-right font-mono font-black text-primary bg-blue-50/50 border-l border-gray-200 whitespace-nowrap">
-                            ₹ {row.rowTotal.toLocaleString('en-IN')}
-                          </td>
-                          <td className="p-1.5 text-center border-l border-gray-200 whitespace-nowrap">
-                            {row.rowTotal > 0 ? (
-                              <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-sm">
-                                वैध
-                              </span>
-                            ) : (
-                              <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] rounded-sm">
-                                निरंक
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                              <td className="p-1.5 border-r border-gray-200 whitespace-nowrap">
+                                <div className={isInvalid ? "font-bold text-red-900" : "text-gray-800"}>
+                                  {row.customerName}
+                                </div>
+                                {row.warning && (
+                                  <div className={`text-[10px] font-semibold mt-0.5 ${isInvalid ? 'text-red-700 font-bold' : 'text-amber-600'}`}>
+                                    ⚠️ {row.warning}
+                                  </div>
+                                )}
+                              </td>
+                              {monthlyImportPreview.columns.map((col, cIdx) => {
+                                const dayNum = parseInt(col.split('/')[0]) || parseInt(col);
+                                const [y, m] = selectedMonth.split('-');
+                                const targetDateStr = `${y}-${m}-${String(dayNum).padStart(2, '0')}`;
+                                const amt = row.dailyAmounts[targetDateStr] || 0;
+                                return (
+                                  <td key={cIdx} className={`p-1 text-center font-mono border-r border-gray-200 whitespace-nowrap ${
+                                    isInvalid 
+                                      ? (amt > 0 ? 'bg-red-100 text-red-800 font-bold line-through' : 'text-red-200')
+                                      : (amt > 0 ? 'bg-emerald-50 text-emerald-800 font-bold' : 'text-gray-300')
+                                  }`}>
+                                    {amt > 0 ? amt : '-'}
+                                  </td>
+                                );
+                              })}
+                              <td className={`p-1.5 text-right font-mono font-black border-l border-gray-200 whitespace-nowrap ${
+                                isInvalid ? 'text-red-700 bg-red-100/50 line-through' : 'text-primary bg-blue-50/50'
+                              }`}>
+                                ₹ {row.rowTotal.toLocaleString('en-IN')}
+                              </td>
+                              <td className="p-1.5 text-center border-l border-gray-200 whitespace-nowrap">
+                                {isInvalid ? (
+                                  <span className="px-2 py-0.5 bg-red-100 text-red-800 text-[10px] font-black rounded-sm border border-red-300 shadow-2xs">
+                                    ❌ अवैध खाते
+                                  </span>
+                                ) : row.rowTotal > 0 ? (
+                                  <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-sm">
+                                    वैध
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] rounded-sm">
+                                    निरंक
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
+                    <tfoot className="bg-slate-100 border-t-2 border-slate-300 text-[11px] font-bold text-gray-900">
+                      <tr>
+                        <td colSpan={3} className="p-2 text-right text-gray-900 font-extrabold uppercase tracking-wider border-r border-gray-300 bg-slate-200/80">
+                          दैनिक उभी बेरीज (Daily Total ₹):
+                        </td>
+                        {monthlyImportPreview.columns.map((col, cIdx) => {
+                          const dayNum = parseInt(col.split('/')[0]) || parseInt(col);
+                          const [y, m] = selectedMonth.split('-');
+                          const targetDateStr = `${y}-${m}-${String(dayNum).padStart(2, '0')}`;
+                          const dayVerticalSum = monthlyImportPreview.rows
+                            .filter(r => r.isValid && r.pigmyAccountId > 0)
+                            .reduce((sum, r) => sum + (r.dailyAmounts[targetDateStr] || 0), 0);
+
+                          return (
+                            <td key={cIdx} className={`p-1.5 text-center font-mono border-r border-gray-300 whitespace-nowrap ${
+                              dayVerticalSum > 0 ? 'bg-emerald-100/70 text-emerald-900 font-black' : 'text-gray-400 font-normal'
+                            }`}>
+                              {dayVerticalSum > 0 ? dayVerticalSum.toLocaleString('en-IN') : '-'}
+                            </td>
+                          );
+                        })}
+                        <td className="p-1.5 text-right font-mono font-black text-emerald-900 bg-emerald-200/80 border-l border-gray-300 whitespace-nowrap">
+                          ₹ {monthlyImportPreview.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-1.5 text-center border-l border-gray-300 whitespace-nowrap bg-slate-200/80 text-[10px] text-gray-700">
+                          एकूण
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
 

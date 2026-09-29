@@ -1326,9 +1326,61 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        private async Task<(decimal accruedInterest, int accruedDays, DateTime fromDate)> CalculatePendingLoanInterestAsync(
+            LoanAccount loanAccount, 
+            DateTime asOfDate)
+        {
+            if (loanAccount == null || loanAccount.PrincipalBalance <= 0)
+            {
+                return (0m, 0, asOfDate);
+            }
+
+            var loanRate = loanAccount.LoanRate ?? await _context.LoanRates.FindAsync(loanAccount.LoanRateID);
+            bool isDailyReducing = loanRate != null && 
+                ((loanRate.InterestCalculationMethod?.Contains("Daily Reducing") == true) || 
+                 (loanRate.InterestCalculationMethod?.Contains("दैनिक घटती") == true));
+
+            if (isDailyReducing)
+            {
+                var fromDate = loanAccount.LastInstallmentPaidDate ?? loanAccount.LoanDisbursementDate ?? loanAccount.OpeningDate;
+                if (loanAccount.LastInterestPostingDate.HasValue && loanAccount.LastInterestPostingDate.Value > fromDate)
+                {
+                    fromDate = loanAccount.LastInterestPostingDate.Value;
+                }
+
+                var rate = loanRate?.InterestRate ?? loanAccount.InterestRate;
+                var diffTime = asOfDate.Date - fromDate.Date;
+                var diffDays = Math.Max(0, diffTime.Days);
+                decimal newInterest = diffDays > 0 ? Math.Round((loanAccount.PrincipalBalance * rate * diffDays) / 36500m, 2) : 0;
+                return (newInterest, diffDays, fromDate);
+            }
+            else
+            {
+                // Scheduled Loan Policy: Flat, Reducing (समान हप्ता / EMI), or Reducing (समान मुद्दल)
+                var dbSchedules = await _context.LoanInstallmentSchedules
+                    .Where(s => s.LoanAccountID == loanAccount.LoanAccountID)
+                    .ToListAsync();
+                
+                var pastCollections = await _context.LoanCollections
+                    .Where(c => c.LoanAccountID == loanAccount.LoanAccountID)
+                    .ToListAsync();
+
+                decimal unpaidScheduledInterest = Services.LoanScheduleGenerator.GetUnpaidScheduledInterest(
+                    loanAccount,
+                    dbSchedules,
+                    pastCollections,
+                    asOfDate.Date);
+
+                decimal additionalInterest = Math.Max(0m, unpaidScheduledInterest - loanAccount.InterestBalance);
+                var fromDate = loanAccount.LastInstallmentPaidDate ?? loanAccount.OpeningDate;
+                var diffDays = Math.Max(0, (asOfDate.Date - fromDate.Date).Days);
+                return (additionalInterest, diffDays, fromDate);
+            }
+        }
+
         // GET: api/FdAccounts/5/ActiveLoans
         [HttpGet("{id}/ActiveLoans")]
-        public async Task<IActionResult> GetActiveLoansForFd(int id)
+        public async Task<IActionResult> GetActiveLoansForFd(int id, [FromQuery] DateTime? asOfDate = null)
         {
             var account = await _context.FdAccounts
                 .Include(a => a.Customer)
@@ -1338,6 +1390,8 @@ namespace Bhisi.Api.Controllers
             {
                 return NotFound(new { message = "मुदत ठेव खाते सापडले नाही." });
             }
+
+            DateTime effectiveDate = asOfDate?.Date ?? DateTime.Today;
 
             int custId = account.CustomerID;
             int? memberId = null;
@@ -1365,26 +1419,53 @@ namespace Bhisi.Api.Controllers
                 .OrderBy(l => l.LoanAccountNo)
                 .ToListAsync();
 
-            var loanList = activeLoans.Select(l => new
+            var loanList = new List<object>();
+            decimal totalOutstanding = 0m;
+            foreach (var l in activeLoans)
             {
-                loanAccountId = l.LoanAccountID,
-                loanAccountNo = l.LoanAccountNo,
-                loanType = l.LoanRate?.LoanType ?? "कर्ज खाते",
-                principalBalance = l.PrincipalBalance,
-                interestBalance = l.InterestBalance,
-                overdueInterestBalance = l.OverdueInterestBalance,
-                totalDue = l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance,
-                openingDate = l.OpeningDate,
-                sanctionedAmount = l.SanctionedAmount,
-                interestRate = l.LoanRate?.InterestRate ?? l.InterestRate
-            }).ToList();
+                var (accruedInt, accruedDays, fromDate) = await CalculatePendingLoanInterestAsync(l, effectiveDate);
+                decimal totalDue = l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance + accruedInt;
+                totalOutstanding += totalDue;
 
-            decimal totalOutstanding = loanList.Sum(l => l.totalDue);
+                int overdueInstallmentsCount = await _context.LoanInstallmentSchedules
+                    .Where(s => s.LoanAccountID == l.LoanAccountID && s.DueDate.Date < effectiveDate.Date && s.Status != "Paid")
+                    .CountAsync();
+
+                decimal overdueExpenses = await _context.OverdueRecoveryLedgers
+                    .Where(o => o.LoanAccountID == l.LoanAccountID)
+                    .SumAsync(o => (decimal?)(o.DebitAmount - o.CreditAmount)) ?? 0m;
+                if (overdueExpenses < 0) overdueExpenses = 0m;
+
+                loanList.Add(new
+                {
+                    loanAccountId = l.LoanAccountID,
+                    loanAccountNo = l.LoanAccountNo,
+                    loanType = l.LoanRate?.LoanType ?? "कर्ज खाते",
+                    principalBalance = l.PrincipalBalance,
+                    interestBalance = l.InterestBalance,
+                    accruedInterest = accruedInt,
+                    accruedDays = accruedDays,
+                    interestCalculatedFrom = fromDate,
+                    overdueInterestBalance = l.OverdueInterestBalance,
+                    overdueExpenses = overdueExpenses,
+                    overdueInstallmentsCount = overdueInstallmentsCount,
+                    totalDue = totalDue,
+                    openingDate = l.OpeningDate,
+                    disbursementDate = l.LoanDisbursementDate ?? l.OpeningDate,
+                    sanctionedAmount = l.SanctionedAmount,
+                    installmentAmount = l.InstallmentAmount,
+                    installmentFrequency = l.InstallmentFrequency ?? "मासिक",
+                    lastInstallmentPaidDate = l.LastInstallmentPaidDate,
+                    interestRate = l.LoanRate?.InterestRate ?? l.InterestRate,
+                    interestCalculationMethod = l.LoanRate?.InterestCalculationMethod ?? "Daily Reducing"
+                });
+            }
 
             return Ok(new
             {
                 hasActiveLoan = loanList.Count > 0,
                 totalOutstandingLiability = totalOutstanding,
+                asOfDate = effectiveDate,
                 loans = loanList
             });
         }
@@ -1405,6 +1486,14 @@ namespace Bhisi.Api.Controllers
                 throw new InvalidOperationException("निवडलेले कर्ज खाते सापडले नाही किंवा ते सक्रिय नाही.");
             }
 
+            // 🌟 1. Accrue unposted interest up to settlement txDate (Daily Reducing / Scheduled)
+            var (pendingInterest, pendingDays, fromDate) = await CalculatePendingLoanInterestAsync(targetLoan, txDate);
+            if (pendingInterest > 0)
+            {
+                targetLoan.InterestBalance += pendingInterest;
+                targetLoan.LastInterestPostingDate = txDate;
+            }
+
             decimal penaltyPaid = Math.Min(adjustAmount, targetLoan.OverdueInterestBalance);
             decimal remainingAdj = adjustAmount - penaltyPaid;
 
@@ -1418,6 +1507,10 @@ namespace Bhisi.Api.Controllers
             targetLoan.InterestBalance -= interestPaid;
             targetLoan.PrincipalBalance -= principalPaid;
             targetLoan.LastInstallmentPaidDate = txDate;
+            if (!targetLoan.LastInterestPostingDate.HasValue || targetLoan.LastInterestPostingDate.Value < txDate)
+            {
+                targetLoan.LastInterestPostingDate = txDate;
+            }
 
             if (targetLoan.PrincipalBalance <= 0.01m && targetLoan.InterestBalance <= 0.01m && targetLoan.OverdueInterestBalance <= 0.01m)
             {
@@ -1597,18 +1690,14 @@ namespace Bhisi.Api.Controllers
                 .Where(l => l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0)
                 .ToListAsync();
 
-            decimal totalActiveLoanDebt = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
-
-            if (totalActiveLoanDebt > 0 && !(req?.AdjustInLoan ?? false))
+            decimal totalActiveLoanDebt = 0m;
+            foreach (var l in activeLoans)
             {
-                return BadRequest(new
-                {
-                    errorCode = "LOAN_OUTSTANDING_EXISTS",
-                    message = $"सदर खातेदाराकडे एकूण ₹{totalActiveLoanDebt:N2} चे कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) हे मुदत ठेव खाते परस्पर बंद करता येणार नाही. कृपया 'कर्ज खात्यात रक्कम वर्ग करा (Adjust in Loan)' हा पर्याय निवडा किंवा कर्ज पूर्ण भरा.",
-                    totalDebt = totalActiveLoanDebt,
-                    activeLoansCount = activeLoans.Count
-                });
+                var (pInt, _, _) = await CalculatePendingLoanInterestAsync(l, closureDate);
+                totalActiveLoanDebt += l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance + pInt;
             }
+
+
 
             // Overdue post-maturity interest calculation (Strictly Governed by FdScheme Policy)
             decimal overdueInterest = 0m;
@@ -1623,6 +1712,23 @@ namespace Bhisi.Api.Controllers
                     overdueDays = (closureDate.Date - account.MaturityDate.Date).Days;
                     decimal overdueRate = account.FdScheme?.OverdueInterestRate ?? req?.OverdueInterestRate ?? 3.00m;
                     overdueInterest = Math.Round((account.MaturityAmount * overdueRate * overdueDays) / 36500.0m, 2);
+                }
+            }
+
+            // ✍️ Manual Amount Override Support (Legacy Pre-Live Society Reconciliation)
+            if (req?.IsManualAmountOverride == true)
+            {
+                if (string.IsNullOrWhiteSpace(req.ManualOverrideReason))
+                {
+                    return BadRequest("मॅन्युअल रक्कम बदल (Manual Override) करताना लेखापरीक्षणासाठी (Audit Trail) बदलाचे कारण देणे बंधनकारक आहे.");
+                }
+                if (req.CustomAccruedInterest.HasValue)
+                {
+                    totalInterest = Math.Max(0m, req.CustomAccruedInterest.Value);
+                }
+                if (req.CustomOverdueInterest.HasValue)
+                {
+                    overdueInterest = Math.Max(0m, req.CustomOverdueInterest.Value);
                 }
             }
 
@@ -1648,7 +1754,8 @@ namespace Bhisi.Api.Controllers
                     return BadRequest(new { message = "निवडलेले कर्ज खाते सापडले नाही किंवा ते सक्रिय नाही." });
                 }
 
-                decimal targetLoanTotalDue = targetLoan.PrincipalBalance + targetLoan.InterestBalance + targetLoan.OverdueInterestBalance;
+                var (pendingInterest, _, _) = await CalculatePendingLoanInterestAsync(targetLoan, closureDate);
+                decimal targetLoanTotalDue = targetLoan.PrincipalBalance + targetLoan.InterestBalance + targetLoan.OverdueInterestBalance + pendingInterest;
                 decimal maxAdjustable = Math.Min(totalMaturityPayout, targetLoanTotalDue);
                 loanAdjustAmount = req.LoanAdjustmentAmount.HasValue && req.LoanAdjustmentAmount.Value > 0
                     ? Math.Min(req.LoanAdjustmentAmount.Value, maxAdjustable)
@@ -1661,11 +1768,16 @@ namespace Bhisi.Api.Controllers
             {
                 try
                 {
+                    string manualAuditNote = req?.IsManualAmountOverride == true
+                        ? $" [✍️ मॅन्युअल लेगसी जुळवणी: {req.ManualOverrideReason?.Trim()}]"
+                        : "";
+
                     account.Status = "Closed";
                     account.Remarks = (account.Remarks ?? "") + 
                         (req?.AdjustInLoan == true 
                             ? $" | बंद दिनांक: {closureDate:dd/MM/yyyy} [कर्ज वजावट: ₹{loanAdjustAmount:N2} -> कर्ज क्र: {targetLoan?.LoanAccountNo}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} ({req.SurplusPaymentMode})]"
-                            : $" | बंद दिनांक: {closureDate:dd/MM/yyyy} ({paymentMode})" + (overdueInterest > 0 ? $" [मुदत संपल्यानंतरचे (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : ""));
+                            : $" | बंद दिनांक: {closureDate:dd/MM/yyyy} ({paymentMode})" + (overdueInterest > 0 ? $" [मुदत संपल्यानंतरचे (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : ""))
+                        + manualAuditNote;
                     await _context.SaveChangesAsync();
 
                     var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(account.FdScheme);
@@ -1747,9 +1859,9 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = closureDate,
                             VoucherType = "Journal",
                             TotalAmount = totalMaturityPayout,
-                            Narration = string.IsNullOrWhiteSpace(req?.Narration)
+                            Narration = (string.IsNullOrWhiteSpace(req?.Narration)
                                 ? $"मुदत ठेव परतावा व कर्ज वजावट (FD Maturity Payout & Loan Set-Off): {account.AccountNo} -> कर्ज: {settledLoan.LoanAccountNo} (कर्ज जमा: ₹{loanAdjustAmount:N2}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} {surplusMode}){(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
-                                : req.Narration,
+                                : req.Narration) + manualAuditNote,
                             CreatedBy = 1,
                             CreatedOn = DateTime.Now
                         };
@@ -1907,9 +2019,9 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = closureDate,
                             VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
                             TotalAmount = totalMaturityPayout,
-                            Narration = string.IsNullOrWhiteSpace(req?.Narration) 
+                            Narration = (string.IsNullOrWhiteSpace(req?.Narration) 
                                 ? $"मुदत ठेव पूर्ण क्लोजर (FD Maturity Payout - {paymentMode}): {account.AccountNo} [मुदतपूर्ती: {account.MaturityDate:dd/MM/yyyy}, प्रक्रिया: {DateTime.Now:dd/MM/yyyy}{(closureDate.Date < DateTime.Today ? $", As-on: {closureDate:dd/MM/yyyy}" : "")}]{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
-                                : req.Narration,
+                                : req.Narration) + manualAuditNote,
                             CreatedBy = 1,
                             CreatedOn = DateTime.Now
                         };
@@ -2088,18 +2200,14 @@ namespace Bhisi.Api.Controllers
                 .Where(l => l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0)
                 .ToListAsync();
 
-            decimal totalActiveLoanDebt = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
-
-            if (totalActiveLoanDebt > 0 && !(req?.AdjustInLoan ?? false))
+            decimal totalActiveLoanDebt = 0m;
+            foreach (var l in activeLoans)
             {
-                return BadRequest(new
-                {
-                    errorCode = "LOAN_OUTSTANDING_EXISTS",
-                    message = $"सदर खातेदाराकडे एकूण ₹{totalActiveLoanDebt:N2} चे कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) हे मुदत ठेव खाते परस्पर बंद करता येणार नाही. कृपया 'कर्ज खात्यात रक्कम वर्ग करा (Adjust in Loan)' हा पर्याय निवडा किंवा कर्ज पूर्ण भरा.",
-                    totalDebt = totalActiveLoanDebt,
-                    activeLoansCount = activeLoans.Count
-                });
+                var (pInt, _, _) = await CalculatePendingLoanInterestAsync(l, effectiveClosureDate);
+                totalActiveLoanDebt += l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance + pInt;
             }
+
+
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
@@ -2115,6 +2223,19 @@ namespace Bhisi.Api.Controllers
 
                     // 3. Recalculate interest
                     decimal recalculatedInterest = Math.Round((account.DepositAmount * prematureRate * actualDays) / 36500.0m, 2);
+
+                    // ✍️ Manual Amount Override Support (Legacy Pre-Live Society Reconciliation)
+                    if (req?.IsManualAmountOverride == true)
+                    {
+                        if (string.IsNullOrWhiteSpace(req.ManualOverrideReason))
+                        {
+                            return BadRequest("मॅन्युअल रक्कम बदल (Manual Override) करताना लेखापरीक्षणासाठी (Audit Trail) बदलाचे कारण देणे बंधनकारक आहे.");
+                        }
+                        if (req.CustomAccruedInterest.HasValue)
+                        {
+                            recalculatedInterest = Math.Max(0m, req.CustomAccruedInterest.Value);
+                        }
+                    }
 
                     // 4. Determine already provisioned/paid interest
                     decimal dbAccrued = await _context.FdTransactions
@@ -2171,7 +2292,8 @@ namespace Bhisi.Api.Controllers
                             return BadRequest(new { message = "निवडलेले कर्ज खाते सापडले नाही किंवा ते सक्रिय नाही." });
                         }
 
-                        decimal targetLoanTotalDue = targetLoan.PrincipalBalance + targetLoan.InterestBalance + targetLoan.OverdueInterestBalance;
+                        var (pendingInterest, _, _) = await CalculatePendingLoanInterestAsync(targetLoan, effectiveClosureDate);
+                        decimal targetLoanTotalDue = targetLoan.PrincipalBalance + targetLoan.InterestBalance + targetLoan.OverdueInterestBalance + pendingInterest;
                         decimal maxAdjustable = Math.Min(netPayoutAmount, targetLoanTotalDue);
                         loanAdjustAmount = req.LoanAdjustmentAmount.HasValue && req.LoanAdjustmentAmount.Value > 0
                             ? Math.Min(req.LoanAdjustmentAmount.Value, maxAdjustable)
@@ -2180,11 +2302,16 @@ namespace Bhisi.Api.Controllers
                         surplusPayoutAmount = netPayoutAmount - loanAdjustAmount;
                     }
 
+                    string manualAuditNote = req?.IsManualAmountOverride == true
+                        ? $" [✍️ मॅन्युअल लेगसी जुळवणी: {req.ManualOverrideReason?.Trim()}]"
+                        : "";
+
                     account.Status = "Closed";
                     account.Remarks = (account.Remarks ?? "") + 
                         (req?.AdjustInLoan == true 
                             ? $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} [कर्ज वजावट: ₹{loanAdjustAmount:N2} -> कर्ज क्र: {targetLoan?.LoanAccountNo}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} ({req.SurplusPaymentMode})]"
-                            : $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} ({paymentMode})");
+                            : $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} ({paymentMode})")
+                        + manualAuditNote;
                     await _context.SaveChangesAsync();
 
                     var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(account.FdScheme);
@@ -2262,9 +2389,9 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = effectiveClosureDate,
                             VoucherType = "Journal",
                             TotalAmount = netPayoutAmount,
-                            Narration = string.IsNullOrWhiteSpace(req?.Narration)
+                            Narration = (string.IsNullOrWhiteSpace(req?.Narration)
                                 ? $"मुदतपूर्व बंद व कर्ज वजावट (FD Premature & Loan Set-Off): {account.AccountNo} -> कर्ज: {settledLoan.LoanAccountNo} (कर्ज जमा: ₹{loanAdjustAmount:N2}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} {surplusMode})"
-                                : req.Narration,
+                                : req.Narration) + manualAuditNote,
                             CreatedBy = 1,
                             CreatedOn = DateTime.Now
                         };
@@ -2429,9 +2556,9 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = effectiveClosureDate,
                             VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
                             TotalAmount = netPayoutAmount,
-                            Narration = string.IsNullOrWhiteSpace(req?.Narration)
+                            Narration = (string.IsNullOrWhiteSpace(req?.Narration)
                                 ? $"मुदतपूर्व बंद (Premature Close - {paymentMode}) - कालावधी: {actualDays} दिवस{(effectiveClosureDate.Date < DateTime.Today ? $" ({effectiveClosureDate:dd/MM/yyyy} As-on)" : "")}, पुनर्हिशोब व्याज: ₹{recalculatedInterest}, दंड कपात: ₹{penaltyClawback}{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}"
-                                : req.Narration,
+                                : req.Narration) + manualAuditNote,
                             CreatedBy = 1,
                             CreatedOn = DateTime.Now
                         };
@@ -2631,6 +2758,27 @@ namespace Bhisi.Api.Controllers
                         overdueInterest = Math.Round((oldAccount.MaturityAmount * overdueRate * overdueDays) / 36500.0m, 2);
                     }
 
+                    // ✍️ Manual Amount Override Support (Legacy Pre-Live Society Reconciliation)
+                    if (request.IsManualAmountOverride)
+                    {
+                        if (string.IsNullOrWhiteSpace(request.ManualOverrideReason))
+                        {
+                            return BadRequest("मॅन्युअल रक्कम बदल (Manual Override) करताना लेखापरीक्षणासाठी (Audit Trail) बदलाचे कारण देणे बंधनकारक आहे.");
+                        }
+                        if (request.CustomAccruedInterest.HasValue)
+                        {
+                            accruedInt = Math.Max(0m, request.CustomAccruedInterest.Value);
+                        }
+                        if (request.CustomOverdueInterest.HasValue)
+                        {
+                            overdueInterest = Math.Max(0m, request.CustomOverdueInterest.Value);
+                        }
+                    }
+
+                    string manualAuditNote = request.IsManualAmountOverride
+                        ? $" [✍️ मॅन्युअल लेगसी जुळवणी: {request.ManualOverrideReason?.Trim()}]"
+                        : "";
+
                     decimal totalMaturityAmount = oldAccount.DepositAmount + accruedInt + overdueInterest;
                     decimal newDepositAmount = request.RenewalType == "PrincipalOnly" ? oldAccount.DepositAmount : totalMaturityAmount;
                     decimal interestPayoutAmount = request.RenewalType == "PrincipalOnly" ? (accruedInt + overdueInterest) : 0m;
@@ -2669,7 +2817,7 @@ namespace Bhisi.Api.Controllers
 
                     // Close Old Account
                     oldAccount.Status = "Closed";
-                    oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType})" + (overdueInterest > 0 ? $" [मुदत उलटून गेलेले (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : "");
+                    oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | नूतनीकरण दिनांक: {closureDate:dd/MM/yyyy} ({request.RenewalType})" + (overdueInterest > 0 ? $" [मुदत उलटून गेलेले (Overdue) व्याज: ₹{overdueInterest:F2} ({overdueDays} दिवस)]" : "") + manualAuditNote;
                     await _context.SaveChangesAsync();
 
                     // 2. Generate Account Number
@@ -2767,6 +2915,7 @@ namespace Bhisi.Api.Controllers
                             + (isSenior ? $" [ज्येष्ठ नागरिक सवलत दर: {appliedRate}%]" : "")
                             + (newOpeningDate != closureDate ? $" [सुरुवात दिनांक: {newOpeningDate:dd/MM/yyyy}]" : "") 
                             + (overdueInterest > 0 ? $" [समाविष्ट Overdue व्याज: ₹{overdueInterest:F2}]" : "")
+                            + manualAuditNote
                     };
 
                     // Maturity Calculations (Exact 365-Day Banking Basis)
@@ -2864,7 +3013,9 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = closureDate,
                         VoucherType = "Journal",
                         TotalAmount = totalMaturityAmount,
-                        Narration = $"मुदत ठेव नूतनीकरण (FD Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}",
+                        Narration = (string.IsNullOrWhiteSpace(request.Narration)
+                            ? $"मुदत ठेव नूतनीकरण (FD Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
+                            : request.Narration) + manualAuditNote,
                         CreatedBy = 1,
                         CreatedOn = DateTime.Now
                     };
@@ -3931,6 +4082,13 @@ namespace Bhisi.Api.Controllers
         public int? SurplusBankLedgerID { get; set; }
         public string? SurplusChequeNo { get; set; }
         public DateTime? SurplusChequeDate { get; set; }
+
+        // ✍️ Manual Amount Override Support (Legacy Reconciliation)
+        public bool IsManualAmountOverride { get; set; } = false;
+        public decimal? CustomAccruedInterest { get; set; }
+        public decimal? CustomOverdueInterest { get; set; }
+        public decimal? CustomTotalPayout { get; set; }
+        public string? ManualOverrideReason { get; set; }
     }
 
     public class FdRenewalRequest
@@ -3953,5 +4111,12 @@ namespace Bhisi.Api.Controllers
         public string RenewalEffectiveFrom { get; set; } = "ClosureDate"; // "ClosureDate" or "MaturityDate"
         public bool ApplyOverdueInterest { get; set; } = false;
         public decimal? OverdueInterestRate { get; set; }
+
+        // ✍️ Manual Amount Override Support (Legacy Reconciliation)
+        public bool IsManualAmountOverride { get; set; } = false;
+        public decimal? CustomAccruedInterest { get; set; }
+        public decimal? CustomOverdueInterest { get; set; }
+        public decimal? CustomTotalPayout { get; set; }
+        public string? ManualOverrideReason { get; set; }
     }
 }

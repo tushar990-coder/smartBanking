@@ -16,7 +16,10 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
-  UserCheck
+  UserCheck,
+  Edit3,
+  RotateCcw,
+  Lock
 } from 'lucide-react';
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import SearchableSelect from './SearchableSelect';
@@ -47,11 +50,15 @@ interface ActiveLoanItem {
   loanType: string;
   principalBalance: number;
   interestBalance: number;
+  accruedInterest?: number;
+  accruedDays?: number;
+  interestCalculatedFrom?: string;
   overdueInterestBalance: number;
   totalDue: number;
   openingDate: string;
   sanctionedAmount: number;
   interestRate: number;
+  interestCalculationMethod?: string;
 }
 
 interface ActiveLoansResponse {
@@ -147,25 +154,29 @@ const FdWithdrawalMaturity: React.FC = () => {
   const [selectedSavingAccountId, setSelectedSavingAccountId] = useState<number | ''>('');
   const [narration, setNarration] = useState<string>('');
 
-  // Active Loans & Lien Protection states
+  // Active Loans Info state (Informational only)
   const [activeLoansData, setActiveLoansData] = useState<ActiveLoansResponse | null>(null);
   const [loadingLoans, setLoadingLoans] = useState<boolean>(false);
-  const [adjustInLoan, setAdjustInLoan] = useState<boolean>(false);
-  const [selectedLoanId, setSelectedLoanId] = useState<number>(0);
-  const [loanAdjustAmount, setLoanAdjustAmount] = useState<number>(0);
 
   // UI toggle states
-  const [showLoanDetails, setShowLoanDetails] = useState<boolean>(false);
   const [showVoucherPreview, setShowVoucherPreview] = useState<boolean>(true);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
-  const [showInlineSchedule, setShowInlineSchedule] = useState<boolean>(true);
+  const [showInlineSchedule, setShowInlineSchedule] = useState<boolean>(false);
 
-  // Surplus Payout states
-  const [surplusPaymentMode, setSurplusPaymentMode] = useState<'Cash' | 'Bank' | 'Transfer'>('Cash');
-  const [surplusBankLedgerID, setSurplusBankLedgerID] = useState<number>(0);
-  const [surplusChequeNo, setSurplusChequeNo] = useState<string>('');
-  const [surplusChequeDate, setSurplusChequeDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [surplusSavingAccountId, setSurplusSavingAccountId] = useState<number | ''>('');
+  // ✍️ Manual Amount Override states (Legacy Reconciliation)
+  const [isManualOverride, setIsManualOverride] = useState<boolean>(false);
+  const [manualOverrideReason, setManualOverrideReason] = useState<string>('');
+  const [customAccruedInterest, setCustomAccruedInterest] = useState<string>('');
+  const [customOverdueInterest, setCustomOverdueInterest] = useState<string>('');
+  const [customPrematureInterest, setCustomPrematureInterest] = useState<string>('');
+
+  const handleResetManualOverride = () => {
+    setIsManualOverride(false);
+    setManualOverrideReason('');
+    setCustomAccruedInterest('');
+    setCustomOverdueInterest('');
+    setCustomPrematureInterest('');
+  };
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -227,47 +238,41 @@ const FdWithdrawalMaturity: React.FC = () => {
         setSurplusSavingAccountId(list[0].savingAccountID);
       } else {
         setSelectedSavingAccountId('');
-        setSurplusSavingAccountId('');
       }
     } catch (err) {
       console.error('Error fetching customer savings accounts', err);
       setMemberSavingAccounts([]);
       setSelectedSavingAccountId('');
-      setSurplusSavingAccountId('');
     }
   };
 
-  const fetchActiveLoans = async (fdAccountId: number) => {
+  const fetchActiveLoans = async (fdAccountId: number, asOfDateStr?: string) => {
     if (!fdAccountId || fdAccountId <= 0) {
       setActiveLoansData(null);
-      setAdjustInLoan(false);
-      setSelectedLoanId(0);
-      setLoanAdjustAmount(0);
       return;
     }
     setLoadingLoans(true);
     try {
-      const res = await axios.get(`${API_URL}/FdAccounts/${fdAccountId}/ActiveLoans`);
+      const qDate = asOfDateStr || closureDate;
+      const res = await axios.get(`${API_URL}/FdAccounts/${fdAccountId}/ActiveLoans`, {
+        params: qDate ? { asOfDate: qDate } : {}
+      });
       const data: ActiveLoansResponse = res.data;
       setActiveLoansData(data);
-      if (data?.hasActiveLoan && data?.loans?.length > 0) {
-        setSelectedLoanId(data.loans[0].loanAccountId);
-        setAdjustInLoan(true);
-      } else {
-        setAdjustInLoan(false);
-        setSelectedLoanId(0);
-        setLoanAdjustAmount(0);
-      }
     } catch (err) {
       console.error('Error fetching active loans', err);
       setActiveLoansData(null);
-      setAdjustInLoan(false);
-      setSelectedLoanId(0);
-      setLoanAdjustAmount(0);
     } finally {
       setLoadingLoans(false);
     }
   };
+
+  // 🔄 Re-fetch active loans with recalculated accrued interest whenever closureDate or selectedAccount changes
+  useEffect(() => {
+    if (selectedAccId && selectedAccId > 0 && closureDate) {
+      fetchActiveLoans(selectedAccId, closureDate);
+    }
+  }, [selectedAccId, closureDate]);
 
   const fetchAccounts = async () => {
     try {
@@ -327,13 +332,13 @@ const FdWithdrawalMaturity: React.FC = () => {
     setSelectedAccount(selected);
     setError('');
     setSuccess('');
+    handleResetManualOverride();
     if (selected) {
       fetchCustomerSavingsAccounts(selected.customerID, selected.memberID);
       fetchActiveLoans(selected.fdAccountID);
     } else {
       setMemberSavingAccounts([]);
       setSelectedSavingAccountId('');
-      setSurplusSavingAccountId('');
       fetchActiveLoans(0);
     }
   };
@@ -536,38 +541,39 @@ const FdWithdrawalMaturity: React.FC = () => {
       const totalMaturity = selectedAccount.maturityAmount && selectedAccount.maturityAmount > selectedAccount.depositAmount
         ? selectedAccount.maturityAmount
         : (selectedAccount.depositAmount + (selectedAccount.legacyAccruedInt || 0));
-      const accruedInt = Math.max(0, totalMaturity - principal);
-      const effOverdueInt = isOverdue ? overdueInterest : 0;
-      return principal + accruedInt + effOverdueInt;
+      const systemAccruedInt = Math.max(0, totalMaturity - principal);
+      const systemOverdueInt = isOverdue ? overdueInterest : 0;
+
+      const effAccrued = isManualOverride && customAccruedInterest !== ''
+        ? Math.max(0, parseFloat(customAccruedInterest) || 0)
+        : systemAccruedInt;
+      const effOverdue = isManualOverride && customOverdueInterest !== ''
+        ? Math.max(0, parseFloat(customOverdueInterest) || 0)
+        : systemOverdueInt;
+
+      return principal + effAccrued + effOverdue;
     } else if (actionType === 'PrematureClose') {
       const principal = selectedAccount.depositAmount;
       const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
       const ledgers = getSchemeLedgers();
       const prematureRate = ledgers?.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
-      const recalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
+      const systemRecalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
+
+      const effRecalcInt = isManualOverride && customPrematureInterest !== ''
+        ? Math.max(0, parseFloat(customPrematureInterest) || 0)
+        : systemRecalcInt;
+
       const alreadyAccrued = selectedAccount.legacyAccruedInt || 0;
       const isPeriodic = ledgers?.scheme?.interestType === 'MIS' || ledgers?.scheme?.interestType === 'Monthly Interest';
-      if (isPeriodic && alreadyAccrued > recalcInt) {
-        return Math.max(0, principal - (alreadyAccrued - recalcInt));
+      if (isPeriodic && alreadyAccrued > effRecalcInt) {
+        return Math.max(0, principal - (alreadyAccrued - effRecalcInt));
       }
-      return principal + recalcInt;
+      return principal + effRecalcInt;
     }
     return 0;
   };
 
-  // Auto-calculate default loan adjustment amount when loan or payout changes
-  useEffect(() => {
-    if (adjustInLoan && selectedLoanId > 0 && activeLoansData?.loans) {
-      const targetLoan = activeLoansData.loans.find(l => l.loanAccountId === selectedLoanId);
-      if (targetLoan) {
-        const totalPayout = getTotalFdPayout();
-        const maxAdjust = Math.min(totalPayout, targetLoan.totalDue);
-        setLoanAdjustAmount(maxAdjust);
-      }
-    } else {
-      setLoanAdjustAmount(0);
-    }
-  }, [adjustInLoan, selectedLoanId, selectedAccount, actionType, closureDate, overdueInterest, activeLoansData]);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -599,92 +605,50 @@ const FdWithdrawalMaturity: React.FC = () => {
       return;
     }
 
-    // Lien & Active Loan Protection Check
-    const hasActiveDebts = Boolean(activeLoansData?.hasActiveLoan && (activeLoansData?.totalOutstandingLiability || 0) > 0);
-    const isLoanAdjustmentActive = Boolean(
-      (actionType === 'MaturityClose' || actionType === 'PrematureClose') &&
-      hasActiveDebts &&
-      adjustInLoan &&
-      selectedLoanId > 0 &&
-      loanAdjustAmount > 0
-    );
-
-    if (hasActiveDebts && !adjustInLoan && (actionType === 'MaturityClose' || actionType === 'PrematureClose')) {
-      setError(`⚠️ कर्ज तारण व धारणाधिकार निर्बंध (Lien Enforcement)! या खातेदाराकडे एकूण ₹${(activeLoansData?.totalOutstandingLiability || 0).toLocaleString()} चे सक्रिय कर्ज बाकी आहे. संस्थेच्या आर्थिक हितासाठी व नियमांनुसार कर्ज खात्यात रक्कम वर्ग केल्याशिवाय (Adjust in Loan) मुदत ठेव बंद करता येणार नाही.`);
+    if (isManualOverride && !manualOverrideReason.trim()) {
+      setError('⚠️ मॅन्युअल रक्कम बदल सक्षम असल्यामुळे लेखापरीक्षणासाठी (Audit Trail) बदलाचे कारण देणे बंधनकारक आहे.');
       return;
     }
 
-    if (hasActiveDebts && actionType === 'Renewal' && renewalType === 'PrincipalOnly') {
-      setError(`⚠️ कर्ज तारण व धारणाधिकार निर्बंध (Lien Enforcement)! या खातेदाराकडे एकूण ₹${(activeLoansData?.totalOutstandingLiability || 0).toLocaleString()} चे सक्रिय कर्ज बाकी आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार थकीत कर्जदारास मुदत ठेवीचे व्याज थेट रोख/बँकेने घेता येणार नाही. कृपया नूतनीकरणात संपूर्ण रक्कम (मुद्दल + व्याज) समाविष्ट करा किंवा आधी कर्ज फेडा.`);
-      return;
-    }
-
-    if (isLoanAdjustmentActive) {
-      if (loanAdjustAmount <= 0) {
-        setError('कृपया कर्ज खात्यात वर्ग करावयाची वैध रक्कम प्रविष्ट करा.');
+    // Standard Payment Mode Validations
+    if ((actionType === 'MaturityClose' || actionType === 'PrematureClose' || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && paymentMode === 'Bank') {
+      if (!bankAccountLedgerID || bankAccountLedgerID <= 0) {
+        setError('कृपया बँक खाते लेजर निवडा.');
         return;
       }
-      const totalPayout = getTotalFdPayout();
-      const surplusAmt = Math.max(0, totalPayout - loanAdjustAmount);
-      if (surplusAmt > 0) {
-        if (surplusPaymentMode === 'Bank' && (!surplusBankLedgerID || surplusBankLedgerID <= 0)) {
-          setError('कृपया शिल्लक परताव्यासाठी बँक खाते लेजर निवडा.');
-          return;
-        }
-        if (surplusPaymentMode === 'Transfer') {
-          if (!surplusSavingAccountId || surplusSavingAccountId <= 0) {
-            setError('कृपया शिल्लक परतावा जमा करण्यासाठी खातेदाराचे बचत खाते निवडा.');
-            return;
-          }
-          if (closureDate < todayStr) {
-            setError(`⚠️ बचत खात्यातील पासबुक विसंगती प्रतिबंध! शिल्लक परतावा बचत खात्यात वर्ग करताना मागील तारीख (${closureDate.split('-').reverse().join('/')}) अनुज्ञेय नाही. तारीख आजची (${todayStr.split('-').reverse().join('/')}) ठेवावी.`);
-            return;
-          }
-        }
-      }
-    } else {
-      // Standard Payment Mode Validations
-      if ((actionType === 'MaturityClose' || actionType === 'PrematureClose' || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && paymentMode === 'Bank') {
-        if (!bankAccountLedgerID || bankAccountLedgerID <= 0) {
-          setError('कृपया बँक खाते लेजर निवडा.');
-          return;
-        }
+    }
+
+    if ((actionType === 'MaturityClose' || actionType === 'PrematureClose' || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && paymentMode === 'Transfer') {
+      if (!selectedSavingAccountId || selectedSavingAccountId <= 0) {
+        setError('⚠️ रक्कम वर्ग करण्यासाठी खातेदाराचे कोणतेही सक्रिय बचत खाते निवडलेले नाही.');
+        return;
       }
 
-      if ((actionType === 'MaturityClose' || actionType === 'PrematureClose' || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && paymentMode === 'Transfer') {
-        if (!selectedSavingAccountId || selectedSavingAccountId <= 0) {
-          setError('⚠️ रक्कम वर्ग करण्यासाठी खातेदाराचे कोणतेही सक्रिय बचत खाते निवडलेले नाही.');
-          return;
-        }
-
-        if (isBackdatedSavingsTransfer) {
-          setError(`⚠️ बचत खात्यातील पासबुक विसंगती प्रतिबंध! बचत खात्यात (Saving Account Transfer) परतावा वर्ग करताना मागील तारीख (${closureDate.split('-').reverse().join('/')}) अनुज्ञेय नाही. पासबुकमधील रनिंग शिल्लक व एसएमएस ताळमेळ अचूक राहण्यासाठी हस्तांतरण आजच्याच तारखेने (${todayStr.split('-').reverse().join('/')}) होणे आवश्यक आहे.`);
-          return;
-        }
+      if (isBackdatedSavingsTransfer) {
+        setError(`⚠️ बचत खात्यातील पासबुक विसंगती प्रतिबंध! बचत खात्यात (Saving Account Transfer) परतावा वर्ग करताना मागील तारीख (${closureDate.split('-').reverse().join('/')}) अनुज्ञेय नाही. पासबुकमधील रनिंग शिल्लक व एसएमएस ताळमेळ अचूक राहण्यासाठी हस्तांतरण आजच्याच तारखेने (${todayStr.split('-').reverse().join('/')}) होणे आवश्यक आहे.`);
+        return;
       }
     }
 
     setLoading(true);
     try {
-      const totalPayout = getTotalFdPayout();
-      const surplusAmt = isLoanAdjustmentActive ? Math.max(0, totalPayout - loanAdjustAmount) : 0;
-
       const basePayload: any = {
         closureDate: closureDate,
-        paymentMode: isLoanAdjustmentActive ? (surplusAmt > 0 ? surplusPaymentMode : 'Cash') : paymentMode,
-        bankAccountLedgerID: isLoanAdjustmentActive ? (surplusPaymentMode === 'Bank' ? surplusBankLedgerID : null) : (paymentMode === 'Bank' ? bankAccountLedgerID : null),
-        chequeNo: isLoanAdjustmentActive ? (surplusPaymentMode === 'Bank' ? surplusChequeNo : null) : (paymentMode === 'Bank' ? chequeNo : null),
-        chequeDate: isLoanAdjustmentActive ? (surplusPaymentMode === 'Bank' ? surplusChequeDate : null) : (paymentMode === 'Bank' ? chequeDate : null),
-        savingAccountID: isLoanAdjustmentActive ? (surplusPaymentMode === 'Transfer' ? surplusSavingAccountId : null) : (paymentMode === 'Transfer' ? selectedSavingAccountId : null),
+        paymentMode: paymentMode,
+        bankAccountLedgerID: paymentMode === 'Bank' ? bankAccountLedgerID : null,
+        chequeNo: paymentMode === 'Bank' ? chequeNo : null,
+        chequeDate: paymentMode === 'Bank' ? chequeDate : null,
+        savingAccountID: paymentMode === 'Transfer' ? selectedSavingAccountId : null,
         narration: narration || null,
-        adjustInLoan: isLoanAdjustmentActive,
-        targetLoanAccountID: isLoanAdjustmentActive ? selectedLoanId : null,
-        loanAdjustmentAmount: isLoanAdjustmentActive ? loanAdjustAmount : null,
-        surplusPaymentMode: isLoanAdjustmentActive && surplusAmt > 0 ? surplusPaymentMode : null,
-        surplusBankLedgerID: isLoanAdjustmentActive && surplusAmt > 0 && surplusPaymentMode === 'Bank' ? surplusBankLedgerID : null,
-        surplusChequeNo: isLoanAdjustmentActive && surplusAmt > 0 && surplusPaymentMode === 'Bank' ? surplusChequeNo : null,
-        surplusChequeDate: isLoanAdjustmentActive && surplusAmt > 0 && surplusPaymentMode === 'Bank' ? surplusChequeDate : null,
-        surplusSavingAccountID: isLoanAdjustmentActive && surplusAmt > 0 && surplusPaymentMode === 'Transfer' ? surplusSavingAccountId : null
+        // ✍️ Manual Amount Override (Legacy Reconciliation)
+        isManualAmountOverride: isManualOverride,
+        customAccruedInterest: isManualOverride 
+          ? (actionType === 'PrematureClose' 
+              ? (customPrematureInterest !== '' ? parseFloat(customPrematureInterest) : null) 
+              : (customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : null)) 
+          : null,
+        customOverdueInterest: isManualOverride && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
+        manualOverrideReason: isManualOverride ? manualOverrideReason.trim() : null
       };
 
       if (actionType === 'MaturityClose') {
@@ -692,7 +656,9 @@ const FdWithdrawalMaturity: React.FC = () => {
           ...basePayload,
           applyOverdueInterest: isOverdue && isAllowedByScheme ? applyOverdueInterest : false,
           overdueInterestRate: isOverdue && isAllowedByScheme && applyOverdueInterest ? effectiveOverdueRate : null,
-          overdueInterestAmount: isOverdue && isAllowedByScheme && applyOverdueInterest ? overdueInterest : null
+          overdueInterestAmount: isOverdue && isAllowedByScheme && applyOverdueInterest 
+            ? (isManualOverride && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : overdueInterest) 
+            : null
         };
         const response = await axios.post(`${API_URL}/FdAccounts/${selectedAccount.fdAccountID}/MaturedClose`, payload);
         const resData = response.data;
@@ -738,7 +704,12 @@ const FdWithdrawalMaturity: React.FC = () => {
           narration: narration || null,
           renewalEffectiveFrom: isOverdue ? renewalEffectiveFrom : 'ClosureDate',
           applyOverdueInterest: isOverdue && isAllowedByScheme && renewalEffectiveFrom === 'ClosureDate' ? applyOverdueInterest : false,
-          overdueInterestRate: isOverdue && isAllowedByScheme && renewalEffectiveFrom === 'ClosureDate' && applyOverdueInterest ? effectiveOverdueRate : null
+          overdueInterestRate: isOverdue && isAllowedByScheme && renewalEffectiveFrom === 'ClosureDate' && applyOverdueInterest ? effectiveOverdueRate : null,
+          // ✍️ Manual Amount Override (Legacy Reconciliation)
+          isManualAmountOverride: isManualOverride,
+          customAccruedInterest: isManualOverride && customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : null,
+          customOverdueInterest: isManualOverride && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
+          manualOverrideReason: isManualOverride ? manualOverrideReason.trim() : null
         };
 
         const response = await axios.post(
@@ -749,14 +720,12 @@ const FdWithdrawalMaturity: React.FC = () => {
         setSuccess(`✅ ${resData.message} (नवीन पावती क्र: ${resData.newAccountNo})${resData.overdueInterest > 0 ? ` [समाविष्ट Overdue व्याज: ₹${resData.overdueInterest.toLocaleString()}]` : ''}`);
       }
 
-      // Refresh list
+      // Refresh list & Reset
+      handleResetManualOverride();
       setSelectedAccount(null);
       setSelectedAccId(0);
       setNarration('');
       setActiveLoansData(null);
-      setAdjustInLoan(false);
-      setSelectedLoanId(0);
-      setLoanAdjustAmount(0);
       fetchAccounts();
     } catch (err: any) {
       setError(err.response?.data?.message || err.response?.data || 'व्यवहार पूर्ण करताना त्रुटी आली.');
@@ -771,101 +740,84 @@ const FdWithdrawalMaturity: React.FC = () => {
     const ledgers = getSchemeLedgers();
     if (!ledgers) return null;
 
-    const entries: { drCr: 'Dr' | 'Cr'; ledgerName: string; note: string; amount: number }[] = [];
-
-    const isLoanAdjustmentActive = Boolean(
-      (actionType === 'MaturityClose' || actionType === 'PrematureClose') &&
-      activeLoansData?.hasActiveLoan &&
-      adjustInLoan &&
-      selectedLoanId > 0 &&
-      loanAdjustAmount > 0
-    );
-    const targetLoan = activeLoansData?.loans.find(l => l.loanAccountId === selectedLoanId);
+    const entries: { 
+      drCr: 'Dr' | 'Cr'; 
+      ledgerName: string; 
+      note: string; 
+      amount: number;
+      isEditable?: boolean;
+      editKey?: 'accrued' | 'overdue' | 'premature';
+      isLockedPrincipal?: boolean;
+      isBalancing?: boolean;
+    }[] = [];
 
     if (actionType === 'MaturityClose') {
       const principal = selectedAccount.depositAmount;
       const totalMaturity = selectedAccount.maturityAmount && selectedAccount.maturityAmount > selectedAccount.depositAmount
         ? selectedAccount.maturityAmount
         : (selectedAccount.depositAmount + (selectedAccount.legacyAccruedInt || 0));
-      const accruedInt = Math.max(0, totalMaturity - principal);
-      const effOverdueInt = isOverdue ? overdueInterest : 0;
+      const systemAccruedInt = Math.max(0, totalMaturity - principal);
+      const systemOverdueInt = isOverdue ? overdueInterest : 0;
+
+      const accruedInt = isManualOverride && customAccruedInterest !== ''
+        ? Math.max(0, parseFloat(customAccruedInterest) || 0)
+        : systemAccruedInt;
+      const effOverdueInt = isManualOverride && customOverdueInterest !== ''
+        ? Math.max(0, parseFloat(customOverdueInterest) || 0)
+        : systemOverdueInt;
+
       const totalPayout = principal + accruedInt + effOverdueInt;
 
       entries.push({
         drCr: 'Dr',
         ledgerName: ledgers.fdLiability,
         note: 'मुदत ठेव मुद्दल खाते कमी करणे (Principal Liability Cleared)',
-        amount: principal
+        amount: principal,
+        isLockedPrincipal: true
       });
 
-      if (accruedInt > 0) {
+      if (accruedInt > 0 || isManualOverride) {
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestPayable,
-          note: 'करारानुसार साचलेले देय व्याज चुकता करणे (Contracted Matured Interest Payable)',
-          amount: accruedInt
+          note: 'करारानुसार साचलेले देय व्याज चुकता करणे (Contracted Matured Interest Payable)' + (isManualOverride && customAccruedInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
+          amount: accruedInt,
+          isEditable: isManualOverride,
+          editKey: 'accrued'
         });
       }
 
-      if (effOverdueInt > 0) {
+      if (effOverdueInt > 0 || (isManualOverride && isOverdue)) {
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestExpense,
-          note: `मुदत संपल्यापासूनच्या (${overdueDays} दिवस) कालावधीचे ओव्हरड्यू व्याज खर्च (Overdue Interest Expense @ ${effectiveOverdueRate}%)`,
-          amount: effOverdueInt
+          note: `मुदत संपल्यापासूनच्या (${overdueDays} दिवस) कालावधीचे ओव्हरड्यू व्याज खर्च (Overdue Interest Expense @ ${effectiveOverdueRate}%)` + (isManualOverride && customOverdueInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
+          amount: effOverdueInt,
+          isEditable: isManualOverride,
+          editKey: 'overdue'
         });
       }
 
-      if (isLoanAdjustmentActive && targetLoan) {
-        const pen = Math.min(loanAdjustAmount, targetLoan.overdueInterestBalance);
-        const rem1 = loanAdjustAmount - pen;
-        const intP = Math.min(rem1, targetLoan.interestBalance);
-        const rem2 = rem1 - intP;
-        const priP = Math.min(rem2, targetLoan.principalBalance);
-
-        entries.push({
-          drCr: 'Cr',
-          ledgerName: `कर्ज खाते: ${targetLoan.loanAccountNo} (${targetLoan.loanType})`,
-          note: `कर्ज खात्यात मुदत ठेव परतावा वर्ग (Loan Adjustment: मुद्दल ₹${priP.toLocaleString()}, व्याज ₹${intP.toLocaleString()}${pen > 0 ? `, दंड ₹${pen.toLocaleString()}` : ''})`,
-          amount: loanAdjustAmount
-        });
-
-        const surplus = Math.max(0, totalPayout - loanAdjustAmount);
-        if (surplus > 0) {
-          let surplusLedgerName = '५१ हातातील रोख शिल्लक (Cash Account)';
-          if (surplusPaymentMode === 'Bank') {
-            const b = bankLedgers.find(l => l.ledgerID === surplusBankLedgerID);
-            surplusLedgerName = b ? `${b.ledgerID} - ${b.ledgerName} (Bank A/c)` : 'बँक खाते लेजर (Bank GL)';
-          } else if (surplusPaymentMode === 'Transfer') {
-            const sAcc = memberSavingAccounts.find(s => s.savingAccountID === surplusSavingAccountId);
-            surplusLedgerName = sAcc ? `७ - बचत ठेव खाते (${sAcc.accountNo})` : '७ - खातेदार बचत ठेव देयता खाते (SB Liability)';
-          }
-
-          entries.push({
-            drCr: 'Cr',
-            ledgerName: surplusLedgerName,
-            note: surplusPaymentMode === 'Cash' 
-              ? 'कर्ज वजावट करून उरलेली शिल्लक खातेदारास रोख परतावा (Surplus Cash Payout)' 
-              : (surplusPaymentMode === 'Bank' ? 'कर्ज वजावट करून उरलेली शिल्लक बँक परतावा (Surplus Bank Payout)' : 'कर्ज वजावट करून उरलेली शिल्लक बचत खात्यात वर्ग (Surplus SB Transfer)'),
-            amount: surplus
-          });
-        }
-      } else {
-        entries.push({
-          drCr: 'Cr',
-          ledgerName: ledgers.cashLedger,
-          note: paymentMode === 'Cash' 
-            ? 'खातेदारास रोख पेमेंट (Cash Payout to Customer)' 
-            : (paymentMode === 'Bank' ? 'बँक ट्रान्सफर / धनादेश परतावा (Bank Payout)' : 'खातेदाराच्या बचत खात्यात वर्ग (SB Credit Payout)'),
-          amount: totalPayout
-        });
-      }
+      entries.push({
+        drCr: 'Cr',
+        ledgerName: ledgers.cashLedger,
+        note: paymentMode === 'Cash' 
+          ? 'खातेदारास रोख पेमेंट (Cash Payout to Customer)' 
+          : (paymentMode === 'Bank' ? 'बँक ट्रान्सफर / धनादेश परतावा (Bank Payout)' : 'खातेदाराच्या बचत खात्यात वर्ग (SB Credit Payout)'),
+        amount: totalPayout,
+        isBalancing: true
+      });
 
     } else if (actionType === 'PrematureClose') {
       const principal = selectedAccount.depositAmount;
       const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
       const prematureRate = ledgers.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
-      const recalculatedInterest = Math.round((principal * prematureRate * actualDays) / 36500);
+      const systemRecalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
+
+      const recalculatedInterest = isManualOverride && customPrematureInterest !== ''
+        ? Math.max(0, parseFloat(customPrematureInterest) || 0)
+        : systemRecalcInt;
+
       const alreadyAccruedInt = selectedAccount.legacyAccruedInt || 0;
       const isPeriodicPayout = ledgers.scheme?.interestType === 'MIS' || ledgers.scheme?.interestType === 'Monthly Interest';
       
@@ -873,14 +825,11 @@ const FdWithdrawalMaturity: React.FC = () => {
       let netPayout = principal + recalculatedInterest;
 
       if (isPeriodicPayout) {
-        // In MIS: Customer already received monthly interest. Recover excess from principal payout.
         if (alreadyAccruedInt > recalculatedInterest) {
           clawback = alreadyAccruedInt - recalculatedInterest;
           netPayout = Math.max(0, principal - clawback);
         }
       } else {
-        // In Cumulative / Simple FD: Customer is entitled to Principal + Recalculated Interest!
-        // Excess internal provision in Interest Payable is reversed to Society P&L.
         netPayout = principal + recalculatedInterest;
         if (alreadyAccruedInt > recalculatedInterest) {
           clawback = alreadyAccruedInt - recalculatedInterest;
@@ -891,7 +840,8 @@ const FdWithdrawalMaturity: React.FC = () => {
         drCr: 'Dr',
         ledgerName: ledgers.fdLiability,
         note: 'मुदत ठेव मुद्दल खाते निरंक करणे (Principal Liability Cleared)',
-        amount: principal
+        amount: principal,
+        isLockedPrincipal: true
       });
 
       if (!isPeriodicPayout && alreadyAccruedInt > 0) {
@@ -907,53 +857,20 @@ const FdWithdrawalMaturity: React.FC = () => {
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestExpense,
-          note: 'चालू कालावधीचे पुनर्गणना केलेले मुदत ठेव व्याज खर्च (Interest Expense)',
-          amount: recalculatedInterest - alreadyAccruedInt
+          note: 'चालू कालावधीचे पुनर्गणना केलेले मुदत ठेव व्याज खर्च (Interest Expense)' + (isManualOverride && customPrematureInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
+          amount: recalculatedInterest - alreadyAccruedInt,
+          isEditable: isManualOverride,
+          editKey: 'premature'
         });
       }
 
-      if (isLoanAdjustmentActive && targetLoan) {
-        const pen = Math.min(loanAdjustAmount, targetLoan.overdueInterestBalance);
-        const rem1 = loanAdjustAmount - pen;
-        const intP = Math.min(rem1, targetLoan.interestBalance);
-        const rem2 = rem1 - intP;
-        const priP = Math.min(rem2, targetLoan.principalBalance);
-
-        entries.push({
-          drCr: 'Cr',
-          ledgerName: `कर्ज खाते: ${targetLoan.loanAccountNo} (${targetLoan.loanType})`,
-          note: `कर्ज खात्यात मुदत पूर्व ठेव परतावा वर्ग (Loan Adjustment: मुद्दल ₹${priP.toLocaleString()}, व्याज ₹${intP.toLocaleString()}${pen > 0 ? `, दंड ₹${pen.toLocaleString()}` : ''})`,
-          amount: loanAdjustAmount
-        });
-
-        const surplus = Math.max(0, netPayout - loanAdjustAmount);
-        if (surplus > 0) {
-          let surplusLedgerName = '५१ हातातील रोख शिल्लक (Cash Account)';
-          if (surplusPaymentMode === 'Bank') {
-            const b = bankLedgers.find(l => l.ledgerID === surplusBankLedgerID);
-            surplusLedgerName = b ? `${b.ledgerID} - ${b.ledgerName} (Bank A/c)` : 'बँक खाते लेजर (Bank GL)';
-          } else if (surplusPaymentMode === 'Transfer') {
-            const sAcc = memberSavingAccounts.find(s => s.savingAccountID === surplusSavingAccountId);
-            surplusLedgerName = sAcc ? `७ - बचत ठेव खाते (${sAcc.accountNo})` : '७ - खातेदार बचत ठेव देयता खाते (SB Liability)';
-          }
-
-          entries.push({
-            drCr: 'Cr',
-            ledgerName: surplusLedgerName,
-            note: surplusPaymentMode === 'Cash' 
-              ? 'कर्ज वजावट करून उरलेली शिल्लक खातेदारास रोख परतावा (Surplus Cash Payout)' 
-              : (surplusPaymentMode === 'Bank' ? 'कर्ज वजावट करून उरलेली शिल्लक बँक परतावा (Surplus Bank Payout)' : 'कर्ज वजावट करून उरलेली शिल्लक बचत खात्यात वर्ग (Surplus SB Transfer)'),
-            amount: surplus
-          });
-        }
-      } else {
-        entries.push({
-          drCr: 'Cr',
-          ledgerName: ledgers.cashLedger,
-          note: paymentMode === 'Cash' ? 'प्रत्यक्ष अंतिम रोख पेआउट रक्कम (Net Cash Paid)' : (paymentMode === 'Bank' ? 'प्रत्यक्ष अंतिम बँक पेआउट (Net Bank Payout)' : 'बचत खात्यात वर्ग अंतिम पेआउट (Net SB Transfer)'),
-          amount: netPayout
-        });
-      }
+      entries.push({
+        drCr: 'Cr',
+        ledgerName: ledgers.cashLedger,
+        note: paymentMode === 'Cash' ? 'प्रत्यक्ष अंतिम रोख पेआउट रक्कम (Net Cash Paid)' : (paymentMode === 'Bank' ? 'प्रत्यक्ष अंतिम बँक पेआउट (Net Bank Payout)' : 'बचत खात्यात वर्ग अंतिम पेआउट (Net SB Transfer)'),
+        amount: netPayout,
+        isBalancing: true
+      });
 
       if (clawback > 0) {
         entries.push({
@@ -976,10 +893,18 @@ const FdWithdrawalMaturity: React.FC = () => {
       const totalMaturity = selectedAccount.maturityAmount && selectedAccount.maturityAmount > selectedAccount.depositAmount
         ? selectedAccount.maturityAmount
         : (selectedAccount.depositAmount + (selectedAccount.legacyAccruedInt || 0));
-      const accruedInt = Math.max(0, totalMaturity - principal);
+      const systemAccruedInt = Math.max(0, totalMaturity - principal);
 
       const isRetroactive = isOverdue && renewalEffectiveFrom === 'MaturityDate';
-      const effOverdueInt = isRetroactive ? 0 : (isOverdue ? overdueInterest : 0);
+      const systemOverdueInt = isRetroactive ? 0 : (isOverdue ? overdueInterest : 0);
+
+      const accruedInt = isManualOverride && customAccruedInterest !== ''
+        ? Math.max(0, parseFloat(customAccruedInterest) || 0)
+        : systemAccruedInt;
+      const effOverdueInt = isManualOverride && customOverdueInterest !== ''
+        ? Math.max(0, parseFloat(customOverdueInterest) || 0)
+        : systemOverdueInt;
+
       const totalVal = principal + accruedInt + effOverdueInt;
 
       const newDepositAmount = renewalType === 'PrincipalPlusInterest' ? totalVal : principal;
@@ -989,26 +914,31 @@ const FdWithdrawalMaturity: React.FC = () => {
         drCr: 'Dr',
         ledgerName: ledgers.fdLiability,
         note: 'जुने मुदत ठेव खाते बंद करणे (Old FD Liability Cleared)',
-        amount: principal
+        amount: principal,
+        isLockedPrincipal: true
       });
 
-      if (accruedInt > 0) {
+      if (accruedInt > 0 || isManualOverride) {
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestPayable,
-          note: renewalType === 'PrincipalPlusInterest'
+          note: (renewalType === 'PrincipalPlusInterest'
             ? 'करारानुसार साचलेले देय व्याज मुद्दलात पुनर्गठित करणे (Contracted Interest Capitalized to New FD)'
-            : 'करारानुसार साचलेले देय व्याज चुकता करणे (Contracted Matured Interest Payable)',
-          amount: accruedInt
+            : 'करारानुसार साचलेले देय व्याज चुकता करणे (Contracted Matured Interest Payable)') + (isManualOverride && customAccruedInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
+          amount: accruedInt,
+          isEditable: isManualOverride,
+          editKey: 'accrued'
         });
       }
 
-      if (effOverdueInt > 0) {
+      if (effOverdueInt > 0 || (isManualOverride && isOverdue)) {
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestExpense,
-          note: `मुदत संपल्यापासूनच्या (${overdueDays} दिवस) कालावधीचे ओव्हरड्यू व्याज (Overdue Interest Expense @ ${effectiveOverdueRate}%)`,
-          amount: effOverdueInt
+          note: `मुदत संपल्यापासूनच्या (${overdueDays} दिवस) कालावधीचे ओव्हरड्यू व्याज (Overdue Interest Expense @ ${effectiveOverdueRate}%)` + (isManualOverride && customOverdueInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
+          amount: effOverdueInt,
+          isEditable: isManualOverride,
+          editKey: 'overdue'
         });
       }
 
@@ -1016,17 +946,19 @@ const FdWithdrawalMaturity: React.FC = () => {
         drCr: 'Cr',
         ledgerName: targetLiabilityLedger,
         note: `नवीन मुदत ठेव खात्यात मुद्दल जमा (${targetScheme?.schemeName || 'New FD Account'})` + (isRetroactive ? ` [सुरुवात दिनांक: ${selectedAccount.maturityDate.split('T')[0].split('-').reverse().join('/')}]` : ''),
-        amount: newDepositAmount
+        amount: newDepositAmount,
+        isBalancing: renewalType === 'PrincipalPlusInterest'
       });
 
-      if (renewalType === 'PrincipalOnly' && interestPayout > 0) {
+      if (renewalType === 'PrincipalOnly' && (interestPayout > 0 || isManualOverride)) {
         entries.push({
           drCr: 'Cr',
           ledgerName: ledgers.cashLedger,
-          note: paymentMode === 'Cash' 
+          note: (paymentMode === 'Cash' 
             ? 'केवळ व्याजाची रक्कम रोखीने अदा करणे (Interest Cash Payout)' 
-            : (paymentMode === 'Bank' ? 'व्याज बँक ट्रान्सफरने अदा करणे (Interest Bank Payout)' : 'व्याज बचत खात्यात वर्ग करणे (Interest SB Credit)'),
-          amount: interestPayout
+            : (paymentMode === 'Bank' ? 'व्याज बँक ट्रान्सफरने अदा करणे (Interest Bank Payout)' : 'व्याज बचत खात्यात वर्ग करणे (Interest SB Credit)')) + (isManualOverride ? ' [⚡ स्वयंचलित संतुलित]' : ''),
+          amount: interestPayout,
+          isBalancing: true
         });
       }
     }
@@ -1159,143 +1091,29 @@ const FdWithdrawalMaturity: React.FC = () => {
             </div>
           </div>
 
-          {/* Account Summary Card */}
+          {/* Compact Selected Account Details Strip */}
           {selectedAccount && (() => {
-            const closureDt = new Date(closureDate || todayStr);
-            closureDt.setHours(0, 0, 0, 0);
-            const matDt = new Date(selectedAccount.maturityDate);
-            matDt.setHours(0, 0, 0, 0);
-            const diffDays = Math.round((matDt.getTime() - closureDt.getTime()) / (1000 * 60 * 60 * 24));
             const hasLien = Boolean(activeLoansData?.hasActiveLoan && (activeLoansData?.totalOutstandingLiability || 0) > 0);
 
             return (
-              <div className="bg-white rounded border border-slate-300 p-3 space-y-3 shadow-2xs">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">👤</span>
-                    <div>
-                      <strong className="text-sm text-gray-900">{selectedAccount.customerName || selectedAccount.memberName}</strong>
-                      <span className="ml-2 font-mono text-[11px] text-primary font-bold">
-                        (CIF: {selectedAccount.cifNo || (selectedAccount.customerID ? `CIF-${selectedAccount.customerID}` : '-')})
-                      </span>
-                      {selectedAccount.isSeniorCitizen && (
-                        <span className="ml-2 bg-purple-100 text-purple-900 text-[10px] px-2 py-0.5 rounded font-bold border border-purple-200">
-                          👴 ज्येष्ठ नागरिक (Senior)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-xs text-gray-600">
-                      योजना: <strong className="text-blue-900">{selectedAccount.schemeName}</strong>
-                    </div>
-                    {scheduleSummary && (
-                      <button
-                        type="button"
-                        onClick={() => setIsScheduleModalOpen(true)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded shadow-2xs transition cursor-pointer"
-                        title="मुदत ठेव व्याज वेळापत्रक व संपूर्ण हिशोब तक्ता पहा"
-                      >
-                        <BookOpen className="w-3.5 h-3.5 text-blue-700" />
-                        <span>📊 व्याज वेळापत्रक तक्ता पहा</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold block">मूळ मुद्दल ठेव:</span>
-                    <strong className="text-sm font-bold text-emerald-800 font-mono">₹ {selectedAccount.depositAmount.toLocaleString()}</strong>
-                    <span className="text-[10px] text-gray-500 block">@ {selectedAccount.interestRate}% व्याजदर</span>
-                  </div>
-
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold block">मुदतपूर्ती तारीख:</span>
-                    <strong className="text-xs font-bold text-gray-900 font-mono">
-                      {selectedAccount.maturityDate.split('T')[0].split('-').reverse().join('/')}
-                    </strong>
-                    <span className="text-[10px] text-gray-500 block">
-                      सुरुवात: {selectedAccount.openingDate.split('T')[0].split('-').reverse().join('/')}
-                    </span>
-                  </div>
-
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold block">खाते परिपक्वता स्थिती:</span>
-                    {diffDays > 0 ? (
-                      <span className="text-[11px] font-bold text-amber-900 bg-amber-100/80 px-2 py-0.5 rounded border border-amber-300 inline-block mt-0.5">
-                        ⏳ मुदतपूर्व (आणखी {diffDays} दिवस बाकी)
-                      </span>
-                    ) : diffDays === 0 ? (
-                      <span className="text-[11px] font-bold text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 inline-block mt-0.5">
-                        ✅ आज मुदतपूर्ण (Matured Today)
-                      </span>
-                    ) : (
-                      <span className="text-[11px] font-bold text-orange-950 bg-orange-100 px-2 py-0.5 rounded border border-orange-300 inline-block mt-0.5">
-                        ⚠️ मुदत संपलेली (Overdue by {Math.abs(diffDays)} दिवस)
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200">
-                    <span className="text-[10px] text-gray-500 uppercase font-bold block">कर्ज तारण / येणे बाकी:</span>
-                    {hasLien ? (
-                      <div className="flex items-center justify-between gap-1 mt-0.5">
-                        <span className="text-[11px] font-bold text-red-800 bg-red-100 px-1.5 py-0.5 rounded border border-red-200">
-                          ⚖️ ₹ {(activeLoansData?.totalOutstandingLiability || 0).toLocaleString()} येणे
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowLoanDetails(!showLoanDetails)}
-                          className="text-[10px] font-bold text-blue-700 hover:underline cursor-pointer"
-                        >
-                          {showLoanDetails ? 'लपवा ▲' : 'तपशील पहा ▼'}
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 inline-block mt-0.5">
-                        🛡️ कर्ज निरंक (No Debt)
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Collapsible Loan Breakdown Table */}
-                {showLoanDetails && hasLien && activeLoansData && (
-                  <div className="mt-2 p-2.5 bg-amber-50/70 border border-amber-200 rounded space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-amber-950 text-xs">सक्रिय कर्ज खाती तपशील (Active Loans for Lien Set-Off)</span>
-                      <span className="text-[10px] font-mono font-bold text-amber-900">
-                        एकूण कर्ज बाकी: ₹ {activeLoansData.totalOutstandingLiability.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div className="overflow-x-auto border border-amber-200 rounded bg-white">
-                      <table className="w-full text-left border-collapse text-[11px]">
-                        <thead>
-                          <tr className="bg-amber-100/60 border-b border-amber-200 text-amber-900 font-bold">
-                            <th className="p-1.5">कर्ज खाते क्र.</th>
-                            <th className="p-1.5">कर्ज प्रकार</th>
-                            <th className="p-1.5 text-right">मुद्दल बाकी</th>
-                            <th className="p-1.5 text-right">व्याज बाकी</th>
-                            <th className="p-1.5 text-right">दंड व्याज</th>
-                            <th className="p-1.5 text-right">एकूण येणे</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {activeLoansData.loans.map((ln) => (
-                            <tr key={ln.loanAccountId} className="border-b last:border-0 border-amber-100">
-                              <td className="p-1.5 font-bold font-mono text-gray-900">{ln.loanAccountNo}</td>
-                              <td className="p-1.5 text-gray-700">{ln.loanType}</td>
-                              <td className="p-1.5 text-right font-mono">₹ {ln.principalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                              <td className="p-1.5 text-right font-mono">₹ {ln.interestBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                              <td className="p-1.5 text-right font-mono text-amber-700">₹ {ln.overdueInterestBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                              <td className="p-1.5 text-right font-mono font-bold text-red-700">₹ {ln.totalDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+              <div className="bg-white rounded border border-slate-300 px-3 py-2 flex flex-wrap items-center gap-2 shadow-2xs">
+                <span className="text-sm">👤</span>
+                <strong className="text-xs text-gray-900">{selectedAccount.customerName || selectedAccount.memberName}</strong>
+                <span className="font-mono text-[11px] text-primary font-bold">
+                  (CIF: {selectedAccount.cifNo || (selectedAccount.customerID ? `CIF-${selectedAccount.customerID}` : '-')})
+                </span>
+                <span className="text-[11px] text-gray-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                  योजना: <strong className="text-blue-900">{selectedAccount.schemeName}</strong>
+                </span>
+                {selectedAccount.isSeniorCitizen && (
+                  <span className="bg-purple-100 text-purple-900 text-[10px] px-1.5 py-0.5 rounded font-bold border border-purple-200">
+                    👴 ज्येष्ठ नागरिक
+                  </span>
+                )}
+                {hasLien && (
+                  <span className="bg-amber-50 text-amber-900 text-[10px] px-2 py-0.5 rounded font-bold border border-amber-200 flex items-center gap-1">
+                    ℹ️ सक्रिय कर्ज बाकी: ₹ {(activeLoansData?.totalOutstandingLiability || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (बचत खात्यातून कर्ज वसुली करावी)
+                  </span>
                 )}
               </div>
             );
@@ -1396,7 +1214,7 @@ const FdWithdrawalMaturity: React.FC = () => {
           <div className="bg-slate-50/70 p-3.5 rounded border border-slate-200 space-y-4">
             <h2 className="text-xs font-bold text-primary flex items-center gap-2 uppercase tracking-wide">
               <span className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold">३</span>
-              <span>परतावा, समायोजन व पेमेंट तपशील (Settlement & Payment Details)</span>
+              <span>परतावा व पेमेंट तपशील (Payout & Payment Details)</span>
             </h2>
 
             {/* A: Premature Close Calculation Card */}
@@ -1704,70 +1522,70 @@ const FdWithdrawalMaturity: React.FC = () => {
                   </div>
                 </div>
 
-                {showInlineSchedule && (
-                  <div className="p-3 space-y-3 bg-slate-50/50">
-                    {/* Reconciled Summary Highlights */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                      <div className="bg-white p-2 rounded border border-slate-200">
-                        <span className="text-[10px] text-gray-500 uppercase font-bold block">ठेव मुद्दल (Principal):</span>
-                        <strong className="text-sm font-bold text-gray-900 font-mono">
-                          ₹ {selectedAccount.depositAmount.toLocaleString()}
-                        </strong>
-                      </div>
-                      <div className="bg-white p-2 rounded border border-slate-200">
-                        <span className="text-[10px] text-gray-500 uppercase font-bold block">करारानुसार देय व्याज:</span>
-                        <strong className="text-sm font-bold text-blue-900 font-mono">
-                          + ₹ {scheduleSummary.totalInterest.toLocaleString()}
-                        </strong>
-                      </div>
-                      <div className="bg-white p-2 rounded border border-slate-200">
-                        <span className="text-[10px] text-gray-500 uppercase font-bold block">
-                          {isOverdue ? `ओव्हरड्यू व्याज (${overdueDays} दिवस @ ${effectiveOverdueRate}%):` : 'ओव्हरड्यू व्याज:'}
-                        </span>
-                        <strong className={`text-sm font-bold font-mono ${isOverdue && overdueInterest > 0 ? 'text-amber-800' : 'text-gray-500'}`}>
-                          {isOverdue && overdueInterest > 0 ? `+ ₹ ${overdueInterest.toLocaleString()}` : '₹ ०.००'}
-                        </strong>
-                      </div>
-                      <div className="bg-emerald-50 p-2 rounded border border-emerald-300">
-                        <span className="text-[10px] text-emerald-900 uppercase font-bold block">
-                          {actionType === 'PrematureClose' ? 'एकूण मुदतपूर्व परतावा:' : 'एकूण अंतिम देय परतावा:'}
-                        </span>
-                        <strong className="text-base font-black text-emerald-950 font-mono">
-                          ₹ {getTotalFdPayout().toLocaleString()}
-                        </strong>
-                      </div>
+                <div className="p-3 space-y-3 bg-slate-50/50">
+                  {/* Reconciled Summary Highlights */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                    <div className="bg-white p-2 rounded border border-slate-200">
+                      <span className="text-[10px] text-gray-500 uppercase font-bold block">ठेव मुद्दल (Principal):</span>
+                      <strong className="text-sm font-bold text-gray-900 font-mono">
+                        ₹ {selectedAccount.depositAmount.toLocaleString()}
+                      </strong>
                     </div>
+                    <div className="bg-white p-2 rounded border border-slate-200">
+                      <span className="text-[10px] text-gray-500 uppercase font-bold block">करारानुसार देय व्याज:</span>
+                      <strong className="text-sm font-bold text-blue-900 font-mono">
+                        + ₹ {scheduleSummary.totalInterest.toLocaleString()}
+                      </strong>
+                    </div>
+                    <div className="bg-white p-2 rounded border border-slate-200">
+                      <span className="text-[10px] text-gray-500 uppercase font-bold block">
+                        {isOverdue ? `ओव्हरड्यू व्याज (${overdueDays} दिवस @ ${effectiveOverdueRate}%):` : 'ओव्हरड्यू व्याज:'}
+                      </span>
+                      <strong className={`text-sm font-bold font-mono ${isOverdue && overdueInterest > 0 ? 'text-amber-800' : 'text-gray-500'}`}>
+                        {isOverdue && overdueInterest > 0 ? `+ ₹ ${overdueInterest.toLocaleString()}` : '₹ ०.००'}
+                      </strong>
+                    </div>
+                    <div className="bg-emerald-50 p-2 rounded border border-emerald-300">
+                      <span className="text-[10px] text-emerald-900 uppercase font-bold block">
+                        {actionType === 'PrematureClose' ? 'एकूण मुदतपूर्व परतावा:' : 'एकूण अंतिम देय परतावा:'}
+                      </span>
+                      <strong className="text-base font-black text-emerald-950 font-mono">
+                        ₹ {getTotalFdPayout().toLocaleString()}
+                      </strong>
+                    </div>
+                  </div>
 
-                    {/* Premature Close Comparison Banner if Premature */}
-                    {actionType === 'PrematureClose' && (() => {
-                      const principal = selectedAccount.depositAmount;
-                      const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
-                      const ledgers = getSchemeLedgers();
-                      const prematureRate = ledgers?.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
-                      const recalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
-                      const alreadyAccrued = selectedAccount.legacyAccruedInt || 0;
-                      const clawback = alreadyAccrued > recalcInt ? (alreadyAccrued - recalcInt) : 0;
+                  {/* Premature Close Comparison Banner if Premature */}
+                  {actionType === 'PrematureClose' && (() => {
+                    const principal = selectedAccount.depositAmount;
+                    const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
+                    const ledgers = getSchemeLedgers();
+                    const prematureRate = ledgers?.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
+                    const recalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
+                    const alreadyAccrued = selectedAccount.legacyAccruedInt || 0;
+                    const clawback = alreadyAccrued > recalcInt ? (alreadyAccrued - recalcInt) : 0;
 
-                      return (
-                        <div className="p-2.5 bg-amber-50 border border-amber-300 rounded text-xs space-y-1">
-                          <div className="flex items-center gap-1.5 font-bold text-amber-950">
-                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span>⚠️ मुदतपूर्व बंद हिशोब पुनर्गणना (Premature Closure Recalculation):</span>
-                          </div>
-                          <p className="text-[11px] text-amber-900">
-                            ठेवीदाराने करार मुदत ({formatDateDisplay(selectedAccount.maturityDate)}) पूर्ण न करता {actualDays} दिवसांतच ठेव बंद केली आहे. 
-                            नियमानुसार नियमित दर {selectedAccount.interestRate}% ऐवजी मुदतपूर्व सवलत दर <b>{prematureRate}%</b> लागू केला आहे.
-                          </p>
-                          <div className="flex flex-wrap items-center gap-4 text-[11px] font-semibold text-amber-950 pt-1 border-t border-amber-200">
-                            <span>पुनर्गणित व्याज: <b>₹ {recalcInt.toLocaleString()}</b></span>
-                            <span>लेजरमध्ये साचलेली तरतूद: <b>₹ {alreadyAccrued.toLocaleString()}</b></span>
-                            {clawback > 0 && <span className="text-red-700">P&L रिव्हर्सल / कपात: <b>₹ {clawback.toLocaleString()}</b></span>}
-                          </div>
+                    return (
+                      <div className="p-2.5 bg-amber-50 border border-amber-300 rounded text-xs space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>⚠️ मुदतपूर्व बंद हिशोब पुनर्गणना (Premature Closure Recalculation):</span>
                         </div>
-                      );
-                    })()}
+                        <p className="text-[11px] text-amber-900">
+                          ठेवीदाराने करार मुदत ({formatDateDisplay(selectedAccount.maturityDate)}) पूर्ण न करता {actualDays} दिवसांतच ठेव बंद केली आहे. 
+                          नियमानुसार नियमित दर {selectedAccount.interestRate}% ऐवजी मुदतपूर्व सवलत दर <b>{prematureRate}%</b> लागू केला आहे.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-4 text-[11px] font-semibold text-amber-950 pt-1 border-t border-amber-200">
+                          <span>पुनर्गणित व्याज: <b>₹ {recalcInt.toLocaleString()}</b></span>
+                          <span>लेजरमध्ये साचलेली तरतूद: <b>₹ {alreadyAccrued.toLocaleString()}</b></span>
+                          {clawback > 0 && <span className="text-red-700">P&L रिव्हर्सल / कपात: <b>₹ {clawback.toLocaleString()}</b></span>}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
-                    {/* Amortization Table */}
+                  {/* Collapsible Amortization Table */}
+                  {showInlineSchedule && (
                     <div className="border border-slate-200 rounded overflow-hidden bg-white shadow-2xs">
                       <div className="overflow-x-auto max-h-80">
                         <table className="w-full text-xs text-left border-collapse">
@@ -1896,219 +1714,23 @@ const FdWithdrawalMaturity: React.FC = () => {
                         </table>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
 
-            {/* D: LIEN RECOVERY & LOAN SET-OFF (Clean, Consolidated Box) */}
+            {/* Informative Note for Active Loans if any */}
             {(actionType === 'MaturityClose' || actionType === 'PrematureClose') && activeLoansData?.hasActiveLoan && (
-              <div className="bg-amber-50/90 border-2 border-amber-300 rounded p-3.5 space-y-3 shadow-2xs">
-                <div className="flex items-center justify-between border-b border-amber-300 pb-2">
-                  <div className="flex items-center gap-2">
-                    <Scale className="w-5 h-5 text-amber-700 shrink-0" />
-                    <h3 className="text-xs font-bold text-amber-950 uppercase tracking-wide">
-                      कर्ज तारण संरक्षण व परतावा समायोजन (Lien Recovery & Loan Set-Off)
-                    </h3>
-                  </div>
-                  <span className="text-[10px] font-bold bg-amber-200 text-amber-950 px-2 py-0.5 rounded border border-amber-300 font-mono">
-                    एकूण येणे बाकी: ₹ {activeLoansData.totalOutstandingLiability.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-
-                <div className="bg-white p-2.5 rounded border border-amber-200 flex items-center justify-between">
-                  <label className="flex items-center gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={adjustInLoan}
-                      onChange={(e) => setAdjustInLoan(e.target.checked)}
-                      className="w-4 h-4 text-primary rounded border-gray-300 focus:ring-primary cursor-pointer"
-                    />
-                    <div>
-                      <span className="font-bold text-gray-900 text-xs block">
-                        मुदत ठेवीची रक्कम थकीत कर्जात वर्ग करा (Statutory Lien Set-Off)
-                      </span>
-                      <span className="text-[11px] text-amber-900 font-medium block">
-                        {adjustInLoan 
-                          ? '✅ कर्ज वजावट सक्षम आहे. मुदत ठेवीचा परतावा प्रथम थकीत कर्ज फेडण्यासाठी वापरला जाईल.' 
-                          : '⚠️ कर्ज वजावट पर्याय बंद ठेवल्यास नियमानुसार मुदत ठेव बंद करता येणार नाही.'}
-                      </span>
-                    </div>
-                  </label>
-                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-300 shrink-0">
-                    🛡️ वैधानिक तारण सुरक्षा
-                  </span>
-                </div>
-
-                {adjustInLoan && (
-                  <div className="space-y-3">
-                    <div>
-                      <label className={labelClass}>जमा करण्यासाठी कर्ज खाते निवडा (Target Loan Account) *</label>
-                      <select
-                        value={selectedLoanId}
-                        onChange={(e) => setSelectedLoanId(parseInt(e.target.value))}
-                        className="w-full text-xs font-bold border border-amber-400 bg-white rounded-sm px-2.5 py-1.5 focus:outline-none focus:border-primary text-gray-900 shadow-2xs"
-                      >
-                        {activeLoansData.loans.map((ln) => (
-                          <option key={ln.loanAccountId} value={ln.loanAccountId}>
-                            {ln.loanAccountNo} - {ln.loanType} | एकूण बाकी: ₹{ln.totalDue.toLocaleString()} (मुद्दल: ₹{ln.principalBalance.toLocaleString()}, नियमित व्याज: ₹{ln.interestBalance.toLocaleString()}{ln.overdueInterestBalance > 0 ? `, दंड: ₹${ln.overdueInterestBalance.toLocaleString()}` : ''})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {(() => {
-                      const totalPayout = getTotalFdPayout();
-                      const targetLoan = activeLoansData.loans.find(l => l.loanAccountId === selectedLoanId);
-                      const maxAdjustable = targetLoan ? Math.min(totalPayout, targetLoan.totalDue) : 0;
-                      const actualAdjust = Math.min(loanAdjustAmount, maxAdjustable);
-                      const surplus = Math.max(0, totalPayout - actualAdjust);
-                      const remLoanDue = targetLoan ? Math.max(0, targetLoan.totalDue - actualAdjust) : 0;
-
-                      return (
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-white p-2.5 rounded border border-amber-200 text-xs">
-                            <div>
-                              <span className="text-gray-500 block text-[10px] font-semibold uppercase">१. एकूण FD परतावा:</span>
-                              <strong className="font-mono text-gray-900 text-sm">₹ {totalPayout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 block text-[10px] font-semibold uppercase">२. कर्ज खात्यात जमा:</span>
-                              <strong className="font-mono text-emerald-800 text-sm font-black">- ₹ {actualAdjust.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 block text-[10px] font-semibold uppercase">३. ग्राहकास शिल्लक:</span>
-                              <strong className={`font-mono text-sm font-black ${surplus > 0 ? 'text-primary' : 'text-gray-400'}`}>
-                                ₹ {surplus.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </strong>
-                            </div>
-                            <div className="bg-amber-50 p-1.5 rounded border border-amber-200">
-                              <span className="text-amber-900 block text-[10px] font-bold uppercase">कर्ज उर्वरित बाकी:</span>
-                              <strong className={`font-mono text-xs font-black ${remLoanDue === 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                                {remLoanDue === 0 ? '₹ ०.०० (खाते निरंक / CLOSED)' : `₹ ${remLoanDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
-                              </strong>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-3 bg-amber-100/60 p-2 rounded border border-amber-200">
-                            <label className="text-[11px] font-bold text-gray-800 shrink-0">
-                              कर्जात वर्ग करावयाची रक्कम (Amount to Adjust ₹):
-                            </label>
-                            <input
-                              type="number"
-                              min={1}
-                              max={maxAdjustable}
-                              value={loanAdjustAmount}
-                              onChange={(e) => setLoanAdjustAmount(Math.min(maxAdjustable, Math.max(0, parseFloat(e.target.value) || 0)))}
-                              className="w-36 font-mono font-bold text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:border-primary"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setLoanAdjustAmount(maxAdjustable)}
-                              className="text-[10px] font-bold text-amber-900 bg-amber-200 hover:bg-amber-300 px-2.5 py-1 rounded transition cursor-pointer"
-                            >
-                              संपूर्ण परतावा कर्जात जमा करा (Max: ₹ {maxAdjustable.toLocaleString()})
-                            </button>
-                          </div>
-
-                          {/* Surplus Payment Mode if Surplus exists */}
-                          {surplus > 0 && (
-                            <div className="bg-emerald-50/70 p-3 rounded border border-emerald-300 space-y-2.5">
-                              <div className="flex items-center justify-between border-b border-emerald-200 pb-1">
-                                <span className="font-bold text-emerald-950 text-xs">
-                                  शिल्लक रक्कम परतावा पद्धत (Surplus Payout — ₹ {surplus.toLocaleString('en-IN', { minimumFractionDigits: 2 })})
-                                </span>
-                                <span className="text-[10px] font-bold bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded">
-                                  शिल्लक परतावा
-                                </span>
-                              </div>
-
-                              <div>
-                                <select
-                                  value={surplusPaymentMode}
-                                  onChange={(e) => setSurplusPaymentMode(e.target.value as 'Cash' | 'Bank' | 'Transfer')}
-                                  className="w-full text-xs border border-emerald-300 rounded px-2.5 py-1.5 font-semibold text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
-                                >
-                                  <option value="Cash">💵 रोख (Cash)</option>
-                                  <option value="Bank">🏦 बँक (Bank)</option>
-                                  <option value="Transfer">🔄 बचत खात्यात वर्ग (Saving Account Transfer)</option>
-                                </select>
-                              </div>
-
-                              {surplusPaymentMode === 'Transfer' && (
-                                <div>
-                                  <label className={labelClass}>बचत खाते निवडा *</label>
-                                  {memberSavingAccounts.length > 0 ? (
-                                    <select
-                                      value={surplusSavingAccountId}
-                                      onChange={(e) => setSurplusSavingAccountId(e.target.value === '' ? '' : parseInt(e.target.value))}
-                                      className="w-full border border-indigo-300 px-2.5 py-1.5 rounded-sm text-xs bg-white font-bold text-indigo-950"
-                                    >
-                                      {memberSavingAccounts.map((acc) => (
-                                        <option key={acc.savingAccountID} value={acc.savingAccountID}>
-                                          {acc.accountNo} | चालू शिल्लक: ₹{acc.currentBalance.toFixed(2)}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <div className="text-[11px] text-red-600 font-bold bg-white p-1.5 rounded border border-red-200">
-                                      बचत खाते उपलब्ध नाही. रोख किंवा बँक निवडा.
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {surplusPaymentMode === 'Bank' && (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 bg-white p-2 rounded border border-emerald-200">
-                                  <div>
-                                    <label className="block text-[10px] font-bold text-gray-700 mb-0.5">बँक लेजर निवडा *</label>
-                                    <SearchableSelect
-                                      options={bankLedgers.map(b => ({
-                                        value: b.ledgerID.toString(),
-                                        label: `${b.ledgerID} - ${b.ledgerName} (${b.accountType || 'Bank'})`
-                                      }))}
-                                      value={surplusBankLedgerID.toString()}
-                                      onChange={(val: any) => {
-                                        const v = typeof val === 'object' && val?.target ? val.target.value : val;
-                                        setSurplusBankLedgerID(parseInt(String(v || 0)));
-                                      }}
-                                      placeholder="बँक खाते शोधा..."
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-[10px] font-bold text-gray-700 mb-0.5">धनादेश क्र.</label>
-                                    <input
-                                      type="text"
-                                      value={surplusChequeNo}
-                                      onChange={(e) => setSurplusChequeNo(e.target.value)}
-                                      placeholder="उदा. 123456"
-                                      className="w-full border border-gray-300 px-2 py-1 rounded text-xs"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-[10px] font-bold text-gray-700 mb-0.5">धनादेश तारीख</label>
-                                    <input
-                                      type="date"
-                                      value={surplusChequeDate}
-                                      onChange={(e) => setSurplusChequeDate(e.target.value)}
-                                      className="w-full border border-gray-300 px-2 py-1 rounded text-xs"
-                                    />
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
+              <div className="bg-blue-50 border border-blue-200 rounded p-2.5 text-xs text-blue-900 flex items-center gap-2">
+                <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>
+                  <b>सूचना:</b> या खातेदाराकडे एकूण ₹{(activeLoansData.totalOutstandingLiability || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} चे सक्रिय कर्ज बाकी आहे. मुदत ठेवीचा परतावा <u>'बचत खात्यात वर्ग (Transfer)'</u> करून नंतर <b>कर्ज वसुली (Loan Collection)</b> मधून हप्ता भरावा.
+                </span>
               </div>
             )}
 
-            {/* E: STANDARD PAYMENT MODE (When no active debt or Renewal PrincipalOnly) */}
-            {(!activeLoansData?.hasActiveLoan || !adjustInLoan || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) &&
-              (actionType === 'MaturityClose' || actionType === 'PrematureClose' || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && (
+            {/* E: STANDARD PAYMENT MODE */}
+            {(actionType === 'MaturityClose' || actionType === 'PrematureClose' || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && (
               <div className="bg-white p-3.5 rounded border border-slate-300 space-y-3 shadow-2xs">
                 <div>
                   <label className={labelClass}>
@@ -2263,6 +1885,123 @@ const FdWithdrawalMaturity: React.FC = () => {
               </div>
             </div>
 
+            {/* Manual Override Controls Banner */}
+            <div className="bg-amber-50/90 border border-amber-300 rounded p-2.5 space-y-2 shadow-2xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isManualOverride}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setIsManualOverride(checked);
+                      if (checked) {
+                        if (actionType === 'PrematureClose') {
+                          if (!customPrematureInterest) {
+                            const principal = selectedAccount.depositAmount;
+                            const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
+                            const ledgers = getSchemeLedgers();
+                            const prematureRate = ledgers?.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
+                            const systemRecalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
+                            setCustomPrematureInterest(systemRecalcInt.toString());
+                          }
+                        } else {
+                          if (!customAccruedInterest) {
+                            const principal = selectedAccount.depositAmount;
+                            const totalMaturity = selectedAccount.maturityAmount && selectedAccount.maturityAmount > selectedAccount.depositAmount
+                              ? selectedAccount.maturityAmount
+                              : (selectedAccount.depositAmount + (selectedAccount.legacyAccruedInt || 0));
+                            const systemAccruedInt = Math.max(0, totalMaturity - principal);
+                            setCustomAccruedInterest(systemAccruedInt.toString());
+                          }
+                          if (isOverdue && !customOverdueInterest) {
+                            setCustomOverdueInterest(overdueInterest.toString());
+                          }
+                        }
+                      }
+                    }}
+                    className="w-4 h-4 text-amber-600 rounded border-amber-400 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <div>
+                    <span className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
+                      <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                      संस्थेच्या जुन्या नोंदीनुसार रक्कम संपादित करा (Manual Amount Override)
+                    </span>
+                    <span className="text-[11px] text-amber-800 block">
+                      (गो-लाईव्ह पूर्वी संस्थेने मॅन्युअल हिशोबानुसार व्याज किंवा परतावा दिला असल्यास व्हाऊचर जुळवण्यासाठी रक्कम बदला)
+                    </span>
+                  </div>
+                </label>
+
+                {isManualOverride && (
+                  <button
+                    type="button"
+                    onClick={handleResetManualOverride}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-900 bg-white hover:bg-amber-100 border border-amber-300 rounded shadow-2xs transition cursor-pointer"
+                    title="सिस्टीमने केलेल्या स्वयंचलित गणनेवर पूर्ववत करा"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    पूर्ववत करा (Reset to Auto)
+                  </button>
+                )}
+              </div>
+
+              {/* Quick editable values strip when manual override is enabled */}
+              {isManualOverride && (
+                <div className="bg-white/80 border border-amber-200 rounded p-2 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                    <Info className="w-3.5 h-3.5 text-amber-700" />
+                    <span>व्हाऊचरमधील व्याजाची रक्कम बदला (खालील टेबलमध्ये परतावा आपोआप समतोल होईल):</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {actionType === 'PrematureClose' ? (
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-[11px] font-bold text-gray-700">मुदतपूर्व व्याज (₹):</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={customPrematureInterest}
+                          onChange={(e) => setCustomPrematureInterest(e.target.value)}
+                          placeholder="0.00"
+                          className="w-28 text-right font-mono font-bold text-xs bg-amber-50 border border-amber-400 rounded px-2 py-1 text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-inner"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-[11px] font-bold text-gray-700">देणे व्याज (₹):</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={customAccruedInterest}
+                            onChange={(e) => setCustomAccruedInterest(e.target.value)}
+                            placeholder="0.00"
+                            className="w-28 text-right font-mono font-bold text-xs bg-amber-50 border border-amber-400 rounded px-2 py-1 text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-inner"
+                          />
+                        </div>
+                        {isOverdue && (
+                          <div className="flex items-center gap-1.5">
+                            <label className="text-[11px] font-bold text-gray-700">ओव्हरड्यू व्याज (₹):</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={customOverdueInterest}
+                              onChange={(e) => setCustomOverdueInterest(e.target.value)}
+                              placeholder="0.00"
+                              className="w-28 text-right font-mono font-bold text-xs bg-amber-50 border border-amber-400 rounded px-2 py-1 text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-inner"
+                            />
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {showVoucherPreview && (
               <div className="border rounded-sm overflow-hidden shadow-2xs bg-white">
                 <table className="w-full text-left border-collapse text-xs">
@@ -2271,7 +2010,7 @@ const FdWithdrawalMaturity: React.FC = () => {
                       <th className="p-2 w-16 text-center">प्रकार (Dr/Cr)</th>
                       <th className="p-2">लेजर खाते (Ledger Account)</th>
                       <th className="p-2">लेखांकन कारण / शेरा (Particulars)</th>
-                      <th className="p-2 text-right w-28">रक्कम (Amount ₹)</th>
+                      <th className="p-2 text-right w-36">रक्कम (Amount ₹)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2287,12 +2026,103 @@ const FdWithdrawalMaturity: React.FC = () => {
                         <td className="p-2 font-bold text-gray-900">{entry.ledgerName}</td>
                         <td className="p-2 text-gray-600 text-[11px]">{entry.note}</td>
                         <td className="p-2 text-right font-mono font-bold text-gray-900">
-                          ₹ {entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {entry.isEditable ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-1 py-0.5 rounded border border-amber-200">
+                                ✍️
+                              </span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={entry.editKey === 'overdue' ? customOverdueInterest : (actionType === 'PrematureClose' ? customPrematureInterest : customAccruedInterest)}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (entry.editKey === 'overdue') setCustomOverdueInterest(val);
+                                  else if (actionType === 'PrematureClose') setCustomPrematureInterest(val);
+                                  else setCustomAccruedInterest(val);
+                                }}
+                                className="w-24 text-right font-mono font-bold text-xs bg-amber-50 border border-amber-400 rounded px-1.5 py-0.5 text-gray-900 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-inner"
+                              />
+                            </div>
+                          ) : entry.isLockedPrincipal ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="text-[9px] text-slate-500 font-normal bg-slate-100 px-1 py-0.5 rounded border border-slate-200 flex items-center gap-0.5">
+                                <Lock className="w-2.5 h-2.5" /> स्थिर
+                              </span>
+                              <span>₹ {entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </div>
+                          ) : entry.isBalancing && isManualOverride ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="text-[9px] text-emerald-800 font-medium bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
+                                ⚡ संतुलित
+                              </span>
+                              <span>₹ {entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </div>
+                          ) : (
+                            <span>₹ {entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          )}
                         </td>
                       </tr>
                     ))}
                   </tbody>
+                  {(() => {
+                    const totalDr = voucherPreview.filter(e => e.drCr === 'Dr').reduce((s, e) => s + e.amount, 0);
+                    const totalCr = voucherPreview.filter(e => e.drCr === 'Cr').reduce((s, e) => s + e.amount, 0);
+                    const isBalanced = Math.abs(totalDr - totalCr) < 0.01;
+                    return (
+                      <tfoot className="bg-slate-100 border-t-2 border-slate-300 font-bold text-xs">
+                        <tr>
+                          <td colSpan={3} className="p-2 text-right text-gray-700">
+                            एकूण व्हाऊचर बेरीज (Voucher Totals):
+                          </td>
+                          <td className="p-2 text-right font-mono whitespace-nowrap">
+                            <div className="space-y-0.5 text-[11px]">
+                              <div className="text-blue-900">Dr: ₹ {totalDr.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                              <div className="text-emerald-900">Cr: ₹ {totalCr.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr className={isBalanced ? 'bg-emerald-50/80 text-emerald-900' : 'bg-red-50 text-red-900'}>
+                          <td colSpan={4} className="p-2 text-center text-xs font-bold">
+                            {isBalanced ? (
+                              <span className="inline-flex items-center gap-1.5 text-emerald-800">
+                                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>✅ द्विनोंद पद्धतीनुसार व्हाऊचर तंतोतंत संतुलित आहे (Total Dr == Total Cr)</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 text-red-800">
+                                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                                <span>⚠️ व्हाऊचर असंतुलित आहे! फरक: ₹{Math.abs(totalDr - totalCr).toFixed(2)}</span>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    );
+                  })()}
                 </table>
+              </div>
+            )}
+
+            {/* Mandatory Audit Reason for Manual Override */}
+            {isManualOverride && (
+              <div className="bg-amber-50/90 border border-amber-300 rounded p-3 space-y-1.5 shadow-2xs">
+                <label className="block text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  लेखांकन बदलाचे कारण / शेरा (Manual Override Reason for Audit Trail) *
+                </label>
+                <input
+                  type="text"
+                  value={manualOverrideReason}
+                  onChange={(e) => setManualOverrideReason(e.target.value)}
+                  placeholder="उदा. गो-लाईव्ह पूर्वी संस्थेने प्रत्यक्ष दिलेल्या पावती/व्हाऊचरनुसार रकमेची जुळवणी (Reconciled with Legacy Physical Voucher)"
+                  className="w-full text-xs border border-amber-400 rounded px-2.5 py-2 bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-inner"
+                  required
+                />
+                <p className="text-[11px] text-amber-800">
+                  🛡️ <b>ऑडिट सुरक्षा सूचना:</b> आपण सिस्टीमच्या स्वयंचलित गणनेत बदल करत आहात. हे कारण व्हाऊचरच्या नॅरेशन (Narration) आणि मुदत ठेव खात्याच्या शेऱ्यामध्ये (Audit Trail) कायमस्वरूपी नोंदवले जाईल.
+                </p>
               </div>
             )}
           </div>
@@ -2315,7 +2145,7 @@ const FdWithdrawalMaturity: React.FC = () => {
               isBeforeLastAccrual ||
               isFutureDate ||
               isBackdatedSavingsTransfer ||
-              (Boolean(activeLoansData?.hasActiveLoan && (activeLoansData?.totalOutstandingLiability || 0) > 0 && (actionType === 'MaturityClose' || actionType === 'PrematureClose')) && !adjustInLoan)
+              (isManualOverride && !manualOverrideReason.trim())
             }
             className={`px-5 py-2.5 rounded font-bold text-xs shadow-xs transition duration-150 flex items-center gap-2 cursor-pointer ${
               loading ||
@@ -2325,10 +2155,8 @@ const FdWithdrawalMaturity: React.FC = () => {
               isBeforeLastAccrual ||
               isFutureDate ||
               isBackdatedSavingsTransfer ||
-              (Boolean(activeLoansData?.hasActiveLoan && (activeLoansData?.totalOutstandingLiability || 0) > 0 && (actionType === 'MaturityClose' || actionType === 'PrematureClose')) && !adjustInLoan)
+              (isManualOverride && !manualOverrideReason.trim())
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : (actionType === 'MaturityClose' || actionType === 'PrematureClose') && activeLoansData?.hasActiveLoan && adjustInLoan
-                ? 'bg-amber-700 hover:bg-amber-800 text-white shadow-amber-900/20'
                 : actionType === 'PrematureClose'
                 ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-900/20'
                 : actionType === 'Renewal'
@@ -2345,9 +2173,7 @@ const FdWithdrawalMaturity: React.FC = () => {
               <>
                 <CheckCircle className="w-4 h-4" />
                 <span>
-                  {(actionType === 'MaturityClose' || actionType === 'PrematureClose') && activeLoansData?.hasActiveLoan && adjustInLoan
-                    ? `कर्ज वजावट करून ${actionType === 'MaturityClose' ? 'मुदत ठेव बंद करा (Adjust Loan & Close)' : 'मुदतपूर्व बंद करा (Adjust Loan & Premature Close)'}`
-                    : actionType === 'MaturityClose'
+                  {actionType === 'MaturityClose'
                     ? 'मुदतपूर्ती पेमेंट पूर्ण करा (Process Maturity Payout)'
                     : actionType === 'PrematureClose'
                     ? 'मुदतपूर्व बंद व पेआउट करा (Process Premature Close)'

@@ -881,9 +881,7 @@ namespace Bhisi.Api.Controllers
                 MemberCode = string.IsNullOrWhiteSpace(req.MemberCode) ? null : req.MemberCode.Trim(),
                 JoiningDate = req.JoiningDate == default ? DateTime.Today : req.JoiningDate,
                 Status = string.IsNullOrWhiteSpace(req.Status) ? "Active" : req.Status.Trim(),
-                MembershipType = string.IsNullOrWhiteSpace(req.MembershipType) 
-                    ? (string.IsNullOrWhiteSpace(req.MemberCode) ? "Nominal" : "Regular") 
-                    : req.MembershipType.Trim(),
+                MembershipType = "Regular",
                 LegacyMemberNo = req.LegacyMemberNo,
                 CreatedBy = userId,
                 CreatedOn = DateTime.Now,

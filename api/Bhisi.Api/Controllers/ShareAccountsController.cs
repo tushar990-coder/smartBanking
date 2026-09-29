@@ -243,33 +243,7 @@ namespace Bhisi.Api.Controllers
                 // Assign official Member Code (MEM0001 format) upon Share Allotment if missing
                 if (string.IsNullOrWhiteSpace(member.MemberCode) || member.MemberCode.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase))
                 {
-                    var existingCodes = await _context.Members
-                        .AsNoTracking()
-                        .Where(m => !string.IsNullOrEmpty(m.MemberCode))
-                        .Select(m => m.MemberCode)
-                        .ToListAsync();
-
-                    int maxCodeNum = 0;
-                    foreach (var code in existingCodes)
-                    {
-                        if (string.IsNullOrEmpty(code)) continue;
-                        var trimmed = code.Trim();
-                        if (trimmed.StartsWith("MEM", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var digits = new string(trimmed.Substring(3).Where(char.IsDigit).ToArray());
-                            if (int.TryParse(digits, out int num) && num > maxCodeNum) maxCodeNum = num;
-                        }
-                    }
-
-                    int nextNum = maxCodeNum + 1;
-                    string candidateCode = $"MEM{nextNum:D4}";
-                    while (existingCodes.Any(c => string.Equals(c, candidateCode, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        nextNum++;
-                        candidateCode = $"MEM{nextNum:D4}";
-                    }
-
-                    member.MemberCode = candidateCode;
+                    member.MemberCode = await GenerateNextMemberCodeAsync(member.LegacyMemberNo ?? request.LegacyMemberNo);
                     member.MembershipType = "Regular";
                     _context.Entry(member).State = EntityState.Modified;
                 }
@@ -923,6 +897,62 @@ namespace Bhisi.Api.Controllers
             public int? DividendPayableLedgerId { get; set; }
         }
 
+        private async Task<string> GenerateNextMemberCodeAsync(string? legacyMemberNo = null)
+        {
+            // 1. If legacy member number is provided and numeric, bind to it if available
+            if (!string.IsNullOrWhiteSpace(legacyMemberNo))
+            {
+                var digits = new string(legacyMemberNo.Trim().Where(char.IsDigit).ToArray());
+                if (int.TryParse(digits, out int legNum) && legNum > 0)
+                {
+                    string legCandidate = $"MEM{legNum:D4}";
+                    bool exists = await _context.Members.AsNoTracking().AnyAsync(m => m.MemberCode == legCandidate);
+                    if (!exists)
+                    {
+                        return legCandidate;
+                    }
+                }
+            }
+
+            // 2. Otherwise for brand new member, take MAX + 1 strictly from existing valid MemberCodes
+            var shareholderCodes = await _context.Members
+                .AsNoTracking()
+                .Where(m => !string.IsNullOrEmpty(m.MemberCode))
+                .Select(m => m.MemberCode)
+                .ToListAsync();
+
+            int maxCodeNum = 0;
+            foreach (var code in shareholderCodes)
+            {
+                if (string.IsNullOrEmpty(code)) continue;
+                var trimmed = code.Trim();
+                if (trimmed.StartsWith("MEM", StringComparison.OrdinalIgnoreCase))
+                {
+                    var digits = new string(trimmed.Substring(3).Where(char.IsDigit).ToArray());
+                    if (int.TryParse(digits, out int num) && num > maxCodeNum)
+                    {
+                        maxCodeNum = num;
+                    }
+                }
+            }
+
+            if (maxCodeNum == 0)
+            {
+                maxCodeNum = await _context.ShareAccounts.CountAsync(sa => sa.TotalShareCount > 0);
+            }
+
+            int nextNum = maxCodeNum + 1;
+            string candidateCode = $"MEM{nextNum:D4}";
+
+            while (shareholderCodes.Any(c => string.Equals(c?.Trim(), candidateCode, StringComparison.OrdinalIgnoreCase)))
+            {
+                nextNum++;
+                candidateCode = $"MEM{nextNum:D4}";
+            }
+
+            return candidateCode;
+        }
+
         [AllowAnonymous]
         [HttpGet("NextShareConfig")]
         [HttpGet("NextRange")]
@@ -934,31 +964,7 @@ namespace Bhisi.Api.Controllers
                 var maxToShareNo = await _context.ShareCertificates.MaxAsync(c => (int?)c.ToShareNo) ?? 0;
                 var nextFromShareNo = maxToShareNo + 1;
 
-                var shareholderCodes = await _context.Members
-                    .AsNoTracking()
-                    .Where(m => !string.IsNullOrEmpty(m.MemberCode))
-                    .Select(m => m.MemberCode)
-                    .ToListAsync();
-
-                int maxCodeNum = 0;
-                foreach (var code in shareholderCodes)
-                {
-                    if (string.IsNullOrEmpty(code)) continue;
-                    var trimmed = code.Trim();
-                    if (trimmed.StartsWith("MEM", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var digits = new string(trimmed.Substring(3).Where(char.IsDigit).ToArray());
-                        if (int.TryParse(digits, out int num) && num > maxCodeNum) maxCodeNum = num;
-                    }
-                }
-
-                if (maxCodeNum == 0)
-                {
-                    maxCodeNum = await _context.ShareAccounts.CountAsync(sa => sa.TotalShareCount > 0);
-                }
-
-                int nextNum = maxCodeNum + 1;
-                string nextMemberCode = $"MEM{nextNum:D4}";
+                string nextMemberCode = await GenerateNextMemberCodeAsync();
 
                 var lastCert = await _context.ShareCertificates
                     .OrderByDescending(c => c.CertificateId)
@@ -1097,36 +1103,10 @@ namespace Bhisi.Api.Controllers
                     _context.Entry(member).State = EntityState.Modified;
                 }
 
-                // Assign official Member Code (MEM0001 format) upon Share Opening Balance if missing
+                // Assign official Member Code (MEM0001 format) ONLY IF MISSING (Preserve existing MemberCode on update/resave)
                 if (string.IsNullOrWhiteSpace(member.MemberCode) || member.MemberCode.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase))
                 {
-                    var shareholderCodes = await _context.Members
-                        .AsNoTracking()
-                        .Where(m => !string.IsNullOrEmpty(m.MemberCode))
-                        .Select(m => m.MemberCode)
-                        .ToListAsync();
-
-                    int maxCodeNum = 0;
-                    foreach (var code in shareholderCodes)
-                    {
-                        if (string.IsNullOrEmpty(code)) continue;
-                        var trimmed = code.Trim();
-                        if (trimmed.StartsWith("MEM", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var digits = new string(trimmed.Substring(3).Where(char.IsDigit).ToArray());
-                            if (int.TryParse(digits, out int num) && num > maxCodeNum) maxCodeNum = num;
-                        }
-                    }
-
-                    if (maxCodeNum == 0)
-                    {
-                        maxCodeNum = await _context.ShareAccounts.CountAsync(sa => sa.TotalShareCount > 0);
-                    }
-
-                    int nextNum = maxCodeNum + 1;
-                    string candidateCode = $"MEM{nextNum:D4}";
-
-                    member.MemberCode = candidateCode;
+                    member.MemberCode = await GenerateNextMemberCodeAsync(member.LegacyMemberNo ?? request.LegacyMemberNo);
                     member.MembershipType = "Regular";
                     _context.Entry(member).State = EntityState.Modified;
                 }
@@ -1472,12 +1452,9 @@ namespace Bhisi.Api.Controllers
 
                     if (string.IsNullOrWhiteSpace(member.MemberCode) || member.MemberCode.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase))
                     {
-                        string targetCode = $"MEM{member.MemberID:D4}";
-                        if (!await _context.Members.AnyAsync(m => m.MemberCode == targetCode && m.MemberID != member.MemberID))
-                        {
-                            member.MemberCode = targetCode;
-                            member.MembershipType = "Regular";
-                        }
+                        member.MemberCode = await GenerateNextMemberCodeAsync(member.LegacyMemberNo ?? request.LegacyMemberNo);
+                        member.MembershipType = "Regular";
+                        _context.Entry(member).State = EntityState.Modified;
                     }
 
                     if (!string.IsNullOrWhiteSpace(request.LegacyMemberNo))
@@ -1730,9 +1707,15 @@ namespace Bhisi.Api.Controllers
                     account.MemberId = member.MemberID;
                     account.CustomerID = cust?.CustomerID ?? member.CustomerID ?? account.CustomerID;
 
+                    // RULE: On UPDATE, NEVER overwrite or increment existing MemberCode! Preserve it.
+                    // Only if MemberCode is missing/blank, bind to LegacyMemberNo or safe sequential code.
                     if (string.IsNullOrWhiteSpace(member.MemberCode) || member.MemberCode.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase))
                     {
-                        member.MemberCode = $"MEM{member.MemberID:D4}";
+                        string? targetLeg = !string.IsNullOrWhiteSpace(request.LegacyMemberNo) 
+                            ? request.LegacyMemberNo.Trim() 
+                            : member.LegacyMemberNo?.Trim();
+
+                        member.MemberCode = await GenerateNextMemberCodeAsync(targetLeg);
                         member.MembershipType = "Regular";
                         _context.Entry(member).State = EntityState.Modified;
                     }
@@ -2094,11 +2077,8 @@ namespace Bhisi.Api.Controllers
                     }
                     else if (!hasOtherShares)
                     {
-                        // Has other accounts (e.g. saving), but no longer a shareholder. Free up the MemberCode sequence
-                        member.MemberCode = null;
-                        member.MembershipType = "Nominal";
-                        member.LegacyMemberNo = null;
-                        _context.Members.Update(member);
+                        // No longer a shareholder. Remove from Members table to keep Members table strictly for shareholders
+                        _context.Members.Remove(member);
                     }
 
                     await _context.SaveChangesAsync();
@@ -2417,33 +2397,7 @@ namespace Bhisi.Api.Controllers
                     // Generate code for toMember if missing
                     if (string.IsNullOrWhiteSpace(toMember.MemberCode) || toMember.MemberCode.StartsWith("TEMP", StringComparison.OrdinalIgnoreCase))
                     {
-                        var existingCodes = await _context.Members
-                            .AsNoTracking()
-                            .Where(m => !string.IsNullOrEmpty(m.MemberCode))
-                            .Select(m => m.MemberCode)
-                            .ToListAsync();
-
-                        int maxCodeNum = 0;
-                        foreach (var code in existingCodes)
-                        {
-                            if (string.IsNullOrEmpty(code)) continue;
-                            var trimmed = code.Trim();
-                            if (trimmed.StartsWith("MEM", StringComparison.OrdinalIgnoreCase))
-                            {
-                                var digits = new string(trimmed.Substring(3).Where(char.IsDigit).ToArray());
-                                if (int.TryParse(digits, out int num) && num > maxCodeNum) maxCodeNum = num;
-                            }
-                        }
-
-                        int nextNum = maxCodeNum + 1;
-                        string candidateCode = $"MEM{nextNum:D4}";
-                        while (existingCodes.Any(c => string.Equals(c, candidateCode, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            nextNum++;
-                            candidateCode = $"MEM{nextNum:D4}";
-                        }
-
-                        toMember.MemberCode = candidateCode;
+                        toMember.MemberCode = await GenerateNextMemberCodeAsync(toMember.LegacyMemberNo);
                         toMember.MembershipType = "Regular";
                         _context.Entry(toMember).State = EntityState.Modified;
                     }

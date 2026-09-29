@@ -47,33 +47,132 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
-        // GET: api/FdAccounts/next-account-no  (global fallback)
-        [HttpGet("next-account-no")]
-        public async Task<ActionResult<string>> GetNextAccountNo()
-        {
-            var maxId = await _context.FdAccounts.MaxAsync(f => (int?)f.FdAccountID) ?? 0;
-            var nextId = maxId + 1;
-            return Content($"FDA-{nextId:D5}", "text/plain");
-        }
-
-        // GET: api/FdAccounts/next-account-no/{branchId}  (branch-specific, matches actual PostFdAccount logic)
-        [HttpGet("next-account-no/{branchId}")]
-        public async Task<ActionResult<string>> GetNextAccountNoForBranch(int branchId)
+        private async Task<(string AccountNo, string FormattedAccountNo, int NextSeq)> GenerateNextFdAccountNoAsync(int branchId, int? schemeId = null, bool incrementSequence = false)
         {
             var branch = await _context.Branches.FindAsync(branchId);
-            if (branch == null) return NotFound("Branch not found.");
+            int branchIdNum = branch != null ? branch.BranchID : branchId;
 
-            string branchPrefix = branch.BranchCode;
+            int schemeCodeNum = 401; // Default FD Scheme Code (400 series)
+            if (schemeId.HasValue && schemeId.Value > 0)
+            {
+                var scheme = await _context.FdSchemes.FindAsync(schemeId.Value);
+                if (scheme != null)
+                {
+                    var sDigits = new string((scheme.SchemeCode ?? "").Where(char.IsDigit).ToArray());
+                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsed) && parsed > 0)
+                    {
+                        schemeCodeNum = parsed < 100 ? 400 + parsed : parsed;
+                    }
+                    else
+                    {
+                        schemeCodeNum = 400 + scheme.FdSchemeID;
+                    }
+                }
+            }
+
+            // Dynamically scan all existing accounts in this branch to determine max sequence
+            var existingAccounts = await _context.FdAccounts
+                .Where(f => f.BranchID == branchId && f.AccountNo != null)
+                .Select(f => f.AccountNo!)
+                .ToListAsync();
+
+            int maxSeq = 0;
+            foreach (var accStr in existingAccounts)
+            {
+                var digitsOnly = new string(accStr.Where(char.IsDigit).ToArray());
+                if (digitsOnly.Length == 14)
+                {
+                    string seqPart = digitsOnly.Substring(6, 7);
+                    if (int.TryParse(seqPart, out int sVal) && sVal > maxSeq)
+                    {
+                        maxSeq = sVal;
+                    }
+                }
+                else
+                {
+                    var lastDash = accStr.LastIndexOf('-');
+                    if (lastDash >= 0 && lastDash < accStr.Length - 1)
+                    {
+                        if (int.TryParse(accStr.Substring(lastDash + 1), out int parsedSeq) && parsedSeq > maxSeq)
+                        {
+                            maxSeq = parsedSeq;
+                        }
+                    }
+                }
+            }
 
             var seq = await _context.FdAccountSequences
                 .FirstOrDefaultAsync(s => s.BranchID == branchId && s.ProductType == "FD");
 
-            int nextSeq = (seq?.CurrentValue ?? 0) + 1;
+            if (seq == null)
+            {
+                seq = new FdAccountSequence { BranchID = branchId, ProductType = "FD", CurrentValue = maxSeq };
+                _context.FdAccountSequences.Add(seq);
+                await _context.SaveChangesAsync();
+            }
+            else
+            {
+                // Sync sequence tracking to actual accounts in the database (ensures auto-decrement after deletes)
+                seq.CurrentValue = maxSeq;
+                await _context.SaveChangesAsync();
+            }
 
-            // Same format as PostFdAccount: {BranchCode}-{BranchID:D3}-FD-{SeqNo:D6}
-            string nextAccountNo = $"{branchPrefix}-{branchId:D3}-FD-{nextSeq:D6}";
-            return Content(nextAccountNo, "text/plain");
+            int nextSeq = seq.CurrentValue + 1;
+            string candidate = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchIdNum, schemeCodeNum, nextSeq);
+
+            // Avoid collisions if any duplicate exists
+            while (existingAccounts.Contains(candidate))
+            {
+                nextSeq++;
+                candidate = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchIdNum, schemeCodeNum, nextSeq);
+            }
+
+            if (incrementSequence)
+            {
+                seq.CurrentValue = nextSeq;
+                await _context.SaveChangesAsync();
+            }
+
+            string formatted = Helpers.AccountNumberHelper.Format14Digit(candidate);
+            return (candidate, formatted, nextSeq);
         }
+
+        // GET: api/FdAccounts/next-account-no  (global fallback, 14-digit CBS)
+        [HttpGet("next-account-no")]
+        public async Task<ActionResult<object>> GetNextAccountNo()
+        {
+            var branch = await _context.Branches.FirstOrDefaultAsync();
+            int bId = branch?.BranchID ?? 1;
+            var (accountNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(bId, null, incrementSequence: false);
+            return Ok(new {
+                accountNo = accountNo,
+                nextAccountNo = accountNo,
+                formattedAccountNo = formattedNo,
+                displayAccountNo = formattedNo,
+                branchID = bId,
+                nextSeq = nextSeq
+            });
+        }
+
+        // GET: api/FdAccounts/next-account-no/{branchId}  (branch-specific, 14-digit CBS)
+        [HttpGet("next-account-no/{branchId}")]
+        public async Task<ActionResult<object>> GetNextAccountNoForBranch(int branchId, [FromQuery] int? schemeId = null)
+        {
+            var branch = await _context.Branches.FindAsync(branchId);
+            if (branch == null) return NotFound("Branch not found.");
+
+            var (accountNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(branchId, schemeId, incrementSequence: false);
+            return Ok(new {
+                accountNo = accountNo,
+                nextAccountNo = accountNo,
+                formattedAccountNo = formattedNo,
+                displayAccountNo = formattedNo,
+                branchID = branchId,
+                schemeId = schemeId,
+                nextSeq = nextSeq
+            });
+        }
+
 
         // GET: api/FdAccounts
         [HttpGet]
@@ -232,28 +331,13 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"Deposit amount must be between ₹{scheme.MinimumAmount} and ₹{scheme.MaximumAmount}.");
             }
 
-            // 3. Generate Auto Account No
+            // 3. Generate 14-digit CBS Account No
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
                 {
-                    var branch = await _context.Branches.FindAsync(account.BranchID);
-                    string branchPrefix = branch != null ? branch.BranchCode : "BR";
-
-                    var seq = await _context.FdAccountSequences
-                        .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "FD");
-                    
-                    if (seq == null)
-                    {
-                        seq = new FdAccountSequence { BranchID = account.BranchID, ProductType = "FD", CurrentValue = 0 };
-                        _context.FdAccountSequences.Add(seq);
-                    }
-                    
-                    seq.CurrentValue += 1;
-                    await _context.SaveChangesAsync();
-
-                    // E.g., KOP-001-FD-000001
-                    account.AccountNo = $"{branchPrefix}-{account.BranchID:D3}-FD-{seq.CurrentValue:D6}";
+                    var (generatedAccountNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(account.BranchID, account.FdSchemeID, incrementSequence: true);
+                    account.AccountNo = generatedAccountNo;
 
                     // 4. Auto-Calculate Maturity Date & Amount with Slabs & Duration Support
                     string durType = !string.IsNullOrWhiteSpace(account.DurationType) ? account.DurationType : (scheme.DurationType ?? "Months");
@@ -512,9 +596,9 @@ namespace Bhisi.Api.Controllers
                     return NotFound(new { message = "मुदत ठेव खाते सापडले नाही." });
                 }
 
-                // 1. Status Guard: Closed किंवा Renewed खाती ऑडिट रेकॉर्ड असल्याने नष्ट करता येत नाहीत
-                if (string.Equals(account.Status, "Closed", StringComparison.OrdinalIgnoreCase) || 
-                    string.Equals(account.Status, "Renewed", StringComparison.OrdinalIgnoreCase))
+                // 1. Status Guard: Closed किंवा Renewed खाती ऑडिट रेकॉर्ड असल्याने नष्ट करता येत नाहीत (force=true असल्यास डेटा दुरुस्तीसाठी मुभा)
+                if (!force && (string.Equals(account.Status, "Closed", StringComparison.OrdinalIgnoreCase) || 
+                               string.Equals(account.Status, "Renewed", StringComparison.OrdinalIgnoreCase)))
                 {
                     return BadRequest(new { message = $"सदर मुदत ठेव खाते आधीच '{account.Status}' झालेले आहे. बंद किंवा नूतनीकरण झालेली खाती वैधानिक ऑडिट रेकॉर्डचा भाग असल्याने नष्ट (Delete) करता येत नाहीत." });
                 }
@@ -681,30 +765,57 @@ namespace Bhisi.Api.Controllers
                 _context.FdAccounts.Remove(account);
                 await _context.SaveChangesAsync();
 
+                // If the deleted record was the highest/only FdAccountID, automatically decrement/reseed identity counter
+                try
+                {
+                    var maxRemainingId = await _context.FdAccounts.MaxAsync(f => (int?)f.FdAccountID) ?? 0;
+                    if (id >= maxRemainingId)
+                    {
+                        int reseedVal = maxRemainingId;
+                        await _context.Database.ExecuteSqlInterpolatedAsync($"DBCC CHECKIDENT ('FdAccounts', RESEED, {reseedVal});");
+                    }
+                }
+                catch (Exception reseedEx)
+                {
+                    Console.WriteLine($"[WARNING] FdAccounts DBCC reseed error: {reseedEx.Message}");
+                }
+
                 if (isLegacy)
                 {
                     try { await SyncFdOpeningBalancesInternalAsync(); } catch { }
                 }
 
-                // 6. Rollback FdAccountSequences by -1 (Sync to max remaining sequence in this branch)
+                // 6. Rollback FdAccountSequences (Sync to max remaining sequence in this branch)
                 var branchSeq = await _context.FdAccountSequences
                     .FirstOrDefaultAsync(s => s.BranchID == branchId && s.ProductType == "FD");
 
                 int remainingMaxSeq = 0;
                 var remainingAccounts = await _context.FdAccounts
-                    .Where(f => f.BranchID == branchId)
-                    .Select(f => f.AccountNo)
+                    .Where(f => f.BranchID == branchId && f.AccountNo != null)
+                    .Select(f => f.AccountNo!)
                     .ToListAsync();
 
                 foreach (var accStr in remainingAccounts)
                 {
-                    // Pattern: {Prefix}-{BranchID:D3}-FD-{SeqNo:D6}
-                    var lastDash = accStr.LastIndexOf('-');
-                    if (lastDash >= 0 && lastDash < accStr.Length - 1)
+                    var digitsOnly = new string(accStr.Where(char.IsDigit).ToArray());
+                    if (digitsOnly.Length == 14)
                     {
-                        if (int.TryParse(accStr.Substring(lastDash + 1), out int parsedSeq))
+                        string seqPart = digitsOnly.Substring(6, 7);
+                        if (int.TryParse(seqPart, out int sVal) && sVal > remainingMaxSeq)
                         {
-                            if (parsedSeq > remainingMaxSeq) remainingMaxSeq = parsedSeq;
+                            remainingMaxSeq = sVal;
+                        }
+                    }
+                    else
+                    {
+                        // Pattern: {Prefix}-{BranchID:D3}-FD-{SeqNo:D6}
+                        var lastDash = accStr.LastIndexOf('-');
+                        if (lastDash >= 0 && lastDash < accStr.Length - 1)
+                        {
+                            if (int.TryParse(accStr.Substring(lastDash + 1), out int parsedSeq) && parsedSeq > remainingMaxSeq)
+                            {
+                                remainingMaxSeq = parsedSeq;
+                            }
                         }
                     }
                 }
@@ -955,8 +1066,7 @@ namespace Bhisi.Api.Controllers
 
                     for (int i = 1; i <= req.SplitCount; i++)
                     {
-                        seq.CurrentValue += 1;
-                        string accNo = $"{branchPrefix}-{req.BranchID:D3}-FD-{seq.CurrentValue:D6}";
+                        var (accNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(req.BranchID, req.FdSchemeID, incrementSequence: true);
 
                         var acc = new FdAccount
                         {
@@ -1091,23 +1201,13 @@ namespace Bhisi.Api.Controllers
             account.Status = "Active";
             account.FinancialYearID = (await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive))?.FinancialYearID ?? 1;
 
-            // 1. Resolve Branch and Sequence
-            var branch = await _context.Branches.FindAsync(account.BranchID);
-            string branchPrefix = branch != null ? branch.BranchCode : "001";
+            // 1. Resolve Account Number (14-Digit CBS standard)
+            var cleanDigits = !string.IsNullOrWhiteSpace(account.AccountNo)
+                ? new string(account.AccountNo.Where(char.IsDigit).ToArray())
+                : "";
 
-            var seq = await _context.FdAccountSequences
-                .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "FD");
-            
-            if (seq == null)
-            {
-                seq = new FdAccountSequence { BranchID = account.BranchID, ProductType = "FD", CurrentValue = 0 };
-                _context.FdAccountSequences.Add(seq);
-                await _context.SaveChangesAsync();
-            }
-
-            // Check if account number is empty, AUTO, or conflicts with an existing account in this branch
             bool isDuplicate = !string.IsNullOrWhiteSpace(account.AccountNo) &&
-                await _context.FdAccounts.AnyAsync(a => a.BranchID == account.BranchID && a.AccountNo == account.AccountNo);
+                await _context.FdAccounts.AnyAsync(a => a.BranchID == account.BranchID && (a.AccountNo == account.AccountNo || (!string.IsNullOrEmpty(cleanDigits) && a.AccountNo == cleanDigits)));
 
             bool needsNewNumber = string.IsNullOrWhiteSpace(account.AccountNo) || 
                                   account.AccountNo == "AUTO" || 
@@ -1115,25 +1215,39 @@ namespace Bhisi.Api.Controllers
 
             if (needsNewNumber)
             {
-                do
-                {
-                    seq.CurrentValue += 1;
-                    account.AccountNo = $"{branchPrefix}-{account.BranchID:D3}-FD-{seq.CurrentValue:D6}";
-                }
-                while (await _context.FdAccounts.AnyAsync(a => a.BranchID == account.BranchID && a.AccountNo == account.AccountNo));
-
-                await _context.SaveChangesAsync();
+                var (accNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(account.BranchID, account.FdSchemeID, incrementSequence: true);
+                account.AccountNo = accNo;
             }
             else
             {
-                // If a valid custom unique account number is provided, ensure sequence tracks it
-                var match = System.Text.RegularExpressions.Regex.Match(account.AccountNo, @"-FD-(\d+)$");
-                if (match.Success && int.TryParse(match.Groups[1].Value, out int customSeq))
+                if (cleanDigits.Length == 14)
                 {
-                    if (customSeq > seq.CurrentValue)
+                    account.AccountNo = cleanDigits;
+                    string seqPart = cleanDigits.Substring(6, 7);
+                    if (int.TryParse(seqPart, out int customSeq))
                     {
-                        seq.CurrentValue = customSeq;
-                        await _context.SaveChangesAsync();
+                        var seq = await _context.FdAccountSequences
+                            .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "FD");
+                        if (seq != null && customSeq > seq.CurrentValue)
+                        {
+                            seq.CurrentValue = customSeq;
+                            await _context.SaveChangesAsync();
+                        }
+                    }
+                }
+                else
+                {
+                    // Track custom legacy sequence if provided
+                    var match = System.Text.RegularExpressions.Regex.Match(account.AccountNo, @"-FD-(\d+)$");
+                    if (match.Success && int.TryParse(match.Groups[1].Value, out int customSeq))
+                    {
+                        var seq = await _context.FdAccountSequences
+                            .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "FD");
+                        if (seq != null && customSeq > seq.CurrentValue)
+                        {
+                            seq.CurrentValue = customSeq;
+                            await _context.SaveChangesAsync();
+                        }
                     }
                 }
             }

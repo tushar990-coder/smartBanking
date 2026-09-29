@@ -193,14 +193,27 @@ const FdOpeningBalanceMigration: React.FC = () => {
     };
   }, []);
 
-  const fetchNextAccountNo = async (bId: number) => {
+  const formatAccountNo = (accNo?: string) => {
+    if (!accNo) return '-';
+    const digits = accNo.replace(/\D/g, '');
+    if (digits.length === 14) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 13)}-${digits.slice(13)}`;
+    }
+    return accNo;
+  };
+
+  const fetchNextAccountNo = async (bId: number, sId?: number) => {
     try {
-      const response = await axios.get(`${API_URL}/FdAccounts/next-account-no/${bId}`);
+      const schemeParam = sId || formData.fdSchemeID;
+      const url = schemeParam && schemeParam > 0
+        ? `${API_URL}/FdAccounts/next-account-no/${bId}?schemeId=${schemeParam}`
+        : `${API_URL}/FdAccounts/next-account-no/${bId}`;
+      const response = await axios.get(url);
       if (!isMountedRef.current) return;
       if (response.data) {
         const nextNo = typeof response.data === 'string'
           ? response.data
-          : (response.data.accountNo || response.data.nextAccountNo || response.data.receiptNo || '');
+          : (response.data.formattedAccountNo || response.data.displayAccountNo || response.data.accountNo || response.data.nextAccountNo || '');
         if (nextNo) {
           setFormData((prev) => ({
             ...prev,
@@ -210,7 +223,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       }
     } catch (err) {
       if (isMountedRef.current) {
-        console.error('Error fetching next receipt number', err);
+        console.error('Error fetching next account number', err);
       }
     }
   };
@@ -376,6 +389,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
       maturityDate: newMatDate,
       maturityAmount: autoMat,
     }));
+    if (sId > 0 && formData.branchID > 0) {
+      fetchNextAccountNo(formData.branchID, sId);
+    }
   };
 
   const normalizeToNumericDigits = (input: string): string => {
@@ -406,7 +422,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       : value;
     
     if (name === 'branchID') {
-      fetchNextAccountNo(parsedVal as number);
+      fetchNextAccountNo(parsedVal as number, formData.fdSchemeID);
     }
 
     if (name === 'lastInterestPostingDate') {
@@ -663,7 +679,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       const successMsg = res.data?.message || `मुदत ठेव खाते '${accNo}' यशस्वीरित्या डिलीट केले.`;
       setSuccess(successMsg);
       await fetchMigratedAccounts();
-      fetchNextAccountNo(formData.branchID);
+      fetchNextAccountNo(formData.branchID, formData.fdSchemeID);
       if (editingAccountId === id) {
         resetForm();
       }
@@ -1089,7 +1105,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between min-h-[22px] mb-1">
                   <label className="text-[11px] font-bold text-gray-700">
-                    नवीन पावती / खाते क्र. (CBS Account No) <span className="text-red-500">*</span>
+                    नवीन खाते क्र. (14-Digit CBS Account No) <span className="text-red-500">*</span>
                   </label>
                   <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold border border-emerald-300" title="सिस्टीम स्वयंचलित युनिक अनुक्रमांक वाटप करेल">
                     ⚡ ऑटो अनुक्रमांक
@@ -1101,7 +1117,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   value={formData.accountNo}
                   onChange={handleChange}
                   className={`${inputClass} font-mono font-bold text-primary bg-blue-50/20`}
-                  placeholder="उदा. 001-001-FD-000001 (स्वयंचलित)"
+                  placeholder="उदा. 001-401-0000001-1 (स्वयंचलित)"
                   required
                 />
               </div>
@@ -1516,7 +1532,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
                     <tr>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center sticky left-0 bg-slate-100 z-10 w-28">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">नवीन पावती क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">नवीन खाते क्र. (CBS Account No)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">जुना पावती क्र.</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left min-w-[170px]">खातेदाराचे नाव & CIF</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना नाव</th>
@@ -1568,7 +1584,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono font-bold text-primary">
-                          {acc.accountNo}
+                          {formatAccountNo(acc.accountNo)}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono font-bold text-amber-900">
                           {acc.legacyAccountNumber ? (

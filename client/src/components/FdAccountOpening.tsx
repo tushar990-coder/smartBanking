@@ -262,7 +262,10 @@ const FdAccountOpening: React.FC = () => {
     setNextAccountNo('');
     try {
       const response = await axios.get(`${API_URL}/FdAccounts/next-account-no/${branchId}`);
-      setNextAccountNo(response.data);
+      const val = typeof response.data === 'string'
+        ? response.data
+        : (response.data.formattedAccountNo || response.data.displayAccountNo || response.data.accountNo || response.data.nextAccountNo || '');
+      setNextAccountNo(val);
     } catch (err) {
       setNextAccountNo('---');
     } finally {

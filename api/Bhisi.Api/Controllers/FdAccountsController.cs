@@ -498,7 +498,7 @@ namespace Bhisi.Api.Controllers
         // DELETE: api/FdAccounts/5
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin,SuperAdmin,Manager,HeadOffice")]
-        public async Task<IActionResult> DeleteFdAccount(int id)
+        public async Task<IActionResult> DeleteFdAccount(int id, [FromQuery] bool force = false)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -519,32 +519,57 @@ namespace Bhisi.Api.Controllers
                     return BadRequest(new { message = $"सदर मुदत ठेव खाते आधीच '{account.Status}' झालेले आहे. बंद किंवा नूतनीकरण झालेली खाती वैधानिक ऑडिट रेकॉर्डचा भाग असल्याने नष्ट (Delete) करता येत नाहीत." });
                 }
 
-                // 2. Lien / Loan Security Guard: जर खातेदाराकडे सक्रिय कर्ज असेल तर कर्ज वसुली सुरक्षेसाठी डिलीट करण्यास मनाई
+                // 2. Specific Lien / Loan Security Guard:
+                // तपासा: ही विशिष्ट मुदत ठेव पावती एखाद्या सक्रिय कर्जासाठी थेट तारण (Lien/Security) म्हणून नोंदवलेली आहे का?
                 if (account.CustomerID > 0)
                 {
-                    int custId = account.CustomerID;
-                    int? linkedMemId = null;
-                    var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
-                    if (mem != null) linkedMemId = mem.MemberID;
+                    string accNo = account.AccountNo ?? "";
+                    string legNo = account.LegacyAccountNumber ?? "";
 
-                    var activeLoansQuery = _context.LoanAccounts
-                        .Where(l => l.Status == "Active" && (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0));
+                    var pledgedLoan = await _context.LoanAccounts
+                        .FirstOrDefaultAsync(l => l.Status == "Active" && 
+                            ((!string.IsNullOrEmpty(accNo) && l.SecurityDetails != null && l.SecurityDetails.Contains(accNo)) ||
+                             (!string.IsNullOrEmpty(legNo) && l.SecurityDetails != null && l.SecurityDetails.Contains(legNo))));
 
-                    if (linkedMemId.HasValue && linkedMemId.Value > 0)
+                    if (pledgedLoan != null)
                     {
-                        activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemId.Value);
-                    }
-                    else
-                    {
-                        activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId);
+                        return BadRequest(new { 
+                            message = $"सदर मुदत ठेव पावती '{account.AccountNo}' कर्ज खाते क्र. {pledgedLoan.LoanAccountNo} साठी तारण (Lien/Security) म्हणून नोंदवलेली आहे. त्यामुळे हे खाते नष्ट करता येणार नाही." 
+                        });
                     }
 
-                    var activeLoans = await activeLoansQuery.ToListAsync();
-
-                    if (activeLoans.Any())
+                    // स्थलांतरित खात्यांसाठी (IsLegacyAccount = true):
+                    // आरंभिक शिल्लक स्थलांतरणात डेटा दुरुस्ती/चूक सुधारण्यासाठी खाते डिलीट करण्याची पूर्ण मुभा असावी.
+                    // केवळ चालू (Non-legacy) खात्यांसाठी आणि force = false असल्यास जनरल अलर्ट द्यावा
+                    if (!account.IsLegacyAccount && !force)
                     {
-                        decimal totalLoanLiability = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
-                        return BadRequest(new { message = $"सदर खातेदाराकडे एकूण ₹{totalLoanLiability:N2} चे सक्रिय कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Lien/Collateral Protection) हे मुदत ठेव खाते नष्ट करता येणार नाही." });
+                        int custId = account.CustomerID;
+                        int? linkedMemId = null;
+                        var mem = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == custId);
+                        if (mem != null) linkedMemId = mem.MemberID;
+
+                        var activeLoansQuery = _context.LoanAccounts
+                            .Where(l => l.Status == "Active" && (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0));
+
+                        if (linkedMemId.HasValue && linkedMemId.Value > 0)
+                        {
+                            activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId || l.MemberID == linkedMemId.Value);
+                        }
+                        else
+                        {
+                            activeLoansQuery = activeLoansQuery.Where(l => l.CustomerID == custId);
+                        }
+
+                        var activeLoans = await activeLoansQuery.ToListAsync();
+
+                        if (activeLoans.Any())
+                        {
+                            decimal totalLoanLiability = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
+                            return BadRequest(new { 
+                                message = $"सदर खातेदाराकडे एकूण ₹{totalLoanLiability:N2} चे सक्रिय कर्ज थकीत आहे. पतसंस्थेच्या सुरक्षा नियमांनुसार (Right of Set-off) तपासणी आवश्यक आहे.",
+                                canForce = true
+                            });
+                        }
                     }
                 }
 
@@ -553,11 +578,28 @@ namespace Bhisi.Api.Controllers
                 decimal depositAmount = account.DepositAmount;
                 string customerName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() : "";
 
-                // 1. Delete linked Voucher and VoucherDetails (removes it completely from Voucher Passing)
+                // 1. Remove all FdTransactions and FdInterestAccruals FIRST
+                // (Clear foreign key constraint FK_FdTransactions_Vouchers_VoucherID before deleting Vouchers!)
+                var fdTxs = await _context.FdTransactions.Where(t => t.FdAccountID == id).ToListAsync();
+                if (fdTxs.Any())
+                {
+                    _context.FdTransactions.RemoveRange(fdTxs);
+                    await _context.SaveChangesAsync();
+                }
+
+                var fdAccruals = await _context.FdInterestAccruals.Where(a => a.FdAccountID == id).ToListAsync();
+                if (fdAccruals.Any())
+                {
+                    _context.FdInterestAccruals.RemoveRange(fdAccruals);
+                    await _context.SaveChangesAsync();
+                }
+
+                // 2. Delete linked Voucher and VoucherDetails (both regular REC-FD-OP and migrated JV-FD-OP)
                 string expectedVoucherNo = $"REC-FD-OP-{accountNo}";
+                string migratedVoucherNo = $"JV-FD-OP-{accountNo}";
                 var linkedVouchers = await _context.Vouchers
                     .Include(v => v.VoucherDetails)
-                    .Where(v => v.VoucherNo == expectedVoucherNo || (v.Narration != null && v.Narration.Contains(accountNo)))
+                    .Where(v => v.VoucherNo == expectedVoucherNo || v.VoucherNo == migratedVoucherNo || (v.Narration != null && v.Narration.Contains(accountNo)))
                     .ToListAsync();
 
                 foreach (var vch in linkedVouchers)
@@ -568,8 +610,12 @@ namespace Bhisi.Api.Controllers
                     }
                     _context.Vouchers.Remove(vch);
                 }
+                if (linkedVouchers.Any())
+                {
+                    await _context.SaveChangesAsync();
+                }
 
-                // 2. Refund Savings Account if PaymentMode was Transfer
+                // 3. Refund Savings Account if PaymentMode was Transfer
                 if (account.PaymentMode == "Transfer" && account.SavingAccountID.HasValue && account.SavingAccountID.Value > 0)
                 {
                     var sbAcc = await _context.SavingAccountMasters.FindAsync(account.SavingAccountID.Value);
@@ -587,13 +633,6 @@ namespace Bhisi.Api.Controllers
                         }
                     }
                 }
-
-                // 3. Remove all FdTransactions and FdInterestAccruals
-                var fdTxs = await _context.FdTransactions.Where(t => t.FdAccountID == id).ToListAsync();
-                if (fdTxs.Any()) _context.FdTransactions.RemoveRange(fdTxs);
-
-                var fdAccruals = await _context.FdInterestAccruals.Where(a => a.FdAccountID == id).ToListAsync();
-                if (fdAccruals.Any()) _context.FdInterestAccruals.RemoveRange(fdAccruals);
 
                 // 4. Remove FdAccount itself
                 bool isLegacy = account.IsLegacyAccount;
@@ -637,10 +676,10 @@ namespace Bhisi.Api.Controllers
                 // 6. Record Audit Log
                 _context.AuditLogs.Add(new AuditLog
                 {
-                    Action = "FD_OPENING_DIRECT_DELETED",
+                    Action = isLegacy ? "FD_MIGRATED_OPENING_DELETED" : "FD_OPENING_DIRECT_DELETED",
                     EntityName = "FdAccount",
                     EntityID = accountNo,
-                    Details = $"मुदत ठेव खाते {accountNo} (रक्कम: ₹{depositAmount:N2}, खातेदार: {customerName}) नवीन खाते फॉर्मवरून थेट डिलीट केले. व्हाउचर पासिंगमधून व्हाउचर हटवले आणि पावती अनुक्रमांक रोलबॅक करून {remainingMaxSeq} केला.",
+                    Details = $"मुदत ठेव खाते {accountNo} (रक्कम: ₹{depositAmount:N2}, खातेदार: {customerName}) डिलीट केले. व्हाउचर हटवले आणि पावती अनुक्रमांक सिंक करून {remainingMaxSeq} केला.",
                     Timestamp = DateTime.Now,
                     Status = "Success"
                 });
@@ -650,7 +689,7 @@ namespace Bhisi.Api.Controllers
 
                 return Ok(new
                 {
-                    message = $"मुदत ठेव खाते '{accountNo}' आणि त्याचे पासिंग व्हाउचर यशस्वीरीत्या डिलीट झाले. पावती क्र. रोलबॅक झाला.",
+                    message = $"मुदत ठेव खाते '{accountNo}' आणि त्याचे व्हाउचर यशस्वीरीत्या डिलीट झाले.",
                     accountNo = accountNo,
                     rolledBackSequence = remainingMaxSeq
                 });

@@ -627,23 +627,32 @@ const FdOpeningBalanceMigration: React.FC = () => {
     }, 150);
   };
 
-  const handleDelete = async (id: number, accNo: string) => {
-    if (!window.confirm(`तुम्हाला खरोखर मुदत ठेव खाते '${accNo}' डिलीट करायचे आहे का?`)) {
+  const handleDelete = async (id: number, accNo: string, force: boolean = false) => {
+    if (!force && !window.confirm(`तुम्हाला खरोखर मुदत ठेव खाते '${accNo}' डिलीट करायचे आहे का?`)) {
       return;
     }
 
     try {
       setLoading(true);
-      await axios.delete(`${API_URL}/FdAccounts/${id}`);
-      setSuccess(`मुदत ठेव खाते '${accNo}' यशस्वीरित्या डिलीट केले.`);
-      fetchMigratedAccounts();
+      setError('');
+      setSuccess('');
+      const res = await axios.delete(`${API_URL}/FdAccounts/${id}${force ? '?force=true' : ''}`);
+      const successMsg = res.data?.message || `मुदत ठेव खाते '${accNo}' यशस्वीरित्या डिलीट केले.`;
+      setSuccess(successMsg);
+      await fetchMigratedAccounts();
       fetchNextAccountNo(formData.branchID);
       if (editingAccountId === id) {
         resetForm();
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.message || err.response?.data || 'खाते डिलीट करताना त्रुटी आली.');
+      const errMsg = err.response?.data?.message || err.response?.data || 'खाते डिलीट करताना त्रुटी आली.';
+      setError(errMsg);
+      if (err.response?.data?.canForce) {
+        if (window.confirm(`${errMsg}\n\nतुम्हाला तरीही हे खाते बळजबरीने (Force Delete) नष्ट करायचे आहे का?`)) {
+          await handleDelete(id, accNo, true);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -1456,6 +1465,26 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {/* Modal Alert Messages (Delete / Edit Feedback) */}
+            {error && (
+              <div className="mx-2.5 mt-2 p-2 bg-rose-50 border border-rose-300 text-rose-800 rounded-sm flex items-center justify-between text-xs font-bold shadow-2xs shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{error}</span>
+                </div>
+                <button type="button" onClick={() => setError('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">✕</button>
+              </div>
+            )}
+            {success && (
+              <div className="mx-2.5 mt-2 p-2 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-sm flex items-center justify-between text-xs font-bold shadow-2xs shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{success}</span>
+                </div>
+                <button type="button" onClick={() => setSuccess('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">✕</button>
+              </div>
+            )}
 
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">

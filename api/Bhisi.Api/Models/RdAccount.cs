@@ -124,6 +124,33 @@ namespace Bhisi.Api.Models
         [StringLength(250)]
         public string? Remarks { get; set; }
 
+        [NotMapped]
+        public string? FormattedAccountNo { get; set; }
+
+        // CBS Enterprise Fields
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal CumulativeInterestAccrued { get; set; } = 0.00m;
+
+        public bool IsLienMarked { get; set; } = false;
+
+        [StringLength(30)]
+        public string? LienLoanAccountNo { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? LienAmount { get; set; }
+
+        public int AutoDebitDay { get; set; } = 10;
+
+        public DateTime? ClosureDate { get; set; }
+
+        [StringLength(30)]
+        public string? ClosureType { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? ClosedPayoutAmount { get; set; }
+
+        public virtual ICollection<RdInstallmentSchedule> InstallmentSchedules { get; set; } = new List<RdInstallmentSchedule>();
+
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
         public int? ModifiedBy { get; set; }

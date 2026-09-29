@@ -57,21 +57,25 @@ namespace Bhisi.Api.Controllers
         [HttpGet("NextCode")]
         public async Task<ActionResult<object>> GetNextSchemeCode()
         {
-            var codes = await _context.RdSchemes.Select(s => s.SchemeCode).ToListAsync();
-            int maxNum = 0;
-            foreach (var code in codes)
+            var schemes = await _context.RdSchemes.ToListAsync();
+            int maxNum = 500;
+            foreach (var s in schemes)
             {
-                if (!string.IsNullOrWhiteSpace(code))
+                if (s.SchemeCodeNumeric > maxNum)
                 {
-                    var digits = new string(code.Where(char.IsDigit).ToArray());
-                    if (int.TryParse(digits, out int num))
+                    maxNum = s.SchemeCodeNumeric;
+                }
+                else if (!string.IsNullOrWhiteSpace(s.SchemeCode))
+                {
+                    var digits = new string(s.SchemeCode.Where(char.IsDigit).ToArray());
+                    if (int.TryParse(digits, out int num) && num > maxNum)
                     {
-                        if (num > maxNum) maxNum = num;
+                        maxNum = num;
                     }
                 }
             }
-            int nextNum = maxNum + 1;
-            return Ok(new { nextCode = $"RD{nextNum:D3}" });
+            int nextNum = maxNum < 501 ? 501 : maxNum + 1;
+            return Ok(new { nextCode = $"{nextNum}", nextNumeric = nextNum });
         }
 
         // POST: api/RdSchemes
@@ -79,27 +83,28 @@ namespace Bhisi.Api.Controllers
         [Authorize(Roles = "Admin,Manager,SuperAdmin,HeadOffice")]
         public async Task<ActionResult<RdScheme>> PostRdScheme(RdScheme rdScheme)
         {
-            if (string.IsNullOrWhiteSpace(rdScheme.SchemeCode))
+            if (rdScheme.InstitutionID <= 0) rdScheme.InstitutionID = 1;
+            if (rdScheme.BranchID <= 0) rdScheme.BranchID = 1;
+            if (string.IsNullOrWhiteSpace(rdScheme.InterestMethod)) rdScheme.InterestMethod = "Quarterly";
+            if (string.IsNullOrWhiteSpace(rdScheme.CompoundingFrequency)) rdScheme.CompoundingFrequency = "Quarterly";
+            if (rdScheme.GracePeriodDays <= 0) rdScheme.GracePeriodDays = 5;
+
+            int numericCode = rdScheme.SchemeCodeNumeric;
+            if (numericCode <= 0 && !string.IsNullOrWhiteSpace(rdScheme.SchemeCode))
             {
-                var codes = await _context.RdSchemes.Select(s => s.SchemeCode).ToListAsync();
-                int maxNum = 0;
-                foreach (var code in codes)
-                {
-                    if (!string.IsNullOrWhiteSpace(code))
-                    {
-                        var digits = new string(code.Where(char.IsDigit).ToArray());
-                        if (int.TryParse(digits, out int num))
-                        {
-                            if (num > maxNum) maxNum = num;
-                        }
-                    }
-                }
-                rdScheme.SchemeCode = $"RD{(maxNum + 1):D3}";
+                var digits = new string(rdScheme.SchemeCode.Where(char.IsDigit).ToArray());
+                int.TryParse(digits, out numericCode);
             }
-            else
+
+            if (numericCode <= 0)
             {
-                rdScheme.SchemeCode = rdScheme.SchemeCode.Trim();
+                int maxNumeric = await _context.RdSchemes.MaxAsync(s => (int?)s.SchemeCodeNumeric) ?? 500;
+                if (maxNumeric < 500) maxNumeric = 500;
+                numericCode = maxNumeric + 1;
             }
+
+            rdScheme.SchemeCodeNumeric = numericCode;
+            rdScheme.SchemeCode = $"{numericCode}";
 
             rdScheme.CreatedDate = DateTime.Now;
             _context.RdSchemes.Add(rdScheme);
@@ -114,27 +119,46 @@ namespace Bhisi.Api.Controllers
         {
             if (id != rdScheme.RdSchemeID)
             {
-                return BadRequest();
+                return BadRequest(new { message = "योजना आयडी मॅच होत नाही." });
             }
 
-            _context.Entry(rdScheme).State = EntityState.Modified;
-
-            try
+            var existing = await _context.RdSchemes.FindAsync(id);
+            if (existing == null)
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!RdSchemeExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                return NotFound(new { message = "योजना सापडली नाही." });
             }
 
+            if (rdScheme.SchemeCodeNumeric > 0)
+            {
+                existing.SchemeCodeNumeric = rdScheme.SchemeCodeNumeric;
+                existing.SchemeCode = $"{rdScheme.SchemeCodeNumeric}";
+            }
+            else if (!string.IsNullOrWhiteSpace(rdScheme.SchemeCode) && int.TryParse(new string(rdScheme.SchemeCode.Where(char.IsDigit).ToArray()), out int parsedNum) && parsedNum > 0)
+            {
+                existing.SchemeCodeNumeric = parsedNum;
+                existing.SchemeCode = $"{parsedNum}";
+            }
+
+            existing.SchemeName = rdScheme.SchemeName;
+            existing.DurationMonths = rdScheme.DurationMonths;
+            existing.InstallmentAmount = rdScheme.InstallmentAmount;
+            existing.MinimumInstallment = rdScheme.MinimumInstallment;
+            existing.MaximumInstallment = rdScheme.MaximumInstallment;
+            existing.InterestRate = rdScheme.InterestRate;
+            existing.InterestMethod = string.IsNullOrWhiteSpace(rdScheme.InterestMethod) ? existing.InterestMethod : rdScheme.InterestMethod;
+            existing.PenaltyAmount = rdScheme.PenaltyAmount;
+            existing.PrematurePenaltyRate = rdScheme.PrematurePenaltyRate;
+            existing.EffectiveDate = rdScheme.EffectiveDate;
+            existing.IsActive = rdScheme.IsActive;
+            if (!string.IsNullOrWhiteSpace(rdScheme.CompoundingFrequency)) existing.CompoundingFrequency = rdScheme.CompoundingFrequency;
+            if (rdScheme.GracePeriodDays > 0) existing.GracePeriodDays = rdScheme.GracePeriodDays;
+            existing.RdLiabilityLedgerID = rdScheme.RdLiabilityLedgerID;
+            existing.InterestExpenseLedgerID = rdScheme.InterestExpenseLedgerID;
+            existing.InterestPayableLedgerID = rdScheme.InterestPayableLedgerID;
+            existing.PenaltyIncomeLedgerID = rdScheme.PenaltyIncomeLedgerID;
+            existing.ModifiedDate = DateTime.Now;
+
+            await _context.SaveChangesAsync();
             return NoContent();
         }
 

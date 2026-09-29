@@ -20,5 +20,12 @@ namespace Bhisi.Api.Models
 
         [Required]
         public int CurrentValue { get; set; } = 0;
+
+        // CBS 14-Digit Standard Sequence Fields
+        public int SchemeCodeNumeric { get; set; } = 501;
+
+        public int LastSequenceNumber { get; set; } = 0;
+
+        public System.DateTime? UpdatedOn { get; set; }
     }
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
@@ -20,25 +21,179 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
-        // GET: api/RdAccounts/next-account-no
-        [HttpGet("next-account-no")]
-        public async Task<ActionResult<string>> GetNextAccountNo([FromQuery] int branchId = 1)
+        // Helper class for Modulo-10 Luhn Check Digit calculation and validation
+        public static class LuhnHelper
         {
-            var branch = await _context.Branches.FindAsync(branchId);
-            string branchPrefix = branch != null ? branch.BranchCode : "BR";
+            public static int CalculateCheckDigit(string digits)
+            {
+                int sum = 0;
+                bool alternate = true;
+                for (int i = digits.Length - 1; i >= 0; i--)
+                {
+                    int d = digits[i] - '0';
+                    if (alternate)
+                    {
+                        d *= 2;
+                        if (d > 9) d -= 9;
+                    }
+                    sum += d;
+                    alternate = !alternate;
+                }
+                int mod = sum % 10;
+                return (mod == 0) ? 0 : 10 - mod;
+            }
 
-            var seq = await _context.RdAccountSequences
-                .FirstOrDefaultAsync(s => s.BranchID == branchId && s.ProductType == "RD");
+            public static bool ValidateAccountNo(string fullAccountNo)
+            {
+                if (string.IsNullOrWhiteSpace(fullAccountNo)) return false;
+                var digitsOnly = new string(fullAccountNo.Where(char.IsDigit).ToArray());
+                if (digitsOnly.Length != 14) return false;
+                string prefix13 = digitsOnly.Substring(0, 13);
+                int expectedCheck = CalculateCheckDigit(prefix13);
+                return (digitsOnly[13] - '0') == expectedCheck;
+            }
 
-            int nextSeq = (seq?.CurrentValue ?? 0) + 1;
-            string nextAccountNo = $"{branchPrefix}-{branchId:D3}-RD-{nextSeq:D6}";
-            return Content(nextAccountNo, "text/plain");
+            public static string Format14Digit(string accountNo)
+            {
+                if (string.IsNullOrWhiteSpace(accountNo)) return "";
+                var d = new string(accountNo.Where(char.IsDigit).ToArray());
+                if (d.Length == 14)
+                {
+                    return $"{d.Substring(0, 3)}-{d.Substring(3, 3)}-{d.Substring(6, 7)}-{d.Substring(13, 1)}";
+                }
+                return accountNo;
+            }
         }
 
-        [HttpGet("next-account-no/{branchId}")]
-        public async Task<ActionResult<string>> GetNextAccountNoForBranch(int branchId)
+        // CBS Standard 14-digit Account Generator: [3-digit Branch] + [3-digit Scheme] + [7-digit Sequence] + [1-digit Checksum]
+        private async Task<string> GenerateNextRdAccountNo(int branchId, int? schemeId = null, bool incrementSequence = false)
         {
-            return await GetNextAccountNo(branchId);
+            var branch = await _context.Branches.FindAsync(branchId);
+
+            // 1. Branch Code: 3 numeric digits (e.g. 001, 002)
+            string branchCode3 = branchId.ToString("D3");
+            if (branch != null && !string.IsNullOrWhiteSpace(branch.BranchCode))
+            {
+                var digitsOnly = new string(branch.BranchCode.Where(char.IsDigit).ToArray());
+                if (!string.IsNullOrEmpty(digitsOnly) && int.TryParse(digitsOnly, out int parsed) && parsed > 0)
+                {
+                    branchCode3 = parsed.ToString("D3");
+                }
+            }
+
+            // 2. Scheme Code: 3 numeric digits (default 501 for RD)
+            int schemeCodeNum = 501;
+            if (schemeId.HasValue && schemeId.Value > 0)
+            {
+                var scheme = await _context.RdSchemes.FindAsync(schemeId.Value);
+                if (scheme != null)
+                {
+                    if (scheme.SchemeCodeNumeric > 0)
+                    {
+                        schemeCodeNum = scheme.SchemeCodeNumeric;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(scheme.SchemeCode))
+                    {
+                        var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
+                        if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
+                        {
+                            schemeCodeNum = parsedScheme;
+                        }
+                    }
+                }
+            }
+            string schemeCode3 = schemeCodeNum.ToString("D3");
+
+            // 3. Sequence: Atomic sequence per (BranchID, SchemeCodeNumeric / ProductType)
+            // Inspect existing accounts to find the maximum assigned sequence number in this branch
+            int maxExistingSeq = 0;
+            var existingAccNos = await _context.RdAccounts
+                .Where(s => s.BranchID == branchId)
+                .Select(s => s.AccountNo)
+                .ToListAsync();
+
+            foreach (var accNo in existingAccNos)
+            {
+                if (string.IsNullOrWhiteSpace(accNo)) continue;
+                var digits = new string(accNo.Where(char.IsDigit).ToArray());
+                if (digits.Length == 14)
+                {
+                    // [Branch:3][Scheme:3][Seq:7][Luhn:1]
+                    if (int.TryParse(digits.Substring(6, 7), out int parsedSeq) && parsedSeq > maxExistingSeq)
+                    {
+                        maxExistingSeq = parsedSeq;
+                    }
+                }
+            }
+
+            var seq = await _context.RdAccountSequences
+                .FirstOrDefaultAsync(s => s.BranchID == branchId && (s.SchemeCodeNumeric == schemeCodeNum || s.ProductType == "RD"));
+
+            if (seq == null)
+            {
+                int initialVal = Math.Max(existingAccNos.Count, maxExistingSeq);
+                seq = new RdAccountSequence
+                {
+                    BranchID = branchId,
+                    ProductType = "RD",
+                    CurrentValue = initialVal,
+                    SchemeCodeNumeric = schemeCodeNum,
+                    LastSequenceNumber = initialVal,
+                    UpdatedOn = DateTime.UtcNow
+                };
+                _context.RdAccountSequences.Add(seq);
+                await _context.SaveChangesAsync();
+            }
+            else
+            {
+                // Self-healing / Auto-sync with actual remaining accounts in database:
+                if (seq.CurrentValue != maxExistingSeq || seq.LastSequenceNumber != maxExistingSeq)
+                {
+                    seq.CurrentValue = maxExistingSeq;
+                    seq.LastSequenceNumber = maxExistingSeq;
+                    seq.UpdatedOn = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                }
+                if (seq.SchemeCodeNumeric == 0)
+                {
+                    seq.SchemeCodeNumeric = schemeCodeNum;
+                }
+            }
+
+            int currentVal = Math.Max(seq.CurrentValue, seq.LastSequenceNumber);
+            int nextSeqNumber = currentVal + 1;
+            if (incrementSequence)
+            {
+                seq.CurrentValue = nextSeqNumber;
+                seq.LastSequenceNumber = nextSeqNumber;
+                seq.UpdatedOn = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+            }
+
+            string thirteenDigits = $"{branchCode3}{schemeCode3}{nextSeqNumber:D7}";
+            int checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
+            return $"{thirteenDigits}{checkDigit}";
+        }
+
+        // GET: api/RdAccounts/next-account-no?branchId=1&schemeId=1
+        [AllowAnonymous]
+        [HttpGet("next-account-no")]
+        [HttpGet("next-account-no/{branchId:int?}")]
+        public async Task<ActionResult<object>> GetNextAccountNo(
+            int? branchId = null,
+            [FromQuery(Name = "branchId")] int? queryBranchId = null,
+            [FromQuery(Name = "schemeId")] int? schemeId = null)
+        {
+            int targetBranchId = branchId ?? queryBranchId ?? 1;
+            string nextNo = await GenerateNextRdAccountNo(targetBranchId, schemeId, incrementSequence: false);
+            string formattedNo = LuhnHelper.Format14Digit(nextNo);
+            return Ok(new
+            {
+                nextAccountNo = nextNo,
+                accountNo = nextNo,
+                formattedAccountNo = formattedNo,
+                displayAccountNo = formattedNo
+            });
         }
 
         // GET: api/RdAccounts
@@ -85,6 +240,7 @@ namespace Bhisi.Api.Controllers
                     SchemeName = r.RdScheme != null ? r.RdScheme.SchemeName : "",
                     SchemeCode = r.RdScheme != null ? r.RdScheme.SchemeCode : "",
                     r.AccountNo,
+                    FormattedAccountNo = LuhnHelper.Format14Digit(r.AccountNo),
                     r.OpeningDate,
                     r.InstallmentAmount,
                     r.DurationMonths,
@@ -161,6 +317,7 @@ namespace Bhisi.Api.Controllers
                     SchemeName = r.RdScheme != null ? r.RdScheme.SchemeName : "",
                     SchemeCode = r.RdScheme != null ? r.RdScheme.SchemeCode : "",
                     r.AccountNo,
+                    FormattedAccountNo = LuhnHelper.Format14Digit(r.AccountNo),
                     r.OpeningDate,
                     r.InstallmentAmount,
                     r.DurationMonths,
@@ -280,23 +437,11 @@ namespace Bhisi.Api.Controllers
             {
                 try
                 {
-                    // Generate Auto Account No
-                    var branch = await _context.Branches.FindAsync(account.BranchID);
-                    string branchPrefix = branch != null ? branch.BranchCode : "BR";
-
-                    var seq = await _context.RdAccountSequences
-                        .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "RD");
-                    
-                    if (seq == null)
+                    // Generate Standard 14-Digit CBS Account Number: [Branch:3][Scheme:3][Seq:7][Luhn:1]
+                    if (string.IsNullOrWhiteSpace(account.AccountNo) || account.AccountNo == "AUTO")
                     {
-                        seq = new RdAccountSequence { BranchID = account.BranchID, ProductType = "RD", CurrentValue = 0 };
-                        _context.RdAccountSequences.Add(seq);
+                        account.AccountNo = await GenerateNextRdAccountNo(account.BranchID, account.RdSchemeID, incrementSequence: true);
                     }
-                    
-                    seq.CurrentValue += 1;
-                    await _context.SaveChangesAsync();
-
-                    account.AccountNo = $"{branchPrefix}-{account.BranchID:D3}-RD-{seq.CurrentValue:D6}";
 
                     // Calculations
                     account.InstallmentAmount = scheme.InstallmentAmount;
@@ -356,6 +501,7 @@ namespace Bhisi.Api.Controllers
                     int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "RD");
                     var cashLedger = await _context.Ledgers.FindAsync(branchCashId);
 
+                    int? generatedVoucherId = null;
                     if (rdLiabilityLedger != null && cashLedger != null)
                     {
                         var (vStatus, appBy, appOn) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, account.InstallmentAmount, account.CreatedBy);
@@ -377,7 +523,7 @@ namespace Bhisi.Api.Controllers
                         };
                         _context.Vouchers.Add(voucher);
                         await _context.SaveChangesAsync();
-
+                        generatedVoucherId = voucher.VoucherID;
 
                         // Dr Cash / Saving, Cr RD Liability
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Dr", Amount = account.InstallmentAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
@@ -398,11 +544,39 @@ namespace Bhisi.Api.Controllers
                             PrincipalAmount = account.InstallmentAmount,
                             PenaltyAmount = 0,
                             InterestAmount = 0,
+                            BalanceAfterTxn = account.TotalDepositedAmount,
+                            Narration = $"नवीन आरडी खाते उघडले - हप्ता क्र. १: {account.AccountNo}",
                             CreatedBy = account.CreatedBy
                         };
                         _context.RdTransactions.Add(tx);
                         await _context.SaveChangesAsync();
                     }
+
+                    // Generate Full RD Installment Amortization Schedule (Installments 1 to N)
+                    var schedules = new List<RdInstallmentSchedule>();
+                    int gracePeriod = scheme.GracePeriodDays > 0 ? scheme.GracePeriodDays : 5;
+                    for (int i = 1; i <= scheme.DurationMonths; i++)
+                    {
+                        DateTime dueDate = account.OpeningDate.AddMonths(i - 1);
+                        var sched = new RdInstallmentSchedule
+                        {
+                            RdAccountID = account.RdAccountID,
+                            InstallmentNo = i,
+                            DueDate = dueDate,
+                            GraceDate = dueDate.AddDays(gracePeriod),
+                            ExpectedAmount = account.InstallmentAmount,
+                            Status = i == 1 ? "Paid" : "Pending",
+                            PaidDate = i == 1 ? account.OpeningDate : null,
+                            PaidAmount = i == 1 ? account.InstallmentAmount : 0,
+                            OverdueDays = 0,
+                            PenaltyCharged = 0,
+                            PenaltyWaived = 0,
+                            VoucherID = i == 1 ? generatedVoucherId : null
+                        };
+                        schedules.Add(sched);
+                    }
+                    _context.RDInstallmentSchedules.AddRange(schedules);
+                    await _context.SaveChangesAsync();
 
                     await transaction.CommitAsync();
                     return CreatedAtAction("GetRdAccount", new { id = account.RdAccountID }, account);
@@ -433,24 +607,16 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Invalid installment amount.");
             }
 
-            if (string.IsNullOrWhiteSpace(account.AccountNo) || account.AccountNo == "AUTO")
+            // Standardize and generate auto-incremented CBS 14-digit Account Number
+            if (string.IsNullOrWhiteSpace(account.AccountNo) || account.AccountNo == "AUTO" || !LuhnHelper.ValidateAccountNo(account.AccountNo) || await _context.RdAccounts.AnyAsync(a => a.AccountNo == account.AccountNo))
             {
-                var branch = await _context.Branches.FindAsync(account.BranchID);
-                string branchPrefix = branch != null ? branch.BranchCode : "BR";
-
-                var seq = await _context.RdAccountSequences
-                    .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "RD");
-                
-                if (seq == null)
-                {
-                    seq = new RdAccountSequence { BranchID = account.BranchID, ProductType = "RD", CurrentValue = 0 };
-                    _context.RdAccountSequences.Add(seq);
-                }
-                
-                seq.CurrentValue += 1;
-                await _context.SaveChangesAsync();
-
-                account.AccountNo = $"{branchPrefix}-{account.BranchID:D3}-RD-{seq.CurrentValue:D6}";
+                string rawNext = await GenerateNextRdAccountNo(account.BranchID, account.RdSchemeID, incrementSequence: true);
+                account.AccountNo = LuhnHelper.Format14Digit(rawNext);
+            }
+            else
+            {
+                account.AccountNo = LuhnHelper.Format14Digit(account.AccountNo);
+                await GenerateNextRdAccountNo(account.BranchID, account.RdSchemeID, incrementSequence: true);
             }
 
             account.IsLegacyAccount = true;
@@ -475,6 +641,8 @@ namespace Bhisi.Api.Controllers
                 PrincipalAmount = account.TotalDepositedAmount,
                 PenaltyAmount = 0,
                 InterestAmount = 0,
+                BalanceAfterTxn = account.TotalDepositedAmount,
+                Narration = $"मायग्रेटेड आरडी खाते सुरुवाती शिल्लक: {account.AccountNo}",
                 CreatedBy = account.CreatedBy
             };
             _context.RdTransactions.Add(tx);
@@ -492,10 +660,67 @@ namespace Bhisi.Api.Controllers
                     PrincipalAmount = 0,
                     PenaltyAmount = 0,
                     InterestAmount = account.LegacyAccruedInt,
+                    BalanceAfterTxn = account.TotalDepositedAmount,
+                    Narration = $"मायग्रेटेड आरडी संचित व्याज: {account.AccountNo}",
                     CreatedBy = account.CreatedBy
                 };
                 _context.RdTransactions.Add(intTx);
             }
+
+            // Generate Amortization Schedule for Migrated Account
+            var scheds = new List<RdInstallmentSchedule>();
+            for (int i = 1; i <= account.DurationMonths; i++)
+            {
+                bool isPaid = i <= account.TotalPaidInstallments;
+                scheds.Add(new RdInstallmentSchedule
+                {
+                    RdAccountID = account.RdAccountID,
+                    InstallmentNo = i,
+                    DueDate = account.OpeningDate.AddMonths(i - 1),
+                    GraceDate = account.OpeningDate.AddMonths(i - 1).AddDays(5),
+                    ExpectedAmount = account.InstallmentAmount,
+                    Status = isPaid ? "Paid" : "Pending",
+                    PaidDate = isPaid ? account.OpeningDate : null,
+                    PaidAmount = isPaid ? account.InstallmentAmount : 0,
+                    OverdueDays = 0,
+                    PenaltyCharged = 0,
+                    PenaltyWaived = 0,
+                    VoucherID = isPaid ? dummyVoucher.VoucherID : null
+                });
+            }
+            _context.RDInstallmentSchedules.AddRange(scheds);
+
+            await _context.SaveChangesAsync();
+            return Ok(account);
+        }
+
+        // PUT: api/RdAccounts/5
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutRdAccount(int id, RdAccount updated)
+        {
+            var account = await _context.RdAccounts.FindAsync(id);
+            if (account == null)
+            {
+                return NotFound(new { message = "आरडी खाते सापडले नाही." });
+            }
+
+            // Keep the same AccountNo on edit - do not change account number!
+            if (updated.CustomerID > 0) account.CustomerID = updated.CustomerID;
+            if (updated.RdSchemeID > 0) account.RdSchemeID = updated.RdSchemeID;
+            account.LegacyAccountNumber = updated.LegacyAccountNumber;
+            account.PassbookNo = updated.PassbookNo;
+            account.OpeningDate = updated.OpeningDate;
+            account.InstallmentAmount = updated.InstallmentAmount;
+            account.DurationMonths = updated.DurationMonths;
+            account.InterestRate = updated.InterestRate;
+            account.MaturityDate = updated.MaturityDate;
+            account.MaturityAmount = updated.MaturityAmount;
+            account.TotalPaidInstallments = updated.TotalPaidInstallments;
+            account.TotalDepositedAmount = updated.TotalDepositedAmount;
+            account.LegacyAccruedInt = updated.LegacyAccruedInt;
+            account.NomineeName = updated.NomineeName;
+            account.NomineeRelation = updated.NomineeRelation;
+            account.Remarks = updated.Remarks;
 
             await _context.SaveChangesAsync();
             return Ok(account);
@@ -514,9 +739,22 @@ namespace Bhisi.Api.Controllers
             }
 
             var transactions = await _context.RdTransactions.Where(t => t.RdAccountID == id).ToListAsync();
-            if (transactions.Any(t => t.TransactionType != "Installment" && t.TransactionType != "Accrual" && t.TransactionType != "Opening"))
+            
+            // कठोर बँकिंग नियम: खात्यावर नंतरचे कोणतेही आर्थिक व्यवहार (हप्ते / दंड / व्याज / इतर व्यवहार) झालेले नसावेत
+            int initialAllowedInstallments = account.IsLegacyAccount ? account.TotalPaidInstallments : 1;
+            bool hasSubsequentTxns = transactions.Any(t =>
+                t.InstallmentNo > initialAllowedInstallments ||
+                (t.TransactionType != "Installment" && t.TransactionType != "Accrual" && t.TransactionType != "Opening") ||
+                (!account.IsLegacyAccount && t.TransactionDate.Date > account.OpeningDate.Date && !(t.Narration ?? "").Contains("नवीन आरडी खाते उघडले")) ||
+                (account.IsLegacyAccount && t.TransactionDate.Date > account.OpeningDate.Date && !(t.Narration ?? "").Contains("मायग्रेटेड"))
+            );
+
+            bool hasSubsequentPaidSchedules = await _context.RDInstallmentSchedules
+                .AnyAsync(s => s.RdAccountID == id && s.InstallmentNo > initialAllowedInstallments && s.Status == "Paid");
+
+            if (hasSubsequentTxns || hasSubsequentPaidSchedules)
             {
-                return BadRequest(new { message = "हे खाते डिलीट करता येणार नाही कारण या खात्यावर नंतरचे व्यवहार झाले आहेत." });
+                return BadRequest(new { message = "हे खाते डिलीट करता येणार नाही कारण या खात्यावर नंतरचे आर्थिक व्यवहार (Transactions / हप्ते) झालेले आहेत." });
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -533,26 +771,38 @@ namespace Bhisi.Api.Controllers
                     _context.RdInterestAccruals.RemoveRange(accruals);
                 }
 
-                // Check and rollback sequence if this was the latest account
-                var seq = await _context.RdAccountSequences
-                    .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "RD");
-                if (seq != null)
+                var schedules = await _context.RDInstallmentSchedules.Where(s => s.RdAccountID == id).ToListAsync();
+                if (schedules.Any())
                 {
-                    var remainingMaxSeq = await _context.RdAccounts
-                        .Where(a => a.BranchID == account.BranchID && a.RdAccountID != id)
-                        .Select(a => a.AccountNo)
-                        .ToListAsync();
+                    _context.RDInstallmentSchedules.RemoveRange(schedules);
+                }
 
-                    int maxNum = 0;
-                    foreach (var accNo in remainingMaxSeq)
+                // Check and rollback sequence to the highest sequence among remaining accounts
+                var remainingAccounts = await _context.RdAccounts
+                    .Where(a => a.BranchID == account.BranchID && a.RdAccountID != id)
+                    .Select(a => a.AccountNo)
+                    .ToListAsync();
+
+                int remainingMaxSeq = 0;
+                foreach (var accNo in remainingAccounts)
+                {
+                    string digits = new string(accNo.Where(char.IsDigit).ToArray());
+                    if (digits.Length == 14)
                     {
-                        var parts = accNo.Split('-');
-                        if (parts.Length > 0 && int.TryParse(parts.Last(), out int parsed))
+                        if (int.TryParse(digits.Substring(6, 7), out int parsedSeq) && parsedSeq > remainingMaxSeq)
                         {
-                            if (parsed > maxNum) maxNum = parsed;
+                            remainingMaxSeq = parsedSeq;
                         }
                     }
-                    seq.CurrentValue = maxNum;
+                }
+
+                var seq = await _context.RdAccountSequences
+                    .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && (s.SchemeCodeNumeric == 501 || s.ProductType == "RD"));
+                if (seq != null)
+                {
+                    seq.CurrentValue = remainingMaxSeq;
+                    seq.LastSequenceNumber = remainingMaxSeq;
+                    seq.UpdatedOn = DateTime.UtcNow;
                     _context.RdAccountSequences.Update(seq);
                 }
 
@@ -663,9 +913,34 @@ namespace Bhisi.Api.Controllers
                     }
                     await _context.SaveChangesAsync();
 
+                    // Update RD Amortization Installment Schedules
+                    var pendingSchedules = await _context.RDInstallmentSchedules
+                        .Where(s => s.RdAccountID == id && s.Status != "Paid")
+                        .OrderBy(s => s.InstallmentNo)
+                        .Take(count)
+                        .ToListAsync();
+
+                    for (int idx = 0; idx < pendingSchedules.Count; idx++)
+                    {
+                        var s = pendingSchedules[idx];
+                        s.Status = "Paid";
+                        s.PaidDate = DateTime.Today;
+                        s.PaidAmount = account.InstallmentAmount;
+                        s.VoucherID = voucher.VoucherID;
+                        s.OverdueDays = (DateTime.Today > s.GraceDate) 
+                            ? (int)(DateTime.Today - s.DueDate).TotalDays 
+                            : 0;
+                        if (idx == pendingSchedules.Count - 1 && penaltyAmount > 0)
+                        {
+                            s.PenaltyCharged = penaltyAmount;
+                        }
+                    }
+
                     // Log transactions
+                    decimal runningBal = account.TotalDepositedAmount - totalInstallmentPrincipal;
                     for (int i = 1; i <= count; i++)
                     {
+                        runningBal += account.InstallmentAmount;
                         var tx = new RdTransaction
                         {
                             BranchID = account.BranchID,
@@ -678,6 +953,8 @@ namespace Bhisi.Api.Controllers
                             PrincipalAmount = account.InstallmentAmount,
                             PenaltyAmount = i == count ? penaltyAmount : 0, // Apply penalty on the batch closure
                             InterestAmount = 0,
+                            BalanceAfterTxn = runningBal,
+                            Narration = $"आरडी हप्ता भरणा - हप्ता क्र. {currentPaid + i}: {account.AccountNo}",
                             CreatedBy = 1
                         };
                         _context.RdTransactions.Add(tx);
@@ -693,6 +970,34 @@ namespace Bhisi.Api.Controllers
                     return BadRequest("हप्ते भरताना त्रुटी आली: " + ex.Message);
                 }
             }
+        }
+
+        // GET: api/RdAccounts/5/schedule
+        [HttpGet("{id}/schedule")]
+        public async Task<ActionResult<IEnumerable<object>>> GetRdSchedule(int id)
+        {
+            var schedules = await _context.RDInstallmentSchedules
+                .Where(s => s.RdAccountID == id)
+                .OrderBy(s => s.InstallmentNo)
+                .Select(s => new
+                {
+                    s.ScheduleID,
+                    s.RdAccountID,
+                    s.InstallmentNo,
+                    s.DueDate,
+                    s.GraceDate,
+                    s.ExpectedAmount,
+                    s.Status,
+                    s.PaidDate,
+                    s.PaidAmount,
+                    s.OverdueDays,
+                    s.PenaltyCharged,
+                    s.PenaltyWaived,
+                    s.VoucherID
+                })
+                .ToListAsync();
+
+            return Ok(schedules);
         }
 
         // POST: api/RdAccounts/AccrueInterest

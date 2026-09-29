@@ -20,10 +20,10 @@ import {
   BookOpen
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
-import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import * as XLSX from 'xlsx';
 
-interface Member extends MemberOption {}
+interface Customer extends CustomerOption {}
 
 interface RdScheme {
   rdSchemeID: number;
@@ -44,7 +44,7 @@ interface Branch {
 }
 
 export default function RdOpeningBalanceMigration() {
-  const [members, setMembers] = useState<Member[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [schemes, setSchemes] = useState<RdScheme[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,7 +63,7 @@ export default function RdOpeningBalanceMigration() {
 
   const [formData, setFormData] = useState({
     branchID: 1,
-    memberID: '',
+    customerID: '',
     rdSchemeID: '',
     accountNo: 'AUTO',
     legacyAccountNumber: '',
@@ -82,13 +82,15 @@ export default function RdOpeningBalanceMigration() {
     remarks: 'जुन्या आरडी खात्याचे मायग्रेशन (Legacy Migration)',
   });
 
-  const selectedMember = members.find((m) => m.memberID.toString() === formData.memberID);
+  const selectedCustomer = customers.find((c) => c && c.customerID != null && c.customerID.toString() === formData.customerID);
 
-  const fetchNextAccountNo = async (branchId: number) => {
+  const fetchNextAccountNo = async (branchId: number, schemeId?: string | number) => {
     setLoadingAccountNo(true);
     try {
-      const res = await axios.get(`/api/RdAccounts/next-account-no?branchId=${branchId}`);
-      setNextAccountNo(res.data);
+      const q = schemeId ? `?branchId=${branchId}&schemeId=${schemeId}` : `?branchId=${branchId}`;
+      const res = await axios.get(`/api/RdAccounts/next-account-no${q}`);
+      const acc = res.data?.formattedAccountNo || res.data?.accountNo || (typeof res.data === 'string' ? res.data : '---');
+      setNextAccountNo(acc);
     } catch (err) {
       console.error('Error fetching next account number', err);
       setNextAccountNo('---');
@@ -108,64 +110,81 @@ export default function RdOpeningBalanceMigration() {
     }
   };
 
-  const handleDelete = async (id: number, accNo: string) => {
-    if (!window.confirm(`तुम्हाला खरोखर आरडी खाते '${accNo}' डिलीट करायचे आहे का?`)) {
-      return;
-    }
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; accNo: string } | null>(null);
+  const [modalMessage, setModalMessage] = useState('');
+  const [modalIsSuccess, setModalIsSuccess] = useState(false);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const { id, accNo } = deleteTarget;
 
     try {
       setLoading(true);
       await axios.delete(`/api/RdAccounts/${id}`);
-      setMessage(`आरडी खाते '${accNo}' यशस्वीरीत्या डिलीट केले.`);
+      const delMsg = `आरडी खाते '${accNo}' यशस्वीरीत्या डिलीट केले.`;
+      setMessage(delMsg);
       setIsSuccess(true);
+      setModalMessage(delMsg);
+      setModalIsSuccess(true);
+      setDeleteTarget(null);
       fetchMigratedAccounts();
-      fetchNextAccountNo(formData.branchID || 1);
+      fetchNextAccountNo(formData.branchID || 1, formData.rdSchemeID);
       if (editingAccountId === id) {
-        resetForm();
+        resetForm(true);
       }
     } catch (err: any) {
       console.error('Error deleting RD account', err);
-      setMessage(err.response?.data?.message || err.response?.data || 'खाते डिलीट करताना त्रुटी आली.');
+      const errMsg = err.response?.data?.message || err.response?.data || 'खाते डिलीट करताना त्रुटी आली.';
+      setMessage(errMsg);
       setIsSuccess(false);
+      setModalMessage(errMsg);
+      setModalIsSuccess(false);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchData = async () => {
-    try {
-      const [mRes, sRes, bRes] = await axios.all([
-        axios.get('/api/Customers'),
-        axios.get('/api/RdSchemes'),
-        axios.get('/api/Branches'),
-      ]);
-      setMembers(mRes.data || []);
-      setSchemes((sRes.data || []).filter((s: any) => s.isActive !== false));
-      setBranches(bRes.data || []);
-
-      const defaultBranch = bRes.data?.length > 0 ? bRes.data[0].branchID : 1;
-      fetchNextAccountNo(defaultBranch);
-      fetchMigratedAccounts();
-
-      const params = new URLSearchParams(window.location.search);
-      const memberIdStr = params.get('memberId');
-      if (memberIdStr && mRes.data?.length > 0) {
-        const mId = parseInt(memberIdStr, 10);
-        const matchedMember = mRes.data.find((m: any) => m.memberID === mId);
-        if (matchedMember) {
-          setFormData((prev) => ({
-            ...prev,
-            memberID: mId.toString()
-          }));
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   useEffect(() => {
+    let isMounted = true;
+
+    const fetchData = async () => {
+      try {
+        const [mRes, sRes, bRes] = await axios.all([
+          axios.get('/api/Customers'),
+          axios.get('/api/RdSchemes'),
+          axios.get('/api/Branches'),
+        ]);
+        if (!isMounted) return;
+        setCustomers(mRes.data || []);
+        setSchemes((sRes.data || []).filter((s: any) => s.isActive !== false));
+        setBranches(bRes.data || []);
+
+        const defaultBranch = bRes.data?.length > 0 ? bRes.data[0].branchID : 1;
+        fetchNextAccountNo(defaultBranch);
+        fetchMigratedAccounts();
+
+        const params = new URLSearchParams(window.location.search);
+        const customerIdStr = params.get('customerId') || params.get('memberId');
+        if (customerIdStr && mRes.data?.length > 0) {
+          const cId = parseInt(customerIdStr, 10);
+          const matchedCustomer = mRes.data.find((c: any) => c && (c.customerID === cId || c.memberID === cId));
+          if (matchedCustomer && isMounted) {
+            setFormData((prev) => ({
+              ...prev,
+              customerID: cId.toString()
+            }));
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
     fetchData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const calculateAccruedInterest31March = (installment: number, annualRate: number, paidInstallments: number): number => {
@@ -190,7 +209,7 @@ export default function RdOpeningBalanceMigration() {
       const updated = { ...prev, [name]: value };
 
       if (name === 'branchID') {
-        fetchNextAccountNo(parseInt(value, 10));
+        fetchNextAccountNo(parseInt(value, 10), prev.rdSchemeID);
       }
 
       if (name === 'installmentAmount' || name === 'totalPaidInstallments') {
@@ -217,6 +236,7 @@ export default function RdOpeningBalanceMigration() {
   };
 
   const handleSchemeChange = (schemeId: string) => {
+    fetchNextAccountNo(formData.branchID || 1, schemeId);
     const selected = schemes.find((s) => s.rdSchemeID.toString() === schemeId);
     if (selected) {
       setFormData((prev) => {
@@ -268,11 +288,11 @@ export default function RdOpeningBalanceMigration() {
     }
   };
 
-  const resetForm = () => {
+  const resetForm = (keepMessage = false) => {
     setEditingAccountId(null);
     setFormData({
       branchID: formData.branchID || 1,
-      memberID: '',
+      customerID: '',
       rdSchemeID: '',
       accountNo: 'AUTO',
       legacyAccountNumber: '',
@@ -290,7 +310,9 @@ export default function RdOpeningBalanceMigration() {
       nomineeRelation: '',
       remarks: 'जुन्या आरडी खात्याचे मायग्रेशन (Legacy Migration)',
     });
-    setMessage('');
+    if (!keepMessage) {
+      setMessage('');
+    }
     fetchNextAccountNo(formData.branchID || 1);
   };
 
@@ -298,7 +320,7 @@ export default function RdOpeningBalanceMigration() {
     setEditingAccountId(acc.rdAccountID || acc.rdAccountId);
     setFormData({
       branchID: acc.branchID || 1,
-      memberID: String(acc.memberID || ''),
+      customerID: String(acc.customerID || acc.customerId || acc.memberID || ''),
       rdSchemeID: String(acc.rdSchemeID || ''),
       accountNo: acc.accountNo || 'AUTO',
       legacyAccountNumber: acc.legacyAccountNumber || '',
@@ -316,7 +338,8 @@ export default function RdOpeningBalanceMigration() {
       nomineeRelation: acc.nomineeRelation || '',
       remarks: acc.remarks || 'जुन्या आरडी खात्याचे मायग्रेशन (Legacy Migration)',
     });
-    setMessage('');
+    setMessage(`✏️ संपादन मोड: खाते क्र. '${acc.accountNo}' फॉर्ममध्ये लोड केले आहे. सुधारणा करून सेव्ह करा.`);
+    setIsSuccess(true);
     setShowMigratedModal(false);
 
     if (formContainerRef.current) {
@@ -331,8 +354,8 @@ export default function RdOpeningBalanceMigration() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.memberID) {
-      setMessage('कृपया सभासद निवडा.');
+    if (!formData.customerID) {
+      setMessage('कृपया खातेदार / ग्राहक निवडा.');
       setIsSuccess(false);
       return;
     }
@@ -348,9 +371,9 @@ export default function RdOpeningBalanceMigration() {
     try {
       const payload = {
         branchID: parseInt(formData.branchID.toString(), 10),
-        customerID: parseInt(formData.memberID, 10),
+        customerID: parseInt(formData.customerID, 10),
         rdSchemeID: parseInt(formData.rdSchemeID, 10),
-        accountNo: formData.accountNo === 'AUTO' ? nextAccountNo : formData.accountNo,
+        accountNo: editingAccountId ? formData.accountNo : 'AUTO',
         legacyAccountNumber: formData.legacyAccountNumber || null,
         passbookNo: formData.passbookNo || null,
         openingDate: formData.openingDate,
@@ -368,21 +391,28 @@ export default function RdOpeningBalanceMigration() {
         isLegacyAccount: true,
       };
 
+      let successMsg = '';
       if (editingAccountId) {
         await axios.put(`/api/RdAccounts/${editingAccountId}`, {
           rdAccountID: editingAccountId,
           ...payload,
         });
-        setMessage('आरडी खात्याची माहिती यशस्वीरित्या अद्ययावत केली!');
-        setIsSuccess(true);
+        successMsg = `✅ आरडी खाते '${payload.accountNo}' ची माहिती यशस्वीरित्या अद्ययावत (Update) केली!`;
       } else {
         const response = await axios.post('/api/RdAccounts/Migrate', payload);
-        setMessage(`जुन्या आरडी खात्याचे मायग्रेशन यशस्वी झाले! नवीन खाते क्र.: ${response.data.accountNo}`);
-        setIsSuccess(true);
+        const createdNo = response.data?.accountNo || nextAccountNo;
+        successMsg = `✅ जुन्या आरडी खात्याचे मायग्रेशन यशस्वी झाले! नवीन खाते क्र.: ${createdNo}`;
       }
 
-      resetForm();
+      resetForm(true);
+      setMessage(successMsg);
+      setIsSuccess(true);
       fetchMigratedAccounts();
+      fetchNextAccountNo(formData.branchID || 1, formData.rdSchemeID);
+
+      if (formContainerRef.current) {
+        formContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     } catch (err: any) {
       console.error(err);
       setMessage(err.response?.data?.message || err.response?.data || 'माहिती जतन करताना त्रुटी आली.');
@@ -398,8 +428,8 @@ export default function RdOpeningBalanceMigration() {
       'अ.क्र.': i + 1,
       'खाते क्र.': acc.accountNo,
       'जुना खाते क्र.': acc.legacyAccountNumber || '-',
-      'सभासद कोड': acc.member?.memberCode || '-',
-      'सभासदाचे नाव': acc.member ? `${acc.member.firstName} ${acc.member.lastName}` : '-',
+      'ग्राहक CIF': acc.cifNo || acc.customer?.cifNo || (acc.customerID ? `CUST-${acc.customerID}` : (acc.member?.memberCode || '-')),
+      'खातेदाराचे नाव': acc.customerName || (acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : (acc.member ? `${acc.member.firstName} ${acc.member.lastName}` : '-')),
       'योजनेचे नाव': acc.rdScheme?.schemeName || '-',
       'हप्ता रक्कम (₹)': acc.installmentAmount || 0,
       'जमा हप्ते संख्या': acc.totalPaidInstallments || 0,
@@ -417,26 +447,14 @@ export default function RdOpeningBalanceMigration() {
     XLSX.writeFile(wb, `RD_Opening_Balances_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const formatMemberLabel = (m: Member) => {
-    const nameParts = [m.firstName, m.middleName, m.lastName].filter(Boolean);
-    const fullName = nameParts.join(' ').trim();
-    const cifStr = m.cifNo ? `CIF: ${m.cifNo}` : '';
-    const codeStr = m.memberCode ? `सभासद नं: ${m.memberCode}` : '';
-    const oldNo = m.oldMemberCode || m.legacyMemberNo;
-    const oldNoStr = oldNo ? `जुना नं: ${oldNo}` : '';
-
-    const details = [cifStr, codeStr, oldNoStr].filter(Boolean).join(' | ');
-    return details ? `${fullName} (${details})` : fullName;
-  };
-
   const filteredAccounts = migratedAccounts.filter((acc) => {
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
-    const memName = acc.member ? `${acc.member.firstName} ${acc.member.lastName}`.toLowerCase() : '';
-    const memCode = acc.member?.memberCode ? acc.member.memberCode.toLowerCase() : '';
+    const custName = (acc.customerName || (acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : (acc.member ? `${acc.member.firstName} ${acc.member.lastName}` : ''))).toLowerCase();
+    const cif = (acc.cifNo || acc.customer?.cifNo || (acc.customerID ? `cust-${acc.customerID}` : '') || (acc.member?.memberCode ? acc.member.memberCode : '')).toLowerCase();
     const accNo = acc.accountNo ? acc.accountNo.toLowerCase() : '';
     const legNo = acc.legacyAccountNumber ? acc.legacyAccountNumber.toLowerCase() : '';
-    return accNo.includes(term) || legNo.includes(term) || memName.includes(term) || memCode.includes(term);
+    return accNo.includes(term) || legNo.includes(term) || custName.includes(term) || cif.includes(term);
   });
 
   // KPI Calculations
@@ -559,12 +577,12 @@ export default function RdOpeningBalanceMigration() {
 
       {/* Alert Messages */}
       {message && (
-        <div className={`mb-3 p-2 border rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs ${
-          isSuccess ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-rose-50 border-rose-300 text-rose-800'
+        <div className={`mb-3 p-3 border rounded-sm flex items-center gap-2.5 text-xs font-bold shadow-xs transition-all ${
+          isSuccess ? 'bg-emerald-50 border-emerald-400 text-emerald-900 ring-2 ring-emerald-200' : 'bg-rose-50 border-rose-300 text-rose-800 ring-2 ring-rose-200'
         }`}>
-          {isSuccess ? <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" /> : <XCircle className="w-4 h-4 text-rose-600 shrink-0" />}
-          <span className="flex-1">{message}</span>
-          <button onClick={() => setMessage('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
+          {isSuccess ? <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" /> : <XCircle className="w-5 h-5 text-rose-600 shrink-0" />}
+          <span className="flex-1 text-[12px]">{message}</span>
+          <button onClick={() => setMessage('')} className="font-bold text-gray-500 hover:text-gray-800 text-base cursor-pointer px-1">×</button>
         </div>
       )}
 
@@ -581,7 +599,7 @@ export default function RdOpeningBalanceMigration() {
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
             <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
               <UserCheck className="w-4 h-4 text-primary" />
-              <h2 className="text-xs font-bold text-primary">१. शाखा, सभासद व आरडी योजना (Branch, Member & Scheme)</h2>
+              <h2 className="text-xs font-bold text-primary">१. शाखा, खातेदार व आरडी योजना (Branch, Customer & Scheme)</h2>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -598,13 +616,13 @@ export default function RdOpeningBalanceMigration() {
 
               <div>
                 <label className={labelClass}>
-                  सभासद निवडा (Member) <span className="text-red-500">*</span>
+                  खातेदार / ग्राहक निवडा (Select Customer / CIF) <span className="text-red-500">*</span>
                 </label>
-                <MemberSearchSelect
-                  members={members}
-                  value={formData.memberID ? Number(formData.memberID) : ''}
-                  onChange={(val) => setFormData(prev => ({ ...prev, memberID: val ? String(val) : '' }))}
-                  placeholder="-- सभासद नाव, कोड किंवा मोबाईलने शोधा --"
+                <CustomerSearchSelect
+                  customers={customers}
+                  value={formData.customerID ? Number(formData.customerID) : ''}
+                  onChange={(val) => setFormData(prev => ({ ...prev, customerID: val ? String(val) : '' }))}
+                  placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
                 />
               </div>
 
@@ -633,16 +651,23 @@ export default function RdOpeningBalanceMigration() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
               <div>
-                <label className={labelClass}>खाते क्र. (Account No) <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  name="accountNo"
-                  value={formData.accountNo === 'AUTO' ? nextAccountNo : formData.accountNo}
-                  onChange={handleChange}
-                  className={`${inputClass} font-mono font-bold text-primary`}
-                  placeholder="उदा. RD001"
-                  required
-                />
+                <label className={labelClass}>
+                  खाते क्र. (Account No) <span className="text-gray-400 font-normal text-[10px]">(स्वयंचलित / Read Only)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    name="accountNo"
+                    value={loadingAccountNo ? 'लोड होत आहे...' : (editingAccountId ? formData.accountNo : (nextAccountNo || '001-501-0000001-0'))}
+                    readOnly
+                    className={`${inputClass} font-mono font-bold text-primary bg-slate-100 border-slate-300 cursor-not-allowed select-none`}
+                    title="सीबीएस खाते क्रमांक सिस्टीमद्वारे स्वयंचलित तयार होतो (बदलता येत नाही)"
+                    required
+                  />
+                  <span className="absolute right-2 top-1.5 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-300 pointer-events-none">
+                    CBS Auto
+                  </span>
+                </div>
               </div>
 
               <div>
@@ -908,6 +933,17 @@ export default function RdOpeningBalanceMigration() {
               </button>
             </div>
 
+            {/* Modal Alert Message */}
+            {modalMessage && (
+              <div className={`mx-2.5 mt-2.5 p-2.5 border rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs ${
+                modalIsSuccess ? 'bg-emerald-50 border-emerald-400 text-emerald-900 ring-1 ring-emerald-300' : 'bg-rose-50 border-rose-300 text-rose-800 ring-1 ring-rose-300'
+              }`}>
+                {modalIsSuccess ? <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" /> : <XCircle className="w-4 h-4 text-rose-600 shrink-0" />}
+                <span className="flex-1">{modalMessage}</span>
+                <button onClick={() => setModalMessage('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
+              </div>
+            )}
+
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
@@ -916,7 +952,7 @@ export default function RdOpeningBalanceMigration() {
                     <tr>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र. & जुना क्र.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">सभासद नाव & कोड</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">खातेदार नाव & CIF</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">हप्ता & जमा हप्ते</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">एकूण जमा मुद्दल (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर (%)</th>
@@ -940,7 +976,7 @@ export default function RdOpeningBalanceMigration() {
                             </button>
                             <button 
                               type="button" 
-                              onClick={() => handleDelete(acc.rdAccountID || acc.rdAccountId, acc.accountNo)} 
+                              onClick={() => setDeleteTarget({ id: acc.rdAccountID || acc.rdAccountId, accNo: acc.accountNo })} 
                               className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
                               title="खाते डिलीट करा (Delete)"
                             >
@@ -956,8 +992,12 @@ export default function RdOpeningBalanceMigration() {
                           )}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
-                          <div className="font-bold text-gray-900">{acc.member ? `${acc.member.firstName} ${acc.member.lastName}` : '-'}</div>
-                          <div className="text-[10px] text-gray-500 font-mono">कोड: {acc.member?.memberCode || '-'}</div>
+                          <div className="font-bold text-gray-900">
+                            {acc.customerName || (acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : (acc.member ? `${acc.member.firstName} ${acc.member.lastName}` : '-'))}
+                          </div>
+                          <div className="text-[10px] text-gray-500 font-mono">
+                            CIF: {acc.cifNo || acc.customer?.cifNo || (acc.customerID ? `CUST-${acc.customerID}` : (acc.member?.memberCode || '-'))}
+                          </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-right">
                           <div className="font-bold text-gray-800 font-mono">₹{acc.installmentAmount}</div>
@@ -1007,6 +1047,43 @@ export default function RdOpeningBalanceMigration() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[70] p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-md shadow-2xl border border-rose-200 max-w-md w-full p-4 space-y-3">
+            <div className="flex items-center gap-2 text-rose-600 border-b border-rose-100 pb-2">
+              <Trash2 className="w-5 h-5 shrink-0" />
+              <h3 className="text-sm font-bold text-gray-900">खाते डिलीट करण्याची खात्री करा (Confirm Delete)</h3>
+            </div>
+            <p className="text-xs text-gray-700 leading-relaxed">
+              तुम्हाला नक्की आरडी खाते क्रमांक <strong className="font-mono text-primary font-bold">{deleteTarget.accNo}</strong> डिलीट करायचे आहे का?
+            </p>
+            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded text-[11px] text-rose-800 font-medium">
+              ⚠️ हे खाते डिलीट केल्यास त्याच्याशी संबंधित सर्व सुरुवातीचे व्यवहार, हप्ते व वेळापत्रक कायमचे हटवले जाईल.
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => setDeleteTarget(null)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold transition-all cursor-pointer"
+              >
+                रद्द करा (Cancel)
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={confirmDelete}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{loading ? 'हटवत आहे...' : 'होय, डिलीट करा (Delete)'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

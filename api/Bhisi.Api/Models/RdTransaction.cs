@@ -61,6 +61,12 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal InterestAmount { get; set; } = 0;
 
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? BalanceAfterTxn { get; set; }
+
+        [StringLength(250)]
+        public string? Narration { get; set; }
+
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
     }

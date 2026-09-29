@@ -141,13 +141,14 @@ export default function RdAccountOpening() {
     remarks: 'नवीन आवर्ती ठेव खाते उघडले',
   });
 
-  const selectedMember = members.find((m) => m.memberID.toString() === formData.memberID);
 
-  const fetchNextAccountNo = async (branchId: number) => {
+  const fetchNextAccountNo = async (branchId: number, schemeId?: string | number) => {
     setLoadingAccountNo(true);
     try {
-      const res = await axios.get(`/api/RdAccounts/next-account-no?branchId=${branchId}`);
-      setNextAccountNo(res.data);
+      const q = schemeId ? `?branchId=${branchId}&schemeId=${schemeId}` : `?branchId=${branchId}`;
+      const res = await axios.get(`/api/RdAccounts/next-account-no${q}`);
+      const acc = res.data?.formattedAccountNo || res.data?.accountNo || (typeof res.data === 'string' ? res.data : '---');
+      setNextAccountNo(acc);
     } catch (err) {
       console.error('Error fetching next account number', err);
       setNextAccountNo('---');
@@ -162,7 +163,7 @@ export default function RdAccountOpening() {
       return;
     }
     try {
-      const selected = members.find((m: any) => (m.customerID || m.memberID)?.toString() === mIdStr.toString());
+      const selected = members.find((m: any) => m && (m.customerID || m.memberID)?.toString() === mIdStr.toString());
       const cId = selected?.customerID || mIdStr;
       const mId = selected?.memberProfile?.memberID || selected?.memberID || mIdStr;
 
@@ -175,45 +176,6 @@ export default function RdAccountOpening() {
     } catch (err) {
       console.error('Error fetching saving accounts', err);
       setSavingAccounts([]);
-    }
-  };
-
-  const fetchData = async () => {
-    try {
-      const [mRes, sRes, bRes, agRes] = await axios.all([
-        axios.get('/api/Customers'),
-        axios.get('/api/RdSchemes'),
-        axios.get('/api/Branches'),
-        axios.get('/api/PigmyAgents'),
-      ]);
-      const mList = Array.isArray(mRes.data) ? mRes.data : [];
-      const sList = Array.isArray(sRes.data) ? sRes.data : [];
-      const bList = Array.isArray(bRes.data) ? bRes.data : [];
-      const agList = Array.isArray(agRes.data) ? agRes.data : [];
-
-      setMembers(mList);
-      setSchemes(sList.filter((s: any) => s && s.isActive));
-      setBranches(bList);
-      setAgents(agList);
-
-      const defaultBranch = bList.length > 0 ? bList[0].branchID : 1;
-      fetchNextAccountNo(defaultBranch);
-
-      const params = new URLSearchParams(window.location.search);
-      const memberIdStr = params.get('memberId');
-      if (memberIdStr && mList.length > 0) {
-        const mId = parseInt(memberIdStr, 10);
-        const matchedMember = mList.find((m: any) => (m.customerID || m.memberID) === mId);
-        if (matchedMember) {
-          setFormData((prev) => ({
-            ...prev,
-            memberID: mId.toString()
-          }));
-          fetchMemberSavingAccounts(mId.toString());
-        }
-      }
-    } catch (err) {
-      console.error('Error loading initial data', err);
     }
   };
 
@@ -232,20 +194,89 @@ export default function RdAccountOpening() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+
+    const fetchData = async () => {
+      try {
+        const [mRes, sRes, bRes, agRes] = await axios.all([
+          axios.get('/api/Customers'),
+          axios.get('/api/RdSchemes'),
+          axios.get('/api/Branches'),
+          axios.get('/api/PigmyAgents'),
+        ]);
+        if (!isMounted) return;
+        const mList = Array.isArray(mRes.data) ? mRes.data : [];
+        const sList = Array.isArray(sRes.data) ? sRes.data : [];
+        const bList = Array.isArray(bRes.data) ? bRes.data : [];
+        const agList = Array.isArray(agRes.data) ? agRes.data : [];
+
+        setMembers(mList);
+        setSchemes(sList.filter((s: any) => s && s.isActive));
+        setBranches(bList);
+        setAgents(agList);
+
+        const defaultBranch = bList.length > 0 ? bList[0].branchID : 1;
+        fetchNextAccountNo(defaultBranch);
+
+        const params = new URLSearchParams(window.location.search);
+        const memberIdStr = params.get('memberId');
+        if (memberIdStr && mList.length > 0) {
+          const mId = parseInt(memberIdStr, 10);
+          const matchedMember = mList.find((m: any) => m && ((m.customerID || m.memberID) === mId));
+          if (matchedMember && isMounted) {
+            setFormData((prev) => ({
+              ...prev,
+              memberID: mId.toString()
+            }));
+            fetchMemberSavingAccounts(mId.toString());
+          }
+        }
+      } catch (err) {
+        console.error('Error loading initial data', err);
+      }
+    };
+
     fetchData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
     if (view === 'list') {
-      fetchRdList();
+      const load = async () => {
+        setListLoading(true);
+        setListError('');
+        try {
+          const res = await axios.get('/api/RdAccounts');
+          if (isMounted) {
+            setRdList(Array.isArray(res.data) ? res.data : []);
+          }
+        } catch (err: any) {
+          if (isMounted) {
+            console.error('Error fetching RD accounts list', err);
+            setListError('आरडी खात्यांची यादी लोड करताना त्रुटी आली.');
+          }
+        } finally {
+          if (isMounted) {
+            setListLoading(false);
+          }
+        }
+      };
+      load();
     }
+    return () => {
+      isMounted = false;
+    };
   }, [view]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     if (name === 'branchID') {
       const bId = parseInt(value, 10) || 1;
-      fetchNextAccountNo(bId);
+      fetchNextAccountNo(bId, formData.rdSchemeID);
     }
 
     setFormData((prev) => {
@@ -273,6 +304,7 @@ export default function RdAccountOpening() {
 
   const handleSchemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const schemeId = parseInt(e.target.value, 10);
+    fetchNextAccountNo(formData.branchID || 1, schemeId || undefined);
     const selected = schemes.find((s) => s.rdSchemeID === schemeId);
     if (selected) {
       setFormData((prev) => {
@@ -318,7 +350,7 @@ export default function RdAccountOpening() {
     }
   };
 
-  const resetForm = () => {
+  const resetForm = (keepMessages: boolean = false) => {
     setFormData({
       branchID: formData.branchID || 1,
       memberID: '',
@@ -342,8 +374,10 @@ export default function RdAccountOpening() {
       nomineeRelation: '',
       remarks: 'नवीन आवर्ती ठेव खाते उघडले',
     });
-    setError('');
-    setSuccess('');
+    if (!keepMessages) {
+      setError('');
+      setSuccess('');
+    }
     setSavingAccounts([]);
     fetchNextAccountNo(formData.branchID || 1);
   };
@@ -351,7 +385,7 @@ export default function RdAccountOpening() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.memberID) {
-      setError('कृपया सभासद निवडा.');
+      setError('कृपया खातेदार निवडा.');
       return;
     }
     if (!formData.rdSchemeID) {
@@ -363,7 +397,7 @@ export default function RdAccountOpening() {
       return;
     }
     if (formData.paymentMode === 'AutoDebit_Saving' && !formData.savingAccountID) {
-      setError('ऑटो-डेबिटसाठी कृपया सभासदाचे बचत खाते निवडा.');
+      setError('ऑटो-डेबिटसाठी कृपया खातेदाराचे बचत खाते निवडा.');
       return;
     }
 
@@ -386,9 +420,10 @@ export default function RdAccountOpening() {
         maturityAmount: parseFloat(formData.maturityAmount as any) || 0,
       };
       const res = await axios.post('/api/RdAccounts', payload);
-      setSuccess(`✅ नवीन आरडी खाते यशस्वीरीत्या सुरू झाले! खाते क्रमांक: ${res.data.accountNo}`);
-      
-      resetForm();
+      const createdAccNo = res.data.accountNo || '';
+      resetForm(true);
+      setSuccess(`✅ नवीन आरडी खाते यशस्वीरीत्या सुरू झाले! खाते क्रमांक: ${createdAccNo}`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       const errText = typeof err.response?.data === 'string'
         ? err.response.data
@@ -471,32 +506,6 @@ export default function RdAccountOpening() {
           {/* ==================== FORM VIEW ==================== */}
           {view === 'form' && (
         <div className="space-y-4">
-          {/* Soft Light Auto Account Banner */}
-          <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3.5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-600 text-white rounded-lg shadow-2xs">
-                <FileText className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider block">
-                  आरडी खाते क्रमांक (RD Account Number)
-                </span>
-                {loadingAccountNo ? (
-                  <span className="text-xs text-indigo-500 font-medium animate-pulse">क्रमांक तयार होत आहे...</span>
-                ) : (
-                  <span className="text-base font-bold text-indigo-700 font-mono tracking-wide">
-                    {nextAccountNo || '---'}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 bg-white border border-indigo-200 px-3 py-1 rounded-md text-[11px] text-indigo-800 font-medium shadow-2xs">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>स्वयंचलित जनरेट केलेला खाते क्रमांक</span>
-            </div>
-          </div>
-
           {/* Alert Messages */}
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg flex items-center gap-2 text-xs">
@@ -507,10 +516,10 @@ export default function RdAccountOpening() {
           )}
 
           {success && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg flex items-center gap-2 text-xs">
-              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="flex-1 font-bold">{success}</span>
-              <button onClick={() => setSuccess('')} className="font-bold text-slate-400 hover:text-slate-600">×</button>
+            <div className="p-3 bg-emerald-50 border-2 border-emerald-500 text-emerald-950 rounded-lg flex items-center gap-2.5 text-xs ring-2 ring-emerald-200 shadow-sm animate-in fade-in">
+              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+              <span className="flex-1 font-bold text-sm">{success}</span>
+              <button onClick={() => setSuccess('')} className="font-bold text-emerald-700 hover:text-emerald-900 text-base cursor-pointer px-1">×</button>
             </div>
           )}
 
@@ -519,11 +528,24 @@ export default function RdAccountOpening() {
             
             {/* Section 1: Basic Info & Operating Mode */}
             <div className="p-4 space-y-3">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded text-xs">१</span>
-                <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                  प्राथमिक माहिती व खाते प्रकार (Basic Information & Mode)
-                </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded text-xs">१</span>
+                  <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                    प्राथमिक माहिती व खाते प्रकार (Basic Information & Mode)
+                  </h2>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-indigo-50/90 border border-indigo-200 px-2.5 py-0.5 rounded text-xs shadow-2xs">
+                  <span className="font-bold text-slate-700 text-[11px]">आरडी खाते क्रमांक:</span>
+                  {loadingAccountNo ? (
+                    <span className="text-xs text-indigo-500 font-medium animate-pulse">तयार होत आहे...</span>
+                  ) : (
+                    <span className="font-mono font-bold text-indigo-700 text-xs tracking-wide">
+                      {nextAccountNo || '---'}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -561,7 +583,7 @@ export default function RdAccountOpening() {
                     <option value="">--- योजना निवडा ---</option>
                     {(Array.isArray(schemes) ? schemes : []).map((s, idx) => (
                       <option key={`scheme-${s.rdSchemeID ?? '0'}-${idx}`} value={s.rdSchemeID}>
-                        {s.schemeName} ({s.schemeCode})
+                        {s.schemeName} (योजना कोड: {s.schemeCode || s.schemeCodeNumeric || 501})
                       </option>
                     ))}
                   </select>
@@ -611,26 +633,7 @@ export default function RdAccountOpening() {
                 </div>
               )}
 
-              {/* Selected Member Preview Badge */}
-              {selectedMember && (
-                <div className="mt-2.5 p-2.5 bg-blue-50/60 border border-blue-100 rounded-lg flex items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-blue-600 shrink-0" />
-                    <div>
-                      <span className="font-bold text-slate-800">
-                        {selectedMember.firstName} {selectedMember.middleName} {selectedMember.lastName}
-                      </span>
-                      <span className="text-slate-500 text-[11px] ml-2 font-mono">
-                        (कोड: <strong className="text-blue-700">{selectedMember.memberCode}</strong>
-                        {selectedMember.cifNo && ` | CIF: ${selectedMember.cifNo}`})
-                      </span>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-semibold rounded text-[10px]">
-                    ✓ निवडलेला सभासद
-                  </span>
-                </div>
-              )}
+
             </div>
 
             {/* Section 2: Deposit Financials & Auto Debit Setup */}
@@ -926,7 +929,7 @@ export default function RdAccountOpening() {
               <thead>
                 <tr className="bg-slate-50 text-slate-600 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
                   <th className="py-2.5 px-3">खाते क्रमांक</th>
-                  <th className="py-2.5 px-3">सभासद नाव</th>
+                  <th className="py-2.5 px-3">खातेदार नाव</th>
                   <th className="py-2.5 px-3">प्रकार</th>
                   <th className="py-2.5 px-3">योजना</th>
                   <th className="py-2.5 px-3 text-right">मासिक हप्ता (₹)</th>
@@ -954,7 +957,7 @@ export default function RdAccountOpening() {
                   filteredRdList.map((item) => (
                     <tr key={item.rdAccountID} className="hover:bg-slate-50 transition">
                       <td className="py-2.5 px-3 font-mono font-bold text-indigo-700 whitespace-nowrap">
-                        {item.accountNo}
+                        {(item as any).formattedAccountNo || (item.accountNo?.length === 14 ? `${item.accountNo.slice(0,3)}-${item.accountNo.slice(3,6)}-${item.accountNo.slice(6,13)}-${item.accountNo.slice(13)}` : item.accountNo)}
                       </td>
                       <td className="py-2.5 px-3 font-semibold text-slate-800">
                         <div>{item.memberName || '-'}</div>
@@ -1056,7 +1059,7 @@ export default function RdAccountOpening() {
 
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
               <div className="flex justify-between"><span className="text-slate-500">खाते क्रमांक:</span> <strong className="font-mono text-indigo-700">{printAccount.accountNo}</strong></div>
-              <div className="flex justify-between"><span className="text-slate-500">सभासद नाव:</span> <strong className="text-slate-800">{printAccount.memberName}</strong></div>
+              <div className="flex justify-between"><span className="text-slate-500">खातेदार नाव:</span> <strong className="text-slate-800">{printAccount.memberName}</strong></div>
               {printAccount.jointMemberName && <div className="flex justify-between"><span className="text-slate-500">संयुक्त खातेदार:</span> <strong className="text-indigo-600">{printAccount.jointMemberName}</strong></div>}
               <div className="flex justify-between"><span className="text-slate-500">योजना:</span> <span>{printAccount.schemeName}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">मासिक हप्ता:</span> <strong className="text-indigo-700">₹{printAccount.installmentAmount?.toLocaleString('en-IN')}</strong></div>

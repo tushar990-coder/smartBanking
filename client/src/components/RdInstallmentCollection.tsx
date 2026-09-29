@@ -236,7 +236,7 @@ export default function RdInstallmentCollection() {
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              सभासदांच्या आरडी खात्यांचा मासिक हप्ता व थकीत दंड जमा करा.
+              खातेदारांच्या आरडी खात्यांचा मासिक हप्ता व थकीत दंड जमा करा.
             </p>
           </div>
         </div>

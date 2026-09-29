@@ -280,6 +280,81 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
+            // RD Module CBS Standardization: Tables and Columns
+            IF OBJECT_ID(N'[dbo].[RDInstallmentSchedules]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[RDInstallmentSchedules] (
+                    [ScheduleID] bigint IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [RdAccountID] int NOT NULL,
+                    [InstallmentNo] int NOT NULL,
+                    [DueDate] date NOT NULL,
+                    [GraceDate] date NOT NULL,
+                    [ExpectedAmount] decimal(18,2) NOT NULL,
+                    [PaidDate] datetime2 NULL,
+                    [PaidAmount] decimal(18,2) NOT NULL DEFAULT 0.00,
+                    [OverdueDays] int NOT NULL DEFAULT 0,
+                    [PenaltyCharged] decimal(18,2) NOT NULL DEFAULT 0.00,
+                    [PenaltyWaived] decimal(18,2) NOT NULL DEFAULT 0.00,
+                    [PaymentMode] nvarchar(30) NULL,
+                    [VoucherID] int NULL,
+                    [Status] nvarchar(20) NOT NULL DEFAULT 'Pending',
+                    CONSTRAINT [FK_RDInstallmentSchedules_RdAccounts] FOREIGN KEY ([RdAccountID]) 
+                        REFERENCES [dbo].[RdAccounts]([RdAccountID]) ON DELETE CASCADE
+                );
+                CREATE NONCLUSTERED INDEX [IX_RDInstallmentSchedules_Account_Due] 
+                    ON [dbo].[RDInstallmentSchedules] ([RdAccountID], [DueDate], [Status]);
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'RdAccountSequences')
+            BEGIN
+                CREATE TABLE [RdAccountSequences] (
+                    [SequenceID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [BranchID] int NOT NULL DEFAULT 1,
+                    [SchemeCodeNumeric] int NOT NULL DEFAULT 501,
+                    [LastSequenceNumber] int NOT NULL DEFAULT 0,
+                    [ProductType] nvarchar(10) NOT NULL DEFAULT 'RD',
+                    [UpdatedOn] datetime2 NOT NULL DEFAULT GETDATE()
+                );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('RdAccountSequences', 'SchemeCodeNumeric') IS NULL
+                    ALTER TABLE [RdAccountSequences] ADD [SchemeCodeNumeric] int NOT NULL DEFAULT 501;
+                IF COL_LENGTH('RdAccountSequences', 'LastSequenceNumber') IS NULL
+                    ALTER TABLE [RdAccountSequences] ADD [LastSequenceNumber] int NOT NULL DEFAULT 0;
+                IF COL_LENGTH('RdAccountSequences', 'UpdatedOn') IS NULL
+                    ALTER TABLE [RdAccountSequences] ADD [UpdatedOn] datetime2 NULL;
+            END
+
+            IF COL_LENGTH('RdAccounts', 'CumulativeInterestAccrued') IS NULL
+                ALTER TABLE [dbo].[RdAccounts] ADD [CumulativeInterestAccrued] decimal(18,2) NOT NULL DEFAULT 0.00;
+            IF COL_LENGTH('RdAccounts', 'IsLienMarked') IS NULL
+                ALTER TABLE [dbo].[RdAccounts] ADD [IsLienMarked] bit NOT NULL DEFAULT 0;
+            IF COL_LENGTH('RdAccounts', 'LienLoanAccountNo') IS NULL
+                ALTER TABLE [dbo].[RdAccounts] ADD [LienLoanAccountNo] nvarchar(30) NULL;
+            IF COL_LENGTH('RdAccounts', 'LienAmount') IS NULL
+                ALTER TABLE [dbo].[RdAccounts] ADD [LienAmount] decimal(18,2) NULL;
+            IF COL_LENGTH('RdAccounts', 'AutoDebitDay') IS NULL
+                ALTER TABLE [dbo].[RdAccounts] ADD [AutoDebitDay] int NOT NULL DEFAULT 10;
+            IF COL_LENGTH('RdAccounts', 'ClosureDate') IS NULL
+                ALTER TABLE [dbo].[RdAccounts] ADD [ClosureDate] datetime2 NULL;
+            IF COL_LENGTH('RdAccounts', 'ClosureType') IS NULL
+                ALTER TABLE [dbo].[RdAccounts] ADD [ClosureType] nvarchar(30) NULL;
+            IF COL_LENGTH('RdAccounts', 'ClosedPayoutAmount') IS NULL
+                ALTER TABLE [dbo].[RdAccounts] ADD [ClosedPayoutAmount] decimal(18,2) NULL;
+
+            IF COL_LENGTH('RdTransactions', 'BalanceAfterTxn') IS NULL
+                ALTER TABLE [dbo].[RdTransactions] ADD [BalanceAfterTxn] decimal(18,2) NULL;
+            IF COL_LENGTH('RdTransactions', 'Narration') IS NULL
+                ALTER TABLE [dbo].[RdTransactions] ADD [Narration] nvarchar(250) NULL;
+
+            IF COL_LENGTH('RdSchemes', 'SchemeCodeNumeric') IS NULL
+                ALTER TABLE [dbo].[RdSchemes] ADD [SchemeCodeNumeric] int NOT NULL DEFAULT 501;
+            IF COL_LENGTH('RdSchemes', 'CompoundingFrequency') IS NULL
+                ALTER TABLE [dbo].[RdSchemes] ADD [CompoundingFrequency] nvarchar(20) NOT NULL DEFAULT 'Quarterly';
+            IF COL_LENGTH('RdSchemes', 'GracePeriodDays') IS NULL
+                ALTER TABLE [dbo].[RdSchemes] ADD [GracePeriodDays] int NOT NULL DEFAULT 5;
+
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgentAccountTransfers')
             BEGIN
                 CREATE TABLE [PigmyAgentAccountTransfers] (

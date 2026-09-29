@@ -62,6 +62,14 @@ namespace Bhisi.Api.Models
 
         public bool IsActive { get; set; } = true;
 
+        // CBS 14-Digit Standard & Rules
+        public int SchemeCodeNumeric { get; set; } = 501;
+
+        [StringLength(20)]
+        public string CompoundingFrequency { get; set; } = "Quarterly";
+
+        public int GracePeriodDays { get; set; } = 5;
+
         // General Ledger (GL) Mapping Properties for Core Banking Integration
         public int? RdLiabilityLedgerID { get; set; }
         [ForeignKey("RdLiabilityLedgerID")]

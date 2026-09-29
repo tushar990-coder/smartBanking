@@ -182,7 +182,7 @@ export default function RdReports() {
     const excelRows = filteredAccounts.map((a, i) => ({
       'अ.क्र.': i + 1,
       'खाते क्र.': a.accountNo,
-      'सभासद कोड': a.memberCode,
+      'ग्राहक CIF / कोड': (a as any).cifNo || a.memberCode || '-',
       'खातेदाराचे नाव': a.memberName,
       'चालू दिनांक': formatDisplayDate(a.openingDate),
       'मासिक हप्ता (₹)': a.installmentAmount || 0,
@@ -198,7 +198,7 @@ export default function RdReports() {
     excelRows.push({
       'अ.क्र.': '' as any,
       'खाते क्र.': '',
-      'सभासद कोड': '',
+      'ग्राहक CIF / कोड': '',
       'खातेदाराचे नाव': 'एकूण बेरीज (Grand Total):',
       'चालू दिनांक': '',
       'मासिक हप्ता (₹)': 0,

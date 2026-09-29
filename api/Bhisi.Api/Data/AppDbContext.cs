@@ -76,6 +76,7 @@ namespace Bhisi.Api.Data
         public DbSet<RdTransaction> RdTransactions { get; set; }
         public DbSet<RdInterestAccrual> RdInterestAccruals { get; set; }
         public DbSet<RdAccountSequence> RdAccountSequences { get; set; }
+        public DbSet<RdInstallmentSchedule> RDInstallmentSchedules { get; set; }
 
         // Pigmy Deposit Module DbSets
         public DbSet<PigmyScheme> PigmySchemes { get; set; }

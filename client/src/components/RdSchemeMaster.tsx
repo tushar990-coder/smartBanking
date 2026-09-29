@@ -35,6 +35,7 @@ interface Ledger {
 interface RdScheme {
   rdSchemeID: number;
   schemeCode: string;
+  schemeCodeNumeric?: number;
   schemeName: string;
   durationMonths: number;
   installmentAmount: number;
@@ -65,10 +66,14 @@ export default function RdSchemeMaster() {
   const [success, setSuccess] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showListModal, setShowListModal] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string } | null>(null);
+  const [modalMessage, setModalMessage] = useState('');
+  const [modalIsSuccess, setModalIsSuccess] = useState(true);
 
   const [formData, setFormData] = useState({
     rdSchemeID: 0,
     schemeCode: '',
+    schemeCodeNumeric: 501,
     schemeName: '',
     durationMonths: 12,
     installmentAmount: 1000,
@@ -92,19 +97,19 @@ export default function RdSchemeMaster() {
   const schemeNameInputRef = useRef<HTMLInputElement>(null);
 
   const generateSchemeCode = (schemeList: RdScheme[]): string => {
-    let maxNum = 0;
+    let maxNum = 500;
     schemeList.forEach((s) => {
+      const num = s.schemeCodeNumeric ? Number(s.schemeCodeNumeric) : 0;
+      if (num > maxNum) maxNum = num;
       if (s.schemeCode) {
-        const match = s.schemeCode.trim().match(/RDS-?(\d+)/i) || s.schemeCode.trim().match(/RD-?(\d+)/i);
-        if (match) {
-          const num = parseInt(match[1], 10);
-          if (!isNaN(num) && num > maxNum) maxNum = num;
-        }
+        const digits = s.schemeCode.replace(/\D/g, '');
+        const p = parseInt(digits, 10);
+        if (!isNaN(p) && p > maxNum) maxNum = p;
       }
     });
 
-    const nextNum = maxNum === 0 ? 1 : maxNum + 1;
-    return `RDS${String(nextNum).padStart(3, '0')}`;
+    const nextNum = maxNum < 501 ? 501 : maxNum + 1;
+    return String(nextNum);
   };
 
   const fetchSchemes = async () => {
@@ -121,7 +126,8 @@ export default function RdSchemeMaster() {
 
       if (!isEditing) {
         const autoCode = generateSchemeCode(fetched);
-        setFormData((prev) => ({ ...prev, schemeCode: autoCode }));
+        const autoNumeric = parseInt(autoCode, 10) || 501;
+        setFormData((prev) => ({ ...prev, schemeCode: autoCode, schemeCodeNumeric: autoNumeric }));
       }
     } catch (err: any) {
       console.error('Error fetching RD schemes or ledgers', err);
@@ -141,6 +147,16 @@ export default function RdSchemeMaster() {
     const type = (e.target as any).type;
     let val: any = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
     
+    if (name === 'schemeCode') {
+      const num = parseInt(String(value).replace(/\D/g, ''), 10) || 501;
+      setFormData((prev) => ({
+        ...prev,
+        schemeCode: String(value),
+        schemeCodeNumeric: num,
+      }));
+      return;
+    }
+
     if (type === 'number' || name.includes('Rate') || name.includes('Amount') || name.includes('Installment') || name === 'durationMonths') {
       val = value === '' ? '' : value;
     } else if (name.endsWith('ID') || name.endsWith('Id')) {
@@ -157,6 +173,7 @@ export default function RdSchemeMaster() {
     setFormData({
       rdSchemeID: scheme.rdSchemeID,
       schemeCode: scheme.schemeCode || '',
+      schemeCodeNumeric: scheme.schemeCodeNumeric || 501,
       schemeName: scheme.schemeName || '',
       durationMonths: scheme.durationMonths || 12,
       installmentAmount: scheme.installmentAmount || 1000,
@@ -189,28 +206,40 @@ export default function RdSchemeMaster() {
     }, 120);
   };
 
-  const handleDelete = async (id: number, name: string) => {
-    if (!window.confirm(`तुम्हाला खरोखर "${name}" ही आवर्ती ठेव योजना डिलीट करायची आहे का?`)) return;
+  const executeDelete = async () => {
+    if (!deleteConfirm) return;
+    const { id, name } = deleteConfirm;
     try {
+      setSaving(true);
       await axios.delete(`/api/RdSchemes/${id}`);
-      setSuccess('योजना यशस्वीरित्या डिलीट केली!');
+      const msg = `✅ आवर्ती ठेव योजना '${name}' यशस्वीरित्या डिलीट केली!`;
+      setSuccess(msg);
+      setModalMessage(msg);
+      setModalIsSuccess(true);
       fetchSchemes();
-      if (formData.rdSchemeID === id) resetForm();
+      if (formData.rdSchemeID === id) resetForm(true);
+      setDeleteConfirm(null);
     } catch (err: any) {
       const errText = typeof err.response?.data === 'string' 
         ? err.response.data 
-        : err.response?.data?.message || 'योजना डिलीट करताना त्रुटी आली.';
+        : err.response?.data?.message || 'योजना डिलीट करताना त्रुटी आली. (या योजनेशी संबंधित खाती असू शकतात)';
       setError(errText);
+      setModalMessage(errText);
+      setModalIsSuccess(false);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const resetForm = () => {
+  const resetForm = (keepMessages: boolean = false) => {
     setIsEditing(false);
     setAllowManualCode(false);
     const autoCode = generateSchemeCode(schemes);
+    const autoNumeric = parseInt(autoCode, 10) || 501;
     setFormData({
       rdSchemeID: 0,
       schemeCode: autoCode,
+      schemeCodeNumeric: autoNumeric,
       schemeName: '',
       durationMonths: 12,
       installmentAmount: 1000,
@@ -227,8 +256,10 @@ export default function RdSchemeMaster() {
       interestPayableLedgerID: 0,
       penaltyIncomeLedgerID: 0,
     });
-    setError('');
-    setSuccess('');
+    if (!keepMessages) {
+      setError('');
+      setSuccess('');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -248,6 +279,7 @@ export default function RdSchemeMaster() {
 
     const payload = {
       ...formData,
+      schemeCodeNumeric: parseInt(String(formData.schemeCodeNumeric), 10) || 501,
       durationMonths: parseInt(String(formData.durationMonths), 10) || 12,
       installmentAmount: parseFloat(String(formData.installmentAmount)) || 0,
       minimumInstallment: parseFloat(String(formData.minimumInstallment)) || 0,
@@ -263,15 +295,20 @@ export default function RdSchemeMaster() {
 
     setSaving(true);
     try {
+      let msg = '';
       if (isEditing) {
         await axios.put(`/api/RdSchemes/${formData.rdSchemeID}`, payload);
-        setSuccess('योजना यशस्वीरित्या अद्ययावत (Updated) केली!');
+        msg = `✅ आवर्ती ठेव योजना '${payload.schemeName}' (कोड: ${payload.schemeCode}) यशस्वीरित्या अद्ययावत (Updated) केली!`;
       } else {
         await axios.post('/api/RdSchemes', payload);
-        setSuccess('नवीन योजना यशस्वीरित्या सेव्ह (Saved) केली!');
+        msg = `✅ नवीन आवर्ती ठेव योजना '${payload.schemeName}' (कोड: ${payload.schemeCode}) यशस्वीरित्या जतन (Saved) केली!`;
       }
-      resetForm();
+      resetForm(true);
+      setSuccess(msg);
       fetchSchemes();
+      if (formContainerRef.current) {
+        formContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     } catch (err: any) {
       const errText = typeof err.response?.data === 'string' 
         ? err.response.data 
@@ -287,6 +324,7 @@ export default function RdSchemeMaster() {
     const rows = filteredSchemes.map((s, i) => ({
       'अ.क्र.': i + 1,
       'योजना कोड': s.schemeCode,
+      'सीबीएस कोड': s.schemeCodeNumeric || 501,
       'योजनेचे नाव': s.schemeName,
       'कालावधी (महिने)': s.durationMonths,
       'हप्ता रक्कम (₹)': s.installmentAmount,
@@ -436,18 +474,18 @@ export default function RdSchemeMaster() {
 
       {/* Alert Messages */}
       {error && (
-        <div className="mb-3 p-2 bg-rose-50 border border-rose-300 text-rose-800 rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs">
-          <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+        <div className="mb-3 p-3 bg-rose-50 border-2 border-rose-300 text-rose-900 rounded-sm flex items-center gap-2.5 text-xs font-bold shadow-sm">
+          <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
           <span className="flex-1">{error}</span>
-          <button onClick={() => setError('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
+          <button onClick={() => setError('')} className="font-bold text-rose-500 hover:text-rose-700 text-base cursor-pointer">×</button>
         </div>
       )}
 
       {success && (
-        <div className="mb-3 p-2 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs">
-          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span className="flex-1">{success}</span>
-          <button onClick={() => setSuccess('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
+        <div className="mb-3 p-3 bg-emerald-50 border-2 border-emerald-500 text-emerald-900 rounded-sm flex items-center gap-2.5 text-xs font-bold shadow-sm ring-2 ring-emerald-200 animate-in fade-in">
+          <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+          <span className="flex-1 text-sm">{success}</span>
+          <button onClick={() => setSuccess('')} className="font-bold text-emerald-700 hover:text-emerald-900 text-base cursor-pointer px-1">×</button>
         </div>
       )}
 
@@ -474,8 +512,8 @@ export default function RdSchemeMaster() {
                     योजना कोड (Scheme Code) <span className="text-red-500">*</span>
                   </label>
                   <div className="flex items-center gap-1">
-                    <span className="text-[9px] bg-primary/10 text-primary font-bold px-1 rounded border border-primary/20">
-                      {isEditing ? 'फिक्स्ड' : allowManualCode ? 'मॅन्युअल' : 'ऑटो'}
+                    <span className="text-[9px] bg-indigo-50 text-indigo-700 font-bold px-1 rounded border border-indigo-200">
+                      {isEditing ? 'फिक्स्ड' : allowManualCode ? 'मॅन्युअल' : 'CBS 501+'}
                     </span>
                     {!isEditing && (
                       <button
@@ -494,10 +532,10 @@ export default function RdSchemeMaster() {
                   value={formData.schemeCode}
                   onChange={handleChange}
                   readOnly={!allowManualCode && !isEditing}
-                  className={`${inputClass} font-mono font-bold uppercase ${
-                    !allowManualCode && !isEditing ? 'bg-slate-100 text-primary cursor-not-allowed select-none' : ''
+                  className={`${inputClass} font-mono font-bold text-indigo-700 ${
+                    !allowManualCode && !isEditing ? 'bg-slate-100 cursor-not-allowed select-none' : ''
                   }`}
-                  placeholder="उदा. RDS001"
+                  placeholder="उदा. 501"
                   required
                 />
               </div>
@@ -830,6 +868,17 @@ export default function RdSchemeMaster() {
               </button>
             </div>
 
+            {/* Modal Alert Message */}
+            {modalMessage && (
+              <div className={`mx-2.5 mt-2.5 p-2.5 border rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs ${
+                modalIsSuccess ? 'bg-emerald-50 border-emerald-400 text-emerald-900 ring-1 ring-emerald-300' : 'bg-rose-50 border-rose-300 text-rose-800 ring-1 ring-rose-300'
+              }`}>
+                {modalIsSuccess ? <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" /> : <XCircle className="w-4 h-4 text-rose-600 shrink-0" />}
+                <span className="flex-1">{modalMessage}</span>
+                <button onClick={() => setModalMessage('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
+              </div>
+            )}
+
             {/* Modal Table Content */}
             <div className="flex-1 overflow-auto p-2 bg-slate-100">
               <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
@@ -837,7 +886,7 @@ export default function RdSchemeMaster() {
                   <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
                     <tr>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना कोड & नाव</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजनेचे नाव & कोड</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">कालावधी & हप्ता</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याज / दंड कपात</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">मॅप्ड देयता खाते</th>
@@ -851,7 +900,10 @@ export default function RdSchemeMaster() {
                           <div className="flex items-center justify-center gap-1">
                             <button 
                               type="button" 
-                              onClick={() => handleEdit(s)} 
+                              onClick={() => {
+                                handleEdit(s);
+                                setShowListModal(false);
+                              }} 
                               className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
                               title="योजना फॉर्ममध्ये लोड करा (Load in Form)"
                             >
@@ -860,7 +912,7 @@ export default function RdSchemeMaster() {
                             </button>
                             <button 
                               type="button" 
-                              onClick={() => handleDelete(s.rdSchemeID, s.schemeName)} 
+                              onClick={() => setDeleteConfirm({ id: s.rdSchemeID, name: s.schemeName })} 
                               className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
                               title="योजना डिलीट करा (Delete)"
                             >
@@ -870,8 +922,10 @@ export default function RdSchemeMaster() {
                           </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
-                          <div className="font-bold text-gray-900 font-mono">{s.schemeCode}</div>
-                          <div className="text-gray-600 font-medium">{s.schemeName}</div>
+                          <div className="font-bold text-gray-900 text-xs">{s.schemeName}</div>
+                          <div className="text-[10px] text-gray-500 font-mono mt-0.5">
+                            कोड: <span className="font-bold text-indigo-700">{s.schemeCode}</span>
+                          </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                           <div className="font-bold text-primary font-mono">₹{s.installmentAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
@@ -925,6 +979,43 @@ export default function RdSchemeMaster() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[70] p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-md shadow-2xl border border-rose-200 max-w-md w-full p-4 space-y-3">
+            <div className="flex items-center gap-2 text-rose-600 border-b border-rose-100 pb-2">
+              <Trash2 className="w-5 h-5 shrink-0" />
+              <h3 className="text-sm font-bold text-gray-900">योजना डिलीट करण्याची खात्री करा (Confirm Delete)</h3>
+            </div>
+            <p className="text-xs text-gray-700 leading-relaxed">
+              तुम्हाला नक्की <strong className="font-bold text-rose-700">"{deleteConfirm.name}"</strong> ही आवर्ती ठेव योजना डिलीट करायची आहे का?
+            </p>
+            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded text-[11px] text-rose-800 font-medium">
+              ⚠️ टीप: जर या योजनेमध्ये आधीच ग्राहकांची आरडी खाती सुरू असतील तर बँकिंग डेटा सुरक्षेसाठी ही योजना डिलीट केली जाणार नाही.
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setDeleteConfirm(null)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold transition-all cursor-pointer"
+              >
+                रद्द करा (Cancel)
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={executeDelete}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{saving ? 'हटवत आहे...' : 'होय, योजना डिलीट करा'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

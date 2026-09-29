@@ -81,7 +81,6 @@ namespace Bhisi.Api.Controllers
         {
             var query = _context.FdAccounts
                 .Include(f => f.Customer)
-                    .ThenInclude(c => c!.MemberProfile)
                 .Include(f => f.FdScheme)
                 .Include(f => f.Branch)
                 .AsQueryable();
@@ -102,9 +101,9 @@ namespace Bhisi.Api.Controllers
                     f.CustomerID,
                     CustomerName = f.Customer != null ? (f.Customer.FirstName + " " + f.Customer.LastName).Trim() : "",
                     CIFNo = f.Customer != null ? f.Customer.CIFNo : "",
-                    MemberID = f.Customer != null && f.Customer.MemberProfile != null ? f.Customer.MemberProfile.MemberID : (int?)null,
+                    MemberID = (int?)null,
                     MemberName = f.Customer != null ? (f.Customer.FirstName + " " + f.Customer.LastName).Trim() : "",
-                    MemberCode = f.Customer != null && f.Customer.MemberProfile != null ? f.Customer.MemberProfile.MemberCode : (f.Customer != null ? f.Customer.CIFNo : ""),
+                    MemberCode = f.Customer != null ? f.Customer.CIFNo : "",
                     f.FdSchemeID,
                     SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "",
                     SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
@@ -151,7 +150,6 @@ namespace Bhisi.Api.Controllers
         {
             var f = await _context.FdAccounts
                 .Include(x => x.Customer)
-                    .ThenInclude(c => c!.MemberProfile)
                 .Include(x => x.FdScheme)
                 .Include(x => x.Branch)
                 .FirstOrDefaultAsync(x => x.FdAccountID == id);
@@ -168,9 +166,9 @@ namespace Bhisi.Api.Controllers
                 f.CustomerID,
                 CustomerName = f.Customer != null ? (f.Customer.FirstName + " " + f.Customer.LastName).Trim() : "",
                 CIFNo = f.Customer != null ? f.Customer.CIFNo : "",
-                MemberID = f.Customer?.MemberProfile?.MemberID,
+                MemberID = (int?)null,
                 MemberName = f.Customer != null ? (f.Customer.FirstName + " " + f.Customer.LastName).Trim() : "",
-                MemberCode = f.Customer?.MemberProfile?.MemberCode ?? f.Customer?.CIFNo ?? "",
+                MemberCode = f.Customer?.CIFNo ?? "",
                 f.FdSchemeID,
                 SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "",
                 SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
@@ -1011,24 +1009,51 @@ namespace Bhisi.Api.Controllers
             account.Status = "Active";
             account.FinancialYearID = (await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive))?.FinancialYearID ?? 1;
 
-            if (string.IsNullOrWhiteSpace(account.AccountNo) || account.AccountNo == "AUTO")
+            // 1. Resolve Branch and Sequence
+            var branch = await _context.Branches.FindAsync(account.BranchID);
+            string branchPrefix = branch != null ? branch.BranchCode : "001";
+
+            var seq = await _context.FdAccountSequences
+                .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "FD");
+            
+            if (seq == null)
             {
-                var branch = await _context.Branches.FindAsync(account.BranchID);
-                string branchPrefix = branch != null ? branch.BranchCode : "BR";
-
-                var seq = await _context.FdAccountSequences
-                    .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "FD");
-                
-                if (seq == null)
-                {
-                    seq = new FdAccountSequence { BranchID = account.BranchID, ProductType = "FD", CurrentValue = 0 };
-                    _context.FdAccountSequences.Add(seq);
-                }
-                
-                seq.CurrentValue += 1;
+                seq = new FdAccountSequence { BranchID = account.BranchID, ProductType = "FD", CurrentValue = 0 };
+                _context.FdAccountSequences.Add(seq);
                 await _context.SaveChangesAsync();
+            }
 
-                account.AccountNo = $"{branchPrefix}-{account.BranchID:D3}-FD-{seq.CurrentValue:D6}";
+            // Check if account number is empty, AUTO, or conflicts with an existing account in this branch
+            bool isDuplicate = !string.IsNullOrWhiteSpace(account.AccountNo) &&
+                await _context.FdAccounts.AnyAsync(a => a.BranchID == account.BranchID && a.AccountNo == account.AccountNo);
+
+            bool needsNewNumber = string.IsNullOrWhiteSpace(account.AccountNo) || 
+                                  account.AccountNo == "AUTO" || 
+                                  isDuplicate;
+
+            if (needsNewNumber)
+            {
+                do
+                {
+                    seq.CurrentValue += 1;
+                    account.AccountNo = $"{branchPrefix}-{account.BranchID:D3}-FD-{seq.CurrentValue:D6}";
+                }
+                while (await _context.FdAccounts.AnyAsync(a => a.BranchID == account.BranchID && a.AccountNo == account.AccountNo));
+
+                await _context.SaveChangesAsync();
+            }
+            else
+            {
+                // If a valid custom unique account number is provided, ensure sequence tracks it
+                var match = System.Text.RegularExpressions.Regex.Match(account.AccountNo, @"-FD-(\d+)$");
+                if (match.Success && int.TryParse(match.Groups[1].Value, out int customSeq))
+                {
+                    if (customSeq > seq.CurrentValue)
+                    {
+                        seq.CurrentValue = customSeq;
+                        await _context.SaveChangesAsync();
+                    }
+                }
             }
 
             _context.FdAccounts.Add(account);
@@ -3224,7 +3249,6 @@ namespace Bhisi.Api.Controllers
         {
             var activeAccounts = await _context.FdAccounts
                 .Include(a => a.Customer)
-                    .ThenInclude(c => c!.MemberProfile)
                 .Include(a => a.FdScheme)
                 .Where(a => a.BranchID == req.BranchID && a.Status == "Active")
                 .ToListAsync();
@@ -3313,9 +3337,9 @@ namespace Bhisi.Api.Controllers
                     CustomerID = acc.CustomerID,
                     CustomerName = memberNameStr,
                     CIFNo = acc.Customer?.CIFNo ?? "",
-                    MemberID = acc.Customer?.MemberProfile?.MemberID ?? acc.CustomerID,
+                    MemberID = acc.CustomerID,
                     MemberName = memberNameStr,
-                    MemberCode = acc.Customer?.MemberProfile?.MemberCode ?? acc.Customer?.CIFNo ?? "",
+                    MemberCode = acc.Customer?.CIFNo ?? "",
                     SchemeName = acc.FdScheme?.SchemeName ?? "Standard Scheme",
                     OpeningDate = acc.OpeningDate,
                     FromDate = fromDate,

@@ -5,9 +5,12 @@ import { Calculator, Search, AlertCircle, CheckCircle2 } from 'lucide-react';
 interface PreviewItem {
   fdAccountID: number;
   accountNo: string;
-  memberID: number;
-  memberName: string;
-  memberCode: string;
+  customerID?: number;
+  customerName?: string;
+  cifNo?: string;
+  memberID?: number;
+  memberName?: string;
+  memberCode?: string;
   schemeName: string;
   openingDate: string;
   fromDate?: string;
@@ -361,8 +364,8 @@ const FdAccrualPosting: React.FC = () => {
                         {item.accountNo}
                       </td>
                       <td className="px-2.5 py-1.5 border-r border-gray-100 text-left">
-                        <div className="font-bold text-gray-800">{item.memberName}</div>
-                        <div className="text-[10px] text-gray-500 font-mono">{item.memberCode}</div>
+                        <div className="font-bold text-gray-800">{item.customerName || item.memberName}</div>
+                        <div className="text-[10px] text-gray-500 font-mono">{item.cifNo || item.memberCode}</div>
                       </td>
                       <td className="px-2.5 py-1.5 border-r border-gray-100 text-left font-medium text-gray-700">
                         {item.schemeName}

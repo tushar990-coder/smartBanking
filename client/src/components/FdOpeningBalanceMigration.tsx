@@ -20,7 +20,8 @@ import {
   Calendar,
   UserCheck,
   BookOpen,
-  Scale
+  Scale,
+  Printer
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { FdInterestScheduleModal } from './FdInterestScheduleModal';
@@ -163,7 +164,6 @@ const FdOpeningBalanceMigration: React.FC = () => {
   const [formData, setFormData] = useState({
     branchID: 1,
     customerID: 0,
-    memberID: 0,
     fdSchemeID: 0,
     accountNo: '',
     legacyAccountNumber: '',
@@ -572,7 +572,6 @@ const FdOpeningBalanceMigration: React.FC = () => {
     setFormData({
       branchID: bId,
       customerID: 0,
-      memberID: 0,
       fdSchemeID: 0,
       accountNo: '',
       legacyAccountNumber: '',
@@ -596,11 +595,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
     setEditingAccountId(acc.fdAccountID);
     setIsManualMaturityEdited(true); // Preserve recorded value from database
     setIsManualMaturityDateEdited(true); // Preserve recorded maturity date from database
-    const custId = acc.customerID || acc.memberID || 0;
+    const custId = acc.customerID || 0;
     setFormData({
       branchID: acc.branchID || 1,
       customerID: custId,
-      memberID: custId,
       fdSchemeID: acc.fdSchemeID || 0,
       accountNo: acc.accountNo || '',
       legacyAccountNumber: acc.legacyAccountNumber || '',
@@ -656,8 +654,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
     setError('');
     setSuccess('');
 
-    if (!formData.customerID && !formData.memberID) {
-      setError('कृपया खातेदार निवडा.');
+    if (!formData.customerID) {
+      setError('कृपया खातेदार (Customer / CIF) निवडा.');
       return;
     }
     if (formData.fdSchemeID === 0) {
@@ -704,10 +702,15 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return;
     }
 
-    // [RULE-FD-001] Customer-First: resolve CustomerID
-    const targetCustId = Number(formData.customerID || formData.memberID);
+    // [RULE-FD-001] Strict Customer-First Architecture: resolve CustomerID
+    const targetCustId = Number(formData.customerID);
     const selectedCust = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === targetCustId);
     const resolvedCustId = Number(selectedCust?.customerID || selectedCust?.id || targetCustId);
+
+    if (!resolvedCustId || resolvedCustId <= 0) {
+      setError('कृपया वैध खातेदार (Customer / CIF) निवडा.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -716,7 +719,6 @@ const FdOpeningBalanceMigration: React.FC = () => {
         legacyAccountNumber: formData.legacyAccountNumber ? formData.legacyAccountNumber.trim() : null,
         lastInterestPostingDate: formData.lastInterestPostingDate ? formData.lastInterestPostingDate : null,
         customerID: resolvedCustId,
-        memberID: resolvedCustId,
         depositAmount: depAmt,
         maturityAmount: matAmt,
         isLegacyAccount: true,
@@ -730,8 +732,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
         });
         setSuccess('मुदत ठेव खात्याची माहिती यशस्वीरित्या अपडेट झाली!');
       } else {
-        await axios.post(`${API_URL}/FdAccounts/Migrate`, payload);
-        setSuccess('जुन्या मुदत ठेव खात्याचे स्थलांतर यशस्वीरित्या झाले!');
+        const res = await axios.post(`${API_URL}/FdAccounts/Migrate`, payload);
+        const assignedNo = res.data?.accountNo || '';
+        setSuccess(`जुन्या मुदत ठेव खात्याचे स्थलांतर यशस्वीरित्या झाले! ${assignedNo ? `(नवीन पावती क्र.: ${assignedNo})` : ''}`);
       }
       resetForm();
       fetchMigratedAccounts();
@@ -772,6 +775,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
     XLSX.writeFile(wb, `FD_Migrated_Accounts_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  const handlePrintModal = () => {
+    window.print();
+  };
+
   const formatCustomerLabel = (c: Customer) => {
     const nameParts = [c.firstName, c.middleName, c.lastName].filter(Boolean);
     let fullName = nameParts.join(' ').trim();
@@ -805,7 +812,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     : '0.00';
 
   const selectedCustomer = customers.find((c: any) => 
-    Number(c.customerID || c.id || c.customerId) === Number(formData.customerID || formData.memberID)
+    Number(c.customerID || c.id || c.customerId) === Number(formData.customerID)
   );
 
   const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
@@ -991,11 +998,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 </div>
                 <CustomerSearchSelect
                   customers={customers}
-                  value={formData.customerID || formData.memberID || ''}
+                  value={formData.customerID || ''}
                   onChange={(val) => setFormData(prev => ({ 
                     ...prev, 
-                    customerID: val ? Number(val) : 0, 
-                    memberID: val ? Number(val) : 0 
+                    customerID: val ? Number(val) : 0
                   }))}
                   placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
                 />
@@ -1053,14 +1059,17 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   <label className="text-[11px] font-bold text-gray-700">
                     नवीन पावती / खाते क्र. (CBS Account No) <span className="text-red-500">*</span>
                   </label>
+                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold border border-emerald-300" title="सिस्टीम स्वयंचलित युनिक अनुक्रमांक वाटप करेल">
+                    ⚡ ऑटो अनुक्रमांक
+                  </span>
                 </div>
                 <input
                   type="text"
                   name="accountNo"
                   value={formData.accountNo}
                   onChange={handleChange}
-                  className={`${inputClass} font-mono font-bold text-primary`}
-                  placeholder="उदा. FD001"
+                  className={`${inputClass} font-mono font-bold text-primary bg-blue-50/20`}
+                  placeholder="उदा. 001-001-FD-000001 (स्वयंचलित)"
                   required
                 />
               </div>
@@ -1434,6 +1443,16 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 >
                   <FileSpreadsheet size={13} />
                   <span>एक्सेल एक्सपोर्ट</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintModal}
+                  disabled={filteredAccounts.length === 0}
+                  className="bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white px-3 py-1 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  title="स्थलांतरित मुदत ठेव यादी प्रिंट करा"
+                >
+                  <Printer size={13} />
+                  <span>प्रिंट (A4)</span>
                 </button>
               </div>
             </div>

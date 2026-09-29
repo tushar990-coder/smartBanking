@@ -16,17 +16,30 @@ import {
 
 interface FdAccountReportRow {
   fdAccountID: number;
+  branchID?: number;
   branchName: string;
+  customerID?: number;
+  cifNo?: string;
+  customerName?: string;
   memberCode: string;
   memberName: string;
+  memberID?: number;
   accountNo: string;
+  legacyAccountNumber?: string;
   schemeName: string;
   openingDate: string;
+  durationType?: string;
+  durationValue?: number;
+  durationInDays?: number;
   depositAmount: number;
   interestRate: number;
   maturityDate: string;
   maturityAmount?: number;
   legacyAccruedInt?: number;
+  lastInterestPostingDate?: string;
+  nomineeName?: string;
+  nomineeRelation?: string;
+  remarks?: string;
   status: string;
 }
 
@@ -253,6 +266,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
         let endpoint = '/api/Reports/fd-register';
         if (reportType === 'Outstanding') endpoint = '/api/Reports/fd-outstanding';
         if (reportType === 'MaturityDue') endpoint = '/api/Reports/fd-maturity-due';
+        if (reportType === 'MigratedFD') endpoint = '/api/Reports/fd-migrated';
 
         const res = await axios.get(endpoint, {
           params: { 
@@ -292,9 +306,13 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
     const term = searchTerm.toLowerCase().trim();
     return (
       (row.accountNo && row.accountNo.toLowerCase().includes(term)) ||
+      (row.legacyAccountNumber && row.legacyAccountNumber.toLowerCase().includes(term)) ||
       (row.memberName && row.memberName.toLowerCase().includes(term)) ||
+      (row.customerName && row.customerName.toLowerCase().includes(term)) ||
+      (row.cifNo && row.cifNo.toLowerCase().includes(term)) ||
       (row.memberCode && row.memberCode.toLowerCase().includes(term)) ||
-      (row.schemeName && row.schemeName.toLowerCase().includes(term))
+      (row.schemeName && row.schemeName.toLowerCase().includes(term)) ||
+      (row.nomineeName && row.nomineeName.toLowerCase().includes(term))
     );
   });
 
@@ -325,6 +343,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
 
   const totalDepositSum = filteredData.reduce((s, r) => s + (r.depositAmount || 0), 0);
   const totalMaturitySum = filteredData.reduce((s, r) => s + (r.maturityAmount || 0), 0);
+  const totalLegacyAccruedSum = filteredData.reduce((s, r) => s + (r.legacyAccruedInt || 0), 0);
   const totalVoucherPassingSum = filteredVoucherPassing.reduce((s, r) => s + (r.totalAmount || 0), 0);
   const totalDeletedSum = filteredDeletedEntries.reduce((s, r) => s + (r.amount || 0), 0);
 
@@ -336,6 +355,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
       case 'MemberLedger': return 'मुदत ठेव खातावणी विवरणपत्र (Member FD Ledger)';
       case 'VoucherPassing': return 'मुदत ठेव व्हाउचर पासिंग अहवाल (FD Voucher Passing Report)';
       case 'DeletedEntries': return 'मुदत ठेव थेट रद्द नोंदी व रोलबॅक अहवाल (FD Deleted Entries & Rollback Report)';
+      case 'MigratedFD': return 'स्थलांतरित मुदत ठेव (FD) यादी अहवाल (Migrated FD Accounts Report)';
       default: return 'मुदत ठेव अहवाल (FD Report)';
     }
   };
@@ -405,12 +425,59 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
       return;
     }
 
+    if (reportType === 'MigratedFD') {
+      if (filteredData.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
+      const rows = filteredData.map((row, i) => ({
+        'अ.क्र.': i + 1,
+        'नवीन पावती क्र.': row.accountNo,
+        'जुनी पावती क्र.': row.legacyAccountNumber || '-',
+        'खातेदाराचे नाव': row.customerName || row.memberName,
+        'CIF क्र.': row.cifNo || '-',
+        'योजना': row.schemeName,
+        'ठेव तारीख': formatDisplayDate(row.openingDate),
+        'कालावधी': row.durationValue ? `${row.durationValue} ${row.durationType || 'महिने'}` : (row.durationInDays ? `${row.durationInDays} दिवस` : '-'),
+        'ठेव मुद्दल (₹)': row.depositAmount || 0,
+        'व्याज दर (%)': row.interestRate,
+        'मुदतपूर्ती तारीख': formatDisplayDate(row.maturityDate),
+        'मुदतपूर्ती रक्कम (₹)': row.maturityAmount || 0,
+        'साचलेले जुने व्याज (₹)': row.legacyAccruedInt || 0,
+        'शेवटची व्याज तारीख': formatDisplayDate(row.lastInterestPostingDate),
+        'वारसदार': row.nomineeName ? `${row.nomineeName} (${row.nomineeRelation || ''})` : '-',
+        'शेरा': row.remarks || '-',
+        'स्थिती': row.status
+      }));
+      rows.push({
+        'अ.क्र.': '' as any,
+        'नवीन पावती क्र.': '',
+        'जुनी पावती क्र.': '',
+        'खातेदाराचे नाव': 'एकूण बेरीज (Grand Total):',
+        'CIF क्र.': '',
+        'योजना': '',
+        'ठेव तारीख': '',
+        'कालावधी': '',
+        'ठेव मुद्दल (₹)': totalDepositSum,
+        'व्याज दर (%)': 0,
+        'मुदतपूर्ती तारीख': '',
+        'मुदतपूर्ती रक्कम (₹)': totalMaturitySum,
+        'साचलेले जुने व्याज (₹)': totalLegacyAccruedSum,
+        'शेवटची व्याज तारीख': '',
+        'वारसदार': '',
+        'शेरा': '',
+        'स्थिती': ''
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Migrated FD Accounts');
+      XLSX.writeFile(wb, `Migrated_FD_Accounts_${new Date().toISOString().split('T')[0]}.xlsx`);
+      return;
+    }
+
     if (filteredData.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
     const excelRows = filteredData.map((row, i) => ({
       'अ.क्र.': i + 1,
       'FD पावती / खाते नं.': row.accountNo,
-      'सभासद कोड': row.memberCode,
-      'खातेदाराचे नाव': row.memberName,
+      'ग्राहक क्र. (CIF)': row.cifNo || row.memberCode || '-',
+      'खातेदाराचे नाव': row.customerName || row.memberName,
       'योजना': row.schemeName,
       'ठेव तारीख': formatDisplayDate(row.openingDate),
       'मुदत ठेव रक्कम (₹)': row.depositAmount || 0,
@@ -423,7 +490,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
     excelRows.push({
       'अ.क्र.': '' as any,
       'FD पावती / खाते नं.': '',
-      'सभासद कोड': '',
+      'ग्राहक क्र. (CIF)': '',
       'खातेदाराचे नाव': 'एकूण बेरीज (Grand Total):',
       'योजना': '',
       'ठेव तारीख': '',
@@ -523,6 +590,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                 <option value="AccrualProvision">५. व्याज तरतूद (Interest Provision)</option>
                 <option value="VoucherPassing">६. मुदत ठेव व्हाउचर पासिंग अहवाल (Voucher Passing)</option>
                 <option value="DeletedEntries">७. मुदत ठेव रद्द नोंदी व रोलबॅक अहवाल (Deleted & Rollback)</option>
+                <option value="MigratedFD">८. स्थलांतरित मुदत ठेव (FD) यादी (Migrated FD Accounts Report)</option>
               </select>
             </div>
 
@@ -694,6 +762,21 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                   </span>
                   <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
                     रद्द रक्कम: <strong className="text-rose-700 font-bold">₹ {fmtCurrency(totalDeletedSum)}</strong>
+                  </span>
+                </>
+              ) : reportType === 'MigratedFD' ? (
+                <>
+                  <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
+                    स्थलांतरित खाती: <strong className="text-primary font-bold">{filteredData.length}</strong>
+                  </span>
+                  <span className="bg-emerald-50 px-2 py-0.5 rounded text-emerald-800 border border-emerald-200">
+                    एकूण ठेव मुद्दल: <strong className="text-emerald-700 font-bold">₹ {fmtCurrency(totalDepositSum)}</strong>
+                  </span>
+                  <span className="bg-blue-50 px-2 py-0.5 rounded text-blue-800 border border-blue-200">
+                    एकूण मुदतपूर्ती: <strong className="text-blue-700 font-bold">₹ {fmtCurrency(totalMaturitySum)}</strong>
+                  </span>
+                  <span className="bg-amber-50 px-2 py-0.5 rounded text-amber-800 border border-amber-200">
+                    साचलेले जुने व्याज: <strong className="text-amber-700 font-bold">₹ {fmtCurrency(totalLegacyAccruedSum)}</strong>
                   </span>
                 </>
               ) : (
@@ -965,8 +1048,123 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
               </div>
             )}
 
+            {/* Migrated FD Accounts Table (स्थलांतरित मुदत ठेव यादी - Pure Customer-First Architecture) */}
+            {reportType === 'MigratedFD' && (
+              <div className="overflow-x-auto mt-2">
+                <table className="w-full border-collapse border border-gray-900 text-xs">
+                  <thead>
+                    <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
+                      <th className="border border-gray-900 py-1.5 px-1 w-[3%] text-center">#</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-center font-mono">नवीन पावती</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-center font-mono">जुनी पावती</th>
+                      <th className="border border-gray-900 py-1.5 px-3 text-left">खातेदाराचे नाव & CIF</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-left">योजना</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-center">ठेव दिनांक</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-center">कालावधी</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-right font-extrabold">ठेव मुद्दल (₹)</th>
+                      <th className="border border-gray-900 py-1.5 px-1 text-center">व्याज %</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-center">मुदतपूर्ती दिनांक</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-right font-bold">मुदतपूर्ती (₹)</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-right font-medium">मागील व्याज (₹)</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-center">शेवटची व्याज तारीख</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-left">वारसदार</th>
+                      <th className="border border-gray-900 py-1.5 px-1 text-center">स्थिती</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={15} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                          स्थलांतरित मुदत ठेव यादी लोड होत आहे, कृपया प्रतीक्षा करा...
+                        </td>
+                      </tr>
+                    ) : filteredData.length === 0 ? (
+                      <tr>
+                        <td colSpan={15} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                          कोणतीही स्थलांतरित मुदत ठेव नोंद आढळली नाही.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredData.map((row, idx) => (
+                        <tr key={row.fdAccountID || idx} className="hover:bg-slate-50 text-gray-900 text-[11px]">
+                          <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-primary">{row.accountNo}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono font-semibold text-amber-900">
+                            {row.legacyAccountNumber ? (
+                              <span className="bg-amber-50 text-amber-900 px-1 py-0.5 rounded border border-amber-300">
+                                {row.legacyAccountNumber}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="border border-gray-900 py-1 px-3 text-left">
+                            <div className="font-bold text-gray-950">{row.customerName || row.memberName}</div>
+                            <div className="text-[10px] text-gray-500 font-mono">
+                              {row.cifNo ? `CIF: ${row.cifNo}` : (row.memberCode ? `CIF: ${row.memberCode}` : '-')}
+                            </div>
+                          </td>
+                          <td className="border border-gray-900 py-1 px-2 text-gray-700">{row.schemeName}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(row.openingDate)}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono text-[10px]">
+                            {row.durationValue && row.durationValue > 0
+                              ? `${row.durationValue} ${row.durationType === 'Days' ? 'दिवस' : row.durationType === 'Years' ? 'वर्षे' : 'महिने'}`
+                              : (row.durationInDays && row.durationInDays > 0 ? `${row.durationInDays} दिवस` : '-')}
+                          </td>
+                          <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-emerald-800">{fmtCurrency(row.depositAmount)}</td>
+                          <td className="border border-gray-900 py-1 px-1 text-center font-mono">{row.interestRate}%</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(row.maturityDate)}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-blue-900">{fmtCurrency(row.maturityAmount)}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-right font-mono font-medium text-amber-800">{fmtCurrency(row.legacyAccruedInt)}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono text-[10px] text-blue-700">
+                            {formatDisplayDate(row.lastInterestPostingDate)}
+                          </td>
+                          <td className="border border-gray-900 py-1 px-2 text-left text-[10px]">
+                            {row.nomineeName ? (
+                              <span>
+                                {row.nomineeName} {row.nomineeRelation ? `(${row.nomineeRelation})` : ''}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="border border-gray-900 py-1 px-1 text-center">
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              row.status === 'Active' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-gray-100 text-gray-700 border border-gray-300'
+                            }`}>
+                              {row.status === 'Active' ? 'Active' : row.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  {filteredData.length > 0 && (
+                    <tfoot>
+                      <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
+                        <td colSpan={7} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                          एकूण स्थलांतरित बेरीज ({filteredData.length} खाती):
+                        </td>
+                        <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
+                          ₹ {fmtCurrency(totalDepositSum)}
+                        </td>
+                        <td colSpan={2} className="border border-gray-900 py-1.5 px-2 text-center"></td>
+                        <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-blue-950 bg-blue-100/50">
+                          ₹ {fmtCurrency(totalMaturitySum)}
+                        </td>
+                        <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-amber-950 bg-amber-100/50">
+                          ₹ {fmtCurrency(totalLegacyAccruedSum)}
+                        </td>
+                        <td colSpan={3} className="border border-gray-900 py-1.5 px-2 text-center"></td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            )}
+
             {/* Standard FD Table (Register, Outstanding, Maturity Due) */}
-            {reportType !== 'MemberLedger' && reportType !== 'VoucherPassing' && reportType !== 'DeletedEntries' && (
+            {reportType !== 'MemberLedger' && reportType !== 'VoucherPassing' && reportType !== 'DeletedEntries' && reportType !== 'MigratedFD' && (
               <div className="overflow-x-auto mt-2">
                 <table className="w-full border-collapse border border-gray-900 text-xs">
                   <thead>
@@ -999,7 +1197,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                         <tr key={row.fdAccountID || idx} className="hover:bg-slate-50 text-gray-900 text-[11px]">
                           <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
                           <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-900">{row.accountNo}</td>
-                          <td className="border border-gray-900 py-1 px-3 font-medium">{row.memberName}</td>
+                          <td className="border border-gray-900 py-1 px-3 font-medium">{row.customerName || row.memberName}</td>
                           <td className="border border-gray-900 py-1 px-2 text-gray-700">{row.schemeName}</td>
                           <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(row.openingDate)}</td>
                           <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-emerald-800">{fmtCurrency(row.depositAmount)}</td>

@@ -5,9 +5,9 @@ import { getAmountInWordsMarathi } from '../utils/marathiWords';
 interface FdAccountDetails {
   fdAccountID: number;
   accountNo: string;
-  memberID: number;
-  memberName: string;
-  memberCode: string;
+  memberID?: number;
+  memberName?: string;
+  memberCode?: string;
   fdSchemeID: number;
   schemeName: string;
   schemeCode: string;
@@ -105,7 +105,7 @@ const FdReceiptPrintModal: React.FC<Props> = ({ account, onClose }) => {
 तुमचे नवीन मुदत ठेव खाते यशस्वीरित्या उघडले गेले आहे.
 
 📄 *पावती क्रमांक:* ${account.accountNo}
-👤 *सभासद / CIF:* ${account.memberCode || account.cifNo || '-'}
+👤 *ग्राहक क्र. (CIF):* ${account.cifNo || account.memberCode || '-'}
 💰 *ठेव रक्कम:* ₹ ${account.depositAmount?.toLocaleString('en-IN')} (${depositWords})
 📊 *मुदत ठेव योजना:* ${account.schemeName}
 📈 *वार्षिक व्याजदर:* ${account.interestRate}%
@@ -213,7 +213,7 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
 
         {/* Official Legal Statement */}
         <div className="bg-slate-50/90 border border-slate-200 p-2 rounded text-[10px] leading-snug text-slate-800 text-justify">
-          प्रमाणित करण्यात येते की, श्री/श्रीमती <strong className="text-slate-950 font-bold">{account.memberName || account.customerName}</strong> ({account.memberCode ? `सभासद कोड: ${account.memberCode}` : `खातेदार / CIF: ${account.cifNo || '-'}`}) यांनी शाखेत <strong className="text-primary font-black">{formatCurrency(account.depositAmount)}</strong> ठेव जमा केली असून नियमानुसार स्वीकारण्यात आली आहे.
+          प्रमाणित करण्यात येते की, श्री/श्रीमती <strong className="text-slate-950 font-bold">{account.customerName || account.memberName}</strong> (ग्राहक क्र. / CIF: {account.cifNo || account.memberCode || '-'}) यांनी शाखेत <strong className="text-primary font-black">{formatCurrency(account.depositAmount)}</strong> ठेव जमा केली असून नियमानुसार स्वीकारण्यात आली आहे.
         </div>
 
         {/* Particulars Grid Table */}

@@ -4825,8 +4825,181 @@ namespace Bhisi.Api.Controllers
         }
 
         // =========================================================================
-        // FD REPORTS (मुदत ठेव अहवाल - नोंदवही, बाकी, मुदतपूर्ती देय, खातावणी)
+        // FD REPORTS (मुदत ठेव अहवाल - नोंदवही, बाकी, मुदतपूर्ती देय, खातावणी, स्थलांतरित यादी)
         // =========================================================================
+
+        private async Task AutoHealDuplicateMigratedAccountsAsync(int? targetBranchId)
+        {
+            try
+            {
+                var query = _context.FdAccounts.Where(f => f.IsLegacyAccount);
+                if (targetBranchId.HasValue && targetBranchId.Value > 0)
+                {
+                    query = query.Where(f => f.BranchID == targetBranchId.Value);
+                }
+
+                var legacyAccounts = await query.ToListAsync();
+                if (!legacyAccounts.Any()) return;
+
+                var duplicateGroups = legacyAccounts
+                    .GroupBy(f => new { f.BranchID, f.AccountNo })
+                    .Where(g => g.Count() > 1)
+                    .ToList();
+
+                if (!duplicateGroups.Any()) return;
+
+                var branchIds = duplicateGroups.Select(g => g.Key.BranchID).Distinct().ToList();
+
+                foreach (var bId in branchIds)
+                {
+                    var branch = await _context.Branches.FindAsync(bId);
+                    string branchPrefix = branch != null && !string.IsNullOrWhiteSpace(branch.BranchCode) ? branch.BranchCode : "001";
+
+                    var seq = await _context.FdAccountSequences
+                        .FirstOrDefaultAsync(s => s.BranchID == bId && s.ProductType == "FD");
+                    if (seq == null)
+                    {
+                        seq = new FdAccountSequence { BranchID = bId, ProductType = "FD", CurrentValue = 0 };
+                        _context.FdAccountSequences.Add(seq);
+                        await _context.SaveChangesAsync();
+                    }
+
+                    var allBranchLegacy = await _context.FdAccounts
+                        .Where(f => f.BranchID == bId && f.IsLegacyAccount)
+                        .OrderBy(f => f.OpeningDate)
+                        .ThenBy(f => f.FdAccountID)
+                        .ToListAsync();
+
+                    var seenNumbers = new HashSet<string>();
+
+                    foreach (var acc in allBranchLegacy)
+                    {
+                        if (seenNumbers.Contains(acc.AccountNo))
+                        {
+                            do
+                            {
+                                seq.CurrentValue += 1;
+                                acc.AccountNo = $"{branchPrefix}-{bId:D3}-FD-{seq.CurrentValue:D6}";
+                            }
+                            while (await _context.FdAccounts.AnyAsync(a => a.BranchID == bId && a.AccountNo == acc.AccountNo));
+
+                            seenNumbers.Add(acc.AccountNo);
+
+                            // Dedicated opening voucher for this re-sequenced account
+                            var newVoucherNo = $"JV-FD-OP-{acc.AccountNo}";
+                            var vch = await _context.Vouchers.FirstOrDefaultAsync(v => v.VoucherNo == newVoucherNo);
+                            if (vch == null)
+                            {
+                                vch = new Voucher
+                                {
+                                    BranchID = acc.BranchID,
+                                    VoucherNo = newVoucherNo,
+                                    VoucherDate = acc.OpeningDate,
+                                    VoucherType = "Journal",
+                                    TotalAmount = acc.DepositAmount,
+                                    Narration = $"मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): {acc.AccountNo} (जुना क्र. {acc.LegacyAccountNumber})",
+                                    Status = "Approved",
+                                    ApprovedBy = acc.CreatedBy > 0 ? acc.CreatedBy : 1,
+                                    ApprovedOn = DateTime.Now,
+                                    CreatedBy = acc.CreatedBy > 0 ? acc.CreatedBy : 1,
+                                    CreatedOn = DateTime.Now
+                                };
+                                _context.Vouchers.Add(vch);
+                                await _context.SaveChangesAsync();
+                            }
+
+                            // Re-link transactions
+                            var txs = await _context.FdTransactions.Where(t => t.FdAccountID == acc.FdAccountID).ToListAsync();
+                            foreach (var tx in txs)
+                            {
+                                tx.VoucherID = vch.VoucherID;
+                            }
+                        }
+                        else
+                        {
+                            seenNumbers.Add(acc.AccountNo);
+                            var match = System.Text.RegularExpressions.Regex.Match(acc.AccountNo, @"-FD-(\d+)$");
+                            if (match.Success && int.TryParse(match.Groups[1].Value, out int curSeq))
+                            {
+                                if (curSeq > seq.CurrentValue) seq.CurrentValue = curSeq;
+                            }
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[AutoHeal] Warning: failed to auto-heal duplicate FD account numbers: {ex.Message}");
+            }
+        }
+
+        // GET: api/Reports/fd-migrated (स्थलांतरित मुदत ठेव यादी अहवाल - Strict Customer-First Architecture)
+        [HttpGet("fd-migrated")]
+        public async Task<IActionResult> GetFdMigratedReport([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        {
+            try
+            {
+                // Auto-Heal: If duplicate AccountNo exists due to legacy sequence desync, heal them atomically
+                await AutoHealDuplicateMigratedAccountsAsync(branchID);
+
+                var query = _context.FdAccounts
+                    .Include(f => f.Branch)
+                    .Include(f => f.Customer)
+                    .Include(f => f.FdScheme)
+                    .Where(f => f.IsLegacyAccount)
+                    .AsQueryable();
+
+                if (branchID.HasValue && branchID.Value > 0)
+                    query = query.Where(f => f.BranchID == branchID.Value);
+
+                if (fromDate.HasValue)
+                    query = query.Where(f => f.OpeningDate >= fromDate.Value.Date);
+
+                if (toDate.HasValue)
+                    query = query.Where(f => f.OpeningDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+                var accounts = await query
+                    .OrderByDescending(f => f.OpeningDate)
+                    .Select(f => new
+                    {
+                        f.FdAccountID,
+                        f.BranchID,
+                        BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
+                        CustomerID = f.CustomerID,
+                        CIFNo = f.Customer != null ? f.Customer.CIFNo : "",
+                        CustomerName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
+                        MemberID = (int?)null,
+                        MemberCode = f.Customer != null ? f.Customer.CIFNo : "",
+                        MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
+                        f.AccountNo,
+                        f.LegacyAccountNumber,
+                        SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",
+                        OpeningDate = f.OpeningDate.ToString("yyyy-MM-dd"),
+                        DurationType = f.DurationType ?? "Months",
+                        f.DurationValue,
+                        f.DurationInDays,
+                        f.DepositAmount,
+                        f.InterestRate,
+                        MaturityDate = f.MaturityDate.ToString("yyyy-MM-dd"),
+                        MaturityAmount = f.MaturityAmount > 0 ? f.MaturityAmount : (decimal?)(f.DepositAmount + f.LegacyAccruedInt),
+                        f.LegacyAccruedInt,
+                        LastInterestPostingDate = f.LastInterestPostingDate.HasValue ? f.LastInterestPostingDate.Value.ToString("yyyy-MM-dd") : null,
+                        f.NomineeName,
+                        f.NomineeRelation,
+                        f.Remarks,
+                        Status = f.Status ?? "Active"
+                    })
+                    .ToListAsync();
+
+                return Ok(accounts);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "स्थलांतरित मुदत ठेव अहवाल लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
 
         // GET: api/Reports/fd-register
         [HttpGet("fd-register")]
@@ -4836,7 +5009,7 @@ namespace Bhisi.Api.Controllers
             {
                 var query = _context.FdAccounts
                     .Include(f => f.Branch)
-                    .Include(f => f.Customer).ThenInclude(c => c!.MemberProfile)
+                    .Include(f => f.Customer)
                     .Include(f => f.FdScheme)
                     .AsQueryable();
 
@@ -4855,7 +5028,10 @@ namespace Bhisi.Api.Controllers
                     {
                         f.FdAccountID,
                         BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
-                        MemberCode = f.Customer != null && f.Customer.MemberProfile != null ? f.Customer.MemberProfile.MemberCode : (f.Customer != null ? f.Customer.CIFNo : ""),
+                        CustomerID = f.CustomerID,
+                        CIFNo = f.Customer != null ? f.Customer.CIFNo : "",
+                        CustomerName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
+                        MemberCode = f.Customer != null ? f.Customer.CIFNo : "",
                         MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
                         f.AccountNo,
                         SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",
@@ -4885,7 +5061,7 @@ namespace Bhisi.Api.Controllers
             {
                 var query = _context.FdAccounts
                     .Include(f => f.Branch)
-                    .Include(f => f.Customer).ThenInclude(c => c!.MemberProfile)
+                    .Include(f => f.Customer)
                     .Include(f => f.FdScheme)
                     .Where(f => f.Status == "Active" || f.Status == "Matured" || string.IsNullOrEmpty(f.Status))
                     .AsQueryable();
@@ -4899,7 +5075,10 @@ namespace Bhisi.Api.Controllers
                     {
                         f.FdAccountID,
                         BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
-                        MemberCode = f.Customer != null && f.Customer.MemberProfile != null ? f.Customer.MemberProfile.MemberCode : (f.Customer != null ? f.Customer.CIFNo : ""),
+                        CustomerID = f.CustomerID,
+                        CIFNo = f.Customer != null ? f.Customer.CIFNo : "",
+                        CustomerName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
+                        MemberCode = f.Customer != null ? f.Customer.CIFNo : "",
                         MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
                         f.AccountNo,
                         SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",
@@ -4929,7 +5108,7 @@ namespace Bhisi.Api.Controllers
             {
                 var query = _context.FdAccounts
                     .Include(f => f.Branch)
-                    .Include(f => f.Customer).ThenInclude(c => c!.MemberProfile)
+                    .Include(f => f.Customer)
                     .Include(f => f.FdScheme)
                     .Where(f => f.Status == "Active" || f.Status == "Matured" || string.IsNullOrEmpty(f.Status))
                     .AsQueryable();
@@ -4949,7 +5128,10 @@ namespace Bhisi.Api.Controllers
                     {
                         f.FdAccountID,
                         BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
-                        MemberCode = f.Customer != null && f.Customer.MemberProfile != null ? f.Customer.MemberProfile.MemberCode : (f.Customer != null ? f.Customer.CIFNo : ""),
+                        CustomerID = f.CustomerID,
+                        CIFNo = f.Customer != null ? f.Customer.CIFNo : "",
+                        CustomerName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
+                        MemberCode = f.Customer != null ? f.Customer.CIFNo : "",
                         MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
                         f.AccountNo,
                         SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",

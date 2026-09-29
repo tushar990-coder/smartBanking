@@ -74,9 +74,9 @@ interface FdAccount {
   customerID?: number;
   customerName?: string;
   cifNo?: string;
-  memberID: number;
-  memberName: string;
-  memberCode: string;
+  memberID?: number;
+  memberName?: string;
+  memberCode?: string;
   schemeName: string;
   fdSchemeID: number;
   depositAmount: number;

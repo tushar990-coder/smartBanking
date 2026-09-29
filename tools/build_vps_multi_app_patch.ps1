@@ -14,7 +14,7 @@ $clientDir = Join-Path $workspaceRoot "client"
 $apiDir = Join-Path $workspaceRoot "api\Bhisi.Api"
 $versionJsonPath = Join-Path $workspaceRoot "version.json"
 
-$version = "2.5.16"
+$version = "2.5.18"
 $gitHash = ""
 $gitShort = ""
 $gitBranch = ""
@@ -168,6 +168,14 @@ if (Test-Path $autoHealSource) {
     Write-Host "  -> auto_heal_nominal_shareholders.sql included in database package (UTF-8 BOM)." -ForegroundColor White
 }
 
+# 3.1.2 Auto-Heal Migrated FD Account Numbers & Sequences
+$fdHealSource = Join-Path $workspaceRoot "tools\heal_migrated_fd_account_numbers.sql"
+if (Test-Path $fdHealSource) {
+    $fdHealContent = [System.IO.File]::ReadAllText($fdHealSource, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText((Join-Path $patchFolder "database\heal_migrated_fd_account_numbers.sql"), $fdHealContent, $utf8WithBom)
+    Write-Host "  -> heal_migrated_fd_account_numbers.sql included in database package (UTF-8 BOM)." -ForegroundColor White
+}
+
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null
@@ -249,6 +257,7 @@ $config = $cleanedConfig | ConvertFrom-Json
 $sqlFile = Join-Path $scriptDir "database\update_schema.sql"
 $saving14Sql = Join-Path $scriptDir "database\patch_migrate_saving_accounts_14digit.sql"
 $autoHealSql = Join-Path $scriptDir "database\auto_heal_nominal_shareholders.sql"
+$fdHealSql = Join-Path $scriptDir "database\heal_migrated_fd_account_numbers.sql"
 $backendSource = Join-Path $scriptDir "backend"
 $frontendSource = Join-Path $scriptDir "frontend"
 
@@ -446,6 +455,29 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
                 }
             } catch {
                 Write-Host "  -> Auto-Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
+            }
+        }
+
+        # 2.3 Auto-Heal Migrated FD Account Numbers & Sequences
+        if (Test-Path $fdHealSql) {
+            Write-Host " [Step 2.3] Auto-Healing Migrated FD Account Numbers & Sequences on $($target.TargetDatabase)..." -ForegroundColor Yellow
+            try {
+                $fdOk = $false
+                if ($config.SqlUser -and $config.SqlPassword) {
+                    try {
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$fdHealSql`"" -f 65001 -b
+                        if ($LASTEXITCODE -eq 0) { $fdOk = $true }
+                    } catch {}
+                }
+                if (-not $fdOk) {
+                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$fdHealSql`"" -f 65001 -b
+                    if ($LASTEXITCODE -eq 0) { $fdOk = $true }
+                }
+                if ($fdOk) {
+                    Write-Host "  -> Migrated FD Account Numbers & Sequences Auto-Healed Successfully!" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "  -> FD Auto-Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
             }
         }
 

@@ -41,8 +41,11 @@ $buildDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host "   SmartBanking ERP - 1-Click Multi-App VPS Master Patch Builder  " -ForegroundColor Cyan
 Write-Host "   Version: v$version ($buildDate)                                " -ForegroundColor Yellow
-if ($gitShort) {
-Write-Host "   Git Commit: $gitShort ($gitBranch) - $gitMsg                   " -ForegroundColor Gray
+if ($gitShort -or $gitHash) {
+    Write-Host "   Git Commit: $gitShort ($gitBranch) - $gitMsg                   " -ForegroundColor Gray
+    if ($gitHash -or $gitDate) {
+        Write-Host "   Git Details: $gitHash ($gitDate)                               " -ForegroundColor Gray
+    }
 }
 Write-Host "==================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -835,8 +838,8 @@ Read-Host "Press ENTER to exit"
 
 [System.IO.File]::WriteAllText((Join-Path $patchFolder "reverse_patch.ps1"), $reversePs1Content, $utf8WithBom)
 
-# Batch Generator Helper Function
-function Generate-BatchScript {
+# Batch Generator Helper Function (Uses approved verb 'New')
+function New-BatchScript {
     param(
         [string]$FilePath,
         [string]$Title,
@@ -867,49 +870,49 @@ pause
 }
 
 # Generate Master Update Batch Files
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_ALL_Sansthas.bat") -Title "SmartBanking ERP - 1-Click Update ALL Sansthas" -ScriptFile "apply_patch.ps1" -TargetName "ALL" -Color "0B"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_ALL_Apps.bat") -Title "SmartBanking ERP - 1-Click Update ALL VPS Apps" -ScriptFile "apply_patch.ps1" -TargetName "ALL" -Color "0B"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "Apply_VPS_Patch.bat") -Title "SmartBanking ERP - Apply Master VPS Patch" -ScriptFile "apply_patch.ps1" -TargetName "ALL" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_ALL_Sansthas.bat") -Title "SmartBanking ERP - 1-Click Update ALL Sansthas" -ScriptFile "apply_patch.ps1" -TargetName "ALL" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_ALL_Apps.bat") -Title "SmartBanking ERP - 1-Click Update ALL VPS Apps" -ScriptFile "apply_patch.ps1" -TargetName "ALL" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "Apply_VPS_Patch.bat") -Title "SmartBanking ERP - Apply Master VPS Patch" -ScriptFile "apply_patch.ps1" -TargetName "ALL" -Color "0B"
 
 # Generate Master Reverse Patch Batch Files
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_ALL_Sansthas.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH ALL Sansthas" -ScriptFile "reverse_patch.ps1" -TargetName "ALL" -Color "0D"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_ALL_Apps.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH ALL VPS Apps" -ScriptFile "reverse_patch.ps1" -TargetName "ALL" -Color "0D"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "Reverse_VPS_Patch.bat") -Title "SmartBanking ERP - Reverse Master VPS Patch" -ScriptFile "reverse_patch.ps1" -TargetName "ALL" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_ALL_Sansthas.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH ALL Sansthas" -ScriptFile "reverse_patch.ps1" -TargetName "ALL" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_ALL_Apps.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH ALL VPS Apps" -ScriptFile "reverse_patch.ps1" -TargetName "ALL" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "Reverse_VPS_Patch.bat") -Title "SmartBanking ERP - Reverse Master VPS Patch" -ScriptFile "reverse_patch.ps1" -TargetName "ALL" -Color "0D"
 
 # Generate Individual Sanstha Update and Reverse Batch Files
 # 1. Padawalwadi
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Padawalwadi.bat") -Title "SmartBanking ERP - 1-Click Update Padawalwadi" -ScriptFile "apply_patch.ps1" -TargetName "Padawalwadi" -Color "0B"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Padawalwadi.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Padawalwadi" -ScriptFile "reverse_patch.ps1" -TargetName "Padawalwadi" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Padawalwadi.bat") -Title "SmartBanking ERP - 1-Click Update Padawalwadi" -ScriptFile "apply_patch.ps1" -TargetName "Padawalwadi" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Padawalwadi.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Padawalwadi" -ScriptFile "reverse_patch.ps1" -TargetName "Padawalwadi" -Color "0D"
 
 # 2. Bambavade
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Bambavade.bat") -Title "SmartBanking ERP - 1-Click Update Bambavade" -ScriptFile "apply_patch.ps1" -TargetName "Bambawade" -Color "0B"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Bambavade.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Bambavade" -ScriptFile "reverse_patch.ps1" -TargetName "Bambawade" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Bambavade.bat") -Title "SmartBanking ERP - 1-Click Update Bambavade" -ScriptFile "apply_patch.ps1" -TargetName "Bambawade" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Bambavade.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Bambavade" -ScriptFile "reverse_patch.ps1" -TargetName "Bambawade" -Color "0D"
 
 # 3. Yadravkar
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Yadravkar.bat") -Title "SmartBanking ERP - 1-Click Update Yadravkar" -ScriptFile "apply_patch.ps1" -TargetName "Yadrav" -Color "0B"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Yadravkar.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Yadravkar" -ScriptFile "reverse_patch.ps1" -TargetName "Yadrav" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Yadravkar.bat") -Title "SmartBanking ERP - 1-Click Update Yadravkar" -ScriptFile "apply_patch.ps1" -TargetName "Yadrav" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Yadravkar.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Yadravkar" -ScriptFile "reverse_patch.ps1" -TargetName "Yadrav" -Color "0D"
 
 # 4. RITEMP
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_RITEMP.bat") -Title "SmartBanking ERP - 1-Click Update RITEMP" -ScriptFile "apply_patch.ps1" -TargetName "ritemployee" -Color "0B"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_RITEMP.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH RITEMP" -ScriptFile "reverse_patch.ps1" -TargetName "ritemployee" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_RITEMP.bat") -Title "SmartBanking ERP - 1-Click Update RITEMP" -ScriptFile "apply_patch.ps1" -TargetName "ritemployee" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_RITEMP.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH RITEMP" -ScriptFile "reverse_patch.ps1" -TargetName "ritemployee" -Color "0D"
 
 # 5. Testing
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Testing.bat") -Title "SmartBanking ERP - 1-Click Update Testing" -ScriptFile "apply_patch.ps1" -TargetName "Testing" -Color "0B"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Testing.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Testing" -ScriptFile "reverse_patch.ps1" -TargetName "Testing" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Testing.bat") -Title "SmartBanking ERP - 1-Click Update Testing" -ScriptFile "apply_patch.ps1" -TargetName "Testing" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Testing.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Testing" -ScriptFile "reverse_patch.ps1" -TargetName "Testing" -Color "0D"
 
 # 6. Testing1
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Testing1.bat") -Title "SmartBanking ERP - 1-Click Update Testing1" -ScriptFile "apply_patch.ps1" -TargetName "Testing1" -Color "0B"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Testing1.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Testing1" -ScriptFile "reverse_patch.ps1" -TargetName "Testing1" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Testing1.bat") -Title "SmartBanking ERP - 1-Click Update Testing1" -ScriptFile "apply_patch.ps1" -TargetName "Testing1" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Testing1.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Testing1" -ScriptFile "reverse_patch.ps1" -TargetName "Testing1" -Color "0D"
 
 # 7. Template
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Template.bat") -Title "SmartBanking ERP - 1-Click Update Template" -ScriptFile "apply_patch.ps1" -TargetName "Template" -Color "0B"
-Generate-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Template.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Template" -ScriptFile "reverse_patch.ps1" -TargetName "Template" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Template.bat") -Title "SmartBanking ERP - 1-Click Update Template" -ScriptFile "apply_patch.ps1" -TargetName "Template" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Template.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Template" -ScriptFile "reverse_patch.ps1" -TargetName "Template" -Color "0D"
 
 # Generate Comprehensive README & Patch Guide
 $readmeContent = @"
 # ==============================================================================
 # SmartBanking Core ERP - Multi-App Master Update & Reverse Patch Guide (v$version)
-# Build Date: $buildDate | Git: $gitShort ($gitBranch)
+# Build Date: $buildDate | Git: $gitShort ($gitBranch) | Hash: $gitHash ($gitDate)
 # ==============================================================================
 
 ## 1. पॅचमधील मुख्य सुधारणा (What's New in v$version)

@@ -121,13 +121,19 @@ const SavingOpeningBalance: React.FC = () => {
     return `${cif}${name}`;
   };
 
+  const isMountedRef = useRef(true);
+
   useEffect(() => {
+    isMountedRef.current = true;
     fetchBranches();
     fetchSchemes();
     fetchCustomers();
     fetchLedgers();
     fetchMigratedAccounts();
     fetchNextAccountNo(formData.branchID || 1);
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -139,17 +145,20 @@ const SavingOpeningBalance: React.FC = () => {
   const fetchNextAccountNo = async (branchId: number) => {
     try {
       const response = await axios.get(`${API_URL}/SavingAccounts/next-account-no?branchId=${branchId}`);
-      if (response.data?.nextAccountNo) {
+      if (isMountedRef.current && response.data?.nextAccountNo) {
         setNextAccountNoPreview(response.data.nextAccountNo);
       }
     } catch (err) {
-      console.error('Error fetching next account number preview', err);
+      if (isMountedRef.current) {
+        console.error('Error fetching next account number preview', err);
+      }
     }
   };
 
   const fetchSchemes = async () => {
     try {
       const response = await axios.get(`${API_URL}/SavingSettings/Interest`);
+      if (!isMountedRef.current) return;
       if (Array.isArray(response.data) && response.data.length > 0) {
         setSchemes(response.data);
         const defaultScheme = response.data[0];
@@ -169,49 +178,64 @@ const SavingOpeningBalance: React.FC = () => {
         }));
       }
     } catch (err) {
-      console.error('Error fetching saving schemes', err);
+      if (isMountedRef.current) {
+        console.error('Error fetching saving schemes', err);
+      }
     }
   };
 
   const fetchMigratedAccounts = async () => {
     try {
       const response = await axios.get(`${API_URL}/SavingAccounts`);
+      if (!isMountedRef.current) return;
       if (Array.isArray(response.data)) {
         setAllSavingAccounts(response.data);
         const legacyOnly = response.data.filter((a: any) => a.isLegacyAccount);
         setMigratedAccounts(legacyOnly);
       }
     } catch (err) {
-      console.error('Error fetching migrated accounts', err);
+      if (isMountedRef.current) {
+        console.error('Error fetching migrated accounts', err);
+      }
     }
   };
 
   const fetchLedgers = async () => {
     try {
       const response = await axios.get(`${API_URL}/Ledgers`);
-      if (Array.isArray(response.data)) {
+      if (isMountedRef.current && Array.isArray(response.data)) {
         setLedgers(response.data);
       }
     } catch (error) {
-      console.error('Failed to fetch ledgers', error);
+      if (isMountedRef.current) {
+        console.error('Failed to fetch ledgers', error);
+      }
     }
   };
 
   const fetchBranches = async () => {
     try {
       const response = await axios.get(`${API_URL}/Branches`);
-      setBranches(response.data);
+      if (isMountedRef.current) {
+        setBranches(response.data);
+      }
     } catch (err) {
-      console.error('Error fetching branches', err);
+      if (isMountedRef.current) {
+        console.error('Error fetching branches', err);
+      }
     }
   };
 
   const fetchCustomers = async () => {
     try {
       const response = await axios.get(`${API_URL}/Customers`);
-      setCustomers(response.data);
+      if (isMountedRef.current) {
+        setCustomers(response.data);
+      }
     } catch (err) {
-      console.error('Error fetching customers', err);
+      if (isMountedRef.current) {
+        console.error('Error fetching customers', err);
+      }
     }
   };
 

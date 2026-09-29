@@ -179,17 +179,24 @@ const FdOpeningBalanceMigration: React.FC = () => {
     remarks: '३१/०३/२०२६ पूर्वीचे चालू मुदत ठेव स्थलांतर',
   });
 
+  const isMountedRef = useRef(true);
+
   useEffect(() => {
+    isMountedRef.current = true;
     fetchCustomers();
     fetchSchemes();
     fetchBranches();
     fetchMigratedAccounts();
     fetchNextAccountNo(1);
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   const fetchNextAccountNo = async (bId: number) => {
     try {
       const response = await axios.get(`${API_URL}/FdAccounts/next-account-no/${bId}`);
+      if (!isMountedRef.current) return;
       if (response.data) {
         const nextNo = typeof response.data === 'string'
           ? response.data
@@ -202,13 +209,16 @@ const FdOpeningBalanceMigration: React.FC = () => {
         }
       }
     } catch (err) {
-      console.error('Error fetching next receipt number', err);
+      if (isMountedRef.current) {
+        console.error('Error fetching next receipt number', err);
+      }
     }
   };
 
   const fetchBranches = async () => {
     try {
       const response = await axios.get(`${API_URL}/Branches`);
+      if (!isMountedRef.current) return;
       setBranches(response.data);
       if (response.data.length > 0) {
         const firstBranchId = response.data[0].branchID;
@@ -216,35 +226,48 @@ const FdOpeningBalanceMigration: React.FC = () => {
         fetchNextAccountNo(firstBranchId);
       }
     } catch (err) {
-      console.error('Error fetching branches', err);
+      if (isMountedRef.current) {
+        console.error('Error fetching branches', err);
+      }
     }
   };
 
   const fetchCustomers = async () => {
     try {
       const response = await axios.get(`${API_URL}/Customers`);
-      setCustomers(response.data);
+      if (isMountedRef.current) {
+        setCustomers(response.data);
+      }
     } catch (err) {
-      console.error('Error fetching customers', err);
+      if (isMountedRef.current) {
+        console.error('Error fetching customers', err);
+      }
     }
   };
 
   const fetchSchemes = async () => {
     try {
       const response = await axios.get(`${API_URL}/FdSchemes`);
-      setSchemes(response.data);
+      if (isMountedRef.current) {
+        setSchemes(response.data);
+      }
     } catch (err) {
-      console.error('Error fetching schemes', err);
+      if (isMountedRef.current) {
+        console.error('Error fetching schemes', err);
+      }
     }
   };
 
   const fetchMigratedAccounts = async () => {
     try {
       const response = await axios.get(`${API_URL}/FdAccounts`);
+      if (!isMountedRef.current) return;
       const list = response.data.filter((a: any) => a.isLegacyAccount);
       setMigratedAccounts(list);
     } catch (err) {
-      console.error('Error fetching migrated FD accounts', err);
+      if (isMountedRef.current) {
+        console.error('Error fetching migrated FD accounts', err);
+      }
     }
   };
 

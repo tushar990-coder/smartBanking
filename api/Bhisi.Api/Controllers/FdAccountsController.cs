@@ -577,9 +577,37 @@ namespace Bhisi.Api.Controllers
                 int branchId = account.BranchID;
                 decimal depositAmount = account.DepositAmount;
                 string customerName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() : "";
+                bool isLegacy = account.IsLegacyAccount;
 
-                // 1. Remove all FdTransactions and FdInterestAccruals FIRST
-                // (Clear foreign key constraint FK_FdTransactions_Vouchers_VoucherID before deleting Vouchers!)
+                // 1. Identify which vouchers were actually linked to THIS specific account
+                // (Collect VoucherIDs from this account's transactions and accruals)
+                var accountVoucherIds = await _context.FdTransactions
+                    .Where(t => t.FdAccountID == id && t.VoucherID > 0)
+                    .Select(t => t.VoucherID)
+                    .Distinct()
+                    .ToListAsync();
+
+                var accrualVoucherIds = await _context.FdInterestAccruals
+                    .Where(a => a.FdAccountID == id && a.VoucherID > 0)
+                    .Select(a => a.VoucherID)
+                    .Distinct()
+                    .ToListAsync();
+
+                var targetVoucherIdSet = new HashSet<int>(accountVoucherIds.Union(accrualVoucherIds));
+
+                // Also check for the exact opening voucher created specifically for this account type
+                string expectedOpVoucherNo = isLegacy 
+                    ? $"JV-FD-OP-{accountNo}" 
+                    : $"REC-FD-OP-{accountNo}";
+
+                var opVoucher = await _context.Vouchers.FirstOrDefaultAsync(v => v.VoucherNo == expectedOpVoucherNo);
+                if (opVoucher != null)
+                {
+                    targetVoucherIdSet.Add(opVoucher.VoucherID);
+                }
+
+                // 2. Remove all FdTransactions and FdInterestAccruals for THIS account FIRST
+                // (Clears foreign key constraint FK_FdTransactions_Vouchers_VoucherID before deleting Vouchers!)
                 var fdTxs = await _context.FdTransactions.Where(t => t.FdAccountID == id).ToListAsync();
                 if (fdTxs.Any())
                 {
@@ -594,28 +622,43 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                // 2. Delete linked Voucher and VoucherDetails (both regular REC-FD-OP and migrated JV-FD-OP)
-                string expectedVoucherNo = $"REC-FD-OP-{accountNo}";
-                string migratedVoucherNo = $"JV-FD-OP-{accountNo}";
-                var linkedVouchers = await _context.Vouchers
-                    .Include(v => v.VoucherDetails)
-                    .Where(v => v.VoucherNo == expectedVoucherNo || v.VoucherNo == migratedVoucherNo || (v.Narration != null && v.Narration.Contains(accountNo)))
-                    .ToListAsync();
-
-                foreach (var vch in linkedVouchers)
+                // 3. For any target vouchers, verify that NO OTHER table or transaction references them before deleting
+                if (targetVoucherIdSet.Any())
                 {
-                    if (vch.VoucherDetails != null && vch.VoucherDetails.Any())
+                    var vouchersToDelete = new List<Voucher>();
+                    foreach (var vId in targetVoucherIdSet)
                     {
-                        _context.VoucherDetails.RemoveRange(vch.VoucherDetails);
+                        // Ensure no other FdTransaction references this voucher
+                        bool usedByOtherFd = await _context.FdTransactions.AnyAsync(t => t.FdAccountID != id && t.VoucherID == vId);
+                        if (usedByOtherFd) continue;
+
+                        // Ensure no other FdInterestAccrual references this voucher
+                        bool usedByOtherAccrual = await _context.FdInterestAccruals.AnyAsync(a => a.FdAccountID != id && a.VoucherID == vId);
+                        if (usedByOtherAccrual) continue;
+
+                        var vch = await _context.Vouchers.Include(v => v.VoucherDetails).FirstOrDefaultAsync(v => v.VoucherID == vId);
+                        if (vch != null)
+                        {
+                            vouchersToDelete.Add(vch);
+                        }
                     }
-                    _context.Vouchers.Remove(vch);
-                }
-                if (linkedVouchers.Any())
-                {
-                    await _context.SaveChangesAsync();
+
+                    foreach (var vch in vouchersToDelete)
+                    {
+                        if (vch.VoucherDetails != null && vch.VoucherDetails.Any())
+                        {
+                            _context.VoucherDetails.RemoveRange(vch.VoucherDetails);
+                        }
+                        _context.Vouchers.Remove(vch);
+                    }
+
+                    if (vouchersToDelete.Any())
+                    {
+                        await _context.SaveChangesAsync();
+                    }
                 }
 
-                // 3. Refund Savings Account if PaymentMode was Transfer
+                // 4. Refund Savings Account if PaymentMode was Transfer
                 if (account.PaymentMode == "Transfer" && account.SavingAccountID.HasValue && account.SavingAccountID.Value > 0)
                 {
                     var sbAcc = await _context.SavingAccountMasters.FindAsync(account.SavingAccountID.Value);
@@ -634,8 +677,7 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                // 4. Remove FdAccount itself
-                bool isLegacy = account.IsLegacyAccount;
+                // 5. Remove FdAccount itself
                 _context.FdAccounts.Remove(account);
                 await _context.SaveChangesAsync();
 
@@ -644,7 +686,7 @@ namespace Bhisi.Api.Controllers
                     try { await SyncFdOpeningBalancesInternalAsync(); } catch { }
                 }
 
-                // 5. Rollback FdAccountSequences by -1 (Sync to max remaining sequence in this branch)
+                // 6. Rollback FdAccountSequences by -1 (Sync to max remaining sequence in this branch)
                 var branchSeq = await _context.FdAccountSequences
                     .FirstOrDefaultAsync(s => s.BranchID == branchId && s.ProductType == "FD");
 
@@ -673,7 +715,7 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                // 6. Record Audit Log
+                // 7. Record Audit Log
                 _context.AuditLogs.Add(new AuditLog
                 {
                     Action = isLegacy ? "FD_MIGRATED_OPENING_DELETED" : "FD_OPENING_DIRECT_DELETED",
@@ -697,7 +739,8 @@ namespace Bhisi.Api.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return StatusCode(500, new { message = $"खाते डिलीट करताना त्रुटी आली: {ex.Message}" });
+                var innerMsg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return StatusCode(500, new { message = $"खाते डिलीट करताना त्रुटी आली: {innerMsg}" });
             }
         }
 

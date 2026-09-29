@@ -229,42 +229,6 @@ export default function PigmyAccountOpening() {
     }
   };
 
-  const adjustAccountNo = (current: string, delta: number): string => {
-    if (!current || current === 'लोड होत आहे...') {
-      return '';
-    }
-    const match = current.match(/^(.*?)(\d+)([^\d]*)$/);
-    if (!match) {
-      return delta > 0 ? `${current}-1` : current;
-    }
-    const prefix = match[1];
-    const numStr = match[2];
-    const suffix = match[3];
-    const currentNum = parseInt(numStr, 10);
-    const nextNum = Math.max(1, currentNum + delta);
-    const paddedNum = String(nextNum).padStart(numStr.length, '0');
-    return `${prefix}${paddedNum}${suffix}`;
-  };
-
-  const handleIncrementAccountNo = () => {
-    const current = formData.accountNo || autoAccountNo;
-    const nextVal = adjustAccountNo(current, 1);
-    setFormData(prev => ({ ...prev, accountNo: nextVal }));
-    setAutoAccountNo(nextVal);
-  };
-
-  const handleDecrementAccountNo = () => {
-    const current = formData.accountNo || autoAccountNo;
-    const prevVal = adjustAccountNo(current, -1);
-    setFormData(prev => ({ ...prev, accountNo: prevVal }));
-    setAutoAccountNo(prevVal);
-  };
-
-  const handleAccountNoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setFormData(prev => ({ ...prev, accountNo: val }));
-    setAutoAccountNo(val);
-  };
 
   const handleCustomerChange = (e: any) => {
     const custId = e && e.target ? e.target.value : e;
@@ -534,78 +498,36 @@ export default function PigmyAccountOpening() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {/* PIGMY ACCOUNT NUMBER FIELD WITH INCREMENT / DECREMENT STEPPER */}
+            {/* PIGMY ACCOUNT NUMBER FIELD (Auto-generated & Protected) */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="font-semibold text-slate-700 text-xs">
                   पिग्मी खाते क्रमांक (Pigmy Account No) <span className="text-rose-500">*</span>
                 </label>
-                {(() => {
-                  const activeNo = (formData.accountNo || autoAccountNo || '').trim().toLowerCase();
-                  const exists = activeNo && activeNo !== 'लोड होत आहे...' && savedAccounts.some(
-                    acc => (acc.accountNo || acc.AccountNo || '').toString().trim().toLowerCase() === activeNo
-                  );
-                  if (exists) {
-                    return (
-                      <span className="text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                        ⚠ वापरलेले (In Use)
-                      </span>
-                    );
-                  }
-                  if (formData.accountNo && formData.accountNo !== 'लोड होत आहे...') {
-                    return (
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                        ✓ उपलब्ध (Available)
-                      </span>
-                    );
-                  }
-                  return null;
-                })()}
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                  ✓ ऑटो-जनरेटेड (Auto)
+                </span>
               </div>
 
               <div className="flex items-center gap-1">
-                {/* Decrement Button */}
-                <button
-                  type="button"
-                  onClick={handleDecrementAccountNo}
-                  title="मागील क्रमांक (Decrement -1)"
-                  className="h-8 w-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-extrabold text-base rounded-lg border border-slate-300 transition-colors cursor-pointer select-none"
-                >
-                  −
-                </button>
-
-                {/* Account Number Input */}
+                {/* Account Number Input - Read Only to prevent accidental skipping */}
                 <input 
                   type="text" 
                   name="accountNo"
-                  required
+                  readOnly
                   value={formData.accountNo || autoAccountNo} 
-                  onChange={handleAccountNoChange}
-                  placeholder="उदा. HO-PG-00001"
-                  className={`flex-1 border rounded-lg px-2.5 py-1.5 font-extrabold font-mono text-xs outline-none shadow-2xs transition-colors text-center ${
-                    (formData.accountNo || autoAccountNo) && savedAccounts.some(acc => (acc.accountNo || acc.AccountNo || '').toString().trim().toLowerCase() === (formData.accountNo || autoAccountNo || '').trim().toLowerCase())
-                      ? 'border-rose-400 bg-rose-50/70 text-rose-900 focus:border-rose-500' 
-                      : 'border-slate-300 bg-white text-primary focus:border-primary focus:ring-1 focus:ring-primary'
-                  }`}
+                  placeholder="उदा. 00130100000010"
+                  title="हा खाते क्रमांक सिस्टीमद्वारे सलगपणे ऑटो-जनरेट केला जातो."
+                  className="flex-1 border rounded-lg px-2.5 py-1.5 font-extrabold font-mono text-xs outline-none shadow-2xs transition-colors text-center border-slate-300 bg-slate-100 text-slate-800 cursor-not-allowed select-all"
                 />
-
-                {/* Increment Button */}
-                <button
-                  type="button"
-                  onClick={handleIncrementAccountNo}
-                  title="पुढील क्रमांक (Increment +1)"
-                  className="h-8 w-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-extrabold text-base rounded-lg border border-slate-300 transition-colors cursor-pointer select-none"
-                >
-                  +
-                </button>
 
                 {/* Reset / Next Sequence Button */}
                 <button
                   type="button"
                   onClick={() => fetchNextAccountNo(parseInt(formData.branchID || '1'), formData.pigmySchemeID ? parseInt(formData.pigmySchemeID) : 1)}
                   disabled={loadingAccountNo}
-                  title="ऑटो पुढील उपलब्ध खाते क्र. आणा (Fetch Next Auto)"
-                  className="h-8 px-2 flex items-center justify-center bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs rounded-lg border border-primary/30 transition-colors cursor-pointer"
+                  title="ऑटो पुढील उपलब्ध खाते क्र. रिफ्रेश करा (Refresh Next Auto)"
+                  className="h-8 px-2.5 flex items-center justify-center bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs rounded-lg border border-primary/30 transition-colors cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingAccountNo ? 'animate-spin' : ''}`} />
                 </button>

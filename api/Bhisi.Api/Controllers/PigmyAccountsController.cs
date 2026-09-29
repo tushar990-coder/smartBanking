@@ -471,6 +471,24 @@ namespace Bhisi.Api.Controllers
                     {
                         return BadRequest($"पिग्मी खाते क्रमांक '{accountNo}' आधीच अस्तित्वात आहे. कृपया दुसरा क्रमांक निवडा.");
                     }
+
+                    // Gap Prevention: Disallow skipping sequence numbers ahead of current sequence
+                    var digitsOnly = new string(accountNo.Where(char.IsDigit).ToArray());
+                    if (digitsOnly.Length == 14)
+                    {
+                        string seqPart = digitsOnly.Substring(6, 7);
+                        if (int.TryParse(seqPart, out int sVal) && sVal > 0)
+                        {
+                            var currentSeq = await _context.PigmyAccountSequences
+                                .FirstOrDefaultAsync(s => s.BranchID == request.BranchID && s.SchemeCodeNumeric == schemeCodeNum);
+                            int lastSeq = currentSeq?.LastSequenceNumber ?? 0;
+                            if (sVal > lastSeq + 1)
+                            {
+                                return BadRequest($"अवैध खाते क्रमांक! अनुक्रमांकामध्ये अंतर (Gap) सोडता येत नाही. पुढील अपेक्षित क्रमांक {lastSeq + 1} असायला हवा.");
+                            }
+                        }
+                    }
+
                     await SyncSequenceWithAccountNoAsync(request.BranchID, schemeCodeNum, accountNo);
                 }
                 else
@@ -602,6 +620,29 @@ namespace Bhisi.Api.Controllers
                 if (!string.IsNullOrWhiteSpace(request.AccountNo))
                 {
                     accountNo = request.AccountNo.Trim();
+                    bool exists = await _context.PigmyAccounts.AnyAsync(p => p.AccountNo == accountNo || p.PreviousAccountNo == accountNo);
+                    if (exists)
+                    {
+                        return BadRequest($"पिग्मी खाते क्रमांक '{accountNo}' आधीच अस्तित्वात आहे. कृपया दुसरा क्रमांक निवडा.");
+                    }
+
+                    // Gap Prevention: Disallow skipping sequence numbers ahead of current sequence
+                    var digitsOnly = new string(accountNo.Where(char.IsDigit).ToArray());
+                    if (digitsOnly.Length == 14)
+                    {
+                        string seqPart = digitsOnly.Substring(6, 7);
+                        if (int.TryParse(seqPart, out int sVal) && sVal > 0)
+                        {
+                            var currentSeq = await _context.PigmyAccountSequences
+                                .FirstOrDefaultAsync(s => s.BranchID == request.BranchID && s.SchemeCodeNumeric == schemeCodeNum);
+                            int lastSeq = currentSeq?.LastSequenceNumber ?? 0;
+                            if (sVal > lastSeq + 1)
+                            {
+                                return BadRequest($"अवैध खाते क्रमांक! अनुक्रमांकामध्ये अंतर (Gap) सोडता येत नाही. पुढील अपेक्षित क्रमांक {lastSeq + 1} असायला हवा.");
+                            }
+                        }
+                    }
+
                     await SyncSequenceWithAccountNoAsync(request.BranchID, schemeCodeNum, accountNo);
                 }
                 else

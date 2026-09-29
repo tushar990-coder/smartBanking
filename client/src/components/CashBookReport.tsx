@@ -26,9 +26,18 @@ interface CashBookResponse {
 }
 
 interface SansthaDetails {
-  sansthaName: string;
-  address: string;
-  registrationNo: string;
+  sansthaID?: number;
+  sansthaName?: string;
+  address?: string;
+  village?: string;
+  taluka?: string;
+  district?: string;
+  pinCode?: string;
+  registrationNo?: string;
+  registrationDate?: string;
+  contactNo?: string;
+  phoneNo?: string;
+  email?: string;
 }
 
 export default function CashBookReport() {
@@ -191,8 +200,13 @@ export default function CashBookReport() {
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
-    const [y, m, d] = dateStr.split('-');
-    return `${d}/${m}/${y}`;
+    const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    const parts = cleanDate.split('-');
+    if (parts.length === 3) {
+      const [y, m, d] = parts;
+      return `${d}/${m}/${y}`;
+    }
+    return dateStr;
   };
 
   const getBranchName = () => {

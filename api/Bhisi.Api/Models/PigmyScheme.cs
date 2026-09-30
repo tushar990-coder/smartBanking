@@ -38,6 +38,9 @@ namespace Bhisi.Api.Models
         [StringLength(50)]
         public string? InterestCalculationMethod { get; set; }
 
+        [StringLength(50)]
+        public string? InterestPostingFrequency { get; set; }
+
         // Dynamic Interest & Penalty Slabs
         public virtual ICollection<PigmySchemeInterestSlab> Slabs { get; set; } = new List<PigmySchemeInterestSlab>();
 

@@ -43,6 +43,7 @@ interface RdScheme {
   maximumInstallment: number;
   interestRate: number;
   interestMethod: string;
+  compoundingFrequency?: string;
   penaltyAmount: number;
   prematurePenaltyRate: number;
   effectiveDate: string;
@@ -80,7 +81,8 @@ export default function RdSchemeMaster() {
     minimumInstallment: 500,
     maximumInstallment: 50000,
     interestRate: 8.0,
-    interestMethod: 'Quarterly',
+    interestMethod: '',
+    compoundingFrequency: '',
     penaltyAmount: 20,
     prematurePenaltyRate: 1.0,
     effectiveDate: new Date().toISOString().split('T')[0],
@@ -180,7 +182,8 @@ export default function RdSchemeMaster() {
       minimumInstallment: scheme.minimumInstallment || 500,
       maximumInstallment: scheme.maximumInstallment || 50000,
       interestRate: scheme.interestRate || 8.0,
-      interestMethod: scheme.interestMethod || 'Quarterly',
+      interestMethod: scheme.interestMethod || '',
+      compoundingFrequency: scheme.compoundingFrequency || '',
       penaltyAmount: scheme.penaltyAmount || 20,
       prematurePenaltyRate: scheme.prematurePenaltyRate ?? 1.0,
       effectiveDate: scheme.effectiveDate ? scheme.effectiveDate.split('T')[0] : new Date().toISOString().split('T')[0],
@@ -246,7 +249,8 @@ export default function RdSchemeMaster() {
       minimumInstallment: 500,
       maximumInstallment: 50000,
       interestRate: 8.0,
-      interestMethod: 'Quarterly',
+      interestMethod: '',
+      compoundingFrequency: '',
       penaltyAmount: 20,
       prematurePenaltyRate: 1.0,
       effectiveDate: new Date().toISOString().split('T')[0],
@@ -274,6 +278,16 @@ export default function RdSchemeMaster() {
 
     if (!formData.schemeCode.trim()) {
       setError('कृपया योजना कोड प्रविष्ट करा.');
+      return;
+    }
+
+    if (!formData.interestMethod) {
+      setError('⚠️ कृपया व्याज आकारणी पद्धत (Interest Calculation Method) निवडा.');
+      return;
+    }
+
+    if (!formData.compoundingFrequency) {
+      setError('⚠️ कृपया व्याज पोस्टिंग वारंवारता (Interest Posting Frequency) निवडा.');
       return;
     }
 
@@ -329,6 +343,8 @@ export default function RdSchemeMaster() {
       'कालावधी (महिने)': s.durationMonths,
       'हप्ता रक्कम (₹)': s.installmentAmount,
       'व्याजदर (%)': s.interestRate,
+      'व्याज आकारणी पद्धत': s.interestMethod || 'Compound',
+      'पोस्टिंग वारंवारता': s.compoundingFrequency || 'Quarterly',
       'मुदतपूर्व कपात दर (%)': s.prematurePenaltyRate,
       'आरडी ठेव देयता खाते': s.rdLiabilityLedger?.ledgerName || 'डिफॉल्ट',
       'स्थिती': s.isActive ? 'सक्रिय' : 'बंद'
@@ -607,6 +623,52 @@ export default function RdSchemeMaster() {
             <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
               <Coins className="w-4 h-4 text-primary" />
               <h2 className="text-xs font-bold text-primary">२. हप्ता, व्याजदर व दंड कपात नियम (Installment, Rates & Limits)</h2>
+            </div>
+
+            {/* Interest Calculation Method & Posting Frequency */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-2 bg-slate-50 border border-slate-200 rounded-sm">
+              <div>
+                <label className={labelClass}>
+                  व्याज आकारणी पद्धत (Calculation Method) <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="interestMethod"
+                  value={formData.interestMethod}
+                  onChange={handleChange}
+                  className={`${inputClass} font-bold ${!formData.interestMethod ? 'border-amber-400 bg-amber-50/50 text-amber-900' : 'text-gray-900'}`}
+                  required
+                >
+                  <option value="">-- व्याज आकारणी पद्धत निवडा * --</option>
+                  <option value="Compound">Compound (त्रैमासिक चक्रवाढ - प्रमाणित CBS)</option>
+                  <option value="Simple">Simple (सरळ व्याज)</option>
+                </select>
+                <span className="text-[10px] text-gray-500 block mt-0.5">
+                  व्याज कसे मोजायचे (फॉर्म्युला / गणित पद्धत)
+                </span>
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  व्याज पोस्टिंग वारंवारता (Posting Frequency) <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="compoundingFrequency"
+                  value={formData.compoundingFrequency}
+                  onChange={handleChange}
+                  className={`${inputClass} font-bold ${!formData.compoundingFrequency ? 'border-amber-400 bg-amber-50/50 text-amber-900' : 'text-gray-900'}`}
+                  required
+                >
+                  <option value="">-- पोस्टिंग वारंवारता निवडा * --</option>
+                  <option value="Monthly">मासिक (Monthly - दरमहा अखेर)</option>
+                  <option value="Quarterly">त्रैमासिक (Quarterly)</option>
+                  <option value="Half-Yearly">अर्धवार्षिक (Half-Yearly)</option>
+                  <option value="Yearly">वार्षिक (Yearly - ३१ मार्च अखेर)</option>
+                  <option value="At Maturity">मुदतीअखेर (At Maturity)</option>
+                </select>
+                <span className="text-[10px] text-gray-500 block mt-0.5">
+                  व्याज व्हाउचर कधी व किती कालावधीने पाडायचे
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
@@ -933,6 +995,7 @@ export default function RdSchemeMaster() {
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                           <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>
+                          <div className="text-purple-700 text-[9px] font-bold">{s.interestMethod || 'चक्रवाढ'} | {s.compoundingFrequency || 'त्रैमासिक'}</div>
                           <div className="text-rose-700 text-[9px] font-mono">कपात: {s.prematurePenaltyRate}%</div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">

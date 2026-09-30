@@ -848,6 +848,12 @@ function App() {
                 <span className="truncate">› नूतनीकरण / परतावा</span>
               </li>
               <li 
+                className={`px-3 py-1 cursor-pointer flex items-center transition-colors text-[11px] rounded ${activeTab === 'rd-accrual' ? 'text-emerald-700 font-bold bg-emerald-50' : 'text-slate-600 hover:text-slate-900'}`}
+                onClick={() => handleNavigate('rd-accrual')}
+              >
+                <span className="truncate">› आरडी व्याज तरतूद (Interest Posting)</span>
+              </li>
+              <li 
                 className={`px-3 py-1 cursor-pointer flex items-center transition-colors text-[11px] rounded ${activeTab === 'rd-reports' ? 'text-emerald-700 font-bold bg-emerald-50' : 'text-slate-600 hover:text-slate-900'}`}
                 onClick={() => handleNavigate('rd-reports')}
               >

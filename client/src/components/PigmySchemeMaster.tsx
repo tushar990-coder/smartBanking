@@ -55,6 +55,7 @@ interface PigmyScheme {
   interestDays?: number;
   penaltyInterestRate?: number;
   interestCalculationMethod?: string;
+  interestPostingFrequency?: string;
   status: string;
   pigmyLiabilityLedgerID?: number | null;
   interestExpenseLedgerID?: number | null;
@@ -138,7 +139,8 @@ export default function PigmySchemeMaster() {
     schemeCode: '',
     schemeName: '',
     interestDays: '365',
-    interestCalculationMethod: 'Flat (फ्लॅट)',
+    interestCalculationMethod: '',
+    interestPostingFrequency: '',
     status: 'Active',
     pigmyLiabilityLedgerID: 0,
     interestExpenseLedgerID: 0,
@@ -206,7 +208,8 @@ export default function PigmySchemeMaster() {
       schemeCode: nextCode,
       schemeName: '',
       interestDays: '365',
-      interestCalculationMethod: 'Flat (फ्लॅट)',
+      interestCalculationMethod: '',
+      interestPostingFrequency: '',
       status: 'Active',
       pigmyLiabilityLedgerID: 0,
       interestExpenseLedgerID: 0,
@@ -227,7 +230,8 @@ export default function PigmySchemeMaster() {
       schemeCode: scheme.schemeCode || '',
       schemeName: scheme.schemeName || '',
       interestDays: scheme.interestDays !== undefined ? String(scheme.interestDays) : '365',
-      interestCalculationMethod: scheme.interestCalculationMethod || 'Flat (फ्लॅट)',
+      interestCalculationMethod: scheme.interestCalculationMethod || '',
+      interestPostingFrequency: scheme.interestPostingFrequency || '',
       status: scheme.status || 'Active',
       pigmyLiabilityLedgerID: scheme.pigmyLiabilityLedgerID || 0,
       interestExpenseLedgerID: scheme.interestExpenseLedgerID || 0,
@@ -542,7 +546,12 @@ export default function PigmySchemeMaster() {
     }
 
     if (!formData.interestCalculationMethod) {
-      setError('कृपया व्याज आकारणी पद्धत निवडा (Interest Calculation Method).');
+      setError('⚠️ कृपया व्याज आकारणी पद्धत निवडा (Interest Calculation Method).');
+      return;
+    }
+
+    if (!formData.interestPostingFrequency) {
+      setError('⚠️ कृपया व्याज पोस्टिंग वारंवारता निवडा (Interest Posting Frequency).');
       return;
     }
 
@@ -577,6 +586,7 @@ export default function PigmySchemeMaster() {
         minDurationMonths: minDuration,
         penaltyInterestRate: penaltyRate,
         interestCalculationMethod: formData.interestCalculationMethod,
+        interestPostingFrequency: formData.interestPostingFrequency,
         createdBy: 1,
         createdDate: new Date().toISOString(),
         slabs: slabs.map((s) => ({
@@ -618,6 +628,8 @@ export default function PigmySchemeMaster() {
       'योजना कोड': s.schemeCode || getSchemeId(s),
       'योजनेचे नाव': s.schemeName,
       'कालावधी (दिवस)': s.durationMonths,
+      'व्याज आकारणी पद्धत': s.interestCalculationMethod || 'Flat (फ्लॅट)',
+      'पोस्टिंग वारंवारता': s.interestPostingFrequency || 'वार्षिक',
       'व्याजदर (%)': s.interestRate,
       'स्लॅब्स संख्या': s.slabs?.length || 0,
       'स्लॅब तपशील': s.slabs?.map(sl => `${sl.fromDays}-${sl.toDays}D: व्याज=${sl.interestRate}%, दंड=${sl.penaltyRate}%`).join(' | ') || '-',
@@ -800,8 +812,8 @@ export default function PigmySchemeMaster() {
               <h2 className="text-xs font-bold text-primary">१. मूलभूत योजना माहिती (Basic Details)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sD:grid-cols-2 md:grid-cols-6 gap-2.5">
-              <div>
+            <div className="grid grid-cols-1 sD:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
+              <div className="lg:col-span-1">
                 <div className="flex items-center justify-between mb-0.5">
                   <label className={labelClass}>
                     योजना कोड <span className="text-red-500">*</span>
@@ -828,7 +840,7 @@ export default function PigmySchemeMaster() {
                 />
               </div>
 
-              <div className="md:col-span-2">
+              <div className="sD:col-span-2 md:col-span-2 lg:col-span-2">
                 <label className={labelClass}>
                   योजनेचे नाव (Scheme Name) <span className="text-red-500">*</span>
                 </label>
@@ -843,7 +855,7 @@ export default function PigmySchemeMaster() {
                 />
               </div>
 
-              <div>
+              <div className="lg:col-span-1">
                 <label className={labelClass}>व्याजाचे दिवस (Days)</label>
                 <input
                   type="number"
@@ -854,20 +866,43 @@ export default function PigmySchemeMaster() {
                 />
               </div>
 
-              <div>
-                <label className={labelClass}>व्याज आकारणी पद्धत</label>
+              <div className="lg:col-span-1">
+                <label className={labelClass}>
+                  व्याज आकारणी पद्धत <span className="text-red-500">*</span>
+                </label>
                 <select
+                  required
                   value={formData.interestCalculationMethod}
                   onChange={(e) => setFormData({ ...formData, interestCalculationMethod: e.target.value })}
-                  className={`${inputClass} font-mono`}
+                  className={`${inputClass} font-mono ${!formData.interestCalculationMethod ? 'border-amber-400 bg-amber-50/50 text-amber-900' : ''}`}
                 >
+                  <option value="">-- आकारणी निवडा * --</option>
                   <option value="Flat (फ्लॅट)">Flat (फ्लॅट)</option>
                   <option value="Daily Reducing (दैनिक घटती)">Daily Reducing (दैनिक घटती)</option>
                   <option value="Reducing (घटती पद्धत)">Reducing (घटती पद्धत)</option>
                 </select>
               </div>
 
-              <div>
+              <div className="lg:col-span-1">
+                <label className={labelClass}>
+                  पोस्टिंग वारंवारता <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={formData.interestPostingFrequency}
+                  onChange={(e) => setFormData({ ...formData, interestPostingFrequency: e.target.value })}
+                  className={`${inputClass} font-bold ${!formData.interestPostingFrequency ? 'border-amber-400 bg-amber-50/50 text-amber-900' : 'text-gray-900'}`}
+                >
+                  <option value="">-- वारंवारता निवडा * --</option>
+                  <option value="Monthly">मासिक (Monthly - दरमहा)</option>
+                  <option value="Quarterly">त्रैमासिक (Quarterly)</option>
+                  <option value="Half-Yearly">अर्धवार्षिक (Half-Yearly)</option>
+                  <option value="Yearly">वार्षिक (Yearly - ३१ मार्च)</option>
+                  <option value="At Maturity">मुदतीअखेर (At Maturity)</option>
+                </select>
+              </div>
+
+              <div className="lg:col-span-1">
                 <label className={labelClass}>योजना स्थिती (Status)</label>
                 <select
                   value={formData.status}
@@ -1257,7 +1292,12 @@ export default function PigmySchemeMaster() {
                           </td>
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                             <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>
-                            <div className="text-gray-500 text-[10px]">{s.durationMonths} दिवस</div>
+                            <div className="text-gray-500 text-[10px]">{s.durationMonths} दिवस • {s.interestCalculationMethod || 'Flat'}</div>
+                            {s.interestPostingFrequency && (
+                              <div className="text-blue-700 font-bold text-[9px]">
+                                पोस्टिंग: {s.interestPostingFrequency}
+                              </div>
+                            )}
                             {s.slabs && s.slabs.length > 0 && (
                               <span
                                 className="inline-block mt-0.5 px-1.5 py-0.5 text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded"

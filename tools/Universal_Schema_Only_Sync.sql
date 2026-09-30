@@ -1,4 +1,4 @@
-﻿-- ====================================================================================================
+-- ====================================================================================================
 -- SCRIPT: Universal_Schema_Only_Sync.sql
 -- PURPOSE: Universal Schema-Only Synchronization Script for SmartBanking Core Banking System
 -- SOURCE BASELINE: SmartBanking_Template (Gold Master Baseline - 126 Tables, 1711 Columns)
@@ -9176,6 +9176,12 @@ IF COL_LENGTH(N'[dbo].[PigmySchemes]', N'SchemeCode') IS NULL
 BEGIN
     ALTER TABLE [dbo].[PigmySchemes] ADD [SchemeCode] NVARCHAR(50) NULL;
     PRINT '  + Added column [SchemeCode] to [dbo].[PigmySchemes]';
+END
+GO
+IF COL_LENGTH(N'[dbo].[PigmySchemes]', N'InterestPostingFrequency') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[PigmySchemes] ADD [InterestPostingFrequency] NVARCHAR(50) NULL;
+    PRINT '  + Added column [InterestPostingFrequency] to [dbo].[PigmySchemes]';
 END
 GO
 

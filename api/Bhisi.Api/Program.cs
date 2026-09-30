@@ -280,7 +280,16 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
-            // RD Module CBS Standardization: Tables and Columns
+            -- RD Module CBS Standardization: Tables and Columns
+            IF COL_LENGTH('PigmySchemeInterestSlabs', 'FromMonths') IS NOT NULL
+                ALTER TABLE [dbo].[PigmySchemeInterestSlabs] ALTER COLUMN [FromMonths] int NULL;
+
+            IF COL_LENGTH('PigmySchemeInterestSlabs', 'ToMonths') IS NOT NULL
+                ALTER TABLE [dbo].[PigmySchemeInterestSlabs] ALTER COLUMN [ToMonths] int NULL;
+
+            IF COL_LENGTH('PigmySchemes', 'InterestPostingFrequency') IS NULL
+                ALTER TABLE [dbo].[PigmySchemes] ADD [InterestPostingFrequency] nvarchar(50) NULL;
+
             IF OBJECT_ID(N'[dbo].[RDInstallmentSchedules]', N'U') IS NULL
             BEGIN
                 CREATE TABLE [dbo].[RDInstallmentSchedules] (

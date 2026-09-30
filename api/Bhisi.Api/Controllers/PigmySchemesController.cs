@@ -84,6 +84,7 @@ namespace Bhisi.Api.Controllers
             existing.MinDurationMonths = pigmyScheme.MinDurationMonths;
             existing.PenaltyInterestRate = pigmyScheme.PenaltyInterestRate;
             existing.InterestCalculationMethod = pigmyScheme.InterestCalculationMethod;
+            existing.InterestPostingFrequency = pigmyScheme.InterestPostingFrequency;
 
             // Synchronize Slabs
             if (pigmyScheme.Slabs != null)

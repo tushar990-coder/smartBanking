@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import {
@@ -62,24 +62,26 @@ export default function CashSchemeSettingMaster() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const loadData = async (isMounted = true) => {
+  const isMountedRef = useRef(true);
+
+  const loadData = async () => {
     setLoading(true);
     setSuccessMsg(null);
     setErrorMsg(null);
     try {
       // 1. Load Ledgers
       const ledgersRes = await api.get('/Ledgers');
-      if (!isMounted) return;
+      if (!isMountedRef.current) return;
       setLedgers(ledgersRes.data || []);
 
       // 2. Load Branches
       const branchesRes = await api.get('/Branches');
-      if (!isMounted) return;
+      if (!isMountedRef.current) return;
       setBranches(branchesRes.data || []);
 
       // 3. Load Cash Settings
       const settingsRes = await api.get(`/CashManagement/Settings?branchId=${selectedBranchId}`);
-      if (!isMounted) return;
+      if (!isMountedRef.current) return;
       if (settingsRes.data) {
         setSettings({
           id: settingsRes.data.id || 0,
@@ -97,7 +99,7 @@ export default function CashSchemeSettingMaster() {
 
       // 4. Load Cashiers list
       const cashiersRes = await api.get(`/CashManagement/Cashiers?branchId=${selectedBranchId}`);
-      if (!isMounted) return;
+      if (!isMountedRef.current) return;
       const cashierList: CashierItem[] = (cashiersRes.data || []).map((c: any) => ({
         id: c.Id || c.id,
         cashierName: c.CashierName || c.cashierName,
@@ -109,21 +111,22 @@ export default function CashSchemeSettingMaster() {
         maxCashLimit: c.MaxCashLimit || c.maxCashLimit || 500000,
         remarks: c.Remarks || c.remarks || ''
       }));
+      if (!isMountedRef.current) return;
       setCashiers(cashierList);
     } catch (err) {
-      if (!isMounted) return;
+      if (!isMountedRef.current) return;
       console.error('Error loading Cash scheme settings:', err);
       setErrorMsg('सेटिंग डेटा लोड करताना त्रुटी आली.');
     } finally {
-      if (isMounted) setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    let isMounted = true;
-    loadData(isMounted);
+    isMountedRef.current = true;
+    loadData();
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
     };
   }, [selectedBranchId]);
 

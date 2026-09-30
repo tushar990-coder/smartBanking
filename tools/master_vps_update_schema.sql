@@ -614,6 +614,14 @@ BEGIN
 END
 GO
 
+-- PigmySchemes
+IF COL_LENGTH('PigmySchemes', 'InterestPostingFrequency') IS NULL
+BEGIN
+    ALTER TABLE [PigmySchemes] ADD [InterestPostingFrequency] NVARCHAR(50) NULL;
+    PRINT 'Added InterestPostingFrequency to PigmySchemes';
+END
+GO
+
 -- InvestmentAccounts
 IF COL_LENGTH('InvestmentAccounts', 'DepositReceiptNo') IS NULL
 BEGIN

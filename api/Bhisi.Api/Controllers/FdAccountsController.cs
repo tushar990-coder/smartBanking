@@ -1263,6 +1263,30 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            var scheme = await _context.FdSchemes.FindAsync(account.FdSchemeID);
+            if (scheme != null)
+            {
+                if (string.IsNullOrWhiteSpace(account.DurationType))
+                {
+                    account.DurationType = scheme.DurationType ?? "Months";
+                }
+                if (!account.DurationValue.HasValue || account.DurationValue.Value <= 0)
+                {
+                    account.DurationValue = scheme.DurationMonths > 0 ? scheme.DurationMonths : 12;
+                }
+            }
+            if (!account.DurationInDays.HasValue || account.DurationInDays.Value <= 0)
+            {
+                if (account.MaturityDate > account.OpeningDate)
+                {
+                    account.DurationInDays = (int)(account.MaturityDate.Date - account.OpeningDate.Date).TotalDays;
+                }
+                else if (string.Equals(account.DurationType, "Days", StringComparison.OrdinalIgnoreCase) && account.DurationValue.HasValue)
+                {
+                    account.DurationInDays = account.DurationValue.Value;
+                }
+            }
+
             _context.FdAccounts.Add(account);
             await _context.SaveChangesAsync();
 

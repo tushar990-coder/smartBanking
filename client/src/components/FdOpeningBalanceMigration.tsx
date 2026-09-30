@@ -47,9 +47,15 @@ interface Customer extends CustomerOption {
 
 interface FdScheme {
   fdSchemeID: number;
+  schemeCode?: string;
   schemeName: string;
   interestRate: number;
   durationMonths?: number;
+  durationType?: string; // 'Days' | 'Months' | 'Years'
+  durationValue?: number;
+  schemeDurationModel?: string; // 'Fixed' | 'Slab'
+  minDurationDays?: number;
+  maxDurationDays?: number;
   interestType?: string;
   interestCompoundingFrequency?: string;
 }
@@ -171,6 +177,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
     openingDate: '',
     depositAmount: 0,
     interestRate: 0,
+    durationType: 'Months',
+    durationValue: 12,
+    durationInDays: 365,
     maturityDate: '',
     maturityAmount: 0,
     legacyAccruedInt: 0,
@@ -289,9 +298,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
   const getSchemeId = (s: any) => s?.fdSchemeID ?? s?.fdSchemeId ?? s?.FdSchemeID ?? 0;
 
-  // [RULE-FD-010] Calendar and leap-year safe maturity date calculation (Timezone-safe)
-  const calculateMaturityDate = (opDateStr: string, months: number): string => {
-    if (!opDateStr || !months || months <= 0) return '';
+  // [RULE-FD-010] Calendar, leap-year and unit-safe (Days/Months/Years) maturity date calculation (Timezone-safe)
+  const calculateMaturityDate = (opDateStr: string, val: number, unit: string = 'Months'): string => {
+    if (!opDateStr || !val || val <= 0) return '';
     const parts = opDateStr.split('-');
     if (parts.length !== 3) return '';
     const year = parseInt(parts[0], 10);
@@ -300,7 +309,25 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
     if (isNaN(year) || isNaN(month) || isNaN(day)) return '';
 
-    const totalMonths = year * 12 + (month - 1) + months;
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+
+    // 1. Days: strictly add calendar days
+    if (unit === 'Days' || unit === 'दिन' || unit === 'दिवस') {
+      const d = new Date(year, month - 1, day);
+      d.setDate(d.getDate() + val);
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+
+    // 2. Years: add calendar years (safe for Feb 29 leap years)
+    if (unit === 'Years' || unit === 'वर्षे') {
+      const targetYear = year + val;
+      const maxDaysInTargetMonth = new Date(targetYear, month, 0).getDate();
+      const targetDay = Math.min(day, maxDaysInTargetMonth);
+      return `${targetYear}-${pad(month)}-${pad(targetDay)}`;
+    }
+
+    // 3. Months (default): add calendar months (safe for 31st to 28/30th month end)
+    const totalMonths = year * 12 + (month - 1) + val;
     const targetYear = Math.floor(totalMonths / 12);
     const targetMonth = (totalMonths % 12) + 1; // 1 to 12
 
@@ -308,11 +335,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
     const maxDaysInTargetMonth = new Date(targetYear, targetMonth, 0).getDate();
     const targetDay = Math.min(day, maxDaysInTargetMonth);
 
-    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
     return `${targetYear}-${pad(targetMonth)}-${pad(targetDay)}`;
   };
 
-  // [RULE-FD-009] Scheme-specific maturity amount auto-calculation
+  // [RULE-FD-009] Scheme-specific maturity amount auto-calculation (with Days & Short-term deposit support)
   const calculateMaturityAmount = (
     p: number,
     r: number,
@@ -323,25 +349,24 @@ const FdOpeningBalanceMigration: React.FC = () => {
     if (!p || p <= 0) return 0;
     if (!r || r <= 0) return Math.round(p);
 
-    let months = 0;
+    let diffDays = 0;
     if (opDateStr && matDateStr) {
       const d1 = new Date(opDateStr);
       const d2 = new Date(matDateStr);
       if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 > d1) {
-        const yearsDiff = d2.getFullYear() - d1.getFullYear();
-        months = yearsDiff * 12 + (d2.getMonth() - d1.getMonth());
-        const dayDiff = d2.getDate() - d1.getDate();
-        if (dayDiff !== 0) {
-          months += dayDiff / 30;
-        }
+        diffDays = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
       }
     }
 
-    if (months <= 0 && scheme?.durationMonths) {
-      months = Number(scheme.durationMonths);
+    if (diffDays <= 0) {
+      const durType = scheme?.durationType || 'Months';
+      const durVal = Number(scheme?.durationMonths) || 12;
+      if (durType === 'Days') diffDays = durVal;
+      else if (durType === 'Years') diffDays = durVal * 365;
+      else diffDays = Math.round(durVal * 30.4167);
     }
 
-    if (months <= 0) return Math.round(p);
+    if (diffDays <= 0) return Math.round(p);
 
     const type = (scheme?.interestType || '').toLowerCase();
 
@@ -350,22 +375,23 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return Math.round(p);
     }
 
-    const t = months / 12;
-
-    // 2. Cumulative / Damduppat / Reinvestment: Quarterly (or configured frequency) compounding
-    if (type.includes('cumulative') || type.includes('damduppat') || type.includes('चक्रवाढ') || (scheme?.schemeName || '').toLowerCase().includes('दाम')) {
-      let n = 4; // default Quarterly
-      const freq = (scheme?.interestCompoundingFrequency || '').toLowerCase();
-      if (freq.includes('half') || freq.includes('2')) n = 2;
-      if (freq.includes('year') || freq.includes('1')) n = 1;
-      if (freq.includes('month') || freq.includes('12')) n = 12;
-
-      const matAmt = p * Math.pow(1 + r / (n * 100), n * t);
+    // 2. Short Term Deposit (< 1 Year / Days based) or Simple Interest: standard Indian banking formula
+    const isShortTermOrSimple = (scheme?.durationType === 'Days') || diffDays < 90 || type.includes('simple') || (!type.includes('cumulative') && !type.includes('damduppat') && !type.includes('चक्रवाढ') && !(scheme?.schemeName || '').toLowerCase().includes('दाम'));
+    if (isShortTermOrSimple) {
+      const t = diffDays / 365.0;
+      const matAmt = p * (1 + (r * t) / 100);
       return Math.round(matAmt);
     }
 
-    // 3. Simple Interest / General Payout
-    const matAmt = p * (1 + (r * t) / 100);
+    // 3. Cumulative / Damduppat / Reinvestment: Quarterly (or configured frequency) compounding
+    let n = 4; // default Quarterly
+    const freq = (scheme?.interestCompoundingFrequency || '').toLowerCase();
+    if (freq.includes('half') || freq.includes('2')) n = 2;
+    if (freq.includes('year') || freq.includes('1')) n = 1;
+    if (freq.includes('month') || freq.includes('12')) n = 12;
+
+    const t = diffDays / 365.0;
+    const matAmt = p * Math.pow(1 + r / (n * 100), n * t);
     return Math.round(matAmt);
   };
 
@@ -373,12 +399,14 @@ const FdOpeningBalanceMigration: React.FC = () => {
     const sId = parseInt(e.target.value, 10) || 0;
     const selected = schemes.find((s: any) => getSchemeId(s) === sId);
     const newRate = selected ? Number(selected.interestRate) || 0 : 0;
-    const months = selected ? Number(selected.durationMonths) || 0 : 0;
+    const durType = selected?.durationType || 'Months';
+    const durVal = selected ? Number(selected.durationMonths) || 0 : 0;
+    const durInDays = durType === 'Days' ? durVal : (durType === 'Years' ? durVal * 365 : Math.round(durVal * 30.4167));
 
     let newMatDate = formData.maturityDate;
-    // [RULE-FD-010] If scheme has durationMonths and openingDate is present, auto-calculate maturity date
-    if (months > 0 && formData.openingDate && (!isManualMaturityDateEdited || !formData.maturityDate)) {
-      newMatDate = calculateMaturityDate(formData.openingDate, months);
+    // [RULE-FD-010] If scheme has duration and openingDate is present, auto-calculate maturity date
+    if (durVal > 0 && formData.openingDate && (!isManualMaturityDateEdited || !formData.maturityDate)) {
+      newMatDate = calculateMaturityDate(formData.openingDate, durVal, durType);
     }
 
     const autoMat = !isManualMaturityEdited
@@ -389,6 +417,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
       ...prev,
       fdSchemeID: sId,
       interestRate: newRate,
+      durationType: durType,
+      durationValue: durVal,
+      durationInDays: durInDays,
       maturityDate: newMatDate,
       maturityAmount: autoMat,
     }));
@@ -474,11 +505,17 @@ const FdOpeningBalanceMigration: React.FC = () => {
         [name]: parsedVal,
       };
 
-      // [RULE-FD-010] Auto-suggest maturityDate if openingDate entered/changed and scheme has durationMonths
+      // [RULE-FD-010] Auto-suggest maturityDate if openingDate entered/changed and scheme has duration
       if (name === 'openingDate' && parsedVal) {
         const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
         if (selected?.durationMonths) {
-          updated.maturityDate = calculateMaturityDate(parsedVal as string, selected.durationMonths);
+          const durType = selected.durationType || 'Months';
+          const durVal = Number(selected.durationMonths) || 0;
+          const durInDays = durType === 'Days' ? durVal : (durType === 'Years' ? durVal * 365 : Math.round(durVal * 30.4167));
+          updated.maturityDate = calculateMaturityDate(parsedVal as string, durVal, durType);
+          updated.durationType = durType;
+          updated.durationValue = durVal;
+          updated.durationInDays = durInDays;
           setIsManualMaturityDateEdited(false);
         }
         // [RULE-FD-011] Auto-suggest lastInterestPostingDate to 31/03/2026 if opening date is before 01/04/2026
@@ -519,14 +556,20 @@ const FdOpeningBalanceMigration: React.FC = () => {
     setIsManualMaturityEdited(false);
   };
 
-  // [RULE-FD-010] Recalculate maturity date based on scheme duration
+  // [RULE-FD-010] Recalculate maturity date based on scheme duration and unit (Days/Months/Years)
   const handleRecalculateMaturityDate = () => {
     const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
     if (selected?.durationMonths && formData.openingDate) {
-      const autoMatDate = calculateMaturityDate(formData.openingDate, selected.durationMonths);
+      const durType = selected.durationType || 'Months';
+      const durVal = Number(selected.durationMonths) || 0;
+      const durInDays = durType === 'Days' ? durVal : (durType === 'Years' ? durVal * 365 : Math.round(durVal * 30.4167));
+      const autoMatDate = calculateMaturityDate(formData.openingDate, durVal, durType);
       setFormData((prev) => {
         const updated = {
           ...prev,
+          durationType: durType,
+          durationValue: durVal,
+          durationInDays: durInDays,
           maturityDate: autoMatDate
         };
         if (!isManualMaturityEdited) {
@@ -620,6 +663,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
       openingDate: '',
       depositAmount: 0,
       interestRate: 0,
+      durationType: 'Months',
+      durationValue: 12,
+      durationInDays: 365,
       maturityDate: '',
       maturityAmount: 0,
       legacyAccruedInt: 0,
@@ -647,6 +693,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
       openingDate: acc.openingDate ? acc.openingDate.split('T')[0] : '',
       depositAmount: acc.depositAmount || 0,
       interestRate: acc.interestRate || 0,
+      durationType: acc.durationType || 'Months',
+      durationValue: acc.durationValue || 0,
+      durationInDays: acc.durationInDays || 0,
       maturityDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : '',
       maturityAmount: acc.maturityAmount || 0,
       legacyAccruedInt: acc.legacyAccruedInt || 0,
@@ -1189,8 +1238,14 @@ const FdOpeningBalanceMigration: React.FC = () => {
               {/* Row 2, Col 2: मुदतपूर्ती तारीख */}
               <div>
                 <div className="flex items-center justify-between min-h-[22px] mb-1">
-                  <label className="text-[11px] font-bold text-gray-700">
-                    मुदतपूर्ती तारीख (Maturity Date) <span className="text-red-500">*</span>
+                  <label className="text-[11px] font-bold text-gray-700 flex items-center gap-1">
+                    <span>मुदतपूर्ती तारीख (Maturity Date)</span>
+                    <span className="text-red-500">*</span>
+                    {formData.durationValue > 0 && (
+                      <span className="text-[10px] text-primary font-bold bg-primary/10 px-1 py-0.2 rounded border border-primary/20 font-mono">
+                        {formData.durationValue} {formData.durationType === 'Days' ? 'दिवस' : formData.durationType === 'Years' ? 'वर्षे' : 'महिने'}
+                      </span>
+                    )}
                   </label>
                   <div className="flex items-center gap-1">
                     {isManualMaturityDateEdited ? (

@@ -113,7 +113,7 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
         { id: 'fd-reports&reportType=Register', name: '१. मुदत ठेव नोंदवही (FD Register)' },
         { id: 'fd-reports&reportType=Outstanding', name: '२. मुदत ठेव बाकी अहवाल (FD Outstanding)' },
         { id: 'fd-reports&reportType=MaturityDue', name: '३. मुदतपूर्ती देय अहवाल (Maturity Due)' },
-        { id: 'fd-reports&reportType=MemberLedger', name: '✨ ४. मुदत ठेव खातावणी अहवाल (Member FD Ledger Statement)' },
+        { id: 'fd-reports&reportType=MemberLedger', name: '✨ ४. मुदत ठेव खातावणी अहवाल (FD Account Ledger)' },
         { id: 'fd-accrual', name: '⚡ ५. मुदत ठेव व्याज तरतूद अहवाल / रन (FD Interest Provision)' }
       ]
     },

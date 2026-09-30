@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import SearchableSelect from './SearchableSelect';
+import CustomerSearchSelect from './common/CustomerSearchSelect';
 import FdAccrualPosting from './FdAccrualPosting';
 import { 
   Printer, 
@@ -76,20 +76,10 @@ interface FdDeletedEntryRow {
   reasonOrDetails: string;
 }
 
-interface MemberOption {
-  memberID: number;
-  memberCode: string;
-  firstName: string;
-  middleName?: string;
-  lastName: string;
-  cifNo?: string;
-}
-
-interface MemberLedgerData {
-  memberID: number;
-  memberCode: string;
+interface CustomerLedgerData {
+  customerID: number;
   cifNo: string;
-  memberName: string;
+  customerName: string;
   mobileNo: string;
   address: string;
   branchName: string;
@@ -99,6 +89,7 @@ interface MemberLedgerData {
   accounts: {
     fdAccountID: number;
     accountNo: string;
+    legacyAccountNumber?: string;
     openingDate: string;
     maturityDate: string;
     depositAmount: number;
@@ -153,12 +144,7 @@ const formatDisplayDate = (dStr?: string | null) => {
   }
 };
 
-const formatMemberOptionLabel = (m: MemberOption) => {
-  const code = m.memberCode || m.memberID;
-  const name = `${m.firstName || ''} ${m.middleName || ''} ${m.lastName || ''}`.trim();
-  const cif = m.cifNo ? ` [CIF: ${m.cifNo}]` : '';
-  return `${code} - ${name}${cif}`;
-};
+
 
 export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
   const [reportType, setReportType] = useState<string>(() => {
@@ -167,8 +153,8 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
   });
 
   const [branches, setBranches] = useState<any[]>([]);
-  const [members, setMembers] = useState<MemberOption[]>([]);
-  const [selectedMemberID, setSelectedMemberID] = useState<number>(0);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [selectedCustomerID, setSelectedCustomerID] = useState<number>(0);
   const [sansthaDetail, setSansthaDetail] = useState<any>(null);
 
   const globalBranchStr = localStorage.getItem('globalBranchId');
@@ -186,7 +172,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
   const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [voucherPassingStatus, setVoucherPassingStatus] = useState<string>('ALL');
 
-  const [memberLedger, setMemberLedger] = useState<MemberLedgerData | null>(null);
+  const [customerLedger, setCustomerLedger] = useState<CustomerLedgerData | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const reportRef = useRef<HTMLDivElement>(null);
@@ -194,7 +180,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
   useEffect(() => {
     fetchBranches();
     fetchSansthaDetail();
-    fetchMembers();
+    fetchCustomers();
   }, []);
 
   const fetchSansthaDetail = async () => {
@@ -210,12 +196,12 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
     }
   };
 
-  const fetchMembers = async () => {
+  const fetchCustomers = async () => {
     try {
-      const res = await axios.get('/api/Members');
-      setMembers(res.data || []);
+      const res = await axios.get('/api/Customers');
+      setCustomers(res.data || []);
     } catch (err) {
-      console.error('Error fetching members', err);
+      console.error('Error fetching customers', err);
     }
   };
 
@@ -230,15 +216,15 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
 
   useEffect(() => {
     if (reportType === 'MemberLedger') {
-      if (selectedMemberID > 0) {
-        fetchMemberLedgerData(selectedMemberID);
+      if (selectedCustomerID > 0) {
+        fetchCustomerLedgerData(selectedCustomerID);
       } else {
-        setMemberLedger(null);
+        setCustomerLedger(null);
       }
     } else if (reportType !== 'AccrualProvision') {
       fetchReportData();
     }
-  }, [reportType, branchID, selectedMemberID, fromDate, toDate, voucherPassingStatus]);
+  }, [reportType, branchID, selectedCustomerID, fromDate, toDate, voucherPassingStatus]);
 
   const fetchReportData = async () => {
     setLoading(true);
@@ -284,14 +270,30 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
     }
   };
 
-  const fetchMemberLedgerData = async (memberId: number) => {
+  const fetchCustomerLedgerData = async (customerId: number) => {
     setLoading(true);
     try {
-      const res = await axios.get(`/api/Reports/fd-member-ledger/${memberId}`);
-      setMemberLedger(res.data);
+      const res = await axios.get(`/api/Reports/fd-member-ledger/${customerId}`);
+      const d = res.data;
+      if (d) {
+        setCustomerLedger({
+          customerID: d.customerID || d.memberID || customerId,
+          cifNo: d.cifNo || d.memberCode || '',
+          customerName: d.customerName || d.memberName || '',
+          mobileNo: d.mobileNo || '',
+          address: d.address || '',
+          branchName: d.branchName || '',
+          totalFDAccountsCount: d.totalFDAccountsCount || 0,
+          totalPrincipalInvested: d.totalPrincipalInvested || 0,
+          totalMaturityValue: d.totalMaturityValue || 0,
+          accounts: d.accounts || []
+        });
+      } else {
+        setCustomerLedger(null);
+      }
     } catch (err) {
-      console.error('Error fetching FD member ledger', err);
-      setMemberLedger(null);
+      console.error('Error fetching FD customer ledger', err);
+      setCustomerLedger(null);
     } finally {
       setLoading(false);
     }
@@ -354,7 +356,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
       case 'Register': return 'मुदत ठेव नोंदवही (Fixed Deposit Register)';
       case 'Outstanding': return 'मुदत ठेव बाकी अहवाल (FD Outstanding Report)';
       case 'MaturityDue': return 'मुदतपूर्ती देय अहवाल (FD Maturity Due Report)';
-      case 'MemberLedger': return 'मुदत ठेव खातावणी विवरणपत्र (Member FD Ledger)';
+      case 'MemberLedger': return 'मुदत ठेव खातावणी विवरणपत्र (FD Account Ledger)';
       case 'VoucherPassing': return 'मुदत ठेव व्हाउचर पासिंग अहवाल (FD Voucher Passing Report)';
       case 'DeletedEntries': return 'मुदत ठेव थेट रद्द नोंदी व रोलबॅक अहवाल (FD Deleted Entries & Rollback Report)';
       case 'MigratedFD': return 'स्थलांतरित मुदत ठेव (FD) यादी अहवाल (Migrated FD Accounts Report)';
@@ -588,7 +590,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                 <option value="Register">१. मुदत ठेव नोंदवही (FD Register)</option>
                 <option value="Outstanding">२. मुदत ठेव बाकी अहवाल (FD Outstanding)</option>
                 <option value="MaturityDue">३. मुदतपूर्ती देय अहवाल (Maturity Due)</option>
-                <option value="MemberLedger">४. मुदत ठेव खातावणी (Member Ledger)</option>
+                <option value="MemberLedger">४. मुदत ठेव खातावणी (FD Account Ledger)</option>
                 <option value="AccrualProvision">५. व्याज तरतूद (Interest Provision)</option>
                 <option value="VoucherPassing">६. मुदत ठेव व्हाउचर पासिंग अहवाल (Voucher Passing)</option>
                 <option value="DeletedEntries">७. मुदत ठेव रद्द नोंदी व रोलबॅक अहवाल (Deleted & Rollback)</option>
@@ -634,18 +636,14 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
               </div>
             )}
 
-            {/* Branch or Member selector */}
+            {/* Branch or Customer selector */}
             {reportType === 'MemberLedger' ? (
-              <div className="w-64 sm:w-72">
-                <SearchableSelect
-                  name="memberID"
-                  options={members.map((m) => ({
-                    value: m.memberID,
-                    label: formatMemberOptionLabel(m),
-                  }))}
-                  value={selectedMemberID}
-                  onChange={(e: any) => setSelectedMemberID(parseInt(e.target.value, 10) || 0)}
-                  placeholder="नाव किंवा कोडने शोधा..."
+              <div className="w-64 sm:w-80">
+                <CustomerSearchSelect
+                  customers={customers}
+                  value={selectedCustomerID || ''}
+                  onChange={(val) => setSelectedCustomerID(val ? Number(val) : 0)}
+                  placeholder="-- खातेदार निवडा (CIF / नाव / मो.) --"
                 />
               </div>
             ) : reportType !== 'AccrualProvision' ? (
@@ -705,9 +703,9 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                     ? filteredVoucherPassing.length === 0
                     : reportType === 'DeletedEntries'
                     ? filteredDeletedEntries.length === 0
-                    : (filteredData.length === 0 && !memberLedger)
+                    : (filteredData.length === 0 && !customerLedger)
                 }
-                className={`h-6 bg-slate-800 hover:bg-slate-900 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${(reportType === 'VoucherPassing' ? filteredVoucherPassing.length === 0 : (reportType === 'DeletedEntries' ? filteredDeletedEntries.length === 0 : (filteredData.length === 0 && !memberLedger))) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`h-6 bg-slate-800 hover:bg-slate-900 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${(reportType === 'VoucherPassing' ? filteredVoucherPassing.length === 0 : (reportType === 'DeletedEntries' ? filteredDeletedEntries.length === 0 : (filteredData.length === 0 && !customerLedger))) ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title="A4 प्रिंट काढा"
               >
                 <Printer size={12} />
@@ -851,31 +849,39 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
               </div>
             </div>
 
-            {/* Member Ledger View */}
-            {reportType === 'MemberLedger' && memberLedger && (
+            {/* Customer / FD Account Ledger View */}
+            {reportType === 'MemberLedger' && !customerLedger && (
+              <div className="py-16 text-center text-gray-500 font-medium border border-dashed border-gray-300 rounded my-4 bg-gray-50/50">
+                <Search size={32} className="mx-auto mb-2 text-gray-400 opacity-60" />
+                <p className="text-sm font-bold text-gray-700">खातावणी पाहण्यासाठी कृपया वरील सर्च बॉक्समधून खातेदार निवडा.</p>
+                <p className="text-xs text-gray-400 mt-1">(Please select a customer from the search box above to view FD ledger statement)</p>
+              </div>
+            )}
+
+            {reportType === 'MemberLedger' && customerLedger && (
               <div className="space-y-4">
                 <div className="border border-gray-900 p-2.5 my-2 bg-gray-50/50 rounded-xs text-[11px]">
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div>
-                      <span className="text-gray-500 block text-[10px]">सभासद नाव:</span>
-                      <strong className="text-gray-950">{memberLedger.memberName}</strong>
+                      <span className="text-gray-500 block text-[10px]">खातेदाराचे नाव:</span>
+                      <strong className="text-gray-950">{customerLedger.customerName}</strong>
                     </div>
                     <div>
-                      <span className="text-gray-500 block text-[10px]">सभासद कोड / CIF:</span>
-                      <strong className="text-primary font-mono">{memberLedger.memberCode || memberLedger.cifNo || '-'}</strong>
+                      <span className="text-gray-500 block text-[10px]">ग्राहक क्र. (CIF):</span>
+                      <strong className="text-primary font-mono">{customerLedger.cifNo || '-'}</strong>
                     </div>
                     <div>
                       <span className="text-gray-500 block text-[10px]">एकूण FD खाती:</span>
-                      <strong className="text-gray-900 font-mono">{memberLedger.totalFDAccountsCount}</strong>
+                      <strong className="text-gray-900 font-mono">{customerLedger.totalFDAccountsCount}</strong>
                     </div>
                     <div>
                       <span className="text-gray-500 block text-[10px]">एकूण मुदत ठेव गुंतवणूक:</span>
-                      <strong className="text-emerald-800 font-mono">₹ {fmtCurrency(memberLedger.totalPrincipalInvested)}</strong>
+                      <strong className="text-emerald-800 font-mono">₹ {fmtCurrency(customerLedger.totalPrincipalInvested)}</strong>
                     </div>
                   </div>
                 </div>
 
-                {memberLedger.accounts.map((acc, aIdx) => (
+                {customerLedger.accounts.map((acc, aIdx) => (
                   <div key={acc.fdAccountID || aIdx} className="border border-gray-900 p-2.5 rounded-xs mt-3">
                     <div className="flex justify-between items-center bg-gray-100 p-1.5 border-b border-gray-900 font-bold text-xs mb-2">
                       <span>

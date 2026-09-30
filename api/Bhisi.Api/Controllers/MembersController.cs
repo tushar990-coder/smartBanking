@@ -388,6 +388,9 @@ namespace Bhisi.Api.Controllers
                     SET [MemberCode] = NULL
                     WHERE [MemberID] NOT IN (
                         SELECT DISTINCT [MemberId] FROM [ShareAccounts] WHERE [TotalShareCount] > 0
+                    )
+                    AND [MemberID] NOT IN (
+                        SELECT DISTINCT [MemberID] FROM [MemberOpeningBalances] WHERE [MemberID] IS NOT NULL
                     );
                 ");
 

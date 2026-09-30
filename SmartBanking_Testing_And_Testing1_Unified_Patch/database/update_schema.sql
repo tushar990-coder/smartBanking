@@ -1826,7 +1826,8 @@ WHERE ([IsDeleted] = 1 OR [Status] = 'Closed')
   AND [MemberID] NOT IN (SELECT DISTINCT [MemberID] FROM [SavingAccountMasters] WHERE [MemberID] IS NOT NULL)
   AND [MemberID] NOT IN (SELECT DISTINCT [MemberID] FROM [LoanAccounts] WHERE [MemberID] IS NOT NULL)
   AND [MemberID] NOT IN (SELECT DISTINCT [MemberId] FROM [ShareAccounts] WHERE [MemberId] IS NOT NULL)
-  AND [MemberID] NOT IN (SELECT DISTINCT [MemberId] FROM [ShareCertificates] WHERE [MemberId] IS NOT NULL);
+  AND [MemberID] NOT IN (SELECT DISTINCT [MemberId] FROM [ShareCertificates] WHERE [MemberId] IS NOT NULL)
+  AND [MemberID] NOT IN (SELECT DISTINCT [MemberID] FROM [MemberOpeningBalances] WHERE [MemberID] IS NOT NULL);
 
 -- Standardize blank/NULL CIF numbers sequentially across all registered customers
 IF COL_LENGTH('Members', 'CIFNo') IS NOT NULL
@@ -1873,6 +1874,9 @@ UPDATE [Members]
 SET [MemberCode] = NULL
 WHERE [MemberID] NOT IN (
     SELECT DISTINCT [MemberId] FROM [ShareAccounts] WHERE [MemberId] IS NOT NULL
+)
+AND [MemberID] NOT IN (
+    SELECT DISTINCT [MemberID] FROM [MemberOpeningBalances] WHERE [MemberID] IS NOT NULL
 );
 
 -- 2. Harmonize MemberCode sequentially strictly across all verified shareholders (MEM0001 -> MEM0269...)

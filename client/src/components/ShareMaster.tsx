@@ -297,11 +297,11 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
   };
 
   const selectMemberById = (mId: number, memberList = members) => {
-    const sel = memberList.find(m => m.memberID === mId);
+    const sel = memberList.find(m => m.memberID === mId || m.customerID === mId);
     if (sel) {
-      setSelectedMemberId(mId);
+      setSelectedMemberId(sel.memberID);
       setLegacyMemberNo(sel.legacyMemberNo || '');
-      loadShareData(mId);
+      loadShareData(sel.memberID);
     }
   };
 
@@ -816,12 +816,13 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
               <MemberSearchSelect
                 members={members}
                 value={selectedMemberId}
-                onChange={(val) => {
+                onChange={(val, selMember) => {
                   if (val) {
-                    const sel = members.find(m => m.memberID === val);
-                    setSelectedMemberId(val as number);
+                    const sel = selMember || members.find(m => m.memberID === val || m.customerID === val);
+                    const targetMemberId = sel?.memberID || (val as number);
+                    setSelectedMemberId(targetMemberId);
                     setLegacyMemberNo(sel?.legacyMemberNo || '');
-                    loadShareData(val as number);
+                    loadShareData(targetMemberId);
                   } else {
                     setSelectedMemberId('');
                     setLegacyMemberNo('');

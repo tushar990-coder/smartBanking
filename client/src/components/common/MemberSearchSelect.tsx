@@ -36,6 +36,7 @@ interface Props {
   isClearable?: boolean;
   required?: boolean;
   compact?: boolean;
+  valueType?: 'memberId' | 'customerId';
 }
 
 export default function MemberSearchSelect({
@@ -46,7 +47,8 @@ export default function MemberSearchSelect({
   className = "",
   isDisabled = false,
   isClearable = true,
-  compact = false
+  compact = false,
+  valueType = 'memberId'
 }: Props) {
   
   // Transform members into react-select options format
@@ -56,7 +58,12 @@ export default function MemberSearchSelect({
       const rawMemProfile = m.memberProfile || m.MemberProfile;
       const memId = Number(rawMemProfile?.memberID || rawMemProfile?.MemberID || m.memberID || m.memberId || m.MemberID || 0);
       const custId = Number(m.customerID || m.customerId || m.CustomerID || m.id || 0);
-      const primaryValueId = custId > 0 ? custId : memId;
+      
+      // If valueType is 'customerId', prioritize custId.
+      // Otherwise (default 'memberId'), prioritize memId if memId > 0; if not, fallback to custId.
+      const primaryValueId = valueType === 'customerId'
+        ? (custId > 0 ? custId : memId)
+        : (memId > 0 ? memId : custId);
 
       const rawCode = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.code || m.MemberCode || m.memberNo || '').trim();
       const isNullOrEmpty = !rawCode || rawCode.toLowerCase() === 'null' || rawCode.toLowerCase() === 'undefined';
@@ -108,28 +115,33 @@ export default function MemberSearchSelect({
         }
       };
     });
-  }, [members]);
+  }, [members, valueType]);
 
   const numericValue = value !== '' && value !== undefined && value !== null ? Number(value) : '';
 
   const selectedOption = React.useMemo(() => {
     if (numericValue === '' || isNaN(numericValue as number)) return null;
     
-    // Priority 1: Exact match on primary option value (CustomerID)
+    // Priority 1: Exact match on primary option value
     const exactMatch = options.find(o => o.value === numericValue);
     if (exactMatch) return exactMatch;
 
-    // Priority 2: Direct CustomerID match on member object
-    const custMatch = options.find(o => o.member?.customerID === numericValue);
-    if (custMatch) return custMatch;
+    if (valueType === 'customerId') {
+      // Direct CustomerID match on member object
+      const custMatch = options.find(o => o.member?.customerID === numericValue);
+      if (custMatch) return custMatch;
 
-    // Priority 3: Direct MemberID match
-    const memMatch = options.find(o => o.member?.memberID === numericValue);
-    if (memMatch) return memMatch;
+      // Secondary fallback to memberID
+      return options.find(o => o.member?.memberID === numericValue || o.member?.memberIdOnly === numericValue) || null;
+    } else {
+      // Direct MemberID match on member object
+      const memMatch = options.find(o => o.member?.memberID === numericValue || o.member?.memberIdOnly === numericValue);
+      if (memMatch) return memMatch;
 
-    // Priority 4: Secondary fallback to memberIdOnly
-    return options.find(o => o.member?.memberIdOnly === numericValue) || null;
-  }, [numericValue, options]);
+      // Secondary fallback to customerID
+      return options.find(o => o.member?.customerID === numericValue) || null;
+    }
+  }, [numericValue, options, valueType]);
 
   // Pure Customer / CIF filter logic (Searches by CIF Number, Member Code, Name, Mobile, Legacy IDs)
   const filterOption = (option: any, rawInput: string) => {

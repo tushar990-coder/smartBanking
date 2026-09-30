@@ -369,6 +369,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                 value={selectedMemberId ? Number(selectedMemberId) : ''}
                                 onChange={(val) => setSelectedMemberId(val ? String(val) : '')}
                                 placeholder="-- नाव, CIF किंवा जुना नं शोधा --"
+                                valueType="customerId"
                             />
                         </div>
                     </div>

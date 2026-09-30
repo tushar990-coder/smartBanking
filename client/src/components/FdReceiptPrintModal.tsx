@@ -26,6 +26,10 @@ interface FdAccountDetails {
   cifNo?: string;
   interestType?: string;
   monthlyInterestAmount?: number;
+  isAutoRenewable?: boolean;
+  autoRenewalOption?: string;
+  autoRenewalCount?: number;
+  maxAutoRenewalCycles?: number;
 }
 
 interface Props {
@@ -112,7 +116,7 @@ const FdReceiptPrintModal: React.FC<Props> = ({ account, onClose }) => {
 ${isMis ? `💵 *दरमहा व्याज परतावा:* ₹ ${monthlyInterest?.toLocaleString('en-IN')}/- (बचत खात्यात जमा)\n` : ''}🗓️ *ठेव दिनांक:* ${formatDate(account.openingDate)}
 ⏰ *मुदतपूर्ती तारीख:* ${formatDate(account.maturityDate)}
 💵 *${isMis ? 'मुदतपूर्ती मुद्दल परतावा' : 'मुदतपूर्ती रक्कम'}:* ₹ ${account.maturityAmount?.toLocaleString('en-IN')}
-${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.nomineeName} (${account.nomineeRelation || '-'})` : ''}
+${account.isAutoRenewable ? `🔄 *स्वयंचलित नूतनीकरण:* सक्रिय (${account.autoRenewalOption === 'PrincipalOnly' ? 'केवळ मुद्दल' : 'मुद्दल + व्याज'})\n` : ''}${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.nomineeName} (${account.nomineeRelation || '-'})` : ''}
 
 सदर पावती संस्थेकडून प्राप्त करून घ्यावी.
 धन्यवाद! 🙏
@@ -272,6 +276,16 @@ ${account.nomineeName ? `👨‍👩‍👧 *वारसदार:* ${account.n
                   </td>
                 </tr>
               ) : null}
+              {account.isAutoRenewable && (
+                <tr className="border-t border-slate-200 bg-sky-50/50">
+                  <td className="p-1.5 font-bold text-sky-950 border-r border-slate-200">स्वयंचलित नूतनीकरण (Auto-Renewal)</td>
+                  <td className="p-1.5 font-bold text-slate-800" colSpan={3}>
+                    <span className="bg-sky-600 text-white px-1.5 py-0.2 rounded text-[9px] font-black mr-1.5">सक्रिय (ENABLED)</span>
+                    पर्याय: <strong>{account.autoRenewalOption === 'PrincipalOnly' ? 'केवळ मुद्दल (व्याज बचत खात्यात जमा)' : 'मुद्दल + जमा व्याज (पुनर्गुंतवणूक)'}</strong>
+                    {account.maxAutoRenewalCycles ? ` (कमाल मर्यादा: ${account.maxAutoRenewalCycles} वेळा)` : ''}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

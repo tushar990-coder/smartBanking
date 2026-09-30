@@ -109,6 +109,7 @@ export function generateFdInterestSchedule(params: {
   maturityDate: string;
   schemeType?: string;
   compoundingFrequency?: string;
+  payoutFrequency?: string;
   targetMaturityAmount?: number;
 }): FdScheduleSummary {
   const {
@@ -118,6 +119,7 @@ export function generateFdInterestSchedule(params: {
     maturityDate,
     schemeType = 'Cumulative',
     compoundingFrequency = 'Quarterly',
+    payoutFrequency = 'At Maturity',
     targetMaturityAmount
   } = params;
 
@@ -147,19 +149,22 @@ export function generateFdInterestSchedule(params: {
   const totalDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
   const isMis = schemeType === 'MIS' || schemeType === 'Monthly Interest';
   const isCumulative = schemeType === 'Cumulative';
+  const isPeriodic = isMis || (payoutFrequency !== 'At Maturity' && payoutFrequency !== 'N/A' && Boolean(payoutFrequency));
 
   const periods: FdSchedulePeriod[] = [];
 
   // Determine period step interval in months
   let stepMonths = 3; // Default Quarterly (3 months)
-  if (isMis) {
+  if (isMis || payoutFrequency === 'Monthly') {
     stepMonths = 1; // Monthly
+  } else if (payoutFrequency === 'Quarterly') {
+    stepMonths = 3;
+  } else if (payoutFrequency === 'Half-Yearly' || compoundingFrequency === 'Half-Yearly') {
+    stepMonths = 6;
+  } else if (payoutFrequency === 'Yearly' || compoundingFrequency === 'Yearly') {
+    stepMonths = 12;
   } else if (compoundingFrequency === 'Monthly') {
     stepMonths = 1;
-  } else if (compoundingFrequency === 'Half-Yearly') {
-    stepMonths = 6;
-  } else if (compoundingFrequency === 'Yearly') {
-    stepMonths = 12;
   }
 
   let currFrom = new Date(start.getTime());
@@ -167,32 +172,58 @@ export function generateFdInterestSchedule(params: {
   let runningCumulativeInt = 0;
   let periodIdx = 1;
 
-  if (isMis) {
-    // ==================== Monthly Interest Scheme (MIS) ====================
-    const monthlyInt = Math.round((p * r) / 1200);
+  if (isPeriodic) {
+    // ==================== Periodic Payout Schemes (MIS / Quarterly / Half-Yearly / Yearly) ====================
+    let periodicInt = 0;
+    let labelPrefix = 'महिना';
+    let labelCode = 'M';
+    let statusText = 'दरमहा बचत खात्यात/रोख जमा (Monthly Payout)';
+
+    if (payoutFrequency === 'Quarterly') {
+      periodicInt = Math.round((p * r) / 400); // 3 months
+      labelPrefix = 'तिमाही';
+      labelCode = 'Q';
+      statusText = 'दर तीन महिन्यांनी (तिमाही) बचत खात्यात जमा (Quarterly Payout)';
+    } else if (payoutFrequency === 'Half-Yearly') {
+      periodicInt = Math.round((p * r) / 200); // 6 months
+      labelPrefix = 'सहामाही';
+      labelCode = 'H';
+      statusText = 'दर सहा महिन्यांनी बचत खात्यात जमा (Half-Yearly Payout)';
+    } else if (payoutFrequency === 'Yearly') {
+      periodicInt = Math.round((p * r) / 100); // 12 months
+      labelPrefix = 'वर्ष';
+      labelCode = 'Y';
+      statusText = 'वार्षिक बचत खात्यात जमा (Yearly Payout)';
+    } else {
+      // Monthly / MIS default
+      periodicInt = Math.round((p * r) / 1200);
+      labelPrefix = 'महिना';
+      labelCode = 'M';
+      statusText = 'दरमहा बचत खात्यात/रोख जमा (Monthly Payout)';
+    }
 
     while (currFrom < end) {
       let nextStep = getNextMilestoneBoundary(currFrom, stepMonths);
       if (nextStep > end) nextStep = new Date(end.getTime());
 
       const periodDays = Math.max(1, Math.round((nextStep.getTime() - currFrom.getTime()) / (1000 * 60 * 60 * 24)));
-      runningCumulativeInt += monthlyInt;
+      runningCumulativeInt += periodicInt;
 
       // The period end date for display is the day before nextStep begins (e.g. 30/06 instead of 01/07)
       const periodToDate = nextStep > currFrom ? new Date(nextStep.getTime() - 24 * 60 * 60 * 1000) : nextStep;
 
       periods.push({
         periodNo: periodIdx,
-        periodLabel: `महिना ${periodIdx} (M${periodIdx})`,
+        periodLabel: `${labelPrefix} ${periodIdx} (${labelCode}${periodIdx})`,
         fromDate: formatDateIso(currFrom),
         toDate: formatDateIso(periodToDate),
         days: periodDays,
         openingBalance: p,
         interestRate: r,
-        interestAmount: monthlyInt,
+        interestAmount: periodicInt,
         cumulativeInterest: runningCumulativeInt,
         closingBalance: p, // Principal remains constant
-        statusNote: 'दरमहा बचत खात्यात/रोख जमा (Monthly Payout)'
+        statusNote: statusText
       });
 
       currFrom = nextStep;
@@ -212,7 +243,7 @@ export function generateFdInterestSchedule(params: {
       totalInterest: runningCumulativeInt,
       totalBenefit,
       isPeriodicPayout: true,
-      monthlyInterestAmount: monthlyInt,
+      monthlyInterestAmount: periodicInt,
       schemeType,
       periods
     };

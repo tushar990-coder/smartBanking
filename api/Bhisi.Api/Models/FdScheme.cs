@@ -58,6 +58,9 @@ namespace Bhisi.Api.Models
         [StringLength(20)]
         public string InterestCompoundingFrequency { get; set; } = "N/A"; // N/A, Quarterly, Half-Yearly, Yearly
 
+        [StringLength(30)]
+        public string InterestPayoutFrequency { get; set; } = "At Maturity"; // At Maturity, Monthly, Quarterly, Half-Yearly, Yearly
+
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal MinimumAmount { get; set; } = 1000;

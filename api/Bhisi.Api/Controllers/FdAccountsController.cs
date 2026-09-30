@@ -9,6 +9,7 @@ using Bhisi.Api.Models;
 using Bhisi.Api.Filters;
 
 using Microsoft.AspNetCore.Authorization;
+using System.ComponentModel.DataAnnotations;
 
 namespace Bhisi.Api.Controllers
 {
@@ -34,6 +35,11 @@ namespace Bhisi.Api.Controllers
         public string? ChequeNo { get; set; }
         public DateTime? ChequeDate { get; set; }
         public int? SavingAccountID { get; set; }
+
+        // CBS Auto-Renewal Configuration
+        public bool IsAutoRenewable { get; set; } = false;
+        public string AutoRenewalOption { get; set; } = "PrincipalPlusInterest"; // PrincipalPlusInterest, PrincipalOnly
+        public int MaxAutoRenewalCycles { get; set; } = 3;
     }
 
     [Route("api/[controller]")]
@@ -1095,6 +1101,10 @@ namespace Bhisi.Api.Controllers
                             ChequeNo = req.ChequeNo,
                             ChequeDate = req.ChequeDate,
                             SavingAccountID = req.SavingAccountID,
+                            IsAutoRenewable = req.IsAutoRenewable,
+                            AutoRenewalOption = string.IsNullOrWhiteSpace(req.AutoRenewalOption) ? "PrincipalPlusInterest" : req.AutoRenewalOption,
+                            MaxAutoRenewalCycles = req.MaxAutoRenewalCycles > 0 ? req.MaxAutoRenewalCycles : 3,
+                            AutoRenewalCount = 0,
                             FinancialYearID = fyId,
                             CreatedBy = 1,
                             CreatedDate = DateTime.UtcNow
@@ -1798,9 +1808,9 @@ namespace Bhisi.Api.Controllers
                 .ThenInclude(s => s!.InterestExpenseLedger)
                 .FirstOrDefaultAsync(a => a.FdAccountID == id);
 
-            if (account == null || account.Status != "Active")
+            if (account == null || (account.Status != "Active" && account.Status != "Matured"))
             {
-                return BadRequest("मुदत ठेव खाते सक्रिय (Active) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
+                return BadRequest("मुदत ठेव खाते सक्रिय (Active) किंवा मुदतपूर्ण (Matured) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
             }
 
             // Fetch accrued interest
@@ -2866,9 +2876,9 @@ namespace Bhisi.Api.Controllers
                 .ThenInclude(s => s!.InterestExpenseLedger)
                 .FirstOrDefaultAsync(a => a.FdAccountID == id);
 
-            if (oldAccount == null || oldAccount.Status != "Active")
+            if (oldAccount == null || (oldAccount.Status != "Active" && oldAccount.Status != "Matured"))
             {
-                return BadRequest("जुने मुदत ठेव खाते सक्रिय (Active) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
+                return BadRequest("जुने मुदत ठेव खाते सक्रिय (Active) किंवा मुदतपूर्ण (Matured) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
             }
 
             var scheme = await _context.FdSchemes
@@ -3358,6 +3368,11 @@ namespace Bhisi.Api.Controllers
             if (account.NomineeName != null) existing.NomineeName = account.NomineeName;
             if (account.NomineeRelation != null) existing.NomineeRelation = account.NomineeRelation;
             if (account.Remarks != null) existing.Remarks = account.Remarks;
+
+            // CBS Auto-Renewal Settings
+            existing.IsAutoRenewable = account.IsAutoRenewable;
+            if (!string.IsNullOrWhiteSpace(account.AutoRenewalOption)) existing.AutoRenewalOption = account.AutoRenewalOption;
+            if (account.MaxAutoRenewalCycles > 0) existing.MaxAutoRenewalCycles = account.MaxAutoRenewalCycles;
 
             try
             {
@@ -4230,6 +4245,692 @@ namespace Bhisi.Api.Controllers
 
             return await ResolveInterestExpenseLedgerAsync(scheme);
         }
+
+        // =========================================================================
+        // CBS AUTO-RENEWAL WORKFLOW SUITE (आरबीआय व सीबीएस मानकांनुसार स्वयंचलित नूतनीकरण)
+        // =========================================================================
+
+        // GET: api/FdAccounts/AutoRenewalCandidates
+        [HttpGet("AutoRenewalCandidates")]
+        public async Task<IActionResult> GetAutoRenewalCandidates([FromQuery] int? branchId = null, [FromQuery] DateTime? asOfDate = null)
+        {
+            DateTime targetDate = asOfDate?.Date ?? DateTime.Today;
+
+            var query = _context.FdAccounts
+                .Include(a => a.Customer)
+                .Include(a => a.Branch)
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.Slabs)
+                .Include(a => a.SavingAccount)
+                .Where(a => a.Status == "Active" && a.IsAutoRenewable && a.MaturityDate.Date <= targetDate && a.AutoRenewalCount < a.MaxAutoRenewalCycles);
+
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(a => a.BranchID == branchId.Value);
+            }
+
+            var accounts = await query.OrderBy(a => a.MaturityDate).ToListAsync();
+            var candidateDtos = new List<AutoRenewalCandidateDto>();
+
+            foreach (var acc in accounts)
+            {
+                bool isSenior = acc.Customer?.BirthDate.HasValue == true && (acc.Customer.BirthDate.Value.Date <= acc.MaturityDate.Date.AddYears(-60));
+
+                var accruedFromTx = await _context.FdTransactions
+                    .Where(t => t.FdAccountID == acc.FdAccountID && t.TransactionType == "Accrual")
+                    .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+
+                bool isOldPeriodicScheme = acc.FdScheme != null && (acc.FdScheme.InterestType == "MIS" || acc.FdScheme.InterestType == "Monthly Interest");
+                decimal accruedInt = isOldPeriodicScheme
+                    ? 0m
+                    : ((acc.MaturityAmount > acc.DepositAmount)
+                        ? (acc.MaturityAmount - acc.DepositAmount)
+                        : Math.Max(accruedFromTx, acc.LegacyAccruedInt));
+
+                decimal totalMaturity = acc.DepositAmount + accruedInt;
+                decimal projectedRenewed = (acc.AutoRenewalOption == "PrincipalOnly") ? acc.DepositAmount : totalMaturity;
+                decimal projectedPayout = (acc.AutoRenewalOption == "PrincipalOnly") ? accruedInt : 0m;
+
+                string durType = !string.IsNullOrWhiteSpace(acc.DurationType) ? acc.DurationType : (acc.FdScheme?.DurationType ?? "Months");
+                int durVal = acc.DurationValue.HasValue && acc.DurationValue.Value > 0 ? acc.DurationValue.Value : (acc.FdScheme?.DurationMonths > 0 ? acc.FdScheme.DurationMonths : 12);
+                DateTime projectedMatDate = durType.Equals("Days", StringComparison.OrdinalIgnoreCase)
+                    ? acc.MaturityDate.AddDays(durVal)
+                    : (durType.Equals("Years", StringComparison.OrdinalIgnoreCase) ? acc.MaturityDate.AddYears(durVal) : acc.MaturityDate.AddMonths(durVal));
+                int totalDays = (int)(projectedMatDate - acc.MaturityDate).TotalDays;
+
+                decimal prevailingRate = acc.InterestRate;
+                if (acc.FdScheme != null)
+                {
+                    if (acc.FdScheme.SchemeDurationModel == "Slab")
+                    {
+                        var slab = acc.FdScheme.Slabs?.FirstOrDefault(s => totalDays >= s.FromDays && totalDays <= s.ToDays && s.IsActive);
+                        if (slab != null)
+                        {
+                            prevailingRate = isSenior ? slab.SeniorCitizenRate : slab.InterestRate;
+                        }
+                        else
+                        {
+                            prevailingRate = isSenior ? acc.FdScheme.SeniorCitizenInterestRate : acc.FdScheme.InterestRate;
+                        }
+                    }
+                    else
+                    {
+                        prevailingRate = isSenior ? acc.FdScheme.SeniorCitizenInterestRate : acc.FdScheme.InterestRate;
+                    }
+                }
+
+                var activeLoans = await _context.LoanAccounts
+                    .Where(l => l.CustomerID == acc.CustomerID && l.Status == "Active" && (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0))
+                    .ToListAsync();
+                bool hasLoan = activeLoans.Any();
+                decimal loanBal = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
+
+                candidateDtos.Add(new AutoRenewalCandidateDto
+                {
+                    FdAccountID = acc.FdAccountID,
+                    AccountNo = acc.AccountNo,
+                    CustomerID = acc.CustomerID,
+                    CustomerName = acc.Customer?.CustomerName ?? "सभासद",
+                    ContactNo = acc.Customer?.MobileNo,
+                    BranchID = acc.BranchID,
+                    BranchName = acc.Branch?.BranchName ?? $"Branch {acc.BranchID}",
+                    FdSchemeID = acc.FdSchemeID,
+                    SchemeName = acc.FdScheme?.SchemeName ?? "मुदत ठेव",
+                    OpeningDate = acc.OpeningDate,
+                    MaturityDate = acc.MaturityDate,
+                    DepositAmount = acc.DepositAmount,
+                    MaturityAmount = acc.MaturityAmount,
+                    InterestRate = acc.InterestRate,
+                    DurationType = durType,
+                    DurationValue = durVal,
+                    DurationInDays = totalDays,
+                    IsAutoRenewable = acc.IsAutoRenewable,
+                    AutoRenewalOption = acc.AutoRenewalOption ?? "PrincipalPlusInterest",
+                    AutoRenewalCount = acc.AutoRenewalCount,
+                    MaxAutoRenewalCycles = acc.MaxAutoRenewalCycles,
+                    SavingAccountID = acc.SavingAccountID,
+                    SavingAccountNo = acc.SavingAccount?.AccountNo,
+                    SavingBalance = acc.SavingAccount?.CurrentBalance,
+                    HasActiveLoan = hasLoan,
+                    ActiveLoanBalance = loanBal,
+                    ProjectedRenewedAmount = projectedRenewed,
+                    ProjectedInterestPayout = projectedPayout,
+                    PrevailingRate = prevailingRate
+                });
+            }
+
+            return Ok(candidateDtos);
+        }
+
+        // POST: api/FdAccounts/RunAutoRenewalBatch
+        [HttpPost("RunAutoRenewalBatch")]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager")]
+        public async Task<IActionResult> RunAutoRenewalBatch([FromBody] AutoRenewalBatchRequest? request)
+        {
+            DateTime processDate = request?.ProcessDate?.Date ?? DateTime.Today;
+
+            var query = _context.FdAccounts
+                .Include(a => a.Customer)
+                .Include(a => a.Branch)
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.Slabs)
+                .Include(a => a.SavingAccount)
+                .Where(a => a.Status == "Active" && a.IsAutoRenewable && a.MaturityDate.Date <= processDate && a.AutoRenewalCount < a.MaxAutoRenewalCycles);
+
+            if (request?.BranchID.HasValue == true && request.BranchID.Value > 0)
+            {
+                query = query.Where(a => a.BranchID == request.BranchID.Value);
+            }
+
+            if (request?.SpecificAccountIDs != null && request.SpecificAccountIDs.Any())
+            {
+                query = query.Where(a => request.SpecificAccountIDs.Contains(a.FdAccountID));
+            }
+
+            var candidates = await query.OrderBy(a => a.MaturityDate).ToListAsync();
+
+            var result = new AutoRenewalBatchResultDto
+            {
+                TotalCandidates = candidates.Count,
+                SuccessCount = 0,
+                FailedCount = 0,
+                TotalRenewedAmount = 0,
+                TotalInterestPaidOut = 0,
+                Items = new List<AutoRenewalItemResultDto>()
+            };
+
+            foreach (var oldAccount in candidates)
+            {
+                using var itemTx = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var scheme = oldAccount.FdScheme;
+                    if (scheme == null)
+                    {
+                        throw new InvalidOperationException($"खात्याशी संबंधित ठेव योजना (Scheme ID: {oldAccount.FdSchemeID}) सापडली नाही.");
+                    }
+
+                    // Accrued interest on old account
+                    var accruedFromTx = await _context.FdTransactions
+                        .Where(t => t.FdAccountID == oldAccount.FdAccountID && t.TransactionType == "Accrual")
+                        .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+
+                    bool isOldPeriodicScheme = scheme.InterestType == "MIS" || scheme.InterestType == "Monthly Interest";
+                    decimal accruedInt = isOldPeriodicScheme
+                        ? 0m
+                        : ((oldAccount.MaturityAmount > oldAccount.DepositAmount)
+                            ? (oldAccount.MaturityAmount - oldAccount.DepositAmount)
+                            : Math.Max(accruedFromTx, oldAccount.LegacyAccruedInt));
+
+                    decimal totalMaturityAmount = oldAccount.DepositAmount + accruedInt;
+                    decimal newDepositAmount = (oldAccount.AutoRenewalOption == "PrincipalOnly") ? oldAccount.DepositAmount : totalMaturityAmount;
+                    decimal interestPayoutAmount = (oldAccount.AutoRenewalOption == "PrincipalOnly") ? accruedInt : 0m;
+
+                    // 🛡️ Active Delinquent Loan Guard
+                    if (oldAccount.AutoRenewalOption == "PrincipalOnly" && interestPayoutAmount > 0)
+                    {
+                        var activeLoans = await _context.LoanAccounts
+                            .Where(l => l.CustomerID == oldAccount.CustomerID && l.Status == "Active" && (l.PrincipalBalance > 0 || l.InterestBalance > 0 || l.OverdueInterestBalance > 0))
+                            .ToListAsync();
+
+                        if (activeLoans.Any())
+                        {
+                            decimal loanBal = activeLoans.Sum(l => l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance);
+                            throw new InvalidOperationException($"सदर खातेदाराकडे एकूण ₹{loanBal:N2} चे सक्रिय कर्ज थकीत असल्याने सुरक्षा नियमांनुसार केवळ मुद्दल नूतनीकरण करून व्याज देणे प्रतिबंधित आहे.");
+                        }
+                    }
+
+                    // Saving account resolution for PrincipalOnly interest payout
+                    SavingAccountMaster? targetSaving = null;
+                    if (oldAccount.AutoRenewalOption == "PrincipalOnly" && interestPayoutAmount > 0)
+                    {
+                        if (oldAccount.SavingAccountID.HasValue && oldAccount.SavingAccountID.Value > 0)
+                        {
+                            targetSaving = await _context.SavingAccountMasters.FindAsync(oldAccount.SavingAccountID.Value);
+                        }
+                        if (targetSaving == null || targetSaving.Status != "Active")
+                        {
+                            targetSaving = await _context.SavingAccountMasters
+                                .FirstOrDefaultAsync(s => s.CustomerID == oldAccount.CustomerID && s.Status == "Active");
+                        }
+                    }
+
+                    DateTime newOpeningDate = oldAccount.MaturityDate.Date;
+                    string durType = !string.IsNullOrWhiteSpace(oldAccount.DurationType) ? oldAccount.DurationType : (scheme.DurationType ?? "Months");
+                    int durVal = oldAccount.DurationValue.HasValue && oldAccount.DurationValue.Value > 0 ? oldAccount.DurationValue.Value : (scheme.DurationMonths > 0 ? scheme.DurationMonths : 12);
+
+                    DateTime newMaturityDate;
+                    int newTotalDays;
+                    if (durType.Equals("Days", StringComparison.OrdinalIgnoreCase))
+                    {
+                        newTotalDays = durVal;
+                        newMaturityDate = newOpeningDate.AddDays(newTotalDays);
+                    }
+                    else if (durType.Equals("Years", StringComparison.OrdinalIgnoreCase))
+                    {
+                        newMaturityDate = newOpeningDate.AddYears(durVal);
+                        newTotalDays = (int)(newMaturityDate - newOpeningDate).TotalDays;
+                    }
+                    else
+                    {
+                        newMaturityDate = newOpeningDate.AddMonths(durVal);
+                        newTotalDays = (int)(newMaturityDate - newOpeningDate).TotalDays;
+                    }
+
+                    var customer = await _context.Customers.FindAsync(oldAccount.CustomerID);
+                    bool isSenior = customer?.BirthDate.HasValue == true && (customer.BirthDate.Value.Date <= newOpeningDate.Date.AddYears(-60));
+
+                    decimal prevailingRate;
+                    if (scheme.SchemeDurationModel == "Slab")
+                    {
+                        var matchedSlab = scheme.Slabs?.FirstOrDefault(s => newTotalDays >= s.FromDays && newTotalDays <= s.ToDays && s.IsActive);
+                        if (matchedSlab == null)
+                        {
+                            throw new InvalidOperationException($"नूतनीकरण कालावधी ({newTotalDays} दिवस) योजनेच्या कोणत्याही मंजूर स्लॅबमध्ये बसत नाही.");
+                        }
+                        prevailingRate = isSenior ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+                    }
+                    else
+                    {
+                        prevailingRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+                    }
+
+                    var branch = await _context.Branches.FindAsync(oldAccount.BranchID);
+                    string branchPrefix = branch != null ? branch.BranchCode : "HO";
+
+                    var seq = await _context.FdAccountSequences
+                        .FirstOrDefaultAsync(s => s.BranchID == oldAccount.BranchID && s.ProductType == "FD");
+
+                    if (seq == null)
+                    {
+                        seq = new FdAccountSequence { BranchID = oldAccount.BranchID, ProductType = "FD", CurrentValue = 0 };
+                        _context.FdAccountSequences.Add(seq);
+                    }
+
+                    seq.CurrentValue += 1;
+                    await _context.SaveChangesAsync();
+
+                    var matchingFy = await _context.FinancialYears
+                        .FirstOrDefaultAsync(fy => newOpeningDate.Date >= fy.StartDate.Date && newOpeningDate.Date <= fy.EndDate.Date);
+
+                    int targetFinancialYearId = matchingFy?.FinancialYearID 
+                        ?? (await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive))?.FinancialYearID 
+                        ?? (oldAccount.FinancialYearID > 0 ? oldAccount.FinancialYearID : 1);
+
+                    int nextCycleCount = oldAccount.AutoRenewalCount + 1;
+                    bool willStillAutoRenew = nextCycleCount < oldAccount.MaxAutoRenewalCycles;
+
+                    var newAccount = new FdAccount
+                    {
+                        InstitutionID = oldAccount.InstitutionID,
+                        BranchID = oldAccount.BranchID,
+                        FinancialYearID = targetFinancialYearId,
+                        CustomerID = oldAccount.CustomerID,
+                        FdSchemeID = oldAccount.FdSchemeID,
+                        AccountNo = $"{branchPrefix}-{oldAccount.BranchID:D3}-FD-{seq.CurrentValue:D6}",
+                        OpeningDate = newOpeningDate,
+                        DepositAmount = newDepositAmount,
+                        InterestRate = prevailingRate,
+                        DurationType = durType,
+                        DurationValue = durVal,
+                        DurationInDays = newTotalDays,
+                        MaturityDate = newMaturityDate,
+                        Status = "Active",
+                        NomineeName = oldAccount.NomineeName,
+                        NomineeRelation = oldAccount.NomineeRelation,
+                        PaymentMode = "Transfer",
+                        SavingAccountID = targetSaving?.SavingAccountID ?? oldAccount.SavingAccountID,
+                        IsAutoRenewable = willStillAutoRenew,
+                        AutoRenewalOption = oldAccount.AutoRenewalOption,
+                        MaxAutoRenewalCycles = oldAccount.MaxAutoRenewalCycles,
+                        AutoRenewalCount = nextCycleCount,
+                        ParentFdAccountID = oldAccount.FdAccountID,
+                        Remarks = $"स्वयंचलित नूतनीकरण (Auto-Renewed): मूळ खाते {oldAccount.AccountNo} (सायकल {nextCycleCount}/{oldAccount.MaxAutoRenewalCycles})"
+                            + (isSenior ? $" [ज्येष्ठ नागरिक सवलत दर: {prevailingRate}%]" : "")
+                    };
+
+                    decimal p = newDepositAmount;
+                    decimal r = prevailingRate;
+
+                    if (scheme.InterestType == "Cumulative")
+                    {
+                        int n = 4;
+                        if (scheme.InterestCompoundingFrequency == "Half-Yearly") n = 2;
+                        if (scheme.InterestCompoundingFrequency == "Yearly") n = 1;
+                        if (scheme.InterestCompoundingFrequency == "Monthly") n = 12;
+
+                        double baseVal = 1.0 + ((double)r / (n * 100.0));
+                        double exponent = n * ((double)newTotalDays / 365.0);
+                        newAccount.MaturityAmount = Math.Round(p * (decimal)Math.Pow(baseVal, exponent), 0, MidpointRounding.AwayFromZero);
+                    }
+                    else if (scheme.InterestType == "MIS" || scheme.InterestType == "Monthly Interest")
+                    {
+                        newAccount.MaturityAmount = p;
+                    }
+                    else
+                    {
+                        newAccount.MaturityAmount = Math.Round(p * (1.0m + ((r * (decimal)newTotalDays) / (365.0m * 100.0m))), 0, MidpointRounding.AwayFromZero);
+                    }
+
+                    _context.FdAccounts.Add(newAccount);
+                    await _context.SaveChangesAsync();
+
+                    oldAccount.Status = "Closed";
+                    oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | स्वयंचलित नूतनीकरण: {newAccount.AccountNo} ({newOpeningDate:dd/MM/yyyy})";
+                    await _context.SaveChangesAsync();
+
+                    var fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(scheme);
+                    var payableLedger = await ResolveInterestPayableLedgerAsync(scheme);
+
+                    if (fdLiabilityLedger == null)
+                    {
+                        throw new InvalidOperationException("मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही.");
+                    }
+
+                    int payoutLedgerId = 0;
+                    if (oldAccount.AutoRenewalOption == "PrincipalOnly" && interestPayoutAmount > 0)
+                    {
+                        if (targetSaving != null)
+                        {
+                            targetSaving.CurrentBalance += interestPayoutAmount;
+                            payoutLedgerId = targetSaving.LedgerID > 0 ? targetSaving.LedgerID : (targetSaving.Ledger?.LedgerID ?? 7);
+
+                            _context.SavingTransactions.Add(new SavingTransaction
+                            {
+                                SavingAccountID = targetSaving.SavingAccountID,
+                                CustomerID = targetSaving.CustomerID,
+                                TransactionDate = newOpeningDate,
+                                TransactionType = "Deposit",
+                                PaymentMode = "Transfer",
+                                Amount = interestPayoutAmount,
+                                BalanceAfterTxn = targetSaving.CurrentBalance,
+                                Narration = $"मुदत ठेव ऑटो-नूतनीकरण व्याज जमा: {oldAccount.AccountNo}",
+                                VoucherNo = $"JV-FD-AUTOREN-{newAccount.AccountNo}",
+                                CreatedBy = 1,
+                                CreatedOn = DateTime.Now
+                            });
+                        }
+                        else
+                        {
+                            payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, oldAccount.BranchID, "FD");
+                        }
+                    }
+
+                    var voucher = new Voucher
+                    {
+                        BranchID = oldAccount.BranchID,
+                        VoucherNo = $"JV-FD-AUTOREN-{newAccount.AccountNo}",
+                        VoucherDate = newOpeningDate,
+                        VoucherType = "Journal",
+                        TotalAmount = totalMaturityAmount,
+                        Narration = $"मुदत ठेव स्वयंचलित नूतनीकरण (FD Auto-Renewal Batch): {oldAccount.AccountNo} -> {newAccount.AccountNo} (सायकल {nextCycleCount}/{oldAccount.MaxAutoRenewalCycles})",
+                        CreatedBy = 1,
+                        CreatedOn = DateTime.Now
+                    };
+                    _context.Vouchers.Add(voucher);
+                    await _context.SaveChangesAsync();
+
+                    var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == oldAccount.CustomerID);
+                    int? linkedMemberId = linkedMember?.MemberID;
+
+                    // Dr Old Liability (Principal)
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = oldAccount.DepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+
+                    // Dr Interest Payable (Accumulated Contract Interest)
+                    if (payableLedger != null && accruedInt > 0)
+                    {
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = accruedInt, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                    }
+
+                    // Cr New Liability
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = newDepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+
+                    // Cr Interest Payout (if PrincipalOnly)
+                    if (oldAccount.AutoRenewalOption == "PrincipalOnly" && interestPayoutAmount > 0 && payoutLedgerId > 0)
+                    {
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedgerId, DrCr = "Cr", Amount = interestPayoutAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                    }
+
+                    // FdTransactions
+                    _context.FdTransactions.Add(new FdTransaction
+                    {
+                        BranchID = oldAccount.BranchID,
+                        FdAccountID = oldAccount.FdAccountID,
+                        VoucherID = voucher.VoucherID,
+                        TransactionDate = newOpeningDate,
+                        TransactionType = "Renewal",
+                        DebitCredit = "Dr",
+                        Amount = totalMaturityAmount
+                    });
+
+                    _context.FdTransactions.Add(new FdTransaction
+                    {
+                        BranchID = newAccount.BranchID,
+                        FdAccountID = newAccount.FdAccountID,
+                        VoucherID = voucher.VoucherID,
+                        TransactionDate = newOpeningDate,
+                        TransactionType = "Opening",
+                        DebitCredit = "Cr",
+                        Amount = newDepositAmount
+                    });
+
+                    // Audit Log
+                    var autoLog = new FdAutoRenewalLog
+                    {
+                        InstitutionID = oldAccount.InstitutionID,
+                        BranchID = oldAccount.BranchID,
+                        BatchDate = newOpeningDate,
+                        OldFdAccountID = oldAccount.FdAccountID,
+                        NewFdAccountID = newAccount.FdAccountID,
+                        OldAccountNo = oldAccount.AccountNo,
+                        NewAccountNo = newAccount.AccountNo,
+                        CustomerID = oldAccount.CustomerID,
+                        CustomerName = customer?.CustomerName ?? "सभासद",
+                        RenewalOption = oldAccount.AutoRenewalOption ?? "PrincipalPlusInterest",
+                        RenewedAmount = newDepositAmount,
+                        InterestPaidOut = interestPayoutAmount,
+                        AppliedRate = prevailingRate,
+                        VoucherID = voucher.VoucherID,
+                        Status = "Success",
+                        ExecutedBy = request?.ExecutedBy ?? "System-EOD",
+                        ExecutionTime = DateTime.UtcNow
+                    };
+                    _context.FdAutoRenewalLogs.Add(autoLog);
+
+                    await _context.SaveChangesAsync();
+                    await itemTx.CommitAsync();
+
+                    result.SuccessCount++;
+                    result.TotalRenewedAmount += newDepositAmount;
+                    result.TotalInterestPaidOut += interestPayoutAmount;
+                    result.Items.Add(new AutoRenewalItemResultDto
+                    {
+                        OldFdAccountID = oldAccount.FdAccountID,
+                        OldAccountNo = oldAccount.AccountNo,
+                        NewFdAccountID = newAccount.FdAccountID,
+                        NewAccountNo = newAccount.AccountNo,
+                        CustomerName = customer?.CustomerName ?? "सभासद",
+                        RenewedAmount = newDepositAmount,
+                        InterestPaidOut = interestPayoutAmount,
+                        AppliedRate = prevailingRate,
+                        RenewalOption = oldAccount.AutoRenewalOption ?? "PrincipalPlusInterest",
+                        Status = "Success"
+                    });
+                }
+                catch (Exception ex)
+                {
+                    await itemTx.RollbackAsync();
+                    result.FailedCount++;
+                    string errMsg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                    result.Items.Add(new AutoRenewalItemResultDto
+                    {
+                        OldFdAccountID = oldAccount.FdAccountID,
+                        OldAccountNo = oldAccount.AccountNo,
+                        CustomerName = oldAccount.Customer?.CustomerName ?? "सभासद",
+                        RenewedAmount = oldAccount.DepositAmount,
+                        InterestPaidOut = 0,
+                        AppliedRate = oldAccount.InterestRate,
+                        RenewalOption = oldAccount.AutoRenewalOption ?? "PrincipalPlusInterest",
+                        Status = "Failed",
+                        ErrorMessage = errMsg
+                    });
+                }
+            }
+
+            return Ok(result);
+        }
+
+        // POST: api/FdAccounts/{id}/RevertAutoRenewal (14-Day Statutory Grace Window Reversal)
+        [HttpPost("{id}/RevertAutoRenewal")]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager")]
+        public async Task<IActionResult> RevertAutoRenewal(int id, [FromBody] RevertAutoRenewalRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request?.RevertReason))
+            {
+                return BadRequest("नूतनीकरण रद्द करण्याचे वैधानिक कारण (Revert Reason) देणे बंधनकारक आहे.");
+            }
+
+            var newAccount = await _context.FdAccounts
+                .Include(a => a.FdScheme)
+                .FirstOrDefaultAsync(a => a.FdAccountID == id);
+
+            if (newAccount == null)
+            {
+                return NotFound("मुदत ठेव खाते सापडले नाही.");
+            }
+
+            if (!newAccount.ParentFdAccountID.HasValue || newAccount.ParentFdAccountID.Value <= 0)
+            {
+                return BadRequest("सदर खाते स्वयंचलित नूतनीकरणातून (Auto-Renewal) तयार झालेले नाही. केवळ ऑटो-नूतनीकरण खातीच या पर्यायाने रिव्हर्ट केली जाऊ शकतात.");
+            }
+
+            if (newAccount.Status != "Active")
+            {
+                return BadRequest($"सदर खाते '{newAccount.Status}' स्थितीत असल्याने रिव्हर्ट करता येणार नाही.");
+            }
+
+            // 🛡️ RBI 14-Day Statutory Grace Window Check
+            var daysSinceRenewal = (DateTime.Today - newAccount.OpeningDate.Date).TotalDays;
+            if (daysSinceRenewal > 14)
+            {
+                return BadRequest($"आरबीआय व बँकिंग नियमांनुसार (RBI 14-Day Grace Rule) स्वयंचलित नूतनीकरण केवळ १४ दिवसांच्या आतच पूर्ववत (Revert) करता येते. या नूतनीकरणास {daysSinceRenewal} दिवस झालेले असल्याने आता हे खाते पूर्ववत करता येणार नाही. मुदतपूर्व बंद (Premature Close) पर्याय वापरा.");
+            }
+
+            var oldAccount = await _context.FdAccounts
+                .Include(a => a.FdScheme)
+                .FirstOrDefaultAsync(a => a.FdAccountID == newAccount.ParentFdAccountID.Value);
+
+            if (oldAccount == null)
+            {
+                return BadRequest("जुने मूळ मुदत ठेव खाते डेटाबेसमध्ये सापडले नाही.");
+            }
+
+            // Check if newAccount is pledged in any active loan
+            var pledgedLoan = await _context.LoanAccounts
+                .FirstOrDefaultAsync(l => l.Status == "Active" && l.SecurityDetails != null && l.SecurityDetails.Contains(newAccount.AccountNo));
+            if (pledgedLoan != null)
+            {
+                return BadRequest($"सदर नवीन पावती क्र. {newAccount.AccountNo} कर्ज खाते क्र. {pledgedLoan.LoanAccountNo} साठी तारण (Lien) म्हणून नोंदवलेली असल्याने नूतनीकरण रद्द करता येणार नाही.");
+            }
+
+            using (var transaction = await _context.Database.BeginTransactionAsync())
+            {
+                try
+                {
+                    // 1. Invert Journal Voucher
+                    string originalVoucherNo = $"JV-FD-AUTOREN-{newAccount.AccountNo}";
+                    var originalVoucher = await _context.Vouchers
+                        .Include(v => v.VoucherDetails)
+                        .FirstOrDefaultAsync(v => v.VoucherNo == originalVoucherNo || v.VoucherNo.EndsWith(newAccount.AccountNo));
+
+                    if (originalVoucher != null)
+                    {
+                        var revVoucher = new Voucher
+                        {
+                            BranchID = newAccount.BranchID,
+                            VoucherNo = $"RV-FD-AUTOREN-{newAccount.AccountNo}",
+                            VoucherDate = DateTime.Today,
+                            VoucherType = "Journal",
+                            TotalAmount = originalVoucher.TotalAmount,
+                            Narration = $"स्वयंचलित नूतनीकरण रद्द (Reversal of Auto-Renewal within 14-day grace): {newAccount.AccountNo} -> {oldAccount.AccountNo}. कारण: {request.RevertReason}",
+                            CreatedBy = 1,
+                            CreatedOn = DateTime.Now
+                        };
+                        _context.Vouchers.Add(revVoucher);
+                        await _context.SaveChangesAsync();
+
+                        foreach (var vd in originalVoucher.VoucherDetails)
+                        {
+                            string invDrCr = (vd.DrCr == "Dr") ? "Cr" : "Dr";
+                            _context.VoucherDetails.Add(new VoucherDetail
+                            {
+                                VoucherID = revVoucher.VoucherID,
+                                LedgerID = vd.LedgerID,
+                                DrCr = invDrCr,
+                                Amount = vd.Amount,
+                                CustomerID = vd.CustomerID,
+                                MemberID = vd.MemberID
+                            });
+                        }
+
+                        // If PrincipalOnly and interest was credited to saving account, claw it back
+                        if (newAccount.AutoRenewalOption == "PrincipalOnly" && newAccount.SavingAccountID.HasValue && newAccount.SavingAccountID.Value > 0)
+                        {
+                            var savAcc = await _context.SavingAccountMasters.FindAsync(newAccount.SavingAccountID.Value);
+                            decimal interestPaid = (oldAccount.MaturityAmount > oldAccount.DepositAmount) ? (oldAccount.MaturityAmount - oldAccount.DepositAmount) : 0m;
+                            if (savAcc != null && interestPaid > 0)
+                            {
+                                if (savAcc.CurrentBalance < interestPaid)
+                                {
+                                    return BadRequest($"बचत खात्यात (SB #{savAcc.AccountNo}) पुरेसा निधी नाही! ऑटो-नूतनीकरणाचे जमा झालेले ₹{interestPaid:N2} व्याज परत घेण्यासाठी खात्यात किमान शिल्लक असणे आवश्यक आहे (सध्याची शिल्लक: ₹{savAcc.CurrentBalance:N2}).");
+                                }
+
+                                savAcc.CurrentBalance -= interestPaid;
+                                _context.SavingTransactions.Add(new SavingTransaction
+                                {
+                                    SavingAccountID = savAcc.SavingAccountID,
+                                    CustomerID = savAcc.CustomerID,
+                                    TransactionDate = DateTime.Today,
+                                    TransactionType = "Withdrawal",
+                                    PaymentMode = "Transfer",
+                                    Amount = interestPaid,
+                                    BalanceAfterTxn = savAcc.CurrentBalance,
+                                    Narration = $"ऑटो-नूतनीकरण रद्द झाल्याने जमा झालेले व्याज परत (Clawback): FD #{newAccount.AccountNo}",
+                                    VoucherNo = revVoucher.VoucherNo,
+                                    CreatedBy = 1,
+                                    CreatedOn = DateTime.Now
+                                });
+                            }
+                        }
+                    }
+
+                    // 2. Mark new account as Closed / Cancelled
+                    newAccount.Status = "Closed";
+                    newAccount.Remarks = (newAccount.Remarks ?? "") + $" | 14-दिवसीय सवलतीत नूतनीकरण रद्द ({DateTime.Now:dd/MM/yyyy}): {request.RevertReason}";
+
+                    // 3. Restore old account to "Matured" status
+                    oldAccount.Status = "Matured";
+                    oldAccount.Remarks = (oldAccount.Remarks ?? "") + $" | नूतनीकरण रद्द करून खाते मुदतपूर्ण (Matured) पूर्ववत केले ({DateTime.Now:dd/MM/yyyy})";
+
+                    // 4. Update Audit Log
+                    var log = await _context.FdAutoRenewalLogs
+                        .FirstOrDefaultAsync(l => l.NewFdAccountID == newAccount.FdAccountID && !l.IsReverted);
+                    if (log != null)
+                    {
+                        log.IsReverted = true;
+                        log.RevertedDate = DateTime.Now;
+                        log.RevertedBy = request.RevertedBy ?? "Manager";
+                        log.RevertReason = request.RevertReason;
+                        log.Status = "Reverted";
+                    }
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return Ok(new
+                    {
+                        Message = $"नवीन खाते क्र. {newAccount.AccountNo} चे नूतनीकरण यशस्वीरीत्या रद्द केले असून मूळ खाते क्र. {oldAccount.AccountNo} मुदतपूर्ण (Matured) म्हणून पूर्ववत केले आहे. ग्राहक आता संपूर्ण मुदतपूर्ती रक्कम विनादंड काढू शकतात.",
+                        OldAccountNo = oldAccount.AccountNo,
+                        OldAccountID = oldAccount.FdAccountID,
+                        Status = oldAccount.Status
+                    });
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    return StatusCode(500, "रिव्हर्ट प्रक्रियेदरम्यान त्रुटी आली: " + ex.Message);
+                }
+            }
+        }
+
+        // GET: api/FdAccounts/AutoRenewalLogs
+        [HttpGet("AutoRenewalLogs")]
+        public async Task<IActionResult> GetAutoRenewalLogs([FromQuery] int? branchId = null, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
+        {
+            var query = _context.FdAutoRenewalLogs
+                .Include(l => l.Branch)
+                .AsQueryable();
+
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(l => l.BranchID == branchId.Value);
+            }
+            if (fromDate.HasValue)
+            {
+                query = query.Where(l => l.BatchDate >= fromDate.Value.Date);
+            }
+            if (toDate.HasValue)
+            {
+                query = query.Where(l => l.BatchDate <= toDate.Value.Date);
+            }
+
+            var logs = await query
+                .OrderByDescending(l => l.ExecutionTime)
+                .Take(200)
+                .ToListAsync();
+
+            return Ok(logs);
+        }
     }
 
     public class FdInterestPreviewRequestDto
@@ -4338,5 +5039,78 @@ namespace Bhisi.Api.Controllers
         public decimal? CustomOverdueInterest { get; set; }
         public decimal? CustomTotalPayout { get; set; }
         public string? ManualOverrideReason { get; set; }
+    }
+
+    public class AutoRenewalCandidateDto
+    {
+        public int FdAccountID { get; set; }
+        public string AccountNo { get; set; } = string.Empty;
+        public int CustomerID { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string? ContactNo { get; set; }
+        public int BranchID { get; set; }
+        public string BranchName { get; set; } = string.Empty;
+        public int FdSchemeID { get; set; }
+        public string SchemeName { get; set; } = string.Empty;
+        public DateTime OpeningDate { get; set; }
+        public DateTime MaturityDate { get; set; }
+        public decimal DepositAmount { get; set; }
+        public decimal MaturityAmount { get; set; }
+        public decimal InterestRate { get; set; }
+        public string DurationType { get; set; } = "Months";
+        public int DurationValue { get; set; }
+        public int DurationInDays { get; set; }
+        public bool IsAutoRenewable { get; set; }
+        public string AutoRenewalOption { get; set; } = "PrincipalPlusInterest";
+        public int AutoRenewalCount { get; set; }
+        public int MaxAutoRenewalCycles { get; set; }
+        public int? SavingAccountID { get; set; }
+        public string? SavingAccountNo { get; set; }
+        public decimal? SavingBalance { get; set; }
+        public bool HasActiveLoan { get; set; }
+        public decimal ActiveLoanBalance { get; set; }
+        public decimal ProjectedRenewedAmount { get; set; }
+        public decimal ProjectedInterestPayout { get; set; }
+        public decimal PrevailingRate { get; set; }
+    }
+
+    public class AutoRenewalBatchRequest
+    {
+        public int? BranchID { get; set; }
+        public DateTime? ProcessDate { get; set; }
+        public List<int>? SpecificAccountIDs { get; set; }
+        public string? ExecutedBy { get; set; }
+    }
+
+    public class AutoRenewalBatchResultDto
+    {
+        public int TotalCandidates { get; set; }
+        public int SuccessCount { get; set; }
+        public int FailedCount { get; set; }
+        public decimal TotalRenewedAmount { get; set; }
+        public decimal TotalInterestPaidOut { get; set; }
+        public List<AutoRenewalItemResultDto> Items { get; set; } = new List<AutoRenewalItemResultDto>();
+    }
+
+    public class AutoRenewalItemResultDto
+    {
+        public int OldFdAccountID { get; set; }
+        public string OldAccountNo { get; set; } = string.Empty;
+        public int? NewFdAccountID { get; set; }
+        public string? NewAccountNo { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public decimal RenewedAmount { get; set; }
+        public decimal InterestPaidOut { get; set; }
+        public decimal AppliedRate { get; set; }
+        public string RenewalOption { get; set; } = string.Empty;
+        public string Status { get; set; } = "Success"; // Success / Failed
+        public string? ErrorMessage { get; set; }
+    }
+
+    public class RevertAutoRenewalRequest
+    {
+        [Required]
+        public string RevertReason { get; set; } = string.Empty;
+        public string? RevertedBy { get; set; }
     }
 }

@@ -234,6 +234,7 @@ namespace Bhisi.Api.Controllers
             existingScheme.InterestType = fdScheme.InterestType;
             existingScheme.InterestPostingMethod = fdScheme.InterestPostingMethod;
             existingScheme.InterestCompoundingFrequency = fdScheme.InterestCompoundingFrequency;
+            existingScheme.InterestPayoutFrequency = string.IsNullOrWhiteSpace(fdScheme.InterestPayoutFrequency) ? "At Maturity" : fdScheme.InterestPayoutFrequency;
             existingScheme.MinimumAmount = fdScheme.MinimumAmount;
             existingScheme.MaximumAmount = fdScheme.MaximumAmount;
             existingScheme.PrematureInterestRate = fdScheme.PrematureInterestRate;
@@ -583,23 +584,63 @@ namespace Bhisi.Api.Controllers
                     matAmount = (decimal)compound;
                     payoutFreq = "At Maturity";
                 }
-                else if (type.Equals("MIS", StringComparison.OrdinalIgnoreCase) || type.Equals("Monthly Interest", StringComparison.OrdinalIgnoreCase))
+                else
                 {
-                    matAmount = principal; // Principal returned at maturity
-                    isPeriodic = true;
-                    payoutFreq = "Monthly (दरमहा)";
-                    // Standard Banking Monthly Formula: P * R / 1200
-                    monthlyInterest = Math.Round((principal * appliedRate) / 1200.0m, 0, MidpointRounding.AwayFromZero);
-                    int monthsCount = durType.Equals("Months", StringComparison.OrdinalIgnoreCase) 
-                        ? durVal 
-                        : (durType.Equals("Years", StringComparison.OrdinalIgnoreCase) ? durVal * 12 : Math.Max(1, (int)Math.Round((double)totalDays / 30.416)));
-                    totalInterestPayout = monthlyInterest * monthsCount;
-                    totalBenefit = principal + totalInterestPayout;
-                }
-                else // Simple Interest
-                {
-                    matAmount = principal + ((principal * appliedRate * (decimal)totalDays) / (365m * 100m));
-                    payoutFreq = "At Maturity";
+                    string payoutSetting = scheme.InterestPayoutFrequency ?? "At Maturity";
+                    double totalMonths = durType.Equals("Months", StringComparison.OrdinalIgnoreCase) 
+                        ? (double)durVal 
+                        : (durType.Equals("Years", StringComparison.OrdinalIgnoreCase) ? (double)durVal * 12.0 : (double)totalDays / 30.416);
+
+                    if (type.Equals("MIS", StringComparison.OrdinalIgnoreCase) || payoutSetting.Equals("Monthly", StringComparison.OrdinalIgnoreCase))
+                    {
+                        matAmount = principal; // Principal returned at maturity
+                        isPeriodic = true;
+                        payoutFreq = "Monthly (दरमहा)";
+                        // Standard Banking Monthly Formula: P * R / 1200
+                        monthlyInterest = Math.Round((principal * appliedRate) / 1200.0m, 0, MidpointRounding.AwayFromZero);
+                        int monthsCount = (int)Math.Max(1, Math.Round(totalMonths));
+                        totalInterestPayout = monthlyInterest * monthsCount;
+                        totalBenefit = principal + totalInterestPayout;
+                    }
+                    else if (payoutSetting.Equals("Quarterly", StringComparison.OrdinalIgnoreCase))
+                    {
+                        matAmount = principal;
+                        isPeriodic = true;
+                        payoutFreq = "Quarterly (दर तीन महिन्यांनी - तिमाही)";
+                        // Standard Banking Quarterly Formula: P * R / 400
+                        decimal quarterlyInterest = Math.Round((principal * appliedRate) / 400.0m, 0, MidpointRounding.AwayFromZero);
+                        monthlyInterest = quarterlyInterest; // Periodic installment
+                        double quartersCount = Math.Max(1.0, totalMonths / 3.0);
+                        totalInterestPayout = Math.Round(quarterlyInterest * (decimal)quartersCount, 0, MidpointRounding.AwayFromZero);
+                        totalBenefit = principal + totalInterestPayout;
+                    }
+                    else if (payoutSetting.Equals("Half-Yearly", StringComparison.OrdinalIgnoreCase))
+                    {
+                        matAmount = principal;
+                        isPeriodic = true;
+                        payoutFreq = "Half-Yearly (दर सहा महिन्यांनी - सहामाही)";
+                        decimal halfYearlyInterest = Math.Round((principal * appliedRate) / 200.0m, 0, MidpointRounding.AwayFromZero);
+                        monthlyInterest = halfYearlyInterest;
+                        double halfYearsCount = Math.Max(1.0, totalMonths / 6.0);
+                        totalInterestPayout = Math.Round(halfYearlyInterest * (decimal)halfYearsCount, 0, MidpointRounding.AwayFromZero);
+                        totalBenefit = principal + totalInterestPayout;
+                    }
+                    else if (payoutSetting.Equals("Yearly", StringComparison.OrdinalIgnoreCase))
+                    {
+                        matAmount = principal;
+                        isPeriodic = true;
+                        payoutFreq = "Yearly (वार्षिक)";
+                        decimal yearlyInterest = Math.Round((principal * appliedRate) / 100.0m, 0, MidpointRounding.AwayFromZero);
+                        monthlyInterest = yearlyInterest;
+                        double yearsCount = Math.Max(1.0, totalMonths / 12.0);
+                        totalInterestPayout = Math.Round(yearlyInterest * (decimal)yearsCount, 0, MidpointRounding.AwayFromZero);
+                        totalBenefit = principal + totalInterestPayout;
+                    }
+                    else // Simple Interest paid At Maturity
+                    {
+                        matAmount = principal + ((principal * appliedRate * (decimal)totalDays) / (365m * 100m));
+                        payoutFreq = "At Maturity (मुदतीअखेर)";
+                    }
                 }
             }
 

@@ -152,6 +152,8 @@ const FdWithdrawalMaturity: React.FC = () => {
   const [chequeDate, setChequeDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [memberSavingAccounts, setMemberSavingAccounts] = useState<SavingAccount[]>([]);
   const [selectedSavingAccountId, setSelectedSavingAccountId] = useState<number | ''>('');
+  const [surplusBankLedgerID, setSurplusBankLedgerID] = useState<number>(0);
+  const [surplusSavingAccountId, setSurplusSavingAccountId] = useState<number | ''>('');
   const [narration, setNarration] = useState<string>('');
 
   // Active Loans Info state (Informational only)

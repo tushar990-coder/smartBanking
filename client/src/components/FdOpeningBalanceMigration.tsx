@@ -42,6 +42,7 @@ interface Customer extends CustomerOption {
   legacyCustomerNo?: string;
   fullName?: string;
   customerName?: string;
+  customerCode?: string;
 }
 
 interface FdScheme {
@@ -548,7 +549,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return;
     }
 
-    const currentCustomer = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === Number(formData.customerID || formData.memberID));
+    const currentCustomer = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === Number(formData.customerID));
     const scheme = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
 
     const summary = generateFdInterestSchedule({

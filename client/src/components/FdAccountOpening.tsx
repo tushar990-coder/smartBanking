@@ -100,6 +100,9 @@ const FdAccountOpening: React.FC = () => {
     nomineeRelation: '',
     remarks: 'नवीन मुदत ठेव खाते उघडले (New FD Opened)',
     isSeniorCitizen: false,
+    isAutoRenewable: false,
+    autoRenewalOption: 'PrincipalPlusInterest',
+    maxAutoRenewalCycles: 3,
   });
 
   const [calcData, setCalcData] = useState({
@@ -549,6 +552,9 @@ const FdAccountOpening: React.FC = () => {
           chequeNo: paymentMode === 'Bank' ? chequeNo : null,
           chequeDate: paymentMode === 'Bank' && chequeDate ? chequeDate : null,
           savingAccountID: paymentMode === 'Transfer' ? selectedSavingAccountID : null,
+          isAutoRenewable: formData.isAutoRenewable,
+          autoRenewalOption: formData.autoRenewalOption,
+          maxAutoRenewalCycles: formData.maxAutoRenewalCycles,
         };
 
         const response = await axios.post(`${API_URL}/FdAccounts`, payload);
@@ -584,6 +590,9 @@ const FdAccountOpening: React.FC = () => {
           chequeNo: paymentMode === 'Bank' ? chequeNo : null,
           chequeDate: paymentMode === 'Bank' && chequeDate ? chequeDate : null,
           savingAccountID: paymentMode === 'Transfer' ? selectedSavingAccountID : null,
+          isAutoRenewable: formData.isAutoRenewable,
+          autoRenewalOption: formData.autoRenewalOption,
+          maxAutoRenewalCycles: formData.maxAutoRenewalCycles,
         };
 
         try {
@@ -616,6 +625,9 @@ const FdAccountOpening: React.FC = () => {
               chequeNo: paymentMode === 'Bank' ? chequeNo : null,
               chequeDate: paymentMode === 'Bank' && chequeDate ? chequeDate : null,
               savingAccountID: paymentMode === 'Transfer' ? selectedSavingAccountID : null,
+              isAutoRenewable: formData.isAutoRenewable,
+              autoRenewalOption: formData.autoRenewalOption,
+              maxAutoRenewalCycles: formData.maxAutoRenewalCycles,
             });
             if (singleRes.data?.accountNo) {
               createdNos.push(singleRes.data.accountNo);
@@ -1209,6 +1221,74 @@ const FdAccountOpening: React.FC = () => {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Section 4: स्वयंचलित नूतनीकरण सुविधा (CBS Auto-Renewal Facility) */}
+              <div className="bg-sky-50/80 p-2.5 rounded border border-sky-200 mb-3 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between pb-1.5 mb-2 border-b border-sky-200 gap-2">
+                  <div className="text-[11px] font-bold text-sky-950 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>🔄</span> ४. स्वयंचलित नूतनीकरण सुविधा (CBS Auto-Renewal Facility)
+                  </div>
+                  <label className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-950 cursor-pointer bg-white px-2.5 py-0.5 rounded border border-sky-300 shadow-2xs hover:bg-sky-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      name="isAutoRenewable"
+                      checked={formData.isAutoRenewable}
+                      onChange={handleChange}
+                      className="w-3.5 h-3.5 text-sky-600 rounded border-gray-300 focus:ring-sky-500"
+                    />
+                    <span>स्वयंचलित नूतनीकरण पर्याय लागू करा (Enable Auto-Renewal)</span>
+                  </label>
+                </div>
+
+                {formData.isAutoRenewable ? (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center bg-white p-2.5 rounded border border-sky-200">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
+                        नूतनीकरण पर्याय (Renewal Mode) *
+                      </label>
+                      <select
+                        name="autoRenewalOption"
+                        value={formData.autoRenewalOption}
+                        onChange={handleChange}
+                        className="w-full border border-sky-300 rounded px-2 py-1 text-xs bg-sky-50/50 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      >
+                        <option value="PrincipalPlusInterest">
+                          💰 मुद्दल + जमा व्याज (Principal + Interest Reinvestment)
+                        </option>
+                        <option value="PrincipalOnly">
+                          💵 केवळ मुद्दल (Principal Only - Interest to SB)
+                        </option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-700 mb-0.5">
+                        कमाल नूतनीकरण मर्यादा (वेळा)
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          name="maxAutoRenewalCycles"
+                          min={1}
+                          max={10}
+                          value={formData.maxAutoRenewalCycles || 3}
+                          onChange={handleChange}
+                          className="w-20 border border-gray-300 rounded px-2 py-1 text-xs text-center font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                        />
+                        <span className="text-[10px] text-slate-500 font-medium">वेळा (डिफॉल्ट: ३)</span>
+                      </div>
+                    </div>
+
+                    <div className="text-[10px] text-slate-600 bg-sky-50/50 p-2 rounded border border-sky-100 leading-snug">
+                      ℹ️ <strong className="text-slate-800">आरबीआय नियम:</strong> मुदतपूर्ती दिवशी प्रचलित (Prevailing) व्याजदराने ऑटो-रिन्यू होईल. ठेवीदारास १४ दिवसांचा विनामूल्य रिव्हर्सल कालावधी मिळतो.
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-500 italic">
+                    मुदतपूर्तीनंतर ऑटो-नूतनीकरण होणार नाही; ठेवीदारास शाखेत येऊन नूतनीकरण किंवा परतावा घ्यावा लागेल.
+                  </p>
+                )}
               </div>
 
               {/* Form Controls */}

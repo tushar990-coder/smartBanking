@@ -108,6 +108,16 @@ namespace Bhisi.Api.Models
         [ForeignKey("SavingAccountID")]
         public virtual SavingAccountMaster? SavingAccount { get; set; }
 
+        // CBS Auto-Renewal Configuration Fields
+        public bool IsAutoRenewable { get; set; } = false;
+
+        [StringLength(30)]
+        public string AutoRenewalOption { get; set; } = "PrincipalPlusInterest"; // PrincipalPlusInterest, PrincipalOnly
+
+        public int MaxAutoRenewalCycles { get; set; } = 3;
+        public int AutoRenewalCount { get; set; } = 0;
+        public int? ParentFdAccountID { get; set; }
+
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
         public int? ModifiedBy { get; set; }

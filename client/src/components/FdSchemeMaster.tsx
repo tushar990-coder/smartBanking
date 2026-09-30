@@ -60,6 +60,7 @@ interface FdScheme {
   interestType: string;
   interestPostingMethod: string;
   interestCompoundingFrequency: string;
+  interestPayoutFrequency?: string;
   minimumAmount: number;
   maximumAmount: number;
   prematureInterestRate: number;
@@ -94,6 +95,7 @@ interface FdSchemeFormData {
   interestType: string;
   interestPostingMethod: string;
   interestCompoundingFrequency: string;
+  interestPayoutFrequency: string;
   minimumAmount: number | string;
   maximumAmount: number | string;
   prematureInterestRate: number | string;
@@ -122,7 +124,7 @@ const FdSchemeMaster: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showListModal, setShowListModal] = useState(false);
 
-  const formContainerRef = useRef<HTMLDivElement>(null);
+  const formContainerRef = useRef<HTMLFormElement>(null);
   const schemeNameInputRef = useRef<HTMLInputElement>(null);
 
   const API_URL = '/api';
@@ -143,6 +145,7 @@ const FdSchemeMaster: React.FC = () => {
     interestType: 'Simple',
     interestPostingMethod: 'On Principal',
     interestCompoundingFrequency: 'N/A',
+    interestPayoutFrequency: 'At Maturity',
     minimumAmount: 1000,
     maximumAmount: 1000000,
     prematureInterestRate: 6.0,
@@ -314,16 +317,34 @@ const FdSchemeMaster: React.FC = () => {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | { target: { name: string; value: any } }) => {
-    const { name, value, type } = e.target as any;
-    let val: any = value;
-    if (type === 'checkbox') {
-      val = (e.target as HTMLInputElement).checked;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | { target: { name?: string; value: any } }) => {
+    const target = e.target as any;
+    const name = target?.name;
+    if (!name) return;
+    let val: any = target?.value;
+    if (target?.type === 'checkbox') {
+      val = (target as HTMLInputElement).checked;
     }
-    setFormData((prev) => ({
-      ...prev,
-      [name]: val
-    }));
+    setFormData((prev) => {
+      const updated: any = {
+        ...prev,
+        [name]: val
+      };
+      if (name === 'interestType') {
+        if (val === 'MIS') {
+          updated.interestPayoutFrequency = 'Monthly';
+          updated.interestCompoundingFrequency = 'N/A';
+          updated.interestPostingMethod = 'Monthly Payout';
+        } else if (val === 'Cumulative') {
+          updated.interestPayoutFrequency = 'At Maturity';
+          if (updated.interestCompoundingFrequency === 'N/A') {
+            updated.interestCompoundingFrequency = 'Quarterly';
+          }
+          updated.interestPostingMethod = 'On Interest';
+        }
+      }
+      return updated;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -397,6 +418,7 @@ const FdSchemeMaster: React.FC = () => {
       interestType: formData.interestType,
       interestPostingMethod: formData.interestPostingMethod,
       interestCompoundingFrequency: formData.interestCompoundingFrequency,
+      interestPayoutFrequency: formData.interestPayoutFrequency || 'At Maturity',
       minimumAmount: parseFloat(formData.minimumAmount.toString()) || 0,
       maximumAmount: parseFloat(formData.maximumAmount.toString()) || 0,
       prematureInterestRate: parseFloat(formData.prematureInterestRate.toString()) || 0,
@@ -464,6 +486,7 @@ const FdSchemeMaster: React.FC = () => {
       interestType: scheme.interestType || 'Simple',
       interestPostingMethod: scheme.interestPostingMethod || 'On Principal',
       interestCompoundingFrequency: scheme.interestCompoundingFrequency || 'N/A',
+      interestPayoutFrequency: scheme.interestPayoutFrequency || (scheme.interestType === 'MIS' ? 'Monthly' : 'At Maturity'),
       minimumAmount: scheme.minimumAmount || 1000,
       maximumAmount: scheme.maximumAmount || 1000000,
       prematureInterestRate: scheme.prematureInterestRate || 0,
@@ -524,6 +547,7 @@ const FdSchemeMaster: React.FC = () => {
       interestType: 'Simple',
       interestPostingMethod: 'On Principal',
       interestCompoundingFrequency: 'N/A',
+      interestPayoutFrequency: 'At Maturity',
       minimumAmount: 1000,
       maximumAmount: 1000000,
       prematureInterestRate: 6.0,
@@ -556,6 +580,7 @@ const FdSchemeMaster: React.FC = () => {
       'व्याजदर (%)': s.schemeDurationModel === 'Slab' ? 'स्लॅबनिहाय' : `${s.interestRate}%`,
       'ज्येष्ठ नागरिक दर (%)': s.schemeDurationModel === 'Slab' ? 'स्लॅबनिहाय' : `${s.seniorCitizenInterestRate}%`,
       'व्याज प्रकार': s.interestType,
+      'व्याज परतावा वारंवारता': s.interestPayoutFrequency || 'मुदतीअखेर',
       'किमान रक्कम (₹)': s.minimumAmount,
       'कमाल रक्कम (₹)': s.maximumAmount,
       'ओव्हरड्यू व्याज नियम': s.allowOverdueInterest ? `अनुज्ञेय (${s.overdueInterestRate || 0}%)` : 'निरंक (बंद)',
@@ -1095,13 +1120,30 @@ const FdSchemeMaster: React.FC = () => {
             <h2 className="text-xs font-bold text-primary">२. व्याज नियम व मर्यादा (Interest Calculation Rules & Limits)</h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
             <div>
               <label className={labelClass}>व्याज प्रकार (Interest Type) <span className="text-red-500">*</span></label>
               <select name="interestType" value={formData.interestType} onChange={handleChange} className={inputClass}>
                 <option value="Simple">साधी ठेव (Simple Deposit)</option>
                 <option value="Cumulative">चक्रवाढ (Cumulative Deposit)</option>
                 <option value="MIS">मासिक व्याज (Monthly Income - MIS)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>व्याज परतावा वारंवारता (Payout Frequency) <span className="text-red-500">*</span></label>
+              <select 
+                name="interestPayoutFrequency" 
+                value={formData.interestPayoutFrequency} 
+                onChange={handleChange} 
+                className={`${inputClass} font-bold text-primary`}
+                disabled={formData.interestType === 'Cumulative'}
+              >
+                <option value="At Maturity">मुदतअखेर (At Maturity - साधी/चक्रवाढ)</option>
+                <option value="Quarterly">त्रैमासिक परतावा (Quarterly Payout - दर ३ महिने)</option>
+                <option value="Monthly">मासिक परतावा (Monthly Payout - दरमहा)</option>
+                <option value="Half-Yearly">सहामाही परतावा (Half-Yearly - दर ६ महिने)</option>
+                <option value="Yearly">वार्षिक परतावा (Yearly - दरवर्षी)</option>
               </select>
             </div>
 
@@ -1131,6 +1173,25 @@ const FdSchemeMaster: React.FC = () => {
               </select>
             </div>
           </div>
+
+          {formData.interestPayoutFrequency === 'Quarterly' && formData.interestType !== 'Cumulative' && (
+            <div className="p-2.5 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-100/70 border border-blue-300 rounded text-blue-950 text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs animate-in fade-in duration-150">
+              <div className="flex items-center gap-2">
+                <span className="text-base">💡</span>
+                <div>
+                  <span className="font-bold text-blue-950">त्रैमासिक व्याज परतावा (Quarterly Interest Payout) मार्गदर्शक:</span>
+                  <p className="text-[11px] text-blue-800">सदर योजनेत मुदतपूर्तीवेळी मूळ मुद्दल परत केली जाते व व्याज दर तीन महिन्यांनी (तिमाहीला) ग्राहकाच्या बचत खात्यात जमा केले जाते.</p>
+                </div>
+              </div>
+              <div className="bg-white px-3 py-1 rounded border border-blue-300 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
+                <span className="text-slate-600">दर ₹ १,००,००० ठेवीवर अंदाजे दर तिमाही व्याज:</span>
+                <span className="text-blue-700 font-extrabold font-mono text-sm">
+                  ₹ {Math.round((100000 * (Number(formData.interestRate) || 0)) / 400).toLocaleString('en-IN')}
+                </span>
+                <span className="text-[10px] text-slate-500 font-normal">/ तिमाही</span>
+              </div>
+            </div>
+          )}
 
           {formData.interestType === 'MIS' && (
             <div className="p-2.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100/70 border border-emerald-300 rounded text-emerald-900 text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs animate-in fade-in duration-150">

@@ -978,6 +978,10 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE [FdSchemes] ADD [OverdueGraceDays] int NOT NULL CONSTRAINT [DF_FdSchemes_OverdueGraceDays] DEFAULT 0;
                     ALTER TABLE [FdSchemes] ADD [OverdueRenewalPolicy] nvarchar(50) NOT NULL CONSTRAINT [DF_FdSchemes_OverdueRenewalPolicy] DEFAULT 'ClosureDate';
                 END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdSchemes]') AND name = 'InterestPayoutFrequency')
+                BEGIN
+                    ALTER TABLE [FdSchemes] ADD [InterestPayoutFrequency] nvarchar(30) NOT NULL CONSTRAINT [DF_FdSchemes_InterestPayoutFrequency] DEFAULT 'At Maturity';
+                END
             END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAccounts')
@@ -1004,6 +1008,44 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE [FdAccounts] DROP COLUMN [MemberID];
                 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_FdAccounts_CustomerID' AND object_id = OBJECT_ID('FdAccounts'))
                     CREATE INDEX [IX_FdAccounts_CustomerID] ON [FdAccounts] ([CustomerID]);
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'IsAutoRenewable')
+                BEGIN
+                    ALTER TABLE [FdAccounts] ADD [IsAutoRenewable] bit NOT NULL CONSTRAINT [DF_FdAccounts_IsAutoRenewable] DEFAULT 0;
+                    ALTER TABLE [FdAccounts] ADD [AutoRenewalOption] nvarchar(30) NOT NULL CONSTRAINT [DF_FdAccounts_AutoRenewalOption] DEFAULT 'PrincipalPlusInterest';
+                    ALTER TABLE [FdAccounts] ADD [MaxAutoRenewalCycles] int NOT NULL CONSTRAINT [DF_FdAccounts_MaxAutoRenewalCycles] DEFAULT 3;
+                    ALTER TABLE [FdAccounts] ADD [AutoRenewalCount] int NOT NULL CONSTRAINT [DF_FdAccounts_AutoRenewalCount] DEFAULT 0;
+                    ALTER TABLE [FdAccounts] ADD [ParentFdAccountID] int NULL;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAutoRenewalLogs')
+                BEGIN
+                    CREATE TABLE [dbo].[FdAutoRenewalLogs] (
+                        [LogID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                        [InstitutionID] int NOT NULL DEFAULT 1,
+                        [BranchID] int NOT NULL DEFAULT 1,
+                        [BatchDate] datetime2 NOT NULL DEFAULT GETDATE(),
+                        [OldFdAccountID] int NOT NULL,
+                        [NewFdAccountID] int NULL,
+                        [OldAccountNo] nvarchar(30) NOT NULL DEFAULT '',
+                        [NewAccountNo] nvarchar(30) NULL,
+                        [CustomerID] int NOT NULL DEFAULT 0,
+                        [CustomerName] nvarchar(150) NOT NULL DEFAULT '',
+                        [RenewalOption] nvarchar(30) NOT NULL DEFAULT 'PrincipalPlusInterest',
+                        [RenewedAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                        [InterestPaidOut] decimal(18,2) NOT NULL DEFAULT 0,
+                        [AppliedRate] decimal(5,2) NOT NULL DEFAULT 0,
+                        [VoucherID] int NULL,
+                        [Status] nvarchar(20) NOT NULL DEFAULT 'Success',
+                        [ErrorMessage] nvarchar(500) NULL,
+                        [ExecutedBy] nvarchar(100) NOT NULL DEFAULT 'System-EOD',
+                        [ExecutionTime] datetime2 NOT NULL DEFAULT GETDATE(),
+                        [IsReverted] bit NOT NULL DEFAULT 0,
+                        [RevertedDate] datetime2 NULL,
+                        [RevertedBy] nvarchar(100) NULL,
+                        [RevertReason] nvarchar(250) NULL
+                    );
+                END
             END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'RdSchemes')

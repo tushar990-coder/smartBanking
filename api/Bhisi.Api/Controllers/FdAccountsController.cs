@@ -198,7 +198,8 @@ namespace Bhisi.Api.Controllers
             var seniorCutoffDate = DateTime.Today.AddYears(-60);
 
             var accounts = await query
-                .OrderByDescending(f => f.OpeningDate)
+                .OrderBy(f => f.AccountNo)
+                .ThenBy(f => f.FdAccountID)
                 .Select(f => new {
                     f.FdAccountID,
                     f.BranchID,

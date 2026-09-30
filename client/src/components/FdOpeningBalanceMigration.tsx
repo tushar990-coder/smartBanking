@@ -276,7 +276,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
     try {
       const response = await axios.get(`${API_URL}/FdAccounts`);
       if (!isMountedRef.current) return;
-      const list = response.data.filter((a: any) => a.isLegacyAccount);
+      const list = response.data
+        .filter((a: any) => a.isLegacyAccount)
+        .sort((a: any, b: any) => (a.accountNo || '').localeCompare(b.accountNo || '') || (a.fdAccountID - b.fdAccountID));
       setMigratedAccounts(list);
     } catch (err) {
       if (isMountedRef.current) {
@@ -839,19 +841,21 @@ const FdOpeningBalanceMigration: React.FC = () => {
     return details ? `${fullName} (${details})` : fullName;
   };
 
-  const filteredAccounts = migratedAccounts.filter((acc) => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      (acc.accountNo && acc.accountNo.toLowerCase().includes(term)) ||
-      (acc.legacyAccountNumber && acc.legacyAccountNumber.toLowerCase().includes(term)) ||
-      (acc.customerName && acc.customerName.toLowerCase().includes(term)) ||
-      (acc.memberName && acc.memberName.toLowerCase().includes(term)) ||
-      (acc.cifNo && acc.cifNo.toLowerCase().includes(term)) ||
-      (acc.memberCode && acc.memberCode.toLowerCase().includes(term)) ||
-      (acc.schemeName && acc.schemeName.toLowerCase().includes(term))
-    );
-  });
+  const filteredAccounts = migratedAccounts
+    .filter((acc) => {
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        (acc.accountNo && acc.accountNo.toLowerCase().includes(term)) ||
+        (acc.legacyAccountNumber && acc.legacyAccountNumber.toLowerCase().includes(term)) ||
+        (acc.customerName && acc.customerName.toLowerCase().includes(term)) ||
+        (acc.memberName && acc.memberName.toLowerCase().includes(term)) ||
+        (acc.cifNo && acc.cifNo.toLowerCase().includes(term)) ||
+        (acc.memberCode && acc.memberCode.toLowerCase().includes(term)) ||
+        (acc.schemeName && acc.schemeName.toLowerCase().includes(term))
+      );
+    })
+    .sort((a, b) => (a.accountNo || '').localeCompare(b.accountNo || '') || (a.fdAccountID - b.fdAccountID));
 
   // KPI Calculations
   const totalDepositAmount = migratedAccounts.reduce((sum, a) => sum + (a.depositAmount || 0), 0);

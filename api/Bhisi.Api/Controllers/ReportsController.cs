@@ -4961,7 +4961,8 @@ namespace Bhisi.Api.Controllers
                     query = query.Where(f => f.OpeningDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
                 var accounts = await query
-                    .OrderByDescending(f => f.OpeningDate)
+                    .OrderBy(f => f.AccountNo)
+                    .ThenBy(f => f.FdAccountID)
                     .Select(f => new
                     {
                         f.FdAccountID,
@@ -5023,7 +5024,8 @@ namespace Bhisi.Api.Controllers
                     query = query.Where(f => f.OpeningDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
 
                 var accounts = await query
-                    .OrderByDescending(f => f.OpeningDate)
+                    .OrderBy(f => f.AccountNo)
+                    .ThenBy(f => f.FdAccountID)
                     .Select(f => new
                     {
                         f.FdAccountID,
@@ -5034,6 +5036,7 @@ namespace Bhisi.Api.Controllers
                         MemberCode = f.Customer != null ? f.Customer.CIFNo : "",
                         MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
                         f.AccountNo,
+                        f.LegacyAccountNumber,
                         SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",
                         OpeningDate = f.OpeningDate.ToString("yyyy-MM-dd"),
                         f.DepositAmount,
@@ -5070,7 +5073,8 @@ namespace Bhisi.Api.Controllers
                     query = query.Where(f => f.BranchID == branchID.Value);
 
                 var accounts = await query
-                    .OrderByDescending(f => f.OpeningDate)
+                    .OrderBy(f => f.AccountNo)
+                    .ThenBy(f => f.FdAccountID)
                     .Select(f => new
                     {
                         f.FdAccountID,
@@ -5081,6 +5085,7 @@ namespace Bhisi.Api.Controllers
                         MemberCode = f.Customer != null ? f.Customer.CIFNo : "",
                         MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
                         f.AccountNo,
+                        f.LegacyAccountNumber,
                         SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",
                         OpeningDate = f.OpeningDate.ToString("yyyy-MM-dd"),
                         f.DepositAmount,
@@ -5134,6 +5139,7 @@ namespace Bhisi.Api.Controllers
                         MemberCode = f.Customer != null ? f.Customer.CIFNo : "",
                         MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
                         f.AccountNo,
+                        f.LegacyAccountNumber,
                         SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",
                         OpeningDate = f.OpeningDate.ToString("yyyy-MM-dd"),
                         f.DepositAmount,
@@ -5183,7 +5189,8 @@ namespace Bhisi.Api.Controllers
                 var accounts = await _context.FdAccounts
                     .Include(a => a.FdScheme)
                     .Where(a => targetCustId != null && a.CustomerID == targetCustId)
-                    .OrderByDescending(a => a.OpeningDate)
+                    .OrderBy(a => a.AccountNo)
+                    .ThenBy(a => a.FdAccountID)
                     .ToListAsync();
 
                 var accountLedgerList = new List<object>();
@@ -5215,6 +5222,7 @@ namespace Bhisi.Api.Controllers
                     {
                         acc.FdAccountID,
                         acc.AccountNo,
+                        acc.LegacyAccountNumber,
                         OpeningDate = acc.OpeningDate.ToString("yyyy-MM-dd"),
                         MaturityDate = acc.MaturityDate.ToString("yyyy-MM-dd"),
                         acc.DepositAmount,

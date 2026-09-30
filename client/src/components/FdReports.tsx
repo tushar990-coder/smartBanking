@@ -301,20 +301,22 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
     window.print();
   };
 
-  const filteredData = data.filter((row) => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase().trim();
-    return (
-      (row.accountNo && row.accountNo.toLowerCase().includes(term)) ||
-      (row.legacyAccountNumber && row.legacyAccountNumber.toLowerCase().includes(term)) ||
-      (row.memberName && row.memberName.toLowerCase().includes(term)) ||
-      (row.customerName && row.customerName.toLowerCase().includes(term)) ||
-      (row.cifNo && row.cifNo.toLowerCase().includes(term)) ||
-      (row.memberCode && row.memberCode.toLowerCase().includes(term)) ||
-      (row.schemeName && row.schemeName.toLowerCase().includes(term)) ||
-      (row.nomineeName && row.nomineeName.toLowerCase().includes(term))
-    );
-  });
+  const filteredData = data
+    .filter((row) => {
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase().trim();
+      return (
+        (row.accountNo && row.accountNo.toLowerCase().includes(term)) ||
+        (row.legacyAccountNumber && row.legacyAccountNumber.toLowerCase().includes(term)) ||
+        (row.memberName && row.memberName.toLowerCase().includes(term)) ||
+        (row.customerName && row.customerName.toLowerCase().includes(term)) ||
+        (row.cifNo && row.cifNo.toLowerCase().includes(term)) ||
+        (row.memberCode && row.memberCode.toLowerCase().includes(term)) ||
+        (row.schemeName && row.schemeName.toLowerCase().includes(term)) ||
+        (row.nomineeName && row.nomineeName.toLowerCase().includes(term))
+      );
+    })
+    .sort((a, b) => (a.accountNo || '').localeCompare(b.accountNo || '') || (a.fdAccountID - b.fdAccountID));
 
   const filteredVoucherPassing = voucherPassingData.filter((r) => {
     if (!searchTerm.trim()) return true;
@@ -876,7 +878,15 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                 {memberLedger.accounts.map((acc, aIdx) => (
                   <div key={acc.fdAccountID || aIdx} className="border border-gray-900 p-2.5 rounded-xs mt-3">
                     <div className="flex justify-between items-center bg-gray-100 p-1.5 border-b border-gray-900 font-bold text-xs mb-2">
-                      <span>FD पावती नं.: <span className="font-mono text-primary">{acc.accountNo}</span> ({acc.schemeName})</span>
+                      <span>
+                        FD पावती नं.: <span className="font-mono text-primary">{acc.accountNo}</span>
+                        {acc.legacyAccountNumber && (
+                          <span className="text-[10px] text-amber-900 bg-amber-50 border border-amber-300 px-1 py-0.5 rounded font-mono ml-1.5 font-bold" title="जुना पावती क्र.">
+                            जुनी पावती: {acc.legacyAccountNumber}
+                          </span>
+                        )}
+                        {' '}({acc.schemeName})
+                      </span>
                       <span className="text-emerald-800 font-mono">ठेव रक्कम: ₹ {fmtCurrency(acc.depositAmount)} | व्याज दर: {acc.interestRate}%</span>
                     </div>
 
@@ -1196,7 +1206,14 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                       filteredData.map((row, idx) => (
                         <tr key={row.fdAccountID || idx} className="hover:bg-slate-50 text-gray-900 text-[11px]">
                           <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
-                          <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-900">{row.accountNo}</td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono text-gray-900">
+                            <span className="font-bold text-gray-900">{row.accountNo}</span>
+                            {row.legacyAccountNumber && (
+                              <div className="text-[10px] text-amber-900 font-semibold bg-amber-50 px-1 rounded border border-amber-300 inline-block mt-0.5" title="जुना पावती क्र. (Legacy Receipt No)">
+                                जुनी पावती: {row.legacyAccountNumber}
+                              </div>
+                            )}
+                          </td>
                           <td className="border border-gray-900 py-1 px-3 font-medium">{row.customerName || row.memberName}</td>
                           <td className="border border-gray-900 py-1 px-2 text-gray-700">{row.schemeName}</td>
                           <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(row.openingDate)}</td>

@@ -1073,7 +1073,8 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                       <th className="border border-gray-900 py-1.5 px-1 w-[3%] text-center">#</th>
                       <th className="border border-gray-900 py-1.5 px-2 text-center font-mono">नवीन पावती</th>
                       <th className="border border-gray-900 py-1.5 px-2 text-center font-mono">जुनी पावती</th>
-                      <th className="border border-gray-900 py-1.5 px-3 text-left">खातेदाराचे नाव & CIF</th>
+                      <th className="border border-gray-900 py-1.5 px-2 text-center font-mono">CIF नं.</th>
+                      <th className="border border-gray-900 py-1.5 px-3 text-left">खातेदाराचे नाव</th>
                       <th className="border border-gray-900 py-1.5 px-2 text-left">योजना</th>
                       <th className="border border-gray-900 py-1.5 px-2 text-center">ठेव दिनांक</th>
                       <th className="border border-gray-900 py-1.5 px-2 text-center">कालावधी</th>
@@ -1090,13 +1091,13 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={15} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                        <td colSpan={16} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
                           स्थलांतरित मुदत ठेव यादी लोड होत आहे, कृपया प्रतीक्षा करा...
                         </td>
                       </tr>
                     ) : filteredData.length === 0 ? (
                       <tr>
-                        <td colSpan={15} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                        <td colSpan={16} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
                           कोणतीही स्थलांतरित मुदत ठेव नोंद आढळली नाही.
                         </td>
                       </tr>
@@ -1114,11 +1115,11 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                               <span className="text-gray-400">-</span>
                             )}
                           </td>
-                          <td className="border border-gray-900 py-1 px-3 text-left">
-                            <div className="font-bold text-gray-950">{row.customerName || row.memberName}</div>
-                            <div className="text-[10px] text-gray-500 font-mono">
-                              {row.cifNo ? `CIF: ${row.cifNo}` : (row.memberCode ? `CIF: ${row.memberCode}` : '-')}
-                            </div>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-blue-900">
+                            {row.cifNo || '-'}
+                          </td>
+                          <td className="border border-gray-900 py-1 px-3 text-left font-bold text-gray-950">
+                            {row.customerName || row.memberName}
                           </td>
                           <td className="border border-gray-900 py-1 px-2 text-gray-700">{row.schemeName}</td>
                           <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(row.openingDate)}</td>
@@ -1158,7 +1159,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                   {filteredData.length > 0 && (
                     <tfoot>
                       <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
-                        <td colSpan={7} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                        <td colSpan={8} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
                           एकूण स्थलांतरित बेरीज ({filteredData.length} खाती):
                         </td>
                         <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
@@ -1185,26 +1186,27 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                 <table className="w-full border-collapse border border-gray-900 text-xs">
                   <thead>
                     <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
-                      <th className="border border-gray-900 py-1.5 px-1 w-[5%] text-center">#</th>
-                      <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-center">FD पावती क्र.</th>
-                      <th className="border border-gray-900 py-1.5 px-3 w-[26%] text-left">खातेदाराचे नाव</th>
-                      <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-left">योजना</th>
-                      <th className="border border-gray-900 py-1.5 px-2 w-[11%] text-center">ठेव दिनांक</th>
-                      <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-right font-extrabold">ठेव रक्कम (₹)</th>
+                      <th className="border border-gray-900 py-1.5 px-1 w-[4%] text-center">#</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[13%] text-center">FD पावती क्र.</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[11%] text-center font-mono">CIF नं.</th>
+                      <th className="border border-gray-900 py-1.5 px-3 w-[23%] text-left">खातेदाराचे नाव</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[13%] text-left">योजना</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[10%] text-center">ठेव दिनांक</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[13%] text-right font-extrabold">ठेव रक्कम (₹)</th>
                       <th className="border border-gray-900 py-1.5 px-1 w-[5%] text-center">व्याज %</th>
-                      <th className="border border-gray-900 py-1.5 px-2 w-[11%] text-center">मुदतपूर्ती दिनांक</th>
+                      <th className="border border-gray-900 py-1.5 px-2 w-[10%] text-center">मुदतपूर्ती दिनांक</th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={8} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                        <td colSpan={9} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
                           माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
                         </td>
                       </tr>
                     ) : filteredData.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
+                        <td colSpan={9} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
                           कोणतीही मुदत ठेव नोंद आढळली नाही.
                         </td>
                       </tr>
@@ -1220,6 +1222,9 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                               </div>
                             )}
                           </td>
+                          <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-blue-900">
+                            {row.cifNo || '-'}
+                          </td>
                           <td className="border border-gray-900 py-1 px-3 font-medium">{row.customerName || row.memberName}</td>
                           <td className="border border-gray-900 py-1 px-2 text-gray-700">{row.schemeName}</td>
                           <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(row.openingDate)}</td>
@@ -1233,7 +1238,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                   {filteredData.length > 0 && (
                     <tfoot>
                       <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
-                        <td colSpan={5} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                        <td colSpan={6} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
                           एकूण मुदत ठेव बेरीज:
                         </td>
                         <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">

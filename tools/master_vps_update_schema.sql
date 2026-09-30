@@ -4913,6 +4913,91 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- 13. FD CBS AUTO-RENEWAL, MAKER-CHECKER & 14-DIGIT RD STANDARDS (v2.5.20)
+-- -----------------------------------------------------------------------------------------
+PRINT '>>> 13. Applying FD Auto-Renewal, Maker-Checker & RD 14-Digit Standard Schema Updates (v2.5.20)...';
+
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdSchemes')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdSchemes]') AND name = 'InterestPayoutFrequency')
+    BEGIN
+        ALTER TABLE [FdSchemes] ADD [InterestPayoutFrequency] nvarchar(30) NOT NULL CONSTRAINT [DF_FdSchemes_InterestPayoutFrequency] DEFAULT 'At Maturity';
+        PRINT '  + Added InterestPayoutFrequency to FdSchemes';
+    END
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdSchemes]') AND name = 'MakerCheckerStatus')
+    BEGIN
+        ALTER TABLE [FdSchemes] ADD [MakerCheckerStatus] nvarchar(20) NOT NULL CONSTRAINT [DF_FdSchemes_MakerCheckerStatus] DEFAULT 'Approved';
+        ALTER TABLE [FdSchemes] ADD [ApprovedByUserID] int NULL;
+        ALTER TABLE [FdSchemes] ADD [ApprovedAt] datetime2 NULL;
+        ALTER TABLE [FdSchemes] ADD [RejectionReason] nvarchar(500) NULL;
+        PRINT '  + Added Maker-Checker workflow columns to FdSchemes';
+    END
+END
+GO
+
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAccounts')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'IsAutoRenewable')
+    BEGIN
+        ALTER TABLE [FdAccounts] ADD [IsAutoRenewable] bit NOT NULL CONSTRAINT [DF_FdAccounts_IsAutoRenewable] DEFAULT 0;
+        ALTER TABLE [FdAccounts] ADD [AutoRenewalOption] nvarchar(30) NOT NULL CONSTRAINT [DF_FdAccounts_AutoRenewalOption] DEFAULT 'PrincipalPlusInterest';
+        ALTER TABLE [FdAccounts] ADD [MaxAutoRenewalCycles] int NOT NULL CONSTRAINT [DF_FdAccounts_MaxAutoRenewalCycles] DEFAULT 3;
+        ALTER TABLE [FdAccounts] ADD [AutoRenewalCount] int NOT NULL CONSTRAINT [DF_FdAccounts_AutoRenewalCount] DEFAULT 0;
+        ALTER TABLE [FdAccounts] ADD [ParentFdAccountID] int NULL;
+        PRINT '  + Added Auto-Renewal columns to FdAccounts';
+    END
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAutoRenewalLogs')
+BEGIN
+    CREATE TABLE [dbo].[FdAutoRenewalLogs] (
+        [LogID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [InstitutionID] int NOT NULL DEFAULT 1,
+        [BranchID] int NOT NULL DEFAULT 1,
+        [BatchDate] datetime2 NOT NULL DEFAULT GETDATE(),
+        [OldFdAccountID] int NOT NULL,
+        [NewFdAccountID] int NULL,
+        [OldAccountNo] nvarchar(30) NOT NULL DEFAULT '',
+        [NewAccountNo] nvarchar(30) NULL,
+        [CustomerID] int NOT NULL DEFAULT 0,
+        [CustomerName] nvarchar(150) NOT NULL DEFAULT '',
+        [RenewalOption] nvarchar(30) NOT NULL DEFAULT 'PrincipalPlusInterest',
+        [RenewedAmount] decimal(18,2) NOT NULL DEFAULT 0,
+        [InterestPaidOut] decimal(18,2) NOT NULL DEFAULT 0,
+        [AppliedRate] decimal(5,2) NOT NULL DEFAULT 0,
+        [VoucherID] int NULL,
+        [Status] nvarchar(20) NOT NULL DEFAULT 'Success',
+        [ErrorMessage] nvarchar(500) NULL,
+        [ExecutedBy] nvarchar(100) NOT NULL DEFAULT 'System-EOD',
+        [ExecutionTime] datetime2 NOT NULL DEFAULT GETDATE(),
+        [IsReverted] bit NOT NULL DEFAULT 0,
+        [RevertedDate] datetime2 NULL,
+        [RevertedBy] nvarchar(100) NULL,
+        [RevertReason] nvarchar(250) NULL
+    );
+    PRINT '  + Created FdAutoRenewalLogs Audit Table';
+END
+GO
+
+-- 13.1 Record Version v2.5.20 in SystemVersionHistories
+IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
+BEGIN
+    EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+    VALUES (
+        ''2.5.20'', 
+        GETUTCDATE(), 
+        ''SmartBanking VPS Multi-App Master Patch v2.5.20'', 
+        ''SUCCESS'', 
+        ''FD CBS Auto-Renewal System, Prevailing Rate Slabs, Maker-Checker Four-Eyes Approval Workflow, and RD 14-Digit Standard.'', 
+        ''VPS Administrator'', 
+        ''2026-09-30''
+    );');
+    PRINT '  + Recorded Version v2.5.20 in SystemVersionHistories';
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

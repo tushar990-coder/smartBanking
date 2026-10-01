@@ -61,6 +61,44 @@ namespace Bhisi.Api.Controllers
             return pigmyAgent;
         }
 
+        // GET: api/PigmyAgents/5/customers
+        [HttpGet("{id}/customers")]
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+        public async Task<IActionResult> GetAgentCustomers(int id)
+        {
+            var customerIds = await _context.PigmyAccounts
+                .Where(a => a.PigmyAgentID == id)
+                .Select(a => a.CustomerID)
+                .Distinct()
+                .ToListAsync();
+
+            var customers = await _context.Customers
+                .AsNoTracking()
+                .Where(c => customerIds.Contains(c.CustomerID))
+                .OrderBy(c => c.FirstName)
+                .Select(c => new
+                {
+                    c.CustomerID,
+                    c.CIFNo,
+                    CustomerName = (c.FirstName + (string.IsNullOrWhiteSpace(c.MiddleName) ? "" : " " + c.MiddleName) + (string.IsNullOrWhiteSpace(c.LastName) ? "" : " " + c.LastName)).Trim(),
+                    c.FirstName,
+                    c.MiddleName,
+                    c.LastName,
+                    c.MobileNo,
+                    c.Address,
+                    c.AadhaarNo,
+                    c.PANNo,
+                    c.Gender,
+                    c.PhotoPath,
+                    c.Status,
+                    TotalAccounts = _context.PigmyAccounts.Count(a => a.CustomerID == c.CustomerID && a.PigmyAgentID == id),
+                    TotalBalance = _context.PigmyAccounts.Where(a => a.CustomerID == c.CustomerID && a.PigmyAgentID == id).Sum(a => (decimal?)a.TotalDepositedAmount) ?? 0m
+                })
+                .ToListAsync();
+
+            return Ok(customers);
+        }
+
         // PUT: api/PigmyAgents/5
         [HttpPut("{id}")]
         public async Task<IActionResult> PutPigmyAgent(int id, PigmyAgent pigmyAgent)

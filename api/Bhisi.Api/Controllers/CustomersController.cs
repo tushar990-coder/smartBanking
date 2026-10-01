@@ -83,6 +83,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Customer>>> GetCustomers(
             [FromQuery] int? branchId = null,
+            [FromQuery] int? agentId = null,
             [FromQuery] string? status = null,
             [FromQuery] string? search = null,
             [FromQuery] int? page = null,
@@ -102,6 +103,14 @@ namespace Bhisi.Api.Controllers
                     .Include(c => c.Branch)
                     .OrderBy(c => c.CustomerID)
                     .AsQueryable();
+
+                if (agentId.HasValue && agentId.Value > 0)
+                {
+                    var agentCustIds = _context.PigmyAccounts
+                        .Where(a => a.PigmyAgentID == agentId.Value)
+                        .Select(a => a.CustomerID);
+                    query = query.Where(c => agentCustIds.Contains(c.CustomerID));
+                }
 
                 if (!isHeadOfficeAdmin)
                 {

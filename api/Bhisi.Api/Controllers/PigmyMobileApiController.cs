@@ -139,6 +139,53 @@ namespace Bhisi.Api.Controllers
         }
 
         // ==========================================
+        // 2b. GET /api/PigmyApp/customers
+        // ==========================================
+        [AllowAnonymous]
+        [HttpGet("api/PigmyApp/customers")]
+        public async Task<IActionResult> GetMobileCustomers([FromQuery] int? agentId)
+        {
+            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            if (targetAgentId <= 0)
+            {
+                return BadRequest(new { message = "Agent ID is required (e.g. ?agentId=1 or X-Agent-Id header or Bearer token)." });
+            }
+
+            var customerIds = await _context.PigmyAccounts
+                .Where(a => a.PigmyAgentID == targetAgentId)
+                .Select(a => a.CustomerID)
+                .Distinct()
+                .ToListAsync();
+
+            var customers = await _context.Customers
+                .AsNoTracking()
+                .Where(c => customerIds.Contains(c.CustomerID))
+                .OrderBy(c => c.FirstName)
+                .Select(c => new
+                {
+                    customerId = c.CustomerID,
+                    memberId = c.CustomerID,
+                    cifNo = c.CIFNo,
+                    customerName = (c.FirstName + (string.IsNullOrWhiteSpace(c.MiddleName) ? "" : " " + c.MiddleName) + (string.IsNullOrWhiteSpace(c.LastName) ? "" : " " + c.LastName)).Trim(),
+                    firstName = c.FirstName,
+                    middleName = c.MiddleName,
+                    lastName = c.LastName,
+                    mobileNo = c.MobileNo,
+                    address = c.Address,
+                    aadhaarNo = c.AadhaarNo,
+                    panNo = c.PANNo,
+                    gender = c.Gender,
+                    photoPath = c.PhotoPath,
+                    status = c.Status,
+                    totalAccounts = _context.PigmyAccounts.Count(a => a.CustomerID == c.CustomerID && a.PigmyAgentID == targetAgentId),
+                    totalBalance = _context.PigmyAccounts.Where(a => a.CustomerID == c.CustomerID && a.PigmyAgentID == targetAgentId).Sum(a => (decimal?)a.TotalDepositedAmount) ?? 0m
+                })
+                .ToListAsync();
+
+            return Ok(customers);
+        }
+
+        // ==========================================
         // 3. POST /api/accounts (Create Customer & Pigmi Account)
         // ==========================================
         public class CreateAccountRequestDto

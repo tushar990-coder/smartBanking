@@ -4206,8 +4206,8 @@ namespace Bhisi.Api.Controllers
                 int? resMId = mem?.MemberID;
 
                 string name = $"{c.FirstName} {c.MiddleName} {c.LastName}".Trim();
-                string code = mem?.MemberCode ?? c.CIFNo;
-                string cif = c.CIFNo;
+                string code = mem?.MemberCode ?? c.CIFNo ?? "-";
+                string cif = c.CIFNo ?? "-";
                 string mobile = !string.IsNullOrWhiteSpace(c.MobileNo) ? c.MobileNo : "-";
 
                 guarantorProfiles[resCId] = (resMId, resCId, name, code, cif, mobile);
@@ -5105,6 +5105,130 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        // GET: api/Reports/fd-customer-summary (मुदतबंद ठेव यादी - ग्राहक-निहाय एकत्रित मुदत ठेव सारांश)
+        [HttpGet("fd-customer-summary")]
+        public async Task<IActionResult> GetFdCustomerSummary([FromQuery] int? branchID, [FromQuery] DateTime? asOfDate)
+        {
+            try
+            {
+                DateTime targetDate = asOfDate?.Date ?? DateTime.Today.Date;
+
+                // 1. Identify closed accounts on or before targetDate
+                var closedAccountIdsBeforeTarget = await _context.FdTransactions
+                    .Where(t => t.TransactionType != null && 
+                               (t.TransactionType == "Close" || t.TransactionType == "Matured_Close" || t.TransactionType == "Premature_Close") && 
+                               t.TransactionDate.Date <= targetDate)
+                    .Select(t => t.FdAccountID)
+                    .Distinct()
+                    .ToListAsync();
+
+                var closedSet = new HashSet<int>(closedAccountIdsBeforeTarget);
+
+                // 2. Fetch all FD accounts opened on or before targetDate
+                var query = _context.FdAccounts
+                    .Include(f => f.Branch)
+                    .Include(f => f.Customer)
+                    .Include(f => f.FdScheme)
+                    .Where(f => f.OpeningDate.Date <= targetDate)
+                    .AsQueryable();
+
+                if (branchID.HasValue && branchID.Value > 0)
+                {
+                    query = query.Where(f => f.BranchID == branchID.Value);
+                }
+
+                var allFdAccounts = await query.ToListAsync();
+
+                // 3. Filter accounts that were active as of targetDate
+                var activeAccounts = allFdAccounts
+                    .Where(f => !closedSet.Contains(f.FdAccountID) && (f.Status != "Closed" || (f.ModifiedDate.HasValue && f.ModifiedDate.Value.Date > targetDate)))
+                    .ToList();
+
+                // 4. Group by Customer and Aggregate
+                var grouped = activeAccounts
+                    .GroupBy(f => f.CustomerID)
+                    .Select(g =>
+                    {
+                        var first = g.First();
+                        var cust = first.Customer;
+                        string cif = !string.IsNullOrWhiteSpace(cust?.CIFNo) ? cust.CIFNo.Trim() : first.CustomerID.ToString();
+                        string custName = cust != null
+                            ? $"{cust.FirstName} {(string.IsNullOrWhiteSpace(cust.MiddleName) ? "" : cust.MiddleName.Trim() + " ")}{cust.LastName}".Trim()
+                            : "अज्ञात खातेदार";
+
+                        decimal totalDeposit = g.Sum(x => x.DepositAmount);
+                        decimal totalMaturity = g.Sum(x => x.MaturityAmount > 0 ? x.MaturityAmount : x.DepositAmount + x.LegacyAccruedInt);
+                        int count = g.Count();
+
+                        var individualAccounts = g.OrderBy(x => x.OpeningDate).Select(x => new
+                        {
+                            x.FdAccountID,
+                            x.AccountNo,
+                            x.LegacyAccountNumber,
+                            x.DepositAmount,
+                            x.InterestRate,
+                            OpeningDate = x.OpeningDate.ToString("yyyy-MM-dd"),
+                            MaturityDate = x.MaturityDate.ToString("yyyy-MM-dd"),
+                            MaturityAmount = x.MaturityAmount > 0 ? x.MaturityAmount : x.DepositAmount + x.LegacyAccruedInt,
+                            Status = x.Status ?? "Active",
+                            SchemeName = x.FdScheme != null ? x.FdScheme.SchemeName : "मुदत ठेव योजना"
+                        }).ToList();
+
+                        return new
+                        {
+                            CustomerID = g.Key,
+                            CIFNo = cif,
+                            AccountNo = cif,
+                            CustomerName = custName,
+                            MobileNo = cust?.MobileNo ?? "",
+                            DepositAmount = totalDeposit,
+                            MaturityAmount = totalMaturity,
+                            FdCount = count,
+                            Accounts = individualAccounts
+                        };
+                    })
+                    .ToList();
+
+                // Sort numerically by CIF if possible, or CustomerID
+                var sorted = grouped
+                    .OrderBy(x =>
+                    {
+                        if (int.TryParse(x.CIFNo, out int num)) return num;
+                        return x.CustomerID;
+                    })
+                    .ThenBy(x => x.CustomerName)
+                    .Select((x, index) => new
+                    {
+                        SrNo = index + 1,
+                        x.CustomerID,
+                        x.CIFNo,
+                        x.AccountNo,
+                        x.CustomerName,
+                        x.MobileNo,
+                        x.DepositAmount,
+                        x.MaturityAmount,
+                        x.FdCount,
+                        x.Accounts
+                    })
+                    .ToList();
+
+                return Ok(new
+                {
+                    AsOfDate = targetDate.ToString("yyyy-MM-dd"),
+                    BranchID = branchID ?? 0,
+                    TotalCustomers = sorted.Count,
+                    TotalDepositAmount = sorted.Sum(x => x.DepositAmount),
+                    TotalMaturityAmount = sorted.Sum(x => x.MaturityAmount),
+                    TotalFdCount = sorted.Sum(x => x.FdCount),
+                    Data = sorted
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "मुदतबंद ठेव यादी अहवाल लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
         // GET: api/Reports/fd-maturity-due
         [HttpGet("fd-maturity-due")]
         public async Task<IActionResult> GetFdMaturityDue([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
@@ -5273,7 +5397,7 @@ namespace Bhisi.Api.Controllers
             {
                 var query = _context.Vouchers
                     .Include(v => v.Branch)
-                    .Where(v => v.VoucherNo.StartsWith("JV-FD-") || v.Narration.Contains("मुदत ठेव") || v.Narration.ToLower().Contains("fd"))
+                    .Where(v => (v.VoucherNo != null && v.VoucherNo.StartsWith("JV-FD-")) || (v.Narration != null && (v.Narration.Contains("मुदत ठेव") || v.Narration.ToLower().Contains("fd"))))
                     .AsQueryable();
 
                 if (branchId.HasValue && branchId.Value > 0)

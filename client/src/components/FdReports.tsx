@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as XLSX from 'xlsx';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import FdAccrualPosting from './FdAccrualPosting';
+import FdCustomerSummaryReport from './FdCustomerSummaryReport';
 import { 
   Printer, 
   FileSpreadsheet, 
@@ -115,6 +116,32 @@ interface CustomerLedgerData {
   }[];
 }
 
+interface FdCustomerSummaryAccountItem {
+  fdAccountID: number;
+  accountNo: string;
+  legacyAccountNumber?: string;
+  depositAmount: number;
+  interestRate: number;
+  openingDate: string;
+  maturityDate: string;
+  maturityAmount: number;
+  status: string;
+  schemeName: string;
+}
+
+interface FdCustomerSummaryRow {
+  srNo: number;
+  customerID: number;
+  cifNo: string;
+  accountNo: string;
+  customerName: string;
+  mobileNo: string;
+  depositAmount: number;
+  maturityAmount: number;
+  fdCount: number;
+  accounts: FdCustomerSummaryAccountItem[];
+}
+
 interface FdReportsProps {
   onNavigate?: (tab: string, params?: any) => void;
   onBack?: () => void;
@@ -172,6 +199,11 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
   const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [voucherPassingStatus, setVoucherPassingStatus] = useState<string>('ALL');
 
+  const [customerSummaryData, setCustomerSummaryData] = useState<FdCustomerSummaryRow[]>([]);
+  const [asOfDate, setAsOfDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [expandedCustomerIds, setExpandedCustomerIds] = useState<number[]>([]);
+  const [summaryViewMode, setSummaryViewMode] = useState<'DualColumn' | 'Detailed'>('DualColumn');
+
   const [customerLedger, setCustomerLedger] = useState<CustomerLedgerData | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -224,12 +256,20 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
     } else if (reportType !== 'AccrualProvision') {
       fetchReportData();
     }
-  }, [reportType, branchID, selectedCustomerID, fromDate, toDate, voucherPassingStatus]);
+  }, [reportType, branchID, selectedCustomerID, fromDate, toDate, asOfDate, voucherPassingStatus]);
 
   const fetchReportData = async () => {
     setLoading(true);
     try {
-      if (reportType === 'VoucherPassing') {
+      if (reportType === 'CustomerSummary') {
+        const res = await axios.get('/api/Reports/fd-customer-summary', {
+          params: {
+            branchID: branchID > 0 ? branchID : undefined,
+            asOfDate: asOfDate || undefined
+          }
+        });
+        setCustomerSummaryData(res.data?.data || []);
+      } else if (reportType === 'VoucherPassing') {
         const res = await axios.get('/api/Reports/fd-voucher-passing', {
           params: {
             branchId: branchID > 0 ? branchID : undefined,
@@ -351,8 +391,24 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
   const totalVoucherPassingSum = filteredVoucherPassing.reduce((s, r) => s + (r.totalAmount || 0), 0);
   const totalDeletedSum = filteredDeletedEntries.reduce((s, r) => s + (r.amount || 0), 0);
 
+  const filteredCustomerSummary = customerSummaryData.filter((row) => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase().trim();
+    return (
+      (row.cifNo && row.cifNo.toLowerCase().includes(term)) ||
+      (row.accountNo && row.accountNo.toLowerCase().includes(term)) ||
+      (row.customerName && row.customerName.toLowerCase().includes(term)) ||
+      (row.mobileNo && row.mobileNo.toLowerCase().includes(term))
+    );
+  });
+
+  const totalCustomerSummaryDeposit = filteredCustomerSummary.reduce((s, r) => s + (r.depositAmount || 0), 0);
+  const totalCustomerSummaryMaturity = filteredCustomerSummary.reduce((s, r) => s + (r.maturityAmount || 0), 0);
+  const totalCustomerSummaryFdCount = filteredCustomerSummary.reduce((s, r) => s + (r.fdCount || 0), 0);
+
   const getReportTitle = () => {
     switch (reportType) {
+      case 'CustomerSummary': return 'मुदतबंद ठेव यादी (Customer-wise Fixed Deposit Summary)';
       case 'Register': return 'मुदत ठेव नोंदवही (Fixed Deposit Register)';
       case 'Outstanding': return 'मुदत ठेव बाकी अहवाल (FD Outstanding Report)';
       case 'MaturityDue': return 'मुदतपूर्ती देय अहवाल (FD Maturity Due Report)';
@@ -365,6 +421,33 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
   };
 
   const handleExportExcel = () => {
+    if (reportType === 'CustomerSummary') {
+      if (filteredCustomerSummary.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
+      const rows = filteredCustomerSummary.map((r, i) => ({
+        'अ.क्र.': i + 1,
+        'खाते / CIF क्र.': r.cifNo || r.accountNo,
+        'खातेदाराचे नाव': r.customerName,
+        'एकूण ठेवी (संख्या)': r.fdCount,
+        'एकूण ठेव रक्कम (₹)': r.depositAmount,
+        'एकूण मुदतपूर्ती रक्कम (₹)': r.maturityAmount,
+        'मोबाईल नं.': r.mobileNo || '-'
+      }));
+      rows.push({
+        'अ.क्र.': '' as any,
+        'खाते / CIF क्र.': '',
+        'खातेदाराचे नाव': 'एकूण बेरीज (Grand Total):',
+        'एकूण ठेवी (संख्या)': totalCustomerSummaryFdCount,
+        'एकूण ठेव रक्कम (₹)': totalCustomerSummaryDeposit,
+        'एकूण मुदतपूर्ती रक्कम (₹)': totalCustomerSummaryMaturity,
+        'मोबाईल नं.': ''
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Mudatband Thev Yadi');
+      XLSX.writeFile(wb, `Mudatband_Thev_Yadi_${asOfDate || new Date().toISOString().split('T')[0]}.xlsx`);
+      return;
+    }
+
     if (reportType === 'VoucherPassing') {
       if (filteredVoucherPassing.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
       const rows = filteredVoucherPassing.map((r, i) => ({
@@ -595,8 +678,23 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                 <option value="VoucherPassing">६. मुदत ठेव व्हाउचर पासिंग अहवाल (Voucher Passing)</option>
                 <option value="DeletedEntries">७. मुदत ठेव रद्द नोंदी व रोलबॅक अहवाल (Deleted & Rollback)</option>
                 <option value="MigratedFD">८. स्थलांतरित मुदत ठेव (FD) यादी (Migrated FD Accounts Report)</option>
+                <option value="CustomerSummary">९. मुदतबंद ठेव यादी (ग्राहक-निहाय एकत्रित ठेवी)</option>
               </select>
             </div>
+
+            {/* As-Of Date for CustomerSummary */}
+            {reportType === 'CustomerSummary' && (
+              <div className="flex items-center gap-1">
+                <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">अखेर तारीख:</label>
+                <input
+                  type="date"
+                  value={asOfDate}
+                  onChange={(e) => setAsOfDate(e.target.value)}
+                  className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-medium bg-white focus:outline-none focus:border-primary w-28"
+                  title="मुदतबंद ठेव यादी अखेर तारीख"
+                />
+              </div>
+            )}
 
             {/* Date Range for VoucherPassing, DeletedEntries, MaturityDue */}
             {(reportType === 'VoucherPassing' || reportType === 'DeletedEntries' || reportType === 'MaturityDue') && (
@@ -678,7 +776,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
           </div>
 
           {/* Right: Export & Print Action Buttons */}
-          {reportType !== 'AccrualProvision' && (
+          {reportType !== 'AccrualProvision' && reportType !== 'CustomerSummary' && (
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 onClick={handleExportExcel}
@@ -717,7 +815,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
         </div>
 
         {/* Row 2: In-Table Search + Summary Metrics Strip */}
-        {reportType !== 'AccrualProvision' && reportType !== 'MemberLedger' && (
+        {reportType !== 'AccrualProvision' && reportType !== 'MemberLedger' && reportType !== 'CustomerSummary' && (
           <div className="pt-1.5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 text-xs">
             <div className="relative w-64 max-w-full">
               <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -797,6 +895,8 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
 
       {reportType === 'AccrualProvision' ? (
         <FdAccrualPosting />
+      ) : reportType === 'CustomerSummary' ? (
+        <FdCustomerSummaryReport initialBranchId={branchID} initialAsOfDate={asOfDate} onNavigate={onNavigate} />
       ) : (
         /* Main Printable A4 Document Frame */
         <div 
@@ -840,6 +940,11 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                 <h2 className="text-sm sm:text-base font-extrabold text-gray-950 tracking-wider uppercase font-serif">
                   {getReportTitle()}
                 </h2>
+                {reportType === 'CustomerSummary' && (
+                  <div className="text-xs font-bold text-gray-800 mt-0.5">
+                    ( दि. {formatDisplayDate(asOfDate)} अखेर )
+                  </div>
+                )}
               </div>
 
               {/* Date Tag on Right */}
@@ -1180,8 +1285,285 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
               </div>
             )}
 
+            {/* Customer-wise FD Summary Report (मुदतबंद ठेव यादी - Dual-Column Exact Format) */}
+            {reportType === 'CustomerSummary' && (
+              <div className="mt-3">
+                {/* Mode toggle for web screen only (Dual Column vs Detailed) */}
+                <div className="no-print flex flex-wrap justify-between items-center bg-blue-50 border border-blue-200 p-2 rounded mb-3 text-xs gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-blue-900">मांडणी पर्याय (View Layout):</span>
+                    <button
+                      type="button"
+                      onClick={() => setSummaryViewMode('DualColumn')}
+                      className={`px-2.5 py-1 rounded font-bold cursor-pointer transition-all ${
+                        summaryViewMode === 'DualColumn' 
+                          ? 'bg-blue-700 text-white shadow-xs' 
+                          : 'bg-white text-blue-800 border border-blue-300 hover:bg-blue-100'
+                      }`}
+                    >
+                      ड्युअल-कॉलम मुद्रण नमुना (२ स्तंभी - Print Layout)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSummaryViewMode('Detailed')}
+                      className={`px-2.5 py-1 rounded font-bold cursor-pointer transition-all ${
+                        summaryViewMode === 'Detailed' 
+                          ? 'bg-blue-700 text-white shadow-xs' 
+                          : 'bg-white text-blue-800 border border-blue-300 hover:bg-blue-100'
+                      }`}
+                    >
+                      तपशीलवार पावती यादी (Interactive Drilldown)
+                    </button>
+                  </div>
+                  <div className="text-blue-950 font-bold">
+                    एकूण खातेदार: <span className="font-mono text-primary text-sm">{filteredCustomerSummary.length}</span> | 
+                    एकूण ठेव रक्कम: <span className="font-mono text-emerald-700 text-sm">₹ {fmtCurrency(totalCustomerSummaryDeposit)}</span>
+                  </div>
+                </div>
+
+                {loading ? (
+                  <div className="py-12 text-center text-gray-500 font-semibold border border-gray-900">
+                    मुदतबंद ठेव यादी लोड होत आहे, कृपया प्रतीक्षा करा...
+                  </div>
+                ) : filteredCustomerSummary.length === 0 ? (
+                  <div className="py-12 text-center text-gray-500 font-semibold border border-gray-900">
+                    कोणतीही मुदतबंद ठेव नोंद आढळली नाही.
+                  </div>
+                ) : (
+                  <>
+                    {/* Dual-Column Print Format (Always active in Print mode, and displayed on screen when DualColumn is selected) */}
+                    <div className={`${summaryViewMode === 'Detailed' ? 'hidden print:block' : 'block'}`}>
+                      {(() => {
+                        const half = Math.ceil(filteredCustomerSummary.length / 2);
+                        const leftRows = filteredCustomerSummary.slice(0, half);
+                        const rightRows = filteredCustomerSummary.slice(half);
+
+                        return (
+                          <div className="overflow-x-auto">
+                            <table className="w-full border-collapse border-2 border-gray-950 text-xs">
+                              <thead>
+                                <tr className="bg-gray-100 text-gray-950 border-b-2 border-gray-950 text-center font-bold text-[11px]">
+                                  {/* Left Column Header */}
+                                  <th className="border border-gray-900 py-1.5 px-1 w-[4%] text-center">अ.नं.</th>
+                                  <th className="border border-gray-900 py-1.5 px-1.5 w-[7%] text-center font-mono">खाते नं.</th>
+                                  <th className="border border-gray-900 py-1.5 px-2.5 w-[25%] text-left">खातेदाराचे नाव</th>
+                                  <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-right font-extrabold">रक्कम</th>
+                                  
+                                  {/* Divider / Right Column Header */}
+                                  <th className="border border-gray-900 py-1.5 px-1 w-[4%] text-center border-l-2 border-l-gray-950">अ.नं.</th>
+                                  <th className="border border-gray-900 py-1.5 px-1.5 w-[7%] text-center font-mono">खाते नं.</th>
+                                  <th className="border border-gray-900 py-1.5 px-2.5 w-[25%] text-left">खातेदाराचे नाव</th>
+                                  <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-right font-extrabold">रक्कम</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Array.from({ length: half }).map((_, i) => {
+                                  const left = leftRows[i];
+                                  const right = rightRows[i];
+                                  return (
+                                    <tr key={`dual-row-${i}`} className="hover:bg-slate-50 text-gray-900 text-[11px] leading-tight">
+                                      {/* Left cell */}
+                                      <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">
+                                        {i + 1}
+                                      </td>
+                                      <td className="border border-gray-900 py-1 px-1.5 text-center font-mono font-bold text-gray-900">
+                                        {left ? (left.cifNo || left.accountNo) : ''}
+                                      </td>
+                                      <td className="border border-gray-900 py-1 px-2.5 text-left font-medium truncate max-w-[200px]" title={left?.customerName}>
+                                        {left ? left.customerName : ''}
+                                      </td>
+                                      <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-gray-950">
+                                        {left ? Number(left.depositAmount).toFixed(2) : ''}
+                                      </td>
+
+                                      {/* Right cell */}
+                                      <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium border-l-2 border-l-gray-950">
+                                        {right ? half + i + 1 : ''}
+                                      </td>
+                                      <td className="border border-gray-900 py-1 px-1.5 text-center font-mono font-bold text-gray-900">
+                                        {right ? (right.cifNo || right.accountNo) : ''}
+                                      </td>
+                                      <td className="border border-gray-900 py-1 px-2.5 text-left font-medium truncate max-w-[200px]" title={right?.customerName}>
+                                        {right ? right.customerName : ''}
+                                      </td>
+                                      <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-gray-950">
+                                        {right ? Number(right.depositAmount).toFixed(2) : ''}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                              <tfoot>
+                                <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-950 text-xs">
+                                  <td colSpan={3} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                                    एकूण खातेदार: <strong className="font-mono">{filteredCustomerSummary.length}</strong>
+                                  </td>
+                                  <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-gray-950">
+                                    ₹ {fmtCurrency(totalCustomerSummaryDeposit)}
+                                  </td>
+                                  <td colSpan={3} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider border-l-2 border-l-gray-950">
+                                    एकूण ठेवी: <strong className="font-mono">{totalCustomerSummaryFdCount}</strong>
+                                  </td>
+                                  <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-gray-950">
+                                    ₹ {fmtCurrency(totalCustomerSummaryDeposit)}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Detailed Drilldown Table (Interactive Web View only) */}
+                    <div className={`no-print ${summaryViewMode === 'Detailed' ? 'block' : 'hidden'}`}>
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse border border-gray-900 text-xs">
+                          <thead>
+                            <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
+                              <th className="border border-gray-900 py-1.5 px-1 w-[4%] text-center">तपशील</th>
+                              <th className="border border-gray-900 py-1.5 px-1 w-[4%] text-center">अ.नं.</th>
+                              <th className="border border-gray-900 py-1.5 px-2 w-[12%] text-center font-mono">खाते / CIF क्र.</th>
+                              <th className="border border-gray-900 py-1.5 px-3 w-[28%] text-left">खातेदाराचे नाव</th>
+                              <th className="border border-gray-900 py-1.5 px-2 w-[10%] text-center">एकूण ठेवी</th>
+                              <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-right font-extrabold">एकूण ठेव रक्कम (₹)</th>
+                              <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-right font-bold">एकूण मुदतपूर्ती (₹)</th>
+                              <th className="border border-gray-900 py-1.5 px-2 w-[10%] text-center font-mono">मोबाईल नं.</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredCustomerSummary.map((cust, idx) => {
+                              const isExpanded = expandedCustomerIds.includes(cust.customerID);
+                              return (
+                                <React.Fragment key={`cust-summary-${cust.customerID || idx}`}>
+                                  <tr 
+                                    onClick={() => {
+                                      setExpandedCustomerIds(prev => 
+                                        prev.includes(cust.customerID)
+                                          ? prev.filter(id => id !== cust.customerID)
+                                          : [...prev, cust.customerID]
+                                      );
+                                    }}
+                                    className="hover:bg-blue-50/50 cursor-pointer text-gray-900 text-[11px] border-b border-gray-300"
+                                  >
+                                    <td className="border border-gray-900 py-1 px-1 text-center">
+                                      <button 
+                                        type="button"
+                                        className="w-5 h-5 inline-flex items-center justify-center rounded bg-gray-100 hover:bg-primary hover:text-white font-bold text-xs"
+                                      >
+                                        {isExpanded ? '−' : '+'}
+                                      </button>
+                                    </td>
+                                    <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
+                                    <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-primary">
+                                      {cust.cifNo || cust.accountNo}
+                                    </td>
+                                    <td className="border border-gray-900 py-1 px-3 text-left font-bold text-gray-950">
+                                      {cust.customerName}
+                                    </td>
+                                    <td className="border border-gray-900 py-1 px-2 text-center">
+                                      <span className="bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-full font-bold text-[10px] font-mono">
+                                        {cust.fdCount} {cust.fdCount > 1 ? 'ठेवी' : 'ठेव'}
+                                      </span>
+                                    </td>
+                                    <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-emerald-800 text-xs">
+                                      ₹ {fmtCurrency(cust.depositAmount)}
+                                    </td>
+                                    <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-blue-900">
+                                      ₹ {fmtCurrency(cust.maturityAmount)}
+                                    </td>
+                                    <td className="border border-gray-900 py-1 px-2 text-center font-mono text-[10px] text-gray-600">
+                                      {cust.mobileNo || '-'}
+                                    </td>
+                                  </tr>
+
+                                  {/* Sub-table with individual receipts */}
+                                  {isExpanded && (
+                                    <tr className="bg-slate-50 border-b-2 border-gray-400">
+                                      <td colSpan={8} className="p-3 border border-gray-900">
+                                        <div className="bg-white p-2.5 rounded border border-gray-300 shadow-2xs">
+                                          <div className="flex justify-between items-center text-xs font-bold text-gray-800 mb-1.5 pb-1 border-b">
+                                            <span>{cust.customerName} - वैयक्तिक मुदत ठेव पावत्या तपशील:</span>
+                                            <span className="text-primary font-mono">एकूण ठेवी: {cust.fdCount} | एकूण रक्कम: ₹ {fmtCurrency(cust.depositAmount)}</span>
+                                          </div>
+                                          <table className="w-full border-collapse border border-gray-300 text-[11px]">
+                                            <thead>
+                                              <tr className="bg-gray-100 text-gray-800 text-center font-bold">
+                                                <th className="border border-gray-300 p-1">पावती क्र.</th>
+                                                <th className="border border-gray-300 p-1 text-left">योजना</th>
+                                                <th className="border border-gray-300 p-1">ठेव तारीख</th>
+                                                <th className="border border-gray-300 p-1 text-right">ठेव रक्कम (₹)</th>
+                                                <th className="border border-gray-300 p-1">व्याज दर %</th>
+                                                <th className="border border-gray-300 p-1">मुदतपूर्ती तारीख</th>
+                                                <th className="border border-gray-300 p-1 text-right">मुदतपूर्ती रक्कम (₹)</th>
+                                                <th className="border border-gray-300 p-1">स्थिती</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {cust.accounts.map((acc, aIdx) => (
+                                                <tr key={acc.fdAccountID || aIdx} className="hover:bg-amber-50/50">
+                                                  <td className="border border-gray-300 p-1 text-center font-mono font-bold text-primary">
+                                                    {acc.accountNo}
+                                                    {acc.legacyAccountNumber && (
+                                                      <span className="text-[10px] text-amber-900 bg-amber-50 px-1 rounded border border-amber-300 ml-1">
+                                                        {acc.legacyAccountNumber}
+                                                      </span>
+                                                    )}
+                                                  </td>
+                                                  <td className="border border-gray-300 p-1 text-left">{acc.schemeName}</td>
+                                                  <td className="border border-gray-300 p-1 text-center font-mono">{formatDisplayDate(acc.openingDate)}</td>
+                                                  <td className="border border-gray-300 p-1 text-right font-mono font-bold text-emerald-800">
+                                                    ₹ {fmtCurrency(acc.depositAmount)}
+                                                  </td>
+                                                  <td className="border border-gray-300 p-1 text-center font-mono">{acc.interestRate}%</td>
+                                                  <td className="border border-gray-300 p-1 text-center font-mono">{formatDisplayDate(acc.maturityDate)}</td>
+                                                  <td className="border border-gray-300 p-1 text-right font-mono font-bold text-blue-900">
+                                                    ₹ {fmtCurrency(acc.maturityAmount)}
+                                                  </td>
+                                                  <td className="border border-gray-300 p-1 text-center">
+                                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                                      {acc.status}
+                                                    </span>
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
+                              <td colSpan={4} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                                एकूण बेरीज (Grand Total - {filteredCustomerSummary.length} खातेदार):
+                              </td>
+                              <td className="border border-gray-900 py-1.5 px-2 text-center font-mono font-bold text-primary">
+                                {totalCustomerSummaryFdCount} ठेवी
+                              </td>
+                              <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
+                                ₹ {fmtCurrency(totalCustomerSummaryDeposit)}
+                              </td>
+                              <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-blue-950 bg-blue-100/50">
+                                ₹ {fmtCurrency(totalCustomerSummaryMaturity)}
+                              </td>
+                              <td className="border border-gray-900 py-1.5 px-2 text-center"></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Standard FD Table (Register, Outstanding, Maturity Due) */}
-            {reportType !== 'MemberLedger' && reportType !== 'VoucherPassing' && reportType !== 'DeletedEntries' && reportType !== 'MigratedFD' && (
+            {reportType !== 'MemberLedger' && reportType !== 'VoucherPassing' && reportType !== 'DeletedEntries' && reportType !== 'MigratedFD' && reportType !== 'CustomerSummary' && (
               <div className="overflow-x-auto mt-2">
                 <table className="w-full border-collapse border border-gray-900 text-xs">
                   <thead>

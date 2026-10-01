@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import SearchableSelect from './SearchableSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import { convertMarathiDigits } from '../utils/api';
 import { 
   PlusCircle, 
   List, 
@@ -240,7 +241,8 @@ const ShareOpeningBalance: React.FC = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | { target: { name?: string, value: string | number } }) => {
     const name = e.target.name || '';
-    const value = String(e.target.value ?? '');
+    const rawVal = String(e.target.value ?? '');
+    const value = convertMarathiDigits(rawVal);
 
     if (name === 'memberId') {
       const sel = Array.isArray(members) ? members.find(m => m && (
@@ -255,54 +257,77 @@ const ShareOpeningBalance: React.FC = () => {
         (b.memberId && String(b.memberId) === value && (!b.customerId || String(b.customerId) === value))
       )) : undefined;
 
-      if (existingBal && !isEditMode) {
+      if (existingBal) {
         handleStartEdit(existingBal);
         return;
       }
+
+      // If no existing balance for this selected customer, cleanly exit edit mode!
+      if (isEditMode) {
+        setIsEditMode(false);
+        setEditAccountId(null);
+        setEditCertificateId(null);
+      }
+
       setFormData(prev => ({ 
         ...prev, 
         memberId: value,
-        legacyMemberNo: existingBal?.legacyMemberNo || (sel as any)?.memberProfile?.legacyMemberNo || (sel as any)?.memberProfile?.oldMemberCode || sel?.legacyMemberNo || '' 
+        legacyMemberNo: (sel as any)?.legacyCustomerNo || (sel as any)?.memberProfile?.legacyMemberNo || (sel as any)?.memberProfile?.oldMemberCode || sel?.legacyMemberNo || '',
+        fromShareNo: nextShareConfig.nextFromShareNo ? nextShareConfig.nextFromShareNo.toString() : '1',
+        toShareNo: '',
+        certificateNo: nextShareConfig.nextCertificateNo || '',
+        shareQuantity: ''
       }));
     } else if (name === 'shareQuantity') {
-      const qty = parseInt(value, 10);
+      const cleanDigits = value.replace(/\D/g, '');
+      const qty = parseInt(cleanDigits, 10);
       const safeQty = !isNaN(qty) && qty > 0 ? qty : 0;
       const currentFrom = parseInt(formData.fromShareNo, 10) || nextShareConfig.nextFromShareNo || 1;
       const calculatedTo = safeQty > 0 ? (currentFrom + safeQty - 1) : '';
       setFormData(prev => ({
         ...prev,
-        shareQuantity: value,
+        shareQuantity: cleanDigits,
         fromShareNo: prev.fromShareNo || currentFrom.toString(),
         toShareNo: calculatedTo ? calculatedTo.toString() : ''
       }));
     } else if (name === 'fromShareNo') {
-      const fromNum = parseInt(value, 10);
+      const cleanDigits = value.replace(/\D/g, '');
+      const fromNum = parseInt(cleanDigits, 10);
       const safeFrom = !isNaN(fromNum) && fromNum > 0 ? fromNum : 0;
       const qty = parseInt(formData.shareQuantity, 10) || 0;
       const calculatedTo = (safeFrom > 0 && qty > 0) ? (safeFrom + qty - 1) : '';
       setFormData(prev => ({
         ...prev,
-        fromShareNo: value,
+        fromShareNo: cleanDigits,
         toShareNo: calculatedTo ? calculatedTo.toString() : prev.toShareNo
       }));
     } else if (name === 'toShareNo') {
-      const toNum = parseInt(value, 10);
+      const cleanDigits = value.replace(/\D/g, '');
+      const toNum = parseInt(cleanDigits, 10);
       const safeTo = !isNaN(toNum) && toNum > 0 ? toNum : 0;
       const currentFrom = parseInt(formData.fromShareNo, 10) || nextShareConfig.nextFromShareNo || 1;
       if (safeTo >= currentFrom && currentFrom > 0) {
         const calcQty = safeTo - currentFrom + 1;
         setFormData(prev => ({
           ...prev,
-          toShareNo: value,
+          toShareNo: cleanDigits,
           fromShareNo: prev.fromShareNo || currentFrom.toString(),
           shareQuantity: calcQty.toString()
         }));
       } else {
         setFormData(prev => ({
           ...prev,
-          toShareNo: value
+          toShareNo: cleanDigits
         }));
       }
+    } else if (name === 'faceValue') {
+      const cleanNum = value.replace(/[^0-9.]/g, '');
+      setFormData(prev => ({ ...prev, faceValue: cleanNum }));
+    } else if (name === 'dividendPayable') {
+      const cleanNum = value.replace(/[^0-9.]/g, '');
+      setFormData(prev => ({ ...prev, dividendPayable: cleanNum }));
+    } else if (name === 'legacyMemberNo') {
+      setFormData(prev => ({ ...prev, legacyMemberNo: value }));
     } else if (name === 'totalAmountInput') {
       const amt = parseFloat(value) || 0;
       const fv = parseFloat(formData.faceValue) || 100;
@@ -1032,6 +1057,7 @@ const ShareOpeningBalance: React.FC = () => {
                 <MemberSearchSelect 
                   members={enrichedMembers} 
                   value={formData.memberId ? Number(formData.memberId) : ''} 
+                  valueType="customerId"
                   onChange={(val) => handleChange({ target: { name: 'memberId', value: val ? String(val) : '' } })} 
                   placeholder="-- खातेदार शोधा (CIF No / नाव / मोबाईल) --"
                 />
@@ -1090,9 +1116,10 @@ const ShareOpeningBalance: React.FC = () => {
                   <span className="text-[10px] text-slate-400 font-normal">नग संख्या</span>
                 </label>
                 <input 
-                  type="number" 
+                  type="text" 
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   name="shareQuantity"
-                  min="1"
                   className={`${inputClass} font-bold text-slate-900 text-sm`}
                   value={formData.shareQuantity}
                   onChange={handleChange}
@@ -1110,10 +1137,9 @@ const ShareOpeningBalance: React.FC = () => {
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">₹</span>
                   <input 
-                    type="number" 
+                    type="text"
+                    inputMode="decimal" 
                     name="faceValue"
-                    min="0.01"
-                    step="0.01"
                     className={`${inputClass} pl-7 font-bold text-slate-900 text-sm`}
                     value={formData.faceValue}
                     onChange={handleChange}
@@ -1153,7 +1179,9 @@ const ShareOpeningBalance: React.FC = () => {
                   <span className="text-[10px] text-slate-400 font-normal">Auto / बदल करा</span>
                 </label>
                 <input 
-                  type="number" 
+                  type="text" 
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   name="fromShareNo"
                   className={`${inputClass} font-mono font-bold text-slate-800`}
                   value={formData.fromShareNo}
@@ -1169,7 +1197,9 @@ const ShareOpeningBalance: React.FC = () => {
                   <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">Auto-गणना</span>
                 </label>
                 <input 
-                  type="number" 
+                  type="text" 
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   name="toShareNo"
                   className={`${inputClass} font-mono font-bold text-slate-800 bg-slate-50`}
                   value={formData.toShareNo}

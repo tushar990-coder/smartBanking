@@ -664,7 +664,7 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                string accountNo = account.AccountNo;
+                string accountNo = account.AccountNo ?? "";
                 int branchId = account.BranchID;
                 decimal depositAmount = account.DepositAmount;
                 string customerName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.LastName}".Trim() : "";
@@ -757,9 +757,11 @@ namespace Bhisi.Api.Controllers
                     {
                         sbAcc.CurrentBalance += depositAmount;
 
-                        var sbTx = await _context.SavingTransactions
-                            .Where(st => st.SavingAccountID == sbAcc.SavingAccountID && st.Narration != null && st.Narration.Contains(accountNo))
-                            .FirstOrDefaultAsync();
+                        var sbTx = !string.IsNullOrEmpty(accountNo)
+                            ? await _context.SavingTransactions
+                                .Where(st => st.SavingAccountID == sbAcc.SavingAccountID && st.Narration != null && st.Narration.Contains(accountNo))
+                                .FirstOrDefaultAsync()
+                            : null;
 
                         if (sbTx != null)
                         {
@@ -4566,7 +4568,7 @@ namespace Bhisi.Api.Controllers
                         PaymentMode = "Transfer",
                         SavingAccountID = targetSaving?.SavingAccountID ?? oldAccount.SavingAccountID,
                         IsAutoRenewable = willStillAutoRenew,
-                        AutoRenewalOption = oldAccount.AutoRenewalOption,
+                        AutoRenewalOption = oldAccount.AutoRenewalOption ?? "PrincipalPlusInterest",
                         MaxAutoRenewalCycles = oldAccount.MaxAutoRenewalCycles,
                         AutoRenewalCount = nextCycleCount,
                         ParentFdAccountID = oldAccount.FdAccountID,

@@ -85,6 +85,7 @@ import SabhasadLabhanshReport from './components/SabhasadLabhanshReport';
 import SharesKhatavaniReport from './components/SharesKhatavaniReport';
 import CbsSampleReport from './components/CbsSampleReport';
 import SavingKhatavaniReport from './components/SavingKhatavaniReport';
+import FdCustomerSummaryReport from './components/FdCustomerSummaryReport';
 import INamunaReport from './components/INamunaReport';
 import VoterListReport from './components/VoterListReport';
 import GoldLoanDetails from './components/GoldLoanDetails';
@@ -254,6 +255,7 @@ function App() {
     'fd-withdrawal': '/fd/withdrawal-maturity',
     'fd-accrual': '/fd/interest-accrual',
     'fd-reports': '/fd/reports',
+    'fd-customer-summary': '/fd/customer-summary',
 
     // Recurring Deposit (आवर्ती ठेव - RD)
     'rd-account': '/rd/account-opening',
@@ -770,19 +772,19 @@ function App() {
             onClick={() => handleNavigate('fd-account')}
             title="मुदत ठेव"
             className={`w-full flex items-center justify-between ${isSidebarOpen ? 'px-3' : 'px-0 justify-center'} py-2 rounded-md text-xs transition-all duration-150 ${
-              (activeTab === 'fd' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-reports')
+              (activeTab === 'fd' || activeTab.startsWith('fd-'))
                 ? 'bg-emerald-50 text-emerald-950 font-bold border-l-4 border-emerald-600 shadow-2xs' 
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 font-medium'
             }`}
           >
             <div className="flex items-center truncate">
-              <Building2 size={18} className={`${isSidebarOpen ? 'mr-3' : ''} shrink-0 ${(activeTab === 'fd' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-reports') ? 'text-emerald-600' : 'text-slate-500'}`} />
+              <Building2 size={18} className={`${isSidebarOpen ? 'mr-3' : ''} shrink-0 ${(activeTab === 'fd' || activeTab.startsWith('fd-')) ? 'text-emerald-600' : 'text-slate-500'}`} />
               {isSidebarOpen && <span className="truncate">मुदत ठेव (FD)</span>}
             </div>
-            {isSidebarOpen && <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${(activeTab === 'fd' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-reports') ? 'rotate-180 text-emerald-600' : ''}`} />}
+            {isSidebarOpen && <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${(activeTab === 'fd' || activeTab.startsWith('fd-')) ? 'rotate-180 text-emerald-600' : ''}`} />}
           </button>
 
-          {isSidebarOpen && (activeTab === 'fd' || activeTab === 'fd-scheme' || activeTab === 'fd-migrate' || activeTab === 'fd-account' || activeTab === 'fd-withdrawal' || activeTab === 'fd-accrual' || activeTab === 'fd-reports') && (
+          {isSidebarOpen && (activeTab === 'fd' || activeTab.startsWith('fd-')) && (
             <ul className="pl-7 space-y-1 border-l-2 border-slate-200 ml-4 my-1">
               <li 
                 className={`px-3 py-1 cursor-pointer flex items-center transition-colors text-[11px] rounded ${activeTab === 'fd-account' ? 'text-emerald-700 font-bold bg-emerald-50' : 'text-slate-600 hover:text-slate-900'}`}
@@ -807,6 +809,12 @@ function App() {
                 onClick={() => handleNavigate('fd-reports')}
               >
                 <span className="truncate">› मुदत ठेव अहवाल (FD Reports)</span>
+              </li>
+              <li 
+                className={`px-3 py-1 cursor-pointer flex items-center transition-colors text-[11px] rounded ${activeTab === 'fd-customer-summary' ? 'text-emerald-700 font-bold bg-emerald-50' : 'text-slate-600 hover:text-slate-900'}`}
+                onClick={() => handleNavigate('fd-customer-summary')}
+              >
+                <span className="truncate">› मुदतबंद ठेव यादी (CBS v2.4)</span>
               </li>
             </ul>
           )}
@@ -1556,6 +1564,7 @@ function App() {
         {activeTab === 'fd-withdrawal' && <FdWithdrawalMaturity />}
         {activeTab === 'fd-accrual' && <FdAccrualPosting />}
         {activeTab === 'fd-reports' && <FdReports onNavigate={handleNavigate} />}
+        {activeTab === 'fd-customer-summary' && <FdCustomerSummaryReport onNavigate={handleNavigate} />}
 
         {/* Pigmy Deposit Module */}
         {activeTab === 'pigmy' && <PigmyDashboard onNavigate={handleNavigate} />}

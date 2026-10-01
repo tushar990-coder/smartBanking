@@ -84,6 +84,7 @@ const GlobalContextMenu: React.FC = () => {
   const depositAndShareReports: ContextMenuItem[] = [
     { id: 'saving-khatavani', label: 'बचत खतावणी', tabName: 'saving-khatavani-report' },
     { id: 'fd-reports', label: 'मुदत ठेव अहवाल', tabName: 'fd-reports' },
+    { id: 'fd-customer-summary', label: 'मुदतबंद ठेव यादी (CBS v2.4)', tabName: 'fd-customer-summary' },
     { id: 'shares-khatavani', label: 'शेअर्स खतावणी', tabName: 'shares-khatavani-report' }
   ];
 

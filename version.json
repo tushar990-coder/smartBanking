@@ -3,8 +3,8 @@
   "releaseDate": "2026-10-01",
   "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.24",
   "git": {
-    "commit": "pending",
-    "fullCommit": "pending",
+    "commit": "dad690f",
+    "fullCommit": "dad690f3c900a6b5f387203a875842cf7b18f46d",
     "branch": "main",
     "commitDate": "2026-10-01 15:35:00 +0530",
     "commitMessage": "feat(fd-migration): enforce unique old receipt number per scheme and branch in FD opening balance migration",

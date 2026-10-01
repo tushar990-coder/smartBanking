@@ -1431,11 +1431,11 @@ function App() {
             </div>
             <button 
               onClick={() => handleNavigate('system-update')}
-              title="सिस्टीम आवृत्ती v2.5.22 (काय नवीन आहे ते पहा)"
+              title="सिस्टीम आवृत्ती v2.5.23 (काय नवीन आहे ते पहा)"
               className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-900 border border-emerald-300 font-mono font-black text-[10px] cursor-pointer shadow-2xs transition-all"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>v2.5.22</span>
+              <span>v2.5.23</span>
               <span className="text-[9px] bg-emerald-200 text-emerald-950 px-1 py-0.2 rounded font-sans font-bold">New</span>
             </button>
           </div>

@@ -179,6 +179,46 @@ namespace Bhisi.Api.Controllers
             });
         }
 
+        // GET: api/FdAccounts/check-legacy-receipt
+        [HttpGet("check-legacy-receipt")]
+        public async Task<ActionResult<object>> CheckLegacyReceipt([FromQuery] int branchId, [FromQuery] int schemeId, [FromQuery] string receiptNo, [FromQuery] int? excludeAccountId = null)
+        {
+            if (string.IsNullOrWhiteSpace(receiptNo) || schemeId <= 0)
+            {
+                return Ok(new { isDuplicate = false });
+            }
+
+            var trimmed = receiptNo.Trim();
+            var query = _context.FdAccounts
+                .Include(a => a.Customer)
+                .Include(a => a.FdScheme)
+                .Where(a => a.FdSchemeID == schemeId 
+                    && (branchId <= 0 || a.BranchID == branchId)
+                    && a.LegacyAccountNumber != null 
+                    && a.LegacyAccountNumber.Trim() == trimmed);
+
+            if (excludeAccountId.HasValue && excludeAccountId.Value > 0)
+            {
+                query = query.Where(a => a.FdAccountID != excludeAccountId.Value);
+            }
+
+            var existing = await query.FirstOrDefaultAsync();
+            if (existing != null)
+            {
+                var sName = existing.FdScheme?.SchemeName ?? "सदर योजना";
+                var cName = existing.Customer?.FullName ?? "खातेदार";
+                return Ok(new
+                {
+                    isDuplicate = true,
+                    accountNo = existing.AccountNo,
+                    customerName = cName,
+                    schemeName = sName,
+                    message = $"या योजनेअंतर्गत ({sName}) जुना पावती क्र. '{trimmed}' आधीच खाते क्र. '{existing.AccountNo}' ({cName}) साठी नोंदवला आहे. एकाच योजनेमध्ये एक जुना पावती क्र. दोनदा सेव्ह करता येत नाही."
+                });
+            }
+
+            return Ok(new { isDuplicate = false });
+        }
 
         // GET: api/FdAccounts
         [HttpGet]
@@ -336,6 +376,26 @@ namespace Bhisi.Api.Controllers
             if (account.DepositAmount < scheme.MinimumAmount || account.DepositAmount > scheme.MaximumAmount)
             {
                 return BadRequest($"Deposit amount must be between ₹{scheme.MinimumAmount} and ₹{scheme.MaximumAmount}.");
+            }
+
+            // [RULE-FD-LEGACY-DUP] Prevent duplicate Old Receipt No under the same Scheme & Branch
+            if (!string.IsNullOrWhiteSpace(account.LegacyAccountNumber))
+            {
+                var trimmedLegacy = account.LegacyAccountNumber.Trim();
+                var duplicate = await _context.FdAccounts
+                    .Include(a => a.Customer)
+                    .Include(a => a.FdScheme)
+                    .FirstOrDefaultAsync(a => a.BranchID == account.BranchID 
+                        && a.FdSchemeID == account.FdSchemeID 
+                        && a.LegacyAccountNumber != null 
+                        && a.LegacyAccountNumber.Trim() == trimmedLegacy);
+
+                if (duplicate != null)
+                {
+                    var sName = duplicate.FdScheme?.SchemeName ?? scheme.SchemeName ?? "सदर योजना";
+                    var cName = duplicate.Customer?.FullName ?? "खातेदार";
+                    return BadRequest($"या योजनेअंतर्गत ({sName}) जुना पावती क्र. '{trimmedLegacy}' आधीच खाते क्र. '{duplicate.AccountNo}' ({cName}) साठी नोंदवला आहे. एकाच योजनेमध्ये एक जुना पावती क्र. दोनदा सेव्ह करता येत नाही.");
+                }
             }
 
             // 3. Generate 14-digit CBS Account No
@@ -1208,6 +1268,26 @@ namespace Bhisi.Api.Controllers
             if (account.DepositAmount <= 0)
             {
                 return BadRequest("Invalid deposit amount.");
+            }
+
+            // [RULE-FD-LEGACY-DUP] Prevent duplicate Old Receipt No under the same Scheme & Branch
+            if (!string.IsNullOrWhiteSpace(account.LegacyAccountNumber))
+            {
+                var trimmedLegacy = account.LegacyAccountNumber.Trim();
+                var duplicate = await _context.FdAccounts
+                    .Include(a => a.Customer)
+                    .Include(a => a.FdScheme)
+                    .FirstOrDefaultAsync(a => a.BranchID == account.BranchID 
+                        && a.FdSchemeID == account.FdSchemeID 
+                        && a.LegacyAccountNumber != null 
+                        && a.LegacyAccountNumber.Trim() == trimmedLegacy);
+
+                if (duplicate != null)
+                {
+                    var sName = duplicate.FdScheme?.SchemeName ?? "सदर योजना";
+                    var cName = duplicate.Customer?.FullName ?? "खातेदार";
+                    return BadRequest($"या योजनेअंतर्गत ({sName}) जुना पावती क्र. '{trimmedLegacy}' आधीच खाते क्र. '{duplicate.AccountNo}' ({cName}) साठी नोंदवला आहे. एकाच योजनेमध्ये एक जुना पावती क्र. दोनदा सेव्ह करता येत नाही.");
+                }
             }
 
             account.IsLegacyAccount = true;
@@ -3375,6 +3455,27 @@ namespace Bhisi.Api.Controllers
             if (string.Equals(existing.Status, "Closed", StringComparison.OrdinalIgnoreCase))
             {
                 return BadRequest("सदर मुदत ठेव खाते आधीच बंद (Closed) झालेले असल्याने संपादित करता येत नाही.");
+            }
+
+            // [RULE-FD-LEGACY-DUP] Prevent duplicate Old Receipt No under the same Scheme & Branch
+            if (!string.IsNullOrWhiteSpace(account.LegacyAccountNumber))
+            {
+                var trimmedLegacy = account.LegacyAccountNumber.Trim();
+                var duplicate = await _context.FdAccounts
+                    .Include(a => a.Customer)
+                    .Include(a => a.FdScheme)
+                    .FirstOrDefaultAsync(a => a.FdAccountID != id
+                        && a.BranchID == account.BranchID 
+                        && a.FdSchemeID == account.FdSchemeID 
+                        && a.LegacyAccountNumber != null 
+                        && a.LegacyAccountNumber.Trim() == trimmedLegacy);
+
+                if (duplicate != null)
+                {
+                    var sName = duplicate.FdScheme?.SchemeName ?? "सदर योजना";
+                    var cName = duplicate.Customer?.FullName ?? "खातेदार";
+                    return BadRequest($"या योजनेअंतर्गत ({sName}) जुना पावती क्र. '{trimmedLegacy}' आधीच खाते क्र. '{duplicate.AccountNo}' ({cName}) साठी नोंदवला आहे. एकाच योजनेमध्ये एक जुना पावती क्र. दोनदा सेव्ह करता येत नाही.");
+                }
             }
 
             existing.BranchID = account.BranchID;

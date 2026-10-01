@@ -438,6 +438,23 @@ const FdOpeningBalanceMigration: React.FC = () => {
     return normalized.replace(/\D/g, '');
   };
 
+  // [RULE-FD-LEGACY-DUP] Real-time detection of duplicate Old Receipt No under the selected Scheme & Branch
+  const duplicateLegacyAccount = React.useMemo(() => {
+    if (!formData.legacyAccountNumber || !formData.legacyAccountNumber.trim() || !formData.fdSchemeID) {
+      return null;
+    }
+    const trimmed = formData.legacyAccountNumber.trim();
+    return (
+      migratedAccounts.find(
+        (acc) =>
+          Number(acc.fdSchemeID) === Number(formData.fdSchemeID) &&
+          (Number(formData.branchID) <= 0 || !acc.branchID || Number(acc.branchID) === Number(formData.branchID)) &&
+          (acc.legacyAccountNumber || '').trim() === trimmed &&
+          acc.fdAccountID !== editingAccountId
+      ) || null
+    );
+  }, [formData.legacyAccountNumber, formData.fdSchemeID, formData.branchID, migratedAccounts, editingAccountId]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     
@@ -812,6 +829,24 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return;
     }
 
+    // [RULE-FD-LEGACY-DUP] Validation: Prevent duplicate Old Receipt No under same scheme & branch
+    if (formData.legacyAccountNumber && formData.legacyAccountNumber.trim()) {
+      const trimmedOldNo = formData.legacyAccountNumber.trim();
+      const duplicateAcc = migratedAccounts.find(
+        (acc) =>
+          Number(acc.fdSchemeID) === Number(formData.fdSchemeID) &&
+          (Number(formData.branchID) <= 0 || !acc.branchID || Number(acc.branchID) === Number(formData.branchID)) &&
+          (acc.legacyAccountNumber || '').trim() === trimmedOldNo &&
+          acc.fdAccountID !== editingAccountId
+      );
+      if (duplicateAcc) {
+        const sName = selectedScheme?.schemeName || 'सदर योजना';
+        const cName = duplicateAcc.customerName || duplicateAcc.memberName || 'खातेदार';
+        setError(`[RULE-FD-DUP] या योजनेअंतर्गत (${sName}) जुना पावती क्र. '${trimmedOldNo}' आधीच खाते क्र. '${duplicateAcc.accountNo}' (${cName}) साठी नोंदवला आहे. एकाच योजनेमध्ये एक जुना पावती क्र. दोनदा सेव्ह करता येत नाही.`);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const payload = {
@@ -1182,7 +1217,13 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   <label className="text-[11px] font-bold text-gray-700">
                     जुना पावती क्र. (Old Receipt No)
                   </label>
-                  <span className="text-[9px] text-amber-700 font-semibold">फक्त अंकात</span>
+                  {duplicateLegacyAccount ? (
+                    <span className="text-[9px] bg-red-100 text-red-700 px-1 py-0.2 rounded font-bold border border-red-300 animate-pulse">
+                      ⚠️ डुप्लिकेट क्रमांक!
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-amber-700 font-semibold">फक्त अंकात</span>
+                  )}
                 </div>
                 <input
                   type="text"
@@ -1191,10 +1232,22 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   name="legacyAccountNumber"
                   value={formData.legacyAccountNumber}
                   onChange={handleChange}
-                  className={`${inputClass} font-mono font-bold text-amber-900 bg-amber-50/40 border-amber-300 focus:border-amber-500`}
+                  className={`${inputClass} font-mono font-bold ${
+                    duplicateLegacyAccount
+                      ? 'text-red-900 bg-red-50 border-red-400 focus:border-red-600 focus:ring-1 focus:ring-red-500'
+                      : 'text-amber-900 bg-amber-50/40 border-amber-300 focus:border-amber-500'
+                  }`}
                   placeholder="उदा. 1024"
                   title="फक्त अंक (0-9) टाका"
                 />
+                {duplicateLegacyAccount && (
+                  <p className="text-[10px] text-red-600 font-semibold mt-1 leading-tight flex items-start gap-1">
+                    <span>⚠️</span>
+                    <span>
+                      हा क्र. आधीच खाते <strong>{duplicateLegacyAccount.accountNo}</strong> ({duplicateLegacyAccount.customerName || duplicateLegacyAccount.memberName || 'खातेदार'}) साठी वापरलेला आहे.
+                    </span>
+                  </p>
+                )}
               </div>
 
               {/* Row 1, Col 3: ठेव मुद्दल रक्कम */}

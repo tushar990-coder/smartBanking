@@ -1,17 +1,18 @@
 {
-  "version": "2.5.23",
+  "version": "2.5.24",
   "releaseDate": "2026-10-01",
-  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.23",
+  "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.24",
   "git": {
-    "commit": "e8e2469",
-    "fullCommit": "e8e2469b61d497c23173e6a4b132890632d4ebfc",
+    "commit": "pending",
+    "fullCommit": "pending",
     "branch": "main",
-    "commitDate": "2026-10-01 09:50:52 +0530",
-    "commitMessage": "feat(fd-reports,shares): add FD customer summary report CBS v2.4 and improve share opening balance",
+    "commitDate": "2026-10-01 15:35:00 +0530",
+    "commitMessage": "feat(fd-migration): enforce unique old receipt number per scheme and branch in FD opening balance migration",
     "author": "tushar990-coder <111702084+tushar990-coder@users.noreply.github.com>",
     "repository": "https://github.com/tushar990-coder/smartBanking.git"
   },
   "changelog": [
+    "⭐ [2026-10-01] मुदत ठेव सुरुवातीची शिल्लक स्थलांतर: एकाच योजनेअंतर्गत जुना पावती क्र. (Old Receipt No) युनिक व्हॅलिडेशन व डुप्लिकेट प्रतिबंध (FD Migrated Unique Old Receipt No Validation v2.5.24): १) बॅकएंड API सुरक्षा (Backend Scheme-Level Uniqueness): FdAccountsController मधील MigrateFdAccount (POST /api/FdAccounts/Migrate), PutFdAccount (PUT /api/FdAccounts/{id}) आणि PostFdAccount (POST /api/FdAccounts) मध्ये एकाच योजना (FdSchemeID) व शाखेखाली (BranchID) जुना पावती क्रमांक (LegacyAccountNumber) डुप्लिकेट सेव्ह होण्यावर १००% कडक प्रतिबंध व स्पष्ट मराठी त्रुटी संदेश; २) रिअल-टाइम व्हॅलिडेशन एंडपॉईंट (GET /api/FdAccounts/check-legacy-receipt): डेटाबेसमधून थेट जलद पावती क्रमांक तपासणीची सुविधा; ३) क्लायंट-साइड रिअल-टाइम वॉर्निंग (Frontend Real-Time Inline Warning): FdOpeningBalanceMigration मध्ये जुना पावती क्रमांक टाईप करताच किंवा योजना बदलताच डुप्लिकेट क्रमांक असल्यास तात्काळ लाल बॉर्डर, '⚠️ डुप्लिकेट क्रमांक!' बॅज आणि संबंधित खाते क्र. व खातेदाराच्या नावासह स्पष्ट सूचना; ४) फॉर्म सबमिट गार्ड (Pre-Submit Guard): फॉर्म सबमिट करताना डुप्लिकेट आढळल्यास तात्काळ अलर्ट देऊन सेव्ह रोखणे व युझरला दुरुस्तीची संधी देणे.",
     "⭐ [2026-10-01] मुदतबंद ठेव यादी (CBS v2.4 FD Customer Summary Report) व शेअर्स प्रारंभिक शिल्लक सुधारणा (FD Customer Summary Report & Share Opening Balance UX v2.5.23): १) मुदतबंद ठेव यादी अहवाल (FD Customer Summary Report): FdCustomerSummaryReport द्वारे CBS v2.4 कॉम्पॅक्ट Dual-Column व Detailed प्रिंट लेआउट, खातेदार/CIF निहाय एकत्रित मुदत ठेव सारांश, एकूण ठेवी, ठेव रक्कम व मुदतपूर्ती रक्कम; २) बॅकएंड API: ReportsController मध्ये GET /api/Reports/fd-customer-summary एंडपॉईंट द्वारे दिलेल्या तारखेपर्यंतची ॲक्टिव्ह खाती अचूक फिल्टरिंग व एकत्रीकरण; ३) शेअर्स प्रारंभिक शिल्लक (Share Opening Balance): मराठी अंकांचे इंग्रजीत स्वयंचलित रूपांतरण (Marathi Digits Conversion), खातेदार स्विच करताना एडिट मोड रीसेट व सुटसुटीत न्यूमॅरिक इनपुट्स; ४) बॅकएंड नल-सेफ्टी: FdAccountsController, PigmyAccountsController आणि ReportsController मधील संभाव्य नल त्रुटींचे निराकरण.",
     "⭐ [2026-09-30] मुदत ठेव कालावधी एकक (दिवस/महिने/वर्षे) अचूक मुदतपूर्ती तारीख व दैनिक व्याज, अहवालात समर्पित CIF कॉलम व शुद्ध खातेदार शोध (FD Duration Unit Days Engine, Dedicated CIF Column & Pure Customer Search v2.5.22): १) दिवस-आधारित कालावधी व अचूक मुदतपूर्ती तारीख (Duration Unit Days & Accurate Maturity Engine): मुदत ठेव योजना मास्टरमध्ये कालावधी एकक 'दिवस' (Days) असताना (उदा. ४६ दिवस) मुदत ठेव सुरुवातीची शिल्लक स्थलांतरणात महिने न जोडता थेट कॅलेंडर दिवसांनुसार अचूक मुदतपूर्ती तारीख सेट होणे; २) अचूक अल्पमुदत दैनिक व्याज सूत्र (Days Interest Engine): १ वर्षापेक्षा कमी कालावधीच्या ठेवींसाठी बँकिंग मानकांनुसार (मुद्दल * दिवस * व्याजदर / ३६५००) तंतोतंत दैनिक व्याज व मुदतपूर्ती रक्कम गणना; ३) मुदत ठेव अहवालात समर्पित CIF कॉलम (Dedicated CIF Number Column): मुदत ठेव नोंदवही (FD Register), मुदत ठेव बाकी अहवाल (FD Outstanding Report), मुदतपूर्ती देय अहवाल (Maturity Due) व स्थलांतरित खाती यादीमध्ये स्वतंत्र निळा ठळक 'CIF नं.' कॉलम जोडणी; ४) सर्च बॉक्समधून 'सभासद' संदर्भ निर्मूलन (Pure Customer Search in FD Reports): मुदत ठेव खातावणी अहवालात CustomerSearchSelect द्वारे शुद्ध ग्राहक (CIF / नाव / मोबाईल) शोध आणि लेबल्सचे 'खातेदाराचे नाव' व 'ग्राहक क्र. (CIF)' मानकीकरण; ५) पडवळवाडी १४-अंकी CBS खाते क्रमांक रूपांतरण (Padvalwadi 14-Digit CBS Standardization): शाखेतील सर्व ५७ खाती सलग १४-अंकी CBS मानकात रूपांतरित व सीक्वेन्स सिंक्रोनाइझेशन.",
     "⭐ [2026-09-30] मुदत ठेव पावती अनुक्रम अचूकता व जुनी पावती बॅज (FD Receipt Number Ascending Sequence & Legacy Receipt Badge v2.5.21): मुदत ठेव बाकी अहवाल (FD Outstanding Report), मुदत ठेव नोंदवही (FD Register), मुदतपूर्ती देय अहवाल (FD Maturity Due), मुदत ठेव खातावणी आणि सुरुवातीची शिल्लक स्थलांतर यादी मोडलमध्ये पावती क्रमांक सलग नैसर्गिक चढत्या क्रमाने (AccountNo / FdAccountID ASC) अचूक प्रदर्शित करणे; तसेच CBS खाते क्रमांकाखाली जुनी प्रत्यक्ष नोंदवही पावती क्रमांक (LegacyAccountNumber) ठळक बॅजसह दर्शवणे, ज्यामुळे प्रत्यक्ष पावती पुस्तक आणि संगणकीय नोंदी पडताळणे सोपे झाले आहे.",

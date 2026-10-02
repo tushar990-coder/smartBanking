@@ -358,6 +358,58 @@ namespace Bhisi.Api.Controllers
             public List<AppCollectionItemDto> Items { get; set; } = new List<AppCollectionItemDto>();
         }
 
+        // GET: api/PigmyApp/Agents/{agentId}/remittance-status
+        [HttpGet("Agents/{agentId}/remittance-status")]
+        public async Task<IActionResult> GetRemittanceStatus(int agentId)
+        {
+            if (agentId <= 0) return BadRequest("वैध AgentId पुरवा.");
+
+            var agent = await _context.PigmyAgents.FindAsync(agentId);
+            if (agent == null) return NotFound("एजंट सापडला नाही.");
+
+            var totalCollected = await _context.PigmyCollections
+                .Where(c => c.AgentId == agentId)
+                .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+
+            var totalRemitted = await _context.PigmyAgentCashDeposits
+                .Where(d => d.AgentId == agentId)
+                .SumAsync(d => (decimal?)d.Amount) ?? 0m;
+
+            var pendingCashInHand = totalCollected - totalRemitted;
+            if (pendingCashInHand < 0) pendingCashInHand = 0;
+
+            bool isLocked = pendingCashInHand > agent.MaxCashLimit;
+
+            // Also check 2-day lock
+            var today = DateTime.Today;
+            var lockDate = today.AddDays(-agent.MaxLockDays);
+            
+            // To properly calculate the lock, we should see if there is cash collected before 'today' that hasn't been deposited.
+            // A simplified check using the same logic as in BulkCollection
+            var unremittedPastCash = await _context.PigmyCollections
+                .Where(c => c.AgentId == agentId && c.CollectionDate.Date >= lockDate && c.CollectionDate.Date < today)
+                .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+
+            var pastRemittedCash = await _context.PigmyAgentCashDeposits
+                .Where(d => d.AgentId == agentId && d.DepositDate.Date >= lockDate && d.DepositDate.Date < today)
+                .SumAsync(d => (decimal?)d.Amount) ?? 0m;
+
+            if (unremittedPastCash > 0 && (unremittedPastCash - pastRemittedCash) > 0)
+            {
+                isLocked = true;
+            }
+
+            return Ok(new
+            {
+                agentId = agent.PigmyAgentID,
+                agentName = agent.AgentName,
+                dailyLimit = agent.MaxCashLimit,
+                pendingCashInHand = pendingCashInHand,
+                isLocked = isLocked,
+                maxLockDays = agent.MaxLockDays
+            });
+        }
+
         // 3. POST: api/PigmyApp/BulkCollection
         [HttpPost("BulkCollection")]
         public async Task<IActionResult> BulkCollection(
@@ -409,44 +461,48 @@ namespace Bhisi.Api.Controllers
                     var account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.PigmyAccountID == item.PigmyAccountId);
                     if (account == null || account.Status != "Active") continue;
 
-                    DateTime collDate = item.CollectionDate?.Date ?? DateTime.Today;
-                    DateTime nextCollDate = collDate.AddDays(1);
-
-                    // Check if collection already exists on collDate (Upsert)
-                    var existingCollection = await _context.PigmyCollections.FirstOrDefaultAsync(c =>
-                        c.PigmyAccountId == item.PigmyAccountId &&
-                        c.CollectionDate >= collDate && c.CollectionDate < nextCollDate);
-
+                    DateTime collDate = item.CollectionDate ?? DateTime.Now;
+                    
                     string receiptNo = !string.IsNullOrWhiteSpace(item.ReceiptNo) 
                         ? item.ReceiptNo 
-                        : $"REC-APP-{account.BranchID}-{collDate:yyyyMMdd}-{account.PigmyAccountID}";
+                        : $"REC-APP-{account.BranchID}-{collDate:yyyyMMddHHmmss}-{account.PigmyAccountID}";
 
-                    decimal prevOpening = existingCollection?.OpeningBalance ?? account.TotalDepositedAmount;
+                    // Check if collection with this ReceiptNo already exists (Idempotency Check)
+                    var existingReceipt = await _context.PigmyCollections.FirstOrDefaultAsync(c =>
+                        c.ReceiptNo == receiptNo);
+
+                    if (existingReceipt != null)
+                    {
+                        // Duplicate received. Do not process accounting again, just return success for this item.
+                        savedReceipts.Add(new
+                        {
+                            pigmyAccountId = account.PigmyAccountID,
+                            accountNo = account.AccountNo,
+                            receiptNo = receiptNo,
+                            amount = existingReceipt.CollectionAmount,
+                            newBalance = account.TotalDepositedAmount, // We might not have exact snapshot, but it's safe to return current
+                            duplicate_ignored = true
+                        });
+                        continue;
+                    }
+
+                    decimal prevOpening = account.TotalDepositedAmount;
                     decimal addedAmount = item.CollectionAmount;
 
-                    if (existingCollection != null)
+                    var newColl = new PigmyCollection
                     {
-                        existingCollection.CollectionAmount += addedAmount;
-                        existingCollection.ClosingBalance = existingCollection.OpeningBalance + existingCollection.CollectionAmount;
-                        _context.PigmyCollections.Update(existingCollection);
-                    }
-                    else
-                    {
-                        var newColl = new PigmyCollection
-                        {
-                            PigmyAccountId = item.PigmyAccountId,
-                            AgentId = agentId,
-                            CollectionDate = collDate,
-                            OpeningBalance = prevOpening,
-                            CollectionAmount = addedAmount,
-                            ClosingBalance = prevOpening + addedAmount,
-                            ReceiptNo = receiptNo,
-                            CollectionSource = "APP",
-                            CreatedBy = agentId,
-                            CreatedOn = DateTime.UtcNow
-                        };
-                        _context.PigmyCollections.Add(newColl);
-                    }
+                        PigmyAccountId = item.PigmyAccountId,
+                        AgentId = agentId,
+                        CollectionDate = collDate,
+                        OpeningBalance = prevOpening,
+                        CollectionAmount = addedAmount,
+                        ClosingBalance = prevOpening + addedAmount,
+                        ReceiptNo = receiptNo,
+                        CollectionSource = "APP",
+                        CreatedBy = agentId,
+                        CreatedOn = DateTime.UtcNow
+                    };
+                    _context.PigmyCollections.Add(newColl);
 
                     // Update Account Total Balance
                     account.TotalDepositedAmount += addedAmount;

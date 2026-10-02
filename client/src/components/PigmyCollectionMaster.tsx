@@ -61,6 +61,7 @@ interface CollectionHistory {
   collectionAmount: number;
   collectionSource: string;
   pigmyAccountNo: string;
+  customerName?: string;
   agentName: string;
 }
 
@@ -2150,6 +2151,7 @@ export default function PigmyCollectionMaster() {
                   <th className="py-2 px-2.5">पावती क्र. (Receipt No)</th>
                   <th className="py-2 px-2.5">तारीख (Date)</th>
                   <th className="py-2 px-2.5">खाते क्रमांक (Account)</th>
+                  <th className="py-2 px-2.5">ग्राहक (Customer)</th>
                   <th className="py-2 px-2.5">एजंट (Agent)</th>
                   <th className="py-2 px-2.5 text-right">जमा रक्कम (Amount ₹)</th>
                   <th className="py-2 px-2.5 text-center">माध्यम (Source)</th>
@@ -2168,6 +2170,7 @@ export default function PigmyCollectionMaster() {
                       <td className="py-2 px-2.5 font-mono font-bold text-gray-900">{item.receiptNo}</td>
                       <td className="py-2 px-2.5">{new Date(item.collectionDate).toLocaleDateString('en-GB')}</td>
                       <td className="py-2 px-2.5 font-mono font-bold text-primary">{item.pigmyAccountNo}</td>
+                      <td className="py-2 px-2.5 font-semibold text-gray-800">{item.customerName || '-'}</td>
                       <td className="py-2 px-2.5 font-semibold text-gray-700">{item.agentName}</td>
                       <td className="py-2 px-2.5 text-right font-mono font-bold text-emerald-700">
                         ₹ {item.collectionAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}

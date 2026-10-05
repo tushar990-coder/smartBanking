@@ -5010,6 +5010,186 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- 14. LOAN SUITE v2.5.26: CBS LOAN SCHEME DYNAMIC INTEREST, UNIQUE CONSTRAINTS & AUDIT
+-- -----------------------------------------------------------------------------------------
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanAccounts')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'PurePrincipalBalance')
+    BEGIN
+        ALTER TABLE [LoanAccounts] ADD [PurePrincipalBalance] decimal(18,2) NOT NULL CONSTRAINT [DF_LoanAccounts_PurePrincipalBalance] DEFAULT 0;
+        PRINT '  + Added PurePrincipalBalance to LoanAccounts';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'CapitalizedInterestAmount')
+    BEGIN
+        ALTER TABLE [LoanAccounts] ADD [CapitalizedInterestAmount] decimal(18,2) NOT NULL CONSTRAINT [DF_LoanAccounts_CapitalizedInterestAmount] DEFAULT 0;
+        PRINT '  + Added CapitalizedInterestAmount to LoanAccounts';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'InterestProvisionBalance')
+    BEGIN
+        ALTER TABLE [LoanAccounts] ADD [InterestProvisionBalance] decimal(18,2) NOT NULL CONSTRAINT [DF_LoanAccounts_InterestProvisionBalance] DEFAULT 0;
+        PRINT '  + Added InterestProvisionBalance to LoanAccounts';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'InitialNpaClassification')
+    BEGIN
+        ALTER TABLE [LoanAccounts] ADD [InitialNpaClassification] nvarchar(20) NOT NULL CONSTRAINT [DF_LoanAccounts_InitialNpaClassification] DEFAULT 'Standard';
+        PRINT '  + Added InitialNpaClassification to LoanAccounts';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'ChargeInterestOnCapitalizedAmount')
+    BEGIN
+        ALTER TABLE [LoanAccounts] ADD [ChargeInterestOnCapitalizedAmount] bit NOT NULL CONSTRAINT [DF_LoanAccounts_ChargeInterestOnCapitalizedAmount] DEFAULT 1;
+        PRINT '  + Added ChargeInterestOnCapitalizedAmount to LoanAccounts';
+    END
+END
+GO
+
+-- 14.1 Self-Healing LoanDisbursements for Opening Balance
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanDisbursements') AND EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanAccounts')
+BEGIN
+    UPDATE ld
+    SET ld.SanctionedAmount = la.SanctionedAmount,
+        ld.DisbursementAmount = la.SanctionedAmount,
+        ld.NetAmountPaid = la.SanctionedAmount
+    FROM [LoanDisbursements] ld
+    INNER JOIN [LoanAccounts] la ON ld.LoanAccountID = la.LoanAccountID
+    WHERE (ld.PaymentMode = 'Opening Balance' OR ld.Remarks LIKE '%Opening Balance%')
+      AND la.IsOpeningBalance = 1
+      AND (ld.DisbursementAmount <> la.SanctionedAmount OR ld.NetAmountPaid <> la.SanctionedAmount OR ld.SanctionedAmount <> la.SanctionedAmount);
+    PRINT '  + Synchronized LoanDisbursements Opening Balance Sanctioned Amounts';
+END
+GO
+
+-- 14.2 LoanRates Unique Constraints & Auto-Healing
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanRates')
+BEGIN
+    -- Fix NULL or empty LoanCode
+    UPDATE [dbo].[LoanRates]
+    SET [LoanCode] = 'LN' + RIGHT('00' + CAST([LoanRateID] AS NVARCHAR(10)), 2)
+    WHERE [LoanCode] IS NULL OR LTRIM(RTRIM([LoanCode])) = '';
+
+    -- Trim whitespace
+    UPDATE [dbo].[LoanRates]
+    SET [LoanCode] = LTRIM(RTRIM([LoanCode]))
+    WHERE [LoanCode] <> LTRIM(RTRIM([LoanCode]));
+
+    -- Auto-heal duplicate LoanCode before creating UNIQUE INDEX
+    ;WITH DupCodeCTE AS (
+        SELECT LoanRateID, LoanCode,
+               ROW_NUMBER() OVER(PARTITION BY LOWER(LTRIM(RTRIM(LoanCode))) ORDER BY LoanRateID) as rn
+        FROM [dbo].[LoanRates]
+    )
+    UPDATE lr
+    SET lr.LoanCode = 'LN' + RIGHT('00' + CAST(lr.LoanRateID AS NVARCHAR(10)), 2)
+    FROM [dbo].[LoanRates] lr
+    INNER JOIN DupCodeCTE cte ON lr.LoanRateID = cte.LoanRateID
+    WHERE cte.rn > 1;
+
+    -- Ensure Unique Index on LoanCode
+    IF NOT EXISTS (
+        SELECT * FROM sys.indexes 
+        WHERE name = 'IX_LoanRates_LoanCode' 
+          AND object_id = OBJECT_ID('dbo.LoanRates')
+    )
+    BEGIN
+        CREATE UNIQUE NONCLUSTERED INDEX [IX_LoanRates_LoanCode] 
+        ON [dbo].[LoanRates]([LoanCode]) 
+        WHERE [LoanCode] IS NOT NULL AND [LoanCode] <> '';
+        PRINT '  + Created Unique Index IX_LoanRates_LoanCode';
+    END
+
+    -- Fix NULL or empty LoanType
+    UPDATE [dbo].[LoanRates]
+    SET [LoanType] = N'कर्ज योजना ' + CAST([LoanRateID] AS NVARCHAR(10))
+    WHERE [LoanType] IS NULL OR LTRIM(RTRIM([LoanType])) = '';
+
+    -- Trim whitespace
+    UPDATE [dbo].[LoanRates]
+    SET [LoanType] = LTRIM(RTRIM([LoanType]))
+    WHERE [LoanType] <> LTRIM(RTRIM([LoanType]));
+
+    -- Auto-heal duplicate LoanType before creating UNIQUE INDEX
+    ;WITH DupTypeCTE AS (
+        SELECT LoanRateID, LoanType,
+               ROW_NUMBER() OVER(PARTITION BY LOWER(LTRIM(RTRIM(LoanType))) ORDER BY LoanRateID) as rn
+        FROM [dbo].[LoanRates]
+    )
+    UPDATE lr
+    SET lr.LoanType = lr.LoanType + N' (' + CAST(lr.LoanRateID AS NVARCHAR(10)) + N')'
+    FROM [dbo].[LoanRates] lr
+    INNER JOIN DupTypeCTE cte ON lr.LoanRateID = cte.LoanRateID
+    WHERE cte.rn > 1;
+
+    -- Ensure Unique Index on LoanType
+    IF NOT EXISTS (
+        SELECT * FROM sys.indexes 
+        WHERE name = 'IX_LoanRates_LoanType' 
+          AND object_id = OBJECT_ID('dbo.LoanRates')
+    )
+    BEGIN
+        CREATE UNIQUE NONCLUSTERED INDEX [IX_LoanRates_LoanType] 
+        ON [dbo].[LoanRates]([LoanType]) 
+        WHERE [LoanType] IS NOT NULL AND [LoanType] <> '';
+        PRINT '  + Created Unique Index IX_LoanRates_LoanType';
+    END
+END
+GO
+
+-- 14.3 LoanRateHistories Audit Table
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanRateHistories')
+BEGIN
+    CREATE TABLE [dbo].[LoanRateHistories] (
+        [HistoryID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [LoanRateID] INT NOT NULL,
+        [OldInterestRate] DECIMAL(18,2) NOT NULL,
+        [NewInterestRate] DECIMAL(18,2) NOT NULL,
+        [OldOverdueInterestRate] DECIMAL(18,2) NOT NULL,
+        [NewOverdueInterestRate] DECIMAL(18,2) NOT NULL,
+        [ResolutionNo] NVARCHAR(100) NOT NULL DEFAULT '',
+        [ResolutionDate] DATETIME2 NULL,
+        [EffectiveDate] DATETIME2 NOT NULL DEFAULT GETDATE(),
+        [Reason] NVARCHAR(500) NULL,
+        [ChangedByUserID] INT NOT NULL DEFAULT 1,
+        [ChangedByUsername] NVARCHAR(100) NOT NULL DEFAULT 'System',
+        [ChangedAt] DATETIME2 NOT NULL DEFAULT GETDATE(),
+        [IPAddress] NVARCHAR(50) NULL,
+        CONSTRAINT [FK_LoanRateHistories_LoanRates] FOREIGN KEY ([LoanRateID]) 
+            REFERENCES [dbo].[LoanRates]([LoanRateID]) ON DELETE CASCADE
+    );
+
+    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanRateHistories_LoanRateID' AND object_id = OBJECT_ID('dbo.LoanRateHistories'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_LoanRateHistories_LoanRateID] ON [dbo].[LoanRateHistories]([LoanRateID] ASC);
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanRateHistories_EffectiveDate' AND object_id = OBJECT_ID('dbo.LoanRateHistories'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_LoanRateHistories_EffectiveDate] ON [dbo].[LoanRateHistories]([EffectiveDate] DESC);
+    END
+    PRINT '  + Created LoanRateHistories Table and Indexes';
+END
+GO
+
+-- 14.4 Record Version v2.5.26 in SystemVersionHistories
+IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
+BEGIN
+    EXEC('INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+    VALUES (
+        ''2.5.26'', 
+        GETUTCDATE(), 
+        ''SmartBanking VPS Multi-App Master Patch v2.5.26'', 
+        ''SUCCESS'', 
+        ''CBS Loan Suite: Dynamic Scheme Interest Posting, Unique LoanRate Constraints, Revision Audit Trail, Capitalized Interest, NPA Sync & GL-SL Reconciliation.'', 
+        ''VPS Administrator'', 
+        ''2026-10-05''
+    );');
+    PRINT '  + Recorded Version v2.5.26 in SystemVersionHistories';
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

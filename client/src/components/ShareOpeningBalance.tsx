@@ -272,7 +272,7 @@ const ShareOpeningBalance: React.FC = () => {
       setFormData(prev => ({ 
         ...prev, 
         memberId: value,
-        legacyMemberNo: (sel as any)?.legacyCustomerNo || (sel as any)?.memberProfile?.legacyMemberNo || (sel as any)?.memberProfile?.oldMemberCode || sel?.legacyMemberNo || '',
+        legacyMemberNo: (sel as any)?.memberProfile?.legacyMemberNo || (sel as any)?.memberProfile?.oldMemberCode || sel?.legacyMemberNo || '',
         fromShareNo: nextShareConfig.nextFromShareNo ? nextShareConfig.nextFromShareNo.toString() : '1',
         toShareNo: '',
         certificateNo: nextShareConfig.nextCertificateNo || '',

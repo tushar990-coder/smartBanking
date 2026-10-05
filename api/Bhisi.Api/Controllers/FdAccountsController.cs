@@ -3507,7 +3507,28 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
                 if (existing.IsLegacyAccount)
                 {
-                    try { await SyncFdOpeningBalancesInternalAsync(); } catch { }
+                    try
+                    {
+                        var opVoucher = await _context.Vouchers.FirstOrDefaultAsync(v => v.VoucherNo == $"JV-FD-OP-{existing.AccountNo}");
+                        if (opVoucher != null)
+                        {
+                            opVoucher.TotalAmount = existing.DepositAmount;
+                            opVoucher.VoucherDate = existing.OpeningDate;
+                        }
+                        var opTx = await _context.FdTransactions.FirstOrDefaultAsync(t => t.FdAccountID == existing.FdAccountID && t.TransactionType == "Opening");
+                        if (opTx != null)
+                        {
+                            opTx.Amount = existing.DepositAmount;
+                            opTx.TransactionDate = existing.OpeningDate;
+                        }
+                        await _context.SaveChangesAsync();
+
+                        await SyncFdOpeningBalancesInternalAsync();
+                    }
+                    catch (Exception syncEx)
+                    {
+                        Console.WriteLine($"[ERROR] PutFdAccount SyncFdOpeningBalances: {syncEx.Message}");
+                    }
                 }
                 return Ok(existing);
             }
@@ -4095,6 +4116,23 @@ namespace Bhisi.Api.Controllers
             {
                 int ledgerId = lGrp.Key;
                 var custGroups = lGrp.GroupBy(x => x.Account.CustomerID).ToList();
+                var activeCustIds = custGroups.Select(g => g.Key).ToHashSet();
+
+                // 1. Purge orphan CustomerOpeningBalances for this Liability Ledger
+                var orphanCustObs = allCustObs.Where(c => c.LedgerID == ledgerId && !activeCustIds.Contains(c.CustomerID)).ToList();
+                if (orphanCustObs.Any())
+                {
+                    _context.CustomerOpeningBalances.RemoveRange(orphanCustObs);
+                    foreach (var o in orphanCustObs) allCustObs.Remove(o);
+                }
+
+                // 2. Purge orphan MemberOpeningBalances for this Liability Ledger
+                var orphanMemObs = allMemObs.Where(m => m.LedgerID == ledgerId && (m.CustomerID == null || !activeCustIds.Contains(m.CustomerID.Value))).ToList();
+                if (orphanMemObs.Any())
+                {
+                    _context.MemberOpeningBalances.RemoveRange(orphanMemObs);
+                    foreach (var o in orphanMemObs) allMemObs.Remove(o);
+                }
 
                 foreach (var cGrp in custGroups)
                 {
@@ -4170,6 +4208,23 @@ namespace Bhisi.Api.Controllers
             {
                 int ledgerId = pGrp.Key;
                 var custGroups = pGrp.GroupBy(x => x.Account.CustomerID).ToList();
+                var activePayableCustIds = custGroups.Select(g => g.Key).ToHashSet();
+
+                // 1. Purge orphan CustomerOpeningBalances for this Payable Ledger
+                var orphanPayableCustObs = allCustObs.Where(c => c.LedgerID == ledgerId && !activePayableCustIds.Contains(c.CustomerID)).ToList();
+                if (orphanPayableCustObs.Any())
+                {
+                    _context.CustomerOpeningBalances.RemoveRange(orphanPayableCustObs);
+                    foreach (var o in orphanPayableCustObs) allCustObs.Remove(o);
+                }
+
+                // 2. Purge orphan MemberOpeningBalances for this Payable Ledger
+                var orphanPayableMemObs = allMemObs.Where(m => m.LedgerID == ledgerId && (m.CustomerID == null || !activePayableCustIds.Contains(m.CustomerID.Value))).ToList();
+                if (orphanPayableMemObs.Any())
+                {
+                    _context.MemberOpeningBalances.RemoveRange(orphanPayableMemObs);
+                    foreach (var o in orphanPayableMemObs) allMemObs.Remove(o);
+                }
 
                 foreach (var cGrp in custGroups)
                 {
@@ -4227,6 +4282,27 @@ namespace Bhisi.Api.Controllers
                             _context.MemberOpeningBalances.Add(newMemOb);
                             allMemObs.Add(newMemOb);
                         }
+                    }
+                }
+            }
+
+            // Purge any affected ledger that no longer has ANY active accounts under it
+            foreach (var lId in affectedLedgerIds)
+            {
+                if (!liabilityLedgerGroups.Any(g => g.Key == lId) && !payableLedgerGroups.Any(g => g.Key == lId))
+                {
+                    var staleCustObs = allCustObs.Where(c => c.LedgerID == lId).ToList();
+                    if (staleCustObs.Any())
+                    {
+                        _context.CustomerOpeningBalances.RemoveRange(staleCustObs);
+                        foreach (var o in staleCustObs) allCustObs.Remove(o);
+                    }
+
+                    var staleMemObs = allMemObs.Where(m => m.LedgerID == lId).ToList();
+                    if (staleMemObs.Any())
+                    {
+                        _context.MemberOpeningBalances.RemoveRange(staleMemObs);
+                        foreach (var o in staleMemObs) allMemObs.Remove(o);
                     }
                 }
             }

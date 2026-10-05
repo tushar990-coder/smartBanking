@@ -5263,7 +5263,7 @@ BEGIN
         UPDATE m
         SET m.[MemberCode] = 'MEM' + RIGHT('0000' + CAST(ash.SeqNo AS VARCHAR(10)), 4),
             m.[MembershipType] = 'Regular',
-            m.[ModifiedDate] = GETDATE()
+            m.[UpdatedOn] = GETDATE()
         FROM [dbo].[Members] m
         INNER JOIN ActiveShareholders ash ON m.[MemberID] = ash.[MemberId];
 
@@ -5278,6 +5278,127 @@ BEGIN
     END TRY
     BEGIN CATCH
         PRINT '  [WARN] Shareholder alignment non-critical warning: ' + ERROR_MESSAGE();
+    END CATCH
+END
+GO
+
+-- ==============================================================================
+-- 14.6 FD OPENING BALANCE & BALANCE SHEET (GL-SL) AUTO-HEALER
+-- ==============================================================================
+IF OBJECT_ID(N'[dbo].[FdAccounts]', N'U') IS NOT NULL AND OBJECT_ID(N'[dbo].[CustomerOpeningBalances]', N'U') IS NOT NULL
+BEGIN
+    PRINT '>> [SECTION 14.6] Reconciling FD Opening Balances with General Ledger...';
+    BEGIN TRY
+        -- 1. Ensure all FD schemes have their FdLiabilityLedgerID mapped
+        UPDATE s
+        SET s.FdLiabilityLedgerID = l.LedgerID
+        FROM [dbo].[FdSchemes] s
+        CROSS APPLY (
+            SELECT TOP 1 l.LedgerID 
+            FROM [dbo].[Ledgers] l
+            WHERE (l.LedgerName = s.SchemeName)
+               OR (s.SchemeName LIKE '%मुदत%' AND l.LedgerName LIKE '%मुदत%ठेव%')
+               OR (s.SchemeName LIKE '%दामदुप्पट%' AND l.LedgerName LIKE '%दामदुप्पट%')
+               OR (l.GroupID = 12 AND l.AccountType IN ('FD', 'FixedDeposit'))
+            ORDER BY CASE WHEN l.LedgerName = s.SchemeName THEN 1 ELSE 2 END, l.LedgerID
+        ) l
+        WHERE s.FdLiabilityLedgerID IS NULL OR s.FdLiabilityLedgerID = 0;
+
+        -- 2. Process each distinct Liability Ledger
+        DECLARE @cLedgerId INT;
+        DECLARE cur_fd_ledger CURSOR FOR 
+        SELECT DISTINCT s.FdLiabilityLedgerID
+        FROM [dbo].[FdSchemes] s
+        WHERE s.FdLiabilityLedgerID IS NOT NULL AND s.FdLiabilityLedgerID > 0;
+
+        OPEN cur_fd_ledger;
+        FETCH NEXT FROM cur_fd_ledger INTO @cLedgerId;
+
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            -- Update / sync active customers
+            ;WITH ActiveCustFd AS (
+                SELECT a.CustomerID, SUM(a.DepositAmount) AS TrueTotal
+                FROM [dbo].[FdAccounts] a
+                JOIN [dbo].[FdSchemes] s ON a.FdSchemeID = s.FdSchemeID
+                WHERE a.Status = 'Active' AND a.IsLegacyAccount = 1 AND s.FdLiabilityLedgerID = @cLedgerId
+                GROUP BY a.CustomerID
+            )
+            UPDATE cob
+            SET cob.Amount = act.TrueTotal,
+                cob.BalanceType = 'Cr',
+                cob.UpdatedOn = GETDATE()
+            FROM [dbo].[CustomerOpeningBalances] cob
+            JOIN ActiveCustFd act ON cob.CustomerID = act.CustomerID AND cob.LedgerID = @cLedgerId
+            WHERE cob.Amount <> act.TrueTotal OR cob.BalanceType <> 'Cr';
+
+            -- Insert missing CustomerOpeningBalances for active customers
+            ;WITH ActiveCustFd AS (
+                SELECT a.CustomerID, SUM(a.DepositAmount) AS TrueTotal
+                FROM [dbo].[FdAccounts] a
+                JOIN [dbo].[FdSchemes] s ON a.FdSchemeID = s.FdSchemeID
+                WHERE a.Status = 'Active' AND a.IsLegacyAccount = 1 AND s.FdLiabilityLedgerID = @cLedgerId
+                GROUP BY a.CustomerID
+            )
+            INSERT INTO [dbo].[CustomerOpeningBalances] (CustomerID, LedgerID, Amount, BalanceType, CreatedBy, CreatedOn)
+            SELECT act.CustomerID, @cLedgerId, act.TrueTotal, 'Cr', 1, GETDATE()
+            FROM ActiveCustFd act
+            LEFT JOIN [dbo].[CustomerOpeningBalances] cob ON act.CustomerID = cob.CustomerID AND cob.LedgerID = @cLedgerId
+            WHERE cob.CustomerOpeningBalanceID IS NULL AND act.TrueTotal > 0;
+
+            -- Purge ORPHAN CustomerOpeningBalances
+            DELETE FROM [dbo].[CustomerOpeningBalances]
+            WHERE LedgerID = @cLedgerId
+              AND CustomerID NOT IN (
+                  SELECT DISTINCT a.CustomerID
+                  FROM [dbo].[FdAccounts] a
+                  JOIN [dbo].[FdSchemes] s ON a.FdSchemeID = s.FdSchemeID
+                  WHERE a.Status = 'Active' AND a.IsLegacyAccount = 1 AND s.FdLiabilityLedgerID = @cLedgerId
+              );
+
+            -- Purge ORPHAN MemberOpeningBalances
+            IF OBJECT_ID(N'[dbo].[MemberOpeningBalances]', N'U') IS NOT NULL
+            BEGIN
+                DELETE mob
+                FROM [dbo].[MemberOpeningBalances] mob
+                WHERE mob.LedgerID = @cLedgerId
+                  AND mob.CustomerID NOT IN (
+                      SELECT DISTINCT a.CustomerID
+                      FROM [dbo].[FdAccounts] a
+                      JOIN [dbo].[FdSchemes] s ON a.FdSchemeID = s.FdSchemeID
+                      WHERE a.Status = 'Active' AND a.IsLegacyAccount = 1 AND s.FdLiabilityLedgerID = @cLedgerId
+                  );
+
+                UPDATE mob
+                SET mob.Amount = cob.Amount,
+                    mob.BalanceType = cob.BalanceType,
+                    mob.UpdatedOn = GETDATE()
+                FROM [dbo].[MemberOpeningBalances] mob
+                JOIN [dbo].[CustomerOpeningBalances] cob ON mob.CustomerID = cob.CustomerID AND mob.LedgerID = cob.LedgerID
+                WHERE mob.LedgerID = @cLedgerId AND (mob.Amount <> cob.Amount OR mob.BalanceType <> cob.BalanceType);
+            END
+
+            -- Reconcile and set Ledger.OpeningBalance to match true subledger total
+            DECLARE @reconciledBal DECIMAL(18,2) = 0;
+            SELECT @reconciledBal = ISNULL(SUM(CASE WHEN BalanceType = 'Cr' THEN Amount ELSE -Amount END), 0)
+            FROM [dbo].[CustomerOpeningBalances]
+            WHERE LedgerID = @cLedgerId;
+
+            UPDATE [dbo].[Ledgers]
+            SET OpeningBalance = CASE WHEN @reconciledBal >= 0 THEN @reconciledBal ELSE -@reconciledBal END,
+                OpeningBalanceType = CASE WHEN @reconciledBal >= 0 THEN 'Cr' ELSE 'Dr' END
+            WHERE LedgerID = @cLedgerId;
+
+            FETCH NEXT FROM cur_fd_ledger INTO @cLedgerId;
+        END;
+
+        CLOSE cur_fd_ledger;
+        DEALLOCATE cur_fd_ledger;
+
+        PRINT '  -> FD Opening Balances reconciled with General Ledger successfully!';
+    END TRY
+    BEGIN CATCH
+        PRINT '  [WARN] FD Opening Balance reconciliation non-critical warning: ' + ERROR_MESSAGE();
     END CATCH
 END
 GO

@@ -195,6 +195,14 @@ if (Test-Path $loanRateHealSource) {
     Write-Host "  -> heal_loan_rate_histories_encoding.sql included in database package (UTF-8 BOM)." -ForegroundColor White
 }
 
+# 3.1.5 Auto-Heal FD Opening Balance & Balance Sheet (GL-SL) Discrepancy
+$fdBsHealSource = Join-Path $workspaceRoot "tools\heal_fd_opening_balance_discrepancy.sql"
+if (Test-Path $fdBsHealSource) {
+    $fdBsHealContent = [System.IO.File]::ReadAllText($fdBsHealSource, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText((Join-Path $patchFolder "database\heal_fd_opening_balance_discrepancy.sql"), $fdBsHealContent, $utf8WithBom)
+    Write-Host "  -> heal_fd_opening_balance_discrepancy.sql included in database package (UTF-8 BOM)." -ForegroundColor White
+}
+
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null

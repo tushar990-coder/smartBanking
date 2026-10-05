@@ -85,7 +85,8 @@ namespace Bhisi.Api.Controllers
                 var rate = la.InterestRate;
                 var diffTime = targetDate.Date - fromDate.Date;
                 var diffDays = Math.Max(0, diffTime.Days);
-                decimal newInterest = diffDays > 0 ? Math.Round((la.PrincipalBalance * rate * diffDays) / 36500m) : 0;
+                decimal effectivePrincipal = LoanAccountsController.GetEffectiveInterestBearingPrincipal(la);
+                decimal newInterest = diffDays > 0 ? Math.Round((effectivePrincipal * rate * diffDays) / 36500m) : 0;
                 return la.InterestBalance + newInterest;
             }
             else

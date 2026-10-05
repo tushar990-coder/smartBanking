@@ -916,21 +916,42 @@ $readmeContent = @"
 # ==============================================================================
 
 ## 1. पॅचमधील मुख्य सुधारणा (What's New in v$version)
-1. **Strict Customer-First Loan Suite:**
-   - सर्व ८ कर्ज मॉड्यूल्समधून `MemberID` fallback पूर्णपणे काढून टाकले आहे (`LoanDisbursementMaster`, `LoanCollectionMaster`, `LoanDistributionListModal`, `LoanRecoveryNoticeReport`, `LoanLedgerReport`, `LoanOpeningBalanceMaster`, `GlobalContextMenu`, `LoanCollectionReceiptPrint`).
-   - सर्व ठिकाणी केवळ वैध `CustomerID` द्वारे डेटा लोड व सेव्ह होतो.
+1. **योजनानिहाय डायनॅमिक कर्ज व्याज आकारणी व लेजर मॅपिंग (Scheme-Driven Dynamic Interest Engine v2.5.26):**
+   - योजना मास्टरमधील `InterestPostingType` ('कर्जावर' किंवा 'येणे व्याजावर') नुसार खात्यांवर अचूक व्याज आकारणी.
+   - सिस्टीममधील सर्व हार्ड-कोडेड मराठी/इंग्रजी लेजर नावे काढून १००% डायनॅमिक योजनानिहाय संतुलित व्हाउचर निर्मिती.
 
-2. **Atomic Loan Disbursement (जोखीम निवारण):**
+2. **कर्ज योजना मास्टर युनिक इंडेक्स व पुनरावृत्ती इतिहास (Loan Rate Unique & Revision History Audit):**
+   - `LoanCode` व `LoanType` साठी युनिक इंडेक्स आणि डेटाबेस डुप्लिकेट प्रिव्हेन्शन व ऑटो-हिलिंग.
+   - व्याजदर/दंड दर बदलताना संचालक मंडळ ठराव क्र., ठराव दिनांक, लागू दिनांक व कारणासह `LoanRateHistories` मध्ये संपूर्ण ऑडिट ट्रेल.
+
+3. **कर्ज आरंभिक शिल्लक भांडवलीकृत व्याज, येणे व्याज व NPA तरतूद (Loan Opening Balance Suite):**
+   - शुद्ध मुद्दल (Pure Principal), समाविष्ट व्याज (Capitalized Interest), चालू येणे व्याज आणि NPA व्याज तरतूद (Interest Provision) चे अचूक विभाजन.
+   - समाविष्ट व्याजावर पुढील व्याज आकारायचे किंवा नाही (ChargeInterestOnCapitalizedAmount) याचा पर्याय आणि InitialNpaClassification थेट सिंक.
+
+4. **GL व SL ताळमेळ अहवाल व फॉरेन्सिक ऑडिट (GL vs SL Reconciliation & Audit):**
+   - `GET /api/LoanAccounts/GlReconciliationSummary` द्वारे सर्व कर्ज योजनांचे खतावणी आणि जनरल लेजर मधील फरक व ऑडिट पडताळणी.
+   - आरंभिक शिल्लक बदल, खाते डिलीट व कर्ज वितरण मंजूर रक्कम ऑटो-हिलिंग (`heal_loan_opening_disbursements.sql`).
+
+5. **मुदत ठेव सुरुवातीची शिल्लक स्थलांतर जुना पावती क्रमांक युनिक व्हॅलिडेशन (FD Migrated Unique Old Receipt No):**
+   - एकाच योजनेअंतर्गत जुना पावती क्रमांक (LegacyAccountNumber) डुप्लिकेट सेव्ह होण्यावर कडक सर्व्हर-साइड व क्लायंट-साइड व्हॅलिडेशन.
+   - रिअल-टाइम व्हॅलिडेशन एंडपॉईंट व डुप्लिकेट असल्यास थेट वॉर्निंग बॅज व प्री-सबमिट गार्ड.
+
+6. **मुदतबंद ठेव यादी अहवाल व शेअर्स प्रारंभिक शिल्लक (FD Customer Summary Report & Share Opening Balance):**
+   - CBS v2.4 कॉम्पॅक्ट Dual-Column व Detailed अहवाल, खातेदार/CIF निहाय एकत्रित मुदत ठेव सारांश.
+   - शेअर्स प्रारंभिक शिल्लकमध्ये मराठी अंकांचे इंग्रजीत स्वयंचलित रूपांतरण व अचूक इनपुट.
+
+7. **Strict Customer-First Loan Suite & Atomic Disbursement:**
+   - सर्व ८ कर्ज मॉड्यूल्समधून `MemberID` fallback पूर्णपणे काढून थेट `CustomerID` द्वारे डेटा व्यवस्थापन.
    - कर्ज अर्ज मंजुरी (Approval) आणि कर्ज वाटप व्हाउचर निर्मिती एकाच अ‍ॅटोमिक ट्रान्झॅक्शनमध्ये समाविष्ट.
-   - सिस्टीममध्ये कधीही Orphan किंवा अर्धवट रेकॉर्ड तयार होणार नाही.
 
-3. **MCS Act 1960 / Cooperative Bye-Laws Compliance:**
-   - नवीन कर्जदारांना शेअर्स वाटप झाल्यास त्यांना थेट 'Regular Member' (वर्ग अ) म्हणून नोंदवले जाते.
+8. **MCS Act 1960 / Cooperative Bye-Laws Compliance:**
+   - नवीन कर्जदारांना शेअर्स वाटप झाल्यास थेट 'Regular Member' (वर्ग अ) म्हणून नोंद.
    - विद्यमान नाममात्र (Nominal) सभासदांनी शेअर्स खरेदी केल्यास सिस्टीम त्यांना स्वयंचलितपणे 'Regular' मध्ये अपग्रेड करते.
    - `auto_heal_nominal_shareholders.sql` पॅचद्वारे डेटाबेसमधील सर्व जुन्या शेअरहोल्डर्सची स्थिती तपासली जाऊन नियमानुसार दुरुस्त केली जाते.
 
-4. **14-Digit Saving Accounts Migration:**
+9. **14-Digit Saving Accounts Migration & FD CBS Standardization:**
    - सर्व जुनी बचत खाती आधुनिक १४-अंकी CBS खाते क्रमांकामध्ये सुरक्षितपणे अपडेट केली जातात.
+   - मुदत ठेवींसाठी १४-अंकी CBS खाते क्रमांक आणि स्वयंचलित डिक्रीमेंट इंजिन.
 
 ---
 

@@ -384,6 +384,18 @@ using (var scope = app.Services.CreateScope())
                 CREATE INDEX [IX_PigmyAgentAccountTransfers_Account] ON [PigmyAgentAccountTransfers] ([PigmyAccountID]);
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanAccounts')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanAccounts_Branch_AccountNo' AND object_id = OBJECT_ID('LoanAccounts'))
+                BEGIN
+                    SET QUOTED_IDENTIFIER ON;
+                    SET ANSI_NULLS ON;
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_LoanAccounts_Branch_AccountNo]
+                    ON [dbo].[LoanAccounts] ([BranchID], [LoanAccountNo])
+                    WHERE [LoanAccountNo] IS NOT NULL AND [LoanAccountNo] <> '';
+                END
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Members')
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Members]') AND name = 'IsDeleted')
@@ -1202,6 +1214,143 @@ using (var scope = app.Services.CreateScope())
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'LastInterestPostingDate')
                 BEGIN
                     ALTER TABLE [LoanAccounts] ADD [LastInterestPostingDate] datetime2 NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'PurePrincipalBalance')
+                BEGIN
+                    ALTER TABLE [LoanAccounts] ADD [PurePrincipalBalance] decimal(18,2) NOT NULL DEFAULT 0;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'CapitalizedInterestAmount')
+                BEGIN
+                    ALTER TABLE [LoanAccounts] ADD [CapitalizedInterestAmount] decimal(18,2) NOT NULL DEFAULT 0;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'InterestProvisionBalance')
+                BEGIN
+                    ALTER TABLE [LoanAccounts] ADD [InterestProvisionBalance] decimal(18,2) NOT NULL DEFAULT 0;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'InitialNpaClassification')
+                BEGIN
+                    ALTER TABLE [LoanAccounts] ADD [InitialNpaClassification] nvarchar(20) NOT NULL DEFAULT 'Standard';
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'ChargeInterestOnCapitalizedAmount')
+                BEGIN
+                    ALTER TABLE [LoanAccounts] ADD [ChargeInterestOnCapitalizedAmount] bit NOT NULL DEFAULT 1;
+                END
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanDisbursements') AND EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanAccounts')
+            BEGIN
+                -- Self-healing: Ensure Opening Balance LoanDisbursements record SanctionedAmount as DisbursementAmount
+                UPDATE ld
+                SET ld.SanctionedAmount = la.SanctionedAmount,
+                    ld.DisbursementAmount = la.SanctionedAmount,
+                    ld.NetAmountPaid = la.SanctionedAmount
+                FROM [LoanDisbursements] ld
+                INNER JOIN [LoanAccounts] la ON ld.LoanAccountID = la.LoanAccountID
+                WHERE (ld.PaymentMode = 'Opening Balance' OR ld.Remarks LIKE '%Opening Balance%')
+                  AND la.IsOpeningBalance = 1
+                  AND (ld.DisbursementAmount <> la.SanctionedAmount OR ld.NetAmountPaid <> la.SanctionedAmount OR ld.SanctionedAmount <> la.SanctionedAmount);
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanRates')
+            BEGIN
+                -- Fix NULL or empty LoanCode
+                UPDATE [dbo].[LoanRates]
+                SET [LoanCode] = 'LN' + RIGHT('00' + CAST([LoanRateID] AS NVARCHAR(10)), 2)
+                WHERE [LoanCode] IS NULL OR LTRIM(RTRIM([LoanCode])) = '';
+
+                -- Trim whitespace
+                UPDATE [dbo].[LoanRates]
+                SET [LoanCode] = LTRIM(RTRIM([LoanCode]))
+                WHERE [LoanCode] <> LTRIM(RTRIM([LoanCode]));
+
+                -- Auto-heal duplicate LoanCode before creating UNIQUE INDEX
+                ;WITH DupCodeCTE AS (
+                    SELECT LoanRateID, LoanCode,
+                           ROW_NUMBER() OVER(PARTITION BY LOWER(LTRIM(RTRIM(LoanCode))) ORDER BY LoanRateID) as rn
+                    FROM [dbo].[LoanRates]
+                )
+                UPDATE lr
+                SET lr.LoanCode = 'LN' + RIGHT('00' + CAST(lr.LoanRateID AS NVARCHAR(10)), 2)
+                FROM [dbo].[LoanRates] lr
+                INNER JOIN DupCodeCTE cte ON lr.LoanRateID = cte.LoanRateID
+                WHERE cte.rn > 1;
+
+                -- Ensure Unique Index on LoanCode
+                IF NOT EXISTS (
+                    SELECT * FROM sys.indexes 
+                    WHERE name = 'IX_LoanRates_LoanCode' 
+                      AND object_id = OBJECT_ID('dbo.LoanRates')
+                )
+                BEGIN
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_LoanRates_LoanCode] 
+                    ON [dbo].[LoanRates]([LoanCode]) 
+                    WHERE [LoanCode] IS NOT NULL AND [LoanCode] <> '';
+                END
+
+                -- Fix NULL or empty LoanType
+                UPDATE [dbo].[LoanRates]
+                SET [LoanType] = N'कर्ज योजना ' + CAST([LoanRateID] AS NVARCHAR(10))
+                WHERE [LoanType] IS NULL OR LTRIM(RTRIM([LoanType])) = '';
+
+                -- Trim whitespace
+                UPDATE [dbo].[LoanRates]
+                SET [LoanType] = LTRIM(RTRIM([LoanType]))
+                WHERE [LoanType] <> LTRIM(RTRIM([LoanType]));
+
+                -- Auto-heal duplicate LoanType before creating UNIQUE INDEX
+                ;WITH DupTypeCTE AS (
+                    SELECT LoanRateID, LoanType,
+                           ROW_NUMBER() OVER(PARTITION BY LOWER(LTRIM(RTRIM(LoanType))) ORDER BY LoanRateID) as rn
+                    FROM [dbo].[LoanRates]
+                )
+                UPDATE lr
+                SET lr.LoanType = lr.LoanType + N' (' + CAST(lr.LoanRateID AS NVARCHAR(10)) + N')'
+                FROM [dbo].[LoanRates] lr
+                INNER JOIN DupTypeCTE cte ON lr.LoanRateID = cte.LoanRateID
+                WHERE cte.rn > 1;
+
+                -- Ensure Unique Index on LoanType
+                IF NOT EXISTS (
+                    SELECT * FROM sys.indexes 
+                    WHERE name = 'IX_LoanRates_LoanType' 
+                      AND object_id = OBJECT_ID('dbo.LoanRates')
+                )
+                BEGIN
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_LoanRates_LoanType] 
+                    ON [dbo].[LoanRates]([LoanType]) 
+                    WHERE [LoanType] IS NOT NULL AND [LoanType] <> '';
+                END
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanRateHistories')
+            BEGIN
+                CREATE TABLE [dbo].[LoanRateHistories] (
+                    [HistoryID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [LoanRateID] INT NOT NULL,
+                    [OldInterestRate] DECIMAL(18,2) NOT NULL,
+                    [NewInterestRate] DECIMAL(18,2) NOT NULL,
+                    [OldOverdueInterestRate] DECIMAL(18,2) NOT NULL,
+                    [NewOverdueInterestRate] DECIMAL(18,2) NOT NULL,
+                    [ResolutionNo] NVARCHAR(100) NOT NULL DEFAULT '',
+                    [ResolutionDate] DATETIME2 NULL,
+                    [EffectiveDate] DATETIME2 NOT NULL DEFAULT GETDATE(),
+                    [Reason] NVARCHAR(500) NULL,
+                    [ChangedByUserID] INT NOT NULL DEFAULT 1,
+                    [ChangedByUsername] NVARCHAR(100) NOT NULL DEFAULT 'System',
+                    [ChangedAt] DATETIME2 NOT NULL DEFAULT GETDATE(),
+                    [IPAddress] NVARCHAR(50) NULL,
+                    CONSTRAINT [FK_LoanRateHistories_LoanRates] FOREIGN KEY ([LoanRateID]) 
+                        REFERENCES [dbo].[LoanRates]([LoanRateID]) ON DELETE CASCADE
+                );
+
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanRateHistories_LoanRateID' AND object_id = OBJECT_ID('dbo.LoanRateHistories'))
+                BEGIN
+                    CREATE NONCLUSTERED INDEX [IX_LoanRateHistories_LoanRateID] ON [dbo].[LoanRateHistories]([LoanRateID] ASC);
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanRateHistories_EffectiveDate' AND object_id = OBJECT_ID('dbo.LoanRateHistories'))
+                BEGIN
+                    CREATE NONCLUSTERED INDEX [IX_LoanRateHistories_EffectiveDate] ON [dbo].[LoanRateHistories]([EffectiveDate] DESC);
                 END
             END
 

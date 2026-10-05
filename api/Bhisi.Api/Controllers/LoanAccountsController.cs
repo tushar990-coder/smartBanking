@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using System.Security.Claims;
 
 namespace Bhisi.Api.Controllers
 {
@@ -150,7 +151,7 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/LoanAccounts/5
-        [HttpGet("{id}")]
+        [HttpGet("{id:int}")]
         public async Task<ActionResult<LoanAccount>> GetLoanAccount(int id)
         {
             var loanAccount = await _context.LoanAccounts
@@ -173,7 +174,7 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/LoanAccounts/5/AccountDetailsAndSchedule
-        [HttpGet("{id}/AccountDetailsAndSchedule")]
+        [HttpGet("{id:int}/AccountDetailsAndSchedule")]
         public async Task<ActionResult<AccountDetailsAndScheduleDto>> GetAccountDetailsAndSchedule(int id)
         {
             var account = await _context.LoanAccounts
@@ -446,7 +447,7 @@ namespace Bhisi.Api.Controllers
 
                 int nextSeq = maxSeq + 1;
                 string nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(targetBranchId, schemeCodeNum, nextSeq);
-                while (existingLoanAccs.Contains(nextAccNo))
+                while (existingLoanAccs.Contains(nextAccNo) || await _context.LoanAccounts.AnyAsync(l => l.BranchID == targetBranchId && l.LoanAccountNo == nextAccNo))
                 {
                     nextSeq++;
                     nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(targetBranchId, schemeCodeNum, nextSeq);
@@ -454,9 +455,23 @@ namespace Bhisi.Api.Controllers
 
                 loanAccount.LoanAccountNo = nextAccNo;
             }
+            else
+            {
+                if (await IsLoanAccountNoDuplicateAsync(loanAccount.BranchID, loanAccount.LoanAccountNo))
+                {
+                    return BadRequest(new { message = $"कर्ज खाते क्रमांक '{loanAccount.LoanAccountNo}' आधीपासून शाखा क्र. {loanAccount.BranchID} मध्ये अस्तित्वात आहे." });
+                }
+            }
 
-            _context.LoanAccounts.Add(loanAccount);
-            await _context.SaveChangesAsync();
+            try
+            {
+                _context.LoanAccounts.Add(loanAccount);
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.SqlClient.SqlException sqlEx && (sqlEx.Number == 2601 || sqlEx.Number == 2627))
+            {
+                return Conflict(new { message = $"कर्ज खाते क्रमांक '{loanAccount.LoanAccountNo}' आधीपासून अस्तित्वात आहे. कृपया नवीन खाते क्रमांक वापरा." });
+            }
 
             return CreatedAtAction("GetLoanAccount", new { id = loanAccount.LoanAccountID }, loanAccount);
         }
@@ -465,6 +480,43 @@ namespace Bhisi.Api.Controllers
         [HttpPost("OpeningBalance")]
         public async Task<ActionResult<LoanAccount>> PostOpeningBalance(LoanOpeningBalanceDto dto)
         {
+            // Server-Side Guard Clause: Validate negative values, date cut-offs, and financial sanity
+            var validationError = await ValidateOpeningBalanceDtoAsync(dto);
+            if (!string.IsNullOrEmpty(validationError))
+            {
+                var (vUserId, vUsername, vIp) = GetAuditContext();
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    UserID = vUserId,
+                    Username = vUsername,
+                    Action = "LOAN_OPENING_VALIDATION_FAILED",
+                    EntityName = "LoanAccount",
+                    Status = "Failed",
+                    Timestamp = DateTime.Now,
+                    IPAddress = vIp,
+                    Details = $"Validation failed in PostOpeningBalance: {validationError}. Sanctioned: ₹{dto.SanctionedAmount:N2}, Principal: ₹{dto.PrincipalBalance:N2}, Date: {dto.OpeningDate:yyyy-MM-dd}"
+                });
+                await _context.SaveChangesAsync();
+                return BadRequest(new { message = validationError });
+            }
+
+            if (dto.LoanOpeningBalanceID > 0)
+            {
+                var existingAccount = await _context.LoanAccounts.FindAsync(dto.LoanOpeningBalanceID);
+                if (existingAccount != null)
+                {
+                    // Defensive guard: Redirect to PutOpeningBalance to prevent duplicate account creation
+                    var putResult = await PutOpeningBalance(dto.LoanOpeningBalanceID, dto);
+                    if (putResult is NoContentResult || putResult is OkResult || putResult is OkObjectResult)
+                    {
+                        var reloaded = await _context.LoanAccounts.FindAsync(dto.LoanOpeningBalanceID);
+                        return Ok(reloaded ?? existingAccount);
+                    }
+                    return StatusCode(500, "Failed to update existing opening balance");
+                }
+            }
+
+            string resolvedAccountNo = dto.LoanAccountNo ?? "";
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -485,7 +537,7 @@ namespace Bhisi.Api.Controllers
                     if (borrower != null && borrower.CustomerID > 0) customer = await _context.Customers.FindAsync(borrower.CustomerID);
                 }
 
-                string resolvedAccountNo = await ResolveValidLoanAccountNo(dto.BranchID, dto.LoanRateID, dto.LoanAccountNo);
+                resolvedAccountNo = await ResolveValidLoanAccountNo(dto.BranchID, dto.LoanRateID, dto.LoanAccountNo);
 
                 var loanAccount = new LoanAccount
                 {
@@ -495,9 +547,16 @@ namespace Bhisi.Api.Controllers
                     LoanRateID = dto.LoanRateID,
                     LoanAccountNo = resolvedAccountNo,
                     LegacyAccountNumber = dto.LegacyAccountNumber,
-                    PrincipalBalance = dto.PrincipalBalance,
+                    PrincipalBalance = (dto.PurePrincipalBalance > 0 || dto.CapitalizedInterestAmount > 0)
+                        ? (dto.PurePrincipalBalance + dto.CapitalizedInterestAmount)
+                        : dto.PrincipalBalance,
+                    PurePrincipalBalance = dto.PurePrincipalBalance > 0 ? dto.PurePrincipalBalance : dto.PrincipalBalance,
+                    CapitalizedInterestAmount = dto.CapitalizedInterestAmount,
                     InterestBalance = dto.InterestBalance,
                     OverdueInterestBalance = dto.OverdueInterestBalance,
+                    InterestProvisionBalance = dto.InterestProvisionBalance,
+                    InitialNpaClassification = string.IsNullOrWhiteSpace(dto.InitialNpaClassification) ? "Standard" : dto.InitialNpaClassification,
+                    ChargeInterestOnCapitalizedAmount = dto.ChargeInterestOnCapitalizedAmount,
                     OpeningDate = dto.OpeningDate,
                     LoanDisbursementDate = dto.LoanDisbursementDate ?? dto.OpeningDate,
                     SanctionedAmount = dto.SanctionedAmount,
@@ -527,13 +586,13 @@ namespace Bhisi.Api.Controllers
                     LoanAccountID = loanAccount.LoanAccountID,
                     DisbursementDate = dto.LoanDisbursementDate ?? dto.OpeningDate,
                     SanctionedAmount = dto.SanctionedAmount,
-                    DisbursementAmount = dto.PrincipalBalance,
+                    DisbursementAmount = dto.SanctionedAmount,
                     ProcessingFee = 0,
                     ShareDeduction = 0,
                     InsuranceDeduction = 0,
                     StationeryCharges = 0,
                     OtherDeductions = 0,
-                    NetAmountPaid = dto.PrincipalBalance,
+                    NetAmountPaid = dto.SanctionedAmount,
                     PaymentMode = "Opening Balance",
                     Remarks = "Opening Balance (मागील येणे कर्ज)",
                     LoanInstallmentType = loanRate?.LoanInstallmentType
@@ -600,8 +659,69 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
+                // Forensic Audit Log for Opening Balance Creation
+                var (auditUserId, auditUsername, auditIp) = GetAuditContext();
+                string borrowerTitle = customer != null 
+                    ? $"{customer.FirstName} {customer.LastName}".Trim() 
+                    : (borrower?.Customer != null ? $"{borrower.Customer.FirstName} {borrower.Customer.LastName}".Trim() : "Borrower");
+
+                var postAuditDetails = new
+                {
+                    Event = "LOAN_OPENING_BALANCE_CREATED",
+                    LoanAccountID = loanAccount.LoanAccountID,
+                    LoanAccountNo = loanAccount.LoanAccountNo,
+                    Borrower = borrowerTitle,
+                    BranchID = loanAccount.BranchID,
+                    SanctionedAmount = loanAccount.SanctionedAmount,
+                    PrincipalBalance = loanAccount.PrincipalBalance,
+                    PurePrincipalBalance = loanAccount.PurePrincipalBalance,
+                    CapitalizedInterestAmount = loanAccount.CapitalizedInterestAmount,
+                    InterestBalance = loanAccount.InterestBalance,
+                    OverdueInterestBalance = loanAccount.OverdueInterestBalance,
+                    InterestProvisionBalance = loanAccount.InterestProvisionBalance,
+                    InitialNpaClassification = loanAccount.InitialNpaClassification,
+                    OpeningDate = loanAccount.OpeningDate.ToString("yyyy-MM-dd"),
+                    Operator = auditUsername,
+                    IPAddress = auditIp,
+                    Timestamp = DateTime.Now
+                };
+
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    UserID = auditUserId,
+                    Username = auditUsername,
+                    Action = "LOAN_OPENING_BALANCE_CREATED",
+                    EntityName = "LoanAccount",
+                    EntityID = loanAccount.LoanAccountID.ToString(),
+                    Timestamp = DateTime.Now,
+                    IPAddress = auditIp,
+                    Details = $"Loan Opening Balance Created: A/C {loanAccount.LoanAccountNo} ({borrowerTitle}). Principal: ₹{loanAccount.PrincipalBalance:N2} (Pure: ₹{loanAccount.PurePrincipalBalance:N2}, CapInt: ₹{loanAccount.CapitalizedInterestAmount:N2}), Int: ₹{loanAccount.InterestBalance:N2}, Prov: ₹{loanAccount.InterestProvisionBalance:N2}, NPA: {loanAccount.InitialNpaClassification}. Operator: {auditUsername} (IP: {auditIp}) | Payload: {System.Text.Json.JsonSerializer.Serialize(postAuditDetails)}"
+                });
+                await _context.SaveChangesAsync();
+
+                // Synchronize Initial NPA Classification with LoanAccountNpaStatuses
+                await EnsureInitialNpaStatusAsync(loanAccount, dto);
+
                 await transaction.CommitAsync();
                 return Ok(loanAccount);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.SqlClient.SqlException sqlEx && (sqlEx.Number == 2601 || sqlEx.Number == 2627))
+            {
+                await transaction.RollbackAsync();
+                var (vUserId, vUsername, vIp) = GetAuditContext();
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    UserID = vUserId,
+                    Username = vUsername,
+                    Action = "LOAN_ACCOUNT_DUPLICATE_COLLISION",
+                    EntityName = "LoanAccount",
+                    Status = "Conflict",
+                    Timestamp = DateTime.Now,
+                    IPAddress = vIp,
+                    Details = $"Concurrency collision in PostOpeningBalance: LoanAccountNo '{resolvedAccountNo}' already exists in Branch {dto.BranchID}."
+                });
+                await _context.SaveChangesAsync();
+                return Conflict(new { message = $"कर्ज खाते क्रमांक '{resolvedAccountNo}' आधीपासून शाखा क्र. {dto.BranchID} मध्ये अस्तित्वात आहे. कृपया नवीन खाते क्रमांक जनरेट करा." });
             }
             catch (Exception ex)
             {
@@ -614,6 +734,28 @@ namespace Bhisi.Api.Controllers
         [HttpPut("OpeningBalance/{id}")]
         public async Task<IActionResult> PutOpeningBalance(int id, LoanOpeningBalanceDto dto)
         {
+            // Server-Side Guard Clause: Validate negative values, date cut-offs, and financial sanity
+            var validationError = await ValidateOpeningBalanceDtoAsync(dto);
+            if (!string.IsNullOrEmpty(validationError))
+            {
+                var (vUserId, vUsername, vIp) = GetAuditContext();
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    UserID = vUserId,
+                    Username = vUsername,
+                    Action = "LOAN_OPENING_VALIDATION_FAILED",
+                    EntityName = "LoanAccount",
+                    EntityID = id.ToString(),
+                    Status = "Failed",
+                    Timestamp = DateTime.Now,
+                    IPAddress = vIp,
+                    Details = $"Validation failed in PutOpeningBalance (A/C ID {id}): {validationError}. Sanctioned: ₹{dto.SanctionedAmount:N2}, Principal: ₹{dto.PrincipalBalance:N2}, Date: {dto.OpeningDate:yyyy-MM-dd}"
+                });
+                await _context.SaveChangesAsync();
+                return BadRequest(new { message = validationError });
+            }
+
+            string resolvedAccountNo = dto.LoanAccountNo ?? "";
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -623,15 +765,61 @@ namespace Bhisi.Api.Controllers
                     return NotFound();
                 }
 
+                // Capture Forensic Old Snapshot before mutating loanAccount
+                var oldSnapshot = new
+                {
+                    LoanAccountNo = loanAccount.LoanAccountNo,
+                    BranchID = loanAccount.BranchID,
+                    CustomerID = loanAccount.CustomerID,
+                    MemberID = loanAccount.MemberID,
+                    LoanRateID = loanAccount.LoanRateID,
+                    PrincipalBalance = loanAccount.PrincipalBalance,
+                    PurePrincipalBalance = loanAccount.PurePrincipalBalance,
+                    CapitalizedInterestAmount = loanAccount.CapitalizedInterestAmount,
+                    InterestBalance = loanAccount.InterestBalance,
+                    OverdueInterestBalance = loanAccount.OverdueInterestBalance,
+                    InterestProvisionBalance = loanAccount.InterestProvisionBalance,
+                    InitialNpaClassification = loanAccount.InitialNpaClassification,
+                    OpeningDate = loanAccount.OpeningDate,
+                    SanctionedAmount = loanAccount.SanctionedAmount,
+                    InterestRate = loanAccount.InterestRate,
+                    InstallmentAmount = loanAccount.InstallmentAmount,
+                    DurationMonths = loanAccount.DurationMonths,
+                    SecurityValue = loanAccount.SecurityValue
+                };
+
+                // Resolve Customer & Member
+                Customer? customer = null;
+                Member? borrower = null;
+
+                if (dto.CustomerID.HasValue && dto.CustomerID.Value > 0)
+                {
+                    customer = await _context.Customers.FindAsync(dto.CustomerID.Value);
+                    if (customer != null) borrower = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                }
+                else if (dto.MemberID.HasValue && dto.MemberID.Value > 0)
+                {
+                    borrower = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == dto.MemberID.Value);
+                    if (borrower != null && borrower.CustomerID > 0) customer = await _context.Customers.FindAsync(borrower.CustomerID);
+                }
+
                 loanAccount.BranchID = dto.BranchID;
-                loanAccount.MemberID = dto.MemberID;
+                loanAccount.CustomerID = customer?.CustomerID ?? (borrower?.CustomerID > 0 ? borrower.CustomerID : loanAccount.CustomerID);
+                loanAccount.MemberID = borrower?.MemberID ?? dto.MemberID;
                 loanAccount.LoanRateID = dto.LoanRateID;
-                string resolvedAccountNo = await ResolveValidLoanAccountNo(dto.BranchID, dto.LoanRateID, dto.LoanAccountNo);
+                resolvedAccountNo = await ResolveValidLoanAccountNo(dto.BranchID, dto.LoanRateID, dto.LoanAccountNo);
                 loanAccount.LoanAccountNo = resolvedAccountNo;
                 loanAccount.LegacyAccountNumber = dto.LegacyAccountNumber;
-                loanAccount.PrincipalBalance = dto.PrincipalBalance;
+                loanAccount.PrincipalBalance = (dto.PurePrincipalBalance > 0 || dto.CapitalizedInterestAmount > 0)
+                    ? (dto.PurePrincipalBalance + dto.CapitalizedInterestAmount)
+                    : dto.PrincipalBalance;
+                loanAccount.PurePrincipalBalance = dto.PurePrincipalBalance > 0 ? dto.PurePrincipalBalance : dto.PrincipalBalance;
+                loanAccount.CapitalizedInterestAmount = dto.CapitalizedInterestAmount;
                 loanAccount.InterestBalance = dto.InterestBalance;
                 loanAccount.OverdueInterestBalance = dto.OverdueInterestBalance;
+                loanAccount.InterestProvisionBalance = dto.InterestProvisionBalance;
+                loanAccount.InitialNpaClassification = string.IsNullOrWhiteSpace(dto.InitialNpaClassification) ? "Standard" : dto.InitialNpaClassification;
+                loanAccount.ChargeInterestOnCapitalizedAmount = dto.ChargeInterestOnCapitalizedAmount;
                 loanAccount.OpeningDate = dto.OpeningDate;
                 loanAccount.LoanDisbursementDate = dto.LoanDisbursementDate ?? dto.OpeningDate;
                 loanAccount.SanctionedAmount = dto.SanctionedAmount;
@@ -662,8 +850,8 @@ namespace Bhisi.Api.Controllers
                 }
                 disbursement.DisbursementDate = dto.LoanDisbursementDate ?? dto.OpeningDate;
                 disbursement.SanctionedAmount = dto.SanctionedAmount;
-                disbursement.DisbursementAmount = dto.PrincipalBalance;
-                disbursement.NetAmountPaid = dto.PrincipalBalance;
+                disbursement.DisbursementAmount = dto.SanctionedAmount;
+                disbursement.NetAmountPaid = dto.SanctionedAmount;
                 disbursement.PaymentMode = "Opening Balance";
                 disbursement.Remarks = "Opening Balance (मागील येणे कर्ज)";
                 disbursement.LoanInstallmentType = loanRate?.LoanInstallmentType;
@@ -716,14 +904,409 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
+                // Forensic Audit Log for Opening Balance Update (Before vs After Diff)
+                var (auditUserId, auditUsername, auditIp) = GetAuditContext();
+
+                var newSnapshot = new
+                {
+                    LoanAccountNo = loanAccount.LoanAccountNo,
+                    BranchID = loanAccount.BranchID,
+                    CustomerID = loanAccount.CustomerID,
+                    MemberID = loanAccount.MemberID,
+                    LoanRateID = loanAccount.LoanRateID,
+                    PrincipalBalance = loanAccount.PrincipalBalance,
+                    PurePrincipalBalance = loanAccount.PurePrincipalBalance,
+                    CapitalizedInterestAmount = loanAccount.CapitalizedInterestAmount,
+                    InterestBalance = loanAccount.InterestBalance,
+                    OverdueInterestBalance = loanAccount.OverdueInterestBalance,
+                    InterestProvisionBalance = loanAccount.InterestProvisionBalance,
+                    InitialNpaClassification = loanAccount.InitialNpaClassification,
+                    OpeningDate = loanAccount.OpeningDate,
+                    SanctionedAmount = loanAccount.SanctionedAmount,
+                    InterestRate = loanAccount.InterestRate,
+                    InstallmentAmount = loanAccount.InstallmentAmount,
+                    DurationMonths = loanAccount.DurationMonths,
+                    SecurityValue = loanAccount.SecurityValue
+                };
+
+                var differences = new List<string>();
+                if (oldSnapshot.PrincipalBalance != newSnapshot.PrincipalBalance)
+                    differences.Add($"PrincipalBalance: ₹{oldSnapshot.PrincipalBalance:N2} -> ₹{newSnapshot.PrincipalBalance:N2}");
+                if (oldSnapshot.PurePrincipalBalance != newSnapshot.PurePrincipalBalance)
+                    differences.Add($"PurePrincipal: ₹{oldSnapshot.PurePrincipalBalance:N2} -> ₹{newSnapshot.PurePrincipalBalance:N2}");
+                if (oldSnapshot.CapitalizedInterestAmount != newSnapshot.CapitalizedInterestAmount)
+                    differences.Add($"CapInt: ₹{oldSnapshot.CapitalizedInterestAmount:N2} -> ₹{newSnapshot.CapitalizedInterestAmount:N2}");
+                if (oldSnapshot.InterestBalance != newSnapshot.InterestBalance)
+                    differences.Add($"InterestBalance: ₹{oldSnapshot.InterestBalance:N2} -> ₹{newSnapshot.InterestBalance:N2}");
+                if (oldSnapshot.OverdueInterestBalance != newSnapshot.OverdueInterestBalance)
+                    differences.Add($"OverdueInterest: ₹{oldSnapshot.OverdueInterestBalance:N2} -> ₹{newSnapshot.OverdueInterestBalance:N2}");
+                if (oldSnapshot.InterestProvisionBalance != newSnapshot.InterestProvisionBalance)
+                    differences.Add($"Provision: ₹{oldSnapshot.InterestProvisionBalance:N2} -> ₹{newSnapshot.InterestProvisionBalance:N2}");
+                if (oldSnapshot.InitialNpaClassification != newSnapshot.InitialNpaClassification)
+                    differences.Add($"NPA: '{oldSnapshot.InitialNpaClassification}' -> '{newSnapshot.InitialNpaClassification}'");
+                if (oldSnapshot.OpeningDate != newSnapshot.OpeningDate)
+                    differences.Add($"OpeningDate: {oldSnapshot.OpeningDate:yyyy-MM-dd} -> {newSnapshot.OpeningDate:yyyy-MM-dd}");
+                if (oldSnapshot.SanctionedAmount != newSnapshot.SanctionedAmount)
+                    differences.Add($"SanctionedAmount: ₹{oldSnapshot.SanctionedAmount:N2} -> ₹{newSnapshot.SanctionedAmount:N2}");
+                if (oldSnapshot.InstallmentAmount != newSnapshot.InstallmentAmount)
+                    differences.Add($"InstallmentAmount: ₹{oldSnapshot.InstallmentAmount:N2} -> ₹{newSnapshot.InstallmentAmount:N2}");
+
+                string diffSummary = differences.Any() ? string.Join(", ", differences) : "No financial values changed (Re-saved)";
+
+                var putAuditPayload = new
+                {
+                    Event = "LOAN_OPENING_BALANCE_UPDATED",
+                    LoanAccountID = id,
+                    LoanAccountNo = loanAccount.LoanAccountNo,
+                    Operator = auditUsername,
+                    IPAddress = auditIp,
+                    Timestamp = DateTime.Now,
+                    Changes = differences,
+                    OldValues = oldSnapshot,
+                    NewValues = newSnapshot
+                };
+
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    UserID = auditUserId,
+                    Username = auditUsername,
+                    Action = "LOAN_OPENING_BALANCE_UPDATED",
+                    EntityName = "LoanAccount",
+                    EntityID = id.ToString(),
+                    Timestamp = DateTime.Now,
+                    IPAddress = auditIp,
+                    Details = $"Loan Opening Balance Updated: A/C {loanAccount.LoanAccountNo}. Changes: [{diffSummary}]. Operator: {auditUsername} (IP: {auditIp}) | Payload: {System.Text.Json.JsonSerializer.Serialize(putAuditPayload)}"
+                });
+                await _context.SaveChangesAsync();
+
+                // Synchronize Initial NPA Classification with LoanAccountNpaStatuses
+                await EnsureInitialNpaStatusAsync(loanAccount, dto);
+
                 await transaction.CommitAsync();
                 return NoContent();
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.SqlClient.SqlException sqlEx && (sqlEx.Number == 2601 || sqlEx.Number == 2627))
+            {
+                await transaction.RollbackAsync();
+                var (vUserId, vUsername, vIp) = GetAuditContext();
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    UserID = vUserId,
+                    Username = vUsername,
+                    Action = "LOAN_ACCOUNT_DUPLICATE_COLLISION",
+                    EntityName = "LoanAccount",
+                    Status = "Conflict",
+                    Timestamp = DateTime.Now,
+                    IPAddress = vIp,
+                    Details = $"Concurrency collision in PutOpeningBalance: LoanAccountNo '{resolvedAccountNo}' already exists in Branch {dto.BranchID} for another account."
+                });
+                await _context.SaveChangesAsync();
+                return Conflict(new { message = $"कर्ज खाते क्रमांक '{resolvedAccountNo}' आधीपासून अस्तित्वात आहे. कृपया वेगळा खाते क्रमांक प्रविष्ट करा." });
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
                 return StatusCode(500, "Internal server error: " + ex.Message + (ex.InnerException != null ? " | " + ex.InnerException.Message : ""));
             }
+        }
+
+        private async Task EnsureInitialNpaStatusAsync(LoanAccount loanAccount, LoanOpeningBalanceDto dto)
+        {
+            string rawCategory = (dto.InitialNpaClassification ?? "Standard").Trim();
+
+            // 1. Normalize Category to standard IRAC values
+            string category = rawCategory switch
+            {
+                "SubStandard" or "Sub-Standard" => "Sub-Standard",
+                "Doubtful1" or "Doubtful-1" => "Doubtful-1",
+                "Doubtful2" or "Doubtful-2" => "Doubtful-2",
+                "Doubtful3" or "Doubtful-3" => "Doubtful-3",
+                "Loss" => "Loss",
+                _ => "Standard"
+            };
+
+            var existingStatus = await _context.LoanAccountNpaStatuses
+                .FirstOrDefaultAsync(s => s.LoanAccountID == loanAccount.LoanAccountID);
+
+            // If Category is Standard
+            if (category == "Standard")
+            {
+                if (existingStatus != null)
+                {
+                    // If previously marked as NPA, revert to Standard Asset on edit
+                    existingStatus.Category = "Standard";
+                    existingStatus.OverdueDate = null;
+                    existingStatus.OutOfOrderDate = null;
+                    existingStatus.OutstandingBalance = loanAccount.PrincipalBalance + loanAccount.InterestBalance + loanAccount.OverdueInterestBalance;
+                    existingStatus.ProvisionRequired = 0;
+                    existingStatus.ProvisionHeld = loanAccount.InterestProvisionBalance;
+                    existingStatus.AuditorRemarks = "Reverted to Standard Asset in Opening Balance Edit";
+                    _context.Entry(existingStatus).State = EntityState.Modified;
+                    await _context.SaveChangesAsync();
+
+                    var (npaRevertUserId, npaRevertUsername, npaRevertIp) = GetAuditContext();
+                    _context.AuditLogs.Add(new AuditLog
+                    {
+                        UserID = npaRevertUserId,
+                        Username = npaRevertUsername,
+                        Action = "NPA_STATUS_REVERTED_STANDARD",
+                        EntityName = "LoanAccountNpaStatus",
+                        EntityID = loanAccount.LoanAccountID.ToString(),
+                        Timestamp = DateTime.Now,
+                        IPAddress = npaRevertIp,
+                        Details = $"Loan A/C {loanAccount.LoanAccountNo} status updated to 'Standard' in Opening Balance edit. Operator: {npaRevertUsername} (IP: {npaRevertIp})"
+                    });
+                    await _context.SaveChangesAsync();
+                }
+                return;
+            }
+
+            // 2. Ensure baseline NpaClassificationRun exists (Satisfies Foreign Key constraint FK_LoanAccountNpaStatuses_NpaClassificationRuns_LastClassificationRunId)
+            var baselineRun = await _context.NpaClassificationRuns
+                .FirstOrDefaultAsync(r => r.TriggeredBy == "System (Opening Balance)");
+
+            if (baselineRun == null)
+            {
+                baselineRun = new NpaClassificationRun
+                {
+                    RunDate = dto.OpeningDate,
+                    TriggeredBy = "System (Opening Balance)",
+                    RecordsProcessed = 1,
+                    Status = "Success",
+                    Remarks = "Baseline run for Opening Balance initial asset classifications"
+                };
+                _context.NpaClassificationRuns.Add(baselineRun);
+                await _context.SaveChangesAsync();
+            }
+
+            // 3. Compute statutory OverdueDate so computed OverdueDays conforms to IRAC norms
+            DateTime asOfDate = dto.OpeningDate;
+            DateTime overdueDate = category switch
+            {
+                "Sub-Standard" => asOfDate.AddDays(-91),     // > 90 days overdue
+                "Doubtful-1"   => asOfDate.AddDays(-456),    // > 15 months overdue
+                "Doubtful-2"   => asOfDate.AddDays(-821),    // > 27 months overdue
+                "Doubtful-3"   => asOfDate.AddDays(-1186),   // > 39 months overdue
+                "Loss"         => asOfDate.AddDays(-1186),   // Certified Loss Asset
+                _              => asOfDate
+            };
+
+            // 4. Outstanding balance and collateral security assessment
+            decimal totalOutstanding = loanAccount.PrincipalBalance + loanAccount.InterestBalance + loanAccount.OverdueInterestBalance;
+            decimal compliantCollateral = loanAccount.SecurityValue;
+            decimal securedAmount = Math.Min(totalOutstanding, compliantCollateral);
+            decimal unsecuredAmount = Math.Max(0, totalOutstanding - securedAmount);
+
+            string securityType = "Unsecured";
+            if (securedAmount > 0 && unsecuredAmount > 0) securityType = "Mixed";
+            else if (securedAmount > 0) securityType = "Secured";
+
+            // 5. Statutory Provision Calculation (IRAC Norms)
+            decimal securedPercent = category switch
+            {
+                "Sub-Standard" => 10.0m,
+                "Doubtful-1"   => 25.0m,
+                "Doubtful-2"   => 40.0m,
+                "Doubtful-3"   => 100.0m,
+                "Loss"         => 100.0m,
+                _              => 0.25m
+            };
+
+            decimal unsecuredPercent = category switch
+            {
+                "Sub-Standard" => 15.0m,
+                "Doubtful-1"   => 100.0m,
+                "Doubtful-2"   => 100.0m,
+                "Doubtful-3"   => 100.0m,
+                "Loss"         => 100.0m,
+                _              => 0.25m
+            };
+
+            decimal provisionRequired = Math.Round((securedAmount * securedPercent / 100m) + (unsecuredAmount * unsecuredPercent / 100m), 2);
+            decimal provisionHeld = loanAccount.InterestProvisionBalance;
+
+            // 6. Insert or update LoanAccountNpaStatus record
+            if (existingStatus != null)
+            {
+                existingStatus.AsOfDate = asOfDate;
+                existingStatus.OverdueDate = overdueDate;
+                existingStatus.Category = category;
+                existingStatus.SecurityType = securityType;
+                existingStatus.OutstandingBalance = totalOutstanding;
+                existingStatus.CompliantCollateralValue = compliantCollateral;
+                existingStatus.ProvisionRequired = provisionRequired;
+                existingStatus.ProvisionHeld = provisionHeld;
+                existingStatus.IsAutoClassified = false;
+                existingStatus.LastClassificationRunId = baselineRun.NpaClassificationRunID;
+                existingStatus.AuditorRemarks = $"Initial Opening Balance Classification: {category}";
+                _context.Entry(existingStatus).State = EntityState.Modified;
+            }
+            else
+            {
+                var npaStatus = new LoanAccountNpaStatus
+                {
+                    LoanAccountID = loanAccount.LoanAccountID,
+                    AsOfDate = asOfDate,
+                    OverdueDate = overdueDate,
+                    Category = category,
+                    SecurityType = securityType,
+                    OutstandingBalance = totalOutstanding,
+                    CompliantCollateralValue = compliantCollateral,
+                    ProvisionRequired = provisionRequired,
+                    ProvisionHeld = provisionHeld,
+                    IsAutoClassified = false,
+                    LastClassificationRunId = baselineRun.NpaClassificationRunID,
+                    AuditorRemarks = $"Initial Opening Balance Classification: {category}"
+                };
+                _context.LoanAccountNpaStatuses.Add(npaStatus);
+            }
+
+            await _context.SaveChangesAsync();
+
+            // 7. Forensic Audit Logging for NPA Classification
+            var (npaAuditUserId, npaAuditUsername, npaAuditIp) = GetAuditContext();
+            _context.AuditLogs.Add(new AuditLog
+            {
+                UserID = npaAuditUserId,
+                Username = npaAuditUsername,
+                Action = "NPA_INITIAL_STATUS_RECORDED",
+                EntityName = "LoanAccountNpaStatus",
+                EntityID = loanAccount.LoanAccountID.ToString(),
+                Timestamp = DateTime.Now,
+                IPAddress = npaAuditIp,
+                Details = $"Initial NPA Status Synchronized: A/C {loanAccount.LoanAccountNo} classified as '{category}'. OverdueDays: {(asOfDate - overdueDate).Days}, Outstanding: ₹{totalOutstanding:N2}, ProvReq: ₹{provisionRequired:N2}, ProvHeld: ₹{provisionHeld:N2}. Operator: {npaAuditUsername} (IP: {npaAuditIp})"
+            });
+            await _context.SaveChangesAsync();
+        }
+
+        private (int UserId, string Username, string IpAddress) GetAuditContext()
+        {
+            int userId = 1;
+            string username = "System";
+
+            var userClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("UserID") ?? User.FindFirst("sub");
+            if (userClaim != null && int.TryParse(userClaim.Value, out int uid)) userId = uid;
+
+            var nameClaim = User.FindFirst(ClaimTypes.Name) ?? User.FindFirst("Username");
+            if (nameClaim != null && !string.IsNullOrWhiteSpace(nameClaim.Value)) username = nameClaim.Value;
+            else if (!string.IsNullOrWhiteSpace(User.Identity?.Name)) username = User.Identity.Name;
+
+            string ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+            if (HttpContext.Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor) && !string.IsNullOrWhiteSpace(forwardedFor))
+            {
+                ipAddress = forwardedFor.ToString().Split(',')[0].Trim();
+            }
+
+            return (userId, username, ipAddress);
+        }
+
+        private async Task<string?> ValidateOpeningBalanceDtoAsync(LoanOpeningBalanceDto dto)
+        {
+            // 1. Basic entity references
+            if (dto.BranchID <= 0)
+                return "अवैध शाखा (Invalid Branch ID).";
+
+            if ((!dto.CustomerID.HasValue || dto.CustomerID.Value <= 0) && (!dto.MemberID.HasValue || dto.MemberID.Value <= 0))
+                return "कर्जदार ग्राहक (Customer) किंवा सभासद (Member) निवडणे अनिवार्य आहे.";
+
+            if (dto.LoanRateID <= 0)
+                return "कर्ज योजना (Loan Scheme / Rate ID) निवडणे अनिवार्य आहे.";
+
+            // 2. Numerical non-negative & strictly positive checks
+            if (dto.SanctionedAmount <= 0)
+                return "कर्ज मंजूर रक्कम (Sanctioned Amount) ₹ ० पेक्षा जास्त असणे बंधनकारक आहे.";
+
+            if (dto.PrincipalBalance < 0)
+                return "मुद्दल बाकी (Principal Balance) उणे (Negative) असू शकत नाही.";
+
+            if (dto.PrincipalBalance > dto.SanctionedAmount)
+                return $"मुद्दल बाकी (₹ {dto.PrincipalBalance:N2}) मंजूर रक्कमेपेक्षा (₹ {dto.SanctionedAmount:N2}) जास्त असू शकत नाही.";
+
+            if (dto.PurePrincipalBalance < 0)
+                return "निव्वळ मुद्दल बाकी (Pure Principal Balance) उणे (Negative) असू शकत नाही.";
+
+            if (dto.CapitalizedInterestAmount < 0)
+                return "मुद्दलात समाविष्ट व्याज (Capitalized Interest Amount) उणे (Negative) असू शकत नाही.";
+
+            if (dto.InterestBalance < 0)
+                return "चालू येणे व्याज शिल्लक (Interest Balance) उणे (Negative) असू शकत नाही.";
+
+            if (dto.OverdueInterestBalance < 0)
+                return "थकीत व्याज शिल्लक (Overdue Interest Balance) उणे (Negative) असू शकत नाही.";
+
+            if (dto.InterestProvisionBalance < 0)
+                return "व्याज तरतूद शिल्लक (Interest Provision Balance) उणे (Negative) असू शकत नाही.";
+
+            if (dto.InterestRate < 0 || dto.InterestRate > 100)
+                return "व्याज दर (Interest Rate) ०% ते १००% दरम्यान असणे आवश्यक आहे.";
+
+            if (dto.DurationMonths <= 0)
+                return "कर्ज कालावधी (Duration Months) ० पेक्षा जास्त असणे आवश्यक आहे.";
+
+            if (dto.InstallmentAmount < 0)
+                return "हप्ता रक्कम (Installment Amount) उणे (Negative) असू शकत नाही.";
+
+            if (dto.SecurityValue < 0)
+                return "तारण मूल्य (Security Value) उणे (Negative) असू शकत नाही.";
+
+            // 3. Cut-off Date boundary enforcement
+            var firstFy = await _context.FinancialYears.OrderBy(f => f.StartDate).FirstOrDefaultAsync();
+            DateTime cutoffDate = firstFy != null ? firstFy.StartDate.AddDays(-1).Date : DateTime.Today;
+
+            if (dto.OpeningDate.Date > cutoffDate.Date)
+                return $"आरंभिक शिल्लक दिनांक ({dto.OpeningDate:dd/MM/yyyy}) कट-ऑफ दिनांकाच्या ({cutoffDate:dd/MM/yyyy}) नंतरचा असू शकत नाही.";
+
+            if (dto.LoanDisbursementDate.HasValue && dto.LoanDisbursementDate.Value.Date > cutoffDate.Date)
+                return $"कर्ज वाटप दिनांक ({dto.LoanDisbursementDate.Value:dd/MM/yyyy}) कट-ऑफ दिनांकाच्या ({cutoffDate:dd/MM/yyyy}) नंतरचा असू शकत नाही.";
+
+            if (dto.LastInstallmentPaidDate.HasValue && dto.LastInstallmentPaidDate.Value.Date > cutoffDate.Date)
+                return $"शेवटचा हप्ता भरल्याचा दिनांक ({dto.LastInstallmentPaidDate.Value:dd/MM/yyyy}) कट-ऑफ दिनांकाच्या ({cutoffDate:dd/MM/yyyy}) नंतरचा असू शकत नाही.";
+
+            if (dto.LoanDisbursementDate.HasValue && dto.LoanDisbursementDate.Value.Date > dto.OpeningDate.Date)
+                return $"कर्ज वाटप दिनांक ({dto.LoanDisbursementDate.Value:dd/MM/yyyy}) आरंभिक शिल्लक दिनांकाच्या ({dto.OpeningDate:dd/MM/yyyy}) नंतरचा असू शकत नाही.";
+
+            // 4. LoanAccountNo uniqueness enforcement
+            string cleanAccountNo = (dto.LoanAccountNo ?? "").Trim();
+            if (cleanAccountNo.StartsWith("{") && cleanAccountNo.Contains("AccountNo"))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(cleanAccountNo);
+                    if (doc.RootElement.TryGetProperty("accountNo", out var pAcc) && !string.IsNullOrWhiteSpace(pAcc.GetString()))
+                        cleanAccountNo = pAcc.GetString()!.Trim();
+                    else if (doc.RootElement.TryGetProperty("nextAccountNo", out var pNext) && !string.IsNullOrWhiteSpace(pNext.GetString()))
+                        cleanAccountNo = pNext.GetString()!.Trim();
+                    else if (doc.RootElement.TryGetProperty("formattedAccountNo", out var pForm) && !string.IsNullOrWhiteSpace(pForm.GetString()))
+                        cleanAccountNo = pForm.GetString()!.Trim();
+                }
+                catch { }
+            }
+            cleanAccountNo = cleanAccountNo.Replace("\"", "").Replace("{", "").Replace("}", "").Trim();
+
+            if (!string.IsNullOrWhiteSpace(cleanAccountNo))
+            {
+                int? excludeId = dto.LoanOpeningBalanceID > 0 ? dto.LoanOpeningBalanceID : null;
+                if (await IsLoanAccountNoDuplicateAsync(dto.BranchID, cleanAccountNo, excludeId))
+                {
+                    return $"कर्ज खाते क्रमांक '{cleanAccountNo}' आधीपासून शाखा क्र. {dto.BranchID} मध्ये अस्तित्वात आहे. कृपया वेगळा खाते क्रमांक प्रविष्ट करा.";
+                }
+            }
+
+            return null; // सर्व अटी वैध आहेत
+        }
+
+        private async Task<bool> IsLoanAccountNoDuplicateAsync(int branchId, string? accountNo, int? excludeLoanAccountId = null)
+        {
+            if (string.IsNullOrWhiteSpace(accountNo)) return false;
+            string clean = accountNo.Trim();
+
+            var query = _context.LoanAccounts.AsNoTracking().Where(l => l.BranchID == branchId && l.LoanAccountNo == clean);
+            if (excludeLoanAccountId.HasValue && excludeLoanAccountId.Value > 0)
+            {
+                query = query.Where(l => l.LoanAccountID != excludeLoanAccountId.Value);
+            }
+
+            return await query.AnyAsync();
         }
 
         private async Task<string> ResolveValidLoanAccountNo(int branchId, int loanRateId, string? inputAccountNo)
@@ -772,7 +1355,7 @@ namespace Bhisi.Api.Controllers
                     .ToListAsync();
                 int nextSeq = existingLoanAccs.Count + 1;
                 clean = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchId, schemeCodeNum, nextSeq);
-                while (existingLoanAccs.Contains(clean))
+                while (existingLoanAccs.Contains(clean) || await _context.LoanAccounts.AnyAsync(l => l.BranchID == branchId && l.LoanAccountNo == clean))
                 {
                     nextSeq++;
                     clean = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchId, schemeCodeNum, nextSeq);
@@ -780,6 +1363,174 @@ namespace Bhisi.Api.Controllers
             }
 
             return clean;
+        }
+
+        // GET: api/LoanAccounts/GlReconciliationSummary?branchId=1&loanRateId=0
+        [HttpGet("GlReconciliationSummary")]
+        public async Task<ActionResult<LoanGlReconciliationResponseDto>> GetGlReconciliationSummary([FromQuery] int branchId = 1, [FromQuery] int loanRateId = 0)
+        {
+            try
+            {
+                var allRates = await _context.LoanRates.AsNoTracking().ToListAsync();
+
+                // Get all opening balance accounts for this branch
+                var allOpeningAccounts = await _context.LoanAccounts.AsNoTracking()
+                    .Where(l => l.BranchID == branchId && l.IsOpeningBalance)
+                    .ToListAsync();
+
+                // Collect all ledger IDs needed
+                var ledgerIds = allRates.Select(r => r.LoanLedgerID).Where(id => id.HasValue).Select(id => id!.Value)
+                    .Union(allRates.Select(r => r.ReceivableInterestLedgerID).Where(id => id.HasValue).Select(id => id!.Value))
+                    .Distinct()
+                    .ToList();
+
+                var ledgers = await _context.Ledgers.AsNoTracking()
+                    .Where(l => ledgerIds.Contains(l.LedgerID))
+                    .ToDictionaryAsync(l => l.LedgerID, l => l);
+
+                var schemeSummaries = new List<LoanGlReconciliationDto>();
+
+                foreach (var rate in allRates)
+                {
+                    var rateAccounts = allOpeningAccounts.Where(a => a.LoanRateID == rate.LoanRateID).ToList();
+
+                    Ledger? loanLedger = rate.LoanLedgerID.HasValue && ledgers.TryGetValue(rate.LoanLedgerID.Value, out var ll) ? ll : null;
+                    Ledger? intLedger = rate.ReceivableInterestLedgerID.HasValue && ledgers.TryGetValue(rate.ReceivableInterestLedgerID.Value, out var il) ? il : null;
+
+                    decimal glOpening = loanLedger?.OpeningBalance ?? 0m;
+                    string glBalanceType = loanLedger?.OpeningBalanceType ?? "Dr";
+                    decimal slPrincipal = rateAccounts.Sum(a => a.PrincipalBalance);
+                    decimal slPure = rateAccounts.Sum(a => a.PurePrincipalBalance > 0 ? a.PurePrincipalBalance : a.PrincipalBalance);
+                    decimal slCap = rateAccounts.Sum(a => a.CapitalizedInterestAmount);
+                    int count = rateAccounts.Count;
+
+                    decimal diff = glOpening - slPrincipal;
+                    string status;
+                    string msg;
+
+                    if (loanLedger == null)
+                    {
+                        status = "NoLedger";
+                        msg = "या कर्ज योजनेला खतावणी (GL) लेजर जोडलेले नाही!";
+                    }
+                    else if (Math.Abs(diff) < 0.01m)
+                    {
+                        status = "Reconciled";
+                        msg = "खतावणी व उप-खाती तंतोतंत जुळली आहेत (100% Reconciled). तेरीज पत्रक संतुलित राहील.";
+                    }
+                    else if (diff > 0)
+                    {
+                        status = "Pending";
+                        msg = $"खतावणीत शिल्लक जास्त आहे. अजून ₹ {diff:N2} मुद्दलाची उप-खाती नोंदवणे बाकी आहे.";
+                    }
+                    else
+                    {
+                        status = "Excess";
+                        msg = $"अति-नोंदणी! नोंदवलेली उप-खाती बेरीज खतावणीपेक्षा ₹ {Math.Abs(diff):N2} ने जास्त झाली आहे.";
+                    }
+
+                    // Interest
+                    decimal glIntOpening = intLedger?.OpeningBalance ?? 0m;
+                    decimal slIntTotal = rateAccounts.Sum(a => a.InterestBalance + a.OverdueInterestBalance);
+                    decimal intDiff = glIntOpening - slIntTotal;
+                    string intStatus = intLedger == null ? "NoLedger" : (Math.Abs(intDiff) < 0.01m ? "Reconciled" : (intDiff > 0 ? "Pending" : "Excess"));
+
+                    schemeSummaries.Add(new LoanGlReconciliationDto
+                    {
+                        BranchID = branchId,
+                        LoanRateID = rate.LoanRateID,
+                        SchemeName = rate.LoanType,
+                        LoanCode = rate.LoanCode,
+                        LoanLedgerID = rate.LoanLedgerID,
+                        LoanLedgerName = loanLedger?.LedgerName ?? "लेजर जोडलेले नाही",
+                        GlPrincipalOpeningBalance = glOpening,
+                        GlOpeningBalanceType = glBalanceType,
+                        SlTotalPrincipalBalance = slPrincipal,
+                        SlTotalPurePrincipal = slPure,
+                        SlTotalCapitalizedInterest = slCap,
+                        TotalAccountsCount = count,
+                        PrincipalDifference = diff,
+                        PrincipalStatus = status,
+                        StatusMessage = msg,
+                        ReceivableInterestLedgerID = rate.ReceivableInterestLedgerID,
+                        ReceivableInterestLedgerName = intLedger?.LedgerName ?? "लेजर जोडलेले नाही",
+                        GlInterestOpeningBalance = glIntOpening,
+                        SlTotalInterestBalance = slIntTotal,
+                        InterestDifference = intDiff,
+                        InterestStatus = intStatus
+                    });
+                }
+
+                // If specific loanRateId requested
+                LoanGlReconciliationDto currentSummary;
+                if (loanRateId > 0)
+                {
+                    currentSummary = schemeSummaries.FirstOrDefault(s => s.LoanRateID == loanRateId)
+                        ?? new LoanGlReconciliationDto
+                        {
+                            BranchID = branchId,
+                            LoanRateID = loanRateId,
+                            SchemeName = "निवडलेली योजना सापडली नाही",
+                            StatusMessage = "योजना उपलब्ध नाही",
+                            PrincipalStatus = "NoLedger"
+                        };
+                }
+                else
+                {
+                    // Overall branch aggregate across all distinct ledgers and accounts
+                    decimal totalGl = ledgers.Values
+                        .Where(l => allRates.Any(r => r.LoanLedgerID == l.LedgerID))
+                        .Sum(l => l.OpeningBalance);
+                    decimal totalSl = schemeSummaries.Sum(s => s.SlTotalPrincipalBalance);
+                    decimal totalPure = schemeSummaries.Sum(s => s.SlTotalPurePrincipal);
+                    decimal totalCap = schemeSummaries.Sum(s => s.SlTotalCapitalizedInterest);
+                    int totalCount = schemeSummaries.Sum(s => s.TotalAccountsCount);
+                    decimal totalDiff = totalGl - totalSl;
+
+                    string overallStatus = Math.Abs(totalDiff) < 0.01m ? "Reconciled" : (totalDiff > 0 ? "Pending" : "Excess");
+                    string overallMsg = Math.Abs(totalDiff) < 0.01m
+                        ? "संस्थेच्या सर्व कर्ज योजनांचा खतावणी व उप-खाती मेळ तंतोतंत जुळला आहे (100% Reconciled)."
+                        : (totalDiff > 0
+                            ? $"संस्थेच्या खतावणीनुसार एकूण ₹ {totalDiff:N2} शिल्लक अजून नोंदवणे बाकी आहे."
+                            : $"संस्थेच्या उप-खात्यांची बेरीज खतावणीपेक्षा ₹ {Math.Abs(totalDiff):N2} ने जास्त झाली आहे!");
+
+                    decimal totalGlInt = ledgers.Values
+                        .Where(l => allRates.Any(r => r.ReceivableInterestLedgerID == l.LedgerID))
+                        .Sum(l => l.OpeningBalance);
+                    decimal totalSlInt = schemeSummaries.Sum(s => s.SlTotalInterestBalance);
+                    decimal totalIntDiff = totalGlInt - totalSlInt;
+
+                    currentSummary = new LoanGlReconciliationDto
+                    {
+                        BranchID = branchId,
+                        LoanRateID = 0,
+                        SchemeName = "सर्व कर्ज योजना (All Loan Schemes)",
+                        LoanLedgerName = "सर्व कर्ज लेजर्स एकत्र",
+                        GlPrincipalOpeningBalance = totalGl,
+                        SlTotalPrincipalBalance = totalSl,
+                        SlTotalPurePrincipal = totalPure,
+                        SlTotalCapitalizedInterest = totalCap,
+                        TotalAccountsCount = totalCount,
+                        PrincipalDifference = totalDiff,
+                        PrincipalStatus = overallStatus,
+                        StatusMessage = overallMsg,
+                        GlInterestOpeningBalance = totalGlInt,
+                        SlTotalInterestBalance = totalSlInt,
+                        InterestDifference = totalIntDiff,
+                        InterestStatus = Math.Abs(totalIntDiff) < 0.01m ? "Reconciled" : (totalIntDiff > 0 ? "Pending" : "Excess")
+                    };
+                }
+
+                return Ok(new LoanGlReconciliationResponseDto
+                {
+                    Summary = currentSummary,
+                    Schemes = schemeSummaries.OrderBy(s => s.LoanCode).ToList()
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "खतावणी जुळवणी माहिती मिळवताना त्रुटी आली: " + ex.Message);
+            }
         }
 
         // PUT: api/LoanAccounts/5
@@ -886,6 +1637,21 @@ namespace Bhisi.Api.Controllers
                     app.LoanAccountNo = null;
                 }
             }
+
+            // Forensic Audit Log for Loan Account Deletion
+            var (deleteUserId, deleteUsername, deleteIp) = GetAuditContext();
+            _context.AuditLogs.Add(new AuditLog
+            {
+                UserID = deleteUserId,
+                Username = deleteUsername,
+                Action = loanAccount.IsOpeningBalance ? "LOAN_OPENING_BALANCE_DELETED" : "LOAN_ACCOUNT_DELETED",
+                EntityName = "LoanAccount",
+                EntityID = loanAccount.LoanAccountID.ToString(),
+                Timestamp = DateTime.Now,
+                IPAddress = deleteIp,
+                Details = $"Loan Account DELETED: A/C {loanAccount.LoanAccountNo} (ID: {loanAccount.LoanAccountID}). Principal: ₹{loanAccount.PrincipalBalance:N2}, PurePrincipal: ₹{loanAccount.PurePrincipalBalance:N2}, Int: ₹{loanAccount.InterestBalance:N2}, NPA: {loanAccount.InitialNpaClassification}, OpeningDate: {loanAccount.OpeningDate:yyyy-MM-dd}. Operator: {deleteUsername} (IP: {deleteIp})"
+            });
+            await _context.SaveChangesAsync();
 
             // 11. Delete the Loan Account itself
             _context.LoanAccounts.Remove(loanAccount);
@@ -1080,6 +1846,15 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        public static decimal GetEffectiveInterestBearingPrincipal(LoanAccount acc)
+        {
+            if (!acc.ChargeInterestOnCapitalizedAmount && acc.PurePrincipalBalance > 0)
+            {
+                return Math.Max(0m, Math.Min(acc.PurePrincipalBalance, acc.PrincipalBalance));
+            }
+            return Math.Max(0m, acc.PrincipalBalance);
+        }
+
         // POST: api/LoanAccounts/PreviewInterestPosting
         [HttpPost("PreviewInterestPosting")]
         public async Task<IActionResult> PreviewInterestPosting([FromBody] LoanInterestPostingRequestDto request)
@@ -1099,19 +1874,50 @@ namespace Bhisi.Api.Controllers
             var activeAccounts = await query.ToListAsync();
             var items = new List<LoanInterestPostingItemDto>();
 
+            var schemeRateIds = activeAccounts.Where(a => a.LoanRateID > 0).Select(a => a.LoanRateID).Distinct().ToList();
+            var schemeRates = await _context.LoanRates
+                .Where(r => schemeRateIds.Contains(r.LoanRateID))
+                .ToDictionaryAsync(r => r.LoanRateID);
+
+            var ledgerIdsToFetch = new HashSet<int>();
+            foreach (var r in schemeRates.Values)
+            {
+                if (r.LoanLedgerID.HasValue && r.LoanLedgerID.Value > 0) ledgerIdsToFetch.Add(r.LoanLedgerID.Value);
+                if (r.ReceivableInterestLedgerID.HasValue && r.ReceivableInterestLedgerID.Value > 0) ledgerIdsToFetch.Add(r.ReceivableInterestLedgerID.Value);
+            }
+            var ledgerDict = await _context.Ledgers
+                .Where(l => ledgerIdsToFetch.Contains(l.LedgerID))
+                .ToDictionaryAsync(l => l.LedgerID, l => l.LedgerName);
+
             foreach (var acc in activeAccounts)
             {
                 DateTime lastDate = acc.LastInstallmentPaidDate ?? acc.LoanDisbursementDate ?? acc.OpeningDate;
                 int daysAccrued = Math.Max(0, (request.PostingDate.Date - lastDate.Date).Days);
                 decimal rate = acc.LoanRate?.InterestRate ?? acc.InterestRate;
+                decimal effectivePrincipal = GetEffectiveInterestBearingPrincipal(acc);
 
                 // Daily simple interest calculation based on accrued days
                 decimal calculatedInterest = daysAccrued > 0
-                    ? Math.Round((acc.PrincipalBalance * rate * daysAccrued) / 36500m, 2, MidpointRounding.AwayFromZero)
+                    ? Math.Round((effectivePrincipal * rate * daysAccrued) / 36500m, 2, MidpointRounding.AwayFromZero)
                     : 0m;
 
-                decimal newPrincipal = request.CapitalizeToPrincipal ? acc.PrincipalBalance + calculatedInterest : acc.PrincipalBalance;
-                decimal newInterest = request.CapitalizeToPrincipal ? acc.InterestBalance : acc.InterestBalance + calculatedInterest;
+                var currentRate = acc.LoanRate ?? (schemeRates.TryGetValue(acc.LoanRateID, out var sr) ? sr : null);
+                bool isSchemeCapitalize = currentRate?.InterestPostingType == "कर्जावर" || currentRate?.InterestPostingType?.Contains("कर्ज") == true;
+                bool shouldCapitalize = request.PostingMode == "ForceCapitalize" 
+                    ? true 
+                    : (request.PostingMode == "ForceSeparate" 
+                        ? false 
+                        : (request.CapitalizeToPrincipal ? true : isSchemeCapitalize));
+
+                decimal newPrincipal = shouldCapitalize ? acc.PrincipalBalance + calculatedInterest : acc.PrincipalBalance;
+                decimal newInterest = shouldCapitalize ? acc.InterestBalance : acc.InterestBalance + calculatedInterest;
+
+                int impactedLedgerId = shouldCapitalize 
+                    ? (currentRate?.LoanLedgerID ?? 0) 
+                    : (currentRate?.ReceivableInterestLedgerID ?? currentRate?.LoanLedgerID ?? 0);
+                string impactedLedgerName = impactedLedgerId > 0 && ledgerDict.TryGetValue(impactedLedgerId, out var lName)
+                    ? lName
+                    : (shouldCapitalize ? "कर्ज मुद्दल खाते" : "येणे व्याज खाते");
 
                 string borrowerName = acc.Customer != null 
                     ? $"{acc.Customer.FirstName} {acc.Customer.LastName}".Trim() 
@@ -1122,8 +1928,13 @@ namespace Bhisi.Api.Controllers
                     LoanAccountID = acc.LoanAccountID,
                     LoanAccountNo = acc.LoanAccountNo,
                     MemberName = borrowerName,
-                    LoanSchemeName = acc.LoanRate?.LoanType ?? "कर्ज",
+                    LoanSchemeName = currentRate?.LoanType ?? "कर्ज",
+                    PostingType = shouldCapitalize ? "कर्जावर (मुद्दल)" : "येणे व्याजावर (व्याज)",
+                    ImpactedLedgerName = impactedLedgerName,
                     CurrentPrincipal = acc.PrincipalBalance,
+                    InterestBearingPrincipal = effectivePrincipal,
+                    CapitalizedInterestAmount = acc.CapitalizedInterestAmount,
+                    ChargeInterestOnCapitalizedAmount = acc.ChargeInterestOnCapitalizedAmount,
                     CurrentInterest = acc.InterestBalance,
                     InterestRate = rate,
                     LastDate = lastDate,
@@ -1167,6 +1978,31 @@ namespace Bhisi.Api.Controllers
                     return BadRequest("व्याजासाठी कोणतीही सक्रिय कर्ज खाती सापडली नाहीत.");
                 }
 
+                var schemeRateIds = activeAccounts.Where(a => a.LoanRateID > 0).Select(a => a.LoanRateID).Distinct().ToList();
+                var schemeRates = await _context.LoanRates
+                    .Where(r => schemeRateIds.Contains(r.LoanRateID))
+                    .ToDictionaryAsync(r => r.LoanRateID);
+
+                // Pre-validate all active schemes have required dynamic ledgers configured
+                foreach (var rate in schemeRates.Values)
+                {
+                    bool isSchemeCapitalize = rate.InterestPostingType == "कर्जावर" || rate.InterestPostingType?.Contains("कर्ज") == true;
+                    bool shouldCapitalize = request.PostingMode == "ForceCapitalize" ? true : (request.PostingMode == "ForceSeparate" ? false : (request.CapitalizeToPrincipal ? true : isSchemeCapitalize));
+
+                    int debitLedgerId = shouldCapitalize ? (rate.LoanLedgerID ?? 0) : (rate.ReceivableInterestLedgerID ?? rate.LoanLedgerID ?? 0);
+                    int creditLedgerId = rate.InterestLedgerID ?? 0;
+
+                    if (debitLedgerId <= 0)
+                    {
+                        string missingName = shouldCapitalize ? "कर्ज मुद्दल खाते (Loan Ledger)" : "येणे व्याज खाते (Receivable Interest Ledger)";
+                        return BadRequest($"कर्ज योजना '{rate.LoanType}' ला {missingName} जोडलेले नाही. कृपया कर्ज दर पत्रकात लेजर जोडा.");
+                    }
+                    if (creditLedgerId <= 0)
+                    {
+                        return BadRequest($"कर्ज योजना '{rate.LoanType}' ला कर्ज व्याज उत्पन्न खाते (Interest Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रकात लेजर जोडा.");
+                    }
+                }
+
                 decimal totalBatchInterest = 0;
                 int processedCount = 0;
 
@@ -1176,12 +2012,17 @@ namespace Bhisi.Api.Controllers
                     int daysAccrued = Math.Max(0, (request.PostingDate.Date - lastDate.Date).Days);
                     if (daysAccrued <= 0) continue;
 
-                    decimal rate = acc.LoanRate?.InterestRate ?? acc.InterestRate;
-                    decimal calculatedInterest = Math.Round((acc.PrincipalBalance * rate * daysAccrued) / 36500m, 2, MidpointRounding.AwayFromZero);
+                    var currentRate = acc.LoanRate ?? (schemeRates.TryGetValue(acc.LoanRateID, out var sr) ? sr : null);
+                    decimal rate = currentRate?.InterestRate ?? acc.InterestRate;
+                    decimal effectivePrincipal = GetEffectiveInterestBearingPrincipal(acc);
+                    decimal calculatedInterest = Math.Round((effectivePrincipal * rate * daysAccrued) / 36500m, 2, MidpointRounding.AwayFromZero);
 
                     if (calculatedInterest <= 0) continue;
 
-                    if (request.CapitalizeToPrincipal)
+                    bool isSchemeCapitalize = currentRate?.InterestPostingType == "कर्जावर" || currentRate?.InterestPostingType?.Contains("कर्ज") == true;
+                    bool shouldCapitalize = request.PostingMode == "ForceCapitalize" ? true : (request.PostingMode == "ForceSeparate" ? false : (request.CapitalizeToPrincipal ? true : isSchemeCapitalize));
+
+                    if (shouldCapitalize)
                     {
                         acc.PrincipalBalance += calculatedInterest;
                     }
@@ -1204,7 +2045,7 @@ namespace Bhisi.Api.Controllers
 
                 await _context.SaveChangesAsync();
 
-                // Accounting Voucher Posting
+                // Accounting Voucher Posting (100% Dynamic Scheme-Wise Multi-Line Voucher)
                 var branch = await _context.Branches.FindAsync(request.BranchID);
                 string branchCode = branch?.BranchCode ?? "HQ";
 
@@ -1218,55 +2059,60 @@ namespace Bhisi.Api.Controllers
                 int count = await _context.Vouchers.CountAsync(v => v.BranchID == request.BranchID && v.VoucherType == "Journal") + 1;
                 string voucherNo = $"{branchCode}-JV-{fy}-{count:D5}";
 
-                // Ledgers
-                Ledger? interestIncomeLedger = null;
-                Ledger? loanAssetLedger = null;
-
-                if (request.LoanRateID.HasValue && request.LoanRateID.Value > 0)
+                var voucher = new Voucher
                 {
-                    var specificRate = await _context.LoanRates.FindAsync(request.LoanRateID.Value);
-                    if (specificRate != null)
+                    BranchID = request.BranchID,
+                    VoucherNo = voucherNo,
+                    VoucherDate = request.PostingDate,
+                    VoucherType = "Journal",
+                    Narration = $"बॅच कर्ज व्याज आकारणी (Loan Interest Run): {request.PostingDate:dd/MM/yyyy} - एकूण खाती: {processedCount} {(request.PostingMode == "ForceCapitalize" ? "[सर्व मुद्दलात]" : (request.PostingMode == "ForceSeparate" ? "[सर्व स्वतंत्र येणे व्याजात]" : "[योजनेनुसार स्वयंचलित]"))}",
+                    TotalAmount = totalBatchInterest,
+                    Status = "Approved",
+                    ApprovedBy = 1,
+                    ApprovedOn = DateTime.Now
+                };
+                _context.Vouchers.Add(voucher);
+                await _context.SaveChangesAsync();
+
+                // Group by scheme to create exact dynamic debit and credit lines
+                var accountsByScheme = activeAccounts
+                    .Where(a => a.LoanRateID > 0)
+                    .GroupBy(a => a.LoanRateID)
+                    .ToList();
+
+                foreach (var group in accountsByScheme)
+                {
+                    if (!schemeRates.TryGetValue(group.Key, out var rate)) continue;
+
+                    decimal schemeTotal = 0;
+                    foreach (var acc in group)
                     {
-                        if (specificRate.InterestLedgerID.HasValue && specificRate.InterestLedgerID.Value > 0)
-                            interestIncomeLedger = await _context.Ledgers.FindAsync(specificRate.InterestLedgerID.Value);
-                        if (specificRate.LoanLedgerID.HasValue && specificRate.LoanLedgerID.Value > 0)
-                            loanAssetLedger = await _context.Ledgers.FindAsync(specificRate.LoanLedgerID.Value);
+                        DateTime lastDate = acc.LastInstallmentPaidDate ?? acc.LoanDisbursementDate ?? acc.OpeningDate;
+                        int daysAccrued = Math.Max(0, (request.PostingDate.Date - lastDate.Date).Days);
+                        if (daysAccrued <= 0) continue;
+                        decimal r = rate.InterestRate;
+                        decimal effP = GetEffectiveInterestBearingPrincipal(acc);
+                        decimal cInt = Math.Round((effP * r * daysAccrued) / 36500m, 2, MidpointRounding.AwayFromZero);
+                        schemeTotal += cInt;
                     }
+
+                    if (schemeTotal <= 0) continue;
+
+                    bool isSchemeCapitalize = rate.InterestPostingType == "कर्जावर" || rate.InterestPostingType?.Contains("कर्ज") == true;
+                    bool shouldCapitalize = request.PostingMode == "ForceCapitalize" ? true : (request.PostingMode == "ForceSeparate" ? false : (request.CapitalizeToPrincipal ? true : isSchemeCapitalize));
+
+                    int debitLedgerId = shouldCapitalize 
+                        ? (rate.LoanLedgerID ?? 0) 
+                        : (rate.ReceivableInterestLedgerID ?? rate.LoanLedgerID ?? 0);
+                    int creditLedgerId = rate.InterestLedgerID ?? 0;
+
+                    // Debit Scheme Dynamic Ledger (Principal or Receivable Interest)
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitLedgerId, DrCr = "Dr", Amount = schemeTotal });
+                    // Credit Scheme Dynamic Interest Income Ledger
+                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = creditLedgerId, DrCr = "Cr", Amount = schemeTotal });
                 }
 
-                if (interestIncomeLedger == null)
-                {
-                    interestIncomeLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१३० कर्जावरील व्याज") || l.LedgerName.Contains("व्याज उत्पन्न") || l.LedgerName.ToLower().Contains("interest income"))
-                        ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("व्याज"));
-                }
-                
-                if (loanAssetLedger == null)
-                {
-                    loanAssetLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("१२ मुदत कर्ज") || l.LedgerName.Contains("कर्ज") || l.LedgerName.ToLower().Contains("loan receivable"))
-                        ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कर्ज"));
-                }
-
-                if (interestIncomeLedger != null && loanAssetLedger != null)
-                {
-                    var voucher = new Voucher
-                    {
-                        BranchID = request.BranchID,
-                        VoucherNo = voucherNo,
-                        VoucherDate = request.PostingDate,
-                        VoucherType = "Journal",
-                        Narration = $"बॅच कर्ज व्याज आकारणी (Loan Interest Run): {request.PostingDate:dd/MM/yyyy} - एकूण खाती: {processedCount} {(request.CapitalizeToPrincipal ? "[मुद्दलात प्लस]" : "[येणे व्याजात नोंद]")}",
-                        TotalAmount = totalBatchInterest
-                    };
-                    _context.Vouchers.Add(voucher);
-                    await _context.SaveChangesAsync();
-
-                    // Debit Loan Asset / Receivable
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanAssetLedger.LedgerID, DrCr = "Dr", Amount = totalBatchInterest });
-                    // Credit Interest Income
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = interestIncomeLedger.LedgerID, DrCr = "Cr", Amount = totalBatchInterest });
-
-                    await _context.SaveChangesAsync();
-                }
+                await _context.SaveChangesAsync();
 
                 // Audit Log
                 _context.AuditLogs.Add(new AuditLog
@@ -1276,7 +2122,7 @@ namespace Bhisi.Api.Controllers
                     Action = "LOAN_INTEREST_POSTING_BATCH",
                     EntityName = "LoanAccount",
                     Timestamp = DateTime.Now,
-                    Details = $"Batch Loan Interest Posted: ₹{totalBatchInterest:N2} across {processedCount} accounts on {request.PostingDate:dd/MM/yyyy}. CapitalizeToPrincipal: {request.CapitalizeToPrincipal}"
+                    Details = $"Batch Loan Interest Posted: ₹{totalBatchInterest:N2} across {processedCount} accounts on {request.PostingDate:dd/MM/yyyy}. Mode: {request.PostingMode}"
                 });
 
                 await _context.SaveChangesAsync();
@@ -1304,6 +2150,7 @@ namespace Bhisi.Api.Controllers
         public int? LoanRateID { get; set; }
         public DateTime PostingDate { get; set; } = DateTime.Today;
         public bool CapitalizeToPrincipal { get; set; } = false;
+        public string PostingMode { get; set; } = "SchemeDefault"; // SchemeDefault, ForceCapitalize, ForceSeparate
         public string? Remarks { get; set; }
     }
 
@@ -1313,7 +2160,12 @@ namespace Bhisi.Api.Controllers
         public string LoanAccountNo { get; set; } = string.Empty;
         public string MemberName { get; set; } = string.Empty;
         public string LoanSchemeName { get; set; } = string.Empty;
+        public string PostingType { get; set; } = string.Empty; // कर्जावर (मुद्दल) किंवा येणे व्याजावर (व्याज)
+        public string ImpactedLedgerName { get; set; } = string.Empty; // e.g. सोने तारण कर्ज खाते
         public decimal CurrentPrincipal { get; set; }
+        public decimal InterestBearingPrincipal { get; set; }
+        public decimal CapitalizedInterestAmount { get; set; }
+        public bool ChargeInterestOnCapitalizedAmount { get; set; } = true;
         public decimal CurrentInterest { get; set; }
         public decimal InterestRate { get; set; }
         public DateTime LastDate { get; set; }
@@ -1339,5 +2191,38 @@ namespace Bhisi.Api.Controllers
         public decimal InstallmentAmount { get; set; }
         public string InstallmentFrequency { get; set; } = "मासिक (Monthly)";
         public int NoOfInstallments { get; set; }
+    }
+
+    public class LoanGlReconciliationDto
+    {
+        public int BranchID { get; set; } = 1;
+        public int LoanRateID { get; set; }
+        public string SchemeName { get; set; } = string.Empty;
+        public string LoanCode { get; set; } = string.Empty;
+        public int? LoanLedgerID { get; set; }
+        public string LoanLedgerName { get; set; } = string.Empty;
+        public decimal GlPrincipalOpeningBalance { get; set; }
+        public string GlOpeningBalanceType { get; set; } = "Dr";
+        public decimal SlTotalPrincipalBalance { get; set; }
+        public decimal SlTotalPurePrincipal { get; set; }
+        public decimal SlTotalCapitalizedInterest { get; set; }
+        public int TotalAccountsCount { get; set; }
+        public decimal PrincipalDifference { get; set; } // GL - SL
+        public string PrincipalStatus { get; set; } = "Pending"; // "Reconciled", "Pending", "Excess", "NoLedger"
+        public string StatusMessage { get; set; } = string.Empty;
+
+        // Interest Breakdown
+        public int? ReceivableInterestLedgerID { get; set; }
+        public string ReceivableInterestLedgerName { get; set; } = string.Empty;
+        public decimal GlInterestOpeningBalance { get; set; }
+        public decimal SlTotalInterestBalance { get; set; }
+        public decimal InterestDifference { get; set; }
+        public string InterestStatus { get; set; } = "Pending";
+    }
+
+    public class LoanGlReconciliationResponseDto
+    {
+        public LoanGlReconciliationDto Summary { get; set; } = new();
+        public List<LoanGlReconciliationDto> Schemes { get; set; } = new();
     }
 }

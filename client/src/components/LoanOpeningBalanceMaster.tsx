@@ -21,7 +21,12 @@ import {
   Wallet, 
   Scale, 
   Calendar,
-  ShieldCheck
+  ShieldCheck,
+  CheckCircle2,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -68,9 +73,14 @@ interface LoanOpeningBalance {
   loanAccountNo: string;
   legacyAccountNumber?: string;
   
+  purePrincipalBalance?: number;
+  capitalizedInterestAmount?: number;
   principalBalance: number;
   interestBalance: number;
   overdueInterestBalance: number;
+  interestProvisionBalance?: number;
+  initialNpaClassification?: string;
+  chargeInterestOnCapitalizedAmount?: boolean;
   openingDate: string;
   
   loanDisbursementDate?: string;
@@ -91,6 +101,35 @@ interface LoanOpeningBalance {
   customer?: Customer;
   member?: Member;
   loanRate?: LoanRate;
+}
+
+interface GlReconciliationSchemeItem {
+  branchID: number;
+  loanRateID: number;
+  schemeName: string;
+  loanCode: string;
+  loanLedgerID?: number;
+  loanLedgerName: string;
+  glPrincipalOpeningBalance: number;
+  glOpeningBalanceType: string;
+  slTotalPrincipalBalance: number;
+  slTotalPurePrincipal: number;
+  slTotalCapitalizedInterest: number;
+  totalAccountsCount: number;
+  principalDifference: number;
+  principalStatus: 'Reconciled' | 'Pending' | 'Excess' | 'NoLedger' | string;
+  statusMessage: string;
+  receivableInterestLedgerID?: number;
+  receivableInterestLedgerName?: string;
+  glInterestOpeningBalance?: number;
+  slTotalInterestBalance?: number;
+  interestDifference?: number;
+  interestStatus?: string;
+}
+
+interface GlReconciliationResponse {
+  summary: GlReconciliationSchemeItem;
+  schemes: GlReconciliationSchemeItem[];
 }
 
 export default function LoanOpeningBalanceMaster() {
@@ -120,6 +159,11 @@ export default function LoanOpeningBalanceMaster() {
 
   const [isInstAmountEdited, setIsInstAmountEdited] = useState(false);
   const [isInterestManuallyEdited, setIsInterestManuallyEdited] = useState(false);
+
+  // GL vs SL Reconciliation States
+  const [glRecon, setGlRecon] = useState<GlReconciliationResponse | null>(null);
+  const [isLoadingRecon, setIsLoadingRecon] = useState<boolean>(false);
+  const [showReconBreakdown, setShowReconBreakdown] = useState<boolean>(false);
   const [formData, setFormData] = useState({
     loanOpeningBalanceID: 0,
     branchID: '1',
@@ -128,10 +172,14 @@ export default function LoanOpeningBalanceMaster() {
     loanRateID: '',
     loanAccountNo: '',
     legacyAccountNumber: '',
-    
+    purePrincipalBalance: '',
+    capitalizedInterestAmount: '',
     principalBalance: '',
     interestBalance: '',
     overdueInterestBalance: '',
+    interestProvisionBalance: '',
+    initialNpaClassification: 'Standard',
+    chargeInterestOnCapitalizedAmount: true,
     openingDate: '2025-03-31',
 
     loanDisbursementDate: '2025-03-31',
@@ -168,6 +216,24 @@ export default function LoanOpeningBalanceMaster() {
     fetchBranches();
     fetchNextAccountNo();
   }, []);
+
+  const fetchGlReconciliation = async (branchId?: string, loanRateId?: string) => {
+    const bId = branchId || formData.branchID || '1';
+    const rId = loanRateId !== undefined ? loanRateId : (formData.loanRateID || '0');
+    try {
+      setIsLoadingRecon(true);
+      const res = await axios.get<GlReconciliationResponse>(`/api/LoanAccounts/GlReconciliationSummary?branchId=${bId}&loanRateId=${rId}`);
+      setGlRecon(res.data);
+    } catch (err) {
+      console.error("Error fetching GL reconciliation summary:", err);
+    } finally {
+      setIsLoadingRecon(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGlReconciliation(formData.branchID, formData.loanRateID);
+  }, [formData.branchID, formData.loanRateID]);
 
   const fetchFinancialYears = async () => {
     try {
@@ -284,6 +350,8 @@ export default function LoanOpeningBalanceMaster() {
       }
     } catch (error) {
       console.error("Error fetching balances", error);
+    } finally {
+      fetchGlReconciliation(formData.branchID, formData.loanRateID);
     }
   };
 
@@ -323,9 +391,11 @@ export default function LoanOpeningBalanceMaster() {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | { target: { name?: string, value: string | number } }) => {
-    const name = e.target.name || '';
-    const value = String(e.target.value ?? '');
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | { target: { name?: string, value?: any, type?: string, checked?: boolean } }) => {
+    const target = e.target as any;
+    const name = target.name || '';
+    const isCheckbox = target.type === 'checkbox';
+    const value = isCheckbox ? target.checked : String(target.value ?? '');
     let updates: any = { [name]: value };
 
     if (name === 'branchID' && !isEditing) {
@@ -344,6 +414,24 @@ export default function LoanOpeningBalanceMaster() {
     }
     if (name === 'sanctionedAmount' || name === 'loanRateID' || name === 'durationMonths' || name === 'installmentFrequency') {
       setIsInstAmountEdited(false);
+    }
+
+    // Auto-sum purePrincipalBalance + capitalizedInterestAmount into principalBalance
+    if (name === 'purePrincipalBalance' || name === 'capitalizedInterestAmount') {
+      const pPure = name === 'purePrincipalBalance' ? (parseFloat(value) || 0) : (parseFloat(formData.purePrincipalBalance) || 0);
+      const pCap = name === 'capitalizedInterestAmount' ? (parseFloat(value) || 0) : (parseFloat(formData.capitalizedInterestAmount) || 0);
+      const totalP = pPure + pCap;
+      updates.principalBalance = totalP > 0 ? totalP.toString() : (pPure === 0 && pCap === 0 && (formData.purePrincipalBalance !== '' || formData.capitalizedInterestAmount !== '') ? '0' : '');
+    }
+
+    if (name === 'principalBalance') {
+      const totalP = parseFloat(value) || 0;
+      const pCap = parseFloat(formData.capitalizedInterestAmount) || 0;
+      if (pCap > 0) {
+        updates.purePrincipalBalance = Math.max(0, totalP - pCap).toString();
+      } else {
+        updates.purePrincipalBalance = totalP.toString();
+      }
     }
 
     // Auto-fill Interest Rate and Duration when Loan Type is selected
@@ -682,9 +770,14 @@ export default function LoanOpeningBalanceMaster() {
       loanRateID: '',
       loanAccountNo: '',
       legacyAccountNumber: '',
+      purePrincipalBalance: '',
+      capitalizedInterestAmount: '',
       principalBalance: '',
       interestBalance: '',
       overdueInterestBalance: '',
+      interestProvisionBalance: '',
+      initialNpaClassification: 'Standard',
+      chargeInterestOnCapitalizedAmount: true,
       openingDate: getDefaultDate(),
       loanDisbursementDate: getTodayDate(),
       sanctionedAmount: '',
@@ -738,9 +831,14 @@ export default function LoanOpeningBalanceMaster() {
         memberID: formData.memberID ? parseInt(formData.memberID) : null,
         loanRateID: parseInt(formData.loanRateID),
         
+        purePrincipalBalance: parseFloat(formData.purePrincipalBalance || formData.principalBalance || '0'),
+        capitalizedInterestAmount: parseFloat(formData.capitalizedInterestAmount || '0'),
         principalBalance: parseFloat(formData.principalBalance || '0'),
         interestBalance: parseFloat(formData.interestBalance || '0'),
         overdueInterestBalance: parseFloat(formData.overdueInterestBalance || '0'),
+        interestProvisionBalance: parseFloat(formData.interestProvisionBalance || '0'),
+        initialNpaClassification: formData.initialNpaClassification || 'Standard',
+        chargeInterestOnCapitalizedAmount: Boolean(formData.chargeInterestOnCapitalizedAmount),
         
         sanctionedAmount: parseFloat(formData.sanctionedAmount || '0'),
         interestRate: parseFloat(formData.interestRate || '0'),
@@ -781,8 +879,12 @@ export default function LoanOpeningBalanceMaster() {
         })
       };
 
-      const response = await fetch(API_URL, {
-        method: 'POST',
+      const isEditMode = isEditing && Boolean(formData.loanOpeningBalanceID && Number(formData.loanOpeningBalanceID) > 0);
+      const targetUrl = isEditMode ? `${API_URL}/${formData.loanOpeningBalanceID}` : API_URL;
+      const targetMethod = isEditMode ? 'PUT' : 'POST';
+
+      const response = await fetch(targetUrl, {
+        method: targetMethod,
         headers: {
           'Content-Type': 'application/json'
         },
@@ -790,12 +892,17 @@ export default function LoanOpeningBalanceMaster() {
       });
 
       if (response.ok) {
-        alert(isEditing ? 'खाते यशस्वीरित्या अद्यतनित झाले!' : 'खाते यशस्वीरित्या सेव्ह झाले!');
+        alert(isEditMode ? 'कर्ज खाते यशस्वीरित्या अद्यतनित (Updated) झाले!' : 'नवीन कर्ज आरंभिक शिल्लक यशस्वीरित्या नोंदवली (Saved) गेली!');
         fetchBalances();
         handleNew();
       } else {
         const errText = await response.text();
-        alert('त्रुटी आली: ' + errText);
+        let displayError = errText;
+        try {
+          const parsed = JSON.parse(errText);
+          if (parsed.message) displayError = parsed.message;
+        } catch {}
+        alert('त्रुटी आली: ' + displayError);
       }
     } catch (error) {
       console.error("Error saving loan opening balance", error);
@@ -814,9 +921,14 @@ export default function LoanOpeningBalanceMaster() {
       loanRateID: balance.loanRateID.toString(),
       loanAccountNo: balance.loanAccountNo,
       legacyAccountNumber: balance.legacyAccountNumber || '',
+      purePrincipalBalance: (balance.purePrincipalBalance ?? balance.principalBalance ?? '').toString(),
+      capitalizedInterestAmount: (balance.capitalizedInterestAmount ?? 0).toString(),
       principalBalance: balance.principalBalance.toString(),
       interestBalance: balance.interestBalance.toString(),
       overdueInterestBalance: (balance.overdueInterestBalance || 0).toString(),
+      interestProvisionBalance: (balance.interestProvisionBalance ?? 0).toString(),
+      initialNpaClassification: balance.initialNpaClassification || 'Standard',
+      chargeInterestOnCapitalizedAmount: balance.chargeInterestOnCapitalizedAmount ?? true,
       openingDate: balance.openingDate ? balance.openingDate.split('T')[0] : '',
       loanDisbursementDate: balance.loanDisbursementDate ? balance.loanDisbursementDate.split('T')[0] : '',
       sanctionedAmount: balance.sanctionedAmount.toString(),
@@ -881,8 +993,12 @@ export default function LoanOpeningBalanceMaster() {
       'खाते क्र.': b.loanAccountNo,
       'जुना खाते क्र.': b.legacyAccountNumber || '-',
       'मंजूर रक्कम (₹)': b.sanctionedAmount,
-      'मुद्दल बाकी (₹)': b.principalBalance,
-      'व्याज बाकी (₹)': b.interestBalance
+      'शुद्ध मुद्दल बाकी (₹)': b.purePrincipalBalance || b.principalBalance,
+      'समाविष्ट व्याज (₹)': b.capitalizedInterestAmount || 0,
+      'एकूण मुद्दल बाकी (₹)': b.principalBalance,
+      'व्याज बाकी (₹)': b.interestBalance,
+      'व्याज तरतूद (₹)': b.interestProvisionBalance || 0,
+      'NPA वर्गवारी': b.initialNpaClassification || 'Standard'
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -1045,6 +1161,265 @@ export default function LoanOpeningBalanceMaster() {
         </span>
       </div>
 
+      {/* 🛡️ खतावणी (GL) विरुद्ध उप-खाते (SL) थेट जुळवणी दर्शक (Real-time GL vs Sub-Ledger Reconciliation Alert Widget) */}
+      {glRecon && (
+        <div className={`p-3 rounded-sm shadow-xs border transition-all duration-300 mb-3 ${
+          glRecon.summary.principalStatus === 'Reconciled'
+            ? 'bg-emerald-50/50 border-emerald-300 ring-1 ring-emerald-400/20'
+            : glRecon.summary.principalStatus === 'Pending'
+            ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-400/20'
+            : glRecon.summary.principalStatus === 'Excess'
+            ? 'bg-rose-50/50 border-rose-300 ring-1 ring-rose-400/20'
+            : 'bg-slate-50 border-slate-300'
+        }`}>
+          {/* Card Header & Status Banner */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200/80 pb-2 mb-2.5">
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded-sm flex items-center justify-center ${
+                glRecon.summary.principalStatus === 'Reconciled'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : glRecon.summary.principalStatus === 'Pending'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : glRecon.summary.principalStatus === 'Excess'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'bg-slate-600 text-white'
+              }`}>
+                {glRecon.summary.principalStatus === 'Reconciled' ? (
+                  <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
+                ) : glRecon.summary.principalStatus === 'Pending' ? (
+                  <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
+                ) : glRecon.summary.principalStatus === 'Excess' ? (
+                  <AlertCircle className="w-4 h-4 stroke-[2.5]" />
+                ) : (
+                  <Scale className="w-4 h-4 stroke-[2.5]" />
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-black text-gray-900 tracking-tight flex items-center gap-1.5">
+                    <span>खतावणी आरंभिक शिल्लक जुळवणी (GL vs SL Reconciliation)</span>
+                    <span className="text-[10px] font-mono text-gray-500 font-semibold">
+                      [{glRecon.summary.loanRateID > 0 ? (glRecon.summary.loanCode || glRecon.summary.schemeName) : 'सर्व योजना एकत्र'}]
+                    </span>
+                  </h3>
+                  {/* Status Badge */}
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wide border flex items-center gap-1 ${
+                    glRecon.summary.principalStatus === 'Reconciled'
+                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                      : glRecon.summary.principalStatus === 'Pending'
+                      ? 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                      : glRecon.summary.principalStatus === 'Excess'
+                      ? 'bg-rose-100 text-rose-900 border-rose-300 animate-pulse'
+                      : 'bg-slate-100 text-slate-800 border-slate-300'
+                  }`}>
+                    {glRecon.summary.principalStatus === 'Reconciled' && '🟢 तंतोतंत जुळले (100% Reconciled)'}
+                    {glRecon.summary.principalStatus === 'Pending' && '🟡 नोंदवणे बाकी (Pending Entry)'}
+                    {glRecon.summary.principalStatus === 'Excess' && '🔴 अति-नोंदणी विसंगती (Excess Entry)'}
+                    {glRecon.summary.principalStatus === 'NoLedger' && '⚪ लेजर जोडलेले नाही'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-600 font-medium">
+                  {glRecon.summary.statusMessage}
+                  {glRecon.summary.loanLedgerID && (
+                    <span className="ml-1 text-gray-500 font-normal">
+                      (खतावणी लेजर: <strong className="text-gray-700">{glRecon.summary.loanLedgerName}</strong>)
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Action Controls */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => fetchGlReconciliation()}
+                disabled={isLoadingRecon}
+                className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-sm text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                title="जुळवणी ताळा रीफ्रेश करा"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLoadingRecon ? 'animate-spin text-primary' : ''}`} />
+                <span>ताळा रीफ्रेश</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowReconBreakdown(!showReconBreakdown)}
+                className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-sm text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                title="सर्व कर्ज योजनांचा ताळा तपशील पहा"
+              >
+                <span>सर्व योजना ताळा ({glRecon.schemes.length})</span>
+                {showReconBreakdown ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+            </div>
+          </div>
+
+          {/* 4 Interactive Metrics Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-1.5">
+            {/* Tile 1: GL Opening Balance */}
+            <div className="bg-white p-2 rounded-sm border border-slate-200/90 shadow-2xs">
+              <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider flex items-center justify-between">
+                <span>१. खतावणी शिल्लक (GL)</span>
+                <span className="text-[9px] bg-slate-100 text-slate-600 px-1 rounded font-mono font-normal">Opening</span>
+              </div>
+              <div className="text-xs sm:text-sm font-black text-slate-900 mt-0.5">
+                ₹ {glRecon.summary.glPrincipalOpeningBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </div>
+              <div className="text-[10px] text-slate-500 truncate" title={glRecon.summary.loanLedgerName}>
+                लेजर: {glRecon.summary.loanLedgerName}
+              </div>
+            </div>
+
+            {/* Tile 2: SL Sum Total */}
+            <div className="bg-white p-2 rounded-sm border border-slate-200/90 shadow-2xs">
+              <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider flex items-center justify-between">
+                <span>२. उप-खाती बेरीज (SL Sum)</span>
+                <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1 rounded font-mono font-semibold">Sub-Ledger</span>
+              </div>
+              <div className="text-xs sm:text-sm font-black text-indigo-950 mt-0.5">
+                ₹ {glRecon.summary.slTotalPrincipalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </div>
+              <div className="text-[10px] text-indigo-600 font-medium">
+                शुद्ध: ₹ {glRecon.summary.slTotalPurePrincipal.toLocaleString('en-IN')} {glRecon.summary.slTotalCapitalizedInterest > 0 ? `+ Cap: ₹ ${glRecon.summary.slTotalCapitalizedInterest.toLocaleString('en-IN')}` : ''}
+              </div>
+            </div>
+
+            {/* Tile 3: Total Accounts Count */}
+            <div className="bg-white p-2 rounded-sm border border-slate-200/90 shadow-2xs">
+              <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider flex items-center justify-between">
+                <span>३. नोंदवलेली खाती</span>
+                <span className="text-[9px] bg-slate-100 text-slate-600 px-1 rounded font-mono font-normal">Count</span>
+              </div>
+              <div className="text-xs sm:text-sm font-black text-slate-900 mt-0.5">
+                {glRecon.summary.totalAccountsCount} <span className="text-xs font-normal text-slate-600">खाती</span>
+              </div>
+              <div className="text-[10px] text-slate-500">
+                {glRecon.summary.totalAccountsCount > 0 ? `सरासरी: ₹ ${Math.round(glRecon.summary.slTotalPrincipalBalance / glRecon.summary.totalAccountsCount).toLocaleString('en-IN')}` : 'अजून खाते नोंदवले नाही'}
+              </div>
+            </div>
+
+            {/* Tile 4: Difference */}
+            <div className={`p-2 rounded-sm border shadow-2xs ${
+              glRecon.summary.principalStatus === 'Reconciled'
+                ? 'bg-emerald-50 border-emerald-300'
+                : glRecon.summary.principalStatus === 'Pending'
+                ? 'bg-amber-50 border-amber-300'
+                : glRecon.summary.principalStatus === 'Excess'
+                ? 'bg-rose-50 border-rose-300'
+                : 'bg-white border-slate-200'
+            }`}>
+              <div className="text-[10px] font-bold uppercase tracking-wider flex items-center justify-between">
+                <span className={
+                  glRecon.summary.principalStatus === 'Reconciled' ? 'text-emerald-800' :
+                  glRecon.summary.principalStatus === 'Pending' ? 'text-amber-800' :
+                  glRecon.summary.principalStatus === 'Excess' ? 'text-rose-800' : 'text-slate-500'
+                }>४. जुळवणी फरक (Diff)</span>
+                <span className={`text-[9px] px-1 rounded font-mono font-bold ${
+                  glRecon.summary.principalStatus === 'Reconciled' ? 'bg-emerald-200/80 text-emerald-900' :
+                  glRecon.summary.principalStatus === 'Pending' ? 'bg-amber-200/80 text-amber-900' :
+                  glRecon.summary.principalStatus === 'Excess' ? 'bg-rose-200/80 text-rose-900' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  GL - SL
+                </span>
+              </div>
+              <div className={`text-xs sm:text-sm font-black mt-0.5 ${
+                glRecon.summary.principalStatus === 'Reconciled' ? 'text-emerald-900' :
+                glRecon.summary.principalStatus === 'Pending' ? 'text-amber-900' :
+                glRecon.summary.principalStatus === 'Excess' ? 'text-rose-900' : 'text-slate-900'
+              }`}>
+                ₹ {Math.abs(glRecon.summary.principalDifference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </div>
+              <div className={`text-[10px] font-bold ${
+                glRecon.summary.principalStatus === 'Reconciled' ? 'text-emerald-700' :
+                glRecon.summary.principalStatus === 'Pending' ? 'text-amber-700' :
+                glRecon.summary.principalStatus === 'Excess' ? 'text-rose-700' : 'text-slate-600'
+              }`}>
+                {glRecon.summary.principalStatus === 'Reconciled' && '✓ शून्य फरक (Balanced)'}
+                {glRecon.summary.principalStatus === 'Pending' && '⏳ शिल्लक बाकी (Pending)'}
+                {glRecon.summary.principalStatus === 'Excess' && '⚠️ अति-नोंदणी (Excess)'}
+                {glRecon.summary.principalStatus === 'NoLedger' && 'लेजर जोडणे बाकी'}
+              </div>
+            </div>
+          </div>
+
+          {/* Expandable Scheme Breakdown Table */}
+          {showReconBreakdown && (
+            <div className="mt-2.5 pt-2.5 border-t border-gray-200/90 bg-white p-2 rounded-sm border border-slate-200">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11px] font-black text-gray-800">
+                  संस्थेच्या सर्व कर्ज योजनांचा खतावणी विरुद्ध उप-खाती ताळा तक्ता:
+                </span>
+                <span className="text-[10px] text-gray-500">
+                  (योजनेवर क्लिक करून थेट त्या योजनेचा फॉर्म भरा)
+                </span>
+              </div>
+              <div className="overflow-x-auto max-h-52 overflow-y-auto">
+                <table className="w-full text-[10px] text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 border-b border-slate-300 font-bold">
+                      <th className="py-1 px-1.5">कोड</th>
+                      <th className="py-1 px-1.5">कर्ज योजना प्रकार</th>
+                      <th className="py-1 px-1.5">खतावणी लेजर</th>
+                      <th className="py-1 px-1.5 text-right">खतावणी शिल्लक (₹)</th>
+                      <th className="py-1 px-1.5 text-right">उप-खाती बेरीज (₹)</th>
+                      <th className="py-1 px-1.5 text-center">खाती</th>
+                      <th className="py-1 px-1.5 text-right">फरक (₹)</th>
+                      <th className="py-1 px-1.5 text-center">स्थिती</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {glRecon.schemes.map((s) => (
+                      <tr 
+                        key={s.loanRateID} 
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, loanRateID: s.loanRateID.toString() }));
+                          const loanRate = loanRates.find(r => r.loanRateID === s.loanRateID);
+                          if (loanRate) {
+                            setFormData(prev => ({
+                              ...prev,
+                              loanRateID: s.loanRateID.toString(),
+                              interestRate: (loanRate.interestRate || 0).toString(),
+                              durationMonths: (loanRate.durationMonths || 12).toString(),
+                              installmentFrequency: loanRate.installmentType || prev.installmentFrequency || 'मासिक'
+                            }));
+                          }
+                        }}
+                        className={`hover:bg-primary/5 cursor-pointer transition-colors ${
+                          formData.loanRateID === s.loanRateID.toString() ? 'bg-primary/10 font-bold' : ''
+                        }`}
+                      >
+                        <td className="py-1 px-1.5 font-mono text-primary font-bold">{s.loanCode || '-'}</td>
+                        <td className="py-1 px-1.5 font-medium">{s.schemeName}</td>
+                        <td className="py-1 px-1.5 text-slate-600 truncate max-w-[130px]" title={s.loanLedgerName}>{s.loanLedgerName}</td>
+                        <td className="py-1 px-1.5 text-right font-mono font-medium">₹ {s.glPrincipalOpeningBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="py-1 px-1.5 text-right font-mono font-medium text-indigo-950">₹ {s.slTotalPrincipalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td className="py-1 px-1.5 text-center font-mono">{s.totalAccountsCount}</td>
+                        <td className={`py-1 px-1.5 text-right font-mono font-bold ${
+                          s.principalStatus === 'Reconciled' ? 'text-emerald-700' :
+                          s.principalStatus === 'Pending' ? 'text-amber-700' :
+                          s.principalStatus === 'Excess' ? 'text-rose-700' : 'text-slate-600'
+                        }`}>
+                          ₹ {Math.abs(s.principalDifference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-1 px-1.5 text-center">
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            s.principalStatus === 'Reconciled' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                            s.principalStatus === 'Pending' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                            s.principalStatus === 'Excess' ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {s.principalStatus === 'Reconciled' ? 'जुळले' : s.principalStatus === 'Pending' ? 'बाकी' : s.principalStatus === 'Excess' ? 'जास्त' : 'नाही'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Single Form Container (Full Width Clean Layout) */}
       <div ref={formContainerRef} className="w-full">
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -1191,28 +1566,129 @@ export default function LoanOpeningBalanceMaster() {
             </div>
           </div>
 
-          {/* Section 3: Outstanding Balances & Security */}
+          {/* Section 3: Outstanding Balances Breakdown */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               
-              {/* Balances */}
-              <div className="bg-primary/5 p-3 rounded-sm shadow-xs border border-primary/20">
-                  <div className="flex items-center gap-1.5 border-b border-primary/20 pb-1.5 mb-2">
-                    <Wallet className="w-4 h-4 text-primary" />
-                    <h2 className="text-xs font-bold text-primary">३. बाकी रक्कम (Outstanding Balances)</h2>
+              {/* Card A: मुद्दल शिल्लक तपशील (Principal Breakdown) */}
+              <div className="bg-emerald-50/30 p-3 rounded-sm shadow-xs border border-emerald-200">
+                  <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5 mb-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <Coins className="w-4 h-4 text-emerald-700" />
+                      <h2 className="text-xs font-bold text-emerald-800">३. मुद्दल शिल्लक तपशील (Principal Balances)</h2>
+                    </div>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                      मूळ मुद्दल + समाविष्ट व्याज
+                    </span>
                   </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <div>
-                          <label className={labelClass}>मुद्दल बाकी (Principal) <span className="text-red-500">*</span></label>
-                          <input type="number" step="0.01" name="principalBalance" value={formData.principalBalance} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-emerald-800 ${isEditing ? 'bg-slate-100' : ''}`} placeholder="0.00" required disabled={isEditing} />
+                          <label className={labelClass}>शुद्ध मुद्दल बाकी (Pure Principal) <span className="text-red-500">*</span></label>
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            name="purePrincipalBalance" 
+                            value={formData.purePrincipalBalance} 
+                            onChange={handleChange} 
+                            onFocus={(e) => e.target.select()} 
+                            className={`${inputClass} font-bold text-emerald-800 ${isEditing ? 'bg-slate-100' : ''}`} 
+                            placeholder="0.00" 
+                            required 
+                            disabled={isEditing} 
+                          />
+                          <div className="text-[10px] text-gray-500 mt-0.5">व्याजाव्यतिरिक्त खरी बाकी मुद्दल</div>
+                      </div>
+
+                      <div>
+                          <label className={labelClass}>मुद्दलात समाविष्ट व्याज (Capitalized Interest)</label>
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            name="capitalizedInterestAmount" 
+                            value={formData.capitalizedInterestAmount} 
+                            onChange={handleChange} 
+                            onFocus={(e) => e.target.select()} 
+                            className={`${inputClass} font-bold text-blue-800 bg-blue-50/40 border-blue-300`} 
+                            placeholder="0.00" 
+                            disabled={isEditing} 
+                          />
+                          <div className="text-[10px] text-blue-700 mt-0.5">जुन्या सॉफ्टवेअरमधून मुद्दलात चढवलेले व्याज</div>
+                      </div>
+
+                      <div>
+                          <label className={labelClass}>एकूण मुद्दल बाकी (Total Principal) <span className="text-emerald-700 font-normal">(स्वयंचलित)</span></label>
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            name="principalBalance" 
+                            value={formData.principalBalance} 
+                            onChange={handleChange} 
+                            onFocus={(e) => e.target.select()} 
+                            className={`${inputClass} font-black text-emerald-900 bg-emerald-100/50 border-emerald-400`} 
+                            placeholder="0.00" 
+                            required 
+                            disabled={isEditing} 
+                          />
                           {parseFloat(formData.principalBalance || '0') > parseFloat(formData.sanctionedAmount || '0') && parseFloat(formData.sanctionedAmount || '0') > 0 && (
                             <div className="text-[10px] text-amber-700 font-bold mt-0.5 flex items-center gap-1">
-                              ℹ️ मुद्दलात व्याज समाविष्ट / ओव्हरड्यू
+                              ℹ️ मुद्दल मंजूर मर्यादेपेक्षा जास्त (व्याज समाविष्ट झाल्यामुळे)
                             </div>
                           )}
                       </div>
+
+                      <div>
+                          <label className={labelClass}>बाकी दिनांक (As of Date) <span className="text-red-500">*</span></label>
+                          <input 
+                            type="date" 
+                            name="openingDate" 
+                            value={formData.openingDate} 
+                            onChange={handleChange} 
+                            max={cutoffDate} 
+                            className={`${inputClass} ${isEditing ? 'bg-slate-100' : ''}`} 
+                            required 
+                            disabled={isEditing} 
+                          />
+                          <div className="text-[10px] text-gray-500 mt-0.5">आरंभिक शिल्लक नोंद दिनांक</div>
+                      </div>
+                  </div>
+
+                  {/* Capitalized Interest Alert & Policy Checkbox */}
+                  {parseFloat(formData.capitalizedInterestAmount || '0') > 0 && (
+                    <div className="mt-2.5 p-2 bg-blue-50/90 border border-blue-200 rounded-sm">
+                      <div className="flex items-center gap-1.5 text-[10px] text-blue-900 font-bold mb-1">
+                        <AlertCircle className="w-3.5 h-3.5 text-blue-700" />
+                        <span>भांडवलीकृत व्याज नोंद: ₹{parseFloat(formData.capitalizedInterestAmount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer text-[10px] text-blue-950 font-semibold">
+                        <input 
+                          type="checkbox" 
+                          name="chargeInterestOnCapitalizedAmount" 
+                          checked={formData.chargeInterestOnCapitalizedAmount} 
+                          onChange={handleChange}
+                          className="rounded text-primary focus:ring-primary w-3.5 h-3.5 cursor-pointer"
+                        />
+                        <span>भांडवलीकृत व्याजावर नियमित व्याज आकारणी चालू ठेवा (Compound Policy)</span>
+                      </label>
+                    </div>
+                  )}
+              </div>
+
+              {/* Card B: व्याज व तरतूद विभाग (Interest & NPA Provision) */}
+              <div className="bg-amber-50/30 p-3 rounded-sm shadow-xs border border-amber-200">
+                  <div className="flex items-center justify-between border-b border-amber-200 pb-1.5 mb-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <Wallet className="w-4 h-4 text-amber-700" />
+                      <h2 className="text-xs font-bold text-amber-900">४. व्याज व तरतूद विभाग (Interest & Provision)</h2>
+                    </div>
+                    <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-300">
+                      येणे व्याज + NPA तरतूद
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <div>
                           <div className="flex items-center justify-between">
-                            <label className={labelClass}>येणे व्याज बाकी (Interest)</label>
+                            <label className={labelClass}>चालू येणे व्याज बाकी (Interest)</label>
                             <button
                               type="button"
                               onClick={() => calculateAccurateInterest(true)}
@@ -1230,7 +1706,7 @@ export default function LoanOpeningBalanceMaster() {
                             value={formData.interestBalance} 
                             onChange={handleChange} 
                             onFocus={(e) => e.target.select()} 
-                            className={`${inputClass} font-bold text-amber-800 ${isEditing ? 'border-primary bg-amber-50/40' : ''}`} 
+                            className={`${inputClass} font-bold text-amber-900 ${isEditing ? 'border-primary bg-amber-50/40' : ''}`} 
                             placeholder="0.00" 
                           />
                           {formData.openingDate && formData.maturityDate && new Date(formData.openingDate) > new Date(formData.maturityDate) && (
@@ -1239,40 +1715,93 @@ export default function LoanOpeningBalanceMaster() {
                             </div>
                           )}
                       </div>
-                      <div>
-                          <label className={labelClass}>थकीत व्याज (Overdue Int)</label>
-                          <input type="number" step="0.01" name="overdueInterestBalance" value={formData.overdueInterestBalance} onChange={handleChange} onFocus={(e) => e.target.select()} className={inputClass} placeholder="0.00" />
-                      </div>
-                      <div>
-                          <label className={labelClass}>बाकी दिनांक (As of Date) <span className="text-red-500">*</span></label>
-                          <input type="date" name="openingDate" value={formData.openingDate} onChange={handleChange} max={cutoffDate} className={`${inputClass} ${isEditing ? 'bg-slate-100' : ''}`} required disabled={isEditing} />
-                      </div>
-                  </div>
-              </div>
 
-              {/* Security & Guarantor */}
-              <div className="bg-white p-3 rounded-sm shadow-xs border border-gray-200">
-                  <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
-                    <ShieldCheck className="w-4 h-4 text-primary" />
-                    <h2 className="text-xs font-bold text-primary">४. तारण व जामीनदार (Guarantor & Security)</h2>
+                      <div>
+                          <label className={labelClass}>थकीत व्याज (Overdue Interest)</label>
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            name="overdueInterestBalance" 
+                            value={formData.overdueInterestBalance} 
+                            onChange={handleChange} 
+                            onFocus={(e) => e.target.select()} 
+                            className={inputClass} 
+                            placeholder="0.00" 
+                          />
+                          <div className="text-[10px] text-gray-500 mt-0.5">मुदतबाह्य दंडात्मक/अतिरिक्त व्याज</div>
+                      </div>
+
+                      <div>
+                          <label className={labelClass}>थकीत व्याज तरतूद/अनामत (Interest Provision)</label>
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            name="interestProvisionBalance" 
+                            value={formData.interestProvisionBalance} 
+                            onChange={handleChange} 
+                            onFocus={(e) => e.target.select()} 
+                            className={`${inputClass} font-bold text-purple-900 bg-purple-50/40 border-purple-300`} 
+                            placeholder="0.00" 
+                          />
+                          <div className="text-[10px] text-purple-700 mt-0.5">NPA खात्यांसाठी राखीव व्याज तरतूद (Suspense)</div>
+                      </div>
+
+                      <div>
+                          <label className={labelClass}>आरंभिक NPA वर्गवारी (Asset Classification)</label>
+                          <select 
+                            name="initialNpaClassification" 
+                            value={formData.initialNpaClassification} 
+                            onChange={handleChange} 
+                            className={`${inputClass} font-semibold ${
+                              formData.initialNpaClassification !== 'Standard' ? 'bg-rose-50 text-rose-900 border-rose-300' : 'text-gray-800'
+                            }`}
+                          >
+                            <option value="Standard">नियमित (Standard Asset)</option>
+                            <option value="SubStandard">दुय्यम (Sub-Standard NPA)</option>
+                            <option value="Sub-Standard">दुय्यम (Sub-Standard NPA)</option>
+                            <option value="Doubtful1">संशयास्पद १ (Doubtful D1 NPA)</option>
+                            <option value="Doubtful-1">संशयास्पद १ (Doubtful D1 NPA)</option>
+                            <option value="Doubtful2">संशयास्पद २ (Doubtful D2 NPA)</option>
+                            <option value="Doubtful-2">संशयास्पद २ (Doubtful D2 NPA)</option>
+                            <option value="Doubtful3">संशयास्पद ३ (Doubtful D3 NPA)</option>
+                            <option value="Doubtful-3">संशयास्पद ३ (Doubtful D3 NPA)</option>
+                            <option value="Loss">बुडीत (Loss Asset)</option>
+                          </select>
+                          <div className="text-[10px] text-gray-500 mt-0.5">सुरुवातीची कर्ज मालमत्ता वर्गवारी</div>
+                      </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div>
-                          <label className={labelClass}>जामीनदार १ (Guarantor 1)</label>
-                          <SearchableSelect name="guarantor1" value={formData.guarantor1} onChange={handleChange} options={guarantorOptions} placeholder="जामीनदार निवडा..." />
-                      </div>
-                      <div>
-                          <label className={labelClass}>जामीनदार २ (Guarantor 2)</label>
-                          <SearchableSelect name="guarantor2" value={formData.guarantor2} onChange={handleChange} options={guarantorOptions} placeholder="जामीनदार निवडा..." />
-                      </div>
-                      <div>
-                          <label className={labelClass}>तारण (Security Item)</label>
-                          <input type="text" name="securityDetails" value={formData.securityDetails} onChange={handleChange} className={inputClass} placeholder="उदा. सोने, वाहन, घर..." />
-                      </div>
-                      <div>
-                          <label className={labelClass}>तारण मूल्य (Security Value)</label>
-                          <input type="number" step="0.01" name="securityValue" value={formData.securityValue} onChange={handleChange} className={inputClass} placeholder="0.00" />
-                      </div>
+
+                  {formData.initialNpaClassification !== 'Standard' && (
+                    <div className="mt-2.5 p-2 bg-rose-50 border border-rose-200 rounded-sm text-[10px] text-rose-900 font-semibold flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      <span>⚠️ NPA खात्यांसाठी जमा न झालेले व्याज नफा-तोट्यात (P&L) न घेता व्याज अनामत (Suspense) मध्ये ठेवले जाईल.</span>
+                    </div>
+                  )}
+              </div>
+          </div>
+
+          {/* Section 4: Security & Guarantor */}
+          <div className="bg-white p-3 rounded-sm shadow-xs border border-gray-200">
+              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
+                <ShieldCheck className="w-4 h-4 text-primary" />
+                <h2 className="text-xs font-bold text-primary">५. तारण व जामीनदार (Guarantor & Security)</h2>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                  <div>
+                      <label className={labelClass}>जामीनदार १ (Guarantor 1)</label>
+                      <SearchableSelect name="guarantor1" value={formData.guarantor1} onChange={handleChange} options={guarantorOptions} placeholder="जामीनदार निवडा..." />
+                  </div>
+                  <div>
+                      <label className={labelClass}>जामीनदार २ (Guarantor 2)</label>
+                      <SearchableSelect name="guarantor2" value={formData.guarantor2} onChange={handleChange} options={guarantorOptions} placeholder="जामीनदार निवडा..." />
+                  </div>
+                  <div>
+                      <label className={labelClass}>तारण (Security Item)</label>
+                      <input type="text" name="securityDetails" value={formData.securityDetails} onChange={handleChange} className={inputClass} placeholder="उदा. सोने, वाहन, घर..." />
+                  </div>
+                  <div>
+                      <label className={labelClass}>तारण मूल्य (Security Value)</label>
+                      <input type="number" step="0.01" name="securityValue" value={formData.securityValue} onChange={handleChange} className={inputClass} placeholder="0.00" />
                   </div>
               </div>
           </div>
@@ -1569,6 +2098,8 @@ export default function LoanOpeningBalanceMaster() {
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">जुना खाते क्र.</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">मुद्दल बाकी (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">व्याज बाकी (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">व्याज तरतूद (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">NPA वर्ग</th>
                       <th className="px-2 py-1.5 text-center w-24">दिनांक</th>
                     </tr>
                   </thead>
@@ -1612,11 +2143,32 @@ export default function LoanOpeningBalanceMaster() {
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-600 font-mono">
                           {balance.legacyAccountNumber || '-'}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-bold text-emerald-700 font-mono">
-                          {balance.principalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono">
+                          <div className="font-bold text-emerald-700">
+                            {balance.principalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                          {(balance.capitalizedInterestAmount || 0) > 0 && (
+                            <div className="text-[9px] text-blue-700 font-semibold">
+                              (समाविष्ट: ₹{(balance.capitalizedInterestAmount || 0).toLocaleString('en-IN')})
+                            </div>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-right font-bold text-amber-700 font-mono">
                           {balance.interestBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono text-purple-800 font-semibold">
+                          {(balance.interestProvisionBalance || 0) > 0 
+                            ? `₹${(balance.interestProvisionBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` 
+                            : '-'}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-bold text-[10px]">
+                          {balance.initialNpaClassification && balance.initialNpaClassification !== 'Standard' ? (
+                            <span className="bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded border border-rose-300">
+                              {balance.initialNpaClassification}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500 font-normal">नियमित</span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-center font-mono text-gray-600">
                           {new Date(balance.openingDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
@@ -1625,7 +2177,7 @@ export default function LoanOpeningBalanceMaster() {
                     ))}
                     {filteredBalances.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="px-6 py-10 text-center text-gray-400 font-bold">
+                        <td colSpan={11} className="px-6 py-10 text-center text-gray-400 font-bold">
                           कोणतीही नोंद सापडली नाही (No loan opening balances found).
                         </td>
                       </tr>

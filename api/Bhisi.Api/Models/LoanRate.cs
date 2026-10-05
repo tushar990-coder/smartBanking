@@ -59,5 +59,18 @@ namespace Bhisi.Api.Models
         public bool IsCcOrOd { get; set; } = false;
 
         public bool IsActive { get; set; } = true;
+
+        // Board Resolution & Rate Revision Audit Metadata (Used during update)
+        [NotMapped]
+        public string? ResolutionNo { get; set; } // ठराव क्र. (उदा. ठराव क्र. १२)
+
+        [NotMapped]
+        public DateTime? ResolutionDate { get; set; } // ठराव दिनांक
+
+        [NotMapped]
+        public DateTime? EffectiveDate { get; set; } // लागू / अंमलबजावणी दिनांक
+
+        [NotMapped]
+        public string? RevisionReason { get; set; } // दर बदल करण्याचे कारण
     }
 }

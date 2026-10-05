@@ -19,6 +19,8 @@ interface InterestPostingItem {
   loanAccountNo: string;
   memberName: string;
   loanSchemeName: string;
+  postingType?: string;
+  impactedLedgerName?: string;
   currentPrincipal: number;
   currentInterest: number;
   interestRate: number;
@@ -35,6 +37,7 @@ const LoanInterestPostingMaster: React.FC = () => {
   const [branchID, setBranchID] = useState<number>(1);
   const [loanRateID, setLoanRateID] = useState<number | null>(null);
   const [postingDate, setPostingDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [postingMode, setPostingMode] = useState<string>('SchemeDefault'); // SchemeDefault, ForceSeparate, ForceCapitalize
   const [capitalizeToPrincipal, setCapitalizeToPrincipal] = useState<boolean>(false);
   
   const [previewItems, setPreviewItems] = useState<InterestPostingItem[]>([]);
@@ -78,7 +81,8 @@ const LoanInterestPostingMaster: React.FC = () => {
         branchID,
         loanRateID: loanRateID || undefined,
         postingDate,
-        capitalizeToPrincipal
+        postingMode,
+        capitalizeToPrincipal: postingMode === 'ForceCapitalize'
       };
       const res = await axios.post('/api/LoanAccounts/PreviewInterestPosting', payload);
       setPreviewItems(res.data.items || []);
@@ -96,7 +100,10 @@ const LoanInterestPostingMaster: React.FC = () => {
       return;
     }
 
-    const modeText = capitalizeToPrincipal ? 'मुद्दलामध्ये प्लस (Capitalize to Principal)' : 'येणे व्याजामध्ये (Separate Interest Balance)';
+    const modeText = postingMode === 'SchemeDefault' 
+      ? '🌟 योजनेच्या धोरणानुसार स्वयंचलित (As per Scheme Policy)' 
+      : (postingMode === 'ForceCapitalize' ? 'मुद्दलामध्ये प्लस (Capitalize to Principal)' : 'येणे व्याजामध्ये (Separate Interest Balance)');
+
     if (!window.confirm(`तुम्हाला खरोखर ${previewItems.length} कर्ज खात्यांवर एकत्रीत ₹${totalCalculatedInterest.toLocaleString('en-IN')} व्याज आकारणी पोस्ट करायची आहे का?\n\nपद्धत: ${modeText}`)) {
       return;
     }
@@ -109,7 +116,8 @@ const LoanInterestPostingMaster: React.FC = () => {
         branchID,
         loanRateID: loanRateID || undefined,
         postingDate,
-        capitalizeToPrincipal
+        postingMode,
+        capitalizeToPrincipal: postingMode === 'ForceCapitalize'
       };
       const res = await axios.post('/api/LoanAccounts/PostInterestBatch', payload);
       const vNoMsg = res.data.voucherNo ? ` (व्हाऊचर क्र: ${res.data.voucherNo})` : '';
@@ -195,38 +203,54 @@ const LoanInterestPostingMaster: React.FC = () => {
         {/* Calculation Method Mode Radio Section */}
         <div className="bg-blue-50/70 p-3 rounded border border-blue-200 space-y-2">
           <label className="block text-xs font-bold text-blue-900">
-            २. व्याज आकारणीची पद्धत निवडा (Select Calculation & Posting Mode):
+            २. व्याज आकारणी व पोस्टिंग पद्धत निवडा (Posting Mode):
           </label>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className={`flex items-start gap-2.5 p-2.5 rounded border cursor-pointer transition-colors ${!capitalizeToPrincipal ? 'bg-white border-blue-600 shadow-2xs' : 'bg-gray-50 border-gray-200'}`}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <label className={`flex items-start gap-2.5 p-2.5 rounded border cursor-pointer transition-colors ${postingMode === 'SchemeDefault' ? 'bg-white border-primary ring-1 ring-primary shadow-2xs' : 'bg-gray-50 border-gray-200'}`}>
               <input
                 type="radio"
                 name="postingMode"
-                checked={!capitalizeToPrincipal}
-                onChange={() => setCapitalizeToPrincipal(false)}
-                className="mt-0.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                checked={postingMode === 'SchemeDefault'}
+                onChange={() => setPostingMode('SchemeDefault')}
+                className="mt-0.5 text-primary focus:ring-primary cursor-pointer"
               />
               <div>
-                <div className="text-xs font-bold text-gray-800">१. व्याजाचे स्वतंत्र खाते ठेवा (Separate Interest Balance)</div>
+                <div className="text-xs font-bold text-primary">🌟 १. योजनेनुसार स्वयंचलित (शिफारस केलेले)</div>
                 <div className="text-[10px] text-gray-500">
-                  आकारलेले व्याज 'येणे व्याज' (Interest Balance) मध्ये जमा होईल. मुद्दल (Principal) जशी आहे तशीच राहील.
+                  प्रत्येक खात्याच्या योजनेत निवडलेल्या प्रकारानुसार ('कर्जावर' असल्यास मुद्दलात, 'येणे व्याजावर' असल्यास स्वतंत्र व्याजात) आपोआप पोस्ट होईल.
                 </div>
               </div>
             </label>
 
-            <label className={`flex items-start gap-2.5 p-2.5 rounded border cursor-pointer transition-colors ${capitalizeToPrincipal ? 'bg-amber-50 border-amber-600 shadow-2xs' : 'bg-gray-50 border-gray-200'}`}>
+            <label className={`flex items-start gap-2.5 p-2.5 rounded border cursor-pointer transition-colors ${postingMode === 'ForceSeparate' ? 'bg-white border-blue-600 shadow-2xs' : 'bg-gray-50 border-gray-200'}`}>
               <input
                 type="radio"
                 name="postingMode"
-                checked={capitalizeToPrincipal}
-                onChange={() => setCapitalizeToPrincipal(true)}
+                checked={postingMode === 'ForceSeparate'}
+                onChange={() => setPostingMode('ForceSeparate')}
+                className="mt-0.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <div>
+                <div className="text-xs font-bold text-gray-800">२. सर्वांचे स्वतंत्र येणे व्याज ठेवा</div>
+                <div className="text-[10px] text-gray-500">
+                  सर्व सक्रिय खात्यांचे व्याज 'येणे व्याज' मध्ये जमा होईल. मुद्दल जशी आहे तशीच राहील.
+                </div>
+              </div>
+            </label>
+
+            <label className={`flex items-start gap-2.5 p-2.5 rounded border cursor-pointer transition-colors ${postingMode === 'ForceCapitalize' ? 'bg-amber-50 border-amber-600 shadow-2xs' : 'bg-gray-50 border-gray-200'}`}>
+              <input
+                type="radio"
+                name="postingMode"
+                checked={postingMode === 'ForceCapitalize'}
+                onChange={() => setPostingMode('ForceCapitalize')}
                 className="mt-0.5 text-amber-600 focus:ring-amber-500 cursor-pointer"
               />
               <div>
-                <div className="text-xs font-bold text-amber-900">२. व्याज मुद्दलामध्ये प्लस करा (Capitalize Interest to Principal)</div>
+                <div className="text-xs font-bold text-amber-900">३. सर्वांचे व्याज मुद्दलामध्ये प्लस करा</div>
                 <div className="text-[10px] text-amber-700 font-medium">
-                  आकारलेले व्याज थेट मुद्दलात (Principal Balance) जोडले जाईल. पुढील महिन्याचे व्याज या नवीन वाढलेल्या मुद्दलावर आकारले जाईल.
+                  सर्व खात्यांचे व्याज थेट मुद्दलात (Principal) जोडले जाईल. पुढील व्याज या वाढलेल्या मुद्दलावर आकारले जाईल.
                 </div>
               </div>
             </label>
@@ -268,7 +292,7 @@ const LoanInterestPostingMaster: React.FC = () => {
                 ३. व्याज आकारणी अंदाजपत्रक (Interest Preview) - एकूण {previewItems.length} खाती
               </h2>
               <p className="text-[10px] text-gray-500">
-                पद्धत: <strong className="text-gray-800">{capitalizeToPrincipal ? 'मुद्दलामध्ये प्लस (Capitalize)' : 'येणे व्याजामध्ये जमा'}</strong> | एकूण आकारलेले व्याज: <strong className="text-emerald-700">₹{totalCalculatedInterest.toLocaleString('en-IN')}</strong>
+                पद्धत: <strong className="text-gray-800">{postingMode === 'SchemeDefault' ? 'योजनेनुसार स्वयंचलित' : (postingMode === 'ForceCapitalize' ? 'मुद्दलामध्ये प्लस' : 'स्वतंत्र येणे व्याज')}</strong> | एकूण आकारलेले व्याज: <strong className="text-emerald-700">₹{totalCalculatedInterest.toLocaleString('en-IN')}</strong>
               </p>
             </div>
 
@@ -291,15 +315,15 @@ const LoanInterestPostingMaster: React.FC = () => {
                   <th className="p-2 border-r">खाते क्रमांक</th>
                   <th className="p-2 border-r">सभासदाचे नाव</th>
                   <th className="p-2 border-r">कर्ज प्रकार</th>
+                  <th className="p-2 border-r">पोस्टिंग प्रकार</th>
+                  <th className="p-2 border-r">प्रभावित लेजर</th>
                   <th className="p-2 border-r text-right">चालू मुद्दल</th>
                   <th className="p-2 border-r text-right">चालू येणे व्याज</th>
-                  <th className="p-2 border-r text-center">व्याजदर (%)</th>
-                  <th className="p-2 border-r text-center">मागील तारीख</th>
+                  <th className="p-2 border-r text-center">व्याजदर</th>
                   <th className="p-2 border-r text-center">दिवस</th>
                   <th className="p-2 border-r text-right bg-emerald-50 text-emerald-800">आकारणी व्याज</th>
-                  <th className="p-2 text-right bg-blue-50 text-blue-900">
-                    {capitalizeToPrincipal ? 'नवीन मुद्दल' : 'नवीन येणे व्याज'}
-                  </th>
+                  <th className="p-2 border-r text-right bg-amber-50 text-amber-900">नवीन मुद्दल</th>
+                  <th className="p-2 text-right bg-blue-50 text-blue-900">नवीन येणे व्याज</th>
                 </tr>
               </thead>
               <tbody>
@@ -309,18 +333,24 @@ const LoanInterestPostingMaster: React.FC = () => {
                     <td className="p-2 border-r font-mono font-bold text-primary">{item.loanAccountNo}</td>
                     <td className="p-2 border-r font-semibold text-gray-800">{item.memberName}</td>
                     <td className="p-2 border-r text-gray-600">{item.loanSchemeName}</td>
+                    <td className="p-2 border-r text-[10px]">
+                      <span className={`px-1.5 py-0.5 rounded font-bold ${item.postingType?.includes('मुद्दल') ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-blue-100 text-blue-900 border border-blue-300'}`}>
+                        {item.postingType || '-'}
+                      </span>
+                    </td>
+                    <td className="p-2 border-r text-gray-700 text-[11px] font-medium">{item.impactedLedgerName || '-'}</td>
                     <td className="p-2 border-r text-right font-medium">₹{item.currentPrincipal.toLocaleString('en-IN')}</td>
                     <td className="p-2 border-r text-right font-medium">₹{item.currentInterest.toLocaleString('en-IN')}</td>
                     <td className="p-2 border-r text-center font-medium">{item.interestRate}%</td>
-                    <td className="p-2 border-r text-center text-gray-600 font-mono text-[11px]">
-                      {item.lastDate ? new Date(item.lastDate).toLocaleDateString('en-GB') : '-'}
-                    </td>
                     <td className="p-2 border-r text-center text-gray-600 font-bold">{item.daysAccrued}</td>
                     <td className="p-2 border-r text-right font-bold text-emerald-700 bg-emerald-50/50">
                       ₹{item.calculatedInterest.toLocaleString('en-IN')}
                     </td>
-                    <td className="p-2 text-right font-bold text-blue-900 bg-blue-50/50">
-                      ₹{(capitalizeToPrincipal ? item.newPrincipal : item.newInterest).toLocaleString('en-IN')}
+                    <td className="p-2 border-r text-right font-bold text-amber-900 bg-amber-50/40">
+                      ₹{item.newPrincipal.toLocaleString('en-IN')}
+                    </td>
+                    <td className="p-2 text-right font-bold text-blue-900 bg-blue-50/40">
+                      ₹{item.newInterest.toLocaleString('en-IN')}
                     </td>
                   </tr>
                 ))}

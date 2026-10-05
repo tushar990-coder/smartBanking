@@ -48,6 +48,12 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal PrincipalBalance { get; set; }
 
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal PurePrincipalBalance { get; set; } = 0; // मूळ शुद्ध मुद्दल बाकी
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal CapitalizedInterestAmount { get; set; } = 0; // मुद्दलात समाविष्ट झालेले व्याज
+
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal InterestBalance { get; set; }
@@ -55,6 +61,14 @@ namespace Bhisi.Api.Models
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal OverdueInterestBalance { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal InterestProvisionBalance { get; set; } = 0; // थकीत व्याज तरतूद / अनामत
+
+        [StringLength(20)]
+        public string InitialNpaClassification { get; set; } = "Standard"; // Standard, SubStandard, Doubtful, Loss
+
+        public bool ChargeInterestOnCapitalizedAmount { get; set; } = true; // समाविष्ट व्याजावर पुढील व्याज आकारायचे का?
 
         [Required]
         public DateTime OpeningDate { get; set; }

@@ -264,6 +264,7 @@ namespace Bhisi.Api.Models
 
     public class LoanOpeningBalanceDto
     {
+        public int LoanOpeningBalanceID { get; set; } = 0;
         public int BranchID { get; set; } = 1;
         public int? CustomerID { get; set; }
         public int? MemberID { get; set; }
@@ -271,8 +272,13 @@ namespace Bhisi.Api.Models
         public string LoanAccountNo { get; set; } = string.Empty;
         public string? LegacyAccountNumber { get; set; }
         public decimal PrincipalBalance { get; set; }
+        public decimal PurePrincipalBalance { get; set; } = 0;
+        public decimal CapitalizedInterestAmount { get; set; } = 0;
         public decimal InterestBalance { get; set; }
         public decimal OverdueInterestBalance { get; set; }
+        public decimal InterestProvisionBalance { get; set; } = 0;
+        public string InitialNpaClassification { get; set; } = "Standard";
+        public bool ChargeInterestOnCapitalizedAmount { get; set; } = true;
         public DateTime OpeningDate { get; set; }
         public DateTime? LoanDisbursementDate { get; set; }
         public decimal SanctionedAmount { get; set; }

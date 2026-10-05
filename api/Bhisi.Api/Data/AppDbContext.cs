@@ -39,6 +39,7 @@ namespace Bhisi.Api.Data
         public DbSet<CustomerOpeningBalance> CustomerOpeningBalances { get; set; }
         public DbSet<MemberOpeningBalance> MemberOpeningBalances { get; set; }
         public DbSet<LoanRate> LoanRates { get; set; }
+        public DbSet<LoanRateHistory> LoanRateHistories { get; set; }
         public DbSet<LoanApplication> LoanApplications { get; set; }
         public DbSet<LoanAccount> LoanAccounts { get; set; }
         public DbSet<LoanDisbursement> LoanDisbursements { get; set; }
@@ -332,6 +333,11 @@ namespace Bhisi.Api.Data
 
             modelBuilder.Entity<LoanAccount>(entity =>
             {
+                entity.HasIndex(l => new { l.BranchID, l.LoanAccountNo })
+                      .IsUnique()
+                      .HasDatabaseName("IX_LoanAccounts_Branch_AccountNo")
+                      .HasFilter("[LoanAccountNo] IS NOT NULL AND [LoanAccountNo] <> ''");
+
                 entity.HasOne(l => l.Branch)
                       .WithMany()
                       .HasForeignKey(l => l.BranchID)

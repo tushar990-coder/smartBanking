@@ -87,7 +87,7 @@ namespace Bhisi.Api.Controllers
         }
 
         // GET: api/LoanRates/5
-        [HttpGet("{id}")]
+        [HttpGet("{id:int}")]
         public async Task<ActionResult<LoanRate>> GetLoanRate(int id)
         {
             var loanRate = await _context.LoanRates.FindAsync(id);
@@ -143,6 +143,16 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "कर्ज प्रकार निवडणे अनिवार्य आहे." });
             }
 
+            loanRate.LoanType = loanRate.LoanType.Trim();
+            loanRate.LoanCode = loanRate.LoanCode?.Trim() ?? string.Empty;
+
+            // 1. Case-insensitive LoanType check
+            bool typeExists = await _context.LoanRates.AnyAsync(r => r.LoanType.ToLower() == loanRate.LoanType.ToLower());
+            if (typeExists)
+            {
+                return BadRequest(new { message = $"कर्ज योजना प्रकार / नाव '{loanRate.LoanType}' आधीपासून अस्तित्वात आहे. कृपया वेगळे नाव द्या." });
+            }
+
             if (loanRate.InterestRate < 0)
             {
                 return BadRequest(new { message = "व्याजदर ऋण (Negative) असू शकत नाही." });
@@ -178,6 +188,24 @@ namespace Bhisi.Api.Controllers
             if (!interestLedgerExists)
             {
                 return BadRequest(new { message = "निवडलेले कर्ज व्याज खाते (Interest Ledger) अस्तित्वात नाही." });
+            }
+
+            bool isAccrueToReceivable = (loanRate.InterestPostingType?.Trim() == "येणे व्याजावर") 
+                || (loanRate.InterestPostingType?.Contains("येणे") == true)
+                || (loanRate.InterestPostingType?.ToLower().Contains("receivable") == true);
+
+            if (isAccrueToReceivable)
+            {
+                if (!loanRate.ReceivableInterestLedgerID.HasValue || loanRate.ReceivableInterestLedgerID.Value <= 0)
+                {
+                    return BadRequest(new { message = "व्याज पोस्टींग प्रकार 'येणे व्याजावर' असताना 'येणे व्याज खाते (Receivable Interest Ledger)' निवडणे अनिवार्य आहे." });
+                }
+
+                bool recLedgerExists = await _context.Ledgers.AnyAsync(l => l.LedgerID == loanRate.ReceivableInterestLedgerID.Value);
+                if (!recLedgerExists)
+                {
+                    return BadRequest(new { message = "निवडलेले येणे व्याज खाते (Receivable Interest Ledger) अस्तित्वात नाही." });
+                }
             }
 
             if (string.IsNullOrWhiteSpace(loanRate.LoanCode))
@@ -208,8 +236,30 @@ namespace Bhisi.Api.Controllers
                 loanRate.LoanCode = loanRate.LoanCode.Trim();
             }
 
-            _context.LoanRates.Add(loanRate);
-            await _context.SaveChangesAsync();
+            // 2. Case-insensitive LoanCode check
+            bool codeExists = await _context.LoanRates.AnyAsync(r => r.LoanCode.ToLower() == loanRate.LoanCode.ToLower());
+            if (codeExists)
+            {
+                return BadRequest(new { message = $"कर्ज योजना कोड '{loanRate.LoanCode}' आधीपासून अस्तित्वात आहे. कृपया दुसरा कोड वापरा." });
+            }
+
+            try
+            {
+                _context.LoanRates.Add(loanRate);
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                if (ex.InnerException?.Message?.Contains("IX_LoanRates_LoanCode") == true)
+                {
+                    return BadRequest(new { message = $"कर्ज योजना कोड '{loanRate.LoanCode}' आधीपासून अस्तित्वात आहे (Duplicate Key)." });
+                }
+                if (ex.InnerException?.Message?.Contains("IX_LoanRates_LoanType") == true)
+                {
+                    return BadRequest(new { message = $"कर्ज योजना प्रकार / नाव '{loanRate.LoanType}' आधीपासून अस्तित्वात आहे (Duplicate Key)." });
+                }
+                throw;
+            }
 
             // Audit Trail for Loan Scheme Creation
             await LogAuditAsync(
@@ -234,6 +284,26 @@ namespace Bhisi.Api.Controllers
             if (string.IsNullOrWhiteSpace(loanRate.LoanType))
             {
                 return BadRequest(new { message = "कर्ज प्रकार निवडणे अनिवार्य आहे." });
+            }
+
+            loanRate.LoanType = loanRate.LoanType.Trim();
+            loanRate.LoanCode = loanRate.LoanCode?.Trim() ?? string.Empty;
+
+            // 1. Case-insensitive LoanType conflict check
+            bool typeConflict = await _context.LoanRates.AnyAsync(r => r.LoanRateID != id && r.LoanType.ToLower() == loanRate.LoanType.ToLower());
+            if (typeConflict)
+            {
+                return BadRequest(new { message = $"कर्ज योजना प्रकार / नाव '{loanRate.LoanType}' इतर कर्ज योजनेसाठी आधीपासून वापरले गेले आहे." });
+            }
+
+            // 2. Case-insensitive LoanCode conflict check
+            if (!string.IsNullOrWhiteSpace(loanRate.LoanCode))
+            {
+                bool codeConflict = await _context.LoanRates.AnyAsync(r => r.LoanRateID != id && r.LoanCode.ToLower() == loanRate.LoanCode.ToLower());
+                if (codeConflict)
+                {
+                    return BadRequest(new { message = $"कर्ज योजना कोड '{loanRate.LoanCode}' इतर कर्ज योजनेसाठी आधीपासून वापरला गेला आहे." });
+                }
             }
 
             if (loanRate.InterestRate < 0)
@@ -273,6 +343,24 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "निवडलेले कर्ज व्याज खाते (Interest Ledger) अस्तित्वात नाही." });
             }
 
+            bool isAccrueToReceivable = (loanRate.InterestPostingType?.Trim() == "येणे व्याजावर") 
+                || (loanRate.InterestPostingType?.Contains("येणे") == true)
+                || (loanRate.InterestPostingType?.ToLower().Contains("receivable") == true);
+
+            if (isAccrueToReceivable)
+            {
+                if (!loanRate.ReceivableInterestLedgerID.HasValue || loanRate.ReceivableInterestLedgerID.Value <= 0)
+                {
+                    return BadRequest(new { message = "व्याज पोस्टींग प्रकार 'येणे व्याजावर' असताना 'येणे व्याज खाते (Receivable Interest Ledger)' निवडणे अनिवार्य आहे." });
+                }
+
+                bool recLedgerExists = await _context.Ledgers.AnyAsync(l => l.LedgerID == loanRate.ReceivableInterestLedgerID.Value);
+                if (!recLedgerExists)
+                {
+                    return BadRequest(new { message = "निवडलेले येणे व्याज खाते (Receivable Interest Ledger) अस्तित्वात नाही." });
+                }
+            }
+
             // Fetch existing to compute change audit diff
             var existing = await _context.LoanRates.AsNoTracking().FirstOrDefaultAsync(r => r.LoanRateID == id);
             if (existing == null)
@@ -292,9 +380,45 @@ namespace Bhisi.Api.Controllers
             if (existing.InterestLedgerID != loanRate.InterestLedgerID) changes.Add($"व्याज खाते ID: {existing.InterestLedgerID} -> {loanRate.InterestLedgerID}");
             if (existing.IsActive != loanRate.IsActive) changes.Add($"स्थिती (Active): {existing.IsActive} -> {loanRate.IsActive}");
 
-            if (!string.IsNullOrWhiteSpace(loanRate.LoanCode))
+            // Track Interest Rate and/or Overdue Interest Rate Revisions into LoanRateHistories
+            bool isInterestRateChanged = existing.InterestRate != loanRate.InterestRate;
+            bool isOverdueRateChanged = existing.OverdueInterestRate != loanRate.OverdueInterestRate;
+
+            if (isInterestRateChanged || isOverdueRateChanged)
             {
-                loanRate.LoanCode = loanRate.LoanCode.Trim();
+                var (userId, username, _, _, _) = GetCurrentUserContext();
+                string resolutionNo = !string.IsNullOrWhiteSpace(loanRate.ResolutionNo)
+                    ? loanRate.ResolutionNo.Trim()
+                    : "नियमित पुनरावलोकन / ठराव नोंद";
+
+                DateTime resolutionDate = loanRate.ResolutionDate ?? DateTime.Today;
+                DateTime effectiveDate = loanRate.EffectiveDate ?? DateTime.Today;
+                string reason = !string.IsNullOrWhiteSpace(loanRate.RevisionReason)
+                    ? loanRate.RevisionReason.Trim()
+                    : (isInterestRateChanged && isOverdueRateChanged
+                        ? $"व्याजदर {existing.InterestRate}% -> {loanRate.InterestRate}% व दंड दर {existing.OverdueInterestRate}% -> {loanRate.OverdueInterestRate}% मध्ये बदल"
+                        : isInterestRateChanged
+                            ? $"व्याजदर {existing.InterestRate}% -> {loanRate.InterestRate}% मध्ये बदल"
+                            : $"थकीत/दंड व्याजदर {existing.OverdueInterestRate}% -> {loanRate.OverdueInterestRate}% मध्ये बदल");
+
+                var history = new LoanRateHistory
+                {
+                    LoanRateID = id,
+                    OldInterestRate = existing.InterestRate,
+                    NewInterestRate = loanRate.InterestRate,
+                    OldOverdueInterestRate = existing.OverdueInterestRate,
+                    NewOverdueInterestRate = loanRate.OverdueInterestRate,
+                    ResolutionNo = resolutionNo,
+                    ResolutionDate = resolutionDate,
+                    EffectiveDate = effectiveDate,
+                    Reason = reason,
+                    ChangedByUserID = userId,
+                    ChangedByUsername = username,
+                    ChangedAt = DateTime.Now,
+                    IPAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1"
+                };
+
+                _context.LoanRateHistories.Add(history);
             }
 
             _context.Entry(loanRate).State = EntityState.Modified;
@@ -314,6 +438,18 @@ namespace Bhisi.Api.Controllers
                     throw;
                 }
             }
+            catch (DbUpdateException ex)
+            {
+                if (ex.InnerException?.Message?.Contains("IX_LoanRates_LoanCode") == true)
+                {
+                    return BadRequest(new { message = $"कर्ज योजना कोड '{loanRate.LoanCode}' इतर योजनेशी जुळत आहे (Duplicate Key)." });
+                }
+                if (ex.InnerException?.Message?.Contains("IX_LoanRates_LoanType") == true)
+                {
+                    return BadRequest(new { message = $"कर्ज योजना प्रकार / नाव '{loanRate.LoanType}' इतर योजनेशी जुळत आहे (Duplicate Key)." });
+                }
+                throw;
+            }
 
             // Audit Trail for Loan Scheme Update
             string changeSummary = changes.Count > 0 ? string.Join("; ", changes) : "कोणतेही महत्त्वपूर्ण बदल नाहीत";
@@ -324,6 +460,86 @@ namespace Bhisi.Api.Controllers
             );
 
             return NoContent();
+        }
+
+        // GET: api/LoanRates/{id}/History
+        [HttpGet("{id:int}/History")]
+        public async Task<ActionResult<IEnumerable<object>>> GetLoanRateHistory(int id)
+        {
+            var loanRate = await _context.LoanRates.AsNoTracking().FirstOrDefaultAsync(r => r.LoanRateID == id);
+            if (loanRate == null)
+            {
+                return NotFound(new { message = "कर्ज योजना सापडली नाही." });
+            }
+
+            var histories = await _context.LoanRateHistories
+                .AsNoTracking()
+                .Where(h => h.LoanRateID == id)
+                .OrderByDescending(h => h.EffectiveDate)
+                .ThenByDescending(h => h.HistoryID)
+                .Select(h => new
+                {
+                    h.HistoryID,
+                    h.LoanRateID,
+                    LoanType = loanRate.LoanType,
+                    LoanCode = loanRate.LoanCode,
+                    h.OldInterestRate,
+                    h.NewInterestRate,
+                    OldOverdueRate = h.OldOverdueInterestRate,
+                    NewOverdueRate = h.NewOverdueInterestRate,
+                    h.OldOverdueInterestRate,
+                    h.NewOverdueInterestRate,
+                    h.ResolutionNo,
+                    h.ResolutionDate,
+                    h.EffectiveDate,
+                    RevisionReason = h.Reason,
+                    Reason = h.Reason,
+                    ChangedBy = h.ChangedByUsername,
+                    h.ChangedByUserID,
+                    h.ChangedByUsername,
+                    h.ChangedAt,
+                    h.IPAddress
+                })
+                .ToListAsync();
+
+            return Ok(histories);
+        }
+
+        // GET: api/LoanRates/AllHistory
+        [HttpGet("AllHistory")]
+        public async Task<ActionResult<IEnumerable<object>>> GetAllLoanRateHistories()
+        {
+            var histories = await _context.LoanRateHistories
+                .AsNoTracking()
+                .Include(h => h.LoanRate)
+                .OrderByDescending(h => h.EffectiveDate)
+                .ThenByDescending(h => h.HistoryID)
+                .Select(h => new
+                {
+                    h.HistoryID,
+                    h.LoanRateID,
+                    LoanType = h.LoanRate != null ? h.LoanRate.LoanType : "-",
+                    LoanCode = h.LoanRate != null ? h.LoanRate.LoanCode : "-",
+                    h.OldInterestRate,
+                    h.NewInterestRate,
+                    OldOverdueRate = h.OldOverdueInterestRate,
+                    NewOverdueRate = h.NewOverdueInterestRate,
+                    h.OldOverdueInterestRate,
+                    h.NewOverdueInterestRate,
+                    h.ResolutionNo,
+                    h.ResolutionDate,
+                    h.EffectiveDate,
+                    RevisionReason = h.Reason,
+                    Reason = h.Reason,
+                    ChangedBy = h.ChangedByUsername,
+                    h.ChangedByUserID,
+                    h.ChangedByUsername,
+                    h.ChangedAt,
+                    h.IPAddress
+                })
+                .ToListAsync();
+
+            return Ok(histories);
         }
 
         // DELETE: api/LoanRates/5

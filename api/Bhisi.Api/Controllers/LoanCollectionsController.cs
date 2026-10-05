@@ -165,8 +165,11 @@ namespace Bhisi.Api.Controllers
 
                     // Fully settle account to zero for OTS
                     loanAccount.PrincipalBalance = 0;
+                    loanAccount.PurePrincipalBalance = 0;
+                    loanAccount.CapitalizedInterestAmount = 0;
                     loanAccount.InterestBalance = 0;
                     loanAccount.OverdueInterestBalance = 0;
+                    loanAccount.InterestProvisionBalance = 0;
                     loanAccount.Status = "Closed_OTS";
                     loanAccount.LastInstallmentPaidDate = collection.CollectionDate;
                 }
@@ -187,7 +190,8 @@ namespace Bhisi.Api.Controllers
                         var rate = loanRate?.InterestRate ?? loanAccount.InterestRate;
                         var diffTime = collection.CollectionDate - fromDateStr;
                         var diffDays = Math.Max(0, diffTime.Days);
-                        decimal newInterest = diffDays > 0 ? Math.Round((loanAccount.PrincipalBalance * rate * diffDays) / 36500m) : 0;
+                        decimal effectivePrincipal = LoanAccountsController.GetEffectiveInterestBearingPrincipal(loanAccount);
+                        decimal newInterest = diffDays > 0 ? Math.Round((effectivePrincipal * rate * diffDays) / 36500m) : 0;
                         loanAccount.InterestBalance += newInterest;
                     }
                     else
@@ -246,6 +250,29 @@ namespace Bhisi.Api.Controllers
                         surchargeCollected = remaining;
                     }
 
+                    // CBS Waterfall: Settle Capitalized Interest first, then Pure Principal
+                    if (principalPaid > 0)
+                    {
+                        if (loanAccount.CapitalizedInterestAmount > 0)
+                        {
+                            decimal capDeduction = Math.Min(principalPaid, loanAccount.CapitalizedInterestAmount);
+                            loanAccount.CapitalizedInterestAmount -= capDeduction;
+                            decimal pureDeduction = principalPaid - capDeduction;
+                            loanAccount.PurePrincipalBalance = Math.Max(0, loanAccount.PurePrincipalBalance - pureDeduction);
+                        }
+                        else
+                        {
+                            loanAccount.PurePrincipalBalance = Math.Max(0, loanAccount.PurePrincipalBalance - principalPaid);
+                        }
+                    }
+
+                    // CBS Suspense: Release Interest Provision on actual cash interest recovery
+                    if (interestPaid > 0 && loanAccount.InterestProvisionBalance > 0)
+                    {
+                        decimal provisionRelease = Math.Min(interestPaid, loanAccount.InterestProvisionBalance);
+                        loanAccount.InterestProvisionBalance -= provisionRelease;
+                    }
+
                     collection.PenaltyInterestCollected = penaltyPaid;
                     collection.InterestCollected = regularInterestPaid;
                     collection.PrincipalCollected = principalPaid;
@@ -292,7 +319,8 @@ namespace Bhisi.Api.Controllers
                     .Where(s => s.LoanAccountID == collection.LoanAccountID)
                     .OrderByDescending(s => s.AsOfDate)
                     .FirstOrDefaultAsync();
-                bool isNpa = lastStatus != null && lastStatus.Category != "Standard";
+                bool isNpa = (lastStatus != null && lastStatus.Category != "Standard") || 
+                             (!string.IsNullOrWhiteSpace(loanAccount.InitialNpaClassification) && loanAccount.InitialNpaClassification != "Standard");
 
                 // Log in Overdue tracking ledgers
                 if (expensesPaid > 0)

@@ -19,7 +19,8 @@ import {
   Landmark,
   Coins,
   ShieldCheck,
-  Calendar
+  Calendar,
+  History
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 // @ts-ignore
@@ -56,6 +57,23 @@ interface LoanRate {
   loanInstallmentType: string;
   securityType: string;
   isActive: boolean;
+}
+
+interface LoanRateHistory {
+  historyID: number;
+  loanRateID: number;
+  loanCode: string;
+  loanType: string;
+  oldInterestRate: number;
+  newInterestRate: number;
+  oldOverdueRate: number;
+  newOverdueRate: number;
+  resolutionNo?: string;
+  resolutionDate?: string;
+  effectiveDate?: string;
+  revisionReason?: string;
+  changedBy?: string;
+  changedAt: string;
 }
 
 interface LoanRateMasterProps {
@@ -100,6 +118,20 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
   const [searchTerm, setSearchTerm] = useState('');
   const formContainerRef = useRef<HTMLDivElement>(null);
   const loanCodeInputRef = useRef<HTMLInputElement>(null);
+
+  // Board Resolution & Rate Revision State (दोष क्र. ७)
+  const [resolutionNo, setResolutionNo] = useState('');
+  const [resolutionDate, setResolutionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
+  const [revisionReason, setRevisionReason] = useState('');
+  const [originalRates, setOriginalRates] = useState<{ interestRate: number; overdueInterestRate: number } | null>(null);
+
+  // Rate Revision History Modal State
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyList, setHistoryList] = useState<LoanRateHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySearchTerm, setHistorySearchTerm] = useState('');
+  const [selectedSchemeFilter, setSelectedSchemeFilter] = useState<string>('ALL');
 
   const API_URL = '/api/LoanRates';
   const LEDGER_API = '/api/Ledgers';
@@ -190,6 +222,32 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
     }));
   };
 
+  const fetchRevisionHistory = async (loanRateID?: number) => {
+    setHistoryLoading(true);
+    try {
+      const url = loanRateID ? `${API_URL}/${loanRateID}/History` : `${API_URL}/AllHistory`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryList(Array.isArray(data) ? data : []);
+      } else {
+        setHistoryList([]);
+      }
+    } catch (err) {
+      console.error("Error fetching rate history", err);
+      setHistoryList([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const currentInterest = formData.interestRate ? parseFloat(formData.interestRate) : 0;
+  const currentOverdue = formData.overdueInterestRate ? parseFloat(formData.overdueInterestRate) : 0;
+  const isRateChanged = isEditing && originalRates !== null && (
+    Math.abs(currentInterest - (originalRates.interestRate || 0)) > 0.0001 ||
+    Math.abs(currentOverdue - (originalRates.overdueInterestRate || 0)) > 0.0001
+  );
+
   const handleNew = () => {
     setFormData({
       loanRateID: 0,
@@ -216,15 +274,45 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       isActive: true
     });
     setIsEditing(false);
+    setOriginalRates(null);
+    setResolutionNo('');
+    setResolutionDate(new Date().toISOString().split('T')[0]);
+    setEffectiveDate(new Date().toISOString().split('T')[0]);
+    setRevisionReason('');
     fetchNextLoanCode();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.loanType) {
+    const trimmedType = (formData.loanType || '').trim();
+    const trimmedCode = (formData.loanCode || '').trim();
+
+    if (!trimmedType) {
       alert('कृपया कर्ज प्रकार निवडा.');
       return;
+    }
+
+    // Client-side unique check for LoanType
+    const duplicateType = loanRates.find(r => 
+      r.loanRateID !== (isEditing ? formData.loanRateID : 0) && 
+      (r.loanType || '').trim().toLowerCase() === trimmedType.toLowerCase()
+    );
+    if (duplicateType) {
+      alert(`कर्ज योजना प्रकार / नाव '${trimmedType}' आधीपासून अस्तित्वात आहे. कृपया वेगळे नाव द्या.`);
+      return;
+    }
+
+    // Client-side unique check for LoanCode
+    if (trimmedCode) {
+      const duplicateCode = loanRates.find(r => 
+        r.loanRateID !== (isEditing ? formData.loanRateID : 0) && 
+        (r.loanCode || '').trim().toLowerCase() === trimmedCode.toLowerCase()
+      );
+      if (duplicateCode) {
+        alert(`कर्ज योजना कोड '${trimmedCode}' आधीपासून योजना '${duplicateCode.loanType}' साठी वापरला आहे. कृपया दुसरा कोड वापरा.`);
+        return;
+      }
     }
 
     if (!formData.loanLedgerID || parseInt(formData.loanLedgerID) <= 0) {
@@ -235,6 +323,28 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
     if (!formData.interestLedgerID || parseInt(formData.interestLedgerID) <= 0) {
       alert('कृपया कर्ज व्याज खाते (Interest Ledger) निवडणे अनिवार्य आहे.');
       return;
+    }
+
+    const isAccrue = formData.interestPostingType?.includes('येणे');
+    if (isAccrue && (!formData.receivableInterestLedgerID || parseInt(formData.receivableInterestLedgerID) <= 0)) {
+      alert("व्याज पोस्टींग प्रकार 'येणे व्याजावर' असताना 'येणे व्याज खाते (Receivable Interest Ledger)' निवडणे अनिवार्य आहे.");
+      return;
+    }
+
+    // Validation for Board Resolution when interest rate changes (दोष क्र. ७)
+    if (isEditing && isRateChanged) {
+      if (!resolutionNo.trim()) {
+        alert('⚠️ व्याजदरात किंवा थकीत दरात बदल केला आहे. सहकार ऑडिट मानकांनुसार संचालक मंडळाचा ठराव क्रमांक (Board Resolution No) भरणे अनिवार्य आहे.');
+        return;
+      }
+      if (!resolutionDate) {
+        alert('⚠️ कृपया संचालक मंडळ ठराव दिनांक (Resolution Date) निवडा.');
+        return;
+      }
+      if (!effectiveDate) {
+        alert('⚠️ कृपया नवीन व्याजदर लागू होण्याचा दिनांक (Effective Date) निवडा.');
+        return;
+      }
     }
 
     const payload = {
@@ -259,7 +369,11 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       installmentCount: formData.installmentCount ? parseInt(formData.installmentCount) : 0,
       loanInstallmentType: formData.loanInstallmentType,
       securityType: formData.securityType,
-      isActive: formData.isActive
+      isActive: formData.isActive,
+      resolutionNo: isRateChanged ? resolutionNo.trim() : null,
+      resolutionDate: isRateChanged ? resolutionDate : null,
+      effectiveDate: isRateChanged ? effectiveDate : null,
+      revisionReason: isRateChanged ? (revisionReason.trim() || 'संचालक मंडळ ठरावानुसार व्याजदर सुधारित') : null
     };
 
     try {
@@ -305,6 +419,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       recoveryFeeLedgerID: rate.recoveryFeeLedgerID?.toString() || '',
       processingFeeLedgerID: rate.processingFeeLedgerID?.toString() || '',
       interestRate: rate.interestRate?.toString() || '',
+      overdueInterestRate: rate.overdueInterestRate?.toString() || '',
       interestPostingType: rate.interestPostingType && !rate.interestPostingType.includes('?') && !rate.interestPostingType.includes('à') 
         ? (rate.interestPostingType.startsWith('कर्ज') ? 'कर्जावर' : rate.interestPostingType.includes('येणे') ? 'येणे व्याजावर' : rate.interestPostingType) 
         : 'कर्जावर',
@@ -318,6 +433,14 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       securityType: rate.securityType || 'तारणी',
       isActive: rate.isActive
     });
+    setOriginalRates({
+      interestRate: rate.interestRate || 0,
+      overdueInterestRate: rate.overdueInterestRate || 0
+    });
+    setResolutionNo('');
+    setResolutionDate(new Date().toISOString().split('T')[0]);
+    setEffectiveDate(new Date().toISOString().split('T')[0]);
+    setRevisionReason('');
     setIsEditing(true);
     setShowList(false);
 
@@ -417,6 +540,40 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "कर्ज दर पत्रक");
     XLSX.writeFile(workbook, `Karj_Dar_Patrak_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const filteredHistory = (historyList || []).filter(item => {
+    const matchesScheme = selectedSchemeFilter === 'ALL' || item.loanRateID.toString() === selectedSchemeFilter;
+    const matchesSearch = !historySearchTerm || (
+      (item.loanType && item.loanType.toLowerCase().includes(historySearchTerm.toLowerCase())) ||
+      (item.loanCode && item.loanCode.toLowerCase().includes(historySearchTerm.toLowerCase())) ||
+      (item.resolutionNo && item.resolutionNo.toLowerCase().includes(historySearchTerm.toLowerCase())) ||
+      (item.revisionReason && item.revisionReason.toLowerCase().includes(historySearchTerm.toLowerCase()))
+    );
+    return matchesScheme && matchesSearch;
+  });
+
+  const handleExportHistoryExcel = () => {
+    const excelRows = filteredHistory.map((item, idx) => ({
+      "अ.क्र.": idx + 1,
+      "कर्ज प्रकार": item.loanType,
+      "कोड": item.loanCode || '-',
+      "जुना व्याजदर (%)": item.oldInterestRate !== undefined && item.oldInterestRate !== null ? `${item.oldInterestRate.toFixed(2)}%` : '0.00%',
+      "नवीन व्याजदर (%)": item.newInterestRate !== undefined && item.newInterestRate !== null ? `${item.newInterestRate.toFixed(2)}%` : '0.00%',
+      "जुना थकीत दर (%)": item.oldOverdueRate !== undefined && item.oldOverdueRate !== null ? `${item.oldOverdueRate.toFixed(2)}%` : '0.00%',
+      "नवीन थकीत दर (%)": item.newOverdueRate !== undefined && item.newOverdueRate !== null ? `${item.newOverdueRate.toFixed(2)}%` : '0.00%',
+      "ठराव क्रमांक": item.resolutionNo || '-',
+      "ठराव दिनांक": item.resolutionDate ? new Date(item.resolutionDate).toLocaleDateString('en-GB') : '-',
+      "लागू दिनांक": item.effectiveDate ? new Date(item.effectiveDate).toLocaleDateString('en-GB') : '-',
+      "बदलाचे कारण": item.revisionReason || '-',
+      "बदल दिनांक": item.changedAt ? new Date(item.changedAt).toLocaleString('en-GB') : '-',
+      "ऑपरेटर": item.changedBy || 'System'
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(excelRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "व्याजदर बदल नोंदवही");
+    XLSX.writeFile(workbook, `Vyajdar_Badal_Nondvahi_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   // KPI Calculations
@@ -622,6 +779,21 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
             <span>प्रिंट</span>
           </button>
 
+          {/* RATE REVISION HISTORY BUTTON (दोष क्र. ७) */}
+          <button
+            type="button"
+            onClick={() => {
+              fetchRevisionHistory();
+              setSelectedSchemeFilter('ALL');
+              setShowHistoryModal(true);
+            }}
+            className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-sm text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+            title="सर्व व्याजदर बदल व संचालक मंडळ ठराव नोंदवही पहा"
+          >
+            <History className="w-3.5 h-3.5 text-amber-700" />
+            <span>📜 दर बदल नोंदवही</span>
+          </button>
+
           {/* VIEW LIST BUTTON -> Opens Pop-up List Modal */}
           <button
             type="button"
@@ -768,6 +940,93 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                 </label>
               </div>
             </div>
+
+            {/* Board Resolution & Revision Notice Card (दोष क्र. ७) */}
+            {isRateChanged && (
+              <div className="mt-2.5 p-3 bg-amber-50 border-2 border-amber-400 rounded-sm shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between border-b border-amber-300 pb-1.5">
+                  <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs">
+                    <ShieldCheck className="w-4 h-4 text-amber-700" />
+                    <span>📜 संचालक मंडळ ठराव व अंमलबजावणी नोंद (Board Resolution & Rate Revision)</span>
+                  </div>
+                  <span className="text-[10px] bg-amber-200 text-amber-900 font-black px-2 py-0.5 rounded-full border border-amber-400">
+                    ⚠️ व्याजदरात बदल आढळला
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] bg-amber-100/70 p-2 rounded border border-amber-200">
+                  <div>
+                    <span className="text-gray-600 block text-[10px]">मूळ व्याजदर:</span>
+                    <span className="font-mono font-bold text-gray-800">{originalRates?.interestRate?.toFixed(2)}%</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 block text-[10px]">नवीन व्याजदर:</span>
+                    <span className="font-mono font-black text-emerald-800">{currentInterest.toFixed(2)}%</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 block text-[10px]">मूळ थकीत दर:</span>
+                    <span className="font-mono font-bold text-gray-800">{originalRates?.overdueInterestRate?.toFixed(2)}%</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 block text-[10px]">नवीन थकीत दर:</span>
+                    <span className="font-mono font-black text-rose-800">{currentOverdue.toFixed(2)}%</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className={labelClass}>
+                      संचालक मंडळ ठराव क्रमांक <span className="text-red-600 font-bold">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={resolutionNo}
+                      onChange={(e) => setResolutionNo(e.target.value)}
+                      placeholder="उदा. ठराव क्र. १२/२०२६"
+                      className={`${inputClass} border-amber-400 focus:ring-amber-500 font-bold`}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>
+                      ठराव दिनांक <span className="text-red-600 font-bold">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={resolutionDate}
+                      onChange={(e) => setResolutionDate(e.target.value)}
+                      className={`${inputClass} border-amber-400 focus:ring-amber-500 font-bold`}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>
+                      नवीन दर लागू दिनांक (Effective Date) <span className="text-red-600 font-bold">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={effectiveDate}
+                      onChange={(e) => setEffectiveDate(e.target.value)}
+                      className={`${inputClass} border-amber-400 focus:ring-amber-500 font-bold`}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className={labelClass}>दर बदलाचे कारण / इतिवृत्त टिपणी (Reason for Revision)</label>
+                  <input
+                    type="text"
+                    value={revisionReason}
+                    onChange={(e) => setRevisionReason(e.target.value)}
+                    placeholder="उदा. संचालक मंडळ मासिक सभा निर्णयानुसार व्याजदर कपात / वाढ"
+                    className={`${inputClass} border-amber-400`}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Section 2: Terms & Methods */}
@@ -873,7 +1132,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
 
               <div>
                 <label className="block text-[11px] font-bold text-gray-800 mb-0.5">
-                  ४. येणे व्याज खाते (Receivable Interest)
+                  ४. येणे व्याज खाते (Receivable Interest) {formData.interestPostingType?.includes('येणे') && <span className="text-red-500 font-bold">* (अनिवार्य)</span>}
                 </label>
                 <SearchableSelect name="receivableInterestLedgerID" value={formData.receivableInterestLedgerID} onChange={handleChange} options={ledgerOptions} />
               </div>
@@ -993,7 +1252,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                 <table className="w-full text-left border-collapse text-xs">
                   <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
                     <tr>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-36">कृती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज प्रकार</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">कोड</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">संक्षिप्त नाव</th>
@@ -1013,6 +1272,19 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                       <tr key={rate.loanRateID} className="hover:bg-primary/5 transition-colors">
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1">
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                fetchRevisionHistory(rate.loanRateID);
+                                setSelectedSchemeFilter(rate.loanRateID.toString());
+                                setShowHistoryModal(true);
+                              }}
+                              className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300 rounded text-[10px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
+                              title="या योजनेचा दर बदल इतिहास पहा"
+                            >
+                              <History className="w-3 h-3 text-indigo-700" />
+                              <span>इतिहास</span>
+                            </button>
                             <button 
                               type="button" 
                               onClick={() => handleEdit(rate)} 
@@ -1095,6 +1367,204 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
               <button
                 type="button"
                 onClick={() => setShowList(false)}
+                className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-sm text-xs font-bold transition-all cursor-pointer"
+              >
+                बंद करा (Close)
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* POP-UP MODAL: LOAN RATE REVISION HISTORY REGISTER (दोष क्र. ७)            */}
+      {/* ========================================================================= */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 max-w-7xl w-full max-h-[94vh] flex flex-col overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="bg-amber-700 text-white px-4 py-2.5 flex justify-between items-center shrink-0 border-b border-amber-800">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-white" />
+                <div>
+                  <h2 className="text-sm font-bold flex items-center gap-2">
+                    <span>📜 व्याजदर बदल व संचालक मंडळ ठराव नोंदवही (Loan Rate Revision History)</span>
+                    <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
+                      {filteredHistory.length} नोंदी
+                    </span>
+                  </h2>
+                  <p className="text-[10px] text-amber-100 font-medium">
+                    सहकार निबंधक लेखापरीक्षण व ऑडिट मानकांनुसार व्याजदर बदलांचा ऐतिहासिक पुरावा
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(false)}
+                className="text-white/80 hover:text-white hover:bg-white/10 p-1 rounded-sm transition-colors cursor-pointer"
+                title="बंद करा (Close)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Filter Toolbar */}
+            <div className="p-2.5 bg-slate-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
+                  <input 
+                    type="text" 
+                    placeholder="योजना / कोड / ठराव क्र. / कारण शोधा..." 
+                    value={historySearchTerm}
+                    onChange={(e) => setHistorySearchTerm(e.target.value)}
+                    className="pl-8 pr-6 py-1 border border-gray-300 rounded-sm text-xs h-[30px] w-60 lg:w-72 focus:outline-none focus:border-amber-600 bg-white shadow-2xs"
+                  />
+                  {historySearchTerm && (
+                    <button 
+                      onClick={() => setHistorySearchTerm('')} 
+                      className="absolute right-2.5 top-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] font-bold text-gray-600">योजना:</span>
+                  <select
+                    value={selectedSchemeFilter}
+                    onChange={(e) => setSelectedSchemeFilter(e.target.value)}
+                    className="border border-gray-300 rounded-sm text-xs h-[30px] px-2 bg-white text-gray-800 font-medium focus:outline-none focus:border-amber-600"
+                  >
+                    <option value="ALL">-- सर्व कर्ज योजना --</option>
+                    {loanRates.map(r => (
+                      <option key={r.loanRateID} value={r.loanRateID.toString()}>
+                        {r.loanCode ? `[${r.loanCode}] ` : ''}{r.loanType}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportHistoryExcel}
+                  disabled={filteredHistory.length === 0}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  title="एक्सेल फाइल डाउनलोड करा"
+                >
+                  <FileSpreadsheet size={13} />
+                  <span>एक्सेल एक्सपोर्ट</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  title="प्रिंट करा"
+                >
+                  <Printer size={13} />
+                  <span>प्रिंट</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Table Content */}
+            <div className="flex-1 overflow-auto p-2 bg-slate-100">
+              {historyLoading ? (
+                <div className="p-8 text-center text-gray-500 font-bold">
+                  माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
+                </div>
+              ) : (
+                <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
+                      <tr>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-center w-12">अ.क्र.</th>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज योजना व कोड</th>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याजदर बदल (% p.a.)</th>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-center">थकीत दर बदल (% p.a.)</th>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-left">संचालक मंडळ ठराव क्र.</th>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-center">ठराव दिनांक</th>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-center">लागू दिनांक (Effective)</th>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-left">बदलाचे कारण / टिपणी</th>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-center">बदल दिनांक व ऑपरेटर</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
+                      {filteredHistory.map((item, idx) => (
+                        <tr key={item.historyID} className="hover:bg-amber-50/40 transition-colors">
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-center font-bold text-gray-600">
+                            {idx + 1}
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-primary">
+                            <div>{item.loanType}</div>
+                            <span className="text-[10px] font-mono text-gray-500 font-semibold">{item.loanCode || '-'}</span>
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                            <span className="font-mono text-gray-500 line-through mr-1.5">
+                              {item.oldInterestRate !== undefined && item.oldInterestRate !== null ? `${item.oldInterestRate.toFixed(2)}%` : '0.00%'}
+                            </span>
+                            <span className="font-bold text-gray-400 mr-1.5">➔</span>
+                            <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
+                              {item.newInterestRate !== undefined && item.newInterestRate !== null ? `${item.newInterestRate.toFixed(2)}%` : '0.00%'}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                            <span className="font-mono text-gray-500 line-through mr-1.5">
+                              {item.oldOverdueRate !== undefined && item.oldOverdueRate !== null ? `${item.oldOverdueRate.toFixed(2)}%` : '0.00%'}
+                            </span>
+                            <span className="font-bold text-gray-400 mr-1.5">➔</span>
+                            <span className="font-mono font-black text-rose-700 bg-rose-50 px-1 py-0.5 rounded border border-rose-200">
+                              {item.newOverdueRate !== undefined && item.newOverdueRate !== null ? `${item.newOverdueRate.toFixed(2)}%` : '0.00%'}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-amber-900">
+                            {item.resolutionNo || '-'}
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono">
+                            {item.resolutionDate ? new Date(item.resolutionDate).toLocaleDateString('en-GB') : '-'}
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-bold text-emerald-800">
+                            {item.effectiveDate ? new Date(item.effectiveDate).toLocaleDateString('en-GB') : '-'}
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-700">
+                            {item.revisionReason || '-'}
+                          </td>
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                            <div className="font-mono text-[10px] text-gray-800">
+                              {item.changedAt ? new Date(item.changedAt).toLocaleString('en-GB') : '-'}
+                            </div>
+                            <div className="text-[10px] text-gray-500 font-semibold">
+                              {item.changedBy || 'System'}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredHistory.length === 0 && (
+                        <tr>
+                          <td colSpan={9} className="px-6 py-10 text-center text-gray-400 font-bold">
+                            कोणतीही व्याजदर बदल नोंद सापडली नाही.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-2.5 bg-slate-50 border-t border-gray-200 flex justify-between items-center text-xs shrink-0">
+              <span className="text-gray-500 font-medium">
+                टीप: जेव्हा जेव्हा कोणत्याही योजनेचा व्याजदर किंवा थकीत दर बदलला जातो, तेव्हा सिस्टीम स्वयंचलितपणे येथे ऑडिट ट्रेल नोंदवते.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(false)}
                 className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-sm text-xs font-bold transition-all cursor-pointer"
               >
                 बंद करा (Close)

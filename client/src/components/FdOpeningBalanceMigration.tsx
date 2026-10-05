@@ -464,6 +464,32 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return;
     }
 
+    // [RULE-FD-AUTO-RECALC] If depositAmount is changed/corrected, always auto-recalculate maturityAmount
+    // and unlock manual override mode so the new principal instantly reflects the exact maturity amount.
+    if (name === 'depositAmount') {
+      const devanagariClean = typeof value === 'string' ? normalizeToNumericDigits(value) : value;
+      const parsedDeposit = parseFloat(devanagariClean) || 0;
+      setIsManualMaturityEdited(false);
+      setFormData((prev) => {
+        const updated = {
+          ...prev,
+          depositAmount: parsedDeposit,
+        };
+        const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
+        updated.maturityAmount = parsedDeposit > 0
+          ? calculateMaturityAmount(
+              parsedDeposit,
+              Number(updated.interestRate) || 0,
+              updated.openingDate,
+              updated.maturityDate,
+              selected
+            )
+          : 0;
+        return updated;
+      });
+      return;
+    }
+
     const isNumericField = 
       (name.includes('Amount') || name.includes('Rate') || name === 'legacyAccruedInt' || name === 'branchID')
       && !name.toLowerCase().includes('date');
@@ -1261,7 +1287,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   ref={depositAmountInputRef}
                   type="number"
                   name="depositAmount"
-                  value={formData.depositAmount}
+                  value={formData.depositAmount || ''}
                   onChange={handleChange}
                   onFocus={(e) => e.target.select()}
                   className={`${inputClass} font-mono font-bold text-emerald-700`}

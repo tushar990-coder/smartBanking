@@ -3,8 +3,8 @@
   "releaseDate": "2026-10-05",
   "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.26",
   "git": {
-    "commit": "72dc486",
-    "fullCommit": "72dc48638aa3515a4b4bc1e1f6db1d020a45ab6f",
+    "commit": "241f45a",
+    "fullCommit": "241f45aaf8dd70795f03e147c8d52a1609f44da2",
     "branch": "main",
     "commitDate": "2026-10-05 11:40:00 +0530",
     "commitMessage": "feat(loan): dynamic scheme interest posting, loan rate unique audit, capitalized interest & gl-sl reconciliation v2.5.26",

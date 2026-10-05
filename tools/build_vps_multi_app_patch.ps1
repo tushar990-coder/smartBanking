@@ -179,6 +179,22 @@ if (Test-Path $fdHealSource) {
     Write-Host "  -> heal_migrated_fd_account_numbers.sql included in database package (UTF-8 BOM)." -ForegroundColor White
 }
 
+# 3.1.3 Auto-Heal Nominal Shareholders & Member Codes
+$memberCodeHealSource = Join-Path $workspaceRoot "tools\heal_nominal_and_duplicate_member_codes.sql"
+if (Test-Path $memberCodeHealSource) {
+    $memberCodeHealContent = [System.IO.File]::ReadAllText($memberCodeHealSource, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText((Join-Path $patchFolder "database\heal_nominal_and_duplicate_member_codes.sql"), $memberCodeHealContent, $utf8WithBom)
+    Write-Host "  -> heal_nominal_and_duplicate_member_codes.sql included in database package (UTF-8 BOM)." -ForegroundColor White
+}
+
+# 3.1.4 Auto-Heal Loan Rate Histories Encoding
+$loanRateHealSource = Join-Path $workspaceRoot "tools\heal_loan_rate_histories_encoding.sql"
+if (Test-Path $loanRateHealSource) {
+    $loanRateHealContent = [System.IO.File]::ReadAllText($loanRateHealSource, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText((Join-Path $patchFolder "database\heal_loan_rate_histories_encoding.sql"), $loanRateHealContent, $utf8WithBom)
+    Write-Host "  -> heal_loan_rate_histories_encoding.sql included in database package (UTF-8 BOM)." -ForegroundColor White
+}
+
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null
@@ -210,6 +226,11 @@ if (Test-Path $versionJsonSource) {
     Copy-Item $versionJsonSource (Join-Path $backendDest "version.json") -Force
     Copy-Item $versionJsonSource (Join-Path $frontendDest "version.json") -Force
     Write-Host "  -> version.json (v$version Changelog) included in patch." -ForegroundColor White
+}
+
+$applyMemberScript = Join-Path $workspaceRoot "tools\apply_member_code_fix_all_sansthas.ps1"
+if (Test-Path $applyMemberScript) {
+    Copy-Item $applyMemberScript (Join-Path $patchFolder "apply_member_code_fix_all_sansthas.ps1") -Force
 }
 
 # Clean temp publish

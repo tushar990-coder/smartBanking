@@ -4938,7 +4938,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Reports/fd-migrated (स्थलांतरित मुदत ठेव यादी अहवाल - Strict Customer-First Architecture)
         [HttpGet("fd-migrated")]
-        public async Task<IActionResult> GetFdMigratedReport([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        public async Task<IActionResult> GetFdMigratedReport([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int? fdSchemeID)
         {
             try
             {
@@ -4955,6 +4955,9 @@ namespace Bhisi.Api.Controllers
                 if (branchID.HasValue && branchID.Value > 0)
                     query = query.Where(f => f.BranchID == branchID.Value);
 
+                if (fdSchemeID.HasValue && fdSchemeID.Value > 0)
+                    query = query.Where(f => f.FdSchemeID == fdSchemeID.Value);
+
                 if (fromDate.HasValue)
                     query = query.Where(f => f.OpeningDate >= fromDate.Value.Date);
 
@@ -4967,6 +4970,8 @@ namespace Bhisi.Api.Controllers
                     .Select(f => new
                     {
                         f.FdAccountID,
+                        f.FdSchemeID,
+                        SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
                         f.BranchID,
                         BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
                         CustomerID = f.CustomerID,
@@ -5005,7 +5010,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Reports/fd-register
         [HttpGet("fd-register")]
-        public async Task<IActionResult> GetFdRegister([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        public async Task<IActionResult> GetFdRegister([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int? fdSchemeID)
         {
             try
             {
@@ -5017,6 +5022,9 @@ namespace Bhisi.Api.Controllers
 
                 if (branchID.HasValue && branchID.Value > 0)
                     query = query.Where(f => f.BranchID == branchID.Value);
+
+                if (fdSchemeID.HasValue && fdSchemeID.Value > 0)
+                    query = query.Where(f => f.FdSchemeID == fdSchemeID.Value);
 
                 if (fromDate.HasValue)
                     query = query.Where(f => f.OpeningDate >= fromDate.Value.Date);
@@ -5030,6 +5038,8 @@ namespace Bhisi.Api.Controllers
                     .Select(f => new
                     {
                         f.FdAccountID,
+                        f.FdSchemeID,
+                        SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
                         BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
                         CustomerID = f.CustomerID,
                         CIFNo = f.Customer != null ? f.Customer.CIFNo : "",
@@ -5059,7 +5069,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Reports/fd-outstanding
         [HttpGet("fd-outstanding")]
-        public async Task<IActionResult> GetFdOutstanding([FromQuery] int? branchID)
+        public async Task<IActionResult> GetFdOutstanding([FromQuery] int? branchID, [FromQuery] int? fdSchemeID)
         {
             try
             {
@@ -5073,12 +5083,17 @@ namespace Bhisi.Api.Controllers
                 if (branchID.HasValue && branchID.Value > 0)
                     query = query.Where(f => f.BranchID == branchID.Value);
 
+                if (fdSchemeID.HasValue && fdSchemeID.Value > 0)
+                    query = query.Where(f => f.FdSchemeID == fdSchemeID.Value);
+
                 var accounts = await query
                     .OrderBy(f => f.AccountNo)
                     .ThenBy(f => f.FdAccountID)
                     .Select(f => new
                     {
                         f.FdAccountID,
+                        f.FdSchemeID,
+                        SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
                         BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
                         CustomerID = f.CustomerID,
                         CIFNo = f.Customer != null ? f.Customer.CIFNo : "",
@@ -5232,7 +5247,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Reports/fd-maturity-due
         [HttpGet("fd-maturity-due")]
-        public async Task<IActionResult> GetFdMaturityDue([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        public async Task<IActionResult> GetFdMaturityDue([FromQuery] int? branchID, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int? fdSchemeID)
         {
             try
             {
@@ -5246,6 +5261,9 @@ namespace Bhisi.Api.Controllers
                 if (branchID.HasValue && branchID.Value > 0)
                     query = query.Where(f => f.BranchID == branchID.Value);
 
+                if (fdSchemeID.HasValue && fdSchemeID.Value > 0)
+                    query = query.Where(f => f.FdSchemeID == fdSchemeID.Value);
+
                 if (fromDate.HasValue)
                     query = query.Where(f => f.MaturityDate >= fromDate.Value.Date);
 
@@ -5257,6 +5275,8 @@ namespace Bhisi.Api.Controllers
                     .Select(f => new
                     {
                         f.FdAccountID,
+                        f.FdSchemeID,
+                        SchemeCode = f.FdScheme != null ? f.FdScheme.SchemeCode : "",
                         BranchName = f.Branch != null ? f.Branch.BranchName : "मुख्य शाखा",
                         CustomerID = f.CustomerID,
                         CIFNo = f.Customer != null ? f.Customer.CIFNo : "",

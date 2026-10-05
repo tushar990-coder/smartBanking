@@ -27,6 +27,8 @@ interface FdAccountReportRow {
   memberID?: number;
   accountNo: string;
   legacyAccountNumber?: string;
+  fdSchemeID?: number;
+  schemeCode?: string;
   schemeName: string;
   openingDate: string;
   durationType?: string;
@@ -180,6 +182,8 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
   });
 
   const [branches, setBranches] = useState<any[]>([]);
+  const [schemes, setSchemes] = useState<any[]>([]);
+  const [selectedSchemeId, setSelectedSchemeId] = useState<number>(0);
   const [customers, setCustomers] = useState<any[]>([]);
   const [selectedCustomerID, setSelectedCustomerID] = useState<number>(0);
   const [sansthaDetail, setSansthaDetail] = useState<any>(null);
@@ -213,6 +217,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
     fetchBranches();
     fetchSansthaDetail();
     fetchCustomers();
+    fetchSchemes();
   }, []);
 
   const fetchSansthaDetail = async () => {
@@ -225,6 +230,15 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
       }
     } catch (err) {
       console.error('Error fetching sanstha detail', err);
+    }
+  };
+
+  const fetchSchemes = async () => {
+    try {
+      const res = await axios.get('/api/FdSchemes');
+      setSchemes(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Error fetching schemes', err);
     }
   };
 
@@ -256,7 +270,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
     } else if (reportType !== 'AccrualProvision') {
       fetchReportData();
     }
-  }, [reportType, branchID, selectedCustomerID, fromDate, toDate, asOfDate, voucherPassingStatus]);
+  }, [reportType, branchID, selectedSchemeId, selectedCustomerID, fromDate, toDate, asOfDate, voucherPassingStatus]);
 
   const fetchReportData = async () => {
     setLoading(true);
@@ -297,8 +311,9 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
         const res = await axios.get(endpoint, {
           params: { 
             branchID: branchID > 0 ? branchID : undefined,
-            fromDate: reportType === 'MaturityDue' ? fromDate : undefined,
-            toDate: reportType === 'MaturityDue' ? toDate : undefined
+            fdSchemeID: selectedSchemeId > 0 ? selectedSchemeId : undefined,
+            fromDate: (reportType === 'MaturityDue' || reportType === 'Register') ? fromDate : undefined,
+            toDate: (reportType === 'MaturityDue' || reportType === 'Register') ? toDate : undefined
           }
         });
         setData(res.data || []);
@@ -345,6 +360,7 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
 
   const filteredData = data
     .filter((row) => {
+      if (selectedSchemeId > 0 && row.fdSchemeID && row.fdSchemeID !== selectedSchemeId) return false;
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase().trim();
       return (
@@ -588,10 +604,13 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
       'स्थिती': ''
     });
 
+    const activeScheme = schemes.find(s => s.fdSchemeID === selectedSchemeId);
+    const activeSchemeName = activeScheme ? activeScheme.schemeName : 'AllSchemes';
+    const cleanSchemeName = activeSchemeName.replace(/[^a-zA-Z0-9_\u0900-\u097F]/g, '_');
     const ws = XLSX.utils.json_to_sheet(excelRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'FD Report');
-    XLSX.writeFile(wb, `FD_Report_${reportType}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `FD_Report_${reportType}_${cleanSchemeName}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
@@ -762,6 +781,26 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
               </div>
             ) : null}
 
+            {/* Scheme Selector */}
+            {reportType !== 'AccrualProvision' && reportType !== 'MemberLedger' && reportType !== 'VoucherPassing' && reportType !== 'DeletedEntries' && (
+              <div className="flex items-center gap-1">
+                <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">योजना:</label>
+                <select
+                  value={selectedSchemeId}
+                  onChange={(e) => setSelectedSchemeId(parseInt(e.target.value, 10))}
+                  className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-bold bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary min-w-[130px] max-w-[200px] text-gray-900"
+                  title="मुदत ठेव योजना निवडा (सर्व योजना एकत्रित किंवा विशिष्ट योजना)"
+                >
+                  <option value={0}>सर्व योजना (एकत्रित)</option>
+                  {schemes.map((s) => (
+                    <option key={s.fdSchemeID} value={s.fdSchemeID}>
+                      {s.schemeName} {s.schemeCode ? `(${s.schemeCode})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* View Button */}
             {reportType !== 'AccrualProvision' && (
               <button
@@ -879,6 +918,11 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                 </>
               ) : (
                 <>
+                  {selectedSchemeId > 0 && (
+                    <span className="bg-primary/10 px-2 py-0.5 rounded text-primary font-bold border border-primary/20">
+                      योजना: {schemes.find(s => s.fdSchemeID === selectedSchemeId)?.schemeName}
+                    </span>
+                  )}
                   <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
                     एकूण खाती: <strong className="text-primary font-bold">{filteredData.length}</strong>
                   </span>
@@ -940,6 +984,17 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                 <h2 className="text-sm sm:text-base font-extrabold text-gray-950 tracking-wider uppercase font-serif">
                   {getReportTitle()}
                 </h2>
+                {selectedSchemeId > 0 ? (
+                  <div className="text-xs font-bold text-primary mt-0.5 font-mono">
+                    [ योजना: {schemes.find(s => s.fdSchemeID === selectedSchemeId)?.schemeName} {schemes.find(s => s.fdSchemeID === selectedSchemeId)?.schemeCode ? `(${schemes.find(s => s.fdSchemeID === selectedSchemeId)?.schemeCode})` : ''} ]
+                  </div>
+                ) : (
+                  reportType !== 'CustomerSummary' && (
+                    <div className="text-[11px] font-semibold text-gray-600 mt-0.5">
+                      ( सर्व मुदत ठेव योजना एकत्रित )
+                    </div>
+                  )
+                )}
                 {reportType === 'CustomerSummary' && (
                   <div className="text-xs font-bold text-gray-800 mt-0.5">
                     ( दि. {formatDisplayDate(asOfDate)} अखेर )
@@ -1265,7 +1320,9 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                     <tfoot>
                       <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
                         <td colSpan={8} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
-                          एकूण स्थलांतरित बेरीज ({filteredData.length} खाती):
+                          {selectedSchemeId > 0 
+                            ? `एकूण स्थलांतरित बेरीज (${schemes.find(s => s.fdSchemeID === selectedSchemeId)?.schemeName || 'योजना'} - ${filteredData.length} खाती):`
+                            : `एकूण स्थलांतरित बेरीज (${filteredData.length} खाती):`}
                         </td>
                         <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
                           ₹ {fmtCurrency(totalDepositSum)}
@@ -1621,7 +1678,9 @@ export default function FdReports({ onNavigate, onBack }: FdReportsProps) {
                     <tfoot>
                       <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
                         <td colSpan={6} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
-                          एकूण मुदत ठेव बेरीज:
+                          {selectedSchemeId > 0 
+                            ? `एकूण मुदत ठेव बेरीज (${schemes.find(s => s.fdSchemeID === selectedSchemeId)?.schemeName || 'निवडलेली योजना'} - ${filteredData.length} खाती):`
+                            : `एकूण मुदत ठेव बेरीज (सर्व योजना - ${filteredData.length} खाती):`}
                         </td>
                         <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black text-emerald-950 bg-emerald-100/50">
                           ₹ {fmtCurrency(totalDepositSum)}

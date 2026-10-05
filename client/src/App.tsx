@@ -222,6 +222,8 @@ function App() {
     // Member & Share Module
     'shares': '/shares/dashboard',
     'members': '/members',
+    'customer-opening': '/settings?category=opening-balance&sub=customer-ob',
+    'customer-ob': '/settings?category=opening-balance&sub=customer-ob',
     'member-opening': '/members/opening-balance',
     'member-closure': '/members/closure',
     'share-master': '/shares/allocation',
@@ -1517,7 +1519,7 @@ function App() {
         {/* Customer & Member Module */}
         {activeTab === 'customers' && <CustomerMaster onNavigate={handleNavigate} />}
         {activeTab === 'customer-bulk' && <CustomerBulkEntry onBack={() => handleNavigate('customers')} onNavigateToCustomers={() => handleNavigate('customers')} />}
-        {activeTab === 'customer-opening' && <CustomerOpeningBalance />}
+        {(activeTab === 'customer-opening' || activeTab === 'customer-ob') && <SettingsDashboard defaultCategory="opening-balance" defaultSub="customer-ob" />}
         {activeTab === 'shares' && <SharesDashboard onNavigate={handleNavigate} />}
         {activeTab === 'members' && <MemberMaster onNavigate={handleNavigate} />}
         {activeTab === 'member-opening' && <MemberOpeningBalance />}

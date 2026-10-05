@@ -33,6 +33,7 @@ import LicenseMaster from './LicenseMaster';
 import SystemUpdateMaster from './SystemUpdateMaster';
 import CashSchemeSettingMaster from './CashSchemeSettingMaster';
 import InvestmentInstitutionMaster from './InvestmentInstitutionMaster';
+import CustomerOpeningBalance from './CustomerOpeningBalance';
 
 interface SettingsDashboardProps {
   defaultCategory?: string;
@@ -81,6 +82,7 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       { id: 'security-type', label: 'तारण प्रकार (Security Types)', icon: '🛡️' }
     ],
     'opening-balance': [
+      { id: 'customer-ob', label: 'खातेदार शिल्लक (Customer OB)', icon: '👥' },
       { id: 'saving-ob', label: 'बचत खाते शिल्लक (Saving OB)', icon: '💰' },
       { id: 'fd-ob', label: 'मुदत ठेव सुरुवातीची शिल्लक स्थलांतर (FD Opening Balance)', icon: '🏛️' },
       { id: 'rd-ob', label: 'आवर्ती ठेव शिल्लक (RD OB)', icon: '💳' },
@@ -136,6 +138,8 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       case 'saving-setting': return <SavingInterestSettingMaster />;
       case 'loan-rate': return <LoanRateMaster />;
       case 'security-type': return <SecurityTypeMaster />;
+      case 'customer-ob':
+      case 'customer-opening': return <CustomerOpeningBalance />;
       case 'saving-ob': return <SavingOpeningBalance />;
       case 'fd-migrate':
       case 'fd-ob': return <FdOpeningBalanceMigration />;

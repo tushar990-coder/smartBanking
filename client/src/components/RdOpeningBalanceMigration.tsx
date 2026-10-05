@@ -500,6 +500,8 @@ export default function RdOpeningBalanceMigration() {
   const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
   const inputClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';
 
+  const maxOpeningDate = new Date().getMonth() > 2 ? `${new Date().getFullYear()}-03-31` : `${new Date().getFullYear() - 1}-03-31`;
+
   return (
     <div className="p-2 sm:p-3 max-w-6xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
       
@@ -803,6 +805,7 @@ export default function RdOpeningBalanceMigration() {
                   value={formData.openingDate}
                   onChange={handleChange}
                   className={inputClass}
+                  max={maxOpeningDate}
                   required
                 />
               </div>

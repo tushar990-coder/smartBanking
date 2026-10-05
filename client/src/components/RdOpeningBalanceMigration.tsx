@@ -45,6 +45,11 @@ interface Branch {
   branchName: string;
 }
 
+const getMaxOpeningDate = () => {
+  const d = new Date();
+  return d.getMonth() > 2 ? `${d.getFullYear()}-03-31` : `${d.getFullYear() - 1}-03-31`;
+};
+
 export default function RdOpeningBalanceMigration() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [schemes, setSchemes] = useState<RdScheme[]>([]);
@@ -70,7 +75,7 @@ export default function RdOpeningBalanceMigration() {
     accountNo: 'AUTO',
     legacyAccountNumber: '',
     passbookNo: '',
-    openingDate: new Date().toISOString().split('T')[0],
+    openingDate: getMaxOpeningDate(),
     installmentAmount: 0,
     durationMonths: 12,
     interestRate: 8.0,
@@ -330,7 +335,7 @@ export default function RdOpeningBalanceMigration() {
       accountNo: 'AUTO',
       legacyAccountNumber: '',
       passbookNo: '',
-      openingDate: new Date().toISOString().split('T')[0],
+      openingDate: getMaxOpeningDate(),
       installmentAmount: 0,
       durationMonths: 12,
       interestRate: 8.0,
@@ -358,7 +363,7 @@ export default function RdOpeningBalanceMigration() {
       accountNo: acc.accountNo || 'AUTO',
       legacyAccountNumber: acc.legacyAccountNumber || '',
       passbookNo: acc.passbookNo || '',
-      openingDate: acc.openingDate ? acc.openingDate.split('T')[0] : new Date().toISOString().split('T')[0],
+      openingDate: acc.openingDate ? acc.openingDate.split('T')[0] : getMaxOpeningDate(),
       installmentAmount: acc.installmentAmount || 0,
       durationMonths: acc.durationMonths || 12,
       interestRate: acc.interestRate || 8.0,

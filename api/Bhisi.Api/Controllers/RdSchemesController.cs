@@ -141,7 +141,6 @@ namespace Bhisi.Api.Controllers
 
             existing.SchemeName = rdScheme.SchemeName;
             existing.DurationMonths = rdScheme.DurationMonths;
-            existing.InstallmentAmount = rdScheme.InstallmentAmount;
             existing.MinimumInstallment = rdScheme.MinimumInstallment;
             existing.MaximumInstallment = rdScheme.MaximumInstallment;
             existing.InterestRate = rdScheme.InterestRate;
@@ -152,6 +151,9 @@ namespace Bhisi.Api.Controllers
             existing.IsActive = rdScheme.IsActive;
             if (!string.IsNullOrWhiteSpace(rdScheme.CompoundingFrequency)) existing.CompoundingFrequency = rdScheme.CompoundingFrequency;
             if (rdScheme.GracePeriodDays > 0) existing.GracePeriodDays = rdScheme.GracePeriodDays;
+            
+            existing.AllowOverdueInterest = rdScheme.AllowOverdueInterest;
+            existing.OverdueInterestRate = rdScheme.OverdueInterestRate;
             existing.RdLiabilityLedgerID = rdScheme.RdLiabilityLedgerID;
             existing.InterestExpenseLedgerID = rdScheme.InterestExpenseLedgerID;
             existing.InterestPayableLedgerID = rdScheme.InterestPayableLedgerID;

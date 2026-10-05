@@ -364,6 +364,22 @@ using (var scope = app.Services.CreateScope())
             IF COL_LENGTH('RdSchemes', 'GracePeriodDays') IS NULL
                 ALTER TABLE [dbo].[RdSchemes] ADD [GracePeriodDays] int NOT NULL DEFAULT 5;
 
+            IF COL_LENGTH('RdSchemes', 'InstallmentAmount') IS NOT NULL
+            BEGIN
+                DECLARE @ConstraintName nvarchar(200);
+                SELECT @ConstraintName = d.name FROM sys.default_constraints d
+                JOIN sys.columns c ON d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id
+                WHERE d.parent_object_id = OBJECT_ID(N'[RdSchemes]') AND c.name = 'InstallmentAmount';
+                IF @ConstraintName IS NOT NULL EXEC('ALTER TABLE [RdSchemes] DROP CONSTRAINT [' + @ConstraintName + ']');
+                ALTER TABLE [dbo].[RdSchemes] DROP COLUMN [InstallmentAmount];
+            END
+            
+            IF COL_LENGTH('RdSchemes', 'AllowOverdueInterest') IS NULL
+                ALTER TABLE [dbo].[RdSchemes] ADD [AllowOverdueInterest] bit NOT NULL DEFAULT 0;
+            
+            IF COL_LENGTH('RdSchemes', 'OverdueInterestRate') IS NULL
+                ALTER TABLE [dbo].[RdSchemes] ADD [OverdueInterestRate] decimal(5,2) NULL;
+
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgentAccountTransfers')
             BEGIN
                 CREATE TABLE [PigmyAgentAccountTransfers] (

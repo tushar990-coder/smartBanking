@@ -21,7 +21,8 @@ import {
   X,
   Plus,
   Coins,
-  Building
+  Building,
+  Clock
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
@@ -38,7 +39,8 @@ interface RdScheme {
   schemeCodeNumeric?: number;
   schemeName: string;
   durationMonths: number;
-  installmentAmount: number;
+  allowOverdueInterest: boolean;
+  overdueInterestRate: number;
   minimumInstallment: number;
   maximumInstallment: number;
   interestRate: number;
@@ -77,7 +79,8 @@ export default function RdSchemeMaster() {
     schemeCodeNumeric: 501,
     schemeName: '',
     durationMonths: 12,
-    installmentAmount: 1000,
+    allowOverdueInterest: false,
+    overdueInterestRate: 0,
     minimumInstallment: 500,
     maximumInstallment: 50000,
     interestRate: 8.0,
@@ -178,7 +181,8 @@ export default function RdSchemeMaster() {
       schemeCodeNumeric: scheme.schemeCodeNumeric || 501,
       schemeName: scheme.schemeName || '',
       durationMonths: scheme.durationMonths || 12,
-      installmentAmount: scheme.installmentAmount || 1000,
+      allowOverdueInterest: scheme.allowOverdueInterest || false,
+      overdueInterestRate: scheme.overdueInterestRate || 0,
       minimumInstallment: scheme.minimumInstallment || 500,
       maximumInstallment: scheme.maximumInstallment || 50000,
       interestRate: scheme.interestRate || 8.0,
@@ -245,7 +249,8 @@ export default function RdSchemeMaster() {
       schemeCodeNumeric: autoNumeric,
       schemeName: '',
       durationMonths: 12,
-      installmentAmount: 1000,
+      allowOverdueInterest: false,
+      overdueInterestRate: 0,
       minimumInstallment: 500,
       maximumInstallment: 50000,
       interestRate: 8.0,
@@ -295,7 +300,8 @@ export default function RdSchemeMaster() {
       ...formData,
       schemeCodeNumeric: parseInt(String(formData.schemeCodeNumeric), 10) || 501,
       durationMonths: parseInt(String(formData.durationMonths), 10) || 12,
-      installmentAmount: parseFloat(String(formData.installmentAmount)) || 0,
+      allowOverdueInterest: Boolean(formData.allowOverdueInterest),
+      overdueInterestRate: parseFloat(String(formData.overdueInterestRate)) || 0,
       minimumInstallment: parseFloat(String(formData.minimumInstallment)) || 0,
       maximumInstallment: parseFloat(String(formData.maximumInstallment)) || 0,
       interestRate: parseFloat(String(formData.interestRate)) || 0,
@@ -341,7 +347,6 @@ export default function RdSchemeMaster() {
       'सीबीएस कोड': s.schemeCodeNumeric || 501,
       'योजनेचे नाव': s.schemeName,
       'कालावधी (महिने)': s.durationMonths,
-      'हप्ता रक्कम (₹)': s.installmentAmount,
       'व्याजदर (%)': s.interestRate,
       'व्याज आकारणी पद्धत': s.interestMethod || 'Compound',
       'पोस्टिंग वारंवारता': s.compoundingFrequency || 'Quarterly',
@@ -671,7 +676,7 @@ export default function RdSchemeMaster() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 gap-2.5">
               <div>
                 <label className={labelClass}>
                   नियमित व्याजदर (% p.a.) <span className="text-red-500">*</span>
@@ -703,22 +708,6 @@ export default function RdSchemeMaster() {
                   step="0.01"
                   min="0"
                   placeholder="1.00"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>
-                  निश्चित हप्ता रक्कम (₹) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  name="installmentAmount"
-                  value={formData.installmentAmount}
-                  onChange={handleChange}
-                  onFocus={(e) => e.target.select()}
-                  className={`${inputClass} font-bold text-primary font-mono`}
-                  min="100"
                   required
                 />
               </div>
@@ -843,6 +832,66 @@ export default function RdSchemeMaster() {
             </div>
           </div>
 
+          {/* Section 4: Post-Maturity Overdue Policy */}
+          <div className="bg-amber-50/40 p-3.5 rounded-sm border border-amber-300 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-amber-700" />
+                <h2 className="text-xs font-bold text-amber-900">४. मुदत संपल्यानंतरचे संस्थात्मक धोरण (Post-Maturity Overdue Policy)</h2>
+              </div>
+              <span className="text-[10px] text-amber-800 bg-amber-100 font-bold px-2 py-0.5 rounded border border-amber-300">
+                संचालक मंडळ ठराव नियम (Board Policy)
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              <label className="flex items-start gap-2.5 cursor-pointer bg-white p-2.5 rounded border border-amber-200 hover:bg-amber-50/80 transition-colors">
+                <input
+                  type="checkbox"
+                  name="allowOverdueInterest"
+                  checked={formData.allowOverdueInterest}
+                  onChange={handleChange as any}
+                  className="h-4 w-4 mt-0.5 text-primary focus:ring-primary border-gray-300 rounded cursor-pointer"
+                />
+                <div>
+                  <span className="text-xs font-bold text-gray-900 block">
+                    या ठेव योजनेवर मुदतपूर्तीनंतर ओव्हरड्यू व्याज अनुज्ञेय आहे (Allow Post-Maturity Overdue Interest)
+                  </span>
+                  <span className="text-[10px] text-gray-500 block mt-0.5">
+                    सदर पर्याय बंद ठेवल्यास मुदत संपल्यानंतर कितीही दिवसांनी ठेवीदार आला तरी मुदतीनंतरचे कोणतेही अतिरिक्त व्याज मिळणार नाही (ऑडिट आक्षेप टाळण्यासाठी).
+                  </span>
+                </div>
+              </label>
+
+              {formData.allowOverdueInterest && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-white rounded border border-amber-200 animate-in fade-in duration-150">
+                  <div>
+                    <label className={labelClass}>
+                      मान्यताप्राप्त ओव्हरड्यू व्याजदर (% p.a.) <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        name="overdueInterestRate"
+                        value={formData.overdueInterestRate}
+                        onChange={handleChange}
+                        className={`${inputClass} font-mono font-bold text-emerald-800`}
+                        placeholder="उदा. 3.00"
+                        required={formData.allowOverdueInterest}
+                      />
+                      <span className="absolute right-2.5 top-1.5 text-gray-400 font-bold text-xs">%</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 block mt-0.5">
+                      सामान्यतः संस्थेचा बचत ठेव दर (उदा. 3.00%).
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Form Action Buttons */}
           <div className="pt-2 flex justify-end gap-2 border-t border-gray-200">
             <button
@@ -949,7 +998,7 @@ export default function RdSchemeMaster() {
                     <tr>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजनेचे नाव & कोड</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">कालावधी & हप्ता</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">कालावधी (महिने)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याज / दंड कपात</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">मॅप्ड देयता खाते</th>
                       <th className="px-2 py-1.5 text-center w-20">स्थिती</th>
@@ -990,8 +1039,7 @@ export default function RdSchemeMaster() {
                           </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center">
-                          <div className="font-bold text-primary font-mono">₹{s.installmentAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                          <div className="text-gray-500 text-[10px]">{s.durationMonths} महिने</div>
+                          <div className="text-gray-800 font-bold text-[11px]">{s.durationMonths} महिने</div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                           <div className="text-emerald-700 font-bold font-mono">{s.interestRate}% p.a.</div>

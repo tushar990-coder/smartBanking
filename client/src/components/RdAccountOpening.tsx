@@ -285,12 +285,26 @@ export default function RdAccountOpening() {
         [name]: e.target.type === 'number' ? (value === '' ? '' : value) : value,
       };
 
-      if (name === 'openingDate' && prev.durationMonths > 0) {
-        const opening = new Date(value);
-        if (!isNaN(opening.getTime())) {
-          opening.setMonth(opening.getMonth() + prev.durationMonths);
-          updated.maturityDate = opening.toISOString().split('T')[0];
+      if (['openingDate', 'durationMonths', 'interestRate', 'installmentAmount'].includes(name)) {
+        const dur = parseInt(String(updated.durationMonths), 10) || 0;
+        if (name === 'openingDate' || name === 'durationMonths') {
+          const opening = new Date(updated.openingDate);
+          if (!isNaN(opening.getTime())) {
+            opening.setMonth(opening.getMonth() + dur);
+            updated.maturityDate = opening.toISOString().split('T')[0];
+          }
         }
+        
+        // Recalculate maturity amount
+        const inst = parseFloat(String(updated.installmentAmount)) || 0;
+        const r = parseFloat(String(updated.interestRate)) || 0;
+        let totalMat = 0;
+        for (let k = 1; k <= dur; k++) {
+          const monthsInBank = dur - k + 1;
+          const factor = Math.pow(1.0 + (r / 400.0), monthsInBank / 3.0);
+          totalMat += inst * factor;
+        }
+        updated.maturityAmount = Math.round(totalMat);
       }
       return updated;
     });
@@ -308,7 +322,7 @@ export default function RdAccountOpening() {
     const selected = schemes.find((s) => s.rdSchemeID === schemeId);
     if (selected) {
       setFormData((prev) => {
-        const inst = selected.installmentAmount;
+        const inst = parseFloat(String(prev.installmentAmount)) || 0;
         const dur = selected.durationMonths;
         const r = selected.interestRate;
 
@@ -331,7 +345,6 @@ export default function RdAccountOpening() {
         return {
           ...prev,
           rdSchemeID: schemeId.toString(),
-          installmentAmount: inst,
           durationMonths: dur,
           interestRate: r,
           maturityDate: maturityDateStr,
@@ -342,7 +355,6 @@ export default function RdAccountOpening() {
       setFormData((prev) => ({
         ...prev,
         rdSchemeID: '',
-        installmentAmount: 0,
         interestRate: 8.0,
         maturityDate: '',
         maturityAmount: 0,

@@ -771,5 +771,96 @@ namespace Bhisi.Api.Controllers
 
             return Ok(schemes);
         }
+
+        // ==========================================
+        // 11. GET /api/reports/pigmy-book
+        // ==========================================
+        public class PigmyDailyRecord
+        {
+            public string Date { get; set; } = string.Empty;
+            public int Customers { get; set; }
+            public decimal Amount { get; set; }
+        }
+
+        public class PigmyBookReportResponse
+        {
+            public decimal TotalCollection { get; set; }
+            public List<PigmyDailyRecord> DailyRecords { get; set; } = new List<PigmyDailyRecord>();
+        }
+
+        [HttpGet("api/reports/pigmy-book")]
+        public async Task<IActionResult> GetPigmyBookReport([FromQuery] int? agentId, [FromQuery] string? filter, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        {
+            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            if (targetAgentId <= 0)
+            {
+                return Unauthorized(new { message = "Valid Agent JWT token or X-Agent-Id header required." });
+            }
+
+            DateTime fDate = DateTime.Today;
+            DateTime tDate = DateTime.Today;
+
+            if (fromDate.HasValue && toDate.HasValue)
+            {
+                fDate = fromDate.Value.Date;
+                tDate = toDate.Value.Date;
+            }
+            else if (!string.IsNullOrWhiteSpace(filter))
+            {
+                var today = DateTime.Today;
+                switch (filter.Trim().ToUpper())
+                {
+                    case "LAST_7_DAYS":
+                        fDate = today.AddDays(-7);
+                        tDate = today;
+                        break;
+                    case "THIS_MONTH":
+                        fDate = new DateTime(today.Year, today.Month, 1);
+                        tDate = today;
+                        break;
+                    case "LAST_MONTH":
+                        fDate = new DateTime(today.Year, today.Month, 1).AddMonths(-1);
+                        tDate = new DateTime(today.Year, today.Month, 1).AddDays(-1);
+                        break;
+                    default:
+                        fDate = today;
+                        tDate = today;
+                        break;
+                }
+            }
+
+            DateTime nextTDate = tDate.AddDays(1);
+
+            var query = _context.PigmyCollections
+                .Where(c => c.AgentId == targetAgentId && c.CollectionDate >= fDate && c.CollectionDate < nextTDate);
+
+            // Fetch to memory first to ensure Distinct Count works perfectly across any EF Core provider
+            var rawData = await query
+                .Select(c => new { 
+                    c.CollectionDate.Date, 
+                    c.PigmyAccountId, 
+                    c.CollectionAmount 
+                })
+                .ToListAsync();
+
+            var dailyData = rawData
+                .GroupBy(x => x.Date)
+                .Select(g => new PigmyDailyRecord
+                {
+                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    Customers = g.Select(x => x.PigmyAccountId).Distinct().Count(),
+                    Amount = g.Sum(x => x.CollectionAmount)
+                })
+                .OrderByDescending(r => r.Date)
+                .ToList();
+
+            var response = new PigmyBookReportResponse
+            {
+                TotalCollection = dailyData.Sum(d => d.Amount),
+                DailyRecords = dailyData
+            };
+
+            return Ok(response);
+        }
     }
 }

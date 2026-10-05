@@ -505,7 +505,6 @@ namespace Bhisi.Api.Controllers
                         SchemeCode = "RD-12M",
                         SchemeName = "लखपती आवर्ती ठेव योजना (१२ महिने)",
                         DurationMonths = 12,
-                        InstallmentAmount = 1000m,
                         MinimumInstallment = 100m
                     });
                 }
@@ -519,7 +518,6 @@ namespace Bhisi.Api.Controllers
                         SchemeCode = "RD-24M",
                         SchemeName = "सौभाग्य आवर्ती ठेव योजना (२४ महिने)",
                         DurationMonths = 24,
-                        InstallmentAmount = 2000m,
                         MinimumInstallment = 200m
                     });
                 }

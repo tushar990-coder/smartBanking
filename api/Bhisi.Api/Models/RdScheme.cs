@@ -31,10 +31,6 @@ namespace Bhisi.Api.Models
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
-        public decimal InstallmentAmount { get; set; }
-
-        [Required]
-        [Column(TypeName = "decimal(18,2)")]
         public decimal MinimumInstallment { get; set; }
 
         [Required]
@@ -69,6 +65,12 @@ namespace Bhisi.Api.Models
         public string CompoundingFrequency { get; set; } = "Quarterly";
 
         public int GracePeriodDays { get; set; } = 5;
+
+        // Post-Maturity Overdue Policy Properties
+        public bool AllowOverdueInterest { get; set; } = false;
+
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal? OverdueInterestRate { get; set; }
 
         // General Ledger (GL) Mapping Properties for Core Banking Integration
         public int? RdLiabilityLedgerID { get; set; }

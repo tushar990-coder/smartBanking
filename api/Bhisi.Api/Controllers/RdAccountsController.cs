@@ -444,13 +444,12 @@ namespace Bhisi.Api.Controllers
                     }
 
                     // Calculations
-                    account.InstallmentAmount = scheme.InstallmentAmount;
                     account.DurationMonths = scheme.DurationMonths;
                     account.InterestRate = scheme.InterestRate;
                     account.MaturityDate = account.OpeningDate.AddMonths(scheme.DurationMonths);
 
                     // IBA Quarterly Compounding Formula for RD Maturity Amount
-                    double p = (double)scheme.InstallmentAmount;
+                    double p = (double)account.InstallmentAmount;
                     double r = (double)scheme.InterestRate;
                     int n = scheme.DurationMonths;
 
@@ -465,7 +464,7 @@ namespace Bhisi.Api.Controllers
                     account.MaturityAmount = Math.Round((decimal)totalMaturity);
 
                     account.TotalPaidInstallments = 1; // Pay first installment on open
-                    account.TotalDepositedAmount = scheme.InstallmentAmount;
+                    account.TotalDepositedAmount = account.InstallmentAmount;
                     account.Status = "Active";
                     account.IsLegacyAccount = false;
                     account.LegacyAccruedInt = 0;

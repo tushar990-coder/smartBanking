@@ -33,6 +33,8 @@ interface RdScheme {
   durationMonths: number;
   installmentAmount: number;
   prematurePenaltyRate?: number;
+  interestMethod?: string;
+  compoundingFrequency?: string;
   rdLiabilityLedger?: { ledgerName: string };
   interestExpenseLedger?: { ledgerName: string };
   isActive?: boolean;
@@ -187,6 +189,7 @@ export default function RdOpeningBalanceMigration() {
     };
   }, []);
 
+  /* 
   const calculateAccruedInterest31March = (installment: number, annualRate: number, paidInstallments: number): number => {
     if (!installment || !paidInstallments || installment <= 0 || paidInstallments <= 0) return 0;
     const p = installment;
@@ -200,6 +203,32 @@ export default function RdOpeningBalanceMigration() {
       totalAccrued += interestForInstallment;
     }
     return Math.round(totalAccrued);
+  };
+  */
+
+  const calculateRDMaturity = (installment: number, annualRate: number, duration: number, method: string): number => {
+    if (!installment || !duration || installment <= 0 || duration <= 0) return 0;
+    
+    if (method === 'Simple') {
+      const p = installment;
+      const r = annualRate;
+      const n = duration;
+      const totalDeposits = p * n;
+      const totalMonths = (n * (n + 1)) / 2;
+      const totalInterest = (totalMonths * p * r) / (12 * 100);
+      return Math.round(totalDeposits + totalInterest);
+    } else {
+      const p = installment;
+      const r = annualRate;
+      const n = duration;
+      let totalMat = 0;
+      for (let k = 1; k <= n; k++) {
+        const monthsInBank = n - k + 1;
+        const factor = Math.pow(1.0 + (r / 400.0), monthsInBank / 3.0);
+        totalMat += p * factor;
+      }
+      return Math.round(totalMat);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -217,8 +246,9 @@ export default function RdOpeningBalanceMigration() {
         const count = name === 'totalPaidInstallments' ? parseInt(value, 10) || 0 : prev.totalPaidInstallments;
         updated.totalDepositedAmount = inst * count;
 
-        const autoAccruedInt = calculateAccruedInterest31March(inst, updated.interestRate, count);
-        updated.legacyAccruedInt = autoAccruedInt;
+        // Auto accrued calculation removed to allow manual entry for legacy accounts
+        // const autoAccruedInt = calculateAccruedInterest31March(inst, updated.interestRate, count);
+        // updated.legacyAccruedInt = autoAccruedInt;
       }
 
       if (name === 'openingDate' || name === 'durationMonths') {
@@ -231,6 +261,17 @@ export default function RdOpeningBalanceMigration() {
         }
       }
 
+      // Recalculate maturity if dependent fields change
+      if (['installmentAmount', 'durationMonths', 'interestRate'].includes(name)) {
+        const inst = name === 'installmentAmount' ? parseFloat(value) || 0 : prev.installmentAmount;
+        const dur = name === 'durationMonths' ? parseInt(value, 10) || 0 : prev.durationMonths;
+        const rate = name === 'interestRate' ? parseFloat(value) || 0 : prev.interestRate;
+        
+        const selectedScheme = schemes.find((s) => s.rdSchemeID.toString() === prev.rdSchemeID);
+        const method = selectedScheme?.interestMethod || 'Compound';
+        updated.maturityAmount = calculateRDMaturity(inst, rate, dur, method);
+      }
+
       return updated;
     });
   };
@@ -240,7 +281,7 @@ export default function RdOpeningBalanceMigration() {
     const selected = schemes.find((s) => s.rdSchemeID.toString() === schemeId);
     if (selected) {
       setFormData((prev) => {
-        const inst = selected.installmentAmount || prev.installmentAmount;
+        const inst = parseFloat(String(prev.installmentAmount)) || 0;
         const dur = selected.durationMonths || prev.durationMonths;
         const count = prev.totalPaidInstallments;
 
@@ -257,24 +298,17 @@ export default function RdOpeningBalanceMigration() {
         const r = selected.interestRate;
         const n = dur;
 
-        let totalMat = 0;
-        for (let k = 1; k <= n; k++) {
-          const monthsInBank = n - k + 1;
-          const factor = Math.pow(1.0 + (r / 400.0), monthsInBank / 3.0);
-          totalMat += p * factor;
-        }
-        const expectedMaturity = Math.round(totalMat);
-        const autoAccruedInt = calculateAccruedInterest31March(inst, r, count);
+        const expectedMaturity = calculateRDMaturity(p, r, n, selected.interestMethod || 'Compound');
+        // const autoAccruedInt = calculateAccruedInterest31March(inst, r, count);
 
         return {
           ...prev,
           rdSchemeID: schemeId.toString(),
-          installmentAmount: inst,
           durationMonths: dur,
           interestRate: selected.interestRate,
           maturityDate: maturityDateStr,
           totalDepositedAmount: inst * count,
-          legacyAccruedInt: autoAccruedInt,
+          // legacyAccruedInt: autoAccruedInt, // Removed to keep it manual
           maturityAmount: expectedMaturity,
         };
       });
@@ -282,7 +316,6 @@ export default function RdOpeningBalanceMigration() {
       setFormData((prev) => ({
         ...prev,
         rdSchemeID: '',
-        installmentAmount: 0,
         interestRate: 8.0,
       }));
     }
@@ -497,7 +530,7 @@ export default function RdOpeningBalanceMigration() {
           {editingAccountId && (
             <button
               type="button"
-              onClick={resetForm}
+              onClick={() => resetForm()}
               className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
               title="संपादन रद्द करा"
             >
@@ -508,7 +541,7 @@ export default function RdOpeningBalanceMigration() {
 
           <button
             type="button"
-            onClick={resetForm}
+            onClick={() => resetForm()}
             className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
             title="नवीन फॉर्म रिकामा करा"
           >
@@ -850,7 +883,7 @@ export default function RdOpeningBalanceMigration() {
           <div className="pt-2 flex justify-end gap-2 border-t border-gray-200">
             <button
               type="button"
-              onClick={resetForm}
+              onClick={() => resetForm()}
               className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1"
             >
               <RotateCcw className="w-3.5 h-3.5" />

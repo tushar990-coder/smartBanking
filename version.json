@@ -3,8 +3,8 @@
   "releaseDate": "2026-10-05",
   "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.27",
   "git": {
-    "commit": "PENDING",
-    "fullCommit": "PENDING",
+    "commit": "d6fac4a",
+    "fullCommit": "d6fac4acd679dc8aa8d846404874ad0ca5d35408",
     "branch": "main",
     "commitDate": "2026-10-05 17:25:00 +0530",
     "commitMessage": "feat(share): strict active shareholder member code auto-decrement, cif-first employee bank details & bank branch master v2.5.27",

@@ -1522,7 +1522,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                               {item.newOverdueRate !== undefined && item.newOverdueRate !== null ? `${item.newOverdueRate.toFixed(2)}%` : '0.00%'}
                             </span>
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-amber-900">
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-amber-900 font-sans">
                             {item.resolutionNo || '-'}
                           </td>
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono">
@@ -1531,7 +1531,7 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono font-bold text-emerald-800">
                             {item.effectiveDate ? new Date(item.effectiveDate).toLocaleDateString('en-GB') : '-'}
                           </td>
-                          <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-700">
+                          <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-800 font-sans">
                             {item.revisionReason || '-'}
                           </td>
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center">

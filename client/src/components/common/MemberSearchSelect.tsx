@@ -65,7 +65,7 @@ export default function MemberSearchSelect({
         ? (custId > 0 ? custId : memId)
         : (memId > 0 ? memId : custId);
 
-      const rawCode = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.code || m.MemberCode || m.memberNo || '').trim();
+      const rawCode = (rawMemProfile?.memberCode || rawMemProfile?.MemberCode || m.memberCode || m.MemberCode || '').trim();
       const isNullOrEmpty = !rawCode || rawCode.toLowerCase() === 'null' || rawCode.toLowerCase() === 'undefined';
       let cleanMemCode = isNullOrEmpty ? '' : rawCode;
 

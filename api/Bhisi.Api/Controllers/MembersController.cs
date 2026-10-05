@@ -231,11 +231,17 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
-                // Only consider codes of active shareholding members or regular members
+                // Only consider codes of active shareholding members (TotalShareCount > 0)
+                var activeShareholderMemberIds = await _context.ShareAccounts
+                    .AsNoTracking()
+                    .Where(sa => sa.TotalShareCount > 0)
+                    .Select(sa => sa.MemberId)
+                    .Distinct()
+                    .ToListAsync();
+
                 var allMemberCodes = await _context.Members
                     .AsNoTracking()
-                    .Where(m => !string.IsNullOrEmpty(m.MemberCode) && 
-                                (_context.ShareAccounts.Any(sa => sa.MemberId == m.MemberID && sa.TotalShareCount > 0) || m.MembershipType == "Regular"))
+                    .Where(m => activeShareholderMemberIds.Contains(m.MemberID) && !string.IsNullOrEmpty(m.MemberCode))
                     .Select(m => m.MemberCode!)
                     .ToListAsync();
 
@@ -258,7 +264,7 @@ namespace Bhisi.Api.Controllers
 
                 if (maxNum == 0)
                 {
-                    maxNum = await _context.ShareAccounts.CountAsync(sa => sa.TotalShareCount > 0);
+                    maxNum = activeShareholderMemberIds.Count;
                 }
 
                 int nextNum = maxNum + 1;
@@ -272,9 +278,9 @@ namespace Bhisi.Api.Controllers
 
                 return Content(candidate, "text/plain");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return StatusCode(500, "Error generating next member code: " + ex.Message);
+                return Content("MEM0001", "text/plain");
             }
         }
 

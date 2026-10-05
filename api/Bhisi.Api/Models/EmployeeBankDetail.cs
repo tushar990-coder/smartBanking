@@ -13,9 +13,6 @@ namespace Bhisi.Api.Models
         [MaxLength(20)]
         public string CIFNo { get; set; } = string.Empty;
 
-        // Navigation property for MemberMaster (assuming Member class exists and has CIFNo as key or unique property)
-        // [ForeignKey("CIFNo")]
-        // public Member? Member { get; set; }
 
         [Required]
         [MaxLength(50)]

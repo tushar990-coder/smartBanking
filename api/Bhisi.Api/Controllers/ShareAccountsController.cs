@@ -899,14 +899,28 @@ namespace Bhisi.Api.Controllers
 
         private async Task<string> GenerateNextMemberCodeAsync(string? legacyMemberNo = null)
         {
-            // 1. If legacy member number is provided and numeric, bind to it if available
+            // 1. Fetch member codes STRICTLY of members holding active shares (TotalShareCount > 0)
+            var activeShareholderMemberIds = await _context.ShareAccounts
+                .AsNoTracking()
+                .Where(sa => sa.TotalShareCount > 0)
+                .Select(sa => sa.MemberId)
+                .Distinct()
+                .ToListAsync();
+
+            var activeShareholderCodes = await _context.Members
+                .AsNoTracking()
+                .Where(m => activeShareholderMemberIds.Contains(m.MemberID) && !string.IsNullOrEmpty(m.MemberCode))
+                .Select(m => m.MemberCode!)
+                .ToListAsync();
+
+            // 2. If legacy member number is provided and numeric, bind to it if available and not taken by active shareholder
             if (!string.IsNullOrWhiteSpace(legacyMemberNo))
             {
                 var digits = new string(legacyMemberNo.Trim().Where(char.IsDigit).ToArray());
                 if (int.TryParse(digits, out int legNum) && legNum > 0)
                 {
                     string legCandidate = $"MEM{legNum:D4}";
-                    bool exists = await _context.Members.AsNoTracking().AnyAsync(m => m.MemberCode == legCandidate);
+                    bool exists = activeShareholderCodes.Any(c => string.Equals(c.Trim(), legCandidate, StringComparison.OrdinalIgnoreCase));
                     if (!exists)
                     {
                         return legCandidate;
@@ -914,15 +928,8 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // 2. Otherwise for brand new member, take MAX + 1 strictly from existing valid MemberCodes
-            var shareholderCodes = await _context.Members
-                .AsNoTracking()
-                .Where(m => !string.IsNullOrEmpty(m.MemberCode))
-                .Select(m => m.MemberCode)
-                .ToListAsync();
-
             int maxCodeNum = 0;
-            foreach (var code in shareholderCodes)
+            foreach (var code in activeShareholderCodes)
             {
                 if (string.IsNullOrEmpty(code)) continue;
                 var trimmed = code.Trim();
@@ -938,13 +945,13 @@ namespace Bhisi.Api.Controllers
 
             if (maxCodeNum == 0)
             {
-                maxCodeNum = await _context.ShareAccounts.CountAsync(sa => sa.TotalShareCount > 0);
+                maxCodeNum = activeShareholderMemberIds.Count;
             }
 
             int nextNum = maxCodeNum + 1;
             string candidateCode = $"MEM{nextNum:D4}";
 
-            while (shareholderCodes.Any(c => string.Equals(c?.Trim(), candidateCode, StringComparison.OrdinalIgnoreCase)))
+            while (activeShareholderCodes.Any(c => string.Equals(c?.Trim(), candidateCode, StringComparison.OrdinalIgnoreCase)))
             {
                 nextNum++;
                 candidateCode = $"MEM{nextNum:D4}";
@@ -2057,28 +2064,42 @@ namespace Bhisi.Api.Controllers
                         .Concat(divMobs.Select(d => d.MemberOpeningBalanceID))
                         .ToList();
 
-                    bool hasOtherShares = await _context.ShareAccounts.AnyAsync(s => s.ShareAccountId != account.ShareAccountId && s.MemberId == targetMemberId);
-                    int? memCustId = member.CustomerID;
-                    bool hasLoans = await _context.LoanAccounts.AnyAsync(l => l.MemberID == targetMemberId || (memCustId != null && (l.CustomerID == memCustId || l.CoCustomerID == memCustId || l.CoCustomer2ID == memCustId || l.Guarantor1CustomerID == memCustId || l.Guarantor2CustomerID == memCustId)));
-                    bool hasLoanApps = await _context.LoanApplications.AnyAsync(l => memCustId != null && (l.CustomerID == memCustId || l.CoCustomerID == memCustId || l.CoCustomer2ID == memCustId || l.Guarantor1CustomerID == memCustId || l.Guarantor2CustomerID == memCustId));
-                    bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID);
-                    bool hasFds = await _context.FdAccounts.AnyAsync(f => member.CustomerID != null && f.CustomerID == member.CustomerID);
-                    bool hasRds = await _context.RdAccounts.AnyAsync(r => member.CustomerID != null && r.CustomerID == member.CustomerID);
-                    bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => member.CustomerID != null && p.CustomerID == member.CustomerID);
-                    bool hasLockers = await _context.LockerAllotments.AnyAsync(l => l.MemberID == targetMemberId);
-                    bool hasJoint = await _context.JointMembers.AnyAsync(j => j.PrimaryMemberID == targetMemberId);
-                    bool hasCommittee = await _context.CommitteeMembers.AnyAsync(c => c.MemberID == targetMemberId);
-                    bool hasOtherMobs = await _context.MemberOpeningBalances.AnyAsync(m => m.MemberID == targetMemberId && !mobIdsToDelete.Contains(m.MemberOpeningBalanceID));
+                    bool hasOtherShares = await _context.ShareAccounts.AnyAsync(s => s.ShareAccountId != account.ShareAccountId && s.MemberId == targetMemberId && s.TotalShareCount > 0);
+                    
+                    if (!hasOtherShares)
+                    {
+                        // Cleanly remove member code so it is immediately released and decremented
+                        member.MemberCode = null;
+                        member.MembershipType = "Nominal";
+                        member.UpdatedOn = DateTime.UtcNow;
 
-                    if (!hasOtherShares && !hasLoans && !hasLoanApps && !hasSavings && !hasFds && !hasRds && !hasPigmies && !hasLockers && !hasJoint && !hasCommittee && !hasOtherMobs)
-                    {
-                        // Safe to completely remove the uncommitted member record, restoring customer to pure CIF
-                        _context.Members.Remove(member);
-                    }
-                    else if (!hasOtherShares)
-                    {
-                        // No longer a shareholder. Remove from Members table to keep Members table strictly for shareholders
-                        _context.Members.Remove(member);
+                        int? memCustId = member.CustomerID;
+                        bool hasLoans = await _context.LoanAccounts.AnyAsync(l => l.MemberID == targetMemberId || (memCustId != null && (l.CustomerID == memCustId || l.CoCustomerID == memCustId || l.CoCustomer2ID == memCustId || l.Guarantor1CustomerID == memCustId || l.Guarantor2CustomerID == memCustId)));
+                        bool hasLoanApps = await _context.LoanApplications.AnyAsync(l => memCustId != null && (l.CustomerID == memCustId || l.CoCustomerID == memCustId || l.CoCustomer2ID == memCustId || l.Guarantor1CustomerID == memCustId || l.Guarantor2CustomerID == memCustId));
+                        bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID);
+                        bool hasFds = await _context.FdAccounts.AnyAsync(f => member.CustomerID != null && f.CustomerID == member.CustomerID);
+                        bool hasRds = await _context.RdAccounts.AnyAsync(r => member.CustomerID != null && r.CustomerID == member.CustomerID);
+                        bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => member.CustomerID != null && p.CustomerID == member.CustomerID);
+                        bool hasLockers = await _context.LockerAllotments.AnyAsync(l => l.MemberID == targetMemberId);
+                        bool hasJoint = await _context.JointMembers.AnyAsync(j => j.PrimaryMemberID == targetMemberId);
+                        bool hasCommittee = await _context.CommitteeMembers.AnyAsync(c => c.MemberID == targetMemberId);
+                        bool hasOtherMobs = await _context.MemberOpeningBalances.AnyAsync(m => m.MemberID == targetMemberId && !mobIdsToDelete.Contains(m.MemberOpeningBalanceID));
+
+                        if (!hasLoans && !hasLoanApps && !hasSavings && !hasFds && !hasRds && !hasPigmies && !hasLockers && !hasJoint && !hasCommittee && !hasOtherMobs)
+                        {
+                            try
+                            {
+                                _context.Members.Remove(member);
+                            }
+                            catch
+                            {
+                                _context.Members.Update(member);
+                            }
+                        }
+                        else
+                        {
+                            _context.Members.Update(member);
+                        }
                     }
 
                     await _context.SaveChangesAsync();

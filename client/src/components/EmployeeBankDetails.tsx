@@ -3,9 +3,9 @@ import { ChevronLeft, Home, User, Landmark, Save, Search, CheckCircle2, AlertCir
 
 interface EmployeeBankDetail {
   employeeBankDetailID?: number;
-  memberID: number;
+  customerID: number;
   cifNo: string;
-  memberName: string;
+  customerName: string;
   employeeID: string;
   departmentID?: number;
   joiningDate?: string;
@@ -48,7 +48,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
   const [addingBank, setAddingBank] = useState(false);
   const [addBankError, setAddBankError] = useState('');
   const [addBankSuccess, setAddBankSuccess] = useState('');
-  const [activeMemberIdForBank, setActiveMemberIdForBank] = useState<number | null>(null);
+  const [activeCustomerIdForBank, setActiveCustomerIdForBank] = useState<number | null>(null);
 
   // Quick Add Department Modal state
   const [showAddDeptModal, setShowAddDeptModal] = useState(false);
@@ -57,16 +57,25 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
   const [addingDept, setAddingDept] = useState(false);
   const [addDeptError, setAddDeptError] = useState('');
   const [addDeptSuccess, setAddDeptSuccess] = useState('');
-  const [activeMemberIdForDept, setActiveMemberIdForDept] = useState<number | null>(null);
+  const [activeCustomerIdForDept, setActiveCustomerIdForDept] = useState<number | null>(null);
+
+  // Quick Add Branch Modal state
+  const [showAddBranchModal, setShowAddBranchModal] = useState(false);
+  const [newBranchName, setNewBranchName] = useState('');
+  const [newBranchCode, setNewBranchCode] = useState('');
+  const [addingBranch, setAddingBranch] = useState(false);
+  const [addBranchError, setAddBranchError] = useState('');
+  const [addBranchSuccess, setAddBranchSuccess] = useState('');
+  const [activeCustomerIdForBranch, setActiveCustomerIdForBranch] = useState<number | null>(null);
 
   // URL Context
   const [source, setSource] = useState('');
-  const [contextMemberId, setContextMemberId] = useState('');
+  const [contextCustomerId, setContextCustomerId] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setSource(params.get('source') || '');
-    setContextMemberId(params.get('memberId') || '');
+    setContextCustomerId(params.get('customerId') || '');
     
     fetchData();
   }, []);
@@ -88,13 +97,13 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
       const bankData = bankRes.ok ? await bankRes.json() : [];
 
       const params = new URLSearchParams(window.location.search);
-      const urlMemberId = params.get('memberId');
+      const urlCustomerId = params.get('customerId');
       
       const normalizedEmpData = empData.map((item: any) => ({
         employeeBankDetailID: item.employeeBankDetailID ?? item.employeeBankDetailId ?? item.EmployeeBankDetailID,
-        memberID: item.memberID ?? item.memberId ?? item.MemberID,
+        customerID: item.customerID ?? item.customerId ?? item.CustomerID ?? 0,
         cifNo: item.cifNo ?? item.CIFNo ?? '',
-        memberName: item.memberName ?? item.MemberName ?? '',
+        customerName: item.customerName ?? item.CustomerName ?? '',
         employeeID: item.employeeID ?? item.EmployeeID ?? '',
         departmentID: item.departmentID ?? item.departmentId ?? item.DepartmentID,
         joiningDate: item.joiningDate ?? item.JoiningDate,
@@ -107,8 +116,8 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
         branchID: item.branchID ?? item.branchId ?? item.BranchID
       }));
 
-      if (urlMemberId && params.get('source') === '360dashboard') {
-          setData(normalizedEmpData.filter((d: any) => d.memberID.toString() === urlMemberId));
+      if (urlCustomerId && params.get('source') === '360dashboard') {
+          setData(normalizedEmpData.filter((d: any) => d.customerID.toString() === urlCustomerId));
       } else {
           setData(normalizedEmpData);
       }
@@ -149,9 +158,9 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
     }
   };
 
-  const handleInputChange = (memberID: number, field: keyof EmployeeBankDetail, value: any) => {
+  const handleInputChange = (customerID: number, field: keyof EmployeeBankDetail, value: any) => {
     setData(prev => prev.map(item => {
-      if (item.memberID === memberID) {
+      if (item.customerID === customerID) {
         return { ...item, [field]: value };
       }
       return item;
@@ -198,8 +207,8 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
           .sort((a, b) => a.bankName.localeCompare(b.bankName));
       });
 
-      if (activeMemberIdForBank !== null) {
-        handleInputChange(activeMemberIdForBank, 'bankName', bankNameAdded);
+      if (activeCustomerIdForBank !== null) {
+        handleInputChange(activeCustomerIdForBank, 'bankName', bankNameAdded);
       }
 
       setAddBankSuccess(`'${bankNameAdded}' बँक यशस्वीरीत्या जोडली गेली!`);
@@ -250,14 +259,70 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
           .sort((a, b) => a.name.localeCompare(b.name));
       });
 
-      if (activeMemberIdForDept !== null) {
-        handleInputChange(activeMemberIdForDept, 'departmentID', newDeptId);
+      if (activeCustomerIdForDept !== null) {
+        handleInputChange(activeCustomerIdForDept, 'departmentID', newDeptId);
       }
 
       setAddDeptSuccess(`'${deptNameAdded}' विभाग यशस्वीरीत्या जोडला गेला!`);
       setNewDeptName('');
       setNewDeptCode('');
       setAddingDept(false);
+    }
+  };
+
+  const handleAddBranch = async () => {
+    const trimmedName = newBranchName.trim();
+    if (!trimmedName) {
+      setAddBranchError('कृपया शाखेचे नाव प्रविष्ट करा.');
+      return;
+    }
+
+    setAddingBranch(true);
+    setAddBranchError('');
+    setAddBranchSuccess('');
+
+    const autoCode = newBranchCode.trim() || `BR${Date.now().toString().slice(-4)}`;
+    let branchNameAdded = trimmedName;
+    let newBranchId = Date.now();
+
+    try {
+      const response = await fetch('/api/BranchMaster', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          branchName: trimmedName,
+          branchCode: autoCode,
+          branchType: 'Branch',
+          status: true
+        })
+      });
+
+      if (response.ok) {
+        const savedBranch = await response.json();
+        branchNameAdded = (savedBranch.branchName ?? savedBranch.BranchName ?? trimmedName).trim();
+        newBranchId = savedBranch.branchID ?? savedBranch.branchId ?? savedBranch.BranchID ?? newBranchId;
+      }
+    } catch (err) {
+      console.error('API call error when saving branch:', err);
+    } finally {
+      setBranches(prev => {
+        if (prev.some(b => b.id === newBranchId || b.name.toLowerCase() === branchNameAdded.toLowerCase())) {
+          return prev;
+        }
+        return [...prev, { id: newBranchId, name: branchNameAdded }]
+          .sort((a, b) => a.name.localeCompare(b.name));
+      });
+
+      if (activeCustomerIdForBranch !== null) {
+        handleInputChange(activeCustomerIdForBranch, 'branchID', newBranchId);
+      }
+
+      setAddBranchSuccess(`'${branchNameAdded}' शाखा यशस्वीरीत्या जोडली गेली!`);
+      setNewBranchName('');
+      setNewBranchCode('');
+      setAddingBranch(false);
     }
   };
 
@@ -300,18 +365,19 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
 
   const navigateBack = () => {
     if (onNavigate) {
-      onNavigate('member-360', { memberId: contextMemberId });
+      onNavigate('customer-360', { customerId: contextCustomerId });
     }
   };
 
   const filteredData = data.filter(item => {
     const q = searchQuery.toLowerCase();
     return (
-      (item.memberName && item.memberName.toLowerCase().includes(q)) ||
+      (item.customerName && item.customerName.toLowerCase().includes(q)) ||
       (item.cifNo && item.cifNo.toLowerCase().includes(q)) ||
       (item.employeeID && item.employeeID.toLowerCase().includes(q)) ||
       (item.bankName && item.bankName.toLowerCase().includes(q)) ||
-      (item.accountNumber && item.accountNumber.includes(q))
+      (item.accountNumber && item.accountNumber.includes(q)) ||
+      (item.mobileNumber && item.mobileNumber.includes(q))
     );
   });
 
@@ -325,8 +391,8 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                <Home size={12} className="mr-1 text-gray-400" /> होम
             </span>
             <span className="mx-1.5 text-gray-300">/</span>
-            <span className="flex items-center hover:text-blue-600 cursor-pointer" onClick={() => onNavigate && onNavigate('member')}>
-               <User size={12} className="mr-1 text-gray-400" /> सभासद माहिती
+            <span className="flex items-center hover:text-blue-600 cursor-pointer" onClick={() => onNavigate && onNavigate('customer')}>
+               <User size={12} className="mr-1 text-gray-400" /> खातेदार माहिती
             </span>
             <span className="mx-1.5 text-gray-300">/</span>
             <span className="text-blue-600 hover:underline cursor-pointer font-bold flex items-center" onClick={navigateBack}>
@@ -354,22 +420,22 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold text-gray-800 leading-tight">
-                सभासद कर्मचारी बँक तपशील (Member Employee Bank Details)
+                खातेदार व कर्मचारी बँक तपशील (Customer & Employee Bank Details)
               </h1>
               {source === '360dashboard' && (
                 <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-bold border border-indigo-200">
-                  सभासद फिल्टर लागू
+                  खातेदार फिल्टर लागू
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-gray-500">पतसंस्थेच्या सभासद-कर्मचाऱ्यांचे वैयक्तिक बँक खाते, IFSC कोड, मूळ कंपनी/विभाग व पद स्थिती माहिती व्यवस्थापित करा</p>
+            <p className="text-[11px] text-gray-500">पतसंस्थेच्या सर्व नोंदणीकृत खातेदारांचे (CIF) वैयक्तिक बँक खाते, IFSC कोड, मूळ कंपनी/विभाग व पद स्थिती माहिती व्यवस्थापित करा</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 mt-2 sm:mt-0">
           <button 
             onClick={() => {
-              setActiveMemberIdForDept(null);
+              setActiveCustomerIdForDept(null);
               setNewDeptName('');
               setNewDeptCode('');
               setAddDeptError('');
@@ -385,7 +451,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
 
           <button 
             onClick={() => {
-              setActiveMemberIdForBank(null);
+              setActiveCustomerIdForBank(null);
               setNewBankName('');
               setAddBankError('');
               setAddBankSuccess('');
@@ -396,6 +462,22 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
           >
             <Plus className="w-4 h-4" />
             <span>+ बँक जोडा (Add Bank)</span>
+          </button>
+
+          <button 
+            onClick={() => {
+              setActiveCustomerIdForBranch(null);
+              setNewBranchName('');
+              setNewBranchCode('');
+              setAddBranchError('');
+              setAddBranchSuccess('');
+              setShowAddBranchModal(true);
+            }}
+            className="flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-md font-bold text-xs shadow-md transition-all cursor-pointer"
+            title="नवीन शाखा जोडा"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ शाखा जोडा (Add Branch)</span>
           </button>
 
           <button 
@@ -441,7 +523,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
           </div>
 
           <div className="text-xs text-gray-500 font-medium self-end sm:self-center">
-            एकूण सभासद-कर्मचारी नोंद: <strong className="text-primary font-bold">{filteredData.length}</strong>
+            एकूण नोंदणीकृत खातेदार: <strong className="text-primary font-bold">{filteredData.length}</strong>
           </div>
         </div>
 
@@ -457,7 +539,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
               <thead className="bg-slate-100 text-slate-700 border-b border-gray-300 shadow-xs">
                 <tr>
                   <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">CIF क्र.</th>
-                  <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap min-w-[140px]">सभासदाचे नाव</th>
+                  <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap min-w-[150px]">खातेदाराचे नाव</th>
                   <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">कर्मचारी आयडी / टोकन</th>
                   <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">विभाग (Dept)</th>
                   <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">रुजू तारीख</th>
@@ -466,7 +548,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">IFSC कोड</th>
                   <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">खाते क्रमांक</th>
                   <th className="px-2.5 py-2 border-r border-gray-200 font-bold whitespace-nowrap">खात्याचा प्रकार</th>
-                  <th className="px-2.5 py-2 font-bold whitespace-nowrap">पतसंस्था शाखा</th>
+                  <th className="px-2.5 py-2 font-bold whitespace-nowrap">बँक शाखा</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
@@ -476,24 +558,24 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                       <div className="flex flex-col items-center justify-center gap-1.5">
                         <Landmark className="w-8 h-8 text-gray-300" />
                         <p className="font-semibold text-gray-600">कोणतीही कर्मचारी नोंद सापडली नाही.</p>
-                        <p className="text-[11px] text-gray-400">शोधाचा शब्द बदला किंवा नवीन सभासद नोंदणी करा.</p>
+                        <p className="text-[11px] text-gray-400">शोधाचा शब्द बदला किंवा नवीन खातेदार नोंदणी करा.</p>
                       </div>
                     </td>
                   </tr>
                 ) : (
                   filteredData.map((row) => (
-                    <tr key={row.memberID} className="hover:bg-blue-50/50 transition-colors">
+                    <tr key={row.customerID || row.cifNo} className="hover:bg-blue-50/50 transition-colors">
                       <td className="px-2.5 py-1.5 border-r border-gray-100 font-bold text-primary whitespace-nowrap">
-                        {row.cifNo || ('CIF' + String(row.memberID).padStart(6, '0'))}
+                        {row.cifNo || ('CIF' + String(row.customerID).padStart(6, '0'))}
                       </td>
                       <td className="px-2.5 py-1.5 border-r border-gray-100 font-bold text-gray-800 whitespace-nowrap">
-                        {row.memberName}
+                        {row.customerName}
                       </td>
                       <td className="px-2.5 py-1.5 border-r border-gray-100">
                         <input 
                           type="text" 
                           value={row.employeeID || ''} 
-                          onChange={(e) => handleInputChange(row.memberID, 'employeeID', e.target.value)}
+                          onChange={(e) => handleInputChange(row.customerID, 'employeeID', e.target.value)}
                           className="border border-gray-300 rounded px-2 py-1 w-24 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white font-medium"
                           placeholder="Emp ID"
                         />
@@ -503,14 +585,14 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                           value={row.departmentID !== undefined && row.departmentID !== null ? row.departmentID : ''}
                           onChange={(e) => {
                             if (e.target.value === '__ADD_NEW_DEPT__') {
-                              setActiveMemberIdForDept(row.memberID);
+                              setActiveCustomerIdForDept(row.customerID);
                               setNewDeptName('');
                               setNewDeptCode('');
                               setAddDeptError('');
                               setAddDeptSuccess('');
                               setShowAddDeptModal(true);
                             } else {
-                              handleInputChange(row.memberID, 'departmentID', e.target.value ? Number(e.target.value) : undefined);
+                              handleInputChange(row.customerID, 'departmentID', e.target.value ? Number(e.target.value) : undefined);
                             }
                           }}
                           className="border border-gray-300 rounded px-2 py-1 w-36 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white font-medium"
@@ -528,14 +610,14 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                         <input 
                           type="date" 
                           value={row.joiningDate ? row.joiningDate.split('T')[0] : ''} 
-                          onChange={(e) => handleInputChange(row.memberID, 'joiningDate', e.target.value)}
+                          onChange={(e) => handleInputChange(row.customerID, 'joiningDate', e.target.value)}
                           className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
                         />
                       </td>
                       <td className="px-2.5 py-1.5 border-r border-gray-100">
                         <select 
                           value={row.employeeStatus}
-                          onChange={(e) => handleInputChange(row.memberID, 'employeeStatus', e.target.value)}
+                          onChange={(e) => handleInputChange(row.customerID, 'employeeStatus', e.target.value)}
                           className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white font-semibold"
                         >
                           <option value="Active">सक्रिय (Active)</option>
@@ -550,13 +632,13 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                           value={row.bankName || ''} 
                           onChange={(e) => {
                             if (e.target.value === '__ADD_NEW__') {
-                              setActiveMemberIdForBank(row.memberID);
+                              setActiveCustomerIdForBank(row.customerID);
                               setNewBankName('');
                               setAddBankError('');
                               setAddBankSuccess('');
                               setShowAddBankModal(true);
                             } else {
-                              handleInputChange(row.memberID, 'bankName', e.target.value);
+                              handleInputChange(row.customerID, 'bankName', e.target.value);
                             }
                           }}
                           className="border border-gray-300 rounded px-2 py-1 w-40 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white font-medium"
@@ -576,7 +658,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                         <input 
                           type="text" 
                           value={row.ifscCode || ''} 
-                          onChange={(e) => handleInputChange(row.memberID, 'ifscCode', e.target.value)}
+                          onChange={(e) => handleInputChange(row.customerID, 'ifscCode', e.target.value)}
                           className="border border-gray-300 rounded px-2 py-1 w-28 text-xs uppercase focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white font-medium"
                           placeholder="SBIN0001234"
                         />
@@ -585,7 +667,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                         <input 
                           type="text" 
                           value={row.accountNumber || ''} 
-                          onChange={(e) => handleInputChange(row.memberID, 'accountNumber', e.target.value)}
+                          onChange={(e) => handleInputChange(row.customerID, 'accountNumber', e.target.value)}
                           className="border border-gray-300 rounded px-2 py-1 w-32 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white font-medium"
                           placeholder="खाते क्रमांक"
                         />
@@ -593,7 +675,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                       <td className="px-2.5 py-1.5 border-r border-gray-100">
                         <select 
                           value={row.accountType}
-                          onChange={(e) => handleInputChange(row.memberID, 'accountType', e.target.value)}
+                          onChange={(e) => handleInputChange(row.customerID, 'accountType', e.target.value)}
                           className="border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
                         >
                           <option value="Savings">बचत (Savings)</option>
@@ -604,13 +686,27 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                       <td className="px-2.5 py-1.5">
                         <select 
                           value={row.branchID !== undefined && row.branchID !== null ? row.branchID : ''}
-                          onChange={(e) => handleInputChange(row.memberID, 'branchID', e.target.value ? Number(e.target.value) : undefined)}
+                          onChange={(e) => {
+                            if (e.target.value === '__ADD_NEW_BRANCH__') {
+                              setActiveCustomerIdForBranch(row.customerID);
+                              setNewBranchName('');
+                              setNewBranchCode('');
+                              setAddBranchError('');
+                              setAddBranchSuccess('');
+                              setShowAddBranchModal(true);
+                            } else {
+                              handleInputChange(row.customerID, 'branchID', e.target.value ? Number(e.target.value) : undefined);
+                            }
+                          }}
                           className="border border-gray-300 rounded px-2 py-1 w-32 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
                         >
                           <option value="">-- शाखा निवडा --</option>
                           {branches.map(b => (
                             <option key={b.id} value={b.id}>{b.name}</option>
                           ))}
+                          <option value="__ADD_NEW_BRANCH__" className="font-bold text-purple-600 bg-purple-50">
+                            + नवीन शाखा जोडा (Add New Branch)
+                          </option>
                         </select>
                       </td>
                     </tr>
@@ -636,7 +732,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   setShowAddBankModal(false);
                   setAddBankError('');
                   setNewBankName('');
-                  setActiveMemberIdForBank(null);
+                  setActiveCustomerIdForBank(null);
                 }}
                 className="text-gray-400 hover:text-gray-600 p-1 rounded-md transition-colors"
               >
@@ -687,7 +783,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   setAddBankError('');
                   setAddBankSuccess('');
                   setNewBankName('');
-                  setActiveMemberIdForBank(null);
+                  setActiveCustomerIdForBank(null);
                 }}
                 className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-md text-xs font-medium hover:bg-gray-100 transition-colors"
               >
@@ -731,7 +827,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   setAddDeptSuccess('');
                   setNewDeptName('');
                   setNewDeptCode('');
-                  setActiveMemberIdForDept(null);
+                  setActiveCustomerIdForDept(null);
                 }}
                 className="text-gray-400 hover:text-gray-600 p-1 rounded-md transition-colors"
               >
@@ -796,7 +892,7 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   setAddDeptSuccess('');
                   setNewDeptName('');
                   setNewDeptCode('');
-                  setActiveMemberIdForDept(null);
+                  setActiveCustomerIdForDept(null);
                 }}
                 className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-md text-xs font-medium hover:bg-gray-100 transition-colors"
               >
@@ -816,6 +912,115 @@ const EmployeeBankDetails: React.FC<EmployeeBankDetailsProps> = ({ onNavigate })
                   <>
                     <Save className="w-3.5 h-3.5" />
                     <span>विभाग सेव्ह करा (Save Dept)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Add Branch Modal */}
+      {showAddBranchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-150">
+            <div className="bg-slate-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Landmark className="w-5 h-5 text-purple-600" />
+                <h3 className="font-bold text-sm text-gray-800">नवीन शाखा जोडा (Add New Branch)</h3>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowAddBranchModal(false);
+                  setAddBranchError('');
+                  setAddBranchSuccess('');
+                  setNewBranchName('');
+                  setNewBranchCode('');
+                  setActiveCustomerIdForBranch(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-md transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              {addBranchSuccess && (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{addBranchSuccess}</span>
+                </div>
+              )}
+
+              {addBranchError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-md text-xs font-medium flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                  <span>{addBranchError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  शाखेचे नाव (Branch Name) <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  value={newBranchName}
+                  onChange={(e) => {
+                    setNewBranchName(e.target.value);
+                    if (addBranchSuccess) setAddBranchSuccess('');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddBranch();
+                  }}
+                  placeholder="उदा. मुख्य शाखा / पुणे शाखा / कोल्हापूर शाखा"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 bg-white"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  शाखा कोड (Branch Code - पर्यायी)
+                </label>
+                <input 
+                  type="text" 
+                  value={newBranchCode}
+                  onChange={(e) => setNewBranchCode(e.target.value)}
+                  placeholder="उदा. BR01"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 bg-white uppercase"
+                />
+              </div>
+            </div>
+
+            <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+              <button 
+                onClick={() => {
+                  setShowAddBranchModal(false);
+                  setAddBranchError('');
+                  setAddBranchSuccess('');
+                  setNewBranchName('');
+                  setNewBranchCode('');
+                  setActiveCustomerIdForBranch(null);
+                }}
+                className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-md text-xs font-medium hover:bg-gray-100 transition-colors"
+              >
+                {addBranchSuccess ? 'पूर्ण झाले (Close)' : 'रद्द करा (Cancel)'}
+              </button>
+              <button 
+                onClick={handleAddBranch}
+                disabled={addingBranch || !newBranchName.trim()}
+                className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-4 py-1.5 rounded-md font-bold text-xs shadow-xs transition-all disabled:opacity-50"
+              >
+                {addingBranch ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>सेव्ह होत आहे...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    <span>शाखा सेव्ह करा (Save Branch)</span>
                   </>
                 )}
               </button>

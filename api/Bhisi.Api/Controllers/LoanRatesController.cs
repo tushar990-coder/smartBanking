@@ -492,7 +492,6 @@ namespace Bhisi.Api.Controllers
                     h.ResolutionNo,
                     h.ResolutionDate,
                     h.EffectiveDate,
-                    RevisionReason = h.Reason,
                     Reason = h.Reason,
                     ChangedBy = h.ChangedByUsername,
                     h.ChangedByUserID,
@@ -502,7 +501,31 @@ namespace Bhisi.Api.Controllers
                 })
                 .ToListAsync();
 
-            return Ok(histories);
+            var sanitized = histories.Select(h => new
+            {
+                h.HistoryID,
+                h.LoanRateID,
+                h.LoanType,
+                h.LoanCode,
+                h.OldInterestRate,
+                h.NewInterestRate,
+                h.OldOverdueRate,
+                h.NewOverdueRate,
+                h.OldOverdueInterestRate,
+                h.NewOverdueInterestRate,
+                ResolutionNo = SanitizeMojibake(h.ResolutionNo),
+                h.ResolutionDate,
+                h.EffectiveDate,
+                RevisionReason = SanitizeMojibake(h.Reason),
+                Reason = SanitizeMojibake(h.Reason),
+                h.ChangedBy,
+                h.ChangedByUserID,
+                h.ChangedByUsername,
+                h.ChangedAt,
+                h.IPAddress
+            });
+
+            return Ok(sanitized);
         }
 
         // GET: api/LoanRates/AllHistory
@@ -529,7 +552,6 @@ namespace Bhisi.Api.Controllers
                     h.ResolutionNo,
                     h.ResolutionDate,
                     h.EffectiveDate,
-                    RevisionReason = h.Reason,
                     Reason = h.Reason,
                     ChangedBy = h.ChangedByUsername,
                     h.ChangedByUserID,
@@ -539,7 +561,48 @@ namespace Bhisi.Api.Controllers
                 })
                 .ToListAsync();
 
-            return Ok(histories);
+            var sanitized = histories.Select(h => new
+            {
+                h.HistoryID,
+                h.LoanRateID,
+                h.LoanType,
+                h.LoanCode,
+                h.OldInterestRate,
+                h.NewInterestRate,
+                h.OldOverdueRate,
+                h.NewOverdueRate,
+                h.OldOverdueInterestRate,
+                h.NewOverdueInterestRate,
+                ResolutionNo = SanitizeMojibake(h.ResolutionNo),
+                h.ResolutionDate,
+                h.EffectiveDate,
+                RevisionReason = SanitizeMojibake(h.Reason),
+                Reason = SanitizeMojibake(h.Reason),
+                h.ChangedBy,
+                h.ChangedByUserID,
+                h.ChangedByUsername,
+                h.ChangedAt,
+                h.IPAddress
+            });
+
+            return Ok(sanitized);
+        }
+
+        private static string SanitizeMojibake(string? input)
+        {
+            if (string.IsNullOrEmpty(input)) return string.Empty;
+            if (!input.Contains("\u00E0\u00A4") && !input.Contains("\u00E0\u00A5")) return input;
+
+            try
+            {
+                byte[] bytes = System.Text.Encoding.Latin1.GetBytes(input);
+                string decoded = System.Text.Encoding.UTF8.GetString(bytes);
+                return string.IsNullOrWhiteSpace(decoded) ? input : decoded;
+            }
+            catch
+            {
+                return input;
+            }
         }
 
         // DELETE: api/LoanRates/5

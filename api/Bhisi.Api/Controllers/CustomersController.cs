@@ -209,7 +209,8 @@ namespace Bhisi.Api.Controllers
                         MemberProfile = c.MemberProfile != null ? new Member
                         {
                             MemberID = c.MemberProfile.MemberID,
-                            MemberCode = !string.IsNullOrWhiteSpace(c.MemberProfile.MemberCode)
+                            MemberCode = !string.IsNullOrWhiteSpace(c.MemberProfile.MemberCode) &&
+                                         _context.ShareAccounts.Any(sa => (sa.CustomerID == c.CustomerID || sa.MemberId == c.MemberProfile.MemberID) && sa.TotalShareCount > 0)
                                 ? c.MemberProfile.MemberCode
                                 : null,
                             LegacyMemberNo = c.MemberProfile.LegacyMemberNo,
@@ -245,6 +246,16 @@ namespace Bhisi.Api.Controllers
             if (!isHeadOfficeAdmin && customer.BranchID != userBranchId)
             {
                 return StatusCode(403, new { message = "आपल्याला इतर शाखेतील ग्राहकांची माहिती पाहण्याची परवानगी नाही." });
+            }
+
+            if (customer.MemberProfile != null)
+            {
+                bool hasActiveShares = await _context.ShareAccounts
+                    .AnyAsync(sa => (sa.CustomerID == id || sa.MemberId == customer.MemberProfile.MemberID) && sa.TotalShareCount > 0);
+                if (!hasActiveShares)
+                {
+                    customer.MemberProfile.MemberCode = null;
+                }
             }
 
             return customer;

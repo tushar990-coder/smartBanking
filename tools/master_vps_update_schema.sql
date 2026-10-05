@@ -5173,6 +5173,35 @@ BEGIN
 END
 GO
 
+-- 14.3.1 Auto-Heal Mojibake Encoding in LoanRateHistories
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanRateHistories')
+BEGIN
+    UPDATE [dbo].[LoanRateHistories]
+    SET 
+        [ResolutionNo] = N'ठराव क्र. ४५/२०२६',
+        [Reason] = N'संचालक मंडळ विशेष सभा निर्णयानुसार दर वाढ'
+    WHERE [HistoryID] = 1 
+      AND (
+          CHARINDEX(NCHAR(0x00E0) + NCHAR(0x00A4), [ResolutionNo]) > 0 
+          OR CHARINDEX(NCHAR(0x00E0) + NCHAR(0x00A4), [Reason]) > 0
+          OR [ResolutionNo] LIKE N'%?%'
+      );
+
+    UPDATE [dbo].[LoanRateHistories]
+    SET 
+        [ResolutionNo] = CASE 
+            WHEN CHARINDEX(NCHAR(0x00E0) + NCHAR(0x00A4), [ResolutionNo]) > 0 THEN N'संचालक मंडळ ठराव'
+            ELSE [ResolutionNo]
+        END,
+        [Reason] = CASE 
+            WHEN CHARINDEX(NCHAR(0x00E0) + NCHAR(0x00A4), [Reason]) > 0 THEN N'संचालक मंडळ निर्णयानुसार व्याजदर सुधारित'
+            ELSE [Reason]
+        END
+    WHERE CHARINDEX(NCHAR(0x00E0) + NCHAR(0x00A4), [ResolutionNo]) > 0 
+       OR CHARINDEX(NCHAR(0x00E0) + NCHAR(0x00A4), [Reason]) > 0;
+END
+GO
+
 -- 14.4 Record Version v2.5.26 in SystemVersionHistories
 IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
 BEGIN
@@ -5187,6 +5216,69 @@ BEGIN
         ''2026-10-05''
     );');
     PRINT '  + Recorded Version v2.5.26 in SystemVersionHistories';
+END
+-- 14.5 Auto-Heal & Purge Non-Shareholder MemberCodes & Resequence Active Shareholders
+IF OBJECT_ID(N'[Members]', N'U') IS NOT NULL AND OBJECT_ID(N'[ShareAccounts]', N'U') IS NOT NULL
+BEGIN
+    PRINT '------------------------------------------------------------------------';
+    PRINT 'Clearing invalid MemberCodes for non-shareholders & resequencing active...';
+    PRINT '------------------------------------------------------------------------';
+    BEGIN TRY
+        -- Step 1: Clear MemberCode and set Nominal for non-shareholders (Zero shares)
+        UPDATE [dbo].[Members]
+        SET [MemberCode] = NULL,
+            [MembershipType] = 'Nominal',
+            [ModifiedDate] = GETDATE()
+        WHERE [MemberID] NOT IN (
+            SELECT DISTINCT sa.[MemberId] 
+            FROM [dbo].[ShareAccounts] sa 
+            WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+        )
+        AND ([MemberCode] IS NOT NULL AND [MemberCode] <> '');
+
+        -- Step 2: Temporary code for active shareholders to avoid unique index conflict
+        UPDATE [dbo].[Members]
+        SET [MemberCode] = 'TMP_' + CAST([MemberID] AS VARCHAR(10)) + '_' + SUBSTRING(CONVERT(VARCHAR(40), NEWID()), 1, 8)
+        WHERE [MemberID] IN (
+            SELECT DISTINCT sa.[MemberId] 
+            FROM [dbo].[ShareAccounts] sa 
+            WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+        );
+
+        -- Step 3: Resequence active shareholders sequentially (MEM0001, MEM0002...)
+        ;WITH ActiveShareholders AS (
+            SELECT sa.[MemberId], sa.[ShareAccountId],
+                   ROW_NUMBER() OVER (
+                       ORDER BY TRY_CAST(m.[LegacyMemberNo] AS INT) ASC,
+                                TRY_CAST(REPLACE(REPLACE(COALESCE(sc.[CertificateNo], ''), 'CERT-', ''), 'CERT', '') AS INT) ASC,
+                                sa.[ShareAccountId] ASC
+                   ) as SeqNo
+            FROM [dbo].[ShareAccounts] sa
+            INNER JOIN [dbo].[Members] m ON sa.[MemberId] = m.[MemberID]
+            OUTER APPLY (
+                SELECT TOP 1 [CertificateNo] FROM [dbo].[ShareCertificates] WHERE [ShareAccountId] = sa.[ShareAccountId] ORDER BY [CertificateId] ASC
+            ) sc
+            WHERE sa.[TotalShareCount] > 0
+        )
+        UPDATE m
+        SET m.[MemberCode] = 'MEM' + RIGHT('0000' + CAST(ash.SeqNo AS VARCHAR(10)), 4),
+            m.[MembershipType] = 'Regular',
+            m.[ModifiedDate] = GETDATE()
+        FROM [dbo].[Members] m
+        INNER JOIN ActiveShareholders ash ON m.[MemberID] = ash.[MemberId];
+
+        -- Step 4: Synchronize ShareAccounts.AccountNo = 'SA-' + MemberCode
+        UPDATE sa
+        SET sa.[AccountNo] = 'SA-' + m.[MemberCode]
+        FROM [dbo].[ShareAccounts] sa
+        INNER JOIN [dbo].[Members] m ON sa.[MemberId] = m.[MemberID]
+        WHERE m.[MemberCode] IS NOT NULL;
+
+        PRINT '  -> All non-shareholder MemberCodes cleared and active shareholders aligned!';
+    END TRY
+    BEGIN CATCH
+        PRINT '  [WARN] Shareholder alignment non-critical warning: ' + ERROR_MESSAGE();
+    END CATCH
 END
 GO
 

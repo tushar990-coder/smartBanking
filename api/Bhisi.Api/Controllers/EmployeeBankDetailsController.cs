@@ -19,9 +19,9 @@ namespace Bhisi.Api.Controllers
         public class EmployeeBankDetailDto
         {
             public int? EmployeeBankDetailID { get; set; }
-            public int MemberID { get; set; }
+            public int CustomerID { get; set; }
             public string CIFNo { get; set; } = string.Empty;
-            public string MemberName { get; set; } = string.Empty;
+            public string CustomerName { get; set; } = string.Empty;
             public string EmployeeID { get; set; } = string.Empty;
             public int? DepartmentID { get; set; }
             public DateTime? JoiningDate { get; set; }
@@ -36,65 +36,43 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/EmployeeBankDetails
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<EmployeeBankDetailDto>>> GetEmployeeBankDetails()
+        public async Task<ActionResult<IEnumerable<EmployeeBankDetailDto>>> GetEmployeeBankDetails([FromQuery] int? branchId = null)
         {
-            var members = await _context.Members.Include(m => m.Customer).Where(m => m.Status == "Active").OrderBy(m => m.MemberID).ToListAsync();
-            var bankDetails = await _context.EmployeeBankDetails.ToListAsync();
-
-            // Find current max valid CIF number <= 600 (last valid ID before 678 jump was 107)
-            int maxCif = 107;
-            foreach (var m in members)
+            var query = _context.Customers.AsNoTracking().AsQueryable();
+            if (branchId.HasValue && branchId.Value > 0)
             {
-                var cif = m.Customer?.CIFNo;
-                if (!string.IsNullOrWhiteSpace(cif))
-                {
-                    var digits = new string(cif.Where(char.IsDigit).ToArray());
-                    if (int.TryParse(digits, out int num) && num <= 600 && num > maxCif)
-                    {
-                        maxCif = num;
-                    }
-                }
+                query = query.Where(c => c.BranchID == branchId.Value);
             }
+            var customers = await query.OrderBy(c => c.CustomerID).ToListAsync();
 
-            bool hasChanges = false;
-            foreach (var m in members)
-            {
-                var cif = m.Customer?.CIFNo;
-                bool isInvalid = string.IsNullOrWhiteSpace(cif) || 
-                                 (int.TryParse(new string((cif ?? "").Where(char.IsDigit).ToArray()), out int n) && n > 600);
+            var bankDetails = await _context.EmployeeBankDetails.AsNoTracking().ToListAsync();
 
-                if (isInvalid && m.Customer != null)
-                {
-                    maxCif++;
-                    m.Customer.CIFNo = $"CIF{maxCif:D6}";
-                    _context.Customers.Update(m.Customer);
-                    hasChanges = true;
-                }
-            }
+            var bankDict = bankDetails
+                .Where(b => !string.IsNullOrEmpty(b.CIFNo))
+                .GroupBy(b => b.CIFNo, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-            if (hasChanges)
-            {
-                await _context.SaveChangesAsync();
-            }
+            var result = customers.Select(c => {
+                bankDict.TryGetValue(c.CIFNo, out var detail);
 
-            var result = members.Select(m => {
-                var detail = bankDetails.FirstOrDefault(b => b.CIFNo == m.Customer?.CIFNo);
+                string fullName = $"{c.FirstName} {c.MiddleName} {c.LastName}".Replace("  ", " ").Trim();
+
                 return new EmployeeBankDetailDto
                 {
                     EmployeeBankDetailID = detail?.EmployeeBankDetailID,
-                    MemberID = m.MemberID,
-                    CIFNo = m.Customer?.CIFNo ?? $"CIF{m.MemberID:D6}",
-                    MemberName = m.Customer != null ? $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Replace("  ", " ").Trim() : "",
+                    CustomerID = c.CustomerID,
+                    CIFNo = c.CIFNo,
+                    CustomerName = fullName,
                     EmployeeID = detail?.EmployeeID ?? "",
                     DepartmentID = detail?.DepartmentID,
                     JoiningDate = detail?.JoiningDate,
                     EmployeeStatus = detail?.EmployeeStatus ?? "Active",
-                    MobileNumber = detail?.MobileNumber ?? m.Customer?.MobileNo,
+                    MobileNumber = detail?.MobileNumber ?? c.MobileNo,
                     BankName = detail?.BankName ?? "",
                     IFSCCode = detail?.IFSCCode ?? "",
                     AccountNumber = detail?.AccountNumber ?? "",
                     AccountType = detail?.AccountType ?? "Savings",
-                    BranchID = detail?.BranchID
+                    BranchID = detail?.BranchID ?? c.BranchID
                 };
             }).ToList();
 
@@ -113,12 +91,38 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                // Ensure default BranchMaster and DepartmentMaster exist to satisfy FK constraints
+                if (!await _context.BranchMasters.AnyAsync())
+                {
+                    var mainBranch = await _context.Branches.FirstOrDefaultAsync();
+                    _context.BranchMasters.Add(new BranchMaster
+                    {
+                        BranchName = mainBranch?.BranchName ?? "मुख्य शाखा",
+                        BranchCode = mainBranch?.BranchCode ?? "MAIN",
+                        BranchType = "HeadOffice",
+                        Address = mainBranch?.Address ?? "Head Office",
+                        Status = true
+                    });
+                    await _context.SaveChangesAsync();
+                }
+
+                if (!await _context.DepartmentMasters.AnyAsync())
+                {
+                    _context.DepartmentMasters.Add(new DepartmentMaster
+                    {
+                        DepartmentName = "सामान्य प्रशासन",
+                        DepartmentCode = "ADMIN",
+                        Status = true
+                    });
+                    await _context.SaveChangesAsync();
+                }
+
                 // Fetch valid department and branch IDs to ensure FK constraint safety
                 var validDeptIds = await _context.DepartmentMasters.Select(d => d.DepartmentID).ToListAsync();
                 var validBranchIds = await _context.BranchMasters.Select(b => b.BranchID).ToListAsync();
 
-                int defaultDeptId = validDeptIds.FirstOrDefault(1);
-                int defaultBranchId = validBranchIds.FirstOrDefault(1);
+                int defaultDeptId = validDeptIds.FirstOrDefault();
+                int defaultBranchId = validBranchIds.FirstOrDefault();
 
                 // Validate duplicate non-empty Employee IDs in incoming request
                 var nonBlankEmpIds = data
@@ -147,25 +151,20 @@ namespace Bhisi.Api.Controllers
                     // Ensure CIFNo is assigned
                     if (string.IsNullOrEmpty(item.CIFNo))
                     {
-                        var member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == item.MemberID);
-                        if (member != null)
+                        var cust = await _context.Customers.FirstOrDefaultAsync(c => c.CustomerID == item.CustomerID);
+                        if (cust != null && !string.IsNullOrEmpty(cust.CIFNo))
                         {
-                            item.CIFNo = MembersController.GenerateCifNo(member);
-                            if (member.Customer != null && string.IsNullOrEmpty(member.Customer.CIFNo))
-                            {
-                                member.Customer.CIFNo = item.CIFNo;
-                                _context.Customers.Update(member.Customer);
-                            }
+                            item.CIFNo = cust.CIFNo;
                         }
                         else
                         {
-                            item.CIFNo = $"CIF{item.MemberID:D6}";
+                            item.CIFNo = $"CIF{item.CustomerID:D6}";
                         }
                     }
 
                     // EmployeeID is UNIQUE in DB schema. Auto-generate if blank to avoid SQL index collision.
                     string empId = string.IsNullOrWhiteSpace(item.EmployeeID)
-                        ? $"EMP{item.MemberID:D6}"
+                        ? $"EMP{item.CustomerID:D6}"
                         : item.EmployeeID.Trim();
 
                     // Ensure valid Foreign Keys
@@ -181,12 +180,12 @@ namespace Bhisi.Api.Controllers
 
                     if (existing != null)
                     {
-                        // Check if another member holds this EmployeeID
+                        // Check if another customer holds this EmployeeID
                         var isEmpIdTaken = await _context.EmployeeBankDetails
                             .AnyAsync(e => e.EmployeeID == empId && e.EmployeeBankDetailID != existing.EmployeeBankDetailID);
                         if (isEmpIdTaken)
                         {
-                            empId = $"EMP{item.MemberID:D6}";
+                            empId = $"EMP{item.CustomerID:D6}";
                         }
 
                         // Update
@@ -205,11 +204,11 @@ namespace Bhisi.Api.Controllers
                     }
                     else
                     {
-                        // Check if another member holds this EmployeeID
+                        // Check if another customer holds this EmployeeID
                         var isEmpIdTaken = await _context.EmployeeBankDetails.AnyAsync(e => e.EmployeeID == empId);
                         if (isEmpIdTaken)
                         {
-                            empId = $"EMP{item.MemberID:D6}";
+                            empId = $"EMP{item.CustomerID:D6}";
                         }
 
                         // Insert
@@ -245,7 +244,7 @@ namespace Bhisi.Api.Controllers
                     EntityID = "BULK_UPSERT",
                     Status = "SUCCESS",
                     Timestamp = DateTime.Now,
-                    Details = $"Bulk updated bank & department details for {savedCount} member-employees (सभासद कर्मचारी)."
+                    Details = $"Bulk updated bank & department details for {savedCount} customers/employees (खातेदार/कर्मचारी बँक तपशील)."
                 };
                 _context.AuditLogs.Add(auditLog);
                 await _context.SaveChangesAsync();

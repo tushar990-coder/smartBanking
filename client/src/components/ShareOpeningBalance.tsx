@@ -474,7 +474,14 @@ const ShareOpeningBalance: React.FC = () => {
         },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+      let data: any = {};
+      try {
+        const text = await res.text();
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { message: 'सर्व्हरकडून प्रतिसाद वाचता आला नाही.' };
+      }
+
       if (res.ok) {
         setMessage(isEditMode ? 'शेअर ओपनिंग बॅलन्स यशस्वीरित्या अपडेट केला!' : 'शेअर ओपनिंग बॅलन्स यशस्वीरित्या सेव्ह झाला!');
         setMessageType('success');
@@ -484,11 +491,12 @@ const ShareOpeningBalance: React.FC = () => {
         fetchNextMemberCode();
         fetchNextShareConfig();
       } else {
-        setMessage(data.message || 'त्रुटी (Error saving balance).');
+        const errMsg = data.message || data.error || (typeof data === 'string' ? data : '') || 'त्रुटी (Error saving balance).';
+        setMessage(errMsg);
         setMessageType('error');
       }
-    } catch (error) {
-      setMessage('नेटवर्क त्रुटी (Network error).');
+    } catch (error: any) {
+      setMessage(error?.message || 'नेटवर्क त्रुटी (Network error).');
       setMessageType('error');
     }
     setLoading(false);
@@ -615,9 +623,9 @@ const ShareOpeningBalance: React.FC = () => {
       const memId = Number((m as any).memberProfile?.memberID || m.memberID || 0);
       const custId = Number((m as any).customerID || (m as any).id || 0);
       const bal = Array.isArray(balances) ? balances.find(b => 
-        (memId > 0 && (b.memberId === memId || b.customerId === memId)) ||
-        (custId > 0 && (b.customerId === custId || b.memberId === custId)) ||
-        (b.cifNo && m.cifNo && b.cifNo.trim().toLowerCase() === m.cifNo.trim().toLowerCase())
+        (b.cifNo && m.cifNo && b.cifNo.trim().toLowerCase() === m.cifNo.trim().toLowerCase()) ||
+        (custId > 0 && b.customerId === custId) ||
+        (memId > 0 && b.memberId === memId)
       ) : undefined;
       
       const balMemberNo = bal?.memberNo?.trim();
@@ -640,11 +648,15 @@ const ShareOpeningBalance: React.FC = () => {
   const currentMemberCodeDisplay = React.useMemo(() => {
     if (!formData.memberId) return '';
     
-    // 1. Check from existing balances in share accounts
+    const selCustId = Number((selectedMember as any)?.customerID || (selectedMember as any)?.id || 0);
+    const selMemId = Number((selectedMember as any)?.memberProfile?.memberID || (selectedMember as any)?.memberID || 0);
+    const selCif = selectedMember?.cifNo?.trim().toLowerCase();
+
+    // 1. Check from existing balances in share accounts strictly by CIF, CustomerID, or MemberID
     const existingBal = Array.isArray(balances) ? balances.find(b => b && (
-      (b.customerId && String(b.customerId) === String(formData.memberId)) ||
-      (selectedMember && b.cifNo && selectedMember.cifNo && b.cifNo.trim().toLowerCase() === selectedMember.cifNo.trim().toLowerCase()) ||
-      (b.memberId && String(b.memberId) === String(formData.memberId))
+      (selCif && b.cifNo && b.cifNo.trim().toLowerCase() === selCif) ||
+      (selCustId > 0 && b.customerId === selCustId) ||
+      (selMemId > 0 && b.memberId === selMemId)
     )) : undefined;
 
     if (existingBal?.memberNo && existingBal.memberNo.trim().toUpperCase().startsWith('MEM')) {

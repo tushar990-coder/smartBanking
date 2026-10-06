@@ -17,14 +17,14 @@ BEGIN TRY
     
     UPDATE [dbo].[Members]
     SET [MemberCode] = NULL,
-        [MembershipType] = 'Nominal',
-        [ModifiedDate] = GETDATE()
+        [LegacyMemberNo] = NULL,
+        [MembershipType] = 'Nominal'
     WHERE [MemberID] NOT IN (
         SELECT DISTINCT sa.[MemberId] 
         FROM [dbo].[ShareAccounts] sa 
         WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
     )
-    AND ([MemberCode] IS NOT NULL AND [MemberCode] <> '');
+    AND ([MemberCode] IS NOT NULL OR [LegacyMemberNo] IS NOT NULL OR [MembershipType] <> 'Nominal');
 
     SET @ClearedCount = @@ROWCOUNT;
     PRINT '>> Step 1 Completed: Cleared ' + CAST(@ClearedCount AS VARCHAR(10)) + ' invalid/orphan MemberCodes for non-shareholders.';

@@ -553,10 +553,6 @@ namespace Bhisi.Api.Controllers
             }
 
             existingCustomer.LegacyCustomerNo = customer.LegacyCustomerNo;
-            if (existingCustomer.MemberProfile != null)
-            {
-                existingCustomer.MemberProfile.LegacyMemberNo = customer.LegacyCustomerNo;
-            }
             existingCustomer.RegistrationDate = customer.RegistrationDate;
             existingCustomer.FirstName = customer.FirstName;
             existingCustomer.MiddleName = customer.MiddleName;

@@ -1024,11 +1024,11 @@ namespace Bhisi.Api.Controllers
         [HttpPost("OpeningBalance")]
         public async Task<IActionResult> CreateOpeningBalance([FromBody] ShareOpeningBalanceRequest request)
         {
-            if (request.ShareQuantity <= 0) return BadRequest("Share quantity must be greater than zero.");
-            if (request.FaceValue <= 0) return BadRequest("Face value must be greater than zero.");
+            if (request.ShareQuantity <= 0) return BadRequest(new { message = "Share quantity must be greater than zero." });
+            if (request.FaceValue <= 0) return BadRequest(new { message = "Face value must be greater than zero." });
             if (!request.LedgerId.HasValue || request.LedgerId.Value <= 0)
             {
-                return BadRequest("कृपया शेअर भांडवल लेजर (Capital Ledger) निवडा. लेजर निवडल्याशिवाय शेअर ओपनिंग बॅलन्स सेव्ह करता येत नाही.");
+                return BadRequest(new { message = "कृपया शेअर भांडवल लेजर (Capital Ledger) निवडा. लेजर निवडल्याशिवाय शेअर ओपनिंग बॅलन्स सेव्ह करता येत नाही." });
             }
 
             decimal totalAmount = request.ShareQuantity * request.FaceValue;
@@ -1090,22 +1090,41 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                if (member == null) return NotFound("सभासद / ग्राहक माहिती सिस्टीममध्ये सापडली नाही (Member/Customer not found).");
+                if (member == null) return NotFound(new { message = "सभासद / ग्राहक माहिती सिस्टीममध्ये सापडली नाही (Member/Customer not found)." });
                 request.MemberId = member.MemberID;
 
-                // Update Old ID (LegacyMemberNo) if entered by user with strict duplicate prevention
+                // Update Old ID (LegacyMemberNo) if entered by user with self-healing duplicate resolution
                 if (!string.IsNullOrWhiteSpace(request.LegacyMemberNo))
                 {
                     var trimmedLegacyNo = request.LegacyMemberNo.Trim();
-                    var existingLegacyMember = await _context.Members
-                        .AsNoTracking()
+                    var existingLegacyMembers = await _context.Members
                         .Include(m => m.Customer)
-                        .FirstOrDefaultAsync(m => m.MemberID != member.MemberID && !m.IsDeleted &&
-                            m.LegacyMemberNo == trimmedLegacyNo);
-                    if (existingLegacyMember != null)
+                        .Where(m => m.MemberID != member.MemberID && !m.IsDeleted &&
+                            m.LegacyMemberNo == trimmedLegacyNo)
+                        .ToListAsync();
+
+                    foreach (var exMem in existingLegacyMembers)
                     {
-                        return BadRequest($"हा जुना सभासद आयडी ({trimmedLegacyNo}) आधीच सभासद '{(existingLegacyMember.Customer != null ? $"{existingLegacyMember.Customer.FirstName} {existingLegacyMember.Customer.LastName}".Trim() : "")}' (कोड: {existingLegacyMember.MemberCode ?? existingLegacyMember.MemberID.ToString()}) साठी नोंदवला आहे.");
+                        // Check if this member actually holds active shares
+                        bool hasActiveShares = await _context.ShareAccounts.AnyAsync(sa => sa.MemberId == exMem.MemberID && sa.TotalShareCount > 0);
+                        if (!hasActiveShares)
+                        {
+                            // Self-healing: This is a non-shareholder customer who had LegacyMemberNo erroneously assigned. Clear it!
+                            exMem.LegacyMemberNo = null;
+                            _context.Entry(exMem).State = EntityState.Modified;
+                            await _context.SaveChangesAsync();
+                        }
+                        else
+                        {
+                            string ownerName = exMem.Customer != null 
+                                ? $"{exMem.Customer.FirstName} {exMem.Customer.LastName}".Trim() 
+                                : "इतर सभासद";
+                            return BadRequest(new { 
+                                message = $"हा जुना सभासद आयडी ({trimmedLegacyNo}) आधीच प्रत्यक्ष शेअरधारक '{ownerName}' (कोड: {exMem.MemberCode ?? exMem.MemberID.ToString()}) साठी नोंदवला आहे." 
+                            });
+                        }
                     }
+
                     member.LegacyMemberNo = trimmedLegacyNo;
                     _context.Entry(member).State = EntityState.Modified;
                 }
@@ -1370,7 +1389,7 @@ namespace Bhisi.Api.Controllers
         {
             if (bulkRequest?.Records == null || bulkRequest.Records.Count == 0)
             {
-                return BadRequest("कोणतीही नोंद पाठवली नाही (No records provided).");
+                return BadRequest(new { message = "कोणतीही नोंद पाठवली नाही (No records provided)." });
             }
 
             var validRecords = bulkRequest.Records
@@ -1379,14 +1398,14 @@ namespace Bhisi.Api.Controllers
 
             if (validRecords.Count == 0)
             {
-                return BadRequest("कृपया किमान एका वैध सभासदाची माहिती भरा (At least one valid record is required).");
+                return BadRequest(new { message = "कृपया किमान एका वैध सभासदाची माहिती भरा (At least one valid record is required)." });
             }
 
             if (!bulkRequest.DefaultLedgerId.HasValue || bulkRequest.DefaultLedgerId.Value <= 0)
             {
                 if (validRecords.All(r => !r.LedgerId.HasValue || r.LedgerId.Value <= 0))
                 {
-                    return BadRequest("कृपया शेअर भांडवल लेजर (Capital Ledger) निवडा. लेजर निवडल्याशिवाय शेअर ओपनिंग बॅलन्स सेव्ह करता येत नाही.");
+                    return BadRequest(new { message = "कृपया शेअर भांडवल लेजर (Capital Ledger) निवडा. लेजर निवडल्याशिवाय शेअर ओपनिंग बॅलन्स सेव्ह करता येत नाही." });
                 }
             }
 
@@ -1663,8 +1682,8 @@ namespace Bhisi.Api.Controllers
         [HttpPut("OpeningBalance/{id}")]
         public async Task<IActionResult> UpdateOpeningBalance(int id, [FromBody] ShareOpeningBalanceRequest request)
         {
-            if (request.ShareQuantity <= 0) return BadRequest("Share quantity must be greater than zero.");
-            if (request.FaceValue <= 0) return BadRequest("Face value must be greater than zero.");
+            if (request.ShareQuantity <= 0) return BadRequest(new { message = "Share quantity must be greater than zero." });
+            if (request.FaceValue <= 0) return BadRequest(new { message = "Face value must be greater than zero." });
 
             decimal newTotalAmount = request.ShareQuantity * request.FaceValue;
 
@@ -1676,7 +1695,7 @@ namespace Bhisi.Api.Controllers
                     .Include(s => s.Certificates)
                     .FirstOrDefaultAsync(s => s.ShareAccountId == id);
 
-                if (account == null) return NotFound("Share account not found.");
+                if (account == null) return NotFound(new { message = "Share account not found." });
 
                 // Resolve target member and customer accurately
                 int inputId = request.CustomerId.HasValue && request.CustomerId.Value > 0 
@@ -1730,6 +1749,31 @@ namespace Bhisi.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(request.LegacyMemberNo))
                     {
                         var trimmedLegacy = request.LegacyMemberNo.Trim();
+                        var existingWithSameNo = await _context.Members
+                            .Include(m => m.Customer)
+                            .Where(m => m.MemberID != member.MemberID && !m.IsDeleted && m.LegacyMemberNo == trimmedLegacy)
+                            .ToListAsync();
+
+                        foreach (var exMem in existingWithSameNo)
+                        {
+                            bool hasActive = await _context.ShareAccounts.AnyAsync(sa => sa.MemberId == exMem.MemberID && sa.TotalShareCount > 0);
+                            if (!hasActive)
+                            {
+                                exMem.LegacyMemberNo = null;
+                                _context.Entry(exMem).State = EntityState.Modified;
+                                await _context.SaveChangesAsync();
+                            }
+                            else
+                            {
+                                string ownerName = exMem.Customer != null 
+                                    ? $"{exMem.Customer.FirstName} {exMem.Customer.LastName}".Trim() 
+                                    : "इतर सभासद";
+                                return BadRequest(new { 
+                                    message = $"हा जुना सभासद आयडी ({trimmedLegacy}) आधीच प्रत्यक्ष शेअरधारक '{ownerName}' (कोड: {exMem.MemberCode ?? exMem.MemberID.ToString()}) साठी नोंदवला आहे." 
+                                });
+                            }
+                        }
+
                         member.LegacyMemberNo = trimmedLegacy;
                         _context.Entry(member).State = EntityState.Modified;
                     }
@@ -2070,6 +2114,7 @@ namespace Bhisi.Api.Controllers
                     {
                         // Cleanly remove member code so it is immediately released and decremented
                         member.MemberCode = null;
+                        member.LegacyMemberNo = null;
                         member.MembershipType = "Nominal";
                         member.UpdatedOn = DateTime.UtcNow;
 

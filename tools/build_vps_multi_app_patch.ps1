@@ -290,6 +290,7 @@ $sqlFile = Join-Path $scriptDir "database\update_schema.sql"
 $saving14Sql = Join-Path $scriptDir "database\patch_migrate_saving_accounts_14digit.sql"
 $autoHealSql = Join-Path $scriptDir "database\auto_heal_nominal_shareholders.sql"
 $fdHealSql = Join-Path $scriptDir "database\heal_migrated_fd_account_numbers.sql"
+$memberCodeHealSql = Join-Path $scriptDir "database\heal_nominal_and_duplicate_member_codes.sql"
 $backendSource = Join-Path $scriptDir "backend"
 $frontendSource = Join-Path $scriptDir "frontend"
 
@@ -510,6 +511,29 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
                 }
             } catch {
                 Write-Host "  -> FD Auto-Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
+            }
+        }
+
+        # 2.4 Auto-Heal Non-Shareholder MemberCodes & Resequence Shareholder Codes
+        if (Test-Path $memberCodeHealSql) {
+            Write-Host " [Step 2.4] Auto-Healing Non-Shareholder MemberCodes & Resequencing on $($target.TargetDatabase)..." -ForegroundColor Yellow
+            try {
+                $mOk = $false
+                if ($config.SqlUser -and $config.SqlPassword) {
+                    try {
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$memberCodeHealSql`"" -f 65001 -b
+                        if ($LASTEXITCODE -eq 0) { $mOk = $true }
+                    } catch {}
+                }
+                if (-not $mOk) {
+                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$memberCodeHealSql`"" -f 65001 -b
+                    if ($LASTEXITCODE -eq 0) { $mOk = $true }
+                }
+                if ($mOk) {
+                    Write-Host "  -> Non-Shareholder MemberCodes Purged & Shareholder Codes Resequenced Successfully!" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "  -> Member Code Auto-Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
             }
         }
 

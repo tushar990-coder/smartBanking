@@ -77,7 +77,7 @@ BEGIN
     SELECT 
         BranchID, CustomerID, CIFNo,
         NULL, -- Pure Customer has NO MemberCode until Shares are allotted!
-        LegacyCustomerNo, LegacyCustomerNo,
+        NULL, NULL, -- Pure Customers have NO LegacyMemberNo until shares are purchased!
         FirstName, MiddleName, LastName, NickName, FirstNameEng, MiddleNameEng, LastNameEng,
         Address, AddressEng, Village, Taluka, District, MobileNo, AadhaarNo, PANNo,
         Gender, BirthDate, Occupation, CasteCategory, Caste, Email,

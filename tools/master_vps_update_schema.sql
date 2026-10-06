@@ -2750,26 +2750,115 @@ END
 GO
 
 -- -----------------------------------------------------------------------------------------
--- 98. DATA CLEANUP: RESET NON-SHAREHOLDER MEMBER ARTIFACTS
+-- 98. DATA CLEANUP: PURGE NON-SHAREHOLDER MEMBERS
 -- RULE: Pure Customers (Pigmy, Savings, Loan without share deduction) MUST NOT be Members!
--- Clear LegacyMemberNo, MemberCode, and reset MembershipType to 'Nominal' for all Members 
--- who DO NOT possess any active Shares in ShareAccounts.
+-- Unlink all FKs and permanently DELETE Member records for anyone without active shares.
 -- -----------------------------------------------------------------------------------------
 IF OBJECT_ID('Members', 'U') IS NOT NULL AND OBJECT_ID('ShareAccounts', 'U') IS NOT NULL
 BEGIN
-    UPDATE m
-    SET m.[MemberCode] = NULL,
-        m.[LegacyMemberNo] = NULL,
-        m.[MembershipType] = 'Nominal'
-    FROM [Members] m
-    WHERE m.[MemberID] NOT IN (
+    -- 1. Unlink LoanAccounts.MemberID (Loans remain linked to CustomerID)
+    IF OBJECT_ID(N'LoanAccounts', N'U') IS NOT NULL
+    BEGIN
+        UPDATE [LoanAccounts]
+        SET [MemberID] = NULL
+        WHERE [MemberID] IN (
+            SELECT [MemberID] FROM [Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 2. Unlink VoucherDetails.MemberID
+    IF OBJECT_ID(N'VoucherDetails', N'U') IS NOT NULL
+    BEGIN
+        UPDATE [VoucherDetails]
+        SET [MemberID] = NULL
+        WHERE [MemberID] IN (
+            SELECT [MemberID] FROM [Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 3. Unlink LockerAllotments.MemberID
+    IF OBJECT_ID(N'LockerAllotments', N'U') IS NOT NULL
+    BEGIN
+        UPDATE [LockerAllotments]
+        SET [MemberID] = NULL
+        WHERE [MemberID] IN (
+            SELECT [MemberID] FROM [Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 4. Delete orphan JointMembers
+    IF OBJECT_ID(N'JointMembers', N'U') IS NOT NULL
+    BEGIN
+        DELETE FROM [JointMembers]
+        WHERE [PrimaryMemberID] IN (
+            SELECT [MemberID] FROM [Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 5. Delete orphan MemberOpeningBalances
+    IF OBJECT_ID(N'MemberOpeningBalances', N'U') IS NOT NULL
+    BEGIN
+        DELETE FROM [MemberOpeningBalances]
+        WHERE [MemberID] IN (
+            SELECT [MemberID] FROM [Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 6. Delete orphan CommitteeMembers
+    IF OBJECT_ID(N'CommitteeMembers', N'U') IS NOT NULL
+    BEGIN
+        DELETE FROM [CommitteeMembers]
+        WHERE [MemberID] IN (
+            SELECT [MemberID] FROM [Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 7. Delete orphan 0-share ShareAccounts
+    IF OBJECT_ID(N'ShareAccounts', N'U') IS NOT NULL
+    BEGIN
+        DELETE FROM [ShareAccounts]
+        WHERE [TotalShareCount] <= 0 OR [TotalShareCount] IS NULL;
+    END
+
+    -- 8. PERMANENTLY DELETE non-shareholder Member rows
+    DELETE FROM [Members]
+    WHERE [MemberID] NOT IN (
         SELECT DISTINCT sa.[MemberId] 
         FROM [ShareAccounts] sa 
         WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
-    )
-    AND (m.[MemberCode] IS NOT NULL OR m.[LegacyMemberNo] IS NOT NULL OR m.[MembershipType] != 'Nominal');
+    );
 
-    PRINT 'Cleaned up Members: Cleared MemberCode and LegacyMemberNo for all non-shareholders.';
+    PRINT 'Cleaned up Members: Permanently deleted all non-shareholder Member rows.';
 END
 GO
 

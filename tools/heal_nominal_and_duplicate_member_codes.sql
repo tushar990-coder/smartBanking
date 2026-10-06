@@ -11,23 +11,136 @@ SET ANSI_NULLS ON;
 
 BEGIN TRANSACTION;
 BEGIN TRY
-    PRINT '>> Step 1: Diagnosing and clearing MemberCode for customers holding 0 shares...';
+    PRINT '>> Step 1: Unlinking foreign keys and permanently deleting Member rows for customers holding 0 shares...';
     
-    DECLARE @ClearedCount INT = 0;
-    
-    UPDATE [dbo].[Members]
-    SET [MemberCode] = NULL,
-        [LegacyMemberNo] = NULL,
-        [MembershipType] = 'Nominal'
+    DECLARE @DeletedCount INT = 0;
+
+    -- 1. Unlink LoanAccounts.MemberID (Borrower remains safely linked to CustomerID)
+    IF OBJECT_ID(N'[dbo].[LoanAccounts]', N'U') IS NOT NULL
+    BEGIN
+        UPDATE [dbo].[LoanAccounts]
+        SET [MemberID] = NULL
+        WHERE [MemberID] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [dbo].[ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 2. Unlink VoucherDetails.MemberID
+    IF OBJECT_ID(N'[dbo].[VoucherDetails]', N'U') IS NOT NULL
+    BEGIN
+        UPDATE [dbo].[VoucherDetails]
+        SET [MemberID] = NULL
+        WHERE [MemberID] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [dbo].[ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 3. Unlink LockerAllotments.MemberID
+    IF OBJECT_ID(N'[dbo].[LockerAllotments]', N'U') IS NOT NULL
+    BEGIN
+        UPDATE [dbo].[LockerAllotments]
+        SET [MemberID] = NULL
+        WHERE [MemberID] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [dbo].[ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 4. Delete orphan JointMembers
+    IF OBJECT_ID(N'[dbo].[JointMembers]', N'U') IS NOT NULL
+    BEGIN
+        DELETE FROM [dbo].[JointMembers]
+        WHERE [PrimaryMemberID] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [dbo].[ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 5. Delete orphan MemberOpeningBalances
+    IF OBJECT_ID(N'[dbo].[MemberOpeningBalances]', N'U') IS NOT NULL
+    BEGIN
+        DELETE FROM [dbo].[MemberOpeningBalances]
+        WHERE [MemberID] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [dbo].[ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 6. Delete orphan BorrowerLinkedAccounts
+    IF OBJECT_ID(N'[dbo].[BorrowerLinkedAccounts]', N'U') IS NOT NULL
+    BEGIN
+        DELETE FROM [dbo].[BorrowerLinkedAccounts]
+        WHERE [ParentMemberID] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [dbo].[ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        )
+        OR [LinkedMemberID] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [dbo].[ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 7. Delete orphan CommitteeMembers
+    IF OBJECT_ID(N'[dbo].[CommitteeMembers]', N'U') IS NOT NULL
+    BEGIN
+        DELETE FROM [dbo].[CommitteeMembers]
+        WHERE [MemberID] IN (
+            SELECT [MemberID] FROM [dbo].[Members]
+            WHERE [MemberID] NOT IN (
+                SELECT DISTINCT sa.[MemberId] 
+                FROM [dbo].[ShareAccounts] sa 
+                WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
+            )
+        );
+    END
+
+    -- 8. Delete orphan 0-share ShareAccounts
+    IF OBJECT_ID(N'[dbo].[ShareAccounts]', N'U') IS NOT NULL
+    BEGIN
+        DELETE FROM [dbo].[ShareAccounts]
+        WHERE [TotalShareCount] <= 0 OR [TotalShareCount] IS NULL;
+    END
+
+    -- 9. PERMANENTLY DELETE all Members who have NO active shares in ShareAccounts
+    DELETE FROM [dbo].[Members]
     WHERE [MemberID] NOT IN (
         SELECT DISTINCT sa.[MemberId] 
         FROM [dbo].[ShareAccounts] sa 
         WHERE sa.[TotalShareCount] > 0 AND sa.[MemberId] IS NOT NULL
-    )
-    AND ([MemberCode] IS NOT NULL OR [LegacyMemberNo] IS NOT NULL OR [MembershipType] <> 'Nominal');
+    );
 
-    SET @ClearedCount = @@ROWCOUNT;
-    PRINT '>> Step 1 Completed: Cleared ' + CAST(@ClearedCount AS VARCHAR(10)) + ' invalid/orphan MemberCodes for non-shareholders.';
+    SET @DeletedCount = @@ROWCOUNT;
+    PRINT '>> Step 1 Completed: Permanently deleted ' + CAST(@DeletedCount AS VARCHAR(10)) + ' non-shareholder Member rows.';
 
     PRINT '>> Step 2: Temporarily assigning TMP codes to active shareholders to prevent unique index collision...';
     UPDATE [dbo].[Members]

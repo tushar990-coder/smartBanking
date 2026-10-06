@@ -2112,39 +2112,81 @@ namespace Bhisi.Api.Controllers
                     
                     if (!hasOtherShares)
                     {
-                        // Cleanly remove member code so it is immediately released and decremented
-                        member.MemberCode = null;
-                        member.LegacyMemberNo = null;
-                        member.MembershipType = "Nominal";
-                        member.UpdatedOn = DateTime.UtcNow;
-
-                        int? memCustId = member.CustomerID;
-                        bool hasLoans = await _context.LoanAccounts.AnyAsync(l => l.MemberID == targetMemberId || (memCustId != null && (l.CustomerID == memCustId || l.CoCustomerID == memCustId || l.CoCustomer2ID == memCustId || l.Guarantor1CustomerID == memCustId || l.Guarantor2CustomerID == memCustId)));
-                        bool hasLoanApps = await _context.LoanApplications.AnyAsync(l => memCustId != null && (l.CustomerID == memCustId || l.CoCustomerID == memCustId || l.CoCustomer2ID == memCustId || l.Guarantor1CustomerID == memCustId || l.Guarantor2CustomerID == memCustId));
-                        bool hasSavings = await _context.SavingAccountMasters.AnyAsync(s => member.CustomerID != null && s.CustomerID == member.CustomerID);
-                        bool hasFds = await _context.FdAccounts.AnyAsync(f => member.CustomerID != null && f.CustomerID == member.CustomerID);
-                        bool hasRds = await _context.RdAccounts.AnyAsync(r => member.CustomerID != null && r.CustomerID == member.CustomerID);
-                        bool hasPigmies = await _context.PigmyAccounts.AnyAsync(p => member.CustomerID != null && p.CustomerID == member.CustomerID);
-                        bool hasLockers = await _context.LockerAllotments.AnyAsync(l => l.MemberID == targetMemberId);
-                        bool hasJoint = await _context.JointMembers.AnyAsync(j => j.PrimaryMemberID == targetMemberId);
-                        bool hasCommittee = await _context.CommitteeMembers.AnyAsync(c => c.MemberID == targetMemberId);
-                        bool hasOtherMobs = await _context.MemberOpeningBalances.AnyAsync(m => m.MemberID == targetMemberId && !mobIdsToDelete.Contains(m.MemberOpeningBalanceID));
-
-                        if (!hasLoans && !hasLoanApps && !hasSavings && !hasFds && !hasRds && !hasPigmies && !hasLockers && !hasJoint && !hasCommittee && !hasOtherMobs)
+                        // Cleanly unlink all foreign keys to this Member record before full removal
+                        var linkedLoans = await _context.LoanAccounts.Where(l => l.MemberID == targetMemberId).ToListAsync();
+                        foreach (var l in linkedLoans)
                         {
-                            try
-                            {
-                                _context.Members.Remove(member);
-                            }
-                            catch
-                            {
-                                _context.Members.Update(member);
-                            }
+                            l.MemberID = null;
                         }
-                        else
+
+                        var linkedLockers = await _context.LockerAllotments.Where(l => l.MemberID == targetMemberId).ToListAsync();
+                        foreach (var l in linkedLockers)
                         {
-                            _context.Members.Update(member);
+                            l.MemberID = null;
                         }
+
+                        var linkedVoucherDetails = await _context.VoucherDetails.Where(v => v.MemberID == targetMemberId).ToListAsync();
+                        foreach (var v in linkedVoucherDetails)
+                        {
+                            v.MemberID = null;
+                        }
+
+                        var linkedJoints = await _context.JointMembers.Where(j => j.PrimaryMemberID == targetMemberId).ToListAsync();
+                        if (linkedJoints.Any())
+                        {
+                            _context.JointMembers.RemoveRange(linkedJoints);
+                        }
+
+                        var linkedBorrowers = await _context.BorrowerLinkedAccounts.Where(b => b.ParentMemberID == targetMemberId || b.LinkedMemberID == targetMemberId).ToListAsync();
+                        if (linkedBorrowers.Any())
+                        {
+                            _context.BorrowerLinkedAccounts.RemoveRange(linkedBorrowers);
+                        }
+
+                        var linkedCommittee = await _context.CommitteeMembers.Where(c => c.MemberID == targetMemberId).ToListAsync();
+                        if (linkedCommittee.Any())
+                        {
+                            _context.CommitteeMembers.RemoveRange(linkedCommittee);
+                        }
+
+                        var remainingMobs = await _context.MemberOpeningBalances.Where(m => m.MemberID == targetMemberId).ToListAsync();
+                        if (remainingMobs.Any())
+                        {
+                            _context.MemberOpeningBalances.RemoveRange(remainingMobs);
+                        }
+
+                        var linkedDcs = await _context.DeceasedClaimSettlements.Where(d => d.MemberID == targetMemberId).ToListAsync();
+                        if (linkedDcs.Any())
+                        {
+                            _context.DeceasedClaimSettlements.RemoveRange(linkedDcs);
+                        }
+
+                        var linkedDmd = await _context.DemandMemberDetails.Where(d => d.MemberId == targetMemberId).ToListAsync();
+                        if (linkedDmd.Any())
+                        {
+                            _context.DemandMemberDetails.RemoveRange(linkedDmd);
+                        }
+
+                        var linkedScm = await _context.Sec101CaseMasters.Where(s => s.MemberId == targetMemberId).ToListAsync();
+                        if (linkedScm.Any())
+                        {
+                            _context.Sec101CaseMasters.RemoveRange(linkedScm);
+                        }
+
+                        var linkedSnh = await _context.Sec101NoticeHistories.Where(s => s.MemberId == targetMemberId).ToListAsync();
+                        if (linkedSnh.Any())
+                        {
+                            _context.Sec101NoticeHistories.RemoveRange(linkedSnh);
+                        }
+
+                        var remainingEmptyShares = await _context.ShareAccounts.Where(s => s.MemberId == targetMemberId && s.ShareAccountId != account.ShareAccountId).ToListAsync();
+                        if (remainingEmptyShares.Any())
+                        {
+                            _context.ShareAccounts.RemoveRange(remainingEmptyShares);
+                        }
+
+                        // Permanently DELETE the Member row since customer holds 0 shares
+                        _context.Members.Remove(member);
                     }
 
                     await _context.SaveChangesAsync();

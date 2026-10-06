@@ -147,7 +147,7 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       case 'pigmy-ob': return <PigmyOpeningBalance />;
       case 'inv-ob': return <InvestmentOpeningBalance />;
       case 'loan-ob': return <LoanOpeningBalanceMaster />;
-      case 'share-ob': return <ShareOpeningBalance />;
+      case 'share-ob': return <ShareOpeningBalance onSwitchToBulk={() => setActiveSubTab('share-bulk-ob')} />;
       case 'share-bulk-ob': return <ShareOpeningBalanceBulk onSwitchToSingle={() => setActiveSubTab('share-ob')} />;
       case 'cash-ob': return <LedgerOpeningBalance defaultFilter="Cash" />;
       case 'bank-ob': return <LedgerOpeningBalance defaultFilter="Bank" />;

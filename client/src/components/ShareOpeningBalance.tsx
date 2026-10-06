@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
-import { convertMarathiDigits } from '../utils/api';
 import { 
-  PlusCircle, 
   List, 
   Search, 
   Edit3, 
@@ -19,9 +17,7 @@ import {
   X,
   Plus,
   Layers,
-  Hash,
-  Calendar,
-  Building2
+  Hash
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -63,7 +59,11 @@ interface ShareOpeningBalance {
   toShareNo?: number;
 }
 
-const ShareOpeningBalance: React.FC = () => {
+interface ShareOpeningBalanceProps {
+  onSwitchToBulk?: () => void;
+}
+
+const ShareOpeningBalance: React.FC<ShareOpeningBalanceProps> = ({ onSwitchToBulk }) => {
   const [members, setMembers] = useState<Member[]>([]);
   const [schemes, setSchemes] = useState<ShareScheme[]>([]);
   const [balances, setBalances] = useState<ShareOpeningBalance[]>([]);
@@ -101,13 +101,6 @@ const ShareOpeningBalance: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
-
-  // Next Member ID (Last Member ID + 1)
-  const nextMemberId = React.useMemo(() => {
-    if (!members || !Array.isArray(members) || members.length === 0) return 1;
-    const maxId = Math.max(...members.map(m => (m?.memberID || (m as any)?.customerID || 0)));
-    return maxId > 0 ? maxId + 1 : 1;
-  }, [members]);
 
   const getAuthHeaders = (): Record<string, string> => {
     const token = localStorage.getItem('token');
@@ -150,14 +143,14 @@ const ShareOpeningBalance: React.FC = () => {
   };
 
   const handleSchemeSelect = (schemeIdStr: string) => {
-    const selectedScheme = Array.isArray(schemes) ? schemes.find(s => s && String(s.shareSchemeId ?? '') === schemeIdStr) : undefined;
-    if (selectedScheme) {
+    const matchedScheme = Array.isArray(schemes) ? schemes.find(s => s && String(s.shareSchemeId ?? '') === schemeIdStr) : undefined;
+    if (matchedScheme) {
       setFormData(prev => ({
         ...prev,
         shareSchemeId: schemeIdStr,
-        faceValue: String(selectedScheme.shareFaceValue || 100),
-        ledgerId: selectedScheme.shareCapitalLedgerID ? String(selectedScheme.shareCapitalLedgerID) : prev.ledgerId,
-        dividendPayableLedgerId: selectedScheme.dividendPayableLedgerID ? String(selectedScheme.dividendPayableLedgerID) : prev.dividendPayableLedgerId
+        faceValue: String(matchedScheme.shareFaceValue || 100),
+        ledgerId: matchedScheme.shareCapitalLedgerID ? String(matchedScheme.shareCapitalLedgerID) : prev.ledgerId,
+        dividendPayableLedgerId: matchedScheme.dividendPayableLedgerID ? String(matchedScheme.dividendPayableLedgerID) : prev.dividendPayableLedgerId
       }));
     } else {
       setFormData(prev => ({ ...prev, shareSchemeId: schemeIdStr }));
@@ -205,7 +198,7 @@ const ShareOpeningBalance: React.FC = () => {
       const res = await fetch('/api/Ledgers', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setLedgers(data);
+        setLedgers(Array.isArray(data) ? data : []);
       }
     } catch (error) {
       console.error('Failed to fetch ledgers', error);
@@ -248,60 +241,58 @@ const ShareOpeningBalance: React.FC = () => {
       setFormData(prev => ({
         ...prev,
         memberId: '',
-        legacyMemberNo: '',
-        fromShareNo: nextShareConfig.nextFromShareNo ? nextShareConfig.nextFromShareNo.toString() : '1',
-        toShareNo: '',
-        certificateNo: nextShareConfig.nextCertificateNo || '',
-        shareQuantity: ''
+        legacyMemberNo: ''
       }));
       return;
     }
 
-    const custIdNum = Number(selectedCustId);
-    const custIdStr = String(selectedCustId);
-
-    // Find customer in members list strictly by customerID
-    const sel = Array.isArray(members) ? members.find(m => m && (
-      Number(m.customerID || m.customerId || m.id) === custIdNum
-    )) : undefined;
-
-    // Check existing opening balance strictly by customerId or matching CIF
-    const existingBal = Array.isArray(balances) ? balances.find(b => b && (
-      (b.customerId && Number(b.customerId) === custIdNum) ||
-      (sel && b.cifNo && sel.cifNo && b.cifNo.trim().toLowerCase() === sel.cifNo.trim().toLowerCase())
-    )) : undefined;
+    const selCust = Array.isArray(members) ? members.find(m => (m.customerID || m.id) === Number(selectedCustId)) : undefined;
+    const existingBal = Array.isArray(balances) ? balances.find(b => {
+      if (!b) return false;
+      const bCustId = Number(b.customerId || 0);
+      const selId = Number(selectedCustId);
+      if (bCustId > 0 && bCustId === selId) return true;
+      if (selCust?.cifNo && b.cifNo && b.cifNo.trim().toLowerCase() === selCust.cifNo.trim().toLowerCase()) return true;
+      return false;
+    }) : undefined;
 
     if (existingBal) {
-      handleStartEdit(existingBal);
-      return;
+      setIsEditMode(true);
+      setEditAccountId(existingBal.shareAccountId);
+      setEditCertificateId(existingBal.certificateId || null);
+      let formattedDate = existingBal.openingDate ? existingBal.openingDate.split('T')[0] : (new Date().getFullYear() + '-03-31');
+      setFormData(prev => ({
+        ...prev,
+        memberId: String(selectedCustId),
+        legacyMemberNo: existingBal.legacyMemberNo || selCust?.legacyCustomerNo || '',
+        openingDate: formattedDate,
+        shareQuantity: (existingBal.shareQuantity || 0).toString(),
+        faceValue: (existingBal.faceValue || 100).toString(),
+        dividendPayable: (existingBal.dividendPayable || 0).toString(),
+        fromShareNo: existingBal.fromShareNo ? existingBal.fromShareNo.toString() : prev.fromShareNo,
+        toShareNo: existingBal.toShareNo ? existingBal.toShareNo.toString() : prev.toShareNo,
+        certificateNo: existingBal.certificateNo || prev.certificateNo
+      }));
+      setMessage(`माहिती: सभासद '${existingBal.memberName}' ची आधीची नोंद सापडली. फॉर्म आपोआप संपादन (Edit) मोडमध्ये लोड केला आहे.`);
+      setMessageType('success');
+    } else {
+      if (isEditMode) {
+        setIsEditMode(false);
+        setEditAccountId(null);
+        setEditCertificateId(null);
+      }
+      setFormData(prev => ({
+        ...prev,
+        memberId: String(selectedCustId),
+        legacyMemberNo: selCust?.legacyCustomerNo || ''
+      }));
     }
-
-    // If no existing balance for this selected customer, cleanly exit edit mode!
-    if (isEditMode) {
-      setIsEditMode(false);
-      setEditAccountId(null);
-      setEditCertificateId(null);
-    }
-
-    setFormData(prev => ({ 
-      ...prev, 
-      memberId: custIdStr,
-      legacyMemberNo: (sel as any)?.legacyCustomerNo || (sel as any)?.legacyMemberNo || (sel as any)?.memberProfile?.legacyMemberNo || '',
-      fromShareNo: nextShareConfig.nextFromShareNo ? nextShareConfig.nextFromShareNo.toString() : '1',
-      toShareNo: '',
-      certificateNo: nextShareConfig.nextCertificateNo || '',
-      shareQuantity: ''
-    }));
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | { target: { name?: string, value: string | number } }) => {
-    const name = e.target.name || '';
-    const rawVal = String(e.target.value ?? '');
-    const value = convertMarathiDigits(rawVal);
-
-    if (name === 'memberId') {
-      handleCustomerSelect(value ? Number(value) : '');
-    } else if (name === 'shareQuantity') {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    
+    if (name === 'shareQuantity') {
       const cleanDigits = value.replace(/\D/g, '');
       const qty = parseInt(cleanDigits, 10);
       const safeQty = !isNaN(qty) && qty > 0 ? qty : 0;
@@ -351,20 +342,6 @@ const ShareOpeningBalance: React.FC = () => {
       setFormData(prev => ({ ...prev, dividendPayable: cleanNum }));
     } else if (name === 'legacyMemberNo') {
       setFormData(prev => ({ ...prev, legacyMemberNo: value }));
-    } else if (name === 'totalAmountInput') {
-      const amt = parseFloat(value) || 0;
-      const fv = parseFloat(formData.faceValue) || 100;
-      const safeFv = fv > 0 ? fv : 100;
-      // Nearest round logic: 540 -> 5 shares, 570 -> 6 shares
-      const calculatedQty = amt > 0 ? Math.round(amt / safeFv) : 0;
-      const currentFrom = parseInt(formData.fromShareNo, 10) || nextShareConfig.nextFromShareNo || 1;
-      const calculatedTo = calculatedQty > 0 ? (currentFrom + calculatedQty - 1) : '';
-      setFormData(prev => ({
-        ...prev,
-        shareQuantity: calculatedQty > 0 ? calculatedQty.toString() : '',
-        fromShareNo: prev.fromShareNo || currentFrom.toString(),
-        toShareNo: calculatedTo ? calculatedTo.toString() : ''
-      }));
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
@@ -383,7 +360,7 @@ const ShareOpeningBalance: React.FC = () => {
       faceValue: prev.faceValue || '100',
       dividendPayable: '',
       dividendPayableLedgerId: prev.dividendPayableLedgerId,
-      fromShareNo: nextShareConfig.nextFromShareNo ? nextShareConfig.nextFromShareNo.toString() : '',
+      fromShareNo: nextShareConfig.nextFromShareNo ? nextShareConfig.nextFromShareNo.toString() : '1',
       toShareNo: '',
       certificateNo: nextShareConfig.nextCertificateNo || '',
       ledgerId: prev.ledgerId
@@ -400,7 +377,6 @@ const ShareOpeningBalance: React.FC = () => {
     const fromNo = b.fromShareNo ? b.fromShareNo.toString() : '';
     const toNo = b.toShareNo ? b.toShareNo.toString() : (b.fromShareNo && b.shareQuantity ? (b.fromShareNo + b.shareQuantity - 1).toString() : '');
 
-    // Target customerId selects customer cleanly in dropdown strictly by customerID
     let targetCustId = (b.customerId && b.customerId > 0) ? b.customerId.toString() : '';
     if (!targetCustId && b.cifNo) {
       const foundCust = Array.isArray(members) ? members.find(m => m && m.cifNo && m.cifNo.trim().toLowerCase() === b.cifNo.trim().toLowerCase()) : undefined;
@@ -559,7 +535,7 @@ const ShareOpeningBalance: React.FC = () => {
         setMessageType('error');
         alert(data.message || 'त्रुटी (Error resequencing).');
       }
-    } catch(err) {
+    } catch {
       setMessage('नेटवर्क त्रुटी (Network error).');
       setMessageType('error');
     }
@@ -587,7 +563,7 @@ const ShareOpeningBalance: React.FC = () => {
         setMessage(data.message || 'त्रुटी (Error syncing).');
         setMessageType('error');
       }
-    } catch(err) {
+    } catch {
       setMessage('नेटवर्क त्रुटी (Network error).');
       setMessageType('error');
     }
@@ -618,7 +594,7 @@ const ShareOpeningBalance: React.FC = () => {
       } else {
         alert(data.message || 'त्रुटी (Error deleting).');
       }
-    } catch (error) {
+    } catch {
       alert('नेटवर्क त्रुटी (Network error).');
     } finally {
       setLoading(false);
@@ -635,7 +611,6 @@ const ShareOpeningBalance: React.FC = () => {
     const selCustId = Number(formData.memberId);
     const selCif = selectedMember?.cifNo?.trim().toLowerCase();
 
-    // 1. Check from existing balances in share accounts strictly by CustomerID or CIF
     const existingBal = Array.isArray(balances) ? balances.find(b => b && (
       (selCustId > 0 && b.customerId && Number(b.customerId) === selCustId) ||
       (selCif && b.cifNo && b.cifNo.trim().toLowerCase() === selCif)
@@ -645,30 +620,25 @@ const ShareOpeningBalance: React.FC = () => {
       return existingBal.memberNo.trim().toUpperCase();
     }
 
-    // 2. Check from selectedMember.memberProfile.memberCode or selectedMember.memberCode
     const rawCode = (selectedMember as any)?.memberProfile?.memberCode || (selectedMember as any)?.memberCode;
     if (rawCode && String(rawCode).trim().toUpperCase().startsWith('MEM')) {
       return String(rawCode).trim().toUpperCase();
     }
 
-    // 3. Fallback to existing balance memberNo if available
     if (existingBal?.memberNo) {
       return existingBal.memberNo.trim();
     }
 
-    // 4. For new member allocation, show next member code
     return nextMemberCode || '';
   }, [formData.memberId, balances, selectedMember, nextMemberCode]);
 
   const selectedScheme = Array.isArray(schemes) ? schemes.find(s => s && String(s.shareSchemeId ?? '') === String(formData.shareSchemeId)) : undefined;
 
-  // Real-time duplicate check strictly for legacyMemberNo
   const legacyMemberDuplicate = React.useMemo(() => {
     if (!formData.legacyMemberNo || !formData.legacyMemberNo.trim()) return null;
     const trimmed = formData.legacyMemberNo.trim().toLowerCase();
     const currentCustId = Number(formData.memberId || 0);
 
-    // Check in existing balances
     const matchBal = Array.isArray(balances) ? balances.find(b => {
       if (!b) return false;
       const bCustId = Number(b.customerId || 0);
@@ -677,7 +647,6 @@ const ShareOpeningBalance: React.FC = () => {
     }) : null;
     if (matchBal) return { name: matchBal.memberName, code: matchBal.memberNo || matchBal.legacyMemberNo || `CIF:${matchBal.cifNo}` };
 
-    // Check in members list (only actual legacyMemberNo / legacyCustomerNo)
     const matchMem = Array.isArray(members) ? members.find(m => {
       if (!m) return false;
       const mCustId = Number(m.customerID || m.customerId || m.id || 0);
@@ -738,8 +707,8 @@ const ShareOpeningBalance: React.FC = () => {
     return qty * fv;
   }, [formData.shareQuantity, formData.faceValue]);
 
-  const inputClass = "w-full border border-slate-300 hover:border-slate-400 px-3 py-1.5 rounded-md focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-all text-xs h-9 bg-white shadow-2xs text-slate-800";
-  const labelClass = "block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between";
+  const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
+  const inputClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';
 
   return (
     <div className="p-2 sm:p-3 max-w-6xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
@@ -756,16 +725,30 @@ const ShareOpeningBalance: React.FC = () => {
               <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Share Opening Balance Migration)</span>
               {isEditMode && (
                 <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
-                  ✏️ संपादन चालू
+                  ✏️ संपादन चालू (#{editAccountId})
                 </span>
               )}
             </h1>
-            <p className="text-[11px] text-gray-500 font-medium">प्रारंभीचे भाग भांडवल, दर्शनी मूल्य, शेअर्स क्रमांक व देणे लाभांश नोंदणी</p>
+            <p className="text-[10px] sm:text-[11px] text-gray-500 font-medium">
+              प्रारंभीचे भाग भांडवल, दर्शनी मूल्य, शेअर्स क्रमांक व देणे लाभांश स्थलांतर नोंदणी
+            </p>
           </div>
         </div>
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {onSwitchToBulk && (
+            <button
+              type="button"
+              onClick={onSwitchToBulk}
+              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+              title="बल्क ग्रिड मोडवर जा (Bulk Grid Migration)"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>📊 बल्क ग्रिड (Bulk Grid)</span>
+            </button>
+          )}
+
           {isEditMode && (
             <button
               type="button"
@@ -785,7 +768,7 @@ const ShareOpeningBalance: React.FC = () => {
             title="नवीन नोंद फॉर्म रिकामा करा"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>नवीन नोंद</span>
+            <span>नवीन नोंद (Reset)</span>
           </button>
 
           {/* VIEW LIST BUTTON -> Opens Pop-up List Modal */}
@@ -832,7 +815,9 @@ const ShareOpeningBalance: React.FC = () => {
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण भाग भांडवल (₹)</div>
-            <div className="text-sm font-black text-emerald-800">₹ {totalCapitalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div className="text-sm font-black text-emerald-800">
+              ₹ {totalCapitalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
           </div>
         </div>
 
@@ -842,49 +827,64 @@ const ShareOpeningBalance: React.FC = () => {
           </div>
           <div>
             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण देणे लाभांश (₹)</div>
-            <div className="text-sm font-black text-amber-800">₹ {totalDividendAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div className="text-sm font-black text-amber-800">
+              ₹ {totalDividendAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Alert Messages */}
       {message && (
-        <div className={`mb-3 p-2 rounded-sm font-bold border flex items-center justify-between text-[11px] shadow-2xs ${
-          messageType === 'error' 
-            ? 'bg-rose-50 text-rose-800 border-rose-200' 
-            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-        }`}>
-          <div className="flex items-center gap-1.5">
-            {messageType === 'error' ? <AlertCircle className="w-4 h-4 text-rose-600" /> : <CheckCircle className="w-4 h-4 text-emerald-600" />}
+        <div
+          className={`mb-3 p-2 rounded-sm font-bold border flex items-center justify-between text-xs shadow-2xs ${
+            messageType === 'error'
+              ? 'bg-rose-50 text-rose-800 border-rose-300'
+              : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {messageType === 'error' ? (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            ) : (
+              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            )}
             <span>{message}</span>
           </div>
-          <button 
-            type="button" 
-            onClick={() => setMessage('')} 
-            className="text-gray-400 hover:text-gray-700 font-bold ml-2 cursor-pointer"
+          <button
+            type="button"
+            onClick={() => setMessage('')}
+            className="text-gray-400 hover:text-gray-700 font-bold ml-2 cursor-pointer text-sm"
           >
             ✕
           </button>
         </div>
       )}
 
-      {/* Main Form Entry Card */}
-      <div ref={formRef} className="w-full bg-white rounded-xl shadow-sm border border-slate-200/80 p-4 sm:p-5 mb-5 transition-all">
-        <form onSubmit={handleSubmit} className="space-y-4">
+      {/* MAIN SINGLE UNIFIED FORM */}
+      <div
+        ref={formRef}
+        className={`bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
+          isEditMode ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
+        }`}
+      >
+        <form onSubmit={handleSubmit} className="space-y-3">
           
           {/* Header Banner of Form */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-2xs ${
-                isEditMode 
-                  ? 'bg-amber-100 text-amber-800 border border-amber-300' 
-                  : 'bg-primary/10 text-primary border border-primary/20'
-              }`}>
-                {isEditMode ? <Edit3 size={16} /> : <Coins size={16} />}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-2">
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-7 h-7 rounded flex items-center justify-center shadow-2xs ${
+                  isEditMode
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : 'bg-primary/10 text-primary border border-primary/20'
+                }`}
+              >
+                {isEditMode ? <Edit3 size={15} /> : <Coins size={15} />}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xs sm:text-sm font-bold text-slate-800 tracking-tight">
+                  <h2 className="text-xs sm:text-sm font-bold text-gray-900 tracking-tight">
                     {isEditMode ? 'नोंद संपादन (Edit Share Opening Balance)' : '१. शेअर ओपनिंग बॅलन्स माहिती नोंदणी फॉर्म'}
                   </h2>
                   {isEditMode ? (
@@ -897,7 +897,7 @@ const ShareOpeningBalance: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-500 font-medium">
+                <p className="text-[10px] text-gray-500 font-medium">
                   सभासदाचे प्रारंभीचे भाग भांडवल, शेअर्स संख्या, प्रमाणपत्र क्रमांक व देणे लाभांश नोंद
                 </p>
               </div>
@@ -907,7 +907,7 @@ const ShareOpeningBalance: React.FC = () => {
               <button
                 type="button"
                 onClick={resetForm}
-                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-md text-[11px] flex items-center gap-1.5 transition-colors border border-slate-300 cursor-pointer shadow-2xs"
+                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-sm text-[11px] flex items-center gap-1.5 transition-colors border border-slate-300 cursor-pointer shadow-2xs"
               >
                 <RotateCcw size={13} />
                 <span>संपादन रद्द करा (Cancel)</span>
@@ -916,21 +916,21 @@ const ShareOpeningBalance: React.FC = () => {
           </div>
 
           {/* Section 1: भाग भांडवल योजना व लेजर सेटअप */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-lg p-3 sm:p-3.5 space-y-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 border-b border-slate-200/80 pb-1.5">
-              <Layers className="w-3.5 h-3.5 text-primary" />
-              <span>१. भाग भांडवल योजना व खाते लेजर तपशील</span>
+          <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
+            <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
+              <Layers className="w-4 h-4 text-primary" />
+              <h2 className="text-xs font-bold text-primary">१. भाग भांडवल योजना व खाते लेजर तपशील (Share Scheme & Ledger)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {/* Share Scheme */}
               <div>
                 <label className={labelClass}>
-                  <span>भाग भांडवल योजना (Share Scheme) <span className="text-rose-500">*</span></span>
+                  भाग भांडवल योजना (Share Scheme) <span className="text-red-500">*</span>
                 </label>
                 <select
                   name="shareSchemeId"
-                  className={`${inputClass} font-semibold text-primary bg-white`}
+                  className={`${inputClass} font-semibold text-primary`}
                   value={formData.shareSchemeId}
                   onChange={(e) => handleSchemeSelect(e.target.value)}
                   required
@@ -947,14 +947,14 @@ const ShareOpeningBalance: React.FC = () => {
               {/* Opening Date */}
               <div>
                 <label className={labelClass}>
-                  <span>तारीख (Opening Date) <span className="text-rose-500">*</span></span>
+                  तारीख (Opening Date) <span className="text-red-500">*</span>
                 </label>
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   name="openingDate"
-                  className={`${inputClass} font-medium`}
                   value={formData.openingDate}
                   onChange={handleChange}
+                  className={`${inputClass} font-mono font-bold text-gray-800`}
                   required
                 />
               </div>
@@ -962,88 +962,101 @@ const ShareOpeningBalance: React.FC = () => {
               {/* Share Capital Ledger */}
               <div>
                 <label className={labelClass}>
-                  <span>भाग भांडवल लेजर (Capital Ledger) <span className="text-rose-500">*</span></span>
+                  शेअर भांडवल लेजर (Capital Ledger) <span className="text-red-500">*</span>
                 </label>
-                <select 
+                <select
                   name="ledgerId"
-                  className={`${inputClass} font-semibold text-slate-800 bg-white`}
                   value={formData.ledgerId}
                   onChange={handleChange}
+                  className={`${inputClass} font-semibold text-gray-800`}
                   required
                 >
                   <option value="">-- लेजर निवडा --</option>
                   {ledgers.map(l => (
-                    <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
+                    <option key={l.ledgerID} value={l.ledgerID}>
+                      {l.ledgerName} ({l.ledgerID})
+                    </option>
                   ))}
                 </select>
+                {selectedScheme && selectedScheme.shareCapitalLedgerID && (
+                  <div className="text-[9px] text-emerald-800 font-medium mt-0.5 flex items-center gap-1 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
+                    <span className="font-bold">योजनेनुसार लेजर:</span>
+                    <span className="font-mono truncate">
+                      {ledgers.find(l => l.ledgerID === selectedScheme.shareCapitalLedgerID)?.ledgerName || 'मॅप केलेले लेजर'}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
-
-            {/* Scheme Metadata Info Banner */}
-            {selectedScheme && (
-              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-primary/5 border border-primary/15 rounded-md text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span className="font-bold text-primary">{selectedScheme.schemeName} ({selectedScheme.schemeCode})</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 font-medium text-slate-700 text-[11px]">
-                  <span className="bg-white px-2 py-0.5 rounded border border-slate-200">
-                    वर्ग: <strong className="text-slate-900">{selectedScheme.memberType === 'Regular' ? 'नियमित (Class A)' : selectedScheme.memberType === 'Nominal' ? 'नाममात्र (Class B)' : selectedScheme.memberType}</strong>
-                  </span>
-                  <span className="bg-white px-2 py-0.5 rounded border border-slate-200">
-                    दर्शनी मूल्य: <strong className="text-emerald-700">₹{selectedScheme.shareFaceValue}</strong>
-                  </span>
-                  <span className="bg-white px-2 py-0.5 rounded border border-slate-200">
-                    डिफॉल्ट लाभांश: <strong className="text-indigo-700">{selectedScheme.dividendRate}%</strong>
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Section 2: खातेदार व सभासद तपशील */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-lg p-3 sm:p-3.5 space-y-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 border-b border-slate-200/80 pb-1.5">
-              <Users className="w-3.5 h-3.5 text-primary" />
-              <span>२. खातेदार व सभासद तपशील (Member & Customer Identification)</span>
+          <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
+            <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
+              <Users className="w-4 h-4 text-primary" />
+              <h2 className="text-xs font-bold text-primary">२. खातेदार व सभासद तपशील (Member & Customer Identification)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-start">
               {/* Select Customer */}
               <div className="sm:col-span-6">
-                <label className={labelClass}>
-                  <span>खातेदार निवडा (Select Customer / CIF) <span className="text-rose-500">*</span></span>
-                  <span className="text-[10px] text-slate-400 font-normal">CIF / नाव / मोबाईलने शोधा</span>
-                </label>
-                <CustomerSearchSelect 
-                  customers={members} 
-                  value={formData.memberId ? Number(formData.memberId) : ''} 
-                  onChange={handleCustomerSelect} 
-                  placeholder="-- खातेदार शोधा (CIF No / नाव / मोबाईल) --"
-                />
+                <div className="flex items-center justify-between min-h-[20px] mb-0.5">
+                  <label className={labelClass}>
+                    खातेदार निवडा (Select Customer / CIF) <span className="text-red-500">*</span>
+                  </label>
+                  {selectedMember && (
+                    <span className="text-[10px] text-primary font-bold bg-primary/10 px-1.5 py-0.2 rounded border border-primary/20 font-mono">
+                      {selectedMember.cifNo ? `CIF: ${selectedMember.cifNo}` : (selectedMember.legacyCustomerNo ? `जुना: ${selectedMember.legacyCustomerNo}` : `ID: ${selectedMember.customerID}`)}
+                    </span>
+                  )}
+                </div>
+                <div className={isEditMode ? 'opacity-70 pointer-events-none' : ''}>
+                  <CustomerSearchSelect 
+                    customers={members} 
+                    value={formData.memberId ? Number(formData.memberId) : ''} 
+                    onChange={handleCustomerSelect} 
+                    placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
+                  />
+                </div>
+                {selectedMember && (
+                  <div className="mt-1 flex items-center justify-between text-[11px] bg-sky-50/70 border border-sky-200 px-2 py-1 rounded text-sky-950 font-bold shadow-2xs">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="text-sky-700">👤 खातेदार:</span>
+                      <span className="font-extrabold text-gray-900">
+                        {selectedMember.fullName || [selectedMember.firstName, selectedMember.middleName, selectedMember.lastName].filter(Boolean).join(' ') || (selectedMember as any).name || (selectedMember as any).customerName}
+                      </span>
+                      {selectedMember.cifNo && (
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 border border-blue-300 ml-1">
+                          CIF: {selectedMember.cifNo}
+                        </span>
+                      )}
+                    </div>
+                    {selectedMember.mobileNo && (
+                      <span className="text-[10px] text-gray-600 font-mono shrink-0 ml-1">
+                        📱 {selectedMember.mobileNo}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Member Code */}
               <div className="sm:col-span-3">
-                <label className={labelClass}>
-                  <span>सभासद कोड (Member Code)</span>
-                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">सलग सिंक</span>
-                </label>
-                <input 
-                  type="text" 
-                  readOnly
-                  value={currentMemberCodeDisplay}
-                  placeholder="-- निवडल्यावर दिसेल --"
-                  className={`${inputClass} bg-slate-100 font-mono font-black text-primary border-slate-300 cursor-not-allowed`}
-                />
+                <div className="flex items-center justify-between min-h-[20px] mb-0.5">
+                  <label className={labelClass}>सभासद कोड (Member Code)</label>
+                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">सलग सिंक</span>
+                </div>
+                <div className="flex items-center h-[28px] px-2 bg-slate-100 border border-slate-300 rounded-sm font-mono font-bold text-xs text-primary shadow-2xs">
+                  {currentMemberCodeDisplay || '-- निवडल्यावर दिसेल --'}
+                </div>
               </div>
 
               {/* Old Member No */}
               <div className="sm:col-span-3">
-                <label className={labelClass}>
-                  <span>जुना सभासद क्र. (Old Member No)</span>
-                  <span className="text-[10px] text-slate-400 font-normal">रजिस्टर क्र.</span>
-                </label>
+                <div className="flex items-center justify-between min-h-[20px] mb-0.5">
+                  <label className={labelClass}>जुना सभासद क्र. (Old Member No)</label>
+                  <span className="text-[10px] text-gray-500 font-mono">रजिस्टर क्र.</span>
+                </div>
                 <input 
                   type="text" 
                   name="legacyMemberNo"
@@ -1062,25 +1075,24 @@ const ShareOpeningBalance: React.FC = () => {
           </div>
 
           {/* Section 3: शेअर्स संख्या, दर्शनी मूल्य व एकूण रक्कम */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-lg p-3 sm:p-3.5 space-y-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 border-b border-slate-200/80 pb-1.5">
-              <Award className="w-3.5 h-3.5 text-primary" />
-              <span>३. शेअर्स वाटप, दर्शनी मूल्य व एकूण रक्कम (Share Quantity & Valuation)</span>
+          <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
+            <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
+              <Award className="w-4 h-4 text-primary" />
+              <h2 className="text-xs font-bold text-primary">३. शेअर्स वाटप, दर्शनी मूल्य व एकूण रक्कम (Share Quantity & Valuation)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end">
               {/* Share Quantity */}
               <div>
                 <label className={labelClass}>
-                  <span>शेअर्सची संख्या (Quantity) <span className="text-rose-500">*</span></span>
-                  <span className="text-[10px] text-slate-400 font-normal">नग संख्या</span>
+                  शेअर्सची संख्या (Quantity) <span className="text-red-500">*</span>
                 </label>
                 <input 
                   type="text" 
                   inputMode="numeric"
                   pattern="[0-9]*"
                   name="shareQuantity"
-                  className={`${inputClass} font-bold text-slate-900 text-sm`}
+                  className={`${inputClass} font-mono font-bold text-gray-900`}
                   value={formData.shareQuantity}
                   onChange={handleChange}
                   placeholder="उदा. 5 किंवा 10"
@@ -1091,16 +1103,15 @@ const ShareOpeningBalance: React.FC = () => {
               {/* Face Value */}
               <div>
                 <label className={labelClass}>
-                  <span>दर्शनी मूल्य (Face Value) <span className="text-rose-500">*</span></span>
-                  <span className="text-[10px] text-slate-400 font-normal">प्रति शेअर दर</span>
+                  दर्शनी मूल्य (Face Value) <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">₹</span>
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">₹</span>
                   <input 
-                    type="text"
+                    type="text" 
                     inputMode="decimal" 
                     name="faceValue"
-                    className={`${inputClass} pl-7 font-bold text-slate-900 text-sm`}
+                    className={`${inputClass} pl-6 font-mono font-bold text-gray-900`}
                     value={formData.faceValue}
                     onChange={handleChange}
                     required
@@ -1111,12 +1122,11 @@ const ShareOpeningBalance: React.FC = () => {
               {/* Total Share Capital (Prominent Highlight Card) */}
               <div>
                 <label className={labelClass}>
-                  <span>एकूण भाग भांडवल (Total Amount)</span>
-                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">हिशोब</span>
+                  एकूण भाग भांडवल (Total Amount)
                 </label>
-                <div className="h-9 px-3 bg-emerald-50/90 border-2 border-emerald-400/80 rounded-md flex items-center justify-between shadow-2xs">
+                <div className="flex items-center justify-between h-[28px] px-2.5 bg-emerald-50 border border-emerald-300 rounded-sm shadow-2xs">
                   <span className="text-[11px] font-semibold text-emerald-800">एकूण रक्कम:</span>
-                  <span className="font-black text-emerald-950 text-sm tracking-tight">
+                  <span className="font-mono font-bold text-emerald-950 text-xs">
                     ₹ {calculatedTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
@@ -1125,43 +1135,41 @@ const ShareOpeningBalance: React.FC = () => {
           </div>
 
           {/* Section 4: शेअर्स क्रमांक व प्रमाणपत्र तपशील */}
-          <div className="bg-slate-50/70 border border-slate-200/80 rounded-lg p-3 sm:p-3.5 space-y-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 border-b border-slate-200/80 pb-1.5">
-              <Hash className="w-3.5 h-3.5 text-primary" />
-              <span>४. शेअर्स क्रमांक व प्रमाणपत्र (Share Serial Range & Certificate)</span>
+          <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
+            <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
+              <Hash className="w-4 h-4 text-primary" />
+              <h2 className="text-xs font-bold text-primary">४. शेअर्स क्रमांक व प्रमाणपत्र (Share Serial Range & Certificate)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {/* From Share No */}
               <div>
                 <label className={labelClass}>
-                  <span>शेअर्स नं. पासून (From No)</span>
-                  <span className="text-[10px] text-slate-400 font-normal">Auto / बदल करा</span>
+                  शेअर्स नं. पासून (From No) <span className="text-[10px] text-gray-400 font-normal ml-1">(Auto / बदल करा)</span>
                 </label>
                 <input 
                   type="text" 
                   inputMode="numeric"
                   pattern="[0-9]*"
                   name="fromShareNo"
-                  className={`${inputClass} font-mono font-bold text-slate-800`}
+                  className={`${inputClass} font-mono font-bold text-gray-800`}
                   value={formData.fromShareNo}
                   onChange={handleChange}
-                  placeholder={nextShareConfig.nextFromShareNo ? nextShareConfig.nextFromShareNo.toString() : '1'}
+                  placeholder="उदा. 1"
                 />
               </div>
 
               {/* To Share No */}
               <div>
                 <label className={labelClass}>
-                  <span>शेअर्स नं. पर्यंत (To No)</span>
-                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">Auto-गणना</span>
+                  शेअर्स नं. पर्यंत (To No) <span className="text-[10px] text-emerald-700 font-bold ml-1 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">Auto-गणना</span>
                 </label>
                 <input 
                   type="text" 
                   inputMode="numeric"
                   pattern="[0-9]*"
                   name="toShareNo"
-                  className={`${inputClass} font-mono font-bold text-slate-800 bg-slate-50`}
+                  className={`${inputClass} font-mono font-bold text-gray-800 bg-slate-50`}
                   value={formData.toShareNo}
                   onChange={handleChange}
                   placeholder="उदा. 10"
@@ -1171,13 +1179,12 @@ const ShareOpeningBalance: React.FC = () => {
               {/* Certificate No */}
               <div>
                 <label className={labelClass}>
-                  <span>सर्टिफिकेट नं. (Certificate No)</span>
-                  <span className="text-[10px] text-indigo-700 font-bold bg-indigo-50 px-1 py-0.2 rounded border border-indigo-200">CERT-xxxx</span>
+                  सर्टिफिकेट नं. (Certificate No) <span className="text-[10px] text-indigo-700 font-bold ml-1 bg-indigo-50 px-1 py-0.2 rounded border border-indigo-200">CERT-xxxx</span>
                 </label>
                 <input 
                   type="text" 
                   name="certificateNo"
-                  className={`${inputClass} font-mono font-black text-indigo-950 uppercase`}
+                  className={`${inputClass} font-mono font-bold text-primary uppercase`}
                   value={formData.certificateNo}
                   onChange={handleChange}
                   placeholder={nextShareConfig.nextCertificateNo || 'CERT-0001'}
@@ -1187,30 +1194,30 @@ const ShareOpeningBalance: React.FC = () => {
           </div>
 
           {/* Section 5: देणे लाभांश नोंद (पर्यायी / Optional) */}
-          <div className="bg-amber-50/40 border border-amber-200/80 rounded-lg p-3 sm:p-3.5 space-y-2">
-            <div className="flex items-center justify-between border-b border-amber-200/60 pb-1.5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-950">
-                <Coins className="w-3.5 h-3.5 text-amber-600" />
-                <span>५. देणे लाभांश नोंद (Dividend Payable - पर्यायी)</span>
+          <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
+              <div className="flex items-center gap-1.5">
+                <Coins className="w-4 h-4 text-primary" />
+                <h2 className="text-xs font-bold text-primary">५. देणे लाभांश नोंद (Dividend Payable - पर्यायी)</h2>
               </div>
-              <span className="text-[10px] text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full font-medium">
+              <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded font-medium">
                 प्रारंभीचे देणे लाभांश असल्यास
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
                 <label className={labelClass}>
-                  <span>देणे लाभांश रक्कम (Dividend Payable)</span>
-                  <span className="text-[10px] text-slate-400 font-normal">रक्कम ₹</span>
+                  देणे लाभांश रक्कम (Dividend Payable ₹)
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">₹</span>
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">₹</span>
                   <input 
                     type="number" 
                     name="dividendPayable"
                     step="0.01"
-                    className={`${inputClass} pl-7 font-semibold text-slate-800`}
+                    min="0"
+                    className={`${inputClass} pl-6 font-mono font-bold text-gray-900`}
                     value={formData.dividendPayable}
                     onChange={handleChange}
                     placeholder="0.00"
@@ -1220,58 +1227,57 @@ const ShareOpeningBalance: React.FC = () => {
 
               <div>
                 <label className={labelClass}>
-                  <span>लाभांश लेजर (Dividend Ledger)</span>
-                  <span className="text-[10px] text-slate-400 font-normal">खतावणी लेजर</span>
+                  लाभांश लेजर (Dividend Payable Ledger)
                 </label>
                 <select 
                   name="dividendPayableLedgerId"
-                  className={`${inputClass} font-medium text-slate-800 bg-white`}
+                  className={`${inputClass} font-medium text-gray-800 bg-white`}
                   value={formData.dividendPayableLedgerId}
                   onChange={handleChange}
                 >
                   <option value="">-- लेजर निवडा --</option>
                   {ledgers.map(l => (
-                    <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
+                    <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName} ({l.ledgerID})</option>
                   ))}
                 </select>
               </div>
             </div>
 
             {selectedScheme && selectedScheme.dividendPayableLedgerID && (
-              <div className="text-[11px] text-amber-900 font-medium flex items-center gap-1.5 pt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+              <div className="text-[10px] text-gray-500 font-medium flex items-center gap-1.5 pt-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
                 <span>योजनेनुसार मॅप केलेले लेजर: <strong>{ledgers.find(l => l.ledgerID === selectedScheme.dividendPayableLedgerID)?.ledgerName || 'मॅप केलेले'}</strong></span>
               </div>
             )}
           </div>
 
           {/* Form Action Buttons Bar */}
-          <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+          <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200">
+            <div className="text-[11px] text-gray-500 flex items-center gap-1.5">
               <span className="text-emerald-600 font-bold">✓</span>
-              <span>नोंद सेव्ह केल्यावर सभासद कोड (MEM) व भाग भांडवल शिल्लक आपोआप सिंक होईल.</span>
+              <span>नोंद सेव्ह केल्यावर सभासद कोड (MEM), प्रमाणपत्र व भाग भांडवल लेजर आपोआप सिंक होईल.</span>
             </div>
 
             <div className="flex items-center gap-2">
               <button 
                 type="button"
                 onClick={resetForm}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-md font-bold text-xs flex items-center gap-1.5 transition-all border border-slate-300 cursor-pointer shadow-2xs"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1 transition-all"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>{isEditMode ? 'संपादन रद्द करा' : 'फॉर्म रिकामा करा (Reset)'}</span>
+                <span>{isEditMode ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
               </button>
               <button 
                 type="submit"
-                className={`${
-                  isEditMode 
-                    ? 'bg-amber-600 hover:bg-amber-700 text-white' 
-                    : 'bg-primary hover:opacity-95 text-white'
-                } px-6 py-2 rounded-md font-bold text-xs flex items-center gap-2 transition-all shadow-sm cursor-pointer disabled:opacity-50`}
                 disabled={loading}
+                className={`px-6 py-2 ${
+                  isEditMode 
+                    ? 'bg-amber-600 hover:bg-amber-700' 
+                    : 'bg-primary hover:opacity-90'
+                } text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all`}
               >
                 {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                <span>{loading ? 'प्रक्रिया सुरू आहे...' : isEditMode ? 'बदल सेव्ह करा (Update)' : 'नोंद सेव्ह करा (Save)'}</span>
+                <span>{loading ? 'जतन होत आहे...' : isEditMode ? 'बदल सेव्ह करा (Update)' : 'शेअर ओपनिंग सेव्ह करा (Save Share OB)'}</span>
               </button>
             </div>
           </div>
@@ -1292,59 +1298,49 @@ const ShareOpeningBalance: React.FC = () => {
                 <List className="w-5 h-5 text-white" />
                 <h2 className="text-sm font-bold flex items-center gap-2">
                   <span>स्थलांतरित शेअर्स नोंद यादी (Migrated Shares List)</span>
-                  <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full">
+                  <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-mono">
                     {filteredBalances.length} / {balances.length} खाती
                   </span>
                 </h2>
               </div>
-              <button
-                type="button"
+              <button 
+                type="button" 
                 onClick={() => setShowListModal(false)}
-                className="text-white/80 hover:text-white hover:bg-white/10 p-1 rounded-sm transition-colors cursor-pointer"
-                title="बंद करा (Close)"
+                className="text-white hover:bg-white/20 p-1 rounded-sm transition-colors cursor-pointer"
+                title="बंद करा"
               >
-                <X className="w-5 h-5" />
+                <X size={18} />
               </button>
             </div>
 
             {/* Modal Toolbar */}
             <div className="p-2.5 bg-slate-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 shrink-0">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
-                <input
-                  type="text"
+              <div className="relative flex-1 min-w-[240px] max-w-md">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input 
+                  type="text" 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="नाव, आयडी, CIF, सर्टिफिकेट शोधा..."
-                  className="pl-8 pr-6 py-1 border border-gray-300 rounded-sm text-xs h-[30px] w-64 lg:w-80 focus:outline-none focus:border-primary bg-white shadow-2xs"
+                  placeholder="नाव, कोड, CIF, सर्टिफिकेट किंवा जुना क्र. शोधा..."
+                  className="w-full text-xs pl-8 pr-3 py-1.5 border border-gray-300 rounded-sm focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white font-medium"
                 />
-                {searchTerm && (
-                  <button 
-                    onClick={() => setSearchTerm('')} 
-                    className="absolute right-2.5 top-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleResequenceMemberCodes}
-                  disabled={loading || balances.length === 0}
-                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-3 py-1 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
-                  title="सर्व शेअर्स खातेदारांचे सभासद कोड (MEM0001, MEM0002...) सलग रीसेट करा"
+                  disabled={loading}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  title="सर्व सभासद कोड १ ते N सलग अचूक क्रमाने रीसेट करा"
                 >
-                  <RotateCcw size={13} className={loading ? 'animate-spin' : ''} />
-                  <span>सलग कोड रीसेट करा (1-N)</span>
+                  <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+                  <span>कोड सलग रीसेट</span>
                 </button>
 
-                <button
-                  type="button"
+                <button 
                   onClick={handleExportExcel}
-                  disabled={filteredBalances.length === 0}
-                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
                   title="एक्सेल फाइल डाउनलोड करा"
                 >
                   <FileSpreadsheet size={13} />
@@ -1354,7 +1350,7 @@ const ShareOpeningBalance: React.FC = () => {
                 <button 
                   onClick={handleSyncImported}
                   disabled={loading || !formData.ledgerId}
-                  className="bg-primary hover:opacity-90 disabled:opacity-50 text-white px-3 py-1 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  className="bg-primary hover:opacity-90 disabled:opacity-50 text-white px-3 py-1.5 rounded-sm text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
                   title="सर्व शेअर्स लेजर शिल्लक पुनर्गणित (Sync) करा"
                 >
                   <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import SearchableSelect from './SearchableSelect';
-import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import { convertMarathiDigits } from '../utils/api';
 import { 
   PlusCircle, 
@@ -26,7 +25,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-interface Member extends MemberOption {}
+interface Member extends CustomerOption {}
 
 interface ShareScheme {
   shareSchemeId: number;
@@ -239,45 +238,69 @@ const ShareOpeningBalance: React.FC = () => {
     }
   };
 
+  const handleCustomerSelect = (selectedCustId: number | '') => {
+    if (!selectedCustId) {
+      if (isEditMode) {
+        setIsEditMode(false);
+        setEditAccountId(null);
+        setEditCertificateId(null);
+      }
+      setFormData(prev => ({
+        ...prev,
+        memberId: '',
+        legacyMemberNo: '',
+        fromShareNo: nextShareConfig.nextFromShareNo ? nextShareConfig.nextFromShareNo.toString() : '1',
+        toShareNo: '',
+        certificateNo: nextShareConfig.nextCertificateNo || '',
+        shareQuantity: ''
+      }));
+      return;
+    }
+
+    const custIdNum = Number(selectedCustId);
+    const custIdStr = String(selectedCustId);
+
+    // Find customer in members list strictly by customerID
+    const sel = Array.isArray(members) ? members.find(m => m && (
+      Number(m.customerID || m.customerId || m.id) === custIdNum
+    )) : undefined;
+
+    // Check existing opening balance strictly by customerId or matching CIF
+    const existingBal = Array.isArray(balances) ? balances.find(b => b && (
+      (b.customerId && Number(b.customerId) === custIdNum) ||
+      (sel && b.cifNo && sel.cifNo && b.cifNo.trim().toLowerCase() === sel.cifNo.trim().toLowerCase())
+    )) : undefined;
+
+    if (existingBal) {
+      handleStartEdit(existingBal);
+      return;
+    }
+
+    // If no existing balance for this selected customer, cleanly exit edit mode!
+    if (isEditMode) {
+      setIsEditMode(false);
+      setEditAccountId(null);
+      setEditCertificateId(null);
+    }
+
+    setFormData(prev => ({ 
+      ...prev, 
+      memberId: custIdStr,
+      legacyMemberNo: (sel as any)?.legacyCustomerNo || (sel as any)?.legacyMemberNo || (sel as any)?.memberProfile?.legacyMemberNo || '',
+      fromShareNo: nextShareConfig.nextFromShareNo ? nextShareConfig.nextFromShareNo.toString() : '1',
+      toShareNo: '',
+      certificateNo: nextShareConfig.nextCertificateNo || '',
+      shareQuantity: ''
+    }));
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement> | { target: { name?: string, value: string | number } }) => {
     const name = e.target.name || '';
     const rawVal = String(e.target.value ?? '');
     const value = convertMarathiDigits(rawVal);
 
     if (name === 'memberId') {
-      const sel = Array.isArray(members) ? members.find(m => m && (
-        String((m as any).customerID ?? '') === value ||
-        String(m.memberID ?? '') === value || 
-        String((m as any).memberProfile?.memberID ?? '') === value
-      )) : undefined;
-
-      const existingBal = Array.isArray(balances) ? balances.find(b => b && (
-        (b.customerId && String(b.customerId) === value) ||
-        (sel && b.cifNo && sel.cifNo && b.cifNo.trim().toLowerCase() === sel.cifNo.trim().toLowerCase()) ||
-        (b.memberId && String(b.memberId) === value && (!b.customerId || String(b.customerId) === value))
-      )) : undefined;
-
-      if (existingBal) {
-        handleStartEdit(existingBal);
-        return;
-      }
-
-      // If no existing balance for this selected customer, cleanly exit edit mode!
-      if (isEditMode) {
-        setIsEditMode(false);
-        setEditAccountId(null);
-        setEditCertificateId(null);
-      }
-
-      setFormData(prev => ({ 
-        ...prev, 
-        memberId: value,
-        legacyMemberNo: (sel as any)?.memberProfile?.legacyMemberNo || (sel as any)?.memberProfile?.oldMemberCode || sel?.legacyMemberNo || '',
-        fromShareNo: nextShareConfig.nextFromShareNo ? nextShareConfig.nextFromShareNo.toString() : '1',
-        toShareNo: '',
-        certificateNo: nextShareConfig.nextCertificateNo || '',
-        shareQuantity: ''
-      }));
+      handleCustomerSelect(value ? Number(value) : '');
     } else if (name === 'shareQuantity') {
       const cleanDigits = value.replace(/\D/g, '');
       const qty = parseInt(cleanDigits, 10);
@@ -377,12 +400,21 @@ const ShareOpeningBalance: React.FC = () => {
     const fromNo = b.fromShareNo ? b.fromShareNo.toString() : '';
     const toNo = b.toShareNo ? b.toShareNo.toString() : (b.fromShareNo && b.shareQuantity ? (b.fromShareNo + b.shareQuantity - 1).toString() : '');
 
-    // Target memberId selects customer cleanly in dropdown whether keyed by customerId or memberId
-    const targetMemberId = (b.customerId && b.customerId > 0) ? b.customerId.toString() : b.memberId.toString();
+    // Target customerId selects customer cleanly in dropdown strictly by customerID
+    let targetCustId = (b.customerId && b.customerId > 0) ? b.customerId.toString() : '';
+    if (!targetCustId && b.cifNo) {
+      const foundCust = Array.isArray(members) ? members.find(m => m && m.cifNo && m.cifNo.trim().toLowerCase() === b.cifNo.trim().toLowerCase()) : undefined;
+      if (foundCust) {
+        targetCustId = String(foundCust.customerID || foundCust.customerId || foundCust.id);
+      }
+    }
+    if (!targetCustId) {
+      targetCustId = b.memberId.toString();
+    }
 
     setFormData({
       shareSchemeId: formData.shareSchemeId || (schemes.length > 0 ? schemes[0].shareSchemeId.toString() : ''),
-      memberId: targetMemberId,
+      memberId: targetCustId,
       legacyMemberNo: b.legacyMemberNo || '',
       openingDate: formattedDate,
       shareQuantity: qty,
@@ -434,19 +466,17 @@ const ShareOpeningBalance: React.FC = () => {
       const certNo = formData.certificateNo || nextShareConfig.nextCertificateNo || '';
 
       const selMember = Array.isArray(members) ? members.find(m => m && (
-        String((m as any).customerID ?? '') === String(formData.memberId) ||
-        String(m.memberID ?? '') === String(formData.memberId) || 
-        String((m as any).memberProfile?.memberID ?? '') === String(formData.memberId)
+        Number(m.customerID || m.customerId || m.id) === Number(formData.memberId)
       )) : undefined;
 
-      const resolvedCustomerId = (selMember as any)?.customerID || (selMember as any)?.id || parseInt(formData.memberId);
+      const resolvedCustomerId = selMember ? Number(selMember.customerID || selMember.customerId || selMember.id) : parseInt(formData.memberId);
 
       const existingBalForMember = Array.isArray(balances) ? balances.find(b => b && (
-        (b.customerId && b.customerId === resolvedCustomerId) ||
+        (b.customerId && Number(b.customerId) === resolvedCustomerId) ||
         (selMember?.cifNo && b.cifNo && b.cifNo.trim().toLowerCase() === selMember.cifNo.trim().toLowerCase())
       )) : undefined;
 
-      const resolvedMemberId = existingBalForMember?.memberId || selMember?.memberProfile?.memberID || (selMember as any)?.memberID || (selMember as any)?.customerID || parseInt(formData.memberId);
+      const resolvedMemberId = existingBalForMember?.memberId || selMember?.memberProfile?.memberID || (selMember as any)?.memberID || resolvedCustomerId;
 
       const payload = {
         certificateId: editCertificateId,
@@ -595,68 +625,20 @@ const ShareOpeningBalance: React.FC = () => {
     }
   };
 
-  const getMemberDisplayNo = (m: any) => {
-    if (!m) return '';
-    if (m.legacyMemberNo && String(m.legacyMemberNo).trim()) return String(m.legacyMemberNo).trim();
-    if (m.legacyCustomerNo && String(m.legacyCustomerNo).trim()) return String(m.legacyCustomerNo).trim();
-    if (m.cifNo) {
-      const digits = String(m.cifNo).replace(/\D/g, '').replace(/^0+/, '');
-      if (digits) return digits;
-    }
-    if (m.memberCode) {
-      const digits = String(m.memberCode).replace(/\D/g, '').replace(/^0+/, '');
-      if (digits) return digits;
-    }
-    const id = m.memberID ?? m.customerID;
-    return id ? String(id) : '';
-  };
-
   const selectedMember = Array.isArray(members) ? members.find(m => m && (
-    String((m as any).customerID ?? '') === String(formData.memberId) ||
-    String(m.memberID ?? '') === String(formData.memberId) ||
-    String((m as any).memberProfile?.memberID ?? '') === String(formData.memberId)
+    Number(m.customerID || m.customerId || m.id) === Number(formData.memberId)
   )) : undefined;
-
-  const enrichedMembers = React.useMemo(() => {
-    if (!Array.isArray(members)) return [];
-    return members.map(m => {
-      const memId = Number((m as any).memberProfile?.memberID || m.memberID || 0);
-      const custId = Number((m as any).customerID || (m as any).id || 0);
-      const bal = Array.isArray(balances) ? balances.find(b => 
-        (b.cifNo && m.cifNo && b.cifNo.trim().toLowerCase() === m.cifNo.trim().toLowerCase()) ||
-        (custId > 0 && b.customerId === custId) ||
-        (memId > 0 && b.memberId === memId)
-      ) : undefined;
-      
-      const balMemberNo = bal?.memberNo?.trim();
-      const existingCode = ((m as any).memberProfile?.memberCode || (m as any).memberCode || '').trim();
-      const resolvedCode = balMemberNo || existingCode || '';
-
-      return {
-        ...m,
-        memberCode: resolvedCode,
-        memberNo: balMemberNo || resolvedCode,
-        memberProfile: {
-          ...((m as any).memberProfile || {}),
-          memberID: memId,
-          memberCode: resolvedCode
-        }
-      };
-    });
-  }, [members, balances]);
 
   const currentMemberCodeDisplay = React.useMemo(() => {
     if (!formData.memberId) return '';
     
-    const selCustId = Number((selectedMember as any)?.customerID || (selectedMember as any)?.id || 0);
-    const selMemId = Number((selectedMember as any)?.memberProfile?.memberID || (selectedMember as any)?.memberID || 0);
+    const selCustId = Number(formData.memberId);
     const selCif = selectedMember?.cifNo?.trim().toLowerCase();
 
-    // 1. Check from existing balances in share accounts strictly by CIF, CustomerID, or MemberID
+    // 1. Check from existing balances in share accounts strictly by CustomerID or CIF
     const existingBal = Array.isArray(balances) ? balances.find(b => b && (
-      (selCif && b.cifNo && b.cifNo.trim().toLowerCase() === selCif) ||
-      (selCustId > 0 && b.customerId === selCustId) ||
-      (selMemId > 0 && b.memberId === selMemId)
+      (selCustId > 0 && b.customerId && Number(b.customerId) === selCustId) ||
+      (selCif && b.cifNo && b.cifNo.trim().toLowerCase() === selCif)
     )) : undefined;
 
     if (existingBal?.memberNo && existingBal.memberNo.trim().toUpperCase().startsWith('MEM')) {
@@ -680,70 +662,37 @@ const ShareOpeningBalance: React.FC = () => {
 
   const selectedScheme = Array.isArray(schemes) ? schemes.find(s => s && String(s.shareSchemeId ?? '') === String(formData.shareSchemeId)) : undefined;
 
-  const existingMemberIds = new Set<string>();
-  if (Array.isArray(balances)) {
-    balances.forEach(b => {
-      if (b) {
-        if (b.memberId) existingMemberIds.add(String(b.memberId));
-        if (b.customerId) existingMemberIds.add(String(b.customerId));
-      }
-    });
-  }
-
-  const availableMembers = Array.isArray(members) ? members.filter(m => {
-    if (!m) return false;
-    const mIdStr = String(m.memberID ?? '');
-    const cIdStr = String((m as any).customerID ?? '');
-    const currentSelected = String(formData.memberId);
-
-    const isCurrent = (mIdStr && mIdStr === currentSelected) || (cIdStr && cIdStr === currentSelected);
-    const isAlreadyMigrated = (mIdStr && existingMemberIds.has(mIdStr)) || (cIdStr && existingMemberIds.has(cIdStr));
-    return !isAlreadyMigrated || isCurrent;
-  }) : [];
-
   // Real-time duplicate check strictly for legacyMemberNo
   const legacyMemberDuplicate = React.useMemo(() => {
     if (!formData.legacyMemberNo || !formData.legacyMemberNo.trim()) return null;
     const trimmed = formData.legacyMemberNo.trim().toLowerCase();
-    const currentMemberIdStr = String(formData.memberId || '');
-    const currentSelectedCustId = selectedMember ? String((selectedMember as any).customerID || (selectedMember as any).id || '') : '';
+    const currentCustId = Number(formData.memberId || 0);
+
     // Check in existing balances
     const matchBal = Array.isArray(balances) ? balances.find(b => {
       if (!b) return false;
-      const bMemIdStr = String(b.memberId || '');
-      const bCustIdStr = String(b.customerId || '');
-      const isSamePerson = (bMemIdStr && bMemIdStr === currentMemberIdStr) || 
-                           (bCustIdStr && bCustIdStr === currentMemberIdStr) ||
-                           (currentSelectedCustId && (bCustIdStr === currentSelectedCustId || bMemIdStr === currentSelectedCustId));
+      const bCustId = Number(b.customerId || 0);
+      const isSamePerson = currentCustId > 0 && bCustId === currentCustId;
       return !isSamePerson && (b.legacyMemberNo?.trim().toLowerCase() === trimmed);
     }) : null;
-    if (matchBal) return { name: matchBal.memberName, code: matchBal.memberNo || matchBal.legacyMemberNo || `ID:${matchBal.memberId}` };
-    // Check in members list (only actual legacyMemberNo)
+    if (matchBal) return { name: matchBal.memberName, code: matchBal.memberNo || matchBal.legacyMemberNo || `CIF:${matchBal.cifNo}` };
+
+    // Check in members list (only actual legacyMemberNo / legacyCustomerNo)
     const matchMem = Array.isArray(members) ? members.find(m => {
       if (!m) return false;
-      const mIdStr = String(m.memberID || '');
-      const mCustIdStr = String((m as any).customerID || '');
-      const isSamePerson = (mIdStr && mIdStr === currentMemberIdStr) || (mCustIdStr && mCustIdStr === currentMemberIdStr);
-      return !isSamePerson && (m.legacyMemberNo?.trim().toLowerCase() === trimmed);
+      const mCustId = Number(m.customerID || m.customerId || m.id || 0);
+      const isSamePerson = currentCustId > 0 && mCustId === currentCustId;
+      return !isSamePerson && (
+        (m.legacyMemberNo?.trim().toLowerCase() === trimmed) ||
+        (m.legacyCustomerNo?.trim().toLowerCase() === trimmed)
+      );
     }) : null;
-    if (matchMem) return { name: `${matchMem.firstName} ${matchMem.lastName}`, code: matchMem.memberCode || `ID:${matchMem.memberID || (matchMem as any).customerID}` };
+    if (matchMem) {
+      const fullName = [matchMem.firstName, matchMem.middleName, matchMem.lastName].filter(Boolean).join(' ');
+      return { name: fullName, code: matchMem.cifNo || `CIF:${matchMem.customerID}` };
+    }
     return null;
-  }, [formData.legacyMemberNo, formData.memberId, balances, members, selectedMember]);
-  
-  const memberOptions = availableMembers.map(m => {
-    const oldCif = getMemberDisplayNo(m);
-    const oldCifDisplay = oldCif ? `(ID: ${oldCif}) ` : '';
-    const fullName = stringJoin([m?.firstName, m?.middleName, m?.lastName]);
-    const idVal = String(m?.memberID ?? (m as any)?.customerID ?? '');
-    return {
-      value: idVal, 
-      label: `${m?.cifNo || ''} ${oldCifDisplay}- ${fullName}`.replace(/\s+/g, ' ').trim()
-    };
-  });
-
-  function stringJoin(arr: (string | undefined)[]): string {
-    return arr.filter(s => !!s && String(s).trim().length > 0).join(' ');
-  }
+  }, [formData.legacyMemberNo, formData.memberId, balances, members]);
 
   const filteredBalances = balances.filter(b => {
     if (!searchTerm.trim()) return true;
@@ -1066,11 +1015,10 @@ const ShareOpeningBalance: React.FC = () => {
                   <span>खातेदार निवडा (Select Customer / CIF) <span className="text-rose-500">*</span></span>
                   <span className="text-[10px] text-slate-400 font-normal">CIF / नाव / मोबाईलने शोधा</span>
                 </label>
-                <MemberSearchSelect 
-                  members={enrichedMembers} 
+                <CustomerSearchSelect 
+                  customers={members} 
                   value={formData.memberId ? Number(formData.memberId) : ''} 
-                  valueType="customerId"
-                  onChange={(val) => handleChange({ target: { name: 'memberId', value: val ? String(val) : '' } })} 
+                  onChange={handleCustomerSelect} 
                   placeholder="-- खातेदार शोधा (CIF No / नाव / मोबाईल) --"
                 />
               </div>

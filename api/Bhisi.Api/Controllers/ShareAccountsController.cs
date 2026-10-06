@@ -1079,7 +1079,7 @@ namespace Bhisi.Api.Controllers
                         BranchID = cust.BranchID,
                         CustomerID = cust.CustomerID,
                         Customer = cust,
-                        LegacyMemberNo = !string.IsNullOrWhiteSpace(request.LegacyMemberNo) ? request.LegacyMemberNo.Trim() : null,
+                        LegacyMemberNo = null, // Set null initially; duplicate resolution and self-healing assign it below safely
                         JoiningDate = request.OpeningDate,
                         MembershipType = "Regular",
                         Status = "Active",

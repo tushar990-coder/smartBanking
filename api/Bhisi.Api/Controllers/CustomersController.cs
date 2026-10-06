@@ -213,7 +213,9 @@ namespace Bhisi.Api.Controllers
                                          _context.ShareAccounts.Any(sa => (sa.CustomerID == c.CustomerID || sa.MemberId == c.MemberProfile.MemberID) && sa.TotalShareCount > 0)
                                 ? c.MemberProfile.MemberCode
                                 : null,
-                            LegacyMemberNo = c.MemberProfile.LegacyMemberNo,
+                            LegacyMemberNo = _context.ShareAccounts.Any(sa => (sa.CustomerID == c.CustomerID || sa.MemberId == c.MemberProfile.MemberID) && sa.TotalShareCount > 0)
+                                ? c.MemberProfile.LegacyMemberNo
+                                : null,
                             MembershipType = c.MemberProfile.MembershipType
                         } : null
                     })

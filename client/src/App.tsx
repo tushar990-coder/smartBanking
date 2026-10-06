@@ -203,6 +203,34 @@ function App() {
   const { user, logout, switchBranch } = useAuth();
   const [headerBranches, setHeaderBranches] = useState<any[]>([]);
   const [showLoginNotifications, setShowLoginNotifications] = useState(false);
+  const [systemVersion, setSystemVersion] = useState<string>('2.5.32');
+
+  useEffect(() => {
+    const fetchVersion = async () => {
+      try {
+        const res = await fetch('/version.json?t=' + Date.now());
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.version) {
+            setSystemVersion(data.version);
+            return;
+          }
+        }
+      } catch {}
+
+      try {
+        const res = await fetch('/api/SystemUpdate/current-version');
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.currentVersion) {
+            setSystemVersion(data.currentVersion);
+          }
+        }
+      } catch {}
+    };
+
+    fetchVersion();
+  }, []);
 
   useEffect(() => {
     if (user && sessionStorage.getItem('just_logged_in') === 'true') {
@@ -1433,11 +1461,11 @@ function App() {
             </div>
             <button 
               onClick={() => handleNavigate('system-update')}
-              title="सिस्टीम आवृत्ती v2.5.23 (काय नवीन आहे ते पहा)"
+              title={`सिस्टीम आवृत्ती v${systemVersion} (काय नवीन आहे ते पहा)`}
               className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-900 border border-emerald-300 font-mono font-black text-[10px] cursor-pointer shadow-2xs transition-all"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>v2.5.23</span>
+              <span>v{systemVersion}</span>
               <span className="text-[9px] bg-emerald-200 text-emerald-950 px-1 py-0.2 rounded font-sans font-bold">New</span>
             </button>
           </div>

@@ -192,7 +192,9 @@ namespace Bhisi.Api.Controllers
                 nextAccountNo = nextNo,
                 accountNo = nextNo,
                 formattedAccountNo = formattedNo,
-                displayAccountNo = formattedNo
+                displayAccountNo = formattedNo,
+                debugDb = _context.Database.GetDbConnection().Database,
+                debugServer = _context.Database.GetDbConnection().DataSource
             });
         }
 

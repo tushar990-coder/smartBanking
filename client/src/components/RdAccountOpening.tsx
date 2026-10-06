@@ -45,6 +45,7 @@ interface RdScheme {
   rdSchemeID: number;
   schemeName: string;
   schemeCode: string;
+  schemeCodeNumeric?: number;
   interestRate: number;
   durationMonths: number;
   installmentAmount: number;
@@ -114,6 +115,9 @@ export default function RdAccountOpening() {
   const [listSuccess, setListSuccess] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; accountNo: string } | null>(null);
 
+  // Schedule view state
+  const [showSchedule, setShowSchedule] = useState(false);
+
   // Print modal state
   const [printAccount, setPrintAccount] = useState<RdAccountItem | null>(null);
 
@@ -145,7 +149,7 @@ export default function RdAccountOpening() {
   const fetchNextAccountNo = async (branchId: number, schemeId?: string | number) => {
     setLoadingAccountNo(true);
     try {
-      const q = schemeId ? `?branchId=${branchId}&schemeId=${schemeId}` : `?branchId=${branchId}`;
+      const q = schemeId ? `?branchId=${branchId}&schemeId=${schemeId}&t=${Date.now()}` : `?branchId=${branchId}&t=${Date.now()}`;
       const res = await axios.get(`/api/RdAccounts/next-account-no${q}`);
       const acc = res.data?.formattedAccountNo || res.data?.accountNo || (typeof res.data === 'string' ? res.data : '---');
       setNextAccountNo(acc);
@@ -157,17 +161,13 @@ export default function RdAccountOpening() {
     }
   };
 
-  const fetchMemberSavingAccounts = async (mIdStr: string) => {
-    if (!mIdStr) {
+  const fetchCustomerSavingAccounts = async (cIdStr: string) => {
+    if (!cIdStr) {
       setSavingAccounts([]);
       return;
     }
     try {
-      const selected = members.find((m: any) => m && (m.customerID || m.memberID)?.toString() === mIdStr.toString());
-      const cId = selected?.customerID || mIdStr;
-      const mId = selected?.memberProfile?.memberID || selected?.memberID || mIdStr;
-
-      const res = await axios.get(`/api/SavingAccounts?customerId=${cId}&memberId=${mId}`);
+      const res = await axios.get(`/api/SavingAccounts?customerId=${cIdStr}`);
       const dataList = Array.isArray(res.data) ? res.data : [];
       setSavingAccounts(dataList);
       if (dataList.length > 0) {
@@ -228,7 +228,7 @@ export default function RdAccountOpening() {
               ...prev,
               memberID: mId.toString()
             }));
-            fetchMemberSavingAccounts(mId.toString());
+            fetchCustomerSavingAccounts(mId.toString());
           }
         }
       } catch (err) {
@@ -298,11 +298,23 @@ export default function RdAccountOpening() {
         // Recalculate maturity amount
         const inst = parseFloat(String(updated.installmentAmount)) || 0;
         const r = parseFloat(String(updated.interestRate)) || 0;
+        const method = schemes.find((s) => s.rdSchemeID === parseInt(String(updated.rdSchemeID), 10))?.interestMethod || 'Compound';
+
         let totalMat = 0;
-        for (let k = 1; k <= dur; k++) {
-          const monthsInBank = dur - k + 1;
-          const factor = Math.pow(1.0 + (r / 400.0), monthsInBank / 3.0);
-          totalMat += inst * factor;
+        if (method === 'Simple' || method === 'Flat') {
+          let runningBalance = 0;
+          let totalInterest = 0;
+          for (let month = 1; month <= dur; month++) {
+            runningBalance += inst;
+            totalInterest += (runningBalance * r) / (12 * 100);
+          }
+          totalMat = runningBalance + totalInterest;
+        } else {
+          for (let k = 1; k <= dur; k++) {
+            const monthsInBank = dur - k + 1;
+            const factor = Math.pow(1.0 + (r / 400.0), monthsInBank / 3.0);
+            totalMat += inst * factor;
+          }
         }
         updated.maturityAmount = Math.round(totalMat);
       }
@@ -313,7 +325,7 @@ export default function RdAccountOpening() {
   const handleMemberSelect = (val: any) => {
     const mIdStr = val?.target?.value ?? val;
     setFormData((prev) => ({ ...prev, memberID: mIdStr }));
-    fetchMemberSavingAccounts(mIdStr);
+    fetchCustomerSavingAccounts(mIdStr);
   };
 
   const handleSchemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -331,14 +343,26 @@ export default function RdAccountOpening() {
         opening.setMonth(opening.getMonth() + dur);
         const maturityDateStr = opening.toISOString().split('T')[0];
 
-        // IBA Standard Compound maturity formula
+        // Maturity formula (Compound or Flat)
         const p = inst;
         const n = dur;
+        const method = selected.interestMethod || 'Compound';
+
         let totalMat = 0;
-        for (let k = 1; k <= n; k++) {
-          const monthsInBank = n - k + 1;
-          const factor = Math.pow(1.0 + (r / 400.0), monthsInBank / 3.0);
-          totalMat += p * factor;
+        if (method === 'Simple' || method === 'Flat') {
+          let runningBalance = 0;
+          let totalInterest = 0;
+          for (let month = 1; month <= n; month++) {
+            runningBalance += p;
+            totalInterest += (runningBalance * r) / (12 * 100);
+          }
+          totalMat = runningBalance + totalInterest;
+        } else {
+          for (let k = 1; k <= n; k++) {
+            const monthsInBank = n - k + 1;
+            const factor = Math.pow(1.0 + (r / 400.0), monthsInBank / 3.0);
+            totalMat += p * factor;
+          }
         }
         const expectedMaturity = Math.round(totalMat);
 
@@ -467,6 +491,42 @@ export default function RdAccountOpening() {
   // Calculate Breakdown
   const totalPrincipalDeposited = (formData.installmentAmount || 0) * (formData.durationMonths || 0);
   const estimatedInterestEarned = Math.max(0, (formData.maturityAmount || 0) - totalPrincipalDeposited);
+
+  const generateSchedule = () => {
+    if (!formData.installmentAmount || !formData.durationMonths || formData.installmentAmount <= 0) return [];
+    
+    const rows = [];
+    let runningBalance = 0;
+    const method = schemes.find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound';
+    const rate = formData.interestRate || 0;
+    const opening = new Date(formData.openingDate);
+    
+    for (let i = 1; i <= formData.durationMonths; i++) {
+      const rowDate = new Date(opening);
+      rowDate.setMonth(rowDate.getMonth() + i - 1);
+      
+      const installmentVal = parseFloat(String(formData.installmentAmount)) || 0;
+      runningBalance += installmentVal;
+      
+      let interest = 0;
+      if (method === 'Simple' || method === 'Flat') {
+        interest = (runningBalance * rate) / (12 * 100);
+      } else {
+        const monthsInBank = formData.durationMonths - i + 1;
+        const factor = Math.pow(1.0 + (rate / 400.0), monthsInBank / 3.0);
+        interest = (installmentVal * factor) - installmentVal;
+      }
+      
+      rows.push({
+        month: i,
+        date: rowDate.toLocaleDateString('en-GB'),
+        deposit: installmentVal,
+        balance: runningBalance,
+        interest: interest
+      });
+    }
+    return rows;
+  };
 
   const labelClass = "block text-[11px] font-bold text-gray-700 mb-0.5";
   const inputClass = "w-full px-2 py-1 text-xs border border-gray-300 rounded-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white font-medium";
@@ -671,13 +731,14 @@ export default function RdAccountOpening() {
                 </div>
 
                 <div>
-                  <label className={labelClass}>मासिक हप्ता रक्कम (Installment ₹)</label>
+                  <label className={labelClass}>मासिक हप्ता रक्कम (Installment ₹) <span className="text-red-500">*</span></label>
                   <input
                     type="number"
                     name="installmentAmount"
                     value={formData.installmentAmount || ''}
-                    readOnly
-                    className="w-full text-xs font-bold border border-indigo-200 bg-indigo-50/50 rounded-lg px-3 py-2 text-indigo-900 cursor-not-allowed select-none"
+                    onChange={handleChange}
+                    className={inputClass}
+                    required
                   />
                 </div>
 
@@ -750,36 +811,87 @@ export default function RdAccountOpening() {
 
               {/* Light Calculation Summary Box */}
               {formData.maturityAmount > 0 && (
-                <div className="mt-3 bg-emerald-50/80 border border-emerald-200 rounded-lg p-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs shadow-2xs">
-                  <div className="bg-white p-2.5 rounded border border-emerald-100">
-                    <span className="text-slate-500 text-[10px] font-bold uppercase block">एकूण जमा मुद्दल:</span>
-                    <strong className="text-slate-800 text-xs font-bold font-mono">
-                      ₹ {totalPrincipalDeposited.toLocaleString('en-IN')}
-                    </strong>
-                    <span className="text-[10px] text-slate-400 block mt-0.5">
-                      ({formData.durationMonths} महिने × ₹{formData.installmentAmount?.toLocaleString('en-IN')})
-                    </span>
+                <div className="mt-3 bg-emerald-50/80 border border-emerald-200 rounded-lg p-3 text-xs shadow-2xs">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <div className="bg-white p-2.5 rounded border border-emerald-100">
+                      <span className="text-slate-500 text-[10px] font-bold uppercase block">एकूण जमा मुद्दल:</span>
+                      <strong className="text-slate-800 text-xs font-bold font-mono">
+                        ₹ {totalPrincipalDeposited.toLocaleString('en-IN')}
+                      </strong>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">
+                        ({formData.durationMonths} महिने × ₹{formData.installmentAmount?.toLocaleString('en-IN')})
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded border border-emerald-100">
+                      <span className="text-slate-500 text-[10px] font-bold uppercase block">अंदाजित व्याज लाभ:</span>
+                      <strong className="text-emerald-700 text-xs font-bold font-mono">
+                        + ₹ {estimatedInterestEarned.toLocaleString('en-IN')}
+                      </strong>
+                      <span className="text-[10px] text-emerald-600 block mt-0.5">
+                        व्याजदर {formData.interestRate}% ({schemes.find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound'})
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded border border-emerald-100">
+                      <span className="text-slate-500 text-[10px] font-bold uppercase block">एकूण मुदतपूर्ती रक्कम:</span>
+                      <strong className="text-indigo-700 text-sm font-bold font-mono">
+                        ₹ {formData.maturityAmount.toLocaleString('en-IN')}
+                      </strong>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                        मुदत तारीख: {formData.maturityDate}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="bg-white p-2.5 rounded border border-emerald-100">
-                    <span className="text-slate-500 text-[10px] font-bold uppercase block">अंदाजित व्याज लाभ:</span>
-                    <strong className="text-emerald-700 text-xs font-bold font-mono">
-                      + ₹ {estimatedInterestEarned.toLocaleString('en-IN')}
-                    </strong>
-                    <span className="text-[10px] text-emerald-600 block mt-0.5">
-                      व्याजदर {formData.interestRate}%
-                    </span>
+                  {/* Toggle Schedule Button */}
+                  <div className="border-t border-emerald-200 pt-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowSchedule(!showSchedule)}
+                      className="text-xs font-bold text-emerald-800 hover:text-emerald-600 underline flex items-center justify-center gap-1 mx-auto"
+                    >
+                      {showSchedule ? 'तक्ता लपवा (Hide Schedule)' : 'तपशीलवार हप्ता व व्याज तक्ता पहा (View Schedule)'}
+                    </button>
                   </div>
-
-                  <div className="bg-white p-2.5 rounded border border-emerald-100">
-                    <span className="text-slate-500 text-[10px] font-bold uppercase block">एकूण मुदतपूर्ती रक्कम:</span>
-                    <strong className="text-indigo-700 text-sm font-bold font-mono">
-                      ₹ {formData.maturityAmount.toLocaleString('en-IN')}
-                    </strong>
-                    <span className="text-[10px] text-slate-500 block mt-0.5">
-                      मुदत तारीख: {formData.maturityDate}
-                    </span>
-                  </div>
+                  
+                  {/* Detailed Schedule Table */}
+                  {showSchedule && (
+                    <div className="mt-3 bg-white border border-emerald-200 rounded overflow-hidden max-h-80 overflow-y-auto">
+                      <table className="w-full text-[11px] text-left">
+                        <thead className="bg-emerald-100/50 sticky top-0 border-b border-emerald-200 text-emerald-900">
+                          <tr>
+                            <th className="px-2 py-1.5 font-bold">srno</th>
+                            <th className="px-2 py-1.5 font-bold">दिनांक</th>
+                            <th className="px-2 py-1.5 font-bold text-right">जमा रक्कम</th>
+                            <th className="px-2 py-1.5 font-bold text-right">नावे रक्कम</th>
+                            <th className="px-2 py-1.5 font-bold text-right">एकूण शिल्लक रक्कम</th>
+                            <th className="px-2 py-1.5 font-bold text-right">व्याज</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-emerald-50">
+                          {generateSchedule().map((row, idx) => (
+                            <tr key={idx} className="hover:bg-emerald-50/30">
+                              <td className="px-2 py-1">{row.month}</td>
+                              <td className="px-2 py-1">{row.date}</td>
+                              <td className="px-2 py-1 text-right font-mono text-slate-700">{row.deposit}</td>
+                              <td className="px-2 py-1 text-right font-mono text-slate-400">-</td>
+                              <td className="px-2 py-1 text-right font-mono font-bold text-slate-800">{row.balance}</td>
+                              <td className="px-2 py-1 text-right font-mono text-emerald-600">{row.interest.toFixed(5)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-emerald-100/80 font-bold border-t border-emerald-300 text-emerald-900">
+                          <tr>
+                            <td colSpan={2} className="px-2 py-2 text-right">एकूण (Total):</td>
+                            <td className="px-2 py-2 text-right font-mono text-slate-800">₹{totalPrincipalDeposited.toLocaleString('en-IN')}</td>
+                            <td colSpan={2} className="px-2 py-2 text-right font-mono text-indigo-700">मुदतपूर्ती (Maturity): ₹{formData.maturityAmount.toLocaleString('en-IN')}</td>
+                            <td className="px-2 py-2 text-right font-mono text-emerald-700">₹{estimatedInterestEarned.toLocaleString('en-IN')}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -878,7 +990,7 @@ export default function RdAccountOpening() {
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   type="button"
-                  onClick={resetForm}
+                  onClick={() => resetForm()}
                   className="flex-1 sm:flex-initial px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg transition text-xs"
                 >
                   फॉर्म रीसेट करा

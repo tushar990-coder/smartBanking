@@ -644,8 +644,8 @@ export default function RdSchemeMaster() {
                   required
                 >
                   <option value="">-- व्याज आकारणी पद्धत निवडा * --</option>
+                  <option value="Flat">Flat (मासिक शिल्लक / सरळ व्याज)</option>
                   <option value="Compound">Compound (त्रैमासिक चक्रवाढ - प्रमाणित CBS)</option>
-                  <option value="Simple">Simple (सरळ व्याज)</option>
                 </select>
                 <span className="text-[10px] text-gray-500 block mt-0.5">
                   व्याज कसे मोजायचे (फॉर्म्युला / गणित पद्धत)

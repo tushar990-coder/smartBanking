@@ -94,7 +94,7 @@ export default function RdOpeningBalanceMigration() {
   const fetchNextAccountNo = async (branchId: number, schemeId?: string | number) => {
     setLoadingAccountNo(true);
     try {
-      const q = schemeId ? `?branchId=${branchId}&schemeId=${schemeId}` : `?branchId=${branchId}`;
+      const q = schemeId ? `?branchId=${branchId}&schemeId=${schemeId}&t=${Date.now()}` : `?branchId=${branchId}&t=${Date.now()}`;
       const res = await axios.get(`/api/RdAccounts/next-account-no${q}`);
       const acc = res.data?.formattedAccountNo || res.data?.accountNo || (typeof res.data === 'string' ? res.data : '---');
       setNextAccountNo(acc);
@@ -214,7 +214,7 @@ export default function RdOpeningBalanceMigration() {
   const calculateRDMaturity = (installment: number, annualRate: number, duration: number, method: string): number => {
     if (!installment || !duration || installment <= 0 || duration <= 0) return 0;
     
-    if (method === 'Simple') {
+    if (method === 'Simple' || method === 'Flat') {
       const p = installment;
       const r = annualRate;
       const n = duration;

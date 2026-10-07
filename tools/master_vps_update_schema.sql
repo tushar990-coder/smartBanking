@@ -5391,6 +5391,67 @@ BEGIN
 END
 GO
 
+-- 15. CustomerOpeningBalances SourceModule & Universal Missing Columns
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'CustomerOpeningBalances')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[CustomerOpeningBalances]') AND name = 'SourceModule')
+    BEGIN
+        ALTER TABLE [CustomerOpeningBalances] ADD [SourceModule] nvarchar(50) NOT NULL CONSTRAINT DF_CustomerOpeningBalances_SourceModule DEFAULT 'CustomerOpeningBalance';
+        PRINT '  + Added [SourceModule] to [CustomerOpeningBalances]';
+    END
+
+    IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingAccountMasters')
+    BEGIN
+        EXEC('
+            UPDATE cob
+            SET cob.[SourceModule] = ''Saving''
+            FROM [CustomerOpeningBalances] cob
+            INNER JOIN [SavingAccountMasters] sam 
+                ON cob.CustomerID = sam.CustomerID 
+                AND cob.LedgerID = sam.LedgerID 
+                AND cob.Amount = sam.OpeningBalance
+            WHERE cob.[SourceModule] = ''CustomerOpeningBalance'';
+        ');
+        PRINT '  -> Synchronized existing Saving Account opening balances to SourceModule = ''Saving''';
+    END
+END
+GO
+
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingAccountJointHolders')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingAccountJointHolders]') AND name = 'MemberID')
+    BEGIN
+        ALTER TABLE [SavingAccountJointHolders] ADD [MemberID] int NULL;
+        PRINT '  + Added [MemberID] to [SavingAccountJointHolders]';
+    END
+END
+GO
+
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'CifSequences')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[CifSequences]') AND name = 'BranchID')
+        ALTER TABLE [CifSequences] ADD [BranchID] int NOT NULL CONSTRAINT DF_CifSequences_BranchID DEFAULT 1;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[CifSequences]') AND name = 'CurrentNumber')
+        ALTER TABLE [CifSequences] ADD [CurrentNumber] int NOT NULL CONSTRAINT DF_CifSequences_CurrentNumber DEFAULT 0;
+END
+GO
+
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'CustomerImportBatches')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[CustomerImportBatches]') AND name = 'FileType')
+        ALTER TABLE [CustomerImportBatches] ADD [FileType] nvarchar(50) NULL;
+END
+GO
+
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmySchemeInterestSlabs')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmySchemeInterestSlabs]') AND name = 'FromMonths')
+        ALTER TABLE [PigmySchemeInterestSlabs] ADD [FromMonths] int NOT NULL CONSTRAINT DF_PigmySlabs_FromMonths DEFAULT 0;
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmySchemeInterestSlabs]') AND name = 'ToMonths')
+        ALTER TABLE [PigmySchemeInterestSlabs] ADD [ToMonths] int NOT NULL CONSTRAINT DF_PigmySlabs_ToMonths DEFAULT 0;
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

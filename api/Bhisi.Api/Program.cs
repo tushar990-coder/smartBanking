@@ -1005,6 +1005,21 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
+            -- Universal verification for CustomerOpeningBalances SourceModule and other tables
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'CustomerOpeningBalances')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[CustomerOpeningBalances]') AND name = 'SourceModule')
+                BEGIN
+                    ALTER TABLE [CustomerOpeningBalances] ADD [SourceModule] nvarchar(50) NOT NULL CONSTRAINT DF_CustomerOpeningBalances_SourceModule DEFAULT 'CustomerOpeningBalance';
+                END
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingAccountJointHolders')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingAccountJointHolders]') AND name = 'MemberID')
+                    ALTER TABLE [SavingAccountJointHolders] ADD [MemberID] int NULL;
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdSchemes')
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdSchemes]') AND name = 'FdLiabilityLedgerID')

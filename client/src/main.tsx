@@ -51,6 +51,12 @@ if (typeof window !== 'undefined') {
       document.activeElement.blur();
     }
   }, { passive: true });
+
+  // Auto-reload on Vite dynamic module preload failure (occurs when a new deployment has replaced chunk hashes)
+  window.addEventListener('vite:preloadError', (event) => {
+    console.warn('Deployment updated or module chunk failed to load. Reloading page...');
+    window.location.reload();
+  });
 }
 
 // Global Axios Request Interceptor (attaches Bearer Token & handles Marathi digits & URL prefix)

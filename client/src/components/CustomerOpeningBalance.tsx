@@ -6,6 +6,11 @@ interface Ledger {
   ledgerID: number;
   ledgerName: string;
   accountType: string;
+  openingBalanceType?: string;
+  accountGroup?: {
+    natureOfGroup?: string;
+    groupName?: string;
+  };
 }
 
 interface Customer {
@@ -24,6 +29,7 @@ interface CustomerOpeningBalance {
   ledgerID: number;
   amount: number;
   balanceType: string;
+  sourceModule?: string;
   customer?: Customer;
   ledger?: Ledger;
 }
@@ -56,7 +62,18 @@ export default function CustomerOpeningBalanceForm() {
       const response = await fetch('/api/Ledgers');
       if (response.ok) {
         const data = await response.json();
-        const personalLedgers = data.filter((l: Ledger) => l.accountType === 'Personal Account' || l.accountType === 'Sundry Debtors' || l.accountType === 'Sundry Creditors');
+        const personalLedgers = data.filter((l: Ledger) => {
+          const typeMatch = l.accountType === 'Personal Account' || l.accountType === 'Sundry Debtors' || l.accountType === 'Sundry Creditors';
+          if (!typeMatch) return false;
+          const name = (l.ledgerName || '').toLowerCase();
+          // Exclude scheme-reserved ledgers that belong to other dedicated modules (FD, Saving, RD, Pigmy, Loan, Share Capital)
+          if (name.includes('मुदत') || name.includes('ठेव योजना') || name.includes('सेव्हिंग') || 
+              name.includes('बचत ठेव') || name.includes('पिग्मी') || name.includes('आवर्ती') || 
+              name.includes('भाग भांडवल') || name.includes('शेअर्स')) {
+            return false;
+          }
+          return true;
+        });
         setLedgers(personalLedgers.length > 0 ? personalLedgers : data);
       }
     } catch (error) {
@@ -78,7 +95,7 @@ export default function CustomerOpeningBalanceForm() {
 
   const fetchBalances = async () => {
     try {
-      const response = await fetch('/api/CustomerOpeningBalances');
+      const response = await fetch('/api/CustomerOpeningBalances?sourceModule=CustomerOpeningBalance');
       if (response.ok) {
         const data = await response.json();
         setBalances(data);
@@ -127,7 +144,8 @@ export default function CustomerOpeningBalanceForm() {
         customerID: Number(selectedCustomerId),
         ledgerID: Number(formData.ledgerID),
         amount: parseFloat(formData.amount),
-        balanceType: formData.balanceType
+        balanceType: formData.balanceType,
+        sourceModule: 'CustomerOpeningBalance'
       };
 
       const url = editingId 
@@ -175,10 +193,54 @@ export default function CustomerOpeningBalanceForm() {
     }
   };
 
+  const getLedgerDefaultBalanceType = (ledger?: Ledger): 'Dr' | 'Cr' => {
+    if (!ledger) return 'Dr';
+    // 1. Check ledger's configured opening balance type
+    if (ledger.openingBalanceType?.toUpperCase() === 'CR') return 'Cr';
+    if (ledger.openingBalanceType?.toUpperCase() === 'DR') return 'Dr';
+
+    // 2. Check Account Group Nature (Liabilities -> Cr, Assets -> Dr)
+    const nature = ledger.accountGroup?.natureOfGroup?.toLowerCase() || '';
+    if (nature.includes('liabilit')) return 'Cr';
+    if (nature.includes('asset')) return 'Dr';
+
+    // 3. Check Account Type
+    const accType = (ledger.accountType || '').toLowerCase();
+    if (accType.includes('creditor')) return 'Cr';
+    if (accType.includes('debtor')) return 'Dr';
+
+    // 4. Fallback Marathi banking keywords
+    const name = (ledger.ledgerName || '').toLowerCase();
+    if (name.includes('ठेव') || name.includes('देणे') || name.includes('अनामत') || name.includes('भांडवल')) {
+      return 'Cr';
+    }
+    if (name.includes('कर्ज') || name.includes('येणे') || name.includes('उचल') || name.includes('ॲडव्हान्स') || name.includes('अग्रिम')) {
+      return 'Dr';
+    }
+
+    return 'Dr';
+  };
+
   const selectedLedger = ledgers.find(l => l.ledgerID === Number(formData.ledgerID));
   const isFilteringByLedger = Boolean(formData.ledgerID && !showAllLedgers);
 
+  const isSchemeLedger = (ledgerName?: string) => {
+    if (!ledgerName) return false;
+    const l = ledgerName.toLowerCase();
+    return l.includes('मुदत') || l.includes('ठेव योजना') || l.includes('सेव्हिंग') || 
+           l.includes('बचत ठेव') || l.includes('पिग्मी') || l.includes('आवर्ती') || 
+           l.includes('भाग भांडवल') || l.includes('शेअर्स') || l.includes('ठेव व्याज') ||
+           l.includes('कर्ज') || l.includes('loan') || l.includes('fixed deposit') || 
+           l.includes('saving') || l.includes('pigmy') || l.includes('recurring');
+  };
+
   const filteredBalances = balances.filter(b => {
+    // 1. Exclude records from other modules (FD, Saving, etc.)
+    if (b.sourceModule && b.sourceModule !== 'CustomerOpeningBalance') return false;
+
+    // 2. Guaranteed fallback: exclude scheme ledgers from grid
+    if (isSchemeLedger(b.ledger?.ledgerName)) return false;
+
     // If filtering by selected ledger, only show records of that ledger
     if (isFilteringByLedger) {
       if (b.ledgerID !== Number(formData.ledgerID)) return false;
@@ -233,6 +295,21 @@ export default function CustomerOpeningBalanceForm() {
           <div className="px-3 py-1 bg-gray-100 text-gray-800 border border-gray-300 rounded shadow-2xs">
             निव्वळ बाकी: ₹{netDifference.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {netType}
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              const url = formData.ledgerID 
+                ? `/reports/customer-opening-balance?ledgerId=${formData.ledgerID}`
+                : '/reports/customer-opening-balance';
+              window.history.pushState({}, '', url);
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+            className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+            title="खातेदार बाकी रिपोर्ट उघडा"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>बाकी रिपोर्ट पहा</span>
+          </button>
         </div>
       </div>
 
@@ -268,7 +345,14 @@ export default function CustomerOpeningBalanceForm() {
               <select
                 value={formData.ledgerID}
                 onChange={e => {
-                  setFormData(prev => ({ ...prev, ledgerID: e.target.value }));
+                  const selectedId = e.target.value;
+                  const chosenLedger = ledgers.find(l => String(l.ledgerID) === selectedId);
+                  const autoBalanceType = chosenLedger ? getLedgerDefaultBalanceType(chosenLedger) : formData.balanceType;
+                  setFormData(prev => ({ 
+                    ...prev, 
+                    ledgerID: selectedId,
+                    balanceType: autoBalanceType
+                  }));
                   setShowAllLedgers(false);
                 }}
                 required
@@ -316,15 +400,25 @@ export default function CustomerOpeningBalanceForm() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-gray-700 mb-1">प्रकार (Dr / Cr) *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">प्रकार (Dr / Cr) *</label>
+                  {selectedLedger && (
+                    <span className="text-[9px] text-blue-700 bg-blue-50 border border-blue-200 px-1 py-0.2 rounded font-semibold">
+                      लेजरनुसार: {getLedgerDefaultBalanceType(selectedLedger) === 'Cr' ? 'जमा (Cr)' : 'नावे (Dr)'}
+                    </span>
+                  )}
+                </div>
                 <select
                   value={formData.balanceType}
                   onChange={e => setFormData(prev => ({ ...prev, balanceType: e.target.value }))}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs bg-white font-bold"
                 >
-                  <option value="Dr">नावे (Dr - देणे बाकी)</option>
-                  <option value="Cr">जमा (Cr - घेणे बाकी)</option>
+                  <option value="Dr">नावे (Dr - येणे बाकी / Receivable)</option>
+                  <option value="Cr">जमा (Cr - देणे बाकी / Payable)</option>
                 </select>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  * लेजरनुसार स्वयंचलित निवड (हवे असल्यास बदलता येईल)
+                </p>
               </div>
             </div>
 

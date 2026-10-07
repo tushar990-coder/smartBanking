@@ -969,7 +969,13 @@ using (var scope = app.Services.CreateScope())
                     IF OBJECT_ID(N'[PigmyAccounts]', N'U') IS NOT NULL
                         UPDATE [PigmyAccounts] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
                     IF OBJECT_ID(N'[CustomerOpeningBalances]', N'U') IS NOT NULL
+                    BEGIN
                         UPDATE [CustomerOpeningBalances] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
+                        IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[CustomerOpeningBalances]') AND name = 'SourceModule')
+                        BEGIN
+                            ALTER TABLE [CustomerOpeningBalances] ADD [SourceModule] nvarchar(50) NOT NULL CONSTRAINT DF_CustomerOpeningBalances_SourceModule DEFAULT 'CustomerOpeningBalance';
+                        END
+                    END
                     IF OBJECT_ID(N'[LockerAllotments]', N'U') IS NOT NULL
                         UPDATE [LockerAllotments] SET [CustomerID] = @TargetCustId WHERE [CustomerID] = 0;
                     IF OBJECT_ID(N'[ShareAccounts]', N'U') IS NOT NULL

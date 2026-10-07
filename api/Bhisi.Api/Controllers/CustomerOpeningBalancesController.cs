@@ -24,12 +24,20 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/CustomerOpeningBalances
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<CustomerOpeningBalance>>> GetCustomerOpeningBalances()
+        public async Task<ActionResult<IEnumerable<CustomerOpeningBalance>>> GetCustomerOpeningBalances([FromQuery] string? sourceModule = "CustomerOpeningBalance")
         {
-            return await _context.CustomerOpeningBalances
+            var query = _context.CustomerOpeningBalances
                                  .Include(c => c.Customer)
                                  .Include(c => c.Ledger)
-                                 .ToListAsync();
+                                 .AsQueryable();
+
+            var targetModule = string.IsNullOrWhiteSpace(sourceModule) ? "CustomerOpeningBalance" : sourceModule.Trim();
+            if (targetModule != "all")
+            {
+                query = query.Where(c => c.SourceModule == targetModule);
+            }
+
+            return await query.ToListAsync();
         }
 
         // GET: api/CustomerOpeningBalances/5
@@ -98,6 +106,10 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<CustomerOpeningBalance>> PostCustomerOpeningBalance(CustomerOpeningBalance customerOpeningBalance)
         {
             customerOpeningBalance.CreatedOn = DateTime.Now;
+            if (string.IsNullOrWhiteSpace(customerOpeningBalance.SourceModule))
+            {
+                customerOpeningBalance.SourceModule = "CustomerOpeningBalance";
+            }
             _context.CustomerOpeningBalances.Add(customerOpeningBalance);
             await _context.SaveChangesAsync();
 

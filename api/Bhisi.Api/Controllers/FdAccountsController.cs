@@ -4157,6 +4157,7 @@ namespace Bhisi.Api.Controllers
                             LedgerID = ledgerId,
                             Amount = custDepositTotal,
                             BalanceType = "Cr",
+                            SourceModule = "FD",
                             CreatedBy = 1,
                             CreatedOn = DateTime.Now
                         };
@@ -4249,6 +4250,7 @@ namespace Bhisi.Api.Controllers
                             LedgerID = ledgerId,
                             Amount = custAccruedTotal,
                             BalanceType = "Cr",
+                            SourceModule = "FD",
                             CreatedBy = 1,
                             CreatedOn = DateTime.Now
                         };

@@ -4825,6 +4825,177 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        // GET: api/Reports/CustomerOpeningBalanceLedgers
+        [HttpGet("CustomerOpeningBalanceLedgers")]
+        public async Task<ActionResult<IEnumerable<LedgerOptionWithEntryDto>>> GetCustomerOpeningBalanceLedgers([FromQuery] string? sourceModule = "CustomerOpeningBalance")
+        {
+            try
+            {
+                var query = _context.CustomerOpeningBalances
+                    .AsNoTracking()
+                    .Include(b => b.Ledger)
+                    .AsQueryable();
+
+                if (!string.IsNullOrWhiteSpace(sourceModule) && sourceModule != "all")
+                {
+                    query = query.Where(b => b.SourceModule == sourceModule);
+                }
+
+                var distinctLedgersWithBalances = await query
+                    .GroupBy(b => new 
+                    { 
+                        b.LedgerID, 
+                        LedgerName = b.Ledger != null ? b.Ledger.LedgerName : "इतर लेजर", 
+                        AccountType = b.Ledger != null ? b.Ledger.AccountType : "" 
+                    })
+                    .Select(g => new LedgerOptionWithEntryDto
+                    {
+                        LedgerID = g.Key.LedgerID,
+                        LedgerName = g.Key.LedgerName,
+                        AccountType = g.Key.AccountType,
+                        EntryCount = g.Count(),
+                        TotalDebit = g.Where(x => x.BalanceType == "Dr").Sum(x => x.Amount),
+                        TotalCredit = g.Where(x => x.BalanceType == "Cr").Sum(x => x.Amount),
+                        NetBalance = Math.Abs(g.Where(x => x.BalanceType == "Dr").Sum(x => x.Amount) - g.Where(x => x.BalanceType == "Cr").Sum(x => x.Amount)),
+                        NetBalanceType = g.Where(x => x.BalanceType == "Dr").Sum(x => x.Amount) >= g.Where(x => x.BalanceType == "Cr").Sum(x => x.Amount) ? "Dr" : "Cr"
+                    })
+                    .OrderBy(l => l.LedgerName)
+                    .ToListAsync();
+
+                return Ok(distinctLedgersWithBalances);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "लेजर यादी लोड करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/CustomerOpeningBalanceReport
+        [HttpGet("CustomerOpeningBalanceReport")]
+        public async Task<ActionResult<CustomerOpeningBalanceReportDto>> GetCustomerOpeningBalanceReport(
+            [FromQuery] int? ledgerId = null,
+            [FromQuery] string? balanceType = null,
+            [FromQuery] string? search = null,
+            [FromQuery] int? branchId = null,
+            [FromQuery] string? sourceModule = "CustomerOpeningBalance")
+        {
+            try
+            {
+                var query = _context.CustomerOpeningBalances
+                    .AsNoTracking()
+                    .Include(b => b.Customer)
+                        .ThenInclude(c => c!.MemberProfile)
+                    .Include(b => b.Customer)
+                        .ThenInclude(c => c!.Branch)
+                    .Include(b => b.Ledger)
+                    .AsQueryable();
+
+                if (!string.IsNullOrWhiteSpace(sourceModule) && sourceModule != "all")
+                {
+                    query = query.Where(b => b.SourceModule == sourceModule);
+                }
+
+                if (ledgerId.HasValue && ledgerId.Value > 0)
+                {
+                    query = query.Where(b => b.LedgerID == ledgerId.Value);
+                }
+
+                if (!string.IsNullOrWhiteSpace(balanceType) && balanceType != "सर्व" && balanceType != "All")
+                {
+                    query = query.Where(b => b.BalanceType == balanceType);
+                }
+
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    query = query.Where(b => b.Customer != null && b.Customer.BranchID == branchId.Value);
+                }
+
+                var list = await query.ToListAsync();
+
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    var term = search.Trim().ToLower();
+                    list = list.Where(b =>
+                    {
+                        var cust = b.Customer;
+                        if (cust == null) return false;
+                        var fullName = $"{cust.FirstName} {cust.MiddleName} {cust.LastName}".ToLower();
+                        var cif = (cust.CIFNo ?? "").ToLower();
+                        var mob = (cust.MobileNo ?? "").ToLower();
+                        var mem = (cust.MemberProfile?.MemberCode ?? cust.MemberProfile?.LegacyMemberNo ?? "").ToLower();
+                        var ledger = (b.Ledger?.LedgerName ?? "").ToLower();
+                        return fullName.Contains(term) || cif.Contains(term) || mob.Contains(term) || mem.Contains(term) || ledger.Contains(term);
+                    }).ToList();
+                }
+
+                list = list.OrderBy(b => b.Ledger != null ? b.Ledger.LedgerName : "")
+                           .ThenBy(b => b.Customer != null ? (b.Customer.CIFNo ?? "") : "", new AlphanumericComparer())
+                           .ToList();
+
+                var rows = new List<CustomerOpeningBalanceRowDto>();
+                int sr = 1;
+                foreach (var item in list)
+                {
+                    var cust = item.Customer;
+                    var fullName = cust != null 
+                        ? string.Join(" ", new[] { cust.FirstName, cust.MiddleName, cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim()
+                        : "अज्ञात खातेदार";
+
+                    rows.Add(new CustomerOpeningBalanceRowDto
+                    {
+                        SrNo = sr++,
+                        CustomerOpeningBalanceID = item.CustomerOpeningBalanceID,
+                        CustomerID = item.CustomerID,
+                        CIFNo = cust?.CIFNo ?? string.Empty,
+                        LegacyCustomerNo = cust?.LegacyCustomerNo,
+                        MemberNo = cust?.MemberProfile?.MemberCode ?? cust?.MemberProfile?.LegacyMemberNo,
+                        CustomerName = fullName,
+                        MobileNo = cust?.MobileNo,
+                        Village = cust?.Village,
+                        Address = cust?.Address,
+                        LedgerID = item.LedgerID,
+                        LedgerName = item.Ledger?.LedgerName ?? "लेजर",
+                        Amount = item.Amount,
+                        BalanceType = item.BalanceType ?? "Dr",
+                        CreatedOn = item.CreatedOn
+                    });
+                }
+
+                decimal totalDebit = rows.Sum(r => r.DebitAmount);
+                decimal totalCredit = rows.Sum(r => r.CreditAmount);
+                decimal netBalance = Math.Abs(totalDebit - totalCredit);
+                string netType = totalDebit >= totalCredit ? "Dr" : "Cr";
+
+                string selectedLedgerName = "सर्व नोंदी असलेले लेजर्स";
+                if (ledgerId.HasValue && ledgerId.Value > 0)
+                {
+                    var ledgerObj = await _context.Ledgers.FindAsync(ledgerId.Value);
+                    if (ledgerObj != null)
+                    {
+                        selectedLedgerName = ledgerObj.LedgerName;
+                    }
+                }
+
+                var response = new CustomerOpeningBalanceReportDto
+                {
+                    SelectedLedgerId = ledgerId,
+                    SelectedLedgerName = selectedLedgerName,
+                    TotalCustomers = rows.Count,
+                    TotalDebit = totalDebit,
+                    TotalCredit = totalCredit,
+                    NetBalance = netBalance,
+                    NetBalanceType = netType,
+                    Rows = rows
+                };
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "खातेदार आरंभी शिल्लक अहवाल तयार करताना त्रुटी आली.", error = ex.Message });
+            }
+        }
+
         // =========================================================================
         // FD REPORTS (मुदत ठेव अहवाल - नोंदवही, बाकी, मुदतपूर्ती देय, खातावणी, स्थलांतरित यादी)
         // =========================================================================
@@ -5086,10 +5257,55 @@ namespace Bhisi.Api.Controllers
                 if (fdSchemeID.HasValue && fdSchemeID.Value > 0)
                     query = query.Where(f => f.FdSchemeID == fdSchemeID.Value);
 
-                var accounts = await query
+                var rawAccounts = await query
                     .OrderBy(f => f.AccountNo)
                     .ThenBy(f => f.FdAccountID)
-                    .Select(f => new
+                    .ToListAsync();
+
+                var accountIds = rawAccounts.Select(f => f.FdAccountID).ToList();
+
+                var txAccruals = await _context.FdTransactions
+                    .Where(t => accountIds.Contains(t.FdAccountID) && t.TransactionType == "Accrual")
+                    .GroupBy(t => t.FdAccountID)
+                    .Select(g => new { FdAccountID = g.Key, TotalAccrued = g.Sum(x => x.Amount) })
+                    .ToDictionaryAsync(x => x.FdAccountID, x => x.TotalAccrued);
+
+                var logAccruals = await _context.FdInterestAccruals
+                    .Where(a => accountIds.Contains(a.FdAccountID) && a.IsPosted)
+                    .GroupBy(a => a.FdAccountID)
+                    .Select(g => new { FdAccountID = g.Key, TotalAccrued = g.Sum(x => x.InterestAmount) })
+                    .ToDictionaryAsync(x => x.FdAccountID, x => x.TotalAccrued);
+
+                var accounts = rawAccounts.Select(f =>
+                {
+                    decimal txSum = txAccruals.TryGetValue(f.FdAccountID, out var tv) ? tv : 0;
+                    decimal logSum = logAccruals.TryGetValue(f.FdAccountID, out var lv) ? lv : 0;
+                    decimal systemAccrued = Math.Max(txSum, logSum);
+                    decimal totalPostedInterest = systemAccrued + f.LegacyAccruedInt;
+
+                    bool isCapitalized = false;
+                    if (f.FdScheme != null)
+                    {
+                        var intType = (f.FdScheme.InterestType ?? "").Trim().ToLower();
+                        var payoutFreq = (f.FdScheme.InterestPayoutFrequency ?? "").Trim().ToLower();
+                        var schemeName = (f.FdScheme.SchemeName ?? "").Trim().ToLower();
+
+                        if (intType == "cumulative" || 
+                            intType == "reinvestment" || 
+                            payoutFreq == "at maturity" || 
+                            schemeName.Contains("मुदतबंद") || 
+                            schemeName.Contains("पुनर्गंतवणूक") || 
+                            schemeName.Contains("cumulative"))
+                        {
+                            isCapitalized = true;
+                        }
+                    }
+
+                    decimal totalOutstandingWithInterest = isCapitalized
+                        ? (f.DepositAmount + totalPostedInterest)
+                        : f.DepositAmount;
+
+                    return new
                     {
                         f.FdAccountID,
                         f.FdSchemeID,
@@ -5109,9 +5325,12 @@ namespace Bhisi.Api.Controllers
                         MaturityDate = f.MaturityDate.ToString("yyyy-MM-dd"),
                         MaturityAmount = f.MaturityAmount > 0 ? f.MaturityAmount : (decimal?)(f.DepositAmount + f.LegacyAccruedInt),
                         f.LegacyAccruedInt,
+                        PostedInterest = totalPostedInterest,
+                        IsInterestCapitalized = isCapitalized,
+                        TotalOutstandingWithInterest = totalOutstandingWithInterest,
                         Status = f.Status ?? "Active"
-                    })
-                    .ToListAsync();
+                    };
+                }).ToList();
 
                 return Ok(accounts);
             }

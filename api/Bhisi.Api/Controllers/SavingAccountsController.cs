@@ -665,6 +665,7 @@ namespace Bhisi.Api.Controllers
                     LedgerID = savingAccount.LedgerID,
                     Amount = savingAccount.OpeningBalance,
                     BalanceType = "Cr",
+                    SourceModule = "Saving",
                     CreatedBy = savingAccount.CreatedBy,
                     CreatedOn = DateTime.Now
                 };
@@ -887,6 +888,7 @@ namespace Bhisi.Api.Controllers
                                 LedgerID = newLedgerId,
                                 Amount = newBalance,
                                 BalanceType = "Cr",
+                                SourceModule = "Saving",
                                 CreatedBy = existing.CreatedBy,
                                 CreatedOn = DateTime.Now
                             });
@@ -941,6 +943,7 @@ namespace Bhisi.Api.Controllers
                                     LedgerID = newLedgerId,
                                     Amount = totalNewCustAmount,
                                     BalanceType = "Cr",
+                                    SourceModule = "Saving",
                                     CreatedBy = existing.CreatedBy,
                                     CreatedOn = DateTime.Now
                                 });

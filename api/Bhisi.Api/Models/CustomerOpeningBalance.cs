@@ -28,6 +28,9 @@ namespace Bhisi.Api.Models
         [StringLength(2)]
         public string BalanceType { get; set; } = "Dr"; // Dr (येणे) or Cr (देणे)
 
+        [MaxLength(50)]
+        public string SourceModule { get; set; } = "CustomerOpeningBalance"; // CustomerOpeningBalance, FD, Saving, RD, Pigmy, Loan
+
         // Audit Fields
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedOn { get; set; } = DateTime.UtcNow;

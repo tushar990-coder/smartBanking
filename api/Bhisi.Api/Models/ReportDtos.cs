@@ -582,5 +582,50 @@ namespace Bhisi.Api.Models
         public int CommercialCount { get; set; }
         public List<CustomerReportRowDto> Rows { get; set; } = new();
     }
+
+    public class LedgerOptionWithEntryDto
+    {
+        public int LedgerID { get; set; }
+        public string LedgerName { get; set; } = string.Empty;
+        public string AccountType { get; set; } = string.Empty;
+        public int EntryCount { get; set; }
+        public decimal TotalDebit { get; set; }
+        public decimal TotalCredit { get; set; }
+        public decimal NetBalance { get; set; }
+        public string NetBalanceType { get; set; } = "Dr";
+    }
+
+    public class CustomerOpeningBalanceRowDto
+    {
+        public int SrNo { get; set; }
+        public int CustomerOpeningBalanceID { get; set; }
+        public int CustomerID { get; set; }
+        public string CIFNo { get; set; } = string.Empty;
+        public string? LegacyCustomerNo { get; set; }
+        public string? MemberNo { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string? MobileNo { get; set; }
+        public string? Village { get; set; }
+        public string? Address { get; set; }
+        public int LedgerID { get; set; }
+        public string LedgerName { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string BalanceType { get; set; } = "Dr";
+        public decimal DebitAmount => BalanceType == "Dr" ? Amount : 0;
+        public decimal CreditAmount => BalanceType == "Cr" ? Amount : 0;
+        public DateTime CreatedOn { get; set; }
+    }
+
+    public class CustomerOpeningBalanceReportDto
+    {
+        public int? SelectedLedgerId { get; set; }
+        public string SelectedLedgerName { get; set; } = string.Empty;
+        public int TotalCustomers { get; set; }
+        public decimal TotalDebit { get; set; }
+        public decimal TotalCredit { get; set; }
+        public decimal NetBalance { get; set; }
+        public string NetBalanceType { get; set; } = "Dr";
+        public List<CustomerOpeningBalanceRowDto> Rows { get; set; } = new();
+    }
 }
 

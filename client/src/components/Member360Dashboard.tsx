@@ -115,7 +115,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
         },
         fd: {
             title: 'मुदत ठेव (FD) रिपोर्ट',
-            countLabel: '५ रिपोर्ट उपलब्ध',
+            countLabel: '९ रिपोर्ट उपलब्ध',
             borderColor: 'border-teal-600',
             headerBg: 'bg-teal-50/90',
             headerBorder: 'border-teal-200',
@@ -131,7 +131,11 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                 { id: 'fd-reports&reportType=Outstanding', name: '२. मुदत ठेव बाकी रिपोर्ट (FD Outstanding)' },
                 { id: 'fd-reports&reportType=MaturityDue', name: '३. मुदतपूर्ती देय रिपोर्ट (Maturity Due)' },
                 { id: 'fd-reports&reportType=MemberLedger', name: '४. मुदत ठेव खातावणी रिपोर्ट (FD Account Ledger)' },
-                { id: 'fd-accrual', name: '५. मुदत ठेव व्याज तरतूद रिपोर्ट (FD Interest Provision)' },
+                { id: 'fd-reports&reportType=AccrualProvision', name: '५. मुदत ठेव व्याज तरतूद (FD Interest Provision)' },
+                { id: 'fd-reports&reportType=VoucherPassing', name: '६. मुदत ठेव व्हाउचर पासिंग अहवाल (Voucher Passing)' },
+                { id: 'fd-reports&reportType=DeletedEntries', name: '७. मुदत ठेव थेट रद्द नोंदी व रोलबॅक अहवाल (Deleted & Rollback)' },
+                { id: 'fd-reports&reportType=MigratedFD', name: '८. स्थलांतरित मुदत ठेव (FD) यादी अहवाल (Migrated FD Report)' },
+                { id: 'fd-reports&reportType=CustomerSummary', name: '९. मुदतबंद ठेव यादी (ग्राहक-निहाय एकत्रित ठेवी)' }
             ]
         },
         rd: {

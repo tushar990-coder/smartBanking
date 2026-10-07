@@ -79,6 +79,7 @@ import LoanOverdueReport from './components/LoanOverdueReport';
 import LoanRecoveryNoticeReport from './components/LoanRecoveryNoticeReport';
 import GuarantorReport from './components/GuarantorReport';
 import CustomerListReport from './components/CustomerListReport';
+import CustomerOpeningBalanceReport from './components/CustomerOpeningBalanceReport';
 import MemberListReport from './components/MemberListReport';
 import AadhaarCardYadiReport from './components/AadhaarCardYadiReport';
 import SabhasadLabhanshReport from './components/SabhasadLabhanshReport';
@@ -390,6 +391,7 @@ function App() {
     'interest-waiver-register': '/reports/interest-waiver',
     'guarantor-loan-report': '/reports/guarantor-report',
     'customer-list-report': '/reports/customer-list',
+    'customer-opening-balance-report': '/reports/customer-opening-balance',
     'member-list-report': '/reports/member-list',
     'aadhaar-list': '/reports/aadhaar-list',
     'sabhasad-labhansh-report': '/reports/labhansh-report',
@@ -1668,6 +1670,7 @@ function App() {
         {activeTab === 'interest-waiver-register' && <InterestWaiverRegister />}
         {activeTab === 'guarantor-loan-report' && <GuarantorReport />}
         {activeTab === 'customer-list-report' && <CustomerListReport />}
+        {activeTab === 'customer-opening-balance-report' && <CustomerOpeningBalanceReport />}
         {activeTab === 'member-list-report' && <MemberListReport />}
         {activeTab === 'aadhaar-list' && <AadhaarCardYadiReport />}
         {activeTab === 'sabhasad-labhansh-report' && <SabhasadLabhanshReport />}

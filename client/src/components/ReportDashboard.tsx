@@ -54,6 +54,7 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
       bgColor: 'bg-emerald-50',
       reports: [
         { id: 'customer-list-report', name: 'खातेदार यादी (Customer / CIF List)' },
+        { id: 'customer-opening-balance-report', name: 'खातेदार बाकी रिपोर्ट (Customer Balance Report)' },
         { id: 'member-list-report', name: 'सभासद यादी (Member List)' },
         { id: 'aadhaar-list', name: 'आधार कार्ड यादी (Aadhaar Card List)' },
         { id: 'member-balance-report', name: 'सभासद शेअर्स यादी (Member Shares List)' },
@@ -113,8 +114,12 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
         { id: 'fd-reports&reportType=Register', name: '१. मुदत ठेव नोंदवही (FD Register)' },
         { id: 'fd-reports&reportType=Outstanding', name: '२. मुदत ठेव बाकी अहवाल (FD Outstanding)' },
         { id: 'fd-reports&reportType=MaturityDue', name: '३. मुदतपूर्ती देय अहवाल (Maturity Due)' },
-        { id: 'fd-reports&reportType=MemberLedger', name: '✨ ४. मुदत ठेव खातावणी अहवाल (FD Account Ledger)' },
-        { id: 'fd-accrual', name: '⚡ ५. मुदत ठेव व्याज तरतूद अहवाल / रन (FD Interest Provision)' }
+        { id: 'fd-reports&reportType=MemberLedger', name: '४. मुदत ठेव खातावणी अहवाल (FD Account Ledger)' },
+        { id: 'fd-reports&reportType=AccrualProvision', name: '५. मुदत ठेव व्याज तरतूद (FD Interest Provision)' },
+        { id: 'fd-reports&reportType=VoucherPassing', name: '६. मुदत ठेव व्हाउचर पासिंग अहवाल (Voucher Passing)' },
+        { id: 'fd-reports&reportType=DeletedEntries', name: '७. मुदत ठेव थेट रद्द नोंदी व रोलबॅक अहवाल (Deleted & Rollback)' },
+        { id: 'fd-reports&reportType=MigratedFD', name: '८. स्थलांतरित मुदत ठेव (FD) यादी अहवाल (Migrated FD Report)' },
+        { id: 'fd-reports&reportType=CustomerSummary', name: '९. मुदतबंद ठेव यादी (ग्राहक-निहाय एकत्रित ठेवी / Customer Summary)' }
       ]
     },
     {

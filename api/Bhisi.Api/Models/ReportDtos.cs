@@ -238,6 +238,8 @@ namespace Bhisi.Api.Models
         public decimal TotalDisbursedAmount { get; set; }
         public int DisbursementCount { get; set; }
         public decimal PendingSanctionedAmount { get; set; }
+        public DateTime? LastInstallmentPaidDate { get; set; }
+        public DateTime? LastInterestPostingDate { get; set; }
         public List<LoanTrancheDetailDto> Tranches { get; set; } = new();
         public List<LoanInstallmentScheduleDto> Schedule { get; set; } = new();
     }

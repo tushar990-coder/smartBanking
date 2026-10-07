@@ -47,6 +47,7 @@ interface LoanAccount {
     interestRate?: number;
     loanDisbursementDate?: string;
     lastInstallmentPaidDate?: string;
+    lastInterestPostingDate?: string;
     openingDate: string;
     maturityDate: string;
     isOpeningBalance?: boolean;
@@ -90,6 +91,8 @@ interface AccountDetailsAndSchedule {
     totalDisbursedAmount?: number;
     disbursementCount?: number;
     pendingSanctionedAmount?: number;
+    lastInstallmentPaidDate?: string;
+    lastInterestPostingDate?: string;
     tranches?: LoanTrancheDetail[];
     schedule: LoanInstallmentScheduleDto[];
 }
@@ -380,6 +383,10 @@ const LoanCollectionMaster: React.FC = () => {
                 await axios.delete(`/api/LoanCollections/${id}`);
                 alert("पावती यशस्वीरित्या डिलीट झाली!");
                 fetchData();
+                await fetchAccounts();
+                if (selectedAccount) {
+                    selectLoanAccountById(selectedAccount.loanAccountID);
+                }
             } catch (err: any) {
                 console.error("Failed to delete receipt", err);
                 alert(err.response?.data?.message || "पावती डिलीट करताना त्रुटी आली.");
@@ -456,7 +463,9 @@ const LoanCollectionMaster: React.FC = () => {
                         interestBalance: res.data.currentInterestBalance !== undefined ? res.data.currentInterestBalance : prev.interestBalance,
                         overdueInterestBalance: res.data.currentOverdueInterestBalance !== undefined ? res.data.currentOverdueInterestBalance : prev.overdueInterestBalance,
                         sanctionedAmount: res.data.sanctionedAmount !== undefined ? res.data.sanctionedAmount : prev.sanctionedAmount,
-                        loanDisbursementDate: res.data.disbursementDate || prev.loanDisbursementDate
+                        loanDisbursementDate: res.data.disbursementDate || prev.loanDisbursementDate,
+                        lastInstallmentPaidDate: res.data.lastInstallmentPaidDate !== undefined ? res.data.lastInstallmentPaidDate : prev.lastInstallmentPaidDate,
+                        lastInterestPostingDate: res.data.lastInterestPostingDate !== undefined ? res.data.lastInterestPostingDate : prev.lastInterestPostingDate
                     };
                 });
             }
@@ -533,10 +542,53 @@ const LoanCollectionMaster: React.FC = () => {
 
     const getInterestStartDate = (acc: any): string | null => {
         if (!acc) return null;
-        if (acc.lastInstallmentPaidDate) {
-            return acc.lastInstallmentPaidDate;
+        let latestDate: Date | null = null;
+        let latestDateStr: string | null = null;
+
+        const checkDate = (dStr: string | undefined | null) => {
+            if (!dStr) return;
+            const d = parseDateSafe(dStr);
+            if (!isNaN(d.getTime())) {
+                if (!latestDate || d.getTime() > latestDate.getTime()) {
+                    latestDate = d;
+                    latestDateStr = dStr;
+                }
+            }
+        };
+
+        checkDate(acc.lastInterestPostingDate);
+        checkDate(acc.lastInstallmentPaidDate);
+
+        // Core Banking Rule: For opening balance loans, interest begins from openingDate (migration cutoff date e.g. 31/03/2026), NOT historical disbursementDate (e.g. 31/03/2025)
+        if (acc.isOpeningBalance && acc.openingDate) {
+            const opDate = parseDateSafe(acc.openingDate);
+            if (!isNaN(opDate.getTime())) {
+                if (!latestDate || latestDate.getTime() < opDate.getTime()) {
+                    return acc.openingDate;
+                }
+            }
         }
+
+        if (latestDateStr) {
+            return latestDateStr;
+        }
+
         return acc.loanDisbursementDate || acc.openingDate || null;
+    };
+
+    // Core banking day count: Excludes repayment date unless configured otherwise (e.g. 31/03/2026 to 07/10/2026 = 189 days)
+    const calculateElapsedDays = (fromDateStr: string | Date | null | undefined, toDateVal: string | Date | null | undefined): number => {
+        if (!fromDateStr) return 0;
+        const fromDate = parseDateSafe(fromDateStr);
+        fromDate.setHours(0, 0, 0, 0);
+        const toDate = parseDateSafe(toDateVal || new Date());
+        toDate.setHours(0, 0, 0, 0);
+
+        const rawDiffDays = Math.round((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (rawDiffDays <= 0) return 0;
+
+        const isIncludePaymentDay = sanstha?.loanInterestDayCountMethod === 'IncludePaymentDay';
+        return isIncludePaymentDay ? rawDiffDays : Math.max(0, rawDiffDays - 1);
     };
 
     const calculateInterest = (acc: any, dateStr: string) => {
@@ -555,12 +607,7 @@ const LoanCollectionMaster: React.FC = () => {
             const fromDateStr = getInterestStartDate(acc);
             let accruedInterest = acc.interestBalance || 0;
             if (fromDateStr) {
-                const fromDate = new Date(fromDateStr);
-                fromDate.setHours(0, 0, 0, 0);
-                const toDate = parseDateSafe(dateStr || new Date());
-                toDate.setHours(0, 0, 0, 0);
-                const diffTime = toDate.getTime() - fromDate.getTime();
-                const diffDays = Math.max(0, Math.round(diffTime / (1000 * 60 * 60 * 24)));
+                const diffDays = calculateElapsedDays(fromDateStr, dateStr || new Date());
                 if (diffDays > 0) {
                     accruedInterest += Math.round((principal * rate * diffDays) / 36500);
                 }
@@ -710,12 +757,7 @@ const LoanCollectionMaster: React.FC = () => {
         
         let interestDue = account.interestBalance || 0;
         if (fromDateStr) {
-            const fromDate = new Date(fromDateStr);
-            fromDate.setHours(0, 0, 0, 0);
-            const toDate = new Date(dateStr);
-            toDate.setHours(0, 0, 0, 0);
-            const diffTime = toDate.getTime() - fromDate.getTime();
-            const diffDays = Math.max(0, Math.round(diffTime / (1000 * 60 * 60 * 24)));
+            const diffDays = calculateElapsedDays(fromDateStr, dateStr);
             if (diffDays > 0) {
                 interestDue += Math.round((principal * rate * diffDays) / 36500);
             }
@@ -1292,6 +1334,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 <tr className="bg-gray-100 text-primary border-b-2 border-primary font-bold">
                                     <th className="p-1 border-r border-gray-300">कर्ज प्रकार</th>
                                     <th className="p-1 border-r border-gray-300">कर्ज उचल दिनांक</th>
+                                    <th className="p-1 border-r border-gray-300 bg-sky-50 text-sky-900 font-bold">व्याज आकारणी पासून</th>
                                     <th className="p-1 border-r border-gray-300">कर्ज उचल रक्कम</th>
                                     <th className="p-1 border-r border-gray-300 text-primary font-bold">हप्त्याची रक्कम</th>
                                     <th className="p-1 border-r border-gray-300">व्याज दर (%)</th>
@@ -1375,16 +1418,12 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                              const rate = selectedAccount.loanRate?.interestRate || selectedAccount.interestRate || 0;
                                              const principal = yeneBaki;
                                              const fromDateStr = getInterestStartDate(selectedAccount);
-                                             if (fromDateStr) {
-                                                 const fromDate = parseDateSafe(fromDateStr);
-                                                 fromDate.setHours(0, 0, 0, 0);
-                                                 const toDate = parseDateSafe(formData.collectionDate || new Date());
-                                                 toDate.setHours(0, 0, 0, 0);
-                                                 const diffDays = Math.max(0, Math.round((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24)));
-                                                 if (diffDays > 0) {
-                                                     vyaj = Math.round((principal * rate * diffDays) / 36500);
-                                                 }
-                                             }
+                                            if (fromDateStr) {
+                                                const diffDays = calculateElapsedDays(fromDateStr, formData.collectionDate);
+                                                if (diffDays > 0) {
+                                                    vyaj = Math.round((principal * rate * diffDays) / 36500);
+                                                }
+                                            }
 
                                              if (accountDetails?.schedule) {
                                                  paikiThakbaki = accountDetails.schedule
@@ -1409,15 +1448,11 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                          }
 
                                          // Calculate actual elapsed days for display
-                                         let days = 0;
-                                         const fromDateStrGrid = getInterestStartDate(selectedAccount);
-                                         if (fromDateStrGrid) {
-                                             const fromDate = parseDateSafe(fromDateStrGrid);
-                                             fromDate.setHours(0, 0, 0, 0);
-                                             const toDate = parseDateSafe(formData.collectionDate || new Date());
-                                             toDate.setHours(0, 0, 0, 0);
-                                             days = Math.max(0, Math.round((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24)));
-                                         }
+                                        let days = 0;
+                                        const fromDateStrGrid = getInterestStartDate(selectedAccount);
+                                        if (fromDateStrGrid) {
+                                            days = calculateElapsedDays(fromDateStrGrid, formData.collectionDate);
+                                        }
 
                                          // Calculate Remaining Loan Amount (शिल्लक कर्ज रक्कम)
                                          const shillakKarjRakkam = Math.max(0, yeneBaki - (formData.principalCollected || 0));
@@ -1429,7 +1464,10 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                              <tr className="border-b border-gray-200 hover:bg-gray-50">
                                                  <td className="p-1.5 border-r border-gray-200 font-semibold">{selectedAccount.loanRate?.shortName || selectedAccount.loanRate?.loanType || 'N/A'}</td>
                                                  <td className="p-1.5 border-r border-gray-200">{disbursementDate ? formatDateSafe(disbursementDate) : ''}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-semibold">{totalDisbursed.toFixed(2)}</td>
+                                                <td className="p-1.5 border-r border-gray-200 font-mono text-sky-800 font-bold bg-sky-50/50">
+                                                    {fromDateStrGrid ? formatDateSafe(fromDateStrGrid) : '-'}
+                                                </td>
+                                                <td className="p-1.5 border-r border-gray-200 font-mono font-semibold">{totalDisbursed.toFixed(2)}</td>
                                                  <td className="p-1.5 border-r border-gray-200 font-mono font-bold text-primary">{(selectedAccount.installmentAmount || 0).toFixed(2)}</td>
                                                  <td className="p-1.5 border-r border-gray-200 font-mono">{interestRate.toFixed(2)}%</td>
                                                  <td className="p-1.5 border-r border-gray-200 font-mono font-semibold text-slate-700">{yeneBaki.toFixed(2)}</td>
@@ -1442,7 +1480,9 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                  <td className="p-1.5 border-r border-gray-200 font-mono">{dandVyaj.toFixed(2)}</td>
                                                  <td className="p-1.5 border-r border-gray-200 font-mono">{surcharge.toFixed(2)}</td>
                                                  <td className="p-1.5 border-r border-gray-200 font-mono">{vasuliFee.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-semibold">{days}</td>
+                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-semibold" title={`व्याज दिवस: ${fromDateStrGrid ? formatDateSafe(fromDateStrGrid) : ''} ते ${formatDateSafe(formData.collectionDate || new Date())} (${days} दिवस, भरणा दिनांक वगळून)`}>
+                                                    {days}
+                                                </td>
                                                  <td className="p-1.5 border-r border-gray-200 font-mono font-bold text-primary">{shillakKarjRakkam.toFixed(2)}</td>
                                                  <td className="p-1.5 font-mono font-bold bg-amber-100 text-amber-900 text-xs">{ekunVasulpatra.toFixed(2)}</td>
                                              </tr>
@@ -1450,7 +1490,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                      })()
                                  ) : (
                                      <tr>
-                                         <td colSpan={18} className="p-8 text-gray-400 italic">कृपया खाते निवडा (Select Account)</td>
+                                         <td colSpan={19} className="p-8 text-gray-400 italic">कृपया खाते निवडा (Select Account)</td>
                                      </tr>
                                  )}
                             </tbody>

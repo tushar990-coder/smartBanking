@@ -5452,6 +5452,37 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- LOAN ACCOUNTS & COLLECTIONS SELF-HEALING (v2.5.35)
+-- Auto-reset LastInstallmentPaidDate to NULL or latest valid LoanCollection date
+-- -----------------------------------------------------------------------------------------
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanAccounts') AND EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollections')
+BEGIN
+    -- 1. If an account has LastInstallmentPaidDate set but NO collections exist in LoanCollections, reset to NULL
+    UPDATE la
+    SET la.LastInstallmentPaidDate = NULL
+    FROM [LoanAccounts] la
+    WHERE la.LastInstallmentPaidDate IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM [LoanCollections] lc WHERE lc.LoanAccountID = la.LoanAccountID
+      );
+
+    -- 2. If an account has collections, ensure LastInstallmentPaidDate matches the latest collection date
+    UPDATE la
+    SET la.LastInstallmentPaidDate = latest.MaxDate
+    FROM [LoanAccounts] la
+    CROSS APPLY (
+        SELECT MAX(lc.CollectionDate) AS MaxDate
+        FROM [LoanCollections] lc
+        WHERE lc.LoanAccountID = la.LoanAccountID
+    ) latest
+    WHERE latest.MaxDate IS NOT NULL
+      AND (la.LastInstallmentPaidDate IS NULL OR la.LastInstallmentPaidDate <> latest.MaxDate);
+
+    PRINT '  -> Self-healed LoanAccounts.LastInstallmentPaidDate against LoanCollections';
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

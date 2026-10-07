@@ -203,6 +203,14 @@ if (Test-Path $fdBsHealSource) {
     Write-Host "  -> heal_fd_opening_balance_discrepancy.sql included in database package (UTF-8 BOM)." -ForegroundColor White
 }
 
+# 3.1.6 Auto-Heal Universal Database Schema (SourceModule & Joint Holders)
+$univHealSource = Join-Path $workspaceRoot "tools\heal_all_databases_schema.sql"
+if (Test-Path $univHealSource) {
+    $univHealContent = [System.IO.File]::ReadAllText($univHealSource, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText((Join-Path $patchFolder "database\heal_all_databases_schema.sql"), $univHealContent, $utf8WithBom)
+    Write-Host "  -> heal_all_databases_schema.sql included in database package (UTF-8 BOM)." -ForegroundColor White
+}
+
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null

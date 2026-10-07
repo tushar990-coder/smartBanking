@@ -227,6 +227,18 @@ namespace Bhisi.Api.Controllers
                 .ThenBy(c => c.LoanCollectionID)
                 .ToListAsync();
 
+            // Self-healing: Ensure LastInstallmentPaidDate matches actual collections in DB
+            if (!collections.Any() && account.LastInstallmentPaidDate.HasValue)
+            {
+                account.LastInstallmentPaidDate = null;
+                await _context.SaveChangesAsync();
+            }
+            else if (collections.Any() && account.LastInstallmentPaidDate != collections.Last().CollectionDate)
+            {
+                account.LastInstallmentPaidDate = collections.Last().CollectionDate;
+                await _context.SaveChangesAsync();
+            }
+
             decimal totalPrincipalCollected = collections.Sum(c => c.PrincipalCollected);
             decimal totalInterestCollected = collections.Sum(c => c.InterestCollected);
 
@@ -348,6 +360,8 @@ namespace Bhisi.Api.Controllers
                 TotalDisbursedAmount = totalDisbursed > 0 ? totalDisbursed : account.PrincipalBalance,
                 DisbursementCount = allDisbursements.Count,
                 PendingSanctionedAmount = pendingLimit,
+                LastInstallmentPaidDate = account.LastInstallmentPaidDate,
+                LastInterestPostingDate = account.LastInterestPostingDate,
                 Tranches = allDisbursements.Select(d => new LoanTrancheDetailDto
                 {
                     DisbursementID = d.LoanDisbursementID,

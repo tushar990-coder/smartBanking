@@ -181,15 +181,33 @@ namespace Bhisi.Api.Controllers
 
                     if (isDailyReducing)
                     {
-                        var fromDateStr = loanAccount.LastInstallmentPaidDate ?? loanAccount.LoanDisbursementDate ?? loanAccount.OpeningDate;
-                        if (loanAccount.LastInterestPostingDate.HasValue && loanAccount.LastInterestPostingDate.Value > fromDateStr)
+                        var fromDateStr = loanAccount.LastInterestPostingDate 
+                            ?? loanAccount.LastInstallmentPaidDate 
+                            ?? (loanAccount.IsOpeningBalance ? loanAccount.OpeningDate : (DateTime?)null)
+                            ?? loanAccount.LoanDisbursementDate 
+                            ?? loanAccount.OpeningDate;
+
+                        if (loanAccount.LastInstallmentPaidDate.HasValue && loanAccount.LastInterestPostingDate.HasValue)
                         {
-                            fromDateStr = loanAccount.LastInterestPostingDate.Value;
+                            fromDateStr = loanAccount.LastInstallmentPaidDate.Value > loanAccount.LastInterestPostingDate.Value
+                                ? loanAccount.LastInstallmentPaidDate.Value
+                                : loanAccount.LastInterestPostingDate.Value;
+                        }
+
+                        // Core Banking Rule: For opening balance loans, interest begins from OpeningDate unless an installment/posting occurred after OpeningDate
+                        if (loanAccount.IsOpeningBalance)
+                        {
+                            if (fromDateStr < loanAccount.OpeningDate)
+                            {
+                                fromDateStr = loanAccount.OpeningDate;
+                            }
                         }
 
                         var rate = loanRate?.InterestRate ?? loanAccount.InterestRate;
-                        var diffTime = collection.CollectionDate - fromDateStr;
-                        var diffDays = Math.Max(0, diffTime.Days);
+                        var diffTime = collection.CollectionDate.Date - fromDateStr.Date;
+                        var rawDiffDays = Math.Max(0, diffTime.Days);
+                        // Standard core banking rule: repayment date is excluded from interest computation (e.g. 31/03/2026 to 07/10/2026 => 189 days)
+                        var diffDays = rawDiffDays > 0 ? rawDiffDays - 1 : 0;
                         decimal effectivePrincipal = LoanAccountsController.GetEffectiveInterestBearingPrincipal(loanAccount);
                         decimal newInterest = diffDays > 0 ? Math.Round((effectivePrincipal * rate * diffDays) / 36500m) : 0;
                         loanAccount.InterestBalance += newInterest;
@@ -666,15 +684,37 @@ namespace Bhisi.Api.Controllers
 
                 if (collection == null) return NotFound("Receipt not found.");
 
-                // Revert LoanAccount PrincipalBalance
+                // Revert LoanAccount PrincipalBalance and LastInstallmentPaidDate
                 var loanAccount = await _context.LoanAccounts.FindAsync(collection.LoanAccountID);
                 if (loanAccount != null)
                 {
                     loanAccount.PrincipalBalance += collection.PrincipalCollected;
+                    loanAccount.PurePrincipalBalance = Math.Min(loanAccount.PrincipalBalance, loanAccount.PurePrincipalBalance + collection.PrincipalCollected);
+                    if (collection.PenaltyInterestCollected > 0)
+                    {
+                        loanAccount.OverdueInterestBalance += collection.PenaltyInterestCollected;
+                    }
                     if (loanAccount.Status == "Closed" && loanAccount.PrincipalBalance > 0)
                     {
                         loanAccount.Status = "Active";
                     }
+
+                    // Revert LastInstallmentPaidDate to latest remaining collection or null
+                    var remainingCollections = await _context.LoanCollections
+                        .Where(c => c.LoanAccountID == loanAccount.LoanAccountID && c.LoanCollectionID != id)
+                        .OrderByDescending(c => c.CollectionDate)
+                        .ThenByDescending(c => c.LoanCollectionID)
+                        .ToListAsync();
+
+                    if (remainingCollections.Any())
+                    {
+                        loanAccount.LastInstallmentPaidDate = remainingCollections.First().CollectionDate;
+                    }
+                    else
+                    {
+                        loanAccount.LastInstallmentPaidDate = null;
+                    }
+
                     _context.Entry(loanAccount).State = EntityState.Modified;
                 }
 

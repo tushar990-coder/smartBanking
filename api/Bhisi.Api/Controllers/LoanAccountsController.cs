@@ -602,7 +602,10 @@ namespace Bhisi.Api.Controllers
 
                 if (dto.Schedule != null && dto.Schedule.Any())
                 {
-                    decimal totalPrincipalPaid = dto.SanctionedAmount - dto.PrincipalBalance;
+                    decimal pureBal = dto.PurePrincipalBalance > 0 
+                        ? dto.PurePrincipalBalance 
+                        : (dto.CapitalizedInterestAmount > 0 ? (dto.PrincipalBalance - dto.CapitalizedInterestAmount) : dto.PrincipalBalance);
+                    decimal totalPrincipalPaid = Math.Max(0, dto.SanctionedAmount - pureBal);
                     foreach (var s in dto.Schedule)
                     {
                         string status = "Pending";
@@ -865,7 +868,10 @@ namespace Bhisi.Api.Controllers
                 // Add new schedule
                 if (dto.Schedule != null && dto.Schedule.Any())
                 {
-                    decimal totalPrincipalPaid = dto.SanctionedAmount - dto.PrincipalBalance;
+                    decimal pureBal = dto.PurePrincipalBalance > 0 
+                        ? dto.PurePrincipalBalance 
+                        : (dto.CapitalizedInterestAmount > 0 ? (dto.PrincipalBalance - dto.CapitalizedInterestAmount) : dto.PrincipalBalance);
+                    decimal totalPrincipalPaid = Math.Max(0, dto.SanctionedAmount - pureBal);
                     foreach (var s in dto.Schedule)
                     {
                         string status = "Pending";
@@ -1219,14 +1225,27 @@ namespace Bhisi.Api.Controllers
             if (dto.PrincipalBalance < 0)
                 return "मुद्दल बाकी (Principal Balance) उणे (Negative) असू शकत नाही.";
 
-            if (dto.PrincipalBalance > dto.SanctionedAmount)
-                return $"मुद्दल बाकी (₹ {dto.PrincipalBalance:N2}) मंजूर रक्कमेपेक्षा (₹ {dto.SanctionedAmount:N2}) जास्त असू शकत नाही.";
-
             if (dto.PurePrincipalBalance < 0)
-                return "निव्वळ मुद्दल बाकी (Pure Principal Balance) उणे (Negative) असू शकत नाही.";
+                return "शुद्ध मुद्दल बाकी (Pure Principal Balance) उणे (Negative) असू शकत नाही.";
 
             if (dto.CapitalizedInterestAmount < 0)
                 return "मुद्दलात समाविष्ट व्याज (Capitalized Interest Amount) उणे (Negative) असू शकत नाही.";
+
+            // CBS Prudential Rule: Pure principal disbursed cannot exceed sanctioned limit
+            decimal effectivePurePrincipal = dto.PurePrincipalBalance > 0 
+                ? dto.PurePrincipalBalance 
+                : (dto.CapitalizedInterestAmount > 0 ? (dto.PrincipalBalance - dto.CapitalizedInterestAmount) : dto.PrincipalBalance);
+
+            if (effectivePurePrincipal > dto.SanctionedAmount)
+            {
+                return $"शुद्ध मुद्दल बाकी (₹ {effectivePurePrincipal:N2}) मंजूर रकमेपेक्षा (₹ {dto.SanctionedAmount:N2}) जास्त असू शकत नाही.";
+            }
+
+            // If no capitalized interest is reported, total principal balance cannot exceed sanctioned limit
+            if (dto.CapitalizedInterestAmount <= 0 && dto.PrincipalBalance > dto.SanctionedAmount)
+            {
+                return $"मुद्दल बाकी (₹ {dto.PrincipalBalance:N2}) मंजूर रकमेपेक्षा (₹ {dto.SanctionedAmount:N2}) जास्त असू शकत नाही. जर मुद्दलात व्याज समाविष्ट असेल तर कृपया 'मुद्दलात समाविष्ट व्याज' रकान्यात नोंद करा.";
+            }
 
             if (dto.InterestBalance < 0)
                 return "चालू येणे व्याज शिल्लक (Interest Balance) उणे (Negative) असू शकत नाही.";

@@ -64,6 +64,7 @@ export default function RdOpeningBalanceMigration() {
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
+  const [showSchedule, setShowSchedule] = useState(false);
 
   const formContainerRef = useRef<HTMLDivElement>(null);
   const installmentInputRef = useRef<HTMLInputElement>(null);
@@ -236,6 +237,58 @@ export default function RdOpeningBalanceMigration() {
     }
   };
 
+  const generateSchedule = () => {
+    const rows: Array<{
+      month: number;
+      date: string;
+      deposit: number;
+      balance: number;
+      interest: number;
+      isPaid: boolean;
+    }> = [];
+
+    const dur = parseInt(formData.durationMonths?.toString() || '12', 10) || 12;
+    const inst = parseFloat(formData.installmentAmount?.toString() || '0') || 0;
+    const rate = parseFloat(formData.interestRate?.toString() || '0') || 0;
+    const paidCount = parseInt(formData.totalPaidInstallments?.toString() || '0', 10) || 0;
+
+    if (dur <= 0 || inst <= 0) return rows;
+
+    const selectedScheme = schemes.find(s => s.rdSchemeID.toString() === formData.rdSchemeID);
+    const method = selectedScheme?.interestMethod || 'Compound';
+    const opening = new Date(formData.openingDate);
+
+    let runningBalance = 0;
+
+    for (let i = 1; i <= dur; i++) {
+      const rowDate = new Date(opening);
+      if (!isNaN(opening.getTime())) {
+        rowDate.setMonth(rowDate.getMonth() + i - 1);
+      }
+
+      runningBalance += inst;
+
+      let interest = 0;
+      if (method === 'Simple' || method === 'Flat') {
+        interest = (runningBalance * rate) / (12 * 100);
+      } else {
+        const monthsInBank = dur - i + 1;
+        const factor = Math.pow(1.0 + (rate / 400.0), monthsInBank / 3.0);
+        interest = (inst * factor) - inst;
+      }
+
+      rows.push({
+        month: i,
+        date: !isNaN(rowDate.getTime()) ? rowDate.toLocaleDateString('en-GB') : `हप्ता ${i}`,
+        deposit: inst,
+        balance: runningBalance,
+        interest: interest,
+        isPaid: i <= paidCount
+      });
+    }
+    return rows;
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
 
@@ -355,6 +408,15 @@ export default function RdOpeningBalanceMigration() {
   };
 
   const handleEdit = (acc: any) => {
+    const inst = acc.installmentAmount || 0;
+    const dur = acc.durationMonths || 12;
+    const rate = acc.interestRate || 8.0;
+    let matAmt = acc.maturityAmount || 0;
+    if ((!matAmt || matAmt === 0) && inst > 0 && dur > 0) {
+      const selectedScheme = schemes.find((s) => s.rdSchemeID.toString() === String(acc.rdSchemeID));
+      matAmt = calculateRDMaturity(inst, rate, dur, selectedScheme?.interestMethod || 'Compound');
+    }
+
     setEditingAccountId(acc.rdAccountID || acc.rdAccountId);
     setFormData({
       branchID: acc.branchID || 1,
@@ -364,11 +426,11 @@ export default function RdOpeningBalanceMigration() {
       legacyAccountNumber: acc.legacyAccountNumber || '',
       passbookNo: acc.passbookNo || '',
       openingDate: acc.openingDate ? acc.openingDate.split('T')[0] : getMaxOpeningDate(),
-      installmentAmount: acc.installmentAmount || 0,
-      durationMonths: acc.durationMonths || 12,
-      interestRate: acc.interestRate || 8.0,
+      installmentAmount: inst,
+      durationMonths: dur,
+      interestRate: rate,
       maturityDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : '',
-      maturityAmount: acc.maturityAmount || 0,
+      maturityAmount: matAmt,
       totalPaidInstallments: acc.totalPaidInstallments || 0,
       totalDepositedAmount: acc.totalDepositedAmount || 0,
       legacyAccruedInt: acc.legacyAccruedInt || 0,
@@ -689,6 +751,7 @@ export default function RdOpeningBalanceMigration() {
               <h2 className="text-xs font-bold text-primary">२. हप्ता रक्कम, जमा हप्ते व शिल्लक तपशील (Installment & Balance Details)</h2>
             </div>
 
+            {/* Row 1: Account Nos, Opening Date & Duration */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
               <div>
                 <label className={labelClass}>
@@ -723,6 +786,35 @@ export default function RdOpeningBalanceMigration() {
               </div>
 
               <div>
+                <label className={labelClass}>खाते उघडल्याचा दिनांक (Opening Date) <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  name="openingDate"
+                  value={formData.openingDate}
+                  onChange={handleChange}
+                  className={inputClass}
+                  max={maxOpeningDate}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>मुदत (महिने - Duration) <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  name="durationMonths"
+                  value={formData.durationMonths}
+                  onChange={handleChange}
+                  className={`${inputClass} font-mono font-bold`}
+                  min="1"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Row 2: Installment Amount, Paid Counts, Deposited Total & Interest Rate */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1.5 border-t border-gray-200">
+              <div>
                 <label className={labelClass}>मासिक हप्ता रक्कम (Installment ₹) <span className="text-red-500">*</span></label>
                 <input
                   ref={installmentInputRef}
@@ -750,9 +842,7 @@ export default function RdOpeningBalanceMigration() {
                   required
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1.5 border-t border-gray-200">
               <div>
                 <label className={labelClass}>एकूण जमा मुद्दल (Deposited Amount ₹)</label>
                 <input
@@ -777,7 +867,10 @@ export default function RdOpeningBalanceMigration() {
                   required
                 />
               </div>
+            </div>
 
+            {/* Row 3: Accrued Interest, Expected Maturity & Maturity Date (at the end) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 border-t border-gray-200">
               <div>
                 <label className={labelClass}>३१ मार्च पर्यंत साचलेले व्याज (Accrued Int ₹)</label>
                 <input
@@ -799,34 +892,6 @@ export default function RdOpeningBalanceMigration() {
                   className={`${inputClass} font-mono`}
                 />
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 border-t border-gray-200">
-              <div>
-                <label className={labelClass}>खाते उघडल्याचा दिनांक (Opening Date) <span className="text-red-500">*</span></label>
-                <input
-                  type="date"
-                  name="openingDate"
-                  value={formData.openingDate}
-                  onChange={handleChange}
-                  className={inputClass}
-                  max={maxOpeningDate}
-                  required
-                />
-              </div>
-
-              <div>
-                <label className={labelClass}>मुदत (महिने - Duration) <span className="text-red-500">*</span></label>
-                <input
-                  type="number"
-                  name="durationMonths"
-                  value={formData.durationMonths}
-                  onChange={handleChange}
-                  className={`${inputClass} font-mono font-bold`}
-                  min="1"
-                  required
-                />
-              </div>
 
               <div>
                 <label className={labelClass}>मुदतपूर्ती दिनांक (Maturity Date)</label>
@@ -835,9 +900,115 @@ export default function RdOpeningBalanceMigration() {
                   name="maturityDate"
                   value={formData.maturityDate}
                   onChange={handleChange}
-                  className={inputClass}
+                  className={`${inputClass} font-mono font-bold text-indigo-900 bg-slate-50`}
                 />
               </div>
+            </div>
+
+            {/* Calculation Summary Box & Installment Schedule Chart (लchart) */}
+            <div className="mt-3 bg-emerald-50/80 border border-emerald-200 rounded-lg p-3 text-xs shadow-2xs">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-2.5">
+                <div className="bg-white p-2.5 rounded border border-emerald-100 shadow-2xs">
+                  <span className="text-slate-500 text-[10px] font-bold uppercase block">एकूण मुदत मुद्दल (Total Expected):</span>
+                  <strong className="text-slate-800 text-xs font-bold font-mono">
+                    ₹ {((parseFloat(formData.installmentAmount?.toString() || '0') || 0) * (parseInt(formData.durationMonths?.toString() || '12', 10) || 12)).toLocaleString('en-IN')}
+                  </strong>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    ({formData.durationMonths} महिने × ₹{(parseFloat(formData.installmentAmount?.toString() || '0') || 0).toLocaleString('en-IN')})
+                  </span>
+                </div>
+
+                <div className="bg-white p-2.5 rounded border border-emerald-100 shadow-2xs">
+                  <span className="text-slate-500 text-[10px] font-bold uppercase block">अंदाजित व्याज लाभ:</span>
+                  <strong className="text-emerald-700 text-xs font-bold font-mono">
+                    + ₹ {Math.max(0, (parseFloat(formData.maturityAmount?.toString() || '0') || 0) - ((parseFloat(formData.installmentAmount?.toString() || '0') || 0) * (parseInt(formData.durationMonths?.toString() || '12', 10) || 12))).toLocaleString('en-IN')}
+                  </strong>
+                  <span className="text-[10px] text-emerald-600 block mt-0.5">
+                    व्याजदर {formData.interestRate}% ({schemes.find(s => s.rdSchemeID.toString() === formData.rdSchemeID)?.interestMethod || 'Compound'})
+                  </span>
+                </div>
+
+                <div className="bg-white p-2.5 rounded border border-emerald-100 shadow-2xs">
+                  <span className="text-slate-500 text-[10px] font-bold uppercase block">एकूण मुदतपूर्ती रक्कम:</span>
+                  <strong className="text-indigo-700 text-sm font-bold font-mono">
+                    ₹ {(parseFloat(formData.maturityAmount?.toString() || '0') || 0).toLocaleString('en-IN')}
+                  </strong>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                    मुदत तारीख: {formData.maturityDate || '---'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Toggle Schedule Button */}
+              <div className="border-t border-emerald-200 pt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => setShowSchedule(!showSchedule)}
+                  className="text-xs font-bold text-emerald-800 hover:text-emerald-600 underline flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                >
+                  {showSchedule ? '▲ तक्ता लपवा (Hide Schedule)' : '▼ तपशीलवार हप्ता व व्याज तक्ता पहा (View Schedule)'}
+                </button>
+              </div>
+
+              {/* Detailed Schedule Table */}
+              {showSchedule && (
+                <div className="mt-2.5 bg-white border border-emerald-200 rounded overflow-hidden max-h-80 overflow-y-auto shadow-inner">
+                  <table className="w-full text-[11px] text-left">
+                    <thead className="bg-emerald-100/60 sticky top-0 border-b border-emerald-200 text-emerald-900">
+                      <tr>
+                        <th className="px-2 py-1.5 font-bold">हप्ता क्र.</th>
+                        <th className="px-2 py-1.5 font-bold">दिनांक</th>
+                        <th className="px-2 py-1.5 font-bold">स्थिती</th>
+                        <th className="px-2 py-1.5 font-bold text-right">हप्ता रक्कम</th>
+                        <th className="px-2 py-1.5 font-bold text-right">नावे रक्कम</th>
+                        <th className="px-2 py-1.5 font-bold text-right">एकूण शिल्लक रक्कम</th>
+                        <th className="px-2 py-1.5 font-bold text-right">व्याज</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-emerald-50">
+                      {generateSchedule().length > 0 ? (
+                        generateSchedule().map((row, idx) => (
+                          <tr key={idx} className={row.isPaid ? 'bg-emerald-50/40 hover:bg-emerald-50/70' : 'hover:bg-slate-50'}>
+                            <td className="px-2 py-1 font-mono font-bold text-slate-700">{row.month}</td>
+                            <td className="px-2 py-1">{row.date}</td>
+                            <td className="px-2 py-1">
+                              {row.isPaid ? (
+                                <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-bold rounded border border-emerald-300">
+                                  ✓ आधीच जमा
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-medium rounded border border-slate-200">
+                                  शिल्लक
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-2 py-1 text-right font-mono text-slate-700">₹{row.deposit.toLocaleString('en-IN')}</td>
+                            <td className="px-2 py-1 text-right font-mono text-slate-400">-</td>
+                            <td className="px-2 py-1 text-right font-mono font-bold text-slate-800">₹{row.balance.toLocaleString('en-IN')}</td>
+                            <td className="px-2 py-1 text-right font-mono text-emerald-600">₹{row.interest.toFixed(2)}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={7} className="px-3 py-4 text-center text-slate-400 italic">
+                            हप्ता रक्कम भरल्यानंतर तपशीलवार हप्ता तक्ता दिसेल.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot className="bg-emerald-100/90 font-bold border-t border-emerald-300 text-emerald-900 sticky bottom-0">
+                      <tr>
+                        <td colSpan={3} className="px-2 py-2 text-right">एकूण (Total):</td>
+                        <td className="px-2 py-2 text-right font-mono text-slate-800">₹{((parseFloat(formData.installmentAmount?.toString() || '0') || 0) * (parseInt(formData.durationMonths?.toString() || '12', 10) || 12)).toLocaleString('en-IN')}</td>
+                        <td colSpan={2} className="px-2 py-2 text-right font-mono text-indigo-800">मुदतपूर्ती: ₹{(parseFloat(formData.maturityAmount?.toString() || '0') || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-2 py-2 text-right font-mono text-emerald-700">
+                          ₹{Math.max(0, (parseFloat(formData.maturityAmount?.toString() || '0') || 0) - ((parseFloat(formData.installmentAmount?.toString() || '0') || 0) * (parseInt(formData.durationMonths?.toString() || '12', 10) || 12))).toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
 

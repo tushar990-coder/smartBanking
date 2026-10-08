@@ -810,6 +810,147 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     }
   };
 
+  const handleExportScheduleExcel = () => {
+    if (!scheduleData || scheduleData.length === 0) return;
+    const applicantMember = members.find((m: any) => (m.customerID || m.id) === formData.customerID);
+    const applicantName = applicantMember ? (applicantMember.fullName || applicantMember.name) : 'अर्जदार';
+    const rateObj = loanRates.find(r => r.loanRateID === formData.loanRateID);
+
+    const data: any[][] = [
+      ['हप्ता वेळापत्रक पत्रक (Live Schedule)'],
+      ['अर्ज क्र.', formData.applicationNumber || '-', 'अर्ज दिनांक', formData.applicationDate || '-'],
+      ['अर्जदार', applicantName, 'कर्ज योजना', rateObj?.loanType || '-'],
+      ['मागणी रक्कम', formData.requestedAmount || 0, 'व्याज दर', `${formData.interestRate || 0}%`],
+      ['हप्ता रक्कम', formData.installmentAmount || 0, 'हप्ते संख्या', formData.noOfInstallments || 0],
+      [],
+      ['हप्ता क्र.', 'हप्ता दिनांक', 'मुद्दल (₹)', 'व्याज (₹)', 'एकूण हप्ता (₹)', 'बाकी शिल्लक (₹)']
+    ];
+
+    scheduleData.forEach((row) => {
+      data.push([
+        row.instNo,
+        row.dueDate,
+        Math.round(row.principal || 0),
+        Math.round(row.interest || 0),
+        Math.round(row.total || 0),
+        Math.round(row.balance || 0)
+      ]);
+    });
+
+    const totalPrin = scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0);
+    const totalInt = scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0);
+    const totalAll = scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0);
+
+    data.push(['एकूण (Total)', '', totalPrin, totalInt, totalAll, '']);
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'वेळापत्रक');
+    XLSX.writeFile(wb, `Loan_Schedule_${formData.applicationNumber || 'APP'}.xlsx`);
+  };
+
+  const handlePrintSchedule = () => {
+    if (!scheduleData || scheduleData.length === 0) return;
+    const applicantMember = members.find((m: any) => (m.customerID || m.id) === formData.customerID);
+    const applicantName = applicantMember ? (applicantMember.fullName || applicantMember.name) : '-';
+    const rateObj = loanRates.find(r => r.loanRateID === formData.loanRateID);
+    const totalPrin = scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0);
+    const totalInt = scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0);
+    const totalAll = scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0);
+
+    const printWin = window.open('', '_blank', 'width=850,height=900');
+    if (!printWin) {
+      alert('कृपया पॉपअप ब्लॉकर बंद करा.');
+      return;
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>हप्ता वेळापत्रक - ${formData.applicationNumber || 'APP'}</title>
+        <style>
+          @page { size: A4 portrait; margin: 15mm; }
+          body { font-family: Arial, sans-serif; font-size: 12px; color: #111; margin: 0; padding: 10px; }
+          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 12px; }
+          .header h2 { margin: 0 0 4px 0; font-size: 18px; color: #047857; }
+          .header p { margin: 0; font-size: 12px; color: #555; }
+          .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 10px; border-radius: 4px; margin-bottom: 14px; }
+          .meta-item { font-size: 11px; }
+          .meta-item span { display: block; color: #64748b; font-size: 10px; }
+          .meta-item strong { font-size: 12px; color: #0f172a; }
+          table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+          th, td { border: 1px solid #cbd5e1; padding: 5px 8px; font-size: 11px; }
+          th { background: #f1f5f9; font-weight: bold; text-align: center; }
+          .text-right { text-align: right; }
+          .text-center { text-align: center; }
+          tfoot tr td { font-weight: bold; background: #f8fafc; border-top: 2px solid #475569; }
+          .footer-sign { margin-top: 40px; display: flex; justify-content: space-between; padding: 0 30px; font-weight: bold; font-size: 11px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h2>हप्ता वेळापत्रक पत्रक (Live Schedule)</h2>
+          <p>कर्ज अर्ज क्र.: <strong>${formData.applicationNumber || '-'}</strong> | अर्ज दिनांक: <strong>${formData.applicationDate || '-'}</strong></p>
+        </div>
+        <div class="meta-grid">
+          <div class="meta-item"><span>अर्जदार खातेदार:</span><strong>${applicantName}</strong></div>
+          <div class="meta-item"><span>कर्ज योजना:</span><strong>${rateObj?.loanType || '-'}</strong></div>
+          <div class="meta-item"><span>मागणी रक्कम:</span><strong>₹${(formData.requestedAmount || 0).toLocaleString('en-IN')}</strong></div>
+          <div class="meta-item"><span>व्याज दर:</span><strong>${formData.interestRate || 0}% p.a.</strong></div>
+          <div class="meta-item"><span>हप्ता रक्कम:</span><strong>₹${(formData.installmentAmount || 0).toLocaleString('en-IN')}</strong></div>
+          <div class="meta-item"><span>हप्ते संख्या:</span><strong>${formData.noOfInstallments || 0} हप्ते</strong></div>
+          <div class="meta-item"><span>पहिले हप्ता दि.:</span><strong>${formData.firstInstallmentDate || '-'}</strong></div>
+          <div class="meta-item"><span>परतफेड मुदत:</span><strong>${formData.maturityDate || '-'}</strong></div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 40px;">हप्ता</th>
+              <th>हप्ता दिनांक</th>
+              <th class="text-right">मुद्दल (₹)</th>
+              <th class="text-right">व्याज (₹)</th>
+              <th class="text-right">एकूण हप्ता (₹)</th>
+              <th class="text-right">बाकी शिल्लक (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${scheduleData.map(r => `
+              <tr>
+                <td class="text-center">${r.instNo}</td>
+                <td class="text-center">${r.dueDate || '-'}</td>
+                <td class="text-right">${Math.round(r.principal || 0).toLocaleString('en-IN')}</td>
+                <td class="text-right">${Math.round(r.interest || 0).toLocaleString('en-IN')}</td>
+                <td class="text-right" style="font-weight: bold;">${Math.round(r.total || 0).toLocaleString('en-IN')}</td>
+                <td class="text-right">${Math.round(r.balance || 0).toLocaleString('en-IN')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2" class="text-center">एकूण (Total)</td>
+              <td class="text-right">₹${totalPrin.toLocaleString('en-IN')}</td>
+              <td class="text-right">₹${totalInt.toLocaleString('en-IN')}</td>
+              <td class="text-right">₹${totalAll.toLocaleString('en-IN')}</td>
+              <td class="text-right">-</td>
+            </tr>
+          </tfoot>
+        </table>
+        <div class="footer-sign">
+          <div>लिपिक / अधिकारी स्वाक्षरी</div>
+          <div>शाखा व्यवस्थापक स्वाक्षरी</div>
+          <div>कर्जदार स्वाक्षरी</div>
+        </div>
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `;
+    printWin.document.write(html);
+    printWin.document.close();
+  };
+
   const handleDelete = async (id: number) => {
     if (window.confirm('तुम्हाला नक्की हा कर्ज अर्ज डिलीट करायचा आहे का? (या अर्जाशी संबंधित कर्ज खाते व वितरण असल्यास तेही सुरक्षितपणे काढले जाईल.)')) {
       try {
@@ -1649,21 +1790,14 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
               <button
                 type="button"
                 onClick={() => {
-                  if (!showSchedule) {
-                    calculateSchedule();
-                  } else {
-                    setShowSchedule(false);
-                  }
+                  calculateSchedule();
+                  setShowSchedule(true);
                 }}
-                className={`px-3 py-1.5 font-bold rounded-sm text-xs border cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all ${
-                  showSchedule 
-                    ? 'bg-primary text-white border-primary shadow-xs' 
-                    : 'bg-white hover:bg-slate-100 text-primary border-primary/30'
-                }`}
-                title={showSchedule ? "हप्ता वेळापत्रक पत्रक लपवा" : "हप्ता वेळापत्रक पत्रक उघडा"}
+                className="px-3 py-1.5 font-bold rounded-sm text-xs border cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all bg-white hover:bg-slate-100 text-primary border-primary/30"
+                title="हप्ता वेळापत्रक पत्रक उघडा (View Live Schedule)"
               >
-                <Calculator className="w-3.5 h-3.5" />
-                <span>{showSchedule ? 'हप्ता पत्रक बंद' : '📊 वेळापत्रक पत्रक'}</span>
+                <Calculator className="w-3.5 h-3.5 text-primary" />
+                <span>📊 वेळापत्रक पत्रक</span>
               </button>
             </div>
 
@@ -1702,136 +1836,243 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
       </div>
 
       {/* ========================================================================= */}
-      {/* SLIDE-OVER DRAWER: LIVE INSTALLMENT SCHEDULE (Non-Disruptive View)        */}
+      {/* POP-UP MODAL: LIVE INSTALLMENT SCHEDULE (Glassmorphism Modal)             */}
       {/* ========================================================================= */}
       {showSchedule && (
-        <div className="fixed inset-0 z-50 overflow-hidden flex justify-end animate-in fade-in duration-150">
-          {/* Backdrop */}
+        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          {/* Frosted Glass Backdrop */}
           <div 
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-2xs transition-opacity cursor-pointer" 
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-md transition-opacity cursor-pointer" 
             onClick={() => setShowSchedule(false)} 
           />
           
-          {/* Slide-over Drawer Panel */}
-          <div className="relative w-full max-w-lg md:max-w-xl bg-white shadow-2xl border-l border-slate-300 flex flex-col z-10 animate-in slide-in-from-right duration-200 h-full p-3.5">
-            <div className="flex items-center justify-between border-b border-gray-200 pb-2 mb-2">
-              <div className="flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-primary" />
-                <h3 className="text-xs font-bold text-primary">हप्ता वेळापत्रक पत्रक (Live Schedule)</h3>
+          {/* Glassmorphic Modal Dialog Box */}
+          <div className="relative w-full max-w-4xl max-h-[90vh] bg-white/85 backdrop-blur-2xl border border-white/60 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.35)] rounded-2xl ring-1 ring-black/5 flex flex-col z-10 animate-in zoom-in-95 duration-200 overflow-hidden">
+            
+            {/* Glassmorphism Header */}
+            <div className="px-5 py-3 bg-gradient-to-r from-emerald-800/90 via-primary/85 to-teal-800/90 backdrop-blur-md text-white flex items-center justify-between border-b border-white/20 shadow-xs shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center shadow-xs text-white">
+                  <Calendar className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>हप्ता वेळापत्रक पत्रक (Live Schedule)</span>
+                    {formData.applicationNumber && (
+                      <span className="text-[11px] font-normal text-emerald-100 font-mono bg-white/15 px-2 py-0.5 rounded-full border border-white/20">
+                        {formData.applicationNumber}
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-[10.5px] text-emerald-100/90 truncate max-w-md">
+                    {(() => {
+                      const applicant = members.find((m: any) => (m.customerID || m.id) === formData.customerID);
+                      const rate = loanRates.find(r => r.loanRateID === formData.loanRateID);
+                      const name = applicant ? (applicant.fullName || applicant.name) : '';
+                      return name ? `${name} ${rate?.loanType ? `• ${rate.loanType}` : ''}` : (rate?.loanType || 'थेट कर्ज हप्ता व व्याज पत्रक');
+                    })()}
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
+
+              <div className="flex items-center gap-2">
                 {scheduleData.length > 0 && (
-                  <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full font-mono">
+                  <span className="bg-white/20 backdrop-blur-md border border-white/30 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full font-mono shadow-2xs">
                     {scheduleData.length} हप्ते
                   </span>
                 )}
                 <button
                   type="button"
                   onClick={() => setShowSchedule(false)}
-                  className="text-gray-400 hover:text-gray-700 hover:bg-slate-100 p-1 rounded-sm transition-colors cursor-pointer"
-                  title="पत्रक बंद करा (Close)"
+                  className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/30 border border-white/25 text-white flex items-center justify-center transition-all cursor-pointer shadow-xs"
+                  title="बंद करा (Close)"
                 >
-                  <X size={18} />
+                  <X size={16} />
                 </button>
               </div>
             </div>
 
-            {/* Mini Summary Banner */}
-            <div className="grid grid-cols-3 gap-1 text-[10px] bg-primary/5 p-2 rounded-sm border border-primary/20 mb-2">
-              <div>
-                <span className="text-gray-500 block">मागणी रक्कम:</span>
-                <span className="font-bold text-gray-900 font-mono">₹{(formData.requestedAmount || 0).toLocaleString('en-IN')}</span>
+            {/* Modal Body: Glass Dashboard & Schedule */}
+            <div className="p-3 sm:p-4 space-y-3 flex-1 flex flex-col overflow-hidden bg-gradient-to-b from-slate-50/60 to-white/40">
+              
+              {/* Glass KPI Summary Cards (4 Cards) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 shrink-0">
+                {/* 1. Requested Amount */}
+                <div className="bg-white/70 backdrop-blur-md border border-white/80 rounded-xl p-2.5 shadow-2xs hover:shadow-xs transition-all">
+                  <div className="flex items-center justify-between text-slate-500 text-[10px] mb-1">
+                    <span>मागणी रक्कम</span>
+                    <IndianRupee className="w-3.5 h-3.5 text-slate-400" />
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 font-mono">
+                    ₹{(formData.requestedAmount || 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+
+                {/* 2. Installment Amount */}
+                <div className="bg-emerald-50/70 backdrop-blur-md border border-emerald-200/80 rounded-xl p-2.5 shadow-2xs hover:shadow-xs transition-all">
+                  <div className="flex items-center justify-between text-emerald-700 text-[10px] mb-1">
+                    <span>हप्ता रक्कम (EMI)</span>
+                    <Calendar className="w-3.5 h-3.5 text-emerald-500" />
+                  </div>
+                  <div className="text-sm font-bold text-emerald-800 font-mono">
+                    ₹{(formData.installmentAmount || 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+
+                {/* 3. Interest Total */}
+                <div className="bg-rose-50/70 backdrop-blur-md border border-rose-200/80 rounded-xl p-2.5 shadow-2xs hover:shadow-xs transition-all">
+                  <div className="flex items-center justify-between text-rose-700 text-[10px] mb-1">
+                    <span>एकूण व्याज ({formData.interestRate || 0}%)</span>
+                    <Percent className="w-3.5 h-3.5 text-rose-500" />
+                  </div>
+                  <div className="text-sm font-bold text-rose-800 font-mono">
+                    ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+
+                {/* 4. Total Payable */}
+                <div className="bg-indigo-50/70 backdrop-blur-md border border-indigo-200/80 rounded-xl p-2.5 shadow-2xs hover:shadow-xs transition-all">
+                  <div className="flex items-center justify-between text-indigo-700 text-[10px] mb-1">
+                    <span>एकूण परतफेड</span>
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                  </div>
+                  <div className="text-sm font-bold text-indigo-900 font-mono">
+                    ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
               </div>
-              <div>
-                <span className="text-gray-500 block">हप्ता रक्कम:</span>
-                <span className="font-bold text-emerald-700 font-mono">₹{(formData.installmentAmount || 0).toLocaleString('en-IN')}</span>
-              </div>
-              <div>
-                <span className="text-gray-500 block">व्याज दर:</span>
-                <span className="font-bold text-indigo-900 font-mono">{formData.interestRate || 0}% p.a.</span>
+
+              {/* Interest Policy & Installment Type Translucent Chip */}
+              {(() => {
+                const currentRate = loanRates.find(r => r.loanRateID === formData.loanRateID);
+                const isFlat = currentRate?.interestCalculationMethod?.includes('Flat') || currentRate?.interestCalculationMethod?.includes('फ्लॅट');
+                const isDeclining = currentRate?.interestCalculationMethod?.includes('Reducing') && 
+                  (currentRate?.loanInstallmentType === 'समान मुद्दल' || currentRate?.loanInstallmentType === 'कर्जावरती' || currentRate?.loanInstallmentType?.includes('मुद्दल') || currentRate?.loanInstallmentType?.includes('कर्जावर'));
+                
+                return (
+                  <div className="bg-gradient-to-r from-emerald-50/80 to-teal-50/80 backdrop-blur-md border border-emerald-200/70 rounded-xl px-3 py-1.5 text-[11px] flex flex-wrap items-center justify-between gap-2 shadow-2xs shrink-0">
+                    <div className="flex items-center gap-1.5 text-slate-700">
+                      <span className="text-slate-500">व्याज पद्धत:</span>
+                      <strong className="text-emerald-800 font-semibold">{currentRate?.interestCalculationMethod || 'Flat (फ्लॅट)'}</strong>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-slate-700">
+                      <span className="text-slate-500">हप्ता प्रकार:</span>
+                      <strong className={isFlat ? 'text-blue-700' : (isDeclining ? 'text-amber-800' : 'text-emerald-700')}>
+                        {isFlat ? 'फ्लॅट हप्ता (स्थिर मुद्दल व व्याज)' : (isDeclining ? 'समान मुद्दल (घटणारा हप्ता)' : 'समान हप्ता (EMI)')}
+                      </strong>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-slate-700">
+                      <span className="text-slate-500">मुदत:</span>
+                      <strong className="text-slate-800">{formData.durationMonths || 12} महिने ({formData.noOfInstallments || 0} हप्ते)</strong>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Glass Table Frame */}
+              <div className="flex-1 overflow-hidden rounded-xl border border-white/80 bg-white/70 backdrop-blur-md shadow-xs flex flex-col">
+                {scheduleData.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-gray-400">
+                    <Calculator className="w-10 h-10 text-gray-300 mb-2 stroke-[1.5]" />
+                    <p className="text-xs font-semibold text-gray-600">हप्ता पत्रक तयार करण्यासाठी कर्ज रक्कम व माहिती भरा.</p>
+                    <button
+                      type="button"
+                      onClick={calculateSchedule}
+                      className="mt-3 px-3.5 py-1.5 bg-primary text-white rounded-lg text-xs font-bold shadow-xs hover:opacity-90 cursor-pointer"
+                    >
+                      📊 वेळापत्रक लोड करा
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-100/90 backdrop-blur-md sticky top-0 shadow-2xs text-slate-700 font-bold border-b border-slate-200 z-10">
+                        <tr>
+                          <th className="p-2 border-r border-slate-200 text-center w-12">क्र.</th>
+                          <th className="p-2 border-r border-slate-200 text-center">हप्ता दिनांक</th>
+                          <th className="p-2 border-r border-slate-200 text-right">मुद्दल (₹)</th>
+                          <th className="p-2 border-r border-slate-200 text-right">व्याज (₹)</th>
+                          <th className="p-2 border-r border-slate-200 text-right">एकूण हप्ता (₹)</th>
+                          <th className="p-2 text-right">बाकी शिल्लक (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200/60 font-mono text-[11px]">
+                        {scheduleData.map((row, i) => (
+                          <tr key={i} className="hover:bg-emerald-50/60 transition-colors">
+                            <td className="p-2 border-r border-slate-200/60 text-center font-bold text-slate-600 bg-slate-50/30">{row.instNo}</td>
+                            <td className="p-2 border-r border-slate-200/60 text-center text-slate-700 font-sans">
+                              {row.dueDate || '-'}
+                            </td>
+                            <td className="p-2 border-r border-slate-200/60 text-right text-slate-800 font-medium">
+                              {Math.round(row.principal || 0).toLocaleString('en-IN')}
+                            </td>
+                            <td className="p-2 border-r border-slate-200/60 text-right text-rose-700 font-medium">
+                              {Math.round(row.interest || 0).toLocaleString('en-IN')}
+                            </td>
+                            <td className="p-2 border-r border-slate-200/60 text-right font-bold text-emerald-800 bg-emerald-50/20">
+                              {Math.round(row.total || 0).toLocaleString('en-IN')}
+                            </td>
+                            <td className="p-2 text-right text-slate-700 font-semibold">
+                              {Math.round(row.balance || 0).toLocaleString('en-IN')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-100/95 backdrop-blur-md font-mono font-bold text-slate-900 border-t-2 border-slate-300 sticky bottom-0 z-10 shadow-xs text-xs">
+                        <tr>
+                          <td colSpan={2} className="p-2 text-center font-sans text-xs">एकूण (Total):</td>
+                          <td className="p-2 text-right text-slate-900 border-r border-slate-200">
+                            ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0).toLocaleString('en-IN')}
+                          </td>
+                          <td className="p-2 text-right text-rose-700 border-r border-slate-200">
+                            ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0).toLocaleString('en-IN')}
+                          </td>
+                          <td className="p-2 text-right text-emerald-800 border-r border-slate-200">
+                            ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0).toLocaleString('en-IN')}
+                          </td>
+                          <td className="p-2 text-right text-slate-400 font-sans">-</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Interest Policy & Installment Type Badge */}
-            {(() => {
-              const currentRate = loanRates.find(r => r.loanRateID === formData.loanRateID);
-              const isFlat = currentRate?.interestCalculationMethod?.includes('Flat') || currentRate?.interestCalculationMethod?.includes('फ्लॅट');
-              const isDeclining = currentRate?.interestCalculationMethod?.includes('Reducing') && 
-                (currentRate?.loanInstallmentType === 'समान मुद्दल' || currentRate?.loanInstallmentType === 'कर्जावरती' || currentRate?.loanInstallmentType?.includes('मुद्दल') || currentRate?.loanInstallmentType?.includes('कर्जावर'));
-              
-              return (
-                <div className="mb-2 px-2 py-1 rounded bg-slate-100 border border-slate-200 text-[10px] flex items-center justify-between">
-                  <span className="text-slate-600 font-medium">
-                    व्याज पद्धत: <strong className="text-primary">{currentRate?.interestCalculationMethod || 'Flat (फ्लॅट)'}</strong>
-                  </span>
-                  <span className="text-slate-600 font-medium">
-                    हप्ता प्रकार: <strong className={isFlat ? 'text-blue-700' : (isDeclining ? 'text-amber-700' : 'text-emerald-700')}>
-                      {isFlat ? 'फ्लॅट हप्ता (स्थिर मुद्दल व व्याज)' : (isDeclining ? 'समान मुद्दल (घटणारा हप्ता)' : 'समान हप्ता (EMI)')}
-                    </strong>
-                  </span>
-                </div>
-              );
-            })()}
-
-            {scheduleData.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-400 bg-slate-50/50 rounded border border-dashed border-gray-200">
-                <Calculator className="w-8 h-8 text-gray-300 mb-2 stroke-[1.5]" />
-                <p className="text-xs font-semibold text-gray-600">हप्ता पत्रक तयार करण्यासाठी कर्ज रक्कम व माहिती भरा.</p>
+            {/* Glass Modal Footer Action Bar */}
+            <div className="px-5 py-2.5 bg-white/70 backdrop-blur-md border-t border-white/80 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={calculateSchedule}
-                  className="mt-3 px-3 py-1 bg-primary text-white rounded-sm text-[11px] font-bold shadow-2xs hover:opacity-90 cursor-pointer"
+                  onClick={handleExportScheduleExcel}
+                  disabled={scheduleData.length === 0}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-50 text-emerald-800 font-bold rounded-lg text-xs border border-emerald-300/80 shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  title="एक्सेल फाइल डाउनलोड करा"
                 >
-                  📊 वेळापत्रक लोड करा
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  <span>एक्सेल (Excel)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintSchedule}
+                  disabled={scheduleData.length === 0}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-lg text-xs border border-slate-300 shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  title="हप्ता वेळापत्रक प्रिंट करा"
+                >
+                  <Printer className="w-4 h-4 text-slate-600" />
+                  <span>प्रिंट (Print)</span>
                 </button>
               </div>
-            ) : (
-              <div className="flex-1 overflow-auto border border-gray-200 rounded-sm">
-                <table className="w-full text-left border-collapse text-[10px]">
-                  <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
-                    <tr>
-                      <th className="p-1.5 border-r border-gray-200 text-center w-8">क्र.</th>
-                      <th className="p-1.5 border-r border-gray-200 text-center">हप्ता दिनांक</th>
-                      <th className="p-1.5 border-r border-gray-200 text-right">मुद्दल (₹)</th>
-                      <th className="p-1.5 border-r border-gray-200 text-right">व्याज (₹)</th>
-                      <th className="p-1.5 border-r border-gray-200 text-right">एकूण (₹)</th>
-                      <th className="p-1.5 text-right">बाकी शिल्लक (₹)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white font-mono">
-                    {scheduleData.map((row, i) => (
-                      <tr key={i} className="hover:bg-primary/5 transition-colors">
-                        <td className="p-1.5 border-r border-gray-200 text-center font-bold text-gray-700">{row.instNo}</td>
-                        <td className="p-1.5 border-r border-gray-200 text-center text-gray-600">
-                          {row.dueDate || '-'}
-                        </td>
-                        <td className="p-1.5 border-r border-gray-200 text-right text-gray-800">{Math.round(row.principal || 0).toLocaleString('en-IN')}</td>
-                        <td className="p-1.5 border-r border-gray-200 text-right text-rose-700">{Math.round(row.interest || 0).toLocaleString('en-IN')}</td>
-                        <td className="p-1.5 border-r border-gray-200 text-right font-bold text-emerald-800">{Math.round(row.total || 0).toLocaleString('en-IN')}</td>
-                        <td className="p-1.5 text-right text-gray-700">{Math.round(row.balance || 0).toLocaleString('en-IN')}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  {scheduleData.length > 0 && (
-                    <tfoot className="bg-slate-100 font-mono font-bold text-gray-800 border-t-2 border-gray-300 sticky bottom-0">
-                      <tr>
-                        <td colSpan={2} className="p-1.5 text-center font-sans text-[11px]">एकूण (Total):</td>
-                        <td className="p-1.5 text-right text-gray-900 border-r border-gray-200">
-                          ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0).toLocaleString('en-IN')}
-                        </td>
-                        <td className="p-1.5 text-right text-rose-700 border-r border-gray-200">
-                          ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0).toLocaleString('en-IN')}
-                        </td>
-                        <td className="p-1.5 text-right text-emerald-800 border-r border-gray-200">
-                          ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0).toLocaleString('en-IN')}
-                        </td>
-                        <td className="p-1.5 text-right text-gray-400 font-sans">-</td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
-            )}
+
+              <button
+                type="button"
+                onClick={() => setShowSchedule(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>बंद करा (Close)</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

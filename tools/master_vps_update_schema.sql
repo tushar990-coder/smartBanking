@@ -5511,9 +5511,18 @@ BEGIN
 END
 GO
 
--- 3. LoanRates IsCollateralMandatoryForOpeningBalance Column
+-- 3. LoanRates Collateral Columns
 IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanRates')
 BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanRates]') AND name = 'CollateralCategory')
+        ALTER TABLE [LoanRates] ADD [CollateralCategory] nvarchar(50) NOT NULL CONSTRAINT DF_LoanRates_CollateralCategory DEFAULT 'None';
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanRates]') AND name = 'MaxLtvPercentage')
+        ALTER TABLE [LoanRates] ADD [MaxLtvPercentage] decimal(5,2) NOT NULL CONSTRAINT DF_LoanRates_MaxLtv DEFAULT 85.00;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanRates]') AND name = 'IsLienRequired')
+        ALTER TABLE [LoanRates] ADD [IsLienRequired] bit NOT NULL CONSTRAINT DF_LoanRates_IsLienRequired DEFAULT 0;
+
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanRates]') AND name = 'IsCollateralMandatoryForOpeningBalance')
         ALTER TABLE [LoanRates] ADD [IsCollateralMandatoryForOpeningBalance] bit NOT NULL CONSTRAINT DF_LoanRates_CollateralMandatory DEFAULT 0;
 END

@@ -1345,16 +1345,20 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            var scheme = await _context.FdSchemes.FindAsync(account.FdSchemeID);
+            var scheme = await _context.FdSchemes
+                .Include(s => s.Slabs)
+                .FirstOrDefaultAsync(s => s.FdSchemeID == account.FdSchemeID);
             if (scheme != null)
             {
                 if (string.IsNullOrWhiteSpace(account.DurationType))
                 {
-                    account.DurationType = scheme.DurationType ?? "Months";
+                    account.DurationType = scheme.DurationType ?? (scheme.SchemeDurationModel == "Slab" ? "Days" : "Months");
                 }
                 if (!account.DurationValue.HasValue || account.DurationValue.Value <= 0)
                 {
-                    account.DurationValue = scheme.DurationMonths > 0 ? scheme.DurationMonths : 12;
+                    account.DurationValue = scheme.DurationMonths > 0 
+                        ? scheme.DurationMonths 
+                        : (scheme.SchemeDurationModel == "Slab" && scheme.Slabs != null && scheme.Slabs.Any() ? scheme.Slabs.First().ToDays : 12);
                 }
             }
             if (!account.DurationInDays.HasValue || account.DurationInDays.Value <= 0)
@@ -1366,6 +1370,52 @@ namespace Bhisi.Api.Controllers
                 else if (string.Equals(account.DurationType, "Days", StringComparison.OrdinalIgnoreCase) && account.DurationValue.HasValue)
                 {
                     account.DurationInDays = account.DurationValue.Value;
+                }
+                else if (string.Equals(account.DurationType, "Years", StringComparison.OrdinalIgnoreCase) && account.DurationValue.HasValue)
+                {
+                    account.DurationInDays = account.DurationValue.Value * 365;
+                }
+                else if (account.DurationValue.HasValue)
+                {
+                    account.DurationInDays = (int)Math.Round(account.DurationValue.Value * 30.4167);
+                }
+            }
+
+            // Fallback: If InterestRate is <= 0 or missing, resolve from scheme/slabs
+            if (account.InterestRate <= 0 && scheme != null)
+            {
+                bool isSenior = false;
+                if (account.CustomerID > 0)
+                {
+                    var cust = await _context.Customers.FindAsync(account.CustomerID);
+                    if (cust?.BirthDate != null && cust.BirthDate.Value.Date <= account.OpeningDate.Date.AddYears(-60))
+                    {
+                        isSenior = true;
+                    }
+                }
+
+                int days = account.DurationInDays.GetValueOrDefault(0);
+                if (scheme.SchemeDurationModel == "Slab" && scheme.Slabs != null && scheme.Slabs.Any())
+                {
+                    var matchedSlab = scheme.Slabs.FirstOrDefault(s => days >= s.FromDays && days <= s.ToDays && s.IsActive);
+                    if (matchedSlab != null)
+                    {
+                        account.InterestRate = isSenior 
+                            ? (matchedSlab.SeniorCitizenRate > 0 ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate) 
+                            : matchedSlab.InterestRate;
+                    }
+                    else
+                    {
+                        account.InterestRate = isSenior 
+                            ? (scheme.SeniorCitizenInterestRate > 0 ? scheme.SeniorCitizenInterestRate : scheme.InterestRate) 
+                            : scheme.InterestRate;
+                    }
+                }
+                else
+                {
+                    account.InterestRate = isSenior 
+                        ? (scheme.SeniorCitizenInterestRate > 0 ? scheme.SeniorCitizenInterestRate : scheme.InterestRate) 
+                        : scheme.InterestRate;
                 }
             }
 

@@ -45,11 +45,23 @@ interface Customer extends CustomerOption {
   customerCode?: string;
 }
 
+export interface FdSchemeInterestSlab {
+  slabID?: number;
+  fdSchemeID?: number;
+  fromDays: number;
+  toDays: number;
+  interestRate: number;
+  seniorCitizenRate: number;
+  prematureRate?: number;
+  isActive?: boolean;
+}
+
 interface FdScheme {
   fdSchemeID: number;
   schemeCode?: string;
   schemeName: string;
   interestRate: number;
+  seniorCitizenInterestRate?: number;
   durationMonths?: number;
   durationType?: string; // 'Days' | 'Months' | 'Years'
   durationValue?: number;
@@ -58,6 +70,7 @@ interface FdScheme {
   maxDurationDays?: number;
   interestType?: string;
   interestCompoundingFrequency?: string;
+  slabs?: FdSchemeInterestSlab[];
 }
 
 interface FdAccountRecord {
@@ -136,6 +149,8 @@ const FdOpeningBalanceMigration: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isManualMaturityEdited, setIsManualMaturityEdited] = useState(false);
   const [isManualMaturityDateEdited, setIsManualMaturityDateEdited] = useState(false);
+  const [matchedSlab, setMatchedSlab] = useState<FdSchemeInterestSlab | null>(null);
+  const [isManualRateEdited, setIsManualRateEdited] = useState(false);
   const formContainerRef = useRef<HTMLDivElement>(null);
   const depositAmountInputRef = useRef<HTMLInputElement>(null);
   const [syncingFinancials, setSyncingFinancials] = useState(false);
@@ -171,6 +186,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
   const [formData, setFormData] = useState({
     branchID: 1,
     customerID: 0,
+    isSeniorCitizen: false,
     fdSchemeID: 0,
     accountNo: '',
     legacyAccountNumber: '',
@@ -338,6 +354,54 @@ const FdOpeningBalanceMigration: React.FC = () => {
     return `${targetYear}-${pad(targetMonth)}-${pad(targetDay)}`;
   };
 
+  // Helper to determine customer's Senior Citizen status (Age >= 60)
+  const isCustomerSeniorCitizen = (c: any): boolean => {
+    if (!c) return false;
+    const bDateStr = c.birthDate || c.dateOfBirth || c.BirthDate;
+    if (!bDateStr) return false;
+    const bDate = new Date(bDateStr);
+    if (isNaN(bDate.getTime())) return false;
+    const today = new Date();
+    let age = today.getFullYear() - bDate.getFullYear();
+    const m = today.getMonth() - bDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < bDate.getDate())) {
+      age--;
+    }
+    return age >= 60;
+  };
+
+  // Dedicated helper to resolve applicable interest rate and matching slab
+  const resolveApplicableRateAndSlab = (
+    scheme: FdScheme | undefined,
+    totalDays: number,
+    isSenior: boolean
+  ): { rate: number; matchedSlab: FdSchemeInterestSlab | null; isOutOfRange: boolean } => {
+    if (!scheme) return { rate: 0, matchedSlab: null, isOutOfRange: false };
+
+    if (scheme.schemeDurationModel === 'Slab' && scheme.slabs && scheme.slabs.length > 0) {
+      const activeSlabs = scheme.slabs.filter((s: any) => s.isActive !== false);
+      const matched = activeSlabs.find(
+        (s: any) => totalDays >= Number(s.fromDays) && totalDays <= Number(s.toDays)
+      );
+      if (matched) {
+        const rate = isSenior
+          ? (Number(matched.seniorCitizenRate) || Number(matched.interestRate))
+          : Number(matched.interestRate);
+        return { rate, matchedSlab: matched, isOutOfRange: false };
+      }
+      return {
+        rate: isSenior ? (Number(scheme.seniorCitizenInterestRate) || Number(scheme.interestRate)) : Number(scheme.interestRate),
+        matchedSlab: null,
+        isOutOfRange: true
+      };
+    }
+
+    const rate = isSenior
+      ? (Number(scheme.seniorCitizenInterestRate) || Number(scheme.interestRate))
+      : Number(scheme.interestRate);
+    return { rate, matchedSlab: null, isOutOfRange: false };
+  };
+
   // [RULE-FD-009] Scheme-specific maturity amount auto-calculation (with Days & Short-term deposit support)
   const calculateMaturityAmount = (
     p: number,
@@ -359,8 +423,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
     }
 
     if (diffDays <= 0) {
-      const durType = scheme?.durationType || 'Months';
-      const durVal = Number(scheme?.durationMonths) || 12;
+      const isSlab = scheme?.schemeDurationModel === 'Slab';
+      const durType = scheme?.durationType || (isSlab ? 'Days' : 'Months');
+      const durVal = isSlab 
+        ? (scheme?.slabs?.[0]?.toDays || scheme?.minDurationDays || 90)
+        : (Number(scheme?.durationMonths) || 12);
       if (durType === 'Days') diffDays = durVal;
       else if (durType === 'Years') diffDays = durVal * 365;
       else diffDays = Math.round(durVal * 30.4167);
@@ -398,16 +465,35 @@ const FdOpeningBalanceMigration: React.FC = () => {
   const handleSchemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const sId = parseInt(e.target.value, 10) || 0;
     const selected = schemes.find((s: any) => getSchemeId(s) === sId);
-    const newRate = selected ? Number(selected.interestRate) || 0 : 0;
-    const durType = selected?.durationType || 'Months';
-    const durVal = selected ? Number(selected.durationMonths) || 0 : 0;
-    const durInDays = durType === 'Days' ? durVal : (durType === 'Years' ? durVal * 365 : Math.round(durVal * 30.4167));
+    const isSlab = selected?.schemeDurationModel === 'Slab';
+
+    let durType = isSlab ? (selected?.durationType || 'Days') : (selected?.durationType || 'Months');
+    let durVal = isSlab
+      ? (selected?.slabs?.[0]?.toDays || selected?.minDurationDays || 90)
+      : (Number(selected?.durationMonths) || 12);
 
     let newMatDate = formData.maturityDate;
     // [RULE-FD-010] If scheme has duration and openingDate is present, auto-calculate maturity date
     if (durVal > 0 && formData.openingDate && (!isManualMaturityDateEdited || !formData.maturityDate)) {
       newMatDate = calculateMaturityDate(formData.openingDate, durVal, durType);
     }
+
+    let totalDays = 0;
+    if (formData.openingDate && newMatDate) {
+      const d1 = new Date(formData.openingDate);
+      const d2 = new Date(newMatDate);
+      if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 > d1) {
+        totalDays = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+      }
+    }
+    if (totalDays <= 0) {
+      totalDays = durType === 'Days' ? durVal : (durType === 'Years' ? durVal * 365 : Math.round(durVal * 30.4167));
+    }
+
+    const slabRes = resolveApplicableRateAndSlab(selected, totalDays, formData.isSeniorCitizen);
+    const newRate = slabRes.rate;
+    setMatchedSlab(slabRes.matchedSlab);
+    setIsManualRateEdited(false);
 
     const autoMat = !isManualMaturityEdited
       ? calculateMaturityAmount(formData.depositAmount, newRate, formData.openingDate, newMatDate, selected)
@@ -419,7 +505,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
       interestRate: newRate,
       durationType: durType,
       durationValue: durVal,
-      durationInDays: durInDays,
+      durationInDays: totalDays,
       maturityDate: newMatDate,
       maturityAmount: autoMat,
     }));
@@ -464,8 +550,34 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return;
     }
 
+    if (name === 'isSeniorCitizen') {
+      const checked = (e.target as HTMLInputElement).checked;
+      setFormData((prev) => {
+        const updated = {
+          ...prev,
+          isSeniorCitizen: checked
+        };
+        const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
+        let newRate = updated.interestRate;
+        if (selected && !isManualRateEdited) {
+          const slabRes = resolveApplicableRateAndSlab(selected, updated.durationInDays, checked);
+          newRate = slabRes.rate;
+          setMatchedSlab(slabRes.matchedSlab);
+        }
+        const newMatAmt = !isManualMaturityEdited
+          ? calculateMaturityAmount(Number(updated.depositAmount) || 0, Number(newRate) || 0, updated.openingDate, updated.maturityDate, selected)
+          : updated.maturityAmount;
+
+        return {
+          ...updated,
+          interestRate: newRate,
+          maturityAmount: newMatAmt
+        };
+      });
+      return;
+    }
+
     // [RULE-FD-AUTO-RECALC] If depositAmount is changed/corrected, always auto-recalculate maturityAmount
-    // and unlock manual override mode so the new principal instantly reflects the exact maturity amount.
     if (name === 'depositAmount') {
       const devanagariClean = typeof value === 'string' ? normalizeToNumericDigits(value) : value;
       const parsedDeposit = parseFloat(devanagariClean) || 0;
@@ -490,16 +602,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
       return;
     }
 
-    const isNumericField = 
-      (name.includes('Amount') || name.includes('Rate') || name === 'legacyAccruedInt' || name === 'branchID')
-      && !name.toLowerCase().includes('date');
-
-    const parsedVal = isNumericField
-      ? parseFloat(value) || 0
-      : value;
-    
     if (name === 'branchID') {
-      fetchNextAccountNo(parsedVal as number, formData.fdSchemeID);
+      const parsedBranch = parseInt(value, 10) || 1;
+      fetchNextAccountNo(parsedBranch, formData.fdSchemeID);
+      setFormData(prev => ({ ...prev, branchID: parsedBranch }));
+      return;
     }
 
     if (name === 'lastInterestPostingDate') {
@@ -508,92 +615,248 @@ const FdOpeningBalanceMigration: React.FC = () => {
         return;
       }
       setError('');
+      setFormData(prev => ({ ...prev, lastInterestPostingDate: value }));
+      return;
     }
 
     if (name === 'maturityAmount') {
       setIsManualMaturityEdited(true);
       setFormData((prev) => ({
         ...prev,
-        maturityAmount: parsedVal as number
+        maturityAmount: parseFloat(value) || 0
       }));
+      return;
+    }
+
+    if (name === 'interestRate') {
+      const parsedRate = parseFloat(value) || 0;
+      setIsManualRateEdited(true);
+      setFormData((prev) => {
+        const selected = schemes.find((s: any) => getSchemeId(s) === prev.fdSchemeID);
+        const newMatAmt = !isManualMaturityEdited
+          ? calculateMaturityAmount(Number(prev.depositAmount) || 0, parsedRate, prev.openingDate, prev.maturityDate, selected)
+          : prev.maturityAmount;
+        return {
+          ...prev,
+          interestRate: parsedRate,
+          maturityAmount: newMatAmt
+        };
+      });
+      return;
+    }
+
+    if (name === 'durationValue') {
+      const val = parseInt(value, 10) || 0;
+      setFormData((prev) => {
+        const durType = prev.durationType || 'Months';
+        let newMatDate = prev.maturityDate;
+        if (val > 0 && prev.openingDate) {
+          newMatDate = calculateMaturityDate(prev.openingDate, val, durType);
+        }
+        let totalDays = 0;
+        if (prev.openingDate && newMatDate) {
+          const d1 = new Date(prev.openingDate);
+          const d2 = new Date(newMatDate);
+          if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 > d1) {
+            totalDays = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+          }
+        }
+        if (totalDays <= 0) {
+          totalDays = durType === 'Days' ? val : (durType === 'Years' ? val * 365 : Math.round(val * 30.4167));
+        }
+
+        const selected = schemes.find((s: any) => getSchemeId(s) === prev.fdSchemeID);
+        let newRate = prev.interestRate;
+        if (selected && !isManualRateEdited) {
+          const slabRes = resolveApplicableRateAndSlab(selected, totalDays, prev.isSeniorCitizen);
+          newRate = slabRes.rate;
+          setMatchedSlab(slabRes.matchedSlab);
+        }
+
+        const newMatAmt = !isManualMaturityEdited
+          ? calculateMaturityAmount(Number(prev.depositAmount) || 0, Number(newRate) || 0, prev.openingDate, newMatDate, selected)
+          : prev.maturityAmount;
+
+        return {
+          ...prev,
+          durationValue: val,
+          durationInDays: totalDays,
+          maturityDate: newMatDate,
+          interestRate: newRate,
+          maturityAmount: newMatAmt
+        };
+      });
+      return;
+    }
+
+    if (name === 'durationType') {
+      const durType = value;
+      setFormData((prev) => {
+        const val = Number(prev.durationValue) || 0;
+        let newMatDate = prev.maturityDate;
+        if (val > 0 && prev.openingDate) {
+          newMatDate = calculateMaturityDate(prev.openingDate, val, durType);
+        }
+        let totalDays = 0;
+        if (prev.openingDate && newMatDate) {
+          const d1 = new Date(prev.openingDate);
+          const d2 = new Date(newMatDate);
+          if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 > d1) {
+            totalDays = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+          }
+        }
+        if (totalDays <= 0) {
+          totalDays = durType === 'Days' ? val : (durType === 'Years' ? val * 365 : Math.round(val * 30.4167));
+        }
+
+        const selected = schemes.find((s: any) => getSchemeId(s) === prev.fdSchemeID);
+        let newRate = prev.interestRate;
+        if (selected && !isManualRateEdited) {
+          const slabRes = resolveApplicableRateAndSlab(selected, totalDays, prev.isSeniorCitizen);
+          newRate = slabRes.rate;
+          setMatchedSlab(slabRes.matchedSlab);
+        }
+
+        const newMatAmt = !isManualMaturityEdited
+          ? calculateMaturityAmount(Number(prev.depositAmount) || 0, Number(newRate) || 0, prev.openingDate, newMatDate, selected)
+          : prev.maturityAmount;
+
+        return {
+          ...prev,
+          durationType: durType,
+          durationInDays: totalDays,
+          maturityDate: newMatDate,
+          interestRate: newRate,
+          maturityAmount: newMatAmt
+        };
+      });
       return;
     }
 
     if (name === 'maturityDate') {
       setIsManualMaturityDateEdited(true);
       setFormData((prev) => {
-        const updated = {
-          ...prev,
-          maturityDate: value
-        };
-        // [RULE-FD-009] If user has not manually overridden maturityAmount, auto-calculate with new maturityDate
-        if (!isManualMaturityEdited) {
-          const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
-          updated.maturityAmount = calculateMaturityAmount(
-            Number(updated.depositAmount) || 0,
-            Number(updated.interestRate) || 0,
-            updated.openingDate,
-            value,
-            selected
-          );
+        let totalDays = 0;
+        if (prev.openingDate && value) {
+          const d1 = new Date(prev.openingDate);
+          const d2 = new Date(value);
+          if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 > d1) {
+            totalDays = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+          }
         }
-        return updated;
+
+        const selected = schemes.find((s: any) => getSchemeId(s) === prev.fdSchemeID);
+        let newRate = prev.interestRate;
+        if (selected && !isManualRateEdited && totalDays > 0) {
+          const slabRes = resolveApplicableRateAndSlab(selected, totalDays, prev.isSeniorCitizen);
+          newRate = slabRes.rate;
+          setMatchedSlab(slabRes.matchedSlab);
+        }
+
+        const newMatAmt = !isManualMaturityEdited
+          ? calculateMaturityAmount(Number(prev.depositAmount) || 0, Number(newRate) || 0, prev.openingDate, value, selected)
+          : prev.maturityAmount;
+
+        return {
+          ...prev,
+          maturityDate: value,
+          durationInDays: totalDays > 0 ? totalDays : prev.durationInDays,
+          durationValue: prev.durationType === 'Days' && totalDays > 0 ? totalDays : prev.durationValue,
+          interestRate: newRate,
+          maturityAmount: newMatAmt
+        };
       });
       return;
     }
 
-    setFormData((prev) => {
-      const updated = {
-        ...prev,
-        [name]: parsedVal,
-      };
+    if (name === 'openingDate') {
+      const opDate = value;
+      setFormData((prev) => {
+        const selected = schemes.find((s: any) => getSchemeId(s) === prev.fdSchemeID);
+        const durType = prev.durationType || (selected?.schemeDurationModel === 'Slab' ? 'Days' : (selected?.durationType || 'Months'));
+        const durVal = Number(prev.durationValue) > 0 
+          ? Number(prev.durationValue) 
+          : (selected?.schemeDurationModel === 'Slab' 
+              ? (selected?.slabs?.[0]?.toDays || selected?.minDurationDays || 90) 
+              : (Number(selected?.durationMonths) || 12));
 
-      // [RULE-FD-010] Auto-suggest maturityDate if openingDate entered/changed and scheme has duration
-      if (name === 'openingDate' && parsedVal) {
-        const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
-        if (selected?.durationMonths) {
-          const durType = selected.durationType || 'Months';
-          const durVal = Number(selected.durationMonths) || 0;
-          const durInDays = durType === 'Days' ? durVal : (durType === 'Years' ? durVal * 365 : Math.round(durVal * 30.4167));
-          updated.maturityDate = calculateMaturityDate(parsedVal as string, durVal, durType);
-          updated.durationType = durType;
-          updated.durationValue = durVal;
-          updated.durationInDays = durInDays;
-          setIsManualMaturityDateEdited(false);
+        let newMatDate = prev.maturityDate;
+        if (opDate && durVal > 0 && (!isManualMaturityDateEdited || !prev.maturityDate)) {
+          newMatDate = calculateMaturityDate(opDate, durVal, durType);
         }
-        // [RULE-FD-011] Auto-suggest lastInterestPostingDate to 31/03/2026 if opening date is before 01/04/2026
-        if (!updated.lastInterestPostingDate && (parsedVal as string) < '2026-04-01') {
-          updated.lastInterestPostingDate = '2026-03-31';
+
+        let totalDays = 0;
+        if (opDate && newMatDate) {
+          const d1 = new Date(opDate);
+          const d2 = new Date(newMatDate);
+          if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 > d1) {
+            totalDays = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+          }
         }
-      }
+        if (totalDays <= 0) {
+          totalDays = durType === 'Days' ? durVal : (durType === 'Years' ? durVal * 365 : Math.round(durVal * 30.4167));
+        }
 
-      // If user has not manually overridden maturityAmount, auto-calculate
-      if (!isManualMaturityEdited && ['depositAmount', 'interestRate', 'openingDate', 'maturityDate'].includes(name)) {
-        const selected = schemes.find((s: any) => getSchemeId(s) === updated.fdSchemeID);
-        updated.maturityAmount = calculateMaturityAmount(
-          Number(updated.depositAmount) || 0,
-          Number(updated.interestRate) || 0,
-          updated.openingDate,
-          updated.maturityDate,
-          selected
-        );
-      }
+        let newRate = prev.interestRate;
+        if (selected && !isManualRateEdited && totalDays > 0) {
+          const slabRes = resolveApplicableRateAndSlab(selected, totalDays, prev.isSeniorCitizen);
+          newRate = slabRes.rate;
+          setMatchedSlab(slabRes.matchedSlab);
+        }
 
-      return updated;
-    });
+        const newMatAmt = !isManualMaturityEdited
+          ? calculateMaturityAmount(Number(prev.depositAmount) || 0, Number(newRate) || 0, opDate, newMatDate, selected)
+          : prev.maturityAmount;
+
+        let lastIntDate = prev.lastInterestPostingDate;
+        if (!lastIntDate && opDate < '2026-04-01') {
+          lastIntDate = '2026-03-31';
+        }
+
+        return {
+          ...prev,
+          openingDate: opDate,
+          maturityDate: newMatDate,
+          durationValue: durVal,
+          durationType: durType,
+          durationInDays: totalDays,
+          interestRate: newRate,
+          maturityAmount: newMatAmt,
+          lastInterestPostingDate: lastIntDate
+        };
+      });
+      return;
+    }
+
+    const isNumericField = 
+      (name.includes('Amount') || name.includes('Rate') || name === 'legacyAccruedInt')
+      && !name.toLowerCase().includes('date');
+
+    const parsedVal = isNumericField ? parseFloat(value) || 0 : value;
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: parsedVal,
+    }));
   };
 
   const handleRecalculateMaturity = () => {
     const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
+    const slabRes = resolveApplicableRateAndSlab(selected, formData.durationInDays, formData.isSeniorCitizen);
+    const appliedRate = isManualRateEdited ? Number(formData.interestRate) || 0 : slabRes.rate;
+    if (!isManualRateEdited) {
+      setMatchedSlab(slabRes.matchedSlab);
+    }
     const autoMat = calculateMaturityAmount(
       Number(formData.depositAmount) || 0,
-      Number(formData.interestRate) || 0,
+      appliedRate,
       formData.openingDate,
       formData.maturityDate,
       selected
     );
     setFormData((prev) => ({
       ...prev,
+      interestRate: appliedRate,
       maturityAmount: autoMat
     }));
     setIsManualMaturityEdited(false);
@@ -602,30 +865,46 @@ const FdOpeningBalanceMigration: React.FC = () => {
   // [RULE-FD-010] Recalculate maturity date based on scheme duration and unit (Days/Months/Years)
   const handleRecalculateMaturityDate = () => {
     const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
-    if (selected?.durationMonths && formData.openingDate) {
-      const durType = selected.durationType || 'Months';
-      const durVal = Number(selected.durationMonths) || 0;
-      const durInDays = durType === 'Days' ? durVal : (durType === 'Years' ? durVal * 365 : Math.round(durVal * 30.4167));
+    const isSlab = selected?.schemeDurationModel === 'Slab';
+    const durType = formData.durationType || (isSlab ? 'Days' : (selected?.durationType || 'Months'));
+    const durVal = formData.durationValue > 0 
+      ? formData.durationValue 
+      : (isSlab ? (selected?.slabs?.[0]?.toDays || selected?.minDurationDays || 90) : (Number(selected?.durationMonths) || 12));
+
+    if (durVal > 0 && formData.openingDate) {
       const autoMatDate = calculateMaturityDate(formData.openingDate, durVal, durType);
-      setFormData((prev) => {
-        const updated = {
-          ...prev,
-          durationType: durType,
-          durationValue: durVal,
-          durationInDays: durInDays,
-          maturityDate: autoMatDate
-        };
-        if (!isManualMaturityEdited) {
-          updated.maturityAmount = calculateMaturityAmount(
-            Number(updated.depositAmount) || 0,
-            Number(updated.interestRate) || 0,
-            updated.openingDate,
-            autoMatDate,
-            selected
-          );
+      let totalDays = 0;
+      if (formData.openingDate && autoMatDate) {
+        const d1 = new Date(formData.openingDate);
+        const d2 = new Date(autoMatDate);
+        if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 > d1) {
+          totalDays = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
         }
-        return updated;
-      });
+      }
+      if (totalDays <= 0) {
+        totalDays = durType === 'Days' ? durVal : (durType === 'Years' ? durVal * 365 : Math.round(durVal * 30.4167));
+      }
+
+      let newRate = formData.interestRate;
+      if (selected && !isManualRateEdited) {
+        const slabRes = resolveApplicableRateAndSlab(selected, totalDays, formData.isSeniorCitizen);
+        newRate = slabRes.rate;
+        setMatchedSlab(slabRes.matchedSlab);
+      }
+
+      const autoMatAmt = !isManualMaturityEdited
+        ? calculateMaturityAmount(Number(formData.depositAmount) || 0, newRate, formData.openingDate, autoMatDate, selected)
+        : formData.maturityAmount;
+
+      setFormData((prev) => ({
+        ...prev,
+        durationType: durType,
+        durationValue: durVal,
+        durationInDays: totalDays,
+        maturityDate: autoMatDate,
+        interestRate: newRate,
+        maturityAmount: autoMatAmt
+      }));
       setIsManualMaturityDateEdited(false);
     }
   };
@@ -696,10 +975,13 @@ const FdOpeningBalanceMigration: React.FC = () => {
     setEditingAccountId(null);
     setIsManualMaturityEdited(false);
     setIsManualMaturityDateEdited(false);
+    setIsManualRateEdited(false);
+    setMatchedSlab(null);
     const bId = formData.branchID || 1;
     setFormData({
       branchID: bId,
       customerID: 0,
+      isSeniorCitizen: false,
       fdSchemeID: 0,
       accountNo: '',
       legacyAccountNumber: '',
@@ -726,10 +1008,18 @@ const FdOpeningBalanceMigration: React.FC = () => {
     setEditingAccountId(acc.fdAccountID);
     setIsManualMaturityEdited(true); // Preserve recorded value from database
     setIsManualMaturityDateEdited(true); // Preserve recorded maturity date from database
+    setIsManualRateEdited(true); // Preserve recorded rate from database
     const custId = acc.customerID || 0;
+    const cust = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === custId);
+    const isSenior = (acc as any).isSeniorCitizen ?? isCustomerSeniorCitizen(cust);
+    const selected = schemes.find((s: any) => getSchemeId(s) === acc.fdSchemeID);
+    const slabRes = resolveApplicableRateAndSlab(selected, acc.durationInDays || 0, isSenior);
+    setMatchedSlab(slabRes.matchedSlab);
+
     setFormData({
       branchID: acc.branchID || 1,
       customerID: custId,
+      isSeniorCitizen: isSenior,
       fdSchemeID: acc.fdSchemeID || 0,
       accountNo: acc.accountNo || '',
       legacyAccountNumber: acc.legacyAccountNumber || '',
@@ -978,6 +1268,10 @@ const FdOpeningBalanceMigration: React.FC = () => {
     Number(c.customerID || c.id || c.customerId) === Number(formData.customerID)
   );
 
+  const selectedScheme = schemes.find((s: any) => 
+    getSchemeId(s) === Number(formData.fdSchemeID)
+  );
+
   const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
   const inputClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';
 
@@ -1162,10 +1456,33 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 <CustomerSearchSelect
                   customers={customers}
                   value={formData.customerID || ''}
-                  onChange={(val) => setFormData(prev => ({ 
-                    ...prev, 
-                    customerID: val ? Number(val) : 0
-                  }))}
+                  onChange={(val) => {
+                    const custId = val ? Number(val) : 0;
+                    const cust = customers.find((c: any) => Number(c.customerID || c.id || c.customerId) === custId);
+                    const isSenior = isCustomerSeniorCitizen(cust);
+                    const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
+
+                    let newRate = formData.interestRate;
+                    let slabMatch = matchedSlab;
+                    if (selected && !isManualRateEdited) {
+                      const res = resolveApplicableRateAndSlab(selected, formData.durationInDays, isSenior);
+                      newRate = res.rate;
+                      slabMatch = res.matchedSlab;
+                    }
+
+                    const newMatAmt = (!isManualMaturityEdited && selected)
+                      ? calculateMaturityAmount(formData.depositAmount, newRate, formData.openingDate, formData.maturityDate, selected)
+                      : formData.maturityAmount;
+
+                    setMatchedSlab(slabMatch);
+                    setFormData(prev => ({ 
+                      ...prev, 
+                      customerID: custId,
+                      isSeniorCitizen: isSenior,
+                      interestRate: newRate,
+                      maturityAmount: newMatAmt
+                    }));
+                  }}
                   placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
                 />
                 {selectedCustomer && (
@@ -1188,6 +1505,28 @@ const FdOpeningBalanceMigration: React.FC = () => {
                     )}
                   </div>
                 )}
+                <div className="mt-1.5 flex items-center justify-between text-[11px] bg-amber-50/80 border border-amber-200 px-2 py-1 rounded text-amber-950 font-bold shadow-2xs">
+                  <label htmlFor="isSeniorCitizen" className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      id="isSeniorCitizen"
+                      name="isSeniorCitizen"
+                      checked={formData.isSeniorCitizen}
+                      onChange={handleChange}
+                      className="w-3.5 h-3.5 text-primary rounded border-amber-300 focus:ring-primary cursor-pointer"
+                    />
+                    <span className="text-[11px]">👴 खातेदार ज्येष्ठ नागरिक (वय ६०+ सवलत लागू)</span>
+                  </label>
+                  {formData.isSeniorCitizen ? (
+                    <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold border border-emerald-300">
+                      सवलत सक्रिय (+०.५०% / स्लॅब दर)
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-gray-500 font-normal">
+                      (नियमित व्याजदर)
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="sm:col-span-3">
@@ -1198,11 +1537,15 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 </div>
                 <select name="fdSchemeID" value={formData.fdSchemeID} onChange={handleSchemeChange} className={inputClass} required>
                   <option value="0">-- योजना निवडा --</option>
-                  {schemes.map((s: any) => (
-                    <option key={getSchemeId(s)} value={getSchemeId(s)}>
-                      {s.schemeName} ({s.interestRate}%)
-                    </option>
-                  ))}
+                  {schemes.map((s: any) => {
+                    const isSlab = s.schemeDurationModel === 'Slab';
+                    const slabCount = s.slabs?.length || 0;
+                    return (
+                      <option key={getSchemeId(s)} value={getSchemeId(s)}>
+                        {s.schemeName} {isSlab ? `[स्लॅब पद्धत: ${slabCount} स्लॅब्स]` : `(${s.interestRate}%)`}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
@@ -1212,7 +1555,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-3">
             <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
               <IndianRupee className="w-4 h-4 text-primary" />
-              <h2 className="text-xs font-bold text-primary">२. ठेव मुद्दल, पावती क्र. व मुदतपूर्ती माहिती (Deposit & Maturity)</h2>
+              <h2 className="text-xs font-bold text-primary">२. ठेव मुद्दल, कालावधी, पावती क्र. व मुदतपूर्ती माहिती (Deposit, Tenor & Maturity)</h2>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -1314,17 +1657,47 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 />
               </div>
 
-              {/* Row 2, Col 2: मुदतपूर्ती तारीख */}
+              {/* Row 2, Col 2: ठेव कालावधी (Duration Value + Unit Select) */}
+              <div>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700 flex items-center gap-1">
+                    <span>कालावधी (Tenor / Duration)</span>
+                    <span className="text-red-500">*</span>
+                  </label>
+                  <span className="text-[9px] bg-primary/10 text-primary font-bold px-1.5 py-0.2 rounded font-mono border border-primary/20">
+                    एकूण: {formData.durationInDays || 0} दिवस
+                  </span>
+                </div>
+                <div className="flex gap-1.5">
+                  <input
+                    type="number"
+                    name="durationValue"
+                    value={formData.durationValue || ''}
+                    onChange={handleChange}
+                    className={`${inputClass} font-mono font-bold w-1/2`}
+                    min="1"
+                    placeholder="उदा. 90 किंवा 12"
+                    required
+                  />
+                  <select
+                    name="durationType"
+                    value={formData.durationType}
+                    onChange={handleChange}
+                    className={`${inputClass} font-bold w-1/2`}
+                  >
+                    <option value="Days">दिवस (Days)</option>
+                    <option value="Months">महिने (Months)</option>
+                    <option value="Years">वर्षे (Years)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 2, Col 3: मुदतपूर्ती तारीख */}
               <div>
                 <div className="flex items-center justify-between min-h-[22px] mb-1">
                   <label className="text-[11px] font-bold text-gray-700 flex items-center gap-1">
                     <span>मुदतपूर्ती तारीख (Maturity Date)</span>
                     <span className="text-red-500">*</span>
-                    {formData.durationValue > 0 && (
-                      <span className="text-[10px] text-primary font-bold bg-primary/10 px-1 py-0.2 rounded border border-primary/20 font-mono">
-                        {formData.durationValue} {formData.durationType === 'Days' ? 'दिवस' : formData.durationType === 'Years' ? 'वर्षे' : 'महिने'}
-                      </span>
-                    )}
                   </label>
                   <div className="flex items-center gap-1">
                     {isManualMaturityDateEdited ? (
@@ -1359,7 +1732,129 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 />
               </div>
 
-              {/* Row 2, Col 3: मुदतपूर्ती रक्कम */}
+              {/* Slabs Visual Strip: Displayed when scheme follows Slab model */}
+              {selectedScheme && selectedScheme.schemeDurationModel === 'Slab' && (
+                <div className="sm:col-span-2 md:col-span-3 -mt-0.5">
+                  {matchedSlab ? (
+                    <div className="bg-emerald-50/90 border border-emerald-300 rounded p-2 text-emerald-950 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base shrink-0">🎯</span>
+                        <div>
+                          <div className="text-[11px] font-bold text-emerald-900">
+                            लागू कालावधी स्लॅब: <span className="font-extrabold underline">{matchedSlab.fromDays} ते {matchedSlab.toDays} दिवस</span>
+                            <span className="ml-1.5 text-[10px] text-emerald-700 font-mono font-bold">
+                              (एकूण कालावधी: {formData.durationInDays} दिवस)
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-emerald-800">
+                            मंजूर स्लॅब व्याजदर: <strong className="font-mono text-emerald-950 text-xs font-black">{formData.interestRate}%</strong>
+                            {formData.isSeniorCitizen && (
+                              <span className="text-amber-800 font-bold ml-1">
+                                (👴 ज्येष्ठ नागरिक सवलत दर समाविष्ट)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {selectedScheme.slabs?.filter((sl: any) => sl.isActive !== false).map((sl: any, idx: number) => {
+                          const isThisMatched = sl === matchedSlab || (matchedSlab && sl.slabID === matchedSlab.slabID);
+                          const slRate = formData.isSeniorCitizen ? (sl.seniorCitizenRate || sl.interestRate) : sl.interestRate;
+                          return (
+                            <span
+                              key={idx}
+                              className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold border transition-all ${
+                                isThisMatched
+                                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs ring-1 ring-emerald-400 scale-105'
+                                  : 'bg-white text-emerald-900 border-emerald-200 opacity-75'
+                              }`}
+                            >
+                              {sl.fromDays}-{sl.toDays}द: {slRate}%
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-300 rounded p-2 text-amber-950 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base shrink-0">⚠️</span>
+                        <div>
+                          <div className="text-[11px] font-bold text-amber-900">
+                            कालावधी स्लॅब मॅच झाला नाही (एकूण कालावधी: {formData.durationInDays} दिवस)
+                          </div>
+                          <div className="text-[10px] text-amber-800">
+                            योजना मर्यादा: {selectedScheme.minDurationDays || 1} ते {selectedScheme.maxDurationDays || 'अमर्याद'} दिवस. योजनेचा मूळ दर {formData.interestRate}% लागू ठेवला आहे.
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {selectedScheme.slabs?.filter((sl: any) => sl.isActive !== false).map((sl: any, idx: number) => (
+                          <span
+                            key={idx}
+                            className="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold border bg-white text-amber-900 border-amber-200"
+                          >
+                            {sl.fromDays}-{sl.toDays}द: {formData.isSeniorCitizen ? (sl.seniorCitizenRate || sl.interestRate) : sl.interestRate}%
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Row 3, Col 1: व्याजदर */}
+              <div>
+                <div className="flex items-center justify-between min-h-[22px] mb-1">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    व्याजदर (% p.a.) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {isManualRateEdited ? (
+                      <span className="text-[9px] bg-amber-100 text-amber-900 px-1 py-0.2 rounded font-bold border border-amber-300" title="मॅन्युअली बदललेला व्याजदर">
+                        ✏️ मॅन्युअल
+                      </span>
+                    ) : (
+                      <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold border border-emerald-300" title="योजना / स्लॅबनुसार स्वयंचलित दर">
+                        ⚡ {matchedSlab ? 'स्लॅब ऑटो' : 'ऑटो'}
+                      </span>
+                    )}
+                    {isManualRateEdited && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsManualRateEdited(false);
+                          const selected = schemes.find((s: any) => getSchemeId(s) === formData.fdSchemeID);
+                          const slabRes = resolveApplicableRateAndSlab(selected, formData.durationInDays, formData.isSeniorCitizen);
+                          setMatchedSlab(slabRes.matchedSlab);
+                          const newMat = !isManualMaturityEdited
+                            ? calculateMaturityAmount(formData.depositAmount, slabRes.rate, formData.openingDate, formData.maturityDate, selected)
+                            : formData.maturityAmount;
+                          setFormData(prev => ({ ...prev, interestRate: slabRes.rate, maturityAmount: newMat }));
+                        }}
+                        className="text-[10px] text-primary hover:text-primary-dark font-bold underline cursor-pointer flex items-center gap-0.5"
+                        title="योजनेचा मूळ किंवा स्लॅब दर पुन्हा आणा"
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" />
+                        <span>री-कॅल्क</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="interestRate"
+                  value={formData.interestRate}
+                  onChange={handleChange}
+                  className={`${inputClass} font-mono font-bold ${
+                    isManualRateEdited ? 'text-amber-900 bg-amber-50/40 border-amber-300' : 'text-primary bg-blue-50/20'
+                  }`}
+                  required
+                />
+              </div>
+
+              {/* Row 3, Col 2: मुदतपूर्ती रक्कम */}
               <div>
                 <div className="flex items-center justify-between min-h-[22px] mb-1">
                   <label className="text-[11px] font-bold text-gray-700">
@@ -1429,63 +1924,45 @@ const FdOpeningBalanceMigration: React.FC = () => {
                 )}
               </div>
 
-              {/* Row 3, Col 1: व्याजदर */}
-              <div>
-                <div className="flex items-center justify-between min-h-[22px] mb-1">
-                  <label className="text-[11px] font-bold text-gray-700">
-                    व्याजदर (% p.a.) <span className="text-red-500">*</span>
-                  </label>
+              {/* Row 3, Col 3: शेवटची व्याज तारीख व साचलेले जुने व्याज */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="flex items-center justify-between min-h-[22px] mb-1">
+                    <label className="text-[11px] font-bold text-gray-700 truncate" title="शेवटची व्याज तारीख (Last Int. Date)">
+                      शेवटची तारीख
+                    </label>
+                    {formData.lastInterestPostingDate && (
+                      <span className="text-[8px] bg-blue-100 text-blue-800 px-1 py-0.2 rounded font-bold border border-blue-300">
+                        कट-ऑफ
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="date"
+                    name="lastInterestPostingDate"
+                    max="2026-03-31"
+                    value={formData.lastInterestPostingDate}
+                    onChange={handleChange}
+                    className={inputClass}
+                    title="जुन्या सॉफ्टवेअरमध्ये ज्या तारखेपर्यंत व्याज झाले होते ती तारीख (जास्तीत जास्त 31/03/2026)"
+                  />
                 </div>
-                <input
-                  type="number"
-                  step="0.01"
-                  name="interestRate"
-                  value={formData.interestRate}
-                  onChange={handleChange}
-                  className={`${inputClass} font-mono font-bold text-primary`}
-                  required
-                />
-              </div>
 
-              {/* Row 3, Col 2: शेवटची व्याज तारीख */}
-              <div>
-                <div className="flex items-center justify-between min-h-[22px] mb-1">
-                  <label className="text-[11px] font-bold text-gray-700">
-                    शेवटची व्याज तारीख (Last Int. Date)
-                  </label>
-                  {formData.lastInterestPostingDate && (
-                    <span className="text-[9px] bg-blue-100 text-blue-800 px-1 py-0.2 rounded font-bold border border-blue-300" title="नवीन वर्षात व्याज मोजण्याचा कट-ऑफ">
-                      कट-ऑफ
-                    </span>
-                  )}
+                <div>
+                  <div className="flex items-center justify-between min-h-[22px] mb-1">
+                    <label className="text-[11px] font-bold text-gray-700 truncate" title="साचलेले जुने व्याज (Accrued Int. ₹)">
+                      साचलेले व्याज ₹
+                    </label>
+                  </div>
+                  <input
+                    type="number"
+                    name="legacyAccruedInt"
+                    value={formData.legacyAccruedInt || ''}
+                    onChange={handleChange}
+                    className={`${inputClass} font-mono font-bold text-amber-800 bg-amber-50/20`}
+                    placeholder="0.00"
+                  />
                 </div>
-                <input
-                  type="date"
-                  name="lastInterestPostingDate"
-                  max="2026-03-31"
-                  value={formData.lastInterestPostingDate}
-                  onChange={handleChange}
-                  className={inputClass}
-                  title="जुन्या सॉफ्टवेअरमध्ये ज्या तारखेपर्यंत व्याज झाले होते ती तारीख (जास्तीत जास्त 31/03/2026)"
-                />
-              </div>
-
-              {/* Row 3, Col 3: साचलेले जुने व्याज */}
-              <div>
-                <div className="flex items-center justify-between min-h-[22px] mb-1">
-                  <label className="text-[11px] font-bold text-gray-700">
-                    साचलेले जुने व्याज (Accrued Int. ₹)
-                  </label>
-                  <span className="text-[9px] text-gray-400">कट-ऑफ अखेरचे</span>
-                </div>
-                <input
-                  type="number"
-                  name="legacyAccruedInt"
-                  value={formData.legacyAccruedInt}
-                  onChange={handleChange}
-                  className={`${inputClass} font-mono font-bold text-amber-800 bg-amber-50/20`}
-                  placeholder="0.00"
-                />
               </div>
             </div>
           </div>

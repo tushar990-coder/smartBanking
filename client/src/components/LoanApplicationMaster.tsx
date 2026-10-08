@@ -217,8 +217,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
   const formContainerRef = useRef<HTMLDivElement>(null);
   const requestedAmountInputRef = useRef<HTMLInputElement>(null);
 
-  const labelClass = "block text-[11px] font-bold text-gray-700 mb-0.5";
-  const inputClass = "w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]";
+  const labelClass = "block text-[11px] font-bold text-gray-700 mb-1 truncate";
+  const inputClass = "w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[30px]";
 
   // Deposit Collateral Modal & State
   const [showDepositModal, setShowDepositModal] = useState(false);
@@ -1095,7 +1095,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
               
               {/* Card 1: अर्जदार व सह-कर्जदार माहिती */}
               <div className="bg-white p-2.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2 shadow-2xs">
-                <div className="flex items-center justify-between border-b border-gray-200 pb-1">
+                <div className="flex items-center justify-between border-b border-gray-200 pb-1 h-[24px]">
                   <div className="flex items-center gap-1.5">
                     <UserCheck className="w-3.5 h-3.5 text-primary" />
                     <h2 className="text-xs font-bold text-primary">१. अर्जदार व सह-कर्जदार (Applicant Details)</h2>
@@ -1115,10 +1115,11 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                   </button>
                 </div>
 
-                <div className="grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-5 sm:col-span-3">
+                {/* Row 1: App No & App Date */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
                     <label className={labelClass}>
-                      अर्ज क्र. <span className="text-red-500">*</span>
+                      अर्ज क्र. (App No) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -1130,9 +1131,9 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                     />
                   </div>
 
-                  <div className="col-span-7 sm:col-span-3">
+                  <div>
                     <label className={labelClass}>
-                      अर्ज दिनांक <span className="text-red-500">*</span>
+                      अर्ज दिनांक (Date) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="date"
@@ -1143,24 +1144,25 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       required
                     />
                   </div>
+                </div>
 
-                  <div className="col-span-12 sm:col-span-6">
-                    <label className={labelClass}>
-                      अर्जदार खातेदार निवडा <span className="text-red-500">*</span>
-                    </label>
-                    <div className={isEditing ? 'opacity-90' : ''}>
-                      <CustomerSearchSelect
-                        customers={members}
-                        value={formData.customerID ? Number(formData.customerID) : ''}
-                        onChange={(val) => {
-                          setFormData(p => ({
-                            ...p,
-                            customerID: val ? Number(val) : 0
-                          }));
-                        }}
-                        placeholder="-- अर्जदार CIF / नाव / मोबाईलने शोधा --"
-                      />
-                    </div>
+                {/* Row 2: Applicant Customer Select (Full Width) */}
+                <div>
+                  <label className={labelClass}>
+                    अर्जदार खातेदार निवडा (Select Applicant Customer) <span className="text-red-500">*</span>
+                  </label>
+                  <div className={isEditing ? 'opacity-90' : ''}>
+                    <CustomerSearchSelect
+                      customers={members}
+                      value={formData.customerID ? Number(formData.customerID) : ''}
+                      onChange={(val) => {
+                        setFormData(p => ({
+                          ...p,
+                          customerID: val ? Number(val) : 0
+                        }));
+                      }}
+                      placeholder="-- अर्जदार CIF / नाव / मोबाईलने शोधा --"
+                    />
                   </div>
                 </div>
 
@@ -1247,13 +1249,14 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
 
               {/* Card 2: कर्ज माहिती व परतफेड नियम */}
               <div className="bg-white p-2.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2 shadow-2xs">
-                <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1">
+                <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1 h-[24px]">
                   <Percent className="w-3.5 h-3.5 text-primary" />
                   <h2 className="text-xs font-bold text-primary">२. कर्ज माहिती व परतफेड नियम (Loan Terms & Rates)</h2>
                 </div>
 
+                {/* Row 1: Scheme, Requested Amount, Interest Rate */}
                 <div className="grid grid-cols-12 gap-2">
-                  <div className="col-span-12 sm:col-span-7">
+                  <div className="col-span-12 sm:col-span-5">
                     <label className={labelClass}>
                       कर्ज योजना (Scheme) <span className="text-red-500">*</span>
                     </label>
@@ -1273,7 +1276,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                     </select>
                   </div>
 
-                  <div className="col-span-12 sm:col-span-5">
+                  <div className="col-span-6 sm:col-span-4">
                     <label className={labelClass}>
                       मागणी रक्कम (Requested ₹) <span className="text-red-500">*</span>
                     </label>
@@ -1290,10 +1293,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       placeholder="0.00"
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-12 gap-2">
-                  <div className="col-span-4">
+                  <div className="col-span-6 sm:col-span-3">
                     <label className={labelClass}>
                       व्याज दर (% p.a.) <span className="text-red-500">*</span>
                     </label>
@@ -1307,8 +1308,11 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       required
                     />
                   </div>
+                </div>
 
-                  <div className="col-span-4">
+                {/* Row 2: Frequency, Duration, No of Inst, Inst Amount */}
+                <div className="grid grid-cols-12 gap-2">
+                  <div className="col-span-6 sm:col-span-3">
                     <label className={labelClass}>
                       हप्ता प्रकार <span className="text-red-500">*</span>
                     </label>
@@ -1324,7 +1328,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                     </select>
                   </div>
 
-                  <div className="col-span-4">
+                  <div className="col-span-6 sm:col-span-3">
                     <label className={labelClass}>
                       मुदत महिने <span className="text-red-500">*</span>
                     </label>
@@ -1338,10 +1342,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       required
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-12 gap-2">
-                  <div className="col-span-4">
+                  <div className="col-span-4 sm:col-span-2">
                     <label className={labelClass}>
                       हप्ते संख्या <span className="text-red-500">*</span>
                     </label>
@@ -1356,8 +1358,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                     />
                   </div>
 
-                  <div className="col-span-8">
-                    <div className="flex justify-between items-center mb-0.5">
+                  <div className="col-span-8 sm:col-span-4">
+                    <div className="flex justify-between items-center mb-1 h-[15px]">
                       <label className={labelClass}>
                         हप्ता रक्कम (Inst ₹) <span className="text-red-500">*</span>
                       </label>
@@ -1387,7 +1389,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                         type="button"
                         onClick={calculateSchedule}
                         title="हप्ता वेळापत्रक पत्रक पहा (View Schedule)"
-                        className="bg-primary hover:opacity-90 text-white px-2 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap cursor-pointer transition-colors shadow-2xs flex items-center gap-1 shrink-0"
+                        className="bg-primary hover:opacity-90 text-white px-2 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap cursor-pointer transition-colors shadow-2xs flex items-center gap-1 shrink-0 h-[30px]"
                       >
                         <span>📊 पत्रक</span>
                       </button>
@@ -1395,6 +1397,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                   </div>
                 </div>
 
+                {/* Row 3: Due Dates */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className={labelClass}>पहिले हप्ता दि. (First Due)</label>
@@ -1428,96 +1431,109 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
             <div className="space-y-2.5">
               
               {/* Card 3: जामीनदार तपशील */}
-              <div className="bg-primary/5 p-2.5 rounded-sm border border-primary/20 space-y-2 shadow-2xs">
-                <div className="flex items-center gap-1.5 border-b border-primary/20 pb-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-                  <h2 className="text-xs font-bold text-primary">३. जामीनदार तपशील (Guarantor Details)</h2>
+              <div className="bg-white p-2.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2 shadow-2xs">
+                <div className="flex items-center justify-between border-b border-gray-200 pb-1 h-[24px]">
+                  <div className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                    <h2 className="text-xs font-bold text-primary">३. जामीनदार तपशील (Guarantor Details)</h2>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-medium italic">
+                    (किमान १ जामीनदार आवश्यक)
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <label className={labelClass}>जामीनदार १ (Guarantor 1)</label>
-                    <CustomerSearchSelect
-                      customers={members.filter((m: any) => {
-                        const mCustId = m.customerID || m.id;
-                        return formData.customerID ? mCustId !== formData.customerID : true;
-                      })}
-                      value={formData.guarantor1CustomerID ? Number(formData.guarantor1CustomerID) : ''}
-                      onChange={(val) => {
-                        setFormData(p => ({
-                          ...p,
-                          guarantor1CustomerID: val ? Number(val) : 0
-                        }));
-                      }}
-                      placeholder="-- जामीनदार १ शोधा --"
-                    />
-                    {guarantor1Summary && (
-                      <div className="mt-1 p-1 bg-amber-50 border border-amber-300 rounded text-[9.5px] text-amber-900 flex justify-between items-center shadow-2xs">
-                        <span>🛡️ <b>{guarantor1Summary.activeGuaranteedLoansCount}</b> चालू जामीन | बाकी: ₹{(guarantor1Summary.totalCurrentBalance || 0).toLocaleString('en-IN')}</span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedGuarantorForModal(guarantor1Summary)}
-                          className="px-1 py-0.2 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded text-[9px] font-bold cursor-pointer"
-                        >
-                          तपशील
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                {/* Row 1: Guarantor 1 (Full Width) */}
+                <div>
+                  <label className={labelClass}>
+                    जामीनदार १ (Guarantor 1) <span className="text-red-500">*</span>
+                  </label>
+                  <CustomerSearchSelect
+                    customers={members.filter((m: any) => {
+                      const mCustId = m.customerID || m.id;
+                      return formData.customerID ? mCustId !== formData.customerID : true;
+                    })}
+                    value={formData.guarantor1CustomerID ? Number(formData.guarantor1CustomerID) : ''}
+                    onChange={(val) => {
+                      setFormData(p => ({
+                        ...p,
+                        guarantor1CustomerID: val ? Number(val) : 0
+                      }));
+                    }}
+                    placeholder="-- जामीनदार १ शोधा (CIF / नाव / मोबाईल) --"
+                  />
+                  {guarantor1Summary && (
+                    <div className="mt-1 p-1 bg-amber-50 border border-amber-300 rounded text-[9.5px] text-amber-900 flex justify-between items-center shadow-2xs">
+                      <span>🛡️ <b>{guarantor1Summary.activeGuaranteedLoansCount}</b> चालू जामीन | बाकी: ₹{(guarantor1Summary.totalCurrentBalance || 0).toLocaleString('en-IN')}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedGuarantorForModal(guarantor1Summary)}
+                        className="px-1.5 py-0.2 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded text-[9px] font-bold cursor-pointer"
+                      >
+                        तपशील
+                      </button>
+                    </div>
+                  )}
+                </div>
 
-                  <div>
-                    <label className={labelClass}>जामीनदार २ (Guarantor 2)</label>
-                    <CustomerSearchSelect
-                      customers={members.filter((m: any) => {
-                        const mCustId = m.customerID || m.id;
-                        return (formData.customerID ? mCustId !== formData.customerID : true) &&
-                               (formData.guarantor1CustomerID ? mCustId !== formData.guarantor1CustomerID : true);
-                      })}
-                      value={formData.guarantor2CustomerID ? Number(formData.guarantor2CustomerID) : ''}
-                      onChange={(val) => {
-                        setFormData(p => ({
-                          ...p,
-                          guarantor2CustomerID: val ? Number(val) : 0
-                        }));
-                      }}
-                      placeholder="-- जामीनदार २ शोधा --"
-                    />
-                    {guarantor2Summary && (
-                      <div className="mt-1 p-1 bg-amber-50 border border-amber-300 rounded text-[9.5px] text-amber-900 flex justify-between items-center shadow-2xs">
-                        <span>🛡️ <b>{guarantor2Summary.activeGuaranteedLoansCount}</b> चालू जामीन | बाकी: ₹{(guarantor2Summary.totalCurrentBalance || 0).toLocaleString('en-IN')}</span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedGuarantorForModal(guarantor2Summary)}
-                          className="px-1 py-0.2 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded text-[9px] font-bold cursor-pointer"
-                        >
-                          तपशील
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                {/* Row 2: Guarantor 2 (Full Width) */}
+                <div>
+                  <label className={labelClass}>
+                    जामीनदार २ (Guarantor 2)
+                  </label>
+                  <CustomerSearchSelect
+                    customers={members.filter((m: any) => {
+                      const mCustId = m.customerID || m.id;
+                      return (formData.customerID ? mCustId !== formData.customerID : true) &&
+                             (formData.guarantor1CustomerID ? mCustId !== formData.guarantor1CustomerID : true);
+                    })}
+                    value={formData.guarantor2CustomerID ? Number(formData.guarantor2CustomerID) : ''}
+                    onChange={(val) => {
+                      setFormData(p => ({
+                        ...p,
+                        guarantor2CustomerID: val ? Number(val) : 0
+                      }));
+                    }}
+                    placeholder="-- जामीनदार २ शोधा (CIF / नाव / मोबाईल) --"
+                  />
+                  {guarantor2Summary && (
+                    <div className="mt-1 p-1 bg-amber-50 border border-amber-300 rounded text-[9.5px] text-amber-900 flex justify-between items-center shadow-2xs">
+                      <span>🛡️ <b>{guarantor2Summary.activeGuaranteedLoansCount}</b> चालू जामीन | बाकी: ₹{(guarantor2Summary.totalCurrentBalance || 0).toLocaleString('en-IN')}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedGuarantorForModal(guarantor2Summary)}
+                        className="px-1.5 py-0.2 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded text-[9px] font-bold cursor-pointer"
+                      >
+                        तपशील
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Card 4: तारण, शिफारस व कारण */}
               <div className="bg-white p-2.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2 shadow-2xs">
-                <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1">
+                <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1 h-[24px]">
                   <Landmark className="w-3.5 h-3.5 text-primary" />
                   <h2 className="text-xs font-bold text-primary">४. तारण, शिफारस व कारण (Security & Details)</h2>
                 </div>
 
+                {/* Row 1: Security Details & Security Value */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
-                    <label className={labelClass}>तारण तपशील (Security Details)</label>
+                    <div className="flex items-center justify-between mb-1 h-[15px]">
+                      <label className={labelClass}>तारण प्रकार (Security Details)</label>
+                    </div>
                     <SearchableSelect
                       options={secOptions}
                       value={formData.securityDetails || ''}
                       onChange={(e: any) => setFormData(p => ({ ...p, securityDetails: e.target.value }))}
                       placeholder="-- तारण प्रकार निवडा --"
+                      className={`${inputClass} flex justify-between items-center text-left cursor-pointer`}
                     />
                   </div>
 
                   <div>
-                    <div className="flex items-center justify-between mb-0.5">
+                    <div className="flex items-center justify-between mb-1 h-[15px]">
                       <label className={labelClass}>तारण मूल्य (Security ₹)</label>
                       <div className="flex items-center gap-1">
                         {(() => {
@@ -1571,6 +1587,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                   </div>
                 </div>
 
+                {/* Row 2: Director Recommendation */}
                 <div>
                   <label className={labelClass}>संचालक शिफारस (Director Recommendation)</label>
                   <CustomerSearchSelect
@@ -1596,6 +1613,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                   )}
                 </div>
 
+                {/* Row 3: Loan Purpose */}
                 <div>
                   <label className={labelClass}>कर्जाचे कारण (Loan Purpose)</label>
                   <input
@@ -1614,15 +1632,15 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
           </div>
 
           {/* Form Action Buttons Bar (Full Width) */}
-          <div className="pt-2 flex flex-wrap justify-between items-center gap-2 border-t border-gray-200 bg-slate-50/60 -mx-2.5 sm:-mx-3 -mb-2.5 sm:-mb-3 p-2 rounded-b-sm">
-            <div className="flex items-center gap-1.5">
+          <div className="pt-2 flex flex-wrap justify-between items-center gap-2 border-t border-gray-200 bg-slate-50/70 -mx-2.5 sm:-mx-3 -mb-2.5 sm:-mb-3 p-2 rounded-b-sm">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
                   fetchData();
                   setShowListModal(true);
                 }}
-                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5"
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
               >
                 <Layers className="w-3.5 h-3.5 text-slate-600" />
                 <span>कर्ज अर्ज यादी ({applications.length})</span>
@@ -1640,7 +1658,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                 className={`px-3 py-1.5 font-bold rounded-sm text-xs border cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all ${
                   showSchedule 
                     ? 'bg-primary text-white border-primary shadow-xs' 
-                    : 'bg-primary/10 hover:bg-primary/20 text-primary border-primary/20'
+                    : 'bg-white hover:bg-slate-100 text-primary border-primary/30'
                 }`}
                 title={showSchedule ? "हप्ता वेळापत्रक पत्रक लपवा" : "हप्ता वेळापत्रक पत्रक उघडा"}
               >
@@ -1653,9 +1671,9 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
               <button
                 type="button"
                 onClick={handleResetForm}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1"
+                className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
+                <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
                 <span>{isEditing ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
               </button>
 

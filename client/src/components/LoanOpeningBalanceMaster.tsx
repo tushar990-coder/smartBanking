@@ -26,9 +26,11 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
-  RefreshCw
+  RefreshCw,
+  Sparkles
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import DepositCollateralSelectorModal, { EligibleDeposit } from './DepositCollateralSelectorModal';
 
 interface Customer {
   customerID: number;
@@ -58,6 +60,10 @@ interface LoanRate {
   installmentType?: string;
   interestCalculationMethod?: string;
   loanInstallmentType?: string;
+  collateralCategory?: string;
+  maxLtvPercentage?: number;
+  isLienRequired?: boolean;
+  isCollateralMandatoryForOpeningBalance?: boolean;
 }
 
 interface LoanOpeningBalance {
@@ -97,10 +103,23 @@ interface LoanOpeningBalance {
   guarantor2?: string;
   securityDetails?: string;
   securityValue: number;
+  depositCollaterals?: any[];
 
   customer?: Customer;
   member?: Member;
   loanRate?: LoanRate;
+}
+
+export interface GoldLoanItem {
+  id: string;
+  itemName: string;
+  purity: string;
+  quantity: number;
+  grossWeight: number;
+  netWeight: number;
+  ratePerGram: number;
+  valuationAmount: number;
+  remarks: string;
 }
 
 interface GlReconciliationSchemeItem {
@@ -137,6 +156,117 @@ export default function LoanOpeningBalanceMaster() {
   const [showAllLoans, setShowAllLoans] = useState(false);
   const [showListModal, setShowListModal] = useState(false);
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
+  const [showGoldModal, setShowGoldModal] = useState(false);
+  const [goldItems, setGoldItems] = useState<GoldLoanItem[]>([]);
+  const [editingGoldId, setEditingGoldId] = useState<string | null>(null);
+
+  // Deposit Collateral Modal & State
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [depositCollaterals, setDepositCollaterals] = useState<any[]>([]);
+  const [goldForm, setGoldForm] = useState<{
+    itemName: string;
+    purity: string;
+    quantity: number | string;
+    grossWeight: number | string;
+    netWeight: number | string;
+    ratePerGram: number | string;
+    remarks: string;
+  }>({
+    itemName: 'सोन्याची साखळी (Chain)',
+    purity: '22K (91.6%)',
+    quantity: 1,
+    grossWeight: '',
+    netWeight: '',
+    ratePerGram: 6000,
+    remarks: ''
+  });
+
+  const handleAddGoldItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    const qty = parseInt(goldForm.quantity.toString() || '1');
+    const gross = parseFloat(goldForm.grossWeight.toString() || '0');
+    const net = parseFloat(goldForm.netWeight.toString() || '0');
+    const rate = parseFloat(goldForm.ratePerGram.toString() || '0');
+    const valuation = Math.round(net * rate);
+
+    if (net <= 0) {
+      alert('कृपया निव्वळ वजन (Net Weight) टाका!');
+      return;
+    }
+
+    if (editingGoldId) {
+      setGoldItems(prev => prev.map(item => item.id === editingGoldId ? {
+        ...item,
+        itemName: goldForm.itemName,
+        purity: goldForm.purity,
+        quantity: qty,
+        grossWeight: gross,
+        netWeight: net,
+        ratePerGram: rate,
+        valuationAmount: valuation,
+        remarks: goldForm.remarks
+      } : item));
+      setEditingGoldId(null);
+    } else {
+      const newItem: GoldLoanItem = {
+        id: Date.now().toString(),
+        itemName: goldForm.itemName,
+        purity: goldForm.purity,
+        quantity: qty,
+        grossWeight: gross,
+        netWeight: net,
+        ratePerGram: rate,
+        valuationAmount: valuation,
+        remarks: goldForm.remarks
+      };
+      setGoldItems(prev => [...prev, newItem]);
+    }
+
+    setGoldForm({
+      itemName: 'सोन्याची साखळी (Chain)',
+      purity: '22K (91.6%)',
+      quantity: 1,
+      grossWeight: '',
+      netWeight: '',
+      ratePerGram: goldForm.ratePerGram || 6000,
+      remarks: ''
+    });
+  };
+
+  const handleEditGoldItem = (item: GoldLoanItem) => {
+    setEditingGoldId(item.id);
+    setGoldForm({
+      itemName: item.itemName,
+      purity: item.purity,
+      quantity: item.quantity,
+      grossWeight: item.grossWeight,
+      netWeight: item.netWeight,
+      ratePerGram: item.ratePerGram,
+      remarks: item.remarks || ''
+    });
+  };
+
+  const handleDeleteGoldItem = (id: string) => {
+    setGoldItems(prev => prev.filter(item => item.id !== id));
+    if (editingGoldId === id) {
+      setEditingGoldId(null);
+    }
+  };
+
+  const totalGoldItemsCount = goldItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
+  const totalGoldGrossWeight = goldItems.reduce((sum, item) => sum + (item.grossWeight || 0), 0);
+  const totalGoldNetWeight = goldItems.reduce((sum, item) => sum + (item.netWeight || 0), 0);
+  const totalGoldValuation = goldItems.reduce((sum, item) => sum + (item.valuationAmount || 0), 0);
+
+  const applyGoldLoanToOpeningBalance = () => {
+    const securitySummary = `सोने तारण: ${goldItems.length} जिन्नस (${totalGoldItemsCount} नग), निव्वळ वजन: ${totalGoldNetWeight.toFixed(2)} ग्रॅम, मूल्यांकन: ₹${totalGoldValuation.toLocaleString('en-IN')}`;
+    setFormData(prev => ({
+      ...prev,
+      securityValue: totalGoldValuation.toString(),
+      securityDetails: securitySummary
+    }));
+    setShowGoldModal(false);
+  };
   const [members, setMembers] = useState<Member[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loanRates, setLoanRates] = useState<LoanRate[]>([]);
@@ -218,8 +348,12 @@ export default function LoanOpeningBalanceMaster() {
   }, []);
 
   const fetchGlReconciliation = async (branchId?: string, loanRateId?: string) => {
-    const bId = branchId || formData.branchID || '1';
-    const rId = loanRateId !== undefined ? loanRateId : (formData.loanRateID || '0');
+    const rawBranch = branchId !== undefined ? branchId : formData.branchID;
+    const bId = rawBranch && String(rawBranch).trim() !== '' && !isNaN(Number(rawBranch)) ? String(rawBranch).trim() : '1';
+    
+    const rawRate = loanRateId !== undefined ? loanRateId : formData.loanRateID;
+    const rId = rawRate && String(rawRate).trim() !== '' && !isNaN(Number(rawRate)) ? String(rawRate).trim() : '0';
+
     try {
       setIsLoadingRecon(true);
       const res = await axios.get<GlReconciliationResponse>(`/api/LoanAccounts/GlReconciliationSummary?branchId=${bId}&loanRateId=${rId}`);
@@ -232,7 +366,32 @@ export default function LoanOpeningBalanceMaster() {
   };
 
   useEffect(() => {
-    fetchGlReconciliation(formData.branchID, formData.loanRateID);
+    let isMounted = true;
+    const rawBranch = formData.branchID;
+    const bId = rawBranch && String(rawBranch).trim() !== '' && !isNaN(Number(rawBranch)) ? String(rawBranch).trim() : '1';
+    
+    const rawRate = formData.loanRateID;
+    const rId = rawRate && String(rawRate).trim() !== '' && !isNaN(Number(rawRate)) ? String(rawRate).trim() : '0';
+
+    const runRecon = async () => {
+      try {
+        setIsLoadingRecon(true);
+        const res = await axios.get<GlReconciliationResponse>(`/api/LoanAccounts/GlReconciliationSummary?branchId=${bId}&loanRateId=${rId}`);
+        if (isMounted) {
+          setGlRecon(res.data);
+        }
+      } catch (err) {
+        if (isMounted) {
+          console.error("Error fetching GL reconciliation summary:", err);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingRecon(false);
+        }
+      }
+    };
+    runRecon();
+    return () => { isMounted = false; };
   }, [formData.branchID, formData.loanRateID]);
 
   const fetchFinancialYears = async () => {
@@ -414,6 +573,16 @@ export default function LoanOpeningBalanceMaster() {
     }
     if (name === 'sanctionedAmount' || name === 'loanRateID' || name === 'durationMonths' || name === 'installmentFrequency') {
       setIsInstAmountEdited(false);
+    }
+
+    if (name === 'loanRateID') {
+      const selectedRate = loanRates.find(r => r.loanRateID.toString() === value);
+      if (selectedRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(selectedRate.collateralCategory || '')) {
+        // Only auto-open modal if the scheme explicitly made collateral mandatory for opening balance
+        if (selectedRate.isCollateralMandatoryForOpeningBalance && formData.customerID && depositCollaterals.length === 0) {
+          setShowDepositModal(true);
+        }
+      }
     }
 
     // Auto-sum purePrincipalBalance + capitalizedInterestAmount into principalBalance
@@ -794,6 +963,19 @@ export default function LoanOpeningBalanceMaster() {
       securityDetails: '',
       securityValue: ''
     });
+    setGoldItems([]);
+    setEditingGoldId(null);
+    setDepositCollaterals([]);
+    setShowDepositModal(false);
+    setGoldForm({
+      itemName: 'सोन्याची साखळी (Chain)',
+      purity: '22K (91.6%)',
+      quantity: 1,
+      grossWeight: '',
+      netWeight: '',
+      ratePerGram: 6000,
+      remarks: ''
+    });
     setIsEditing(false);
     fetchNextAccountNo();
   };
@@ -803,6 +985,14 @@ export default function LoanOpeningBalanceMaster() {
     if ((!formData.customerID && !formData.memberID) || !formData.loanRateID || !formData.loanAccountNo) {
         alert("कृपया कर्जदार खातेदार व आवश्यक माहिती भरा!");
         return;
+    }
+
+    const selectedRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+    const isDepositScheme = selectedRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(selectedRate.collateralCategory || '');
+    if (isDepositScheme && selectedRate.isCollateralMandatoryForOpeningBalance && depositCollaterals.length === 0) {
+      alert(`सदर कर्ज योजनेसाठी (${selectedRate.shortName || selectedRate.loanType}) आरंभिक शिल्लक नोंदणीतही तारण ठेव जोडणे अनिवार्य केले आहे. कृपया ठेव जोडा किंवा 'कर्ज दर/प्रकार' सेटिंग्जमध्ये हे ऐच्छिक करा.`);
+      setShowDepositModal(true);
+      return;
     }
 
     if (cutoffDate) {
@@ -848,7 +1038,41 @@ export default function LoanOpeningBalanceMaster() {
         noOfInstallments: installmentChart.length,
         guarantor1CustomerID: formData.guarantor1 ? parseInt(formData.guarantor1) : null,
         guarantor2CustomerID: formData.guarantor2 ? parseInt(formData.guarantor2) : null,
+        goldItems: goldItems.map(g => {
+          let purityNum = 22;
+          if (typeof g.purity === 'string') {
+            const match = g.purity.match(/(\d+(\.\d+)?)/);
+            if (match) purityNum = parseFloat(match[1]);
+          } else if (typeof g.purity === 'number') {
+            purityNum = g.purity;
+          }
+          return {
+            goldLoanDetailID: g.id && !g.id.startsWith('temp_') && !isNaN(Number(g.id)) ? Number(g.id) : 0,
+            ornamentName: g.itemName,
+            quantity: g.quantity || 1,
+            grossWeight: g.grossWeight || 0,
+            netWeight: g.netWeight || 0,
+            purity: purityNum,
+            goldRatePerGram: g.ratePerGram || 0,
+            estimatedValue: g.valuationAmount || (g.netWeight * g.ratePerGram) || 0,
+            remarks: g.remarks || ''
+          };
+        }),
         
+        depositCollaterals: depositCollaterals.map((c: any) => ({
+          collateralID: c.collateralID || c.CollateralID || 0,
+          customerID: Number(formData.customerID) || 0,
+          collateralType: c.depositType || c.collateralType || c.CollateralType || 'FixedDeposit',
+          depositAccountID: c.depositAccountID || c.DepositAccountID,
+          depositAccountNo: c.accountNo || c.depositAccountNo || c.DepositAccountNo,
+          depositAmount: c.depositAmount || c.DepositAmount || 0,
+          currentDepositBalance: c.currentBalance || c.currentDepositBalance || c.CurrentDepositBalance || 0,
+          maturityDate: c.maturityDate || c.MaturityDate || null,
+          lienAmount: c.lienAmount || c.LienAmount || c.currentBalance || c.depositAmount || 0,
+          lienStatus: 'LienMarked',
+          remarks: c.remarks || c.Remarks || 'Loan Opening Balance Collateral'
+        })),
+
         loanDisbursementDate: formData.loanDisbursementDate || null,
         firstInstallmentDate: formData.firstInstallmentDate || null,
         maturityDate: formData.maturityDate || null,
@@ -910,7 +1134,7 @@ export default function LoanOpeningBalanceMaster() {
     }
   };
 
-  const handleEdit = (balance: any) => {
+  const handleEdit = async (balance: any) => {
     setIsInstAmountEdited(false);
     const custId = balance.customerID || balance.customer?.customerID;
     setFormData({
@@ -947,6 +1171,42 @@ export default function LoanOpeningBalanceMaster() {
     });
     setIsEditing(true);
     setShowListModal(false);
+
+    // Fetch Gold Details if any
+    try {
+      const goldRes = await axios.get(`/api/GoldLoanDetails/ByLoanAccount/${balance.loanAccountID}`);
+      if (goldRes.data && Array.isArray(goldRes.data) && goldRes.data.length > 0) {
+        const mappedGold: GoldLoanItem[] = goldRes.data.map((g: any) => ({
+          id: g.goldLoanDetailID?.toString() || Date.now().toString(),
+          itemName: g.ornamentName || 'सोन्याचे अलंकार',
+          purity: g.purity ? `${g.purity}K` : '22K (91.6%)',
+          quantity: g.quantity || 1,
+          grossWeight: Number(g.grossWeight) || 0,
+          netWeight: Number(g.netWeight) || 0,
+          ratePerGram: Number(g.goldRatePerGram) || 0,
+          valuationAmount: Number(g.estimatedValue) || 0,
+          remarks: g.imagePath || ''
+        }));
+        setGoldItems(mappedGold);
+      } else {
+        setGoldItems([]);
+      }
+    } catch (err) {
+      console.error("Error fetching gold details for loan:", err);
+      setGoldItems([]);
+    }
+
+    // Fetch Deposit Collaterals if any
+    try {
+      const colRes = await axios.get(`/api/LoanCollaterals/ByAccount/${balance.loanAccountID}`);
+      if (colRes.data && Array.isArray(colRes.data) && colRes.data.length > 0) {
+        setDepositCollaterals(colRes.data);
+      } else {
+        setDepositCollaterals([]);
+      }
+    } catch {
+      setDepositCollaterals([]);
+    }
 
     if (formContainerRef.current) {
       formContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1150,16 +1410,7 @@ export default function LoanOpeningBalanceMaster() {
         </div>
       </div>
 
-      {/* Cut-off Date Info Banner */}
-      <div className="bg-amber-50/80 border border-amber-300 p-2 rounded-sm text-[11px] text-amber-900 flex flex-wrap items-center justify-between gap-2 shadow-2xs mb-3">
-        <div className="flex items-center gap-1.5 font-medium">
-          <Calendar className="w-4 h-4 text-amber-700" />
-          <span><strong>आरंभिक शिल्लक कट-ऑफ दिनांक मर्यादा:</strong> <span className="font-bold text-amber-950 font-mono">{new Date(cutoffDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span> {firstFyInfo ? `(पहिले आर्थिक वर्ष ${firstFyInfo.yearCode || ''} सुरू होण्याच्या आधीचा दिनांक)` : ''}</span>
-        </div>
-        <span className="text-[10px] text-amber-900 font-semibold bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
-          ⚠️ कर्ज उचल दिनांक, शेवटचा हप्ता व बाकी दिनांक या कट-ऑफ दिनांकाच्या पुढील असणार नाहीत
-        </span>
-      </div>
+
 
       {/* 🛡️ खतावणी (GL) विरुद्ध उप-खाते (SL) थेट जुळवणी दर्शक (Real-time GL vs Sub-Ledger Reconciliation Alert Widget) */}
       {glRecon && (
@@ -1782,9 +2033,75 @@ export default function LoanOpeningBalanceMaster() {
 
           {/* Section 4: Security & Guarantor */}
           <div className="bg-white p-3 rounded-sm shadow-xs border border-gray-200">
-              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5 mb-2">
-                <ShieldCheck className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">५. तारण व जामीनदार (Guarantor & Security)</h2>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-1.5 mb-2">
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-primary" />
+                  <h2 className="text-xs font-bold text-primary">५. तारण व जामीनदार (Guarantor & Security)</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const curRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+                    const isDepScheme = curRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(curRate.collateralCategory || '');
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!formData.customerID) {
+                            alert('कृपया आधी कर्जदार खातेदार (Borrower Customer) निवडा.');
+                            return;
+                          }
+                          setShowDepositModal(true);
+                        }}
+                        className={`${
+                          isDepScheme 
+                            ? 'bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white border-emerald-500 ring-2 ring-emerald-300' 
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                        } px-3 py-1 rounded text-[11px] font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer border`}
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>
+                          {curRate?.collateralCategory === 'FixedDeposit' 
+                            ? 'मुदत ठेव (FD) तारण जोडा' 
+                            : curRate?.collateralCategory === 'PigmyDeposit' 
+                              ? 'पिग्मी ठेव तारण जोडा' 
+                              : curRate?.collateralCategory === 'RecurringDeposit'
+                                ? 'RD ठेव तारण जोडा'
+                                : 'ठेव तारण जोडा (FD/Pigmy)'}
+                        </span>
+                        {depositCollaterals.length > 0 && (
+                          <span className="bg-emerald-950/80 text-emerald-100 text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold">
+                            {depositCollaterals.length} खाती
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })()}
+
+                  {(() => {
+                    const curRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+                    const isDepScheme = curRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(curRate.collateralCategory || '');
+                    if (!isDepScheme) return null;
+                    return (
+                      <span className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-300 rounded px-2 py-0.5 font-medium flex items-center gap-1 shadow-2xs">
+                        <span>ℹ️ {curRate?.isCollateralMandatoryForOpeningBalance ? '⚠️ तारण अनिवार्य' : '✅ तारण ऐच्छिक (नंतरही जोडता येईल)'}</span>
+                      </span>
+                    );
+                  })()}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowGoldModal(true)}
+                    className="bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white px-3 py-1 rounded text-[11px] font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer border border-amber-400"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-100" />
+                    <span>सुवर्ण कर्ज तारण तपशील (Gold Loan Collateral)</span>
+                    {goldItems.length > 0 && (
+                      <span className="bg-amber-950/80 text-amber-100 text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold">
+                        {goldItems.length} जिन्नस (₹{totalGoldValuation.toLocaleString('en-IN')})
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
                   <div>
@@ -1804,6 +2121,46 @@ export default function LoanOpeningBalanceMaster() {
                       <input type="number" step="0.01" name="securityValue" value={formData.securityValue} onChange={handleChange} className={inputClass} placeholder="0.00" />
                   </div>
               </div>
+
+              {depositCollaterals.length > 0 && (
+                <div className="mt-2.5 p-2 bg-emerald-50 border border-emerald-300 rounded text-xs flex flex-wrap items-center justify-between gap-2 animate-in fade-in duration-150">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span className="text-emerald-950 font-medium">
+                      🔒 <strong className="text-emerald-900">तारण ठेव खाती ({depositCollaterals.length}):</strong>{' '}
+                      <span className="font-mono font-bold">
+                        {depositCollaterals.map((c: any) => c.accountNo || c.depositAccountNo || c.DepositAccountNo).join(', ')}
+                      </span>{' '}
+                      | तारण मूल्य: <strong className="text-emerald-800 font-mono">₹{Number(formData.securityValue || 0).toLocaleString('en-IN')}</strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDepositModal(true)}
+                    className="text-emerald-800 hover:text-emerald-950 underline font-bold text-[11px] cursor-pointer"
+                  >
+                    बदला / तपासा
+                  </button>
+                </div>
+              )}
+
+              {goldItems.length > 0 && (
+                <div className="mt-2.5 p-2 bg-amber-50/80 border border-amber-200 rounded text-xs flex flex-wrap items-center justify-between gap-2 animate-in fade-in duration-150">
+                  <div className="flex items-center gap-2">
+                    <span className="text-amber-800 font-bold">💎 जोडलेले सुवर्ण तारण:</span>
+                    <span className="text-amber-950 font-medium">
+                      {goldItems.length} जिन्नस ({totalGoldItemsCount} नग) | एकूण ग्रॉस: <span className="font-mono">{totalGoldGrossWeight.toFixed(2)}g</span> | निव्वळ वजन: <strong className="font-mono">{totalGoldNetWeight.toFixed(2)}g</strong> | मूल्यांकन: <strong className="text-emerald-700 font-mono">₹{totalGoldValuation.toLocaleString('en-IN')}</strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowGoldModal(true)}
+                    className="text-amber-800 hover:text-amber-950 underline font-bold text-[11px] cursor-pointer"
+                  >
+                    तपशील पहा / बदला
+                  </button>
+                </div>
+              )}
           </div>
 
           {/* Form Footer Action Buttons */}
@@ -2008,6 +2365,301 @@ export default function LoanOpeningBalanceMaster() {
       )}
 
       {/* ========================================================================= */}
+      {/* POP-UP MODAL: GOLD LOAN COLLATERAL DETAILS (सुवर्ण कर्ज तारण तपशील)       */}
+      {/* ========================================================================= */}
+      {showGoldModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 animate-in fade-in duration-200">
+          <div className="bg-white rounded-md shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-amber-300">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-700 text-white px-4 py-2.5 flex justify-between items-center shadow-xs">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-amber-100" />
+                <div>
+                  <h3 className="text-sm font-bold tracking-wide">
+                    सुवर्ण कर्ज तारण तपशील (Gold Loan Collateral Details)
+                  </h3>
+                  <p className="text-[10px] text-amber-100 font-medium">
+                    सोन्याचे जिन्नस, कॅरेट शुद्धता, निव्वळ वजन व मूल्यांकनाचा हिशोब जोडा
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGoldModal(false)}
+                className="text-white/80 hover:text-white hover:bg-amber-800/60 w-7 h-7 flex items-center justify-center rounded-full transition-colors font-bold text-base cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-3.5 space-y-3 overflow-y-auto bg-slate-50/50 flex-1">
+              {/* Form Card */}
+              <form onSubmit={handleAddGoldItem} className="bg-white p-3 rounded border border-amber-200 shadow-2xs space-y-2.5">
+                <div className="flex items-center justify-between border-b border-amber-100 pb-1.5">
+                  <h4 className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                    <span>💎</span>
+                    <span>{editingGoldId ? 'सोन्याचा जिन्नस दुरुस्त करा (Edit Item)' : 'नवीन सोन्याचा जिन्नस जोडा (Add New Gold Item)'}</span>
+                  </h4>
+                  {editingGoldId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingGoldId(null);
+                        setGoldForm({ itemName: 'सोन्याची साखळी (Chain)', purity: '22K (91.6%)', quantity: 1, grossWeight: '', netWeight: '', ratePerGram: 6000, remarks: '' });
+                      }}
+                      className="text-[10px] text-rose-700 font-bold hover:underline cursor-pointer"
+                    >
+                      रद्द करा (Reset Form)
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                  <div>
+                    <label className={labelClass}>जिन्नस / दागिन्याचे नाव *</label>
+                    <select
+                      value={goldForm.itemName}
+                      onChange={(e) => setGoldForm(prev => ({ ...prev, itemName: e.target.value }))}
+                      className={inputClass}
+                    >
+                      <option value="सोन्याची साखळी (Chain)">सोन्याची साखळी (Chain)</option>
+                      <option value="सोन्याची अंगठी (Ring)">सोन्याची अंगठी (Ring)</option>
+                      <option value="सोन्याचे पाटल्या / बांगड्या (Bangles)">सोन्याचे पाटल्या / बांगड्या (Bangles)</option>
+                      <option value="सोन्याचा हार / नेकलेस (Necklace)">सोन्याचा हार / नेकलेस (Necklace)</option>
+                      <option value="सोन्याचे मंगलसूत्र (Mangalsutra)">सोन्याचे मंगलसूत्र (Mangalsutra)</option>
+                      <option value="सोन्याची वेढणी / नाणे (Coin/Bar)">सोन्याची वेढणी / नाणे (Coin/Bar)</option>
+                      <option value="सोन्याचे झुमके / कानातील (Earrings)">सोन्याचे झुमके / कानातील (Earrings)</option>
+                      <option value="इतर सुवर्ण अलंकार (Other Ornaments)">इतर सुवर्ण अलंकार (Other Ornaments)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>शुद्धता / कॅरेट (Purity) *</label>
+                    <select
+                      value={goldForm.purity}
+                      onChange={(e) => setGoldForm(prev => ({ ...prev, purity: e.target.value }))}
+                      className={inputClass}
+                    >
+                      <option value="24K (99.9%)">24K (99.9% शुद्ध सोन्याचे नाणे/वेढणी)</option>
+                      <option value="22K (91.6%)">22K (91.6% हॉलमार्क दागिने)</option>
+                      <option value="20K (83.3%)">20K (83.3% शुद्धता)</option>
+                      <option value="18K (75.0%)">18K (75.0% शुद्धता)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>नग / संख्या (Qty)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={goldForm.quantity}
+                      onChange={(e) => setGoldForm(prev => ({ ...prev, quantity: e.target.value }))}
+                      className={`${inputClass} font-mono`}
+                      placeholder="1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>ग्रॉस वजन (Gross Wt. g) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={goldForm.grossWeight}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setGoldForm(prev => ({
+                          ...prev,
+                          grossWeight: val,
+                          netWeight: prev.netWeight === '' ? val : prev.netWeight
+                        }));
+                      }}
+                      className={`${inputClass} font-mono`}
+                      placeholder="उदा. 15.50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>निव्वळ वजन (Net Wt. g) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={goldForm.netWeight}
+                      onChange={(e) => setGoldForm(prev => ({ ...prev, netWeight: e.target.value }))}
+                      className={`${inputClass} font-mono font-bold text-amber-950`}
+                      placeholder="उदा. 14.80"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>दर प्रति ग्रॅम (Rate / g ₹) *</label>
+                    <input
+                      type="number"
+                      value={goldForm.ratePerGram}
+                      onChange={(e) => setGoldForm(prev => ({ ...prev, ratePerGram: e.target.value }))}
+                      className={`${inputClass} font-mono`}
+                      placeholder="6000"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>मूल्यांकन (Valuation ₹)</label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={(() => {
+                        const net = parseFloat(goldForm.netWeight.toString() || '0');
+                        const rate = parseFloat(goldForm.ratePerGram.toString() || '0');
+                        return Math.round(net * rate).toLocaleString('en-IN');
+                      })()}
+                      className={`${inputClass} bg-emerald-50 text-emerald-800 font-bold font-mono border-emerald-300`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>शेरा / ओळख खूण (Remarks)</label>
+                    <input
+                      type="text"
+                      value={goldForm.remarks}
+                      onChange={(e) => setGoldForm(prev => ({ ...prev, remarks: e.target.value }))}
+                      className={inputClass}
+                      placeholder="उदा. 22K हॉलमार्क मोहर"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="submit"
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-1 rounded-sm text-xs shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{editingGoldId ? '✓ बदल सेव्ह करा (Update)' : '➕ जिन्नस जोडा (Add Item)'}</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="bg-white p-2 rounded border border-slate-200 shadow-2xs text-center">
+                  <span className="text-[10px] font-bold text-gray-500 block uppercase">एकूण जिन्नस</span>
+                  <span className="text-xs font-black text-gray-800">{goldItems.length} जिन्नस ({totalGoldItemsCount} नग)</span>
+                </div>
+
+                <div className="bg-white p-2 rounded border border-slate-200 shadow-2xs text-center">
+                  <span className="text-[10px] font-bold text-gray-500 block uppercase">एकूण ग्रॉस वजन</span>
+                  <span className="text-xs font-black text-gray-800 font-mono">{totalGoldGrossWeight.toFixed(2)} g</span>
+                </div>
+
+                <div className="bg-amber-50 p-2 rounded border border-amber-200 shadow-2xs text-center">
+                  <span className="text-[10px] font-bold text-amber-800 block uppercase">निव्वळ शुद्ध वजन</span>
+                  <span className="text-xs font-black text-amber-950 font-mono">{totalGoldNetWeight.toFixed(2)} g</span>
+                </div>
+
+                <div className="bg-emerald-50 p-2 rounded border border-emerald-200 shadow-2xs text-center">
+                  <span className="text-[10px] font-bold text-emerald-800 block uppercase">सुवर्ण मूल्य (Valuation ₹)</span>
+                  <span className="text-xs font-black text-emerald-800 font-mono">₹{totalGoldValuation.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="bg-white rounded border border-slate-200 shadow-2xs overflow-hidden">
+                <div className="px-3 py-1.5 bg-slate-100 border-b border-slate-200 flex justify-between items-center">
+                  <h4 className="text-xs font-bold text-slate-800">तारण सोन्याच्या दागिन्यांची यादी ({goldItems.length})</h4>
+                  <span className="text-[10px] text-slate-500 italic">नोंद एडिट करण्यासाठी 'बदला' किंवा 'काढा' वर क्लिक करा</span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-700 border-b border-slate-200 font-bold text-[10px]">
+                        <th className="p-1.5 text-center w-8">अ.क्र.</th>
+                        <th className="p-1.5">दागिन्याचे नाव</th>
+                        <th className="p-1.5 text-center">कॅरेट</th>
+                        <th className="p-1.5 text-center">नग</th>
+                        <th className="p-1.5 text-right">ग्रॉस वजन (g)</th>
+                        <th className="p-1.5 text-right">निव्वळ वजन (g)</th>
+                        <th className="p-1.5 text-right">दर / ग्रॅम (₹)</th>
+                        <th className="p-1.5 text-right">एकूण मूल्य (₹)</th>
+                        <th className="p-1.5">शेरा</th>
+                        <th className="p-1.5 text-center w-24">कृती</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-[11px] font-mono">
+                      {goldItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="p-6 text-center text-slate-400 font-sans italic">
+                            कोणताही सोन्याचा जिन्नस जोडलेला नाही.
+                          </td>
+                        </tr>
+                      ) : (
+                        goldItems.map((item, idx) => (
+                          <tr key={item.id} className="hover:bg-amber-50/30 transition-colors">
+                            <td className="p-1.5 text-center font-bold text-slate-500 font-sans">{idx + 1}</td>
+                            <td className="p-1.5 font-bold text-slate-800 font-sans">{item.itemName}</td>
+                            <td className="p-1.5 text-center font-bold text-amber-800">{item.purity}</td>
+                            <td className="p-1.5 text-center font-semibold">{item.quantity}</td>
+                            <td className="p-1.5 text-right">{item.grossWeight.toFixed(2)} g</td>
+                            <td className="p-1.5 text-right font-bold text-amber-900">{item.netWeight.toFixed(2)} g</td>
+                            <td className="p-1.5 text-right">₹{item.ratePerGram.toLocaleString('en-IN')}</td>
+                            <td className="p-1.5 text-right font-black text-emerald-700">₹{item.valuationAmount.toLocaleString('en-IN')}</td>
+                            <td className="p-1.5 text-slate-600 text-[10px] truncate max-w-[120px] font-sans">{item.remarks || '-'}</td>
+                            <td className="p-1.5 text-center font-sans">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditGoldItem(item)}
+                                  className="bg-blue-50 text-blue-700 hover:bg-blue-100 px-1.5 py-0.5 rounded text-[10px] font-bold border border-blue-200 cursor-pointer"
+                                >
+                                  बदला
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteGoldItem(item.id)}
+                                  className="bg-rose-50 text-rose-700 hover:bg-rose-100 px-1.5 py-0.5 rounded text-[10px] font-bold border border-rose-200 cursor-pointer"
+                                >
+                                  काढा
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-2.5 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-slate-700 font-medium">
+                ✨ सुवर्ण एकूण मूल्यांकन: <strong className="text-emerald-700 font-black font-mono">₹{totalGoldValuation.toLocaleString('en-IN')}</strong> ({totalGoldNetWeight.toFixed(2)} ग्रॅम निव्वळ वजन)
+              </span>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowGoldModal(false)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-4 py-1.5 rounded-sm text-xs font-bold cursor-pointer border border-slate-300"
+                >
+                  रद्द करा (Cancel)
+                </button>
+                <button
+                  type="button"
+                  onClick={applyGoldLoanToOpeningBalance}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-1.5 rounded-sm text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>✅ तारण माहिती खात्याशी जोडा (Apply)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* POP-UP MODAL: SAVED LOAN OPENING BALANCES LIST                            */}
       {/* ========================================================================= */}
       {showListModal && (
@@ -2204,6 +2856,31 @@ export default function LoanOpeningBalanceMaster() {
           </div>
         </div>
       )}
+
+      {/* 🛡️ DEPOSIT COLLATERAL SELECTOR MODAL (FD, Pigmy, RD, Saving) */}
+      {(() => {
+        const curRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+        const selectedCust = customers.find(c => c.customerID.toString() === formData.customerID);
+        return (
+          <DepositCollateralSelectorModal
+            isOpen={showDepositModal}
+            onClose={() => setShowDepositModal(false)}
+            customerID={formData.customerID ? Number(formData.customerID) : 0}
+            customerName={selectedCust ? `${selectedCust.firstName} ${selectedCust.lastName}` : ''}
+            collateralCategory={curRate?.collateralCategory || 'FixedDeposit'}
+            maxLtv={curRate?.maxLtvPercentage || 85}
+            alreadySelectedIds={depositCollaterals.map((c: any) => c.depositAccountID || c.DepositAccountID)}
+            onApply={(selectedItems, totalVal, summaryText) => {
+              setDepositCollaterals(selectedItems);
+              setFormData(prev => ({
+                ...prev,
+                securityValue: totalVal.toString(),
+                securityDetails: summaryText
+              }));
+            }}
+          />
+        );
+      })()}
 
     </div>
   );

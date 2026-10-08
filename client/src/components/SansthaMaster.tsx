@@ -45,12 +45,40 @@ export default function SansthaMaster() {
   const sansthaNameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchSansthaDetails();
-    setTimeout(() => {
-      if (sansthaNameInputRef.current) {
+    let isMounted = true;
+    const loadDetails = async () => {
+      setLoading(true);
+      try {
+        const response = await axios.get(API_URL);
+        if (isMounted && response.data) {
+          const data = Array.isArray(response.data) ? response.data : [response.data];
+          setSansthaDetails(data);
+          if (data.length > 0) {
+            const profile = { ...data[0] };
+            if (profile.registrationDate) {
+              profile.registrationDate = profile.registrationDate.split('T')[0];
+            }
+            setFormData(profile);
+          }
+        }
+      } catch (error) {
+        if (isMounted) console.error("Error fetching Sanstha Details", error);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    loadDetails();
+    const timer = setTimeout(() => {
+      if (isMounted && sansthaNameInputRef.current) {
         sansthaNameInputRef.current.focus();
       }
     }, 150);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, []);
 
   const fetchSansthaDetails = async () => {

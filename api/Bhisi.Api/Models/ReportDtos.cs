@@ -301,6 +301,38 @@ namespace Bhisi.Api.Models
         public decimal SecurityValue { get; set; }
         public int NoOfInstallments { get; set; }
         public List<OpeningBalanceScheduleDto> Schedule { get; set; } = new();
+        public List<GoldLoanDetailItemDto> GoldItems { get; set; } = new();
+        public List<LoanDepositCollateralDto> DepositCollaterals { get; set; } = new();
+    }
+
+    public class LoanDepositCollateralDto
+    {
+        public int CollateralID { get; set; }
+        public int? LoanApplicationID { get; set; }
+        public int? LoanAccountID { get; set; }
+        public int CustomerID { get; set; }
+        public string CollateralType { get; set; } = "FixedDeposit"; // FixedDeposit, PigmyDeposit, RecurringDeposit, SavingDeposit
+        public int DepositAccountID { get; set; }
+        public string DepositAccountNo { get; set; } = string.Empty;
+        public decimal DepositAmount { get; set; }
+        public decimal CurrentDepositBalance { get; set; }
+        public DateTime? MaturityDate { get; set; }
+        public decimal LienAmount { get; set; }
+        public string LienStatus { get; set; } = "Pledged"; // Pledged, LienMarked, Released, Invoked
+        public string? Remarks { get; set; }
+    }
+
+    public class GoldLoanDetailItemDto
+    {
+        public int GoldLoanDetailID { get; set; }
+        public string OrnamentName { get; set; } = string.Empty;
+        public int Quantity { get; set; } = 1;
+        public decimal GrossWeight { get; set; }
+        public decimal NetWeight { get; set; }
+        public decimal Purity { get; set; }
+        public decimal GoldRatePerGram { get; set; }
+        public decimal EstimatedValue { get; set; }
+        public string? Remarks { get; set; }
     }
 
     public class OpeningBalanceScheduleDto

@@ -38,6 +38,7 @@ import {
   MapPin
 } from 'lucide-react';
 import LoanApplicationPrintModal from './LoanApplicationPrintModal';
+import DepositCollateralSelectorModal, { EligibleDeposit } from './DepositCollateralSelectorModal';
 
 export interface Member extends MemberOption {}
 
@@ -53,6 +54,10 @@ export interface LoanRate {
   installmentType?: string;
   installmentCount?: number;
   durationMonths?: number;
+  collateralCategory?: string;
+  maxLtvPercentage?: number;
+  isLienRequired?: boolean;
+  isCollateralMandatoryForOpeningBalance?: boolean;
 }
 
 export interface LoanApplication {
@@ -214,6 +219,10 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
 
   const labelClass = "block text-[11px] font-bold text-gray-700 mb-0.5";
   const inputClass = "w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]";
+
+  // Deposit Collateral Modal & State
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [depositCollaterals, setDepositCollaterals] = useState<any[]>([]);
 
   // Gold Loan Modal & CRUD State
   const [showGoldModal, setShowGoldModal] = useState(false);
@@ -548,6 +557,10 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
         noOfInstallments: rate.installmentCount || prev.noOfInstallments || 12,
         durationMonths: rate.durationMonths || prev.durationMonths || 12
       }));
+
+      if (['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(rate.collateralCategory || '') && formData.customerID && depositCollaterals.length === 0) {
+        setShowDepositModal(true);
+      }
     } else {
       setFormData(prev => ({ ...prev, loanRateID: id }));
     }
@@ -560,6 +573,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     setSuccess('');
     setScheduleData([]);
     setShowCoBorrowers(false);
+    setDepositCollaterals([]);
+    setShowDepositModal(false);
     setFormData({
       ...initialFormState,
       applicationDate: new Date().toISOString().split('T')[0]
@@ -583,6 +598,15 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     if (!formData.loanRateID || !formData.requestedAmount) {
       setError('कृपया कर्ज प्रकार आणि मागणी रक्कम टाका! (Please select Loan Type and Requested Amount)');
       return;
+    }
+
+    const curRate = loanRates.find(r => r.loanRateID === formData.loanRateID);
+    if (curRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(curRate.collateralCategory || '')) {
+      if (curRate.isLienRequired && depositCollaterals.length === 0) {
+        setError(`सदर कर्ज योजनेसाठी (${curRate.shortName || curRate.loanType}) नवीन कर्ज अर्जात तारण ठेव जोडणे अनिवार्य आहे! कृपया तारण ठेव जोडा.`);
+        setShowDepositModal(true);
+        return;
+      }
     }
 
     setLoading(true);
@@ -615,6 +639,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
       delete payload.guarantor2Customer;
       delete payload.recommendedByDirector;
 
+      let savedAppId = formData.loanApplicationID;
       if (formData.loanApplicationID) {
         await axios.put(`/api/LoanApplications/${formData.loanApplicationID}`, payload);
         savedData = { ...payload };
@@ -623,7 +648,16 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
         delete payload.loanApplicationID;
         const res = await axios.post('/api/LoanApplications', payload);
         savedData = res.data;
+        savedAppId = res.data.loanApplicationID;
         setSuccess(`नवीन कर्ज अर्ज #${res.data.applicationNo || res.data.loanApplicationID} यशस्वीरीत्या सेव्ह झाला!`);
+      }
+
+      if (savedAppId && depositCollaterals.length > 0) {
+        try {
+          await axios.post(`/api/LoanCollaterals/SaveApplicationCollaterals/${savedAppId}`, depositCollaterals);
+        } catch (colErr) {
+          console.error("Failed to save collaterals", colErr);
+        }
       }
 
       fetchData();
@@ -659,6 +693,14 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
       firstInstallmentDate: app.firstInstallmentDate ? app.firstInstallmentDate.split('T')[0] : '',
       maturityDate: app.maturityDate ? app.maturityDate.split('T')[0] : ''
     });
+
+    // Fetch collaterals if any
+    try {
+      const colRes = await axios.get(`/api/LoanCollaterals/ByApplication/${app.loanApplicationID}`);
+      setDepositCollaterals(colRes.data || []);
+    } catch {
+      setDepositCollaterals([]);
+    }
     
     if (formContainerRef.current) {
       formContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1596,14 +1638,45 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                 <div>
                   <div className="flex items-center justify-between mb-0.5">
                     <label className={labelClass}>तारण मूल्य (Security Value ₹)</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowGoldModal(true)}
-                      className="text-[10px] text-amber-900 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-amber-100/80 px-1.5 py-0.2 rounded border border-amber-300"
-                    >
-                      <Sparkles className="w-3 h-3 text-amber-700" />
-                      <span>सुवर्ण तारण</span>
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {(() => {
+                        const curRate = loanRates.find(r => r.loanRateID === formData.loanRateID);
+                        const isDepScheme = curRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(curRate.collateralCategory || '');
+                        if (!isDepScheme) return null;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!formData.customerID) {
+                                alert('कृपया आधी मुख्य कर्जदार ग्राहक (Customer) निवडा.');
+                                return;
+                              }
+                              setShowDepositModal(true);
+                            }}
+                            className="text-[10px] text-emerald-950 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-400 shadow-2xs"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>
+                              {curRate?.collateralCategory === 'FixedDeposit' 
+                                ? 'FD ठेव निवडा' 
+                                : curRate?.collateralCategory === 'PigmyDeposit' 
+                                  ? 'पिग्मी ठेव निवडा' 
+                                  : curRate?.collateralCategory === 'RecurringDeposit'
+                                    ? 'RD ठेव निवडा'
+                                    : 'बचत ठेव निवडा'}
+                            </span>
+                          </button>
+                        );
+                      })()}
+                      <button
+                        type="button"
+                        onClick={() => setShowGoldModal(true)}
+                        className="text-[10px] text-amber-900 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-amber-100/80 px-1.5 py-0.2 rounded border border-amber-300"
+                      >
+                        <Sparkles className="w-3 h-3 text-amber-700" />
+                        <span>सुवर्ण तारण</span>
+                      </button>
+                    </div>
                   </div>
                   <input
                     type="number"
@@ -2554,6 +2627,33 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
           </div>
         </div>
       )}
+
+      {/* 🛡️ DEPOSIT COLLATERAL SELECTOR MODAL (FD, Pigmy, RD, Saving) */}
+      {(() => {
+        const curRate = loanRates.find(r => r.loanRateID === formData.loanRateID);
+        const selectedCust: any = members.find((m: any) => (m.customerID || m.id) === formData.customerID);
+        const customerDisplayName = selectedCust ? (selectedCust.name || `${selectedCust.firstName || ''} ${selectedCust.lastName || ''}`.trim()) : '';
+        return (
+          <DepositCollateralSelectorModal
+            isOpen={showDepositModal}
+            onClose={() => setShowDepositModal(false)}
+            customerID={formData.customerID || 0}
+            customerName={customerDisplayName}
+            collateralCategory={curRate?.collateralCategory || 'FixedDeposit'}
+            maxLtv={curRate?.maxLtvPercentage || 85}
+            alreadySelectedIds={depositCollaterals.map((c: any) => c.depositAccountID || c.DepositAccountID)}
+            onApply={(selectedItems, totalVal, summaryText) => {
+              setDepositCollaterals(selectedItems);
+              setFormData(prev => ({
+                ...prev,
+                securityValue: totalVal,
+                securityDetails: summaryText
+              }));
+              setSuccess('ठेव तारण माहिती कर्ज अर्जाशी यशस्वीरित्या जोडली गेली!');
+            }}
+          />
+        );
+      })()}
 
       {/* 📄 LOAN APPLICATION FORM PRINT PREVIEW MODAL */}
       {printApplication && (

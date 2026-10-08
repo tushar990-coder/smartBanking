@@ -1920,6 +1920,11 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("मुदत ठेव खाते सक्रिय (Active) किंवा मुदतपूर्ण (Matured) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
             }
 
+            if (account.IsLienMarked)
+            {
+                return BadRequest($"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{account.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज पूर्ण फेडल्याशिवाय ही ठेव बंद करता येत नाही.");
+            }
+
             // Fetch accrued interest
             var accruedFromTx = await _context.FdTransactions
                 .Where(t => t.FdAccountID == id && t.TransactionType == "Accrual")
@@ -2442,6 +2447,11 @@ namespace Bhisi.Api.Controllers
             if (account == null || account.Status != "Active")
             {
                 return BadRequest("मुदत ठेव खाते सक्रिय (Active) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
+            }
+
+            if (account.IsLienMarked)
+            {
+                return BadRequest($"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{account.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज पूर्ण फेडल्याशिवाय ही ठेव बंद करता येत नाही.");
             }
 
             DateTime effectiveClosureDate = req?.ClosureDate ?? closureDate ?? DateTime.Today;

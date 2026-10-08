@@ -187,6 +187,20 @@ const formatDateSafe = (dateVal: string | Date | undefined | null): string => {
     return str;
 };
 
+interface LienReleasePrompt {
+    loanAccountId: number;
+    loanAccountNo: string;
+    activeCollaterals: Array<{
+        collateralID: number;
+        depositAccountNo: string;
+        collateralType: string;
+        depositAccountID: number;
+        lienAmount: number;
+        lienStatus: string;
+    }>;
+    collectionId?: number;
+}
+
 const LoanCollectionMaster: React.FC = () => {
     const [collections, setCollections] = useState<LoanCollection[]>([]);
     const [accounts, setAccounts] = useState<LoanAccount[]>([]);
@@ -197,6 +211,10 @@ const LoanCollectionMaster: React.FC = () => {
     // Printing state
     const [lastSavedCollectionId, setLastSavedCollectionId] = useState<number | null>(null);
     const [printingCollectionId, setPrintingCollectionId] = useState<number | null>(null);
+
+    // Lien release on loan closure prompt state
+    const [lienPromptData, setLienPromptData] = useState<LienReleasePrompt | null>(null);
+    const [releasingLien, setReleasingLien] = useState(false);
 
     // View All Receipts Modal State
     const [showReceiptsModal, setShowReceiptsModal] = useState(false);
@@ -844,11 +862,23 @@ const LoanCollectionMaster: React.FC = () => {
 
         try {
             const res = await axios.post('/api/LoanCollections', formData);
-            alert('पावती यशस्वीरित्या जतन झाली!');
-            
+            const savedCollectionId = res.data?.loanCollectionID || res.data?.LoanCollectionID;
+
             // Save the ID for printing
-            if (res.data && res.data.loanCollectionID) {
-                setLastSavedCollectionId(res.data.loanCollectionID);
+            if (savedCollectionId) {
+                setLastSavedCollectionId(savedCollectionId);
+            }
+
+            // Check if loan was fully settled and has active collaterals
+            if (res.data?.isLoanFullySettled && res.data?.activeCollaterals && res.data.activeCollaterals.length > 0) {
+                setLienPromptData({
+                    loanAccountId: res.data.loanAccountID || res.data.LoanAccountID || selectedAccount?.loanAccountID,
+                    loanAccountNo: res.data.settledLoanAccountNo || selectedAccount?.loanAccountNo || '',
+                    activeCollaterals: res.data.activeCollaterals,
+                    collectionId: savedCollectionId
+                });
+            } else {
+                alert('पावती यशस्वीरित्या जतन झाली!');
             }
 
             // Reset form
@@ -922,6 +952,31 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
         const waUrl = `https://api.whatsapp.com/send?${phoneParam}text=${encodedMsg}`;
         window.open(waUrl, '_blank');
+    };
+
+    const getCollateralTypeName = (type: string) => {
+        switch (type) {
+            case 'FixedDeposit': return 'मुदत ठेव (FD)';
+            case 'PigmyDeposit': return 'पिग्मी ठेव (Pigmy)';
+            case 'RecurringDeposit': return 'आवर्ती ठेव (RD)';
+            case 'SavingDeposit': return 'बचत खाते (Saving)';
+            default: return type;
+        }
+    };
+
+    const handleReleaseAllLiens = async () => {
+        if (!lienPromptData) return;
+        setReleasingLien(true);
+        try {
+            const res = await axios.post(`/api/LoanCollaterals/ReleaseAllByLoan/${lienPromptData.loanAccountId}`);
+            alert(res.data?.message || 'तारण ठेवींवरील बोजा यशस्वीरित्या काढण्यात आला!');
+            setLienPromptData(null);
+        } catch (err: any) {
+            alert('बोजा मोकळा करण्यास अडचण आली: ' + (err.response?.data?.message || err.response?.data || err.message));
+            console.error(err);
+        } finally {
+            setReleasingLien(false);
+        }
     };
 
     const handlePrintClick = () => {
@@ -2090,6 +2145,121 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     )}
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Auto Lien Release Confirmation Modal on Loan Closure */}
+            {lienPromptData && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex justify-center items-center z-50 p-3 animate-fade-in">
+                    <div className="bg-white rounded-md shadow-2xl w-full max-w-lg overflow-hidden border border-emerald-500/30">
+                        {/* Header */}
+                        <div className="bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-800 text-white p-3.5 flex justify-between items-center">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 bg-white/20 rounded-full">
+                                    <CheckCircle className="text-white" size={20} />
+                                </div>
+                                <div>
+                                    <h2 className="text-sm font-bold leading-tight">
+                                        कर्ज खाते पूर्ण नील झाले! (Loan Fully Settled)
+                                    </h2>
+                                    <p className="text-[11px] text-emerald-100 font-mono">
+                                        खाते क्र.: {lienPromptData.loanAccountNo}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setLienPromptData(null)}
+                                className="text-white/80 hover:text-white p-1 rounded-sm transition-colors cursor-pointer"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-4 bg-gray-50/50 space-y-3.5">
+                            <div className="bg-emerald-50 border border-emerald-200 rounded p-3 text-[12px] text-emerald-900 leading-relaxed">
+                                <p className="font-semibold text-emerald-950 mb-1">
+                                    🎉 सदर कर्ज खात्याची सर्व येणे मुद्दल व व्याज भरणा पूर्ण झाला असून खाते 'Closed' झाले आहे.
+                                </p>
+                                <p className="text-emerald-800">
+                                    या कर्जापोटी खालील तारण ठेव खात्यांवर बोजा (Lien) नोंदवला आहे. हा बोजा आपण आता <strong className="text-emerald-950 underline">तात्काळ मोकळा (Release)</strong> करू इच्छिता का?
+                                </p>
+                            </div>
+
+                            {/* Table of Collaterals */}
+                            <div className="border border-gray-200 rounded overflow-hidden bg-white shadow-xs">
+                                <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-200 text-[11px] font-bold text-gray-700 flex justify-between items-center">
+                                    <span>तारण ठेव तपशील (Linked Collaterals)</span>
+                                    <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-mono font-semibold">
+                                        {lienPromptData.activeCollaterals.length} खाती
+                                    </span>
+                                </div>
+                                <div className="max-h-48 overflow-y-auto">
+                                    <table className="w-full text-[11px] text-left border-collapse">
+                                        <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-semibold">
+                                            <tr>
+                                                <th className="p-2 border-r border-gray-200">ठेव प्रकार</th>
+                                                <th className="p-2 border-r border-gray-200 font-mono">खाते क्र.</th>
+                                                <th className="p-2 border-r border-gray-200 text-right">बोजा रक्कम (₹)</th>
+                                                <th className="p-2 text-center">स्थिती</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {lienPromptData.activeCollaterals.map((c, idx) => (
+                                                <tr key={idx} className="hover:bg-emerald-50/30">
+                                                    <td className="p-2 border-r border-gray-100 font-medium text-gray-800">
+                                                        {getCollateralTypeName(c.collateralType)}
+                                                    </td>
+                                                    <td className="p-2 border-r border-gray-100 font-mono font-semibold text-primary">
+                                                        {c.depositAccountNo}
+                                                    </td>
+                                                    <td className="p-2 border-r border-gray-100 text-right font-mono font-bold text-gray-800">
+                                                        ₹{(c.lienAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                    <td className="p-2 text-center">
+                                                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[10px] font-bold border border-amber-300">
+                                                            बोजा नोंदवला
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <p className="text-[11px] text-gray-500 italic">
+                                * बोजा तात्काळ मोकळा केल्यास खातेदाराला आपल्या ठेवीवरील रक्कम आहरण किंवा मुदतपूर्ती लाभ त्वरित घेता येईल.
+                            </p>
+                        </div>
+
+                        {/* Footer Buttons */}
+                        <div className="p-3 bg-gray-100 border-t border-gray-200 flex justify-end items-center gap-2">
+                            <button
+                                type="button"
+                                disabled={releasingLien}
+                                onClick={() => setLienPromptData(null)}
+                                className="px-3.5 py-1.5 text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50 border border-gray-300 rounded shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                                नंतर करा (Do Later)
+                            </button>
+                            <button
+                                type="button"
+                                disabled={releasingLien}
+                                onClick={handleReleaseAllLiens}
+                                className="px-4 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            >
+                                {releasingLien ? (
+                                    <>मोकळा करत आहे...</>
+                                ) : (
+                                    <>
+                                        <CheckCircle size={14} /> होय, बोजा तात्काळ मोकळा करा
+                                    </>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>

@@ -605,6 +605,39 @@ namespace Bhisi.Api.Controllers
 
                 await transaction.CommitAsync();
 
+                bool isLoanFullySettled = (loanAccount.PrincipalBalance <= 0 || loanAccount.Status == "Closed" || loanAccount.Status == "Closed_OTS");
+                if (isLoanFullySettled)
+                {
+                    var activeCollaterals = await _context.LoanDepositCollaterals
+                        .Where(c => c.LoanAccountID == loanAccount.LoanAccountID && c.LienStatus == "LienMarked")
+                        .Select(c => new
+                        {
+                            c.CollateralID,
+                            c.DepositAccountNo,
+                            c.CollateralType,
+                            c.DepositAccountID,
+                            c.LienAmount,
+                            c.LienStatus
+                        })
+                        .ToListAsync();
+
+                    return CreatedAtAction("GetLoanCollection", new { id = collection.LoanCollectionID }, new
+                    {
+                        collection.LoanCollectionID,
+                        collection.LoanAccountID,
+                        collection.ReceiptNo,
+                        collection.CollectionDate,
+                        collection.TotalAmountReceived,
+                        collection.PrincipalCollected,
+                        collection.InterestCollected,
+                        collection.PenaltyInterestCollected,
+                        collection.SurchargeCollected,
+                        isLoanFullySettled = true,
+                        settledLoanAccountNo = loanAccount.LoanAccountNo,
+                        activeCollaterals = activeCollaterals
+                    });
+                }
+
                 return CreatedAtAction("GetLoanCollection", new { id = collection.LoanCollectionID }, collection);
             }
             catch (Exception)

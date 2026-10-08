@@ -56,6 +56,16 @@ namespace Bhisi.Api.Models
         [StringLength(100)]
         public string? SecurityType { get; set; } = string.Empty; // तारणी (Security Type)
 
+        [StringLength(50)]
+        public string CollateralCategory { get; set; } = "None"; // None, FixedDeposit, PigmyDeposit, RecurringDeposit, SavingDeposit, Gold, Salary, Property, Other
+
+        [Column(TypeName = "decimal(5, 2)")]
+        public decimal MaxLtvPercentage { get; set; } = 85.00m; // कमाल LTV %
+
+        public bool IsLienRequired { get; set; } = false; // ठेव असल्यास बोजा अनिवार्य आहे का
+
+        public bool IsCollateralMandatoryForOpeningBalance { get; set; } = false; // आरंभिक शिल्लक नोंदणीत तारण अनिवार्य आहे का (Default: false - ऐच्छिक)
+
         public bool IsCcOrOd { get; set; } = false;
 
         public bool IsActive { get; set; } = true;

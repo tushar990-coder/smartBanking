@@ -81,6 +81,15 @@ namespace Bhisi.Api.Models
         [StringLength(20)]
         public string Status { get; set; } = "Active"; // Active, Matured, Closed
 
+        // Lien / Collateral Tracking Fields
+        public bool IsLienMarked { get; set; } = false;
+
+        [StringLength(50)]
+        public string? LienLoanAccountNo { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? LienAmount { get; set; }
+
         [StringLength(100)]
         public string? NomineeName { get; set; }
 

@@ -676,6 +676,96 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
+                // Save Gold Loan Collateral Details if provided
+                if (dto.GoldItems != null && dto.GoldItems.Any())
+                {
+                    foreach (var item in dto.GoldItems)
+                    {
+                        var goldDetail = new GoldLoanDetail
+                        {
+                            LoanAccountID = loanAccount.LoanAccountID,
+                            OrnamentName = string.IsNullOrWhiteSpace(item.OrnamentName) ? "दागिने" : item.OrnamentName.Trim(),
+                            Quantity = item.Quantity > 0 ? item.Quantity : 1,
+                            GrossWeight = item.GrossWeight,
+                            NetWeight = item.NetWeight,
+                            Purity = item.Purity,
+                            GoldRatePerGram = item.GoldRatePerGram,
+                            EstimatedValue = item.EstimatedValue > 0 ? item.EstimatedValue : (item.NetWeight * item.GoldRatePerGram),
+                            ImagePath = item.Remarks
+                        };
+                        _context.GoldLoanDetails.Add(goldDetail);
+                    }
+                    await _context.SaveChangesAsync();
+                }
+
+                // Save Deposit Collaterals & Mark Lien for Opening Balance
+                if (dto.DepositCollaterals != null && dto.DepositCollaterals.Any())
+                {
+                    var (auditUid, _, _) = GetAuditContext();
+                    foreach (var c in dto.DepositCollaterals)
+                    {
+                        var colRecord = new LoanDepositCollateral
+                        {
+                            LoanAccountID = loanAccount.LoanAccountID,
+                            CustomerID = loanAccount.CustomerID ?? (loanAccount.Member?.CustomerID ?? 0),
+                            CollateralType = c.CollateralType,
+                            DepositAccountID = c.DepositAccountID,
+                            DepositAccountNo = c.DepositAccountNo,
+                            DepositAmount = c.DepositAmount,
+                            CurrentDepositBalance = c.CurrentDepositBalance,
+                            MaturityDate = c.MaturityDate,
+                            LienAmount = c.LienAmount > 0 ? c.LienAmount : c.DepositAmount,
+                            LienStatus = "LienMarked",
+                            LienMarkedDate = DateTime.Now,
+                            Remarks = c.Remarks,
+                            CreatedBy = auditUid,
+                            CreatedDate = DateTime.Now
+                        };
+                        _context.LoanDepositCollaterals.Add(colRecord);
+
+                        if (c.CollateralType == "FixedDeposit")
+                        {
+                            var fd = await _context.FdAccounts.FindAsync(c.DepositAccountID);
+                            if (fd != null)
+                            {
+                                fd.IsLienMarked = true;
+                                fd.LienLoanAccountNo = loanAccount.LoanAccountNo;
+                                fd.LienAmount = colRecord.LienAmount;
+                            }
+                        }
+                        else if (c.CollateralType == "PigmyDeposit")
+                        {
+                            var pg = await _context.PigmyAccounts.FindAsync(c.DepositAccountID);
+                            if (pg != null)
+                            {
+                                pg.IsLienMarked = true;
+                                pg.LienLoanAccountNo = loanAccount.LoanAccountNo;
+                                pg.LienAmount = colRecord.LienAmount;
+                            }
+                        }
+                        else if (c.CollateralType == "RecurringDeposit")
+                        {
+                            var rd = await _context.RdAccounts.FindAsync(c.DepositAccountID);
+                            if (rd != null)
+                            {
+                                rd.IsLienMarked = true;
+                                rd.LienLoanAccountNo = loanAccount.LoanAccountNo;
+                                rd.LienAmount = colRecord.LienAmount;
+                            }
+                        }
+                        else if (c.CollateralType == "SavingDeposit")
+                        {
+                            var sav = await _context.SavingAccountMasters.FindAsync(c.DepositAccountID);
+                            if (sav != null)
+                            {
+                                sav.LienAmount = colRecord.LienAmount;
+                                sav.LienReason = $"Loan A/c: {loanAccount.LoanAccountNo}";
+                            }
+                        }
+                    }
+                    await _context.SaveChangesAsync();
+                }
+
                 // Forensic Audit Log for Opening Balance Creation
                 var (auditUserId, auditUsername, auditIp) = GetAuditContext();
                 string borrowerTitle = customer != null 
@@ -922,6 +1012,162 @@ namespace Bhisi.Api.Controllers
                         _context.LoanInstallmentSchedules.Add(schedule);
                     }
                     await _context.SaveChangesAsync();
+                }
+
+                // Sync Gold Loan Collateral Details if provided
+                if (dto.GoldItems != null)
+                {
+                    var existingGold = await _context.GoldLoanDetails.Where(g => g.LoanAccountID == id).ToListAsync();
+                    if (existingGold.Any())
+                    {
+                        _context.GoldLoanDetails.RemoveRange(existingGold);
+                    }
+
+                    if (dto.GoldItems.Any())
+                    {
+                        foreach (var item in dto.GoldItems)
+                        {
+                            var goldDetail = new GoldLoanDetail
+                            {
+                                LoanAccountID = id,
+                                OrnamentName = string.IsNullOrWhiteSpace(item.OrnamentName) ? "दागिने" : item.OrnamentName.Trim(),
+                                Quantity = item.Quantity > 0 ? item.Quantity : 1,
+                                GrossWeight = item.GrossWeight,
+                                NetWeight = item.NetWeight,
+                                Purity = item.Purity,
+                                GoldRatePerGram = item.GoldRatePerGram,
+                                EstimatedValue = item.EstimatedValue > 0 ? item.EstimatedValue : (item.NetWeight * item.GoldRatePerGram),
+                                ImagePath = item.Remarks
+                            };
+                            _context.GoldLoanDetails.Add(goldDetail);
+                        }
+                    }
+                    await _context.SaveChangesAsync();
+                }
+
+                // Sync Deposit Collaterals & Liens for Opening Balance Update
+                if (dto.DepositCollaterals != null)
+                {
+                    var existingCols = await _context.LoanDepositCollaterals
+                        .Where(c => c.LoanAccountID == id)
+                        .ToListAsync();
+
+                    // Release liens on existing collaterals
+                    foreach (var oldCol in existingCols)
+                    {
+                        if (oldCol.CollateralType == "FixedDeposit")
+                        {
+                            var fd = await _context.FdAccounts.FindAsync(oldCol.DepositAccountID);
+                            if (fd != null && fd.LienLoanAccountNo == loanAccount.LoanAccountNo)
+                            {
+                                fd.IsLienMarked = false;
+                                fd.LienLoanAccountNo = null;
+                                fd.LienAmount = 0;
+                            }
+                        }
+                        else if (oldCol.CollateralType == "PigmyDeposit")
+                        {
+                            var pg = await _context.PigmyAccounts.FindAsync(oldCol.DepositAccountID);
+                            if (pg != null && pg.LienLoanAccountNo == loanAccount.LoanAccountNo)
+                            {
+                                pg.IsLienMarked = false;
+                                pg.LienLoanAccountNo = null;
+                                pg.LienAmount = 0;
+                            }
+                        }
+                        else if (oldCol.CollateralType == "RecurringDeposit")
+                        {
+                            var rd = await _context.RdAccounts.FindAsync(oldCol.DepositAccountID);
+                            if (rd != null && rd.LienLoanAccountNo == loanAccount.LoanAccountNo)
+                            {
+                                rd.IsLienMarked = false;
+                                rd.LienLoanAccountNo = null;
+                                rd.LienAmount = 0;
+                            }
+                        }
+                        else if (oldCol.CollateralType == "SavingDeposit")
+                        {
+                            var sav = await _context.SavingAccountMasters.FindAsync(oldCol.DepositAccountID);
+                            if (sav != null && sav.LienReason != null && sav.LienReason.Contains(loanAccount.LoanAccountNo ?? ""))
+                            {
+                                sav.LienAmount = 0;
+                                sav.LienReason = null;
+                            }
+                        }
+                    }
+
+                    if (existingCols.Any())
+                    {
+                        _context.LoanDepositCollaterals.RemoveRange(existingCols);
+                        await _context.SaveChangesAsync();
+                    }
+
+                    if (dto.DepositCollaterals.Any())
+                    {
+                        var (auditUid, _, _) = GetAuditContext();
+                        foreach (var c in dto.DepositCollaterals)
+                        {
+                            var colRecord = new LoanDepositCollateral
+                            {
+                                LoanAccountID = id,
+                                CustomerID = loanAccount.CustomerID ?? (loanAccount.Member?.CustomerID ?? 0),
+                                CollateralType = c.CollateralType,
+                                DepositAccountID = c.DepositAccountID,
+                                DepositAccountNo = c.DepositAccountNo,
+                                DepositAmount = c.DepositAmount,
+                                CurrentDepositBalance = c.CurrentDepositBalance,
+                                MaturityDate = c.MaturityDate,
+                                LienAmount = c.LienAmount > 0 ? c.LienAmount : c.DepositAmount,
+                                LienStatus = "LienMarked",
+                                LienMarkedDate = DateTime.Now,
+                                Remarks = c.Remarks,
+                                CreatedBy = auditUid,
+                                CreatedDate = DateTime.Now
+                            };
+                            _context.LoanDepositCollaterals.Add(colRecord);
+
+                            if (c.CollateralType == "FixedDeposit")
+                            {
+                                var fd = await _context.FdAccounts.FindAsync(c.DepositAccountID);
+                                if (fd != null)
+                                {
+                                    fd.IsLienMarked = true;
+                                    fd.LienLoanAccountNo = loanAccount.LoanAccountNo;
+                                    fd.LienAmount = colRecord.LienAmount;
+                                }
+                            }
+                            else if (c.CollateralType == "PigmyDeposit")
+                            {
+                                var pg = await _context.PigmyAccounts.FindAsync(c.DepositAccountID);
+                                if (pg != null)
+                                {
+                                    pg.IsLienMarked = true;
+                                    pg.LienLoanAccountNo = loanAccount.LoanAccountNo;
+                                    pg.LienAmount = colRecord.LienAmount;
+                                }
+                            }
+                            else if (c.CollateralType == "RecurringDeposit")
+                            {
+                                var rd = await _context.RdAccounts.FindAsync(c.DepositAccountID);
+                                if (rd != null)
+                                {
+                                    rd.IsLienMarked = true;
+                                    rd.LienLoanAccountNo = loanAccount.LoanAccountNo;
+                                    rd.LienAmount = colRecord.LienAmount;
+                                }
+                            }
+                            else if (c.CollateralType == "SavingDeposit")
+                            {
+                                var sav = await _context.SavingAccountMasters.FindAsync(c.DepositAccountID);
+                                if (sav != null)
+                                {
+                                    sav.LienAmount = colRecord.LienAmount;
+                                    sav.LienReason = $"Loan A/c: {loanAccount.LoanAccountNo}";
+                                }
+                            }
+                        }
+                        await _context.SaveChangesAsync();
+                    }
                 }
 
                 // Forensic Audit Log for Opening Balance Update (Before vs After Diff)
@@ -1400,10 +1646,11 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/LoanAccounts/GlReconciliationSummary?branchId=1&loanRateId=0
         [HttpGet("GlReconciliationSummary")]
-        public async Task<ActionResult<LoanGlReconciliationResponseDto>> GetGlReconciliationSummary([FromQuery] int branchId = 1, [FromQuery] int loanRateId = 0)
+        public async Task<ActionResult<LoanGlReconciliationResponseDto>> GetGlReconciliationSummary([FromQuery] int branchId = 1, [FromQuery] int? loanRateId = 0)
         {
             try
             {
+                int targetLoanRateId = loanRateId ?? 0;
                 var allRates = await _context.LoanRates.AsNoTracking().ToListAsync();
 
                 // Get all opening balance accounts for this branch
@@ -1496,13 +1743,13 @@ namespace Bhisi.Api.Controllers
 
                 // If specific loanRateId requested
                 LoanGlReconciliationDto currentSummary;
-                if (loanRateId > 0)
+                if (targetLoanRateId > 0)
                 {
-                    currentSummary = schemeSummaries.FirstOrDefault(s => s.LoanRateID == loanRateId)
+                    currentSummary = schemeSummaries.FirstOrDefault(s => s.LoanRateID == targetLoanRateId)
                         ?? new LoanGlReconciliationDto
                         {
                             BranchID = branchId,
-                            LoanRateID = loanRateId,
+                            LoanRateID = targetLoanRateId,
                             SchemeName = "निवडलेली योजना सापडली नाही",
                             StatusMessage = "योजना उपलब्ध नाही",
                             PrincipalStatus = "NoLedger"
@@ -1658,6 +1905,93 @@ namespace Bhisi.Api.Controllers
 
             var disbursements = _context.LoanDisbursements.Where(d => d.LoanAccountID == id);
             _context.LoanDisbursements.RemoveRange(disbursements);
+
+            // 9b. Delete associated GoldLoanDetails
+            var goldDetails = await _context.GoldLoanDetails.Where(g => g.LoanAccountID == id).ToListAsync();
+            if (goldDetails.Any())
+            {
+                _context.GoldLoanDetails.RemoveRange(goldDetails);
+            }
+
+            // 9c. Release Liens on Deposit Collaterals & Clean Up
+            var linkedCollaterals = await _context.LoanDepositCollaterals
+                .Where(c => c.LoanAccountID == id)
+                .ToListAsync();
+
+            if (linkedCollaterals.Any())
+            {
+                var (delAuditId, delAuditName, _) = GetAuditContext();
+                foreach (var col in linkedCollaterals)
+                {
+                    if (col.CollateralType == "FixedDeposit")
+                    {
+                        var fd = await _context.FdAccounts.FindAsync(col.DepositAccountID);
+                        if (fd != null && (fd.LienLoanAccountNo == loanAccount.LoanAccountNo || fd.IsLienMarked))
+                        {
+                            fd.IsLienMarked = false;
+                            fd.LienLoanAccountNo = null;
+                            fd.LienAmount = 0;
+                            _context.Entry(fd).State = EntityState.Modified;
+                        }
+                    }
+                    else if (col.CollateralType == "PigmyDeposit")
+                    {
+                        var pg = await _context.PigmyAccounts.FindAsync(col.DepositAccountID);
+                        if (pg != null && (pg.LienLoanAccountNo == loanAccount.LoanAccountNo || pg.IsLienMarked))
+                        {
+                            pg.IsLienMarked = false;
+                            pg.LienLoanAccountNo = null;
+                            pg.LienAmount = 0;
+                            _context.Entry(pg).State = EntityState.Modified;
+                        }
+                    }
+                    else if (col.CollateralType == "RecurringDeposit")
+                    {
+                        var rd = await _context.RdAccounts.FindAsync(col.DepositAccountID);
+                        if (rd != null && (rd.LienLoanAccountNo == loanAccount.LoanAccountNo || rd.IsLienMarked))
+                        {
+                            rd.IsLienMarked = false;
+                            rd.LienLoanAccountNo = null;
+                            rd.LienAmount = 0;
+                            _context.Entry(rd).State = EntityState.Modified;
+                        }
+                    }
+                    else if (col.CollateralType == "SavingDeposit")
+                    {
+                        var sav = await _context.SavingAccountMasters.FindAsync(col.DepositAccountID);
+                        if (sav != null && sav.LienReason != null && sav.LienReason.Contains(loanAccount.LoanAccountNo ?? ""))
+                        {
+                            sav.LienAmount = 0;
+                            sav.LienReason = null;
+                            _context.Entry(sav).State = EntityState.Modified;
+                        }
+                    }
+
+                    _context.AuditLogs.Add(new AuditLog
+                    {
+                        UserID = delAuditId,
+                        Username = delAuditName,
+                        Action = "COLLATERAL_LIEN_RELEASED_ON_LOAN_DELETE",
+                        EntityName = "LoanDepositCollateral",
+                        EntityID = col.CollateralID.ToString(),
+                        Timestamp = DateTime.Now,
+                        Details = $"कर्ज खाते क्र. {loanAccount.LoanAccountNo} डिलीट केल्यामुळे {col.CollateralType} ठेव खाते क्र. {col.DepositAccountNo} वरील ₹{col.LienAmount} चा तारण बोजा आपोआप मोकळा केला.",
+                        Status = "Success"
+                    });
+
+                    if (col.LoanApplicationID.HasValue)
+                    {
+                        col.LoanAccountID = null;
+                        col.LienStatus = "Pledged";
+                        col.LienMarkedDate = null;
+                        _context.Entry(col).State = EntityState.Modified;
+                    }
+                    else
+                    {
+                        _context.LoanDepositCollaterals.Remove(col);
+                    }
+                }
+            }
 
             // 10. De-link any Loan Application
             if (!string.IsNullOrEmpty(loanAccount.LoanAccountNo))

@@ -53,6 +53,20 @@
       "IISAppPoolName": "ritemployee-backend",
       "BackendFolderPath": "D:\\WebApps\\ritemployee\\backend",
       "FrontendFolderPath": "D:\\WebApps\\ritemployee\\frontend"
+    },
+    {
+      "SansthaName": "Sahyadri Gruhataran Sahakari Sanstha Maryadit Bambavade",
+      "TargetDatabase": "SmartBanking_sahyadribambavade",
+      "IISAppPoolName": "sahyadribambavade-backend",
+      "BackendFolderPath": "D:\\WebApps\\sahyadribambavade\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\sahyadribambavade\\frontend"
+    },
+    {
+      "SansthaName": "Sahyadri shasakiy karmachari patasanatha maryadit,Bambavade",
+      "TargetDatabase": "SmartBanking_sahyadrikarmachari",
+      "IISAppPoolName": "sahyadrikarmachari-backend",
+      "BackendFolderPath": "D:\\WebApps\\sahyadrikarmachari\\backend",
+      "FrontendFolderPath": "D:\\WebApps\\sahyadrikarmachari\\frontend"
     }
   ],
   "_CommentedOtherTargets": []

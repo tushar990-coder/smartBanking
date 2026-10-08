@@ -380,6 +380,57 @@ using (var scope = app.Services.CreateScope())
             IF COL_LENGTH('RdSchemes', 'OverdueInterestRate') IS NULL
                 ALTER TABLE [dbo].[RdSchemes] ADD [OverdueInterestRate] decimal(5,2) NULL;
 
+            // Deposit Collateral & Lien Tracking Migration Checks
+            IF COL_LENGTH('LoanRates', 'CollateralCategory') IS NULL
+                ALTER TABLE [dbo].[LoanRates] ADD [CollateralCategory] nvarchar(50) NOT NULL DEFAULT 'None';
+            IF COL_LENGTH('LoanRates', 'MaxLtvPercentage') IS NULL
+                ALTER TABLE [dbo].[LoanRates] ADD [MaxLtvPercentage] decimal(5,2) NOT NULL DEFAULT 85.00;
+            IF COL_LENGTH('LoanRates', 'IsLienRequired') IS NULL
+                ALTER TABLE [dbo].[LoanRates] ADD [IsLienRequired] bit NOT NULL DEFAULT 0;
+            IF COL_LENGTH('LoanRates', 'IsCollateralMandatoryForOpeningBalance') IS NULL
+                ALTER TABLE [dbo].[LoanRates] ADD [IsCollateralMandatoryForOpeningBalance] bit NOT NULL DEFAULT 0;
+
+            IF COL_LENGTH('FdAccounts', 'IsLienMarked') IS NULL
+                ALTER TABLE [dbo].[FdAccounts] ADD [IsLienMarked] bit NOT NULL DEFAULT 0;
+            IF COL_LENGTH('FdAccounts', 'LienLoanAccountNo') IS NULL
+                ALTER TABLE [dbo].[FdAccounts] ADD [LienLoanAccountNo] nvarchar(50) NULL;
+            IF COL_LENGTH('FdAccounts', 'LienAmount') IS NULL
+                ALTER TABLE [dbo].[FdAccounts] ADD [LienAmount] decimal(18,2) NULL;
+
+            IF COL_LENGTH('PigmyAccounts', 'IsLienMarked') IS NULL
+                ALTER TABLE [dbo].[PigmyAccounts] ADD [IsLienMarked] bit NOT NULL DEFAULT 0;
+            IF COL_LENGTH('PigmyAccounts', 'LienLoanAccountNo') IS NULL
+                ALTER TABLE [dbo].[PigmyAccounts] ADD [LienLoanAccountNo] nvarchar(50) NULL;
+            IF COL_LENGTH('PigmyAccounts', 'LienAmount') IS NULL
+                ALTER TABLE [dbo].[PigmyAccounts] ADD [LienAmount] decimal(18,2) NULL;
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanDepositCollaterals')
+            BEGIN
+                CREATE TABLE [LoanDepositCollaterals] (
+                    [CollateralID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [LoanApplicationID] int NULL,
+                    [LoanAccountID] int NULL,
+                    [CustomerID] int NOT NULL,
+                    [CollateralType] nvarchar(50) NOT NULL,
+                    [DepositAccountID] int NOT NULL,
+                    [DepositAccountNo] nvarchar(50) NOT NULL,
+                    [DepositAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [CurrentDepositBalance] decimal(18,2) NOT NULL DEFAULT 0,
+                    [MaturityDate] datetime2 NULL,
+                    [LienAmount] decimal(18,2) NOT NULL DEFAULT 0,
+                    [LienStatus] nvarchar(20) NOT NULL DEFAULT 'Pledged',
+                    [LienMarkedDate] datetime2 NULL,
+                    [LienReleasedDate] datetime2 NULL,
+                    [Remarks] nvarchar(250) NULL,
+                    [CreatedBy] int NOT NULL DEFAULT 1,
+                    [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE()
+                );
+                CREATE INDEX [IX_LoanDepositCollaterals_App] ON [LoanDepositCollaterals] ([LoanApplicationID]);
+                CREATE INDEX [IX_LoanDepositCollaterals_Acc] ON [LoanDepositCollaterals] ([LoanAccountID]);
+                CREATE INDEX [IX_LoanDepositCollaterals_Cust] ON [LoanDepositCollaterals] ([CustomerID]);
+                CREATE INDEX [IX_LoanDepositCollaterals_Deposit] ON [LoanDepositCollaterals] ([CollateralType], [DepositAccountID]);
+            END
+
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgentAccountTransfers')
             BEGIN
                 CREATE TABLE [PigmyAgentAccountTransfers] (

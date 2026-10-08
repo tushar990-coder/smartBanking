@@ -52,9 +52,50 @@ export default function CustomerOpeningBalanceForm() {
   const [editingId, setEditingId] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchLedgers();
-    fetchCustomers();
-    fetchBalances();
+    let isMounted = true;
+    const loadAll = async () => {
+      try {
+        const [lRes, cRes, bRes] = await Promise.all([
+          fetch('/api/Ledgers'),
+          fetch('/api/Customers'),
+          fetch('/api/CustomerOpeningBalances?sourceModule=CustomerOpeningBalance')
+        ]);
+        if (!isMounted) return;
+
+        if (lRes.ok) {
+          const data = await lRes.json();
+          if (isMounted) {
+            const personalLedgers = data.filter((l: Ledger) => {
+              const typeMatch = l.accountType === 'Personal Account' || l.accountType === 'Sundry Debtors' || l.accountType === 'Sundry Creditors';
+              if (!typeMatch) return false;
+              const name = (l.ledgerName || '').toLowerCase();
+              if (name.includes('मुदत') || name.includes('ठेव योजना') || name.includes('सेव्हिंग') || 
+                  name.includes('बचत ठेव') || name.includes('पिग्मी') || name.includes('आवर्ती') || 
+                  name.includes('भाग भांडवल') || name.includes('शेअर्स')) {
+                return false;
+              }
+              return true;
+            });
+            setLedgers(personalLedgers.length > 0 ? personalLedgers : data);
+          }
+        }
+
+        if (cRes.ok && isMounted) {
+          const cData = await cRes.json();
+          if (isMounted) setCustomers(cData);
+        }
+
+        if (bRes.ok && isMounted) {
+          const bData = await bRes.json();
+          if (isMounted) setBalances(bData);
+        }
+      } catch (err) {
+        if (isMounted) console.error("Error loading customer opening balance data", err);
+      }
+    };
+
+    loadAll();
+    return () => { isMounted = false; };
   }, []);
 
   const fetchLedgers = async () => {
@@ -66,7 +107,6 @@ export default function CustomerOpeningBalanceForm() {
           const typeMatch = l.accountType === 'Personal Account' || l.accountType === 'Sundry Debtors' || l.accountType === 'Sundry Creditors';
           if (!typeMatch) return false;
           const name = (l.ledgerName || '').toLowerCase();
-          // Exclude scheme-reserved ledgers that belong to other dedicated modules (FD, Saving, RD, Pigmy, Loan, Share Capital)
           if (name.includes('मुदत') || name.includes('ठेव योजना') || name.includes('सेव्हिंग') || 
               name.includes('बचत ठेव') || name.includes('पिग्मी') || name.includes('आवर्ती') || 
               name.includes('भाग भांडवल') || name.includes('शेअर्स')) {

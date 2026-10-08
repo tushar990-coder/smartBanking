@@ -56,6 +56,10 @@ interface LoanRate {
   installmentCount: number;
   loanInstallmentType: string;
   securityType: string;
+  collateralCategory?: string;
+  maxLtvPercentage?: number;
+  isLienRequired?: boolean;
+  isCollateralMandatoryForOpeningBalance?: boolean;
   isActive: boolean;
 }
 
@@ -110,6 +114,10 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
     installmentCount: '',
     loanInstallmentType: 'कर्जावरती',
     securityType: 'तारणी',
+    collateralCategory: 'None',
+    maxLtvPercentage: '85',
+    isLienRequired: false,
+    isCollateralMandatoryForOpeningBalance: false,
     isActive: true
   });
 
@@ -271,6 +279,10 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       installmentCount: '',
       loanInstallmentType: 'कर्जावरती',
       securityType: 'तारणी',
+      collateralCategory: 'None',
+      maxLtvPercentage: '85',
+      isLienRequired: false,
+      isCollateralMandatoryForOpeningBalance: false,
       isActive: true
     });
     setIsEditing(false);
@@ -369,6 +381,10 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       installmentCount: formData.installmentCount ? parseInt(formData.installmentCount) : 0,
       loanInstallmentType: formData.loanInstallmentType,
       securityType: formData.securityType,
+      collateralCategory: formData.collateralCategory,
+      maxLtvPercentage: parseFloat(formData.maxLtvPercentage) || 85,
+      isLienRequired: formData.isLienRequired,
+      isCollateralMandatoryForOpeningBalance: formData.isCollateralMandatoryForOpeningBalance,
       isActive: formData.isActive,
       resolutionNo: isRateChanged ? resolutionNo.trim() : null,
       resolutionDate: isRateChanged ? resolutionDate : null,
@@ -431,6 +447,10 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       installmentCount: rate.installmentCount?.toString() || '',
       loanInstallmentType: rate.loanInstallmentType || 'कर्जावरती',
       securityType: rate.securityType || 'तारणी',
+      collateralCategory: rate.collateralCategory || 'None',
+      maxLtvPercentage: rate.maxLtvPercentage !== undefined ? rate.maxLtvPercentage.toString() : '85',
+      isLienRequired: rate.isLienRequired || false,
+      isCollateralMandatoryForOpeningBalance: rate.isCollateralMandatoryForOpeningBalance || false,
       isActive: rate.isActive
     });
     setOriginalRates({
@@ -914,6 +934,90 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
                   <option value="ठेव तारण">ठेव तारण</option>
                 </select>
               </div>
+            </div>
+
+            {/* Dynamic Collateral Configuration Section */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 border-t border-gray-200 bg-slate-50/70 p-2.5 rounded-sm border border-slate-200">
+              <div>
+                <label className={labelClass}>
+                  तारण वर्गवारी (Collateral Category) <span className="text-primary font-bold">*</span>
+                </label>
+                <select 
+                  name="collateralCategory" 
+                  value={formData.collateralCategory} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const isDeposit = ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(val);
+                    setFormData(prev => ({
+                      ...prev,
+                      collateralCategory: val,
+                      isLienRequired: isDeposit ? true : prev.isLienRequired,
+                      securityType: val === 'None' ? 'विनातारणी' : (isDeposit ? 'ठेव तारण' : (val === 'Gold' ? 'सोने तारण' : prev.securityType))
+                    }));
+                  }} 
+                  className={`${inputClass} font-semibold text-primary border-primary/40`}
+                >
+                  <option value="None">लागू नाही / विनातारणी (None / Unsecured)</option>
+                  <option value="FixedDeposit">मुदत ठेव तारण (Fixed Deposit - FD)</option>
+                  <option value="PigmyDeposit">दैनिक / पिग्मी ठेव तारण (Pigmy / Daily Deposit)</option>
+                  <option value="RecurringDeposit">आवर्ती ठेव तारण (Recurring Deposit - RD)</option>
+                  <option value="SavingDeposit">बचत ठेव तारण (Saving Account)</option>
+                  <option value="Gold">सुवर्ण तारण (Gold Loan)</option>
+                  <option value="Salary">पगार तारण (Salary Loan)</option>
+                  <option value="Property">मालमत्ता / स्थावर तारण (Property / Mortgage)</option>
+                  <option value="Other">इतर तारण (Other Security)</option>
+                </select>
+              </div>
+
+              {['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(formData.collateralCategory) && (
+                <>
+                  <div>
+                    <label className={labelClass}>
+                      कमाल कर्ज मर्यादा (Max LTV %) <span className="text-red-500">*</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      name="maxLtvPercentage" 
+                      value={formData.maxLtvPercentage} 
+                      onChange={handleChange} 
+                      className={`${inputClass} font-bold text-blue-700 font-mono`} 
+                      placeholder="उदा. 85.00" 
+                      title="ठेवीच्या शिलकीवर किती टक्के कर्ज देता येईल"
+                    />
+                    <span className="text-[10px] text-gray-500 font-medium">उदा. १०० रुपयांच्या ठेवीवर कमाल ₹८५ कर्ज</span>
+                  </div>
+
+                  <div className="flex flex-col gap-2 pt-2">
+                    <label className="flex items-center space-x-2 cursor-pointer bg-white p-2 rounded-sm border border-slate-300 w-full hover:bg-emerald-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        name="isLienRequired"
+                        checked={formData.isLienRequired}
+                        onChange={(e) => setFormData(prev => ({ ...prev, isLienRequired: e.target.checked }))}
+                        className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                      />
+                      <span className="text-xs font-semibold text-gray-800">नवीन कर्ज अर्जाला ठेवीवर बोजा (Lien Lock) अनिवार्य</span>
+                    </label>
+
+                    <label className="flex items-start space-x-2 cursor-pointer bg-white p-2 rounded-sm border border-slate-300 w-full hover:bg-emerald-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        name="isCollateralMandatoryForOpeningBalance"
+                        checked={formData.isCollateralMandatoryForOpeningBalance}
+                        onChange={(e) => setFormData(prev => ({ ...prev, isCollateralMandatoryForOpeningBalance: e.target.checked }))}
+                        className="mt-0.5 rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-semibold text-gray-800">आरंभिक शिल्लकीत (Opening Balance) तारण ठेव अनिवार्य ठेवा</span>
+                        <span className="text-[10px] text-gray-500">
+                          (अनचेक असल्यास: जुनी आरंभिक शिल्लक नोंदवताना तारण उपलब्ध नसले तरी डेटा एन्ट्री अडकणार नाही व नंतर एडिट करून तारण जोडता येईल)
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1.5 border-t border-gray-200">

@@ -75,6 +75,20 @@ namespace Bhisi.Api.Controllers
                 var activeFdAccounts = await fdAccountsQuery.Where(f => f.Status == "Active").CountAsync();
                 var totalFdBalance = await fdAccountsQuery.Where(f => f.Status == "Active").SumAsync(f => (decimal?)f.DepositAmount) ?? 0m;
 
+                // Recurring Deposit Module
+                var rdAccountsQuery = _context.RdAccounts.AsNoTracking();
+                if (branchId.HasValue && branchId.Value > 0) rdAccountsQuery = rdAccountsQuery.Where(r => r.BranchID == branchId.Value);
+                var totalRdAccounts = await rdAccountsQuery.CountAsync();
+                var activeRdAccounts = await rdAccountsQuery.Where(r => r.Status == "Active").CountAsync();
+                var totalRdBalance = await rdAccountsQuery.Where(r => r.Status == "Active").SumAsync(r => (decimal?)r.TotalDepositedAmount) ?? 0m;
+
+                // Pigmy Module
+                var pigmyAccountsQuery = _context.PigmyAccounts.AsNoTracking();
+                if (branchId.HasValue && branchId.Value > 0) pigmyAccountsQuery = pigmyAccountsQuery.Where(p => p.BranchID == branchId.Value);
+                var totalPigmyAccounts = await pigmyAccountsQuery.CountAsync();
+                var activePigmyAccounts = await pigmyAccountsQuery.Where(p => p.Status == "Active").CountAsync();
+                var totalPigmyBalance = await pigmyAccountsQuery.Where(p => p.Status == "Active").SumAsync(p => (decimal?)p.TotalDepositedAmount) ?? 0m;
+
                 // Share Module
                 var shareAccountsQuery = _context.ShareAccounts.AsNoTracking();
                 var totalShareAccounts = await shareAccountsQuery.CountAsync();
@@ -123,6 +137,20 @@ namespace Bhisi.Api.Controllers
                         activeAccounts = activeFdAccounts,
                         totalBalance = totalFdBalance,
                         accountCount = activeFdAccounts
+                    },
+                    recurringDeposit = new
+                    {
+                        totalAccounts = totalRdAccounts,
+                        activeAccounts = activeRdAccounts,
+                        totalBalance = totalRdBalance,
+                        accountCount = activeRdAccounts
+                    },
+                    pigmy = new
+                    {
+                        totalAccounts = totalPigmyAccounts,
+                        activeAccounts = activePigmyAccounts,
+                        totalBalance = totalPigmyBalance,
+                        accountCount = activePigmyAccounts
                     },
                     shares = new
                     {

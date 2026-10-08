@@ -341,6 +341,58 @@ namespace Bhisi.Api.Controllers
                     {
                         app.LoanAccountNo = loanAcc.LoanAccountNo; 
                         _context.Entry(app).State = EntityState.Modified;
+
+                        // Mark Lien on Pledged Collaterals
+                        var pledgedCollaterals = await _context.LoanDepositCollaterals
+                            .Where(c => c.LoanApplicationID == app.LoanApplicationID)
+                            .ToListAsync();
+
+                        foreach (var col in pledgedCollaterals)
+                        {
+                            col.LoanAccountID = loanAcc.LoanAccountID;
+                            col.LienStatus = "LienMarked";
+                            col.LienMarkedDate = DateTime.Now;
+
+                            if (col.CollateralType == "FixedDeposit")
+                            {
+                                var fd = await _context.FdAccounts.FindAsync(col.DepositAccountID);
+                                if (fd != null)
+                                {
+                                    fd.IsLienMarked = true;
+                                    fd.LienLoanAccountNo = loanAcc.LoanAccountNo;
+                                    fd.LienAmount = col.LienAmount > 0 ? col.LienAmount : col.DepositAmount;
+                                }
+                            }
+                            else if (col.CollateralType == "PigmyDeposit")
+                            {
+                                var pg = await _context.PigmyAccounts.FindAsync(col.DepositAccountID);
+                                if (pg != null)
+                                {
+                                    pg.IsLienMarked = true;
+                                    pg.LienLoanAccountNo = loanAcc.LoanAccountNo;
+                                    pg.LienAmount = col.LienAmount > 0 ? col.LienAmount : col.DepositAmount;
+                                }
+                            }
+                            else if (col.CollateralType == "RecurringDeposit")
+                            {
+                                var rd = await _context.RdAccounts.FindAsync(col.DepositAccountID);
+                                if (rd != null)
+                                {
+                                    rd.IsLienMarked = true;
+                                    rd.LienLoanAccountNo = loanAcc.LoanAccountNo;
+                                    rd.LienAmount = col.LienAmount > 0 ? col.LienAmount : col.DepositAmount;
+                                }
+                            }
+                            else if (col.CollateralType == "SavingDeposit")
+                            {
+                                var sav = await _context.SavingAccountMasters.FindAsync(col.DepositAccountID);
+                                if (sav != null)
+                                {
+                                    sav.LienAmount = col.LienAmount > 0 ? col.LienAmount : col.DepositAmount;
+                                    sav.LienReason = $"Loan A/c: {loanAcc.LoanAccountNo}";
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1039,6 +1091,66 @@ namespace Bhisi.Api.Controllers
                             {
                                 app.LoanAccountNo = null;
                                 _context.Entry(app).State = EntityState.Modified;
+                            }
+                        }
+
+                        // Release Liens on Deposit Collaterals back to Pledged
+                        var linkedCollaterals = await _context.LoanDepositCollaterals
+                            .Where(c => c.LoanAccountID == loanAcc.LoanAccountID)
+                            .ToListAsync();
+
+                        foreach (var col in linkedCollaterals)
+                        {
+                            if (col.CollateralType == "FixedDeposit")
+                            {
+                                var fd = await _context.FdAccounts.FindAsync(col.DepositAccountID);
+                                if (fd != null && (fd.LienLoanAccountNo == loanAcc.LoanAccountNo || fd.IsLienMarked))
+                                {
+                                    fd.IsLienMarked = false;
+                                    fd.LienLoanAccountNo = null;
+                                    fd.LienAmount = 0;
+                                    _context.Entry(fd).State = EntityState.Modified;
+                                }
+                            }
+                            else if (col.CollateralType == "PigmyDeposit")
+                            {
+                                var pg = await _context.PigmyAccounts.FindAsync(col.DepositAccountID);
+                                if (pg != null && (pg.LienLoanAccountNo == loanAcc.LoanAccountNo || pg.IsLienMarked))
+                                {
+                                    pg.IsLienMarked = false;
+                                    pg.LienLoanAccountNo = null;
+                                    pg.LienAmount = 0;
+                                    _context.Entry(pg).State = EntityState.Modified;
+                                }
+                            }
+                            else if (col.CollateralType == "RecurringDeposit")
+                            {
+                                var rd = await _context.RdAccounts.FindAsync(col.DepositAccountID);
+                                if (rd != null && (rd.LienLoanAccountNo == loanAcc.LoanAccountNo || rd.IsLienMarked))
+                                {
+                                    rd.IsLienMarked = false;
+                                    rd.LienLoanAccountNo = null;
+                                    rd.LienAmount = 0;
+                                    _context.Entry(rd).State = EntityState.Modified;
+                                }
+                            }
+                            else if (col.CollateralType == "SavingDeposit")
+                            {
+                                var sav = await _context.SavingAccountMasters.FindAsync(col.DepositAccountID);
+                                if (sav != null && sav.LienReason != null && sav.LienReason.Contains(loanAcc.LoanAccountNo ?? ""))
+                                {
+                                    sav.LienAmount = 0;
+                                    sav.LienReason = null;
+                                    _context.Entry(sav).State = EntityState.Modified;
+                                }
+                            }
+
+                            if (col.LoanApplicationID.HasValue)
+                            {
+                                col.LoanAccountID = null;
+                                col.LienStatus = "Pledged";
+                                col.LienMarkedDate = null;
+                                _context.Entry(col).State = EntityState.Modified;
                             }
                         }
                     }

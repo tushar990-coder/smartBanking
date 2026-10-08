@@ -354,6 +354,20 @@ namespace Bhisi.Api.Controllers
                 });
             }
 
+            if (account.IsLienMarked)
+            {
+                decimal lienAmt = account.LienAmount ?? account.TotalDepositedAmount;
+                decimal freeBalance = Math.Max(0, account.TotalDepositedAmount - lienAmt);
+                if (request.Amount > freeBalance)
+                {
+                    return BadRequest(new
+                    {
+                        error = "ACCOUNT_LIEN_MARKED",
+                        message = $"सदर पिग्मी खात्यावर कर्ज खाते क्र. '{account.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{lienAmt:N2}) नोंदवला आहे. बोजा वजा जाता उपलब्ध रक्कम ₹{freeBalance:N2} आहे, त्यामुळे ₹{request.Amount:N2} विड्रॉल करता येणार नाही."
+                    });
+                }
+            }
+
             DateTime cycleStart = account.EffectiveStartDate ?? account.OpeningDate;
             int elapsedDays = Math.Max(0, (int)(DateTime.Today - cycleStart).TotalDays);
             decimal elapsedMonths = Math.Round((decimal)elapsedDays / 30.416m, 2);
@@ -609,6 +623,15 @@ namespace Bhisi.Api.Controllers
                     error = "ACTIVE_LOAN_LIEN",
                     message = $"सदर खातेदाराकडे एकूण ₹{totalLoanLiability:N2} चे सक्रिय कर्ज थकीत आहे. कर्ज वसुली सुरक्षेसाठी (Lien Protection) हे पिग्मी खाते बंद करण्यापूर्वी कर्ज खाते तपासावे किंवा विशेष व्यवस्थापक संमती (Manager Override) आवश्यक आहे.",
                     activeLoans = activeLoans
+                });
+            }
+
+            if (account.IsLienMarked)
+            {
+                return BadRequest(new
+                {
+                    error = "ACCOUNT_LIEN_MARKED",
+                    message = $"सदर पिग्मी खात्यावर कर्ज खाते क्र. '{account.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.TotalDepositedAmount:N2}) नोंदवला आहे. कर्ज खाते पूर्ण नील केल्याशिवाय हे पिग्मी खाते बंद करता येत नाही."
                 });
             }
 

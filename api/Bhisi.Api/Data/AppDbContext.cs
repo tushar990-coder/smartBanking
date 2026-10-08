@@ -48,6 +48,7 @@ namespace Bhisi.Api.Data
         public DbSet<LoanCollectionFee> LoanCollectionFees { get; set; }
         public DbSet<LoanInstallmentSchedule> LoanInstallmentSchedules { get; set; }
         public DbSet<GoldLoanDetail> GoldLoanDetails { get; set; }
+        public DbSet<LoanDepositCollateral> LoanDepositCollaterals { get; set; }
         public DbSet<LoanDocument> LoanDocuments { get; set; }
         public DbSet<SecurityType> SecurityTypes { get; set; }
 

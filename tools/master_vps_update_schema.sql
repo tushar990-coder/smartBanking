@@ -5480,6 +5480,71 @@ BEGIN
       AND (la.LastInstallmentPaidDate IS NULL OR la.LastInstallmentPaidDate <> latest.MaxDate);
 
     PRINT '  -> Self-healed LoanAccounts.LastInstallmentPaidDate against LoanCollections';
+-- -----------------------------------------------------------------------------------------
+-- LOAN DEPOSIT COLLATERAL & LIEN TRACKING SCHEMA (v2.5.36)
+-- -----------------------------------------------------------------------------------------
+-- 1. FdAccounts Lien Columns
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAccounts')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'IsLienMarked')
+        ALTER TABLE [FdAccounts] ADD [IsLienMarked] bit NOT NULL CONSTRAINT DF_FdAccounts_IsLienMarked DEFAULT 0;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'LienLoanAccountNo')
+        ALTER TABLE [FdAccounts] ADD [LienLoanAccountNo] nvarchar(50) NULL;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdAccounts]') AND name = 'LienAmount')
+        ALTER TABLE [FdAccounts] ADD [LienAmount] decimal(18,2) NULL;
+END
+GO
+
+-- 2. PigmyAccounts Lien Columns
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAccounts')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyAccounts]') AND name = 'IsLienMarked')
+        ALTER TABLE [PigmyAccounts] ADD [IsLienMarked] bit NOT NULL CONSTRAINT DF_PigmyAccounts_IsLienMarked DEFAULT 0;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyAccounts]') AND name = 'LienLoanAccountNo')
+        ALTER TABLE [PigmyAccounts] ADD [LienLoanAccountNo] nvarchar(50) NULL;
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyAccounts]') AND name = 'LienAmount')
+        ALTER TABLE [PigmyAccounts] ADD [LienAmount] decimal(18,2) NULL;
+END
+GO
+
+-- 3. LoanRates IsCollateralMandatoryForOpeningBalance Column
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanRates')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanRates]') AND name = 'IsCollateralMandatoryForOpeningBalance')
+        ALTER TABLE [LoanRates] ADD [IsCollateralMandatoryForOpeningBalance] bit NOT NULL CONSTRAINT DF_LoanRates_CollateralMandatory DEFAULT 0;
+END
+GO
+
+-- 4. LoanDepositCollaterals Table
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanDepositCollaterals')
+BEGIN
+    CREATE TABLE [LoanDepositCollaterals] (
+        [CollateralID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [LoanApplicationID] int NULL,
+        [LoanAccountID] int NULL,
+        [CustomerID] int NOT NULL,
+        [CollateralType] nvarchar(50) NOT NULL DEFAULT 'FixedDeposit',
+        [DepositAccountID] int NOT NULL,
+        [DepositAccountNo] nvarchar(50) NOT NULL DEFAULT '',
+        [DepositAmount] decimal(18,2) NOT NULL DEFAULT 0,
+        [CurrentDepositBalance] decimal(18,2) NOT NULL DEFAULT 0,
+        [MaturityDate] datetime2 NULL,
+        [LienAmount] decimal(18,2) NOT NULL DEFAULT 0,
+        [LienStatus] nvarchar(20) NOT NULL DEFAULT 'Pledged',
+        [LienMarkedDate] datetime2 NULL,
+        [LienReleasedDate] datetime2 NULL,
+        [Remarks] nvarchar(250) NULL,
+        [CreatedBy] int NOT NULL DEFAULT 1,
+        [CreatedDate] datetime2 NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT [FK_LoanDepositCollaterals_Customers] FOREIGN KEY ([CustomerID]) REFERENCES [Customers] ([CustomerID]) ON DELETE NO ACTION
+    );
+    CREATE NONCLUSTERED INDEX [IX_LoanDepositCollaterals_LoanAccountID] ON [LoanDepositCollaterals] ([LoanAccountID]);
+    CREATE NONCLUSTERED INDEX [IX_LoanDepositCollaterals_CustomerID] ON [LoanDepositCollaterals] ([CustomerID]);
+    PRINT '  -> Created LoanDepositCollaterals table successfully';
 END
 GO
 

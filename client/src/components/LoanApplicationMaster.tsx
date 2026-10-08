@@ -987,287 +987,220 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
       {/* ========================================================================= */}
       {/* TOP SLEEK CBS HEADER BANNER (Matching SavingOpeningBalance.tsx)          */}
       {/* ========================================================================= */}
-      <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
-            <Landmark size={18} className="stroke-[2.5]" />
+      {/* ========================================================================= */}
+      {/* TOP SLEEK CBS HEADER BANNER WITH COMPACT KPI BAR                          */}
+      {/* ========================================================================= */}
+      <div className="bg-white px-3 py-2 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-2.5 flex flex-wrap justify-between items-center gap-2">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs shrink-0">
+            <Landmark size={16} className="stroke-[2.5]" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
-              <span>कर्ज अर्ज नोंदणी व मंजुरी</span>
-              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Loan Application Master)</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xs sm:text-sm font-bold text-gray-900 tracking-tight">
+                कर्ज अर्ज नोंदणी व मंजुरी
+              </h1>
+              <span className="text-[10px] font-semibold text-primary font-mono hidden md:inline">(Loan Application Master)</span>
               {isEditing && (
-                <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
-                  ✏️ संपादन चालू (#{formData.applicationNo || formData.loanApplicationID})
+                <span className="bg-amber-100 text-amber-900 text-[9.5px] font-black px-2 py-0.2 rounded-full border border-amber-300 animate-pulse">
+                  ✏️ संपादन (#{formData.applicationNo || formData.loanApplicationID})
                 </span>
               )}
-            </h1>
-            <p className="text-[11px] text-gray-500 font-medium">
-              नवीन कर्ज मागणी अर्ज, सह-कर्जदार, जामीनदार पडताळणी, सुवर्ण तारण मूल्यांकन व हप्ता वेळापत्रक व्यवस्थापन
-            </p>
+            </div>
+            {/* Ultra-compact inline KPI metrics strip */}
+            <div className="flex items-center gap-2 text-[10px] text-gray-500 font-medium mt-0.5 flex-wrap">
+              <span>एकूण अर्ज: <b className="text-gray-800">{applications.length}</b></span>
+              <span className="text-gray-300">|</span>
+              <span>मागणी रक्कम: <b className="text-emerald-700 font-mono">₹{totalRequestedAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</b></span>
+              <span className="text-gray-300">|</span>
+              <span>सरासरी व्याज: <b className="text-indigo-900 font-mono">{avgRate}%</b></span>
+              <span className="text-gray-300">|</span>
+              <span>योजना: <b className="text-amber-800">{activeSchemesCount}</b></span>
+            </div>
           </div>
         </div>
 
         {/* Header Action Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {isEditing && (
             <button
               type="button"
               onClick={handleResetForm}
-              className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+              className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-sm text-[10.5px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
               title="संपादन रद्द करा"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>संपादन रद्द करा</span>
+              <RotateCcw className="w-3 h-3" />
+              <span>रद्द करा</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={handleResetForm}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-sm text-[10.5px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
             title="नवीन फॉर्म रिकामा करा"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-3 h-3" />
             <span>नवीन नोंद</span>
           </button>
 
-          {/* VIEW LIST BUTTON -> Opens Pop-up List Modal */}
           <button
             type="button"
             onClick={() => {
               fetchData();
               setShowListModal(true);
             }}
-            className="px-3.5 py-1.5 bg-primary hover:opacity-90 text-white rounded-sm text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-            title="सर्व नोंदवलेले कर्ज अर्ज यादी पॉप-अप मध्ये पहा"
+            className="px-2.5 py-1 bg-primary hover:opacity-90 text-white rounded-sm text-[10.5px] font-bold flex items-center gap-1 transition-all shadow-xs cursor-pointer"
+            title="सर्व नोंदवलेले कर्ज अर्ज यादी पहा"
           >
-            <Layers className="w-4 h-4" />
-            <span>📋 नोंदवलेले अर्ज पहा ({applications.length})</span>
+            <Layers className="w-3.5 h-3.5" />
+            <span>अर्ज यादी ({applications.length})</span>
           </button>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* SUMMARY KPI CARDS                                                         */}
-      {/* ========================================================================= */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-primary/10 text-primary border border-primary/20 rounded">
-            <Landmark className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण कर्ज अर्ज</div>
-            <div className="text-sm font-black text-gray-900">{applications.length}</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
-            <IndianRupee className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण मागणी रक्कम</div>
-            <div className="text-sm font-black text-emerald-800">₹{totalRequestedAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
-            <Percent className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सरासरी व्याजदर</div>
-            <div className="text-sm font-black text-indigo-950">{avgRate}% p.a.</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-amber-50 text-amber-700 border border-amber-200 rounded">
-            <CheckCircle className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">सक्रिय कर्ज योजना</div>
-            <div className="text-sm font-black text-amber-800">{activeSchemesCount} योजना</div>
-          </div>
         </div>
       </div>
 
       {/* Alert Messages */}
       {error && (
-        <div className="mb-3 p-2 bg-rose-50 border border-rose-300 text-rose-800 rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs animate-in fade-in duration-150">
-          <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+        <div className="mb-2 p-1.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-sm flex items-center gap-1.5 text-[11px] font-bold shadow-2xs animate-in fade-in duration-150">
+          <XCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
           <span className="flex-1">{error}</span>
           <button onClick={() => setError('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
         </div>
       )}
 
       {success && (
-        <div className="mb-3 p-2 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-sm flex items-center gap-2 text-xs font-bold shadow-2xs animate-in fade-in duration-150">
-          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+        <div className="mb-2 p-1.5 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-sm flex items-center gap-1.5 text-[11px] font-bold shadow-2xs animate-in fade-in duration-150">
+          <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           <span className="flex-1">{success}</span>
           <button onClick={() => setSuccess('')} className="font-bold text-gray-400 hover:text-gray-600 text-sm cursor-pointer">×</button>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* MAIN WORKSPACE: FORM & ON-DEMAND LIVE SCHEDULE                            */}
+      {/* MAIN WORKSPACE: COMPACT 2-COLUMN SIDE-BY-SIDE CBS GRID                   */}
       {/* ========================================================================= */}
-      <div className="flex flex-col lg:flex-row gap-3 items-start">
-        
-        {/* Main Form Container - Full Width when schedule is hidden */}
-        <div 
-          ref={formContainerRef}
-          className={`${showSchedule ? 'w-full lg:w-7/12' : 'w-full'} bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border space-y-3 transition-all duration-300 ${
-            isEditing ? 'border-primary ring-2 ring-primary/20 bg-blue-50/20' : 'border-gray-200'
-          }`}
-        >
-          <form onSubmit={handleSubmit} className="space-y-3">
+      <div 
+        ref={formContainerRef}
+        className={`w-full bg-white p-2.5 sm:p-3 rounded-sm shadow-xs border transition-all duration-300 ${
+          isEditing ? 'border-primary ring-2 ring-primary/20 bg-blue-50/15' : 'border-gray-200'
+        }`}
+      >
+        <form onSubmit={handleSubmit} className="space-y-2.5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-start">
             
-            {/* Section 1: Borrower & Co-Borrower Details */}
-            <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
-              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
-                <UserCheck className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">१. अर्जदार व सह-कर्जदार माहिती (Applicant & Co-Borrower)</h2>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
-                <div className="sm:col-span-3 lg:col-span-2">
-                  <label className={labelClass}>
-                    अर्ज क्र. (App No) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="applicationNo"
-                    value={formData.applicationNo || ''}
-                    readOnly
-                    className={`${inputClass} bg-slate-100 font-mono font-bold text-primary`}
-                    placeholder="AUTO"
-                  />
+            {/* =================================================================== */}
+            {/* LEFT COLUMN: अर्जदार व कर्ज तपशील                                    */}
+            {/* =================================================================== */}
+            <div className="space-y-2.5">
+              
+              {/* Card 1: अर्जदार व सह-कर्जदार माहिती */}
+              <div className="bg-white p-2.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2 shadow-2xs">
+                <div className="flex items-center justify-between border-b border-gray-200 pb-1">
+                  <div className="flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-primary" />
+                    <h2 className="text-xs font-bold text-primary">१. अर्जदार व सह-कर्जदार (Applicant Details)</h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCoBorrowers(p => !p)}
+                    className={`text-[10px] px-2 py-0.5 rounded font-bold transition flex items-center gap-1 cursor-pointer border ${
+                      showCoBorrowers || Boolean(formData.coCustomerID || formData.coCustomer2ID)
+                        ? 'bg-primary/10 text-primary border-primary/30'
+                        : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-300'
+                    }`}
+                    title="सह-कर्जदार जोडा किंवा बदला"
+                  >
+                    <UserPlus className="w-3 h-3" />
+                    <span>{showCoBorrowers || Boolean(formData.coCustomerID || formData.coCustomer2ID) ? 'सह-कर्जदार बंद' : '+ सह-कर्जदार'}</span>
+                  </button>
                 </div>
 
-                <div className="sm:col-span-3 lg:col-span-2">
-                  <label className={labelClass}>
-                    अर्ज दिनांक (Date) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    name="applicationDate"
-                    value={formData.applicationDate ? formData.applicationDate.split('T')[0] : ''}
-                    onChange={handleInputChange}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-
-                <div className="sm:col-span-6 lg:col-span-8">
-                  <label className={labelClass}>
-                    अर्जदार खातेदार निवडा (Select Applicant Customer) <span className="text-red-500">*</span>
-                  </label>
-                  <div className={isEditing ? 'opacity-90' : ''}>
-                    <CustomerSearchSelect
-                      customers={members}
-                      value={formData.customerID ? Number(formData.customerID) : ''}
-                      onChange={(val) => {
-                        setFormData(p => ({
-                          ...p,
-                          customerID: val ? Number(val) : 0
-                        }));
-                      }}
-                      placeholder="-- अर्जदार CIF / नाव / मोबाईलने शोधा --"
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-5 sm:col-span-3">
+                    <label className={labelClass}>
+                      अर्ज क्र. <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="applicationNo"
+                      value={formData.applicationNo || ''}
+                      readOnly
+                      className={`${inputClass} bg-slate-100 font-mono font-bold text-primary`}
+                      placeholder="AUTO"
                     />
                   </div>
-                </div>
-              </div>
 
-              {/* Rich Selected Customer Profile Card with Modern Theme */}
-              {selectedMember && (
-                <div className="p-3 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/80 border border-primary/25 rounded-md shadow-2xs space-y-2.5">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-primary/15 pb-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-                        <User className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-black text-gray-900 tracking-tight">
-                            {selectedMember.firstName} {selectedMember.middleName ? selectedMember.middleName + ' ' : ''}{selectedMember.lastName}
-                          </span>
-                          <span className="px-2 py-0.5 bg-primary/10 text-primary border border-primary/25 font-mono text-[11px] rounded font-bold">
-                            CIF: {selectedMember.cifNo || (selectedMember as any).cif || '-'}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-gray-500 font-medium flex items-center gap-1 mt-0.5">
-                          <MapPin className="w-3 h-3 text-gray-400 shrink-0" />
-                          <span>{(selectedMember as any).village || (selectedMember as any).address || (selectedMember as any).city || 'पत्ता: नोंदवला नाही'}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold rounded text-[10px] flex items-center gap-1 shrink-0 shadow-2xs">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>अर्जदार पडताळणी पूर्ण (Applicant Verified)</span>
-                    </span>
+                  <div className="col-span-7 sm:col-span-3">
+                    <label className={labelClass}>
+                      अर्ज दिनांक <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      name="applicationDate"
+                      value={formData.applicationDate ? formData.applicationDate.split('T')[0] : ''}
+                      onChange={handleInputChange}
+                      className={inputClass}
+                      required
+                    />
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] pt-0.5">
-                    <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200 shadow-2xs flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5 text-primary shrink-0" />
-                      <div className="min-w-0">
-                        <span className="text-[10px] text-gray-400 block font-semibold">मोबाईल नंबर:</span>
-                        <span className="font-mono font-bold text-gray-800 truncate block">
-                          {selectedMember.mobileNo || (selectedMember as any).mobile || '-'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200 shadow-2xs flex items-center gap-2">
-                      <MapPin className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                      <div className="min-w-0">
-                        <span className="text-[10px] text-gray-400 block font-semibold">गाव / पत्ता:</span>
-                        <span className="font-bold text-gray-800 truncate block" title={(selectedMember as any).village || (selectedMember as any).address || '-'}>
-                          {(selectedMember as any).village || (selectedMember as any).address || '-'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200 shadow-2xs flex items-center gap-2 col-span-2 sm:col-span-1">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <div className="min-w-0">
-                        <span className="text-[10px] text-gray-400 block font-semibold">ओळख पुरावा / केवायसी:</span>
-                        <span className="font-mono font-bold text-gray-800 text-[10px] truncate block">
-                          {(selectedMember as any).aadhaarNo ? `UID: ${(selectedMember as any).aadhaarNo}` : (selectedMember as any).panNo ? `PAN: ${(selectedMember as any).panNo}` : 'KYC उपलब्ध'}
-                        </span>
-                      </div>
+                  <div className="col-span-12 sm:col-span-6">
+                    <label className={labelClass}>
+                      अर्जदार खातेदार निवडा <span className="text-red-500">*</span>
+                    </label>
+                    <div className={isEditing ? 'opacity-90' : ''}>
+                      <CustomerSearchSelect
+                        customers={members}
+                        value={formData.customerID ? Number(formData.customerID) : ''}
+                        onChange={(val) => {
+                          setFormData(p => ({
+                            ...p,
+                            customerID: val ? Number(val) : 0
+                          }));
+                        }}
+                        placeholder="-- अर्जदार CIF / नाव / मोबाईलने शोधा --"
+                      />
                     </div>
                   </div>
                 </div>
-              )}
 
-              {/* Co-Borrowers Collapsible Section */}
-              <div className="pt-2 border-t border-slate-200">
-                {!(showCoBorrowers || Boolean(formData.coCustomerID || formData.coCustomer2ID)) ? (
-                  <div className="flex flex-wrap items-center justify-between gap-2 py-1.5 px-2.5 bg-slate-50/70 rounded border border-dashed border-slate-300">
-                    <button
-                      type="button"
-                      onClick={() => setShowCoBorrowers(true)}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-primary/5 text-primary border border-primary/30 hover:border-primary rounded text-xs font-bold transition-all cursor-pointer shadow-2xs hover:shadow-xs group"
-                    >
-                      <div className="w-4 h-4 rounded-full bg-primary/10 group-hover:bg-primary group-hover:text-white text-primary flex items-center justify-center transition-colors">
-                        <Plus className="w-2.5 h-2.5" />
+                {/* Ultra-Compact Selected Customer Profile Banner */}
+                {selectedMember && (
+                  <div className="p-1.5 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/80 border border-primary/25 rounded shadow-2xs flex flex-wrap items-center justify-between gap-1.5 text-[10.5px]">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center font-bold text-[9px] shrink-0">
+                        <User className="w-3 h-3" />
                       </div>
-                      <span>+ सह-कर्जदार जोडा (Add Co-Borrower)</span>
-                    </button>
-                    <span className="text-[11px] text-slate-500 font-medium italic">
-                      (कर्जासाठी सह-अर्जदार जोडायचे असल्यास '+' बटनावर क्लिक करा)
-                    </span>
+                      <div className="truncate">
+                        <span className="font-bold text-gray-900 mr-1.5">
+                          {selectedMember.firstName} {selectedMember.middleName ? selectedMember.middleName + ' ' : ''}{selectedMember.lastName}
+                        </span>
+                        <span className="px-1.5 py-0.2 bg-primary/10 text-primary border border-primary/20 font-mono text-[9.5px] rounded font-bold mr-1.5">
+                          CIF: {selectedMember.cifNo || (selectedMember as any).cif || '-'}
+                        </span>
+                        <span className="text-gray-500 font-mono text-[10px]">
+                          📞 {selectedMember.mobileNo || (selectedMember as any).mobile || '-'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 text-[9.5px]">
+                      <span className="text-gray-600 bg-white px-1.5 py-0.2 rounded border border-slate-200">
+                        📍 {(selectedMember as any).village || (selectedMember as any).address || '-'}
+                      </span>
+                      <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        <span>केवायसी पडताळणी पूर्ण</span>
+                      </span>
+                    </div>
                   </div>
-                ) : (
-                  <div className="space-y-2.5 bg-gradient-to-r from-slate-50 to-blue-50/40 p-3 rounded-md border border-primary/20 shadow-2xs animate-in fade-in duration-200">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-primary/15">
-                      <span className="text-xs font-bold text-primary flex items-center gap-1.5">
-                        <UserPlus className="w-3.5 h-3.5 text-primary" />
-                        सह-कर्जदार तपशील (Co-Borrower Details)
+                )}
+
+                {/* Co-Borrowers Compact Drawer */}
+                {(showCoBorrowers || Boolean(formData.coCustomerID || formData.coCustomer2ID)) && (
+                  <div className="p-2 bg-slate-50 rounded border border-primary/20 space-y-1.5 animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10.5px] font-bold text-primary flex items-center gap-1">
+                        <UserPlus className="w-3 h-3" /> सह-कर्जदार (Co-Borrowers)
                       </span>
                       <button
                         type="button"
@@ -1275,45 +1208,27 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                           setFormData(p => ({ ...p, coCustomerID: 0, coCustomer2ID: 0 }));
                           setShowCoBorrowers(false);
                         }}
-                        className="text-[11px] text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2.5 py-0.5 rounded flex items-center gap-1 transition cursor-pointer font-bold border border-rose-200 hover:border-rose-300 shadow-2xs"
-                        title="सह-कर्जदार माहिती रद्द करून लपवा"
+                        className="text-[9.5px] text-rose-600 hover:text-rose-800 font-bold hover:underline cursor-pointer"
                       >
-                        <X className="w-3 h-3" />
-                        <span>सह-कर्जदार रद्द करा (Remove)</span>
+                        ✕ सह-कर्जदार काढा (Remove)
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
-                      <div className="space-y-1">
-                        <label className={labelClass}>सह-कर्जदार १ (Co-Borrower 1)</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className={labelClass}>सह-कर्जदार १</label>
                         <CustomerSearchSelect
                           customers={members.filter((m: any) => {
                             const mCustId = m.customerID || m.id;
                             return formData.customerID ? mCustId !== formData.customerID : true;
                           })}
                           value={formData.coCustomerID ? Number(formData.coCustomerID) : ''}
-                          onChange={(val) => {
-                            setFormData(p => ({
-                              ...p,
-                              coCustomerID: val ? Number(val) : 0
-                            }));
-                          }}
-                          placeholder="-- सह-कर्जदार १ शोधा (CIF / नाव) --"
+                          onChange={(val) => setFormData(p => ({ ...p, coCustomerID: val ? Number(val) : 0 }))}
+                          placeholder="-- सह-कर्जदार १ निवडा --"
                         />
-                        {selectedCoMember1 && (
-                          <div className="p-1.5 bg-white border border-slate-200 rounded text-[10px] text-slate-700 flex justify-between items-center shadow-2xs">
-                            <span className="font-bold text-primary truncate">
-                              👤 {selectedCoMember1.firstName} {selectedCoMember1.lastName}
-                            </span>
-                            <span className="font-mono text-slate-500 font-bold ml-1 shrink-0">
-                              CIF: {selectedCoMember1.cifNo || (selectedCoMember1 as any).cif || '-'}
-                            </span>
-                          </div>
-                        )}
                       </div>
-
-                      <div className="space-y-1">
-                        <label className={labelClass}>सह-कर्जदार २ (Co-Borrower 2)</label>
+                      <div>
+                        <label className={labelClass}>सह-कर्जदार २</label>
                         <CustomerSearchSelect
                           customers={members.filter((m: any) => {
                             const mCustId = m.customerID || m.id;
@@ -1321,372 +1236,364 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                                    (formData.coCustomerID ? mCustId !== formData.coCustomerID : true);
                           })}
                           value={formData.coCustomer2ID ? Number(formData.coCustomer2ID) : ''}
-                          onChange={(val) => {
-                            setFormData(p => ({
-                              ...p,
-                              coCustomer2ID: val ? Number(val) : 0
-                            }));
-                          }}
-                          placeholder="-- सह-कर्जदार २ शोधा (CIF / नाव) --"
+                          onChange={(val) => setFormData(p => ({ ...p, coCustomer2ID: val ? Number(val) : 0 }))}
+                          placeholder="-- सह-कर्जदार २ निवडा --"
                         />
-                        {selectedCoMember2 && (
-                          <div className="p-1.5 bg-white border border-slate-200 rounded text-[10px] text-slate-700 flex justify-between items-center shadow-2xs">
-                            <span className="font-bold text-primary truncate">
-                              👤 {selectedCoMember2.firstName} {selectedCoMember2.lastName}
-                            </span>
-                            <span className="font-mono text-slate-500 font-bold ml-1 shrink-0">
-                              CIF: {selectedCoMember2.cifNo || (selectedCoMember2 as any).cif || '-'}
-                            </span>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Section 2: Loan Details & Repayment Rules */}
-            <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
-              <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1.5">
-                <Percent className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">२. कर्ज माहिती व परतफेड नियम (Loan Terms & Rates)</h2>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                <div className="sm:col-span-1">
-                  <label className={labelClass}>
-                    कर्ज प्रकार / योजना (Loan Scheme) <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    name="loanRateID"
-                    value={formData.loanRateID || ''}
-                    onChange={(e) => handleLoanRateChange(parseInt(e.target.value, 10))}
-                    className={inputClass}
-                    required
-                  >
-                    <option value="">-- कर्ज योजना निवडा --</option>
-                    {loanRates.filter(r => r.isActive).map(r => (
-                      <option key={r.loanRateID} value={r.loanRateID}>
-                        {r.shortName || r.loanType} ({r.interestRate}%)
-                      </option>
-                    ))}
-                  </select>
+              {/* Card 2: कर्ज माहिती व परतफेड नियम */}
+              <div className="bg-white p-2.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2 shadow-2xs">
+                <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1">
+                  <Percent className="w-3.5 h-3.5 text-primary" />
+                  <h2 className="text-xs font-bold text-primary">२. कर्ज माहिती व परतफेड नियम (Loan Terms & Rates)</h2>
                 </div>
 
-                <div>
-                  <label className={labelClass}>
-                    मागणी रक्कम (Requested ₹) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    ref={requestedAmountInputRef}
-                    type="number"
-                    name="requestedAmount"
-                    value={formData.requestedAmount || ''}
-                    onChange={handleInputChange}
-                    onFocus={(e) => e.target.select()}
-                    className={`${inputClass} font-bold text-emerald-700 font-mono`}
-                    min="1"
-                    required
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>
-                    व्याज दर (% p.a.) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    name="interestRate"
-                    value={formData.interestRate || ''}
-                    onChange={handleInputChange}
-                    className={`${inputClass} font-bold text-indigo-900 font-mono`}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-                <div>
-                  <label className={labelClass}>
-                    हप्ता प्रकार (Frequency) <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    name="installmentFrequency"
-                    value={formData.installmentFrequency}
-                    onChange={handleInputChange}
-                    className={inputClass}
-                  >
-                    {InstallmentFrequencies.map(f => (
-                      <option key={f} value={f}>{f}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={labelClass}>
-                    मुदत महिने (Duration) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    name="durationMonths"
-                    value={formData.durationMonths || ''}
-                    onChange={handleInputChange}
-                    className={`${inputClass} font-mono`}
-                    min="1"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>
-                    हप्ते संख्या (No of Inst) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    name="noOfInstallments"
-                    value={formData.noOfInstallments || ''}
-                    onChange={handleInputChange}
-                    className={`${inputClass} font-mono`}
-                    min="1"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-                <div>
-                  <div className="flex justify-between items-center mb-0.5">
+                <div className="grid grid-cols-12 gap-2">
+                  <div className="col-span-12 sm:col-span-7">
                     <label className={labelClass}>
-                      हप्ता रक्कम (Inst Amount ₹) <span className="text-red-500">*</span>
+                      कर्ज योजना (Scheme) <span className="text-red-500">*</span>
                     </label>
-                    {isInstAmountEdited && (
-                      <button
-                        type="button"
-                        onClick={handleResetInstAmount}
-                        title="ऑटो हप्ता रिसेट करा"
-                        className="text-[10px] text-primary hover:underline font-bold"
-                      >
-                        🔄 ऑटो रिसेट
-                      </button>
-                    )}
+                    <select
+                      name="loanRateID"
+                      value={formData.loanRateID || ''}
+                      onChange={(e) => handleLoanRateChange(parseInt(e.target.value, 10))}
+                      className={inputClass}
+                      required
+                    >
+                      <option value="">-- कर्ज योजना निवडा --</option>
+                      {loanRates.filter(r => r.isActive).map(r => (
+                        <option key={r.loanRateID} value={r.loanRateID}>
+                          {r.shortName || r.loanType} ({r.interestRate}%)
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <div className="flex gap-1">
+
+                  <div className="col-span-12 sm:col-span-5">
+                    <label className={labelClass}>
+                      मागणी रक्कम (Requested ₹) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      ref={requestedAmountInputRef}
+                      type="number"
+                      name="requestedAmount"
+                      value={formData.requestedAmount || ''}
+                      onChange={handleInputChange}
+                      onFocus={(e) => e.target.select()}
+                      className={`${inputClass} font-bold text-emerald-700 font-mono`}
+                      min="1"
+                      required
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-12 gap-2">
+                  <div className="col-span-4">
+                    <label className={labelClass}>
+                      व्याज दर (% p.a.) <span className="text-red-500">*</span>
+                    </label>
                     <input
                       type="number"
-                      name="installmentAmount"
-                      value={formData.installmentAmount || ''}
+                      step="0.01"
+                      name="interestRate"
+                      value={formData.interestRate || ''}
                       onChange={handleInputChange}
-                      className={`${inputClass} font-bold font-mono ${
-                        isInstAmountEdited ? 'text-purple-800 bg-purple-50/50 border-purple-300' : 'text-emerald-700'
-                      }`}
+                      className={`${inputClass} font-bold text-indigo-900 font-mono`}
                       required
                     />
-                    <button
-                      type="button"
-                      onClick={calculateSchedule}
-                      title="हप्ता पत्रक पहा (View Schedule)"
-                      className="bg-primary hover:opacity-90 text-white px-2.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap cursor-pointer transition-colors shadow-2xs flex items-center gap-1"
+                  </div>
+
+                  <div className="col-span-4">
+                    <label className={labelClass}>
+                      हप्ता प्रकार <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      name="installmentFrequency"
+                      value={formData.installmentFrequency}
+                      onChange={handleInputChange}
+                      className={inputClass}
                     >
-                      <span>📊 पत्रक</span>
-                    </button>
+                      {InstallmentFrequencies.map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="col-span-4">
+                    <label className={labelClass}>
+                      मुदत महिने <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      name="durationMonths"
+                      value={formData.durationMonths || ''}
+                      onChange={handleInputChange}
+                      className={`${inputClass} font-mono`}
+                      min="1"
+                      required
+                    />
                   </div>
                 </div>
 
-                <div>
-                  <label className={labelClass}>पहिले हप्ता दि. (First Due)</label>
-                  <input
-                    type="date"
-                    name="firstInstallmentDate"
-                    value={formData.firstInstallmentDate ? formData.firstInstallmentDate.split('T')[0] : ''}
-                    onChange={handleInputChange}
-                    className={inputClass}
-                  />
-                </div>
+                <div className="grid grid-cols-12 gap-2">
+                  <div className="col-span-4">
+                    <label className={labelClass}>
+                      हप्ते संख्या <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      name="noOfInstallments"
+                      value={formData.noOfInstallments || ''}
+                      onChange={handleInputChange}
+                      className={`${inputClass} font-mono`}
+                      min="1"
+                      required
+                    />
+                  </div>
 
-                <div>
-                  <label className={labelClass}>परतफेड दि. (Maturity)</label>
-                  <input
-                    type="date"
-                    name="maturityDate"
-                    value={formData.maturityDate ? formData.maturityDate.split('T')[0] : ''}
-                    onChange={handleInputChange}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              {/* Director Recommendation */}
-              <div className="pt-1.5 border-t border-gray-100">
-                <label className={labelClass}>संचालक शिफारस (Director Recommendation)</label>
-                <CustomerSearchSelect
-                  customers={members}
-                  value={formData.recommendedByDirectorID ? Number(formData.recommendedByDirectorID) : ''}
-                  onChange={(val) => setFormData(p => ({ ...p, recommendedByDirectorID: val ? Number(val) : 0 }))}
-                  placeholder="-- संचालक शिफारस खातेदार शोधा (CIF / नाव) --"
-                />
-                {directorSummary && (
-                  <div className="mt-1 p-1.5 bg-purple-50/70 border border-purple-200 rounded-sm text-[10px] text-purple-900 flex justify-between items-center shadow-2xs">
-                    <div>
-                      <span>👔 <b>{directorSummary.activeRecommendedLoansCount}</b> चालू शिफारस कर्जे | <b>{directorSummary.pendingRecommendedAppsCount}</b> अर्ज</span>
-                      <span className="ml-2 font-mono text-purple-950 font-bold">बाकी: ₹{(directorSummary.totalRecommendedCurrentBalance || 0).toLocaleString('en-IN')}</span>
+                  <div className="col-span-8">
+                    <div className="flex justify-between items-center mb-0.5">
+                      <label className={labelClass}>
+                        हप्ता रक्कम (Inst ₹) <span className="text-red-500">*</span>
+                      </label>
+                      {isInstAmountEdited && (
+                        <button
+                          type="button"
+                          onClick={handleResetInstAmount}
+                          title="ऑटो हप्ता रिसेट करा"
+                          className="text-[9.5px] text-primary hover:underline font-bold"
+                        >
+                          🔄 रिसेट
+                        </button>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDirectorForModal(directorSummary)}
-                      className="px-1.5 py-0.5 bg-purple-200 hover:bg-purple-300 text-purple-950 rounded text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>तपशील</span>
-                    </button>
+                    <div className="flex gap-1">
+                      <input
+                        type="number"
+                        name="installmentAmount"
+                        value={formData.installmentAmount || ''}
+                        onChange={handleInputChange}
+                        className={`${inputClass} font-bold font-mono ${
+                          isInstAmountEdited ? 'text-purple-800 bg-purple-50/50 border-purple-300' : 'text-emerald-700'
+                        }`}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={calculateSchedule}
+                        title="हप्ता वेळापत्रक पत्रक पहा (View Schedule)"
+                        className="bg-primary hover:opacity-90 text-white px-2 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap cursor-pointer transition-colors shadow-2xs flex items-center gap-1 shrink-0"
+                      >
+                        <span>📊 पत्रक</span>
+                      </button>
+                    </div>
                   </div>
-                )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={labelClass}>पहिले हप्ता दि. (First Due)</label>
+                    <input
+                      type="date"
+                      name="firstInstallmentDate"
+                      value={formData.firstInstallmentDate ? formData.firstInstallmentDate.split('T')[0] : ''}
+                      onChange={handleInputChange}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>परतफेड दि. (Maturity)</label>
+                    <input
+                      type="date"
+                      name="maturityDate"
+                      value={formData.maturityDate ? formData.maturityDate.split('T')[0] : ''}
+                      onChange={handleInputChange}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
               </div>
+
             </div>
 
-            {/* Section 3: Guarantors & Collateral Security (Styled in primary/5) */}
-            <div className="bg-primary/5 p-3.5 rounded-sm border border-primary/20 space-y-2.5">
-              <div className="flex items-center gap-1.5 border-b border-primary/20 pb-1.5">
-                <ShieldCheck className="w-4 h-4 text-primary" />
-                <h2 className="text-xs font-bold text-primary">३. जामीनदार व तारण तपशील (Guarantors & Collateral Security)</h2>
-              </div>
+            {/* =================================================================== */}
+            {/* RIGHT COLUMN: जामीनदार, तारण व शिफारस                               */}
+            {/* =================================================================== */}
+            <div className="space-y-2.5">
+              
+              {/* Card 3: जामीनदार तपशील */}
+              <div className="bg-primary/5 p-2.5 rounded-sm border border-primary/20 space-y-2 shadow-2xs">
+                <div className="flex items-center gap-1.5 border-b border-primary/20 pb-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                  <h2 className="text-xs font-bold text-primary">३. जामीनदार तपशील (Guarantor Details)</h2>
+                </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <label className={labelClass}>जामीनदार १ (Guarantor 1)</label>
-                  <CustomerSearchSelect
-                    customers={members.filter((m: any) => {
-                      const mCustId = m.customerID || m.id;
-                      return formData.customerID ? mCustId !== formData.customerID : true;
-                    })}
-                    value={formData.guarantor1CustomerID ? Number(formData.guarantor1CustomerID) : ''}
-                    onChange={(val) => {
-                      setFormData(p => ({
-                        ...p,
-                        guarantor1CustomerID: val ? Number(val) : 0
-                      }));
-                    }}
-                    placeholder="-- जामीनदार १ शोधा (CIF / नाव) --"
-                  />
-                  {guarantor1Summary && (
-                    <div className="mt-1 p-1.5 bg-amber-50 border border-amber-300 rounded-sm text-[10px] text-amber-900 flex justify-between items-center shadow-2xs">
-                      <div>
-                        <span>🛡️ <b>{guarantor1Summary.activeGuaranteedLoansCount}</b> चालू जामीन | <b>{guarantor1Summary.pendingGuaranteedAppsCount}</b> अर्ज</span>
-                        <span className="ml-2 font-mono text-amber-950 font-bold">बाकी: ₹{(guarantor1Summary.totalCurrentBalance || 0).toLocaleString('en-IN')}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className={labelClass}>जामीनदार १ (Guarantor 1)</label>
+                    <CustomerSearchSelect
+                      customers={members.filter((m: any) => {
+                        const mCustId = m.customerID || m.id;
+                        return formData.customerID ? mCustId !== formData.customerID : true;
+                      })}
+                      value={formData.guarantor1CustomerID ? Number(formData.guarantor1CustomerID) : ''}
+                      onChange={(val) => {
+                        setFormData(p => ({
+                          ...p,
+                          guarantor1CustomerID: val ? Number(val) : 0
+                        }));
+                      }}
+                      placeholder="-- जामीनदार १ शोधा --"
+                    />
+                    {guarantor1Summary && (
+                      <div className="mt-1 p-1 bg-amber-50 border border-amber-300 rounded text-[9.5px] text-amber-900 flex justify-between items-center shadow-2xs">
+                        <span>🛡️ <b>{guarantor1Summary.activeGuaranteedLoansCount}</b> चालू जामीन | बाकी: ₹{(guarantor1Summary.totalCurrentBalance || 0).toLocaleString('en-IN')}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedGuarantorForModal(guarantor1Summary)}
+                          className="px-1 py-0.2 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded text-[9px] font-bold cursor-pointer"
+                        >
+                          तपशील
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedGuarantorForModal(guarantor1Summary)}
-                        className="px-1.5 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
-                      >
-                        <Eye className="w-3 h-3" />
-                        <span>तपशील</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className={labelClass}>जामीनदार २ (Guarantor 2)</label>
-                  <CustomerSearchSelect
-                    customers={members.filter((m: any) => {
-                      const mCustId = m.customerID || m.id;
-                      return (formData.customerID ? mCustId !== formData.customerID : true) &&
-                             (formData.guarantor1CustomerID ? mCustId !== formData.guarantor1CustomerID : true);
-                    })}
-                    value={formData.guarantor2CustomerID ? Number(formData.guarantor2CustomerID) : ''}
-                    onChange={(val) => {
-                      setFormData(p => ({
-                        ...p,
-                        guarantor2CustomerID: val ? Number(val) : 0
-                      }));
-                    }}
-                    placeholder="-- जामीनदार २ शोधा (CIF / नाव) --"
-                  />
-                  {guarantor2Summary && (
-                    <div className="mt-1 p-1.5 bg-amber-50 border border-amber-300 rounded-sm text-[10px] text-amber-900 flex justify-between items-center shadow-2xs">
-                      <div>
-                        <span>🛡️ <b>{guarantor2Summary.activeGuaranteedLoansCount}</b> चालू जामीन | <b>{guarantor2Summary.pendingGuaranteedAppsCount}</b> अर्ज</span>
-                        <span className="ml-2 font-mono text-amber-950 font-bold">बाकी: ₹{(guarantor2Summary.totalCurrentBalance || 0).toLocaleString('en-IN')}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedGuarantorForModal(guarantor2Summary)}
-                        className="px-1.5 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
-                      >
-                        <Eye className="w-3 h-3" />
-                        <span>तपशील</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 border-t border-primary/10">
-                <div>
-                  <label className={labelClass}>तारण तपशील (Security Details)</label>
-                  <SearchableSelect
-                    options={secOptions}
-                    value={formData.securityDetails || ''}
-                    onChange={(e: any) => setFormData(p => ({ ...p, securityDetails: e.target.value }))}
-                    placeholder="-- तारण प्रकार निवडा --"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-0.5">
-                    <label className={labelClass}>तारण मूल्य (Security Value ₹)</label>
-                    <div className="flex items-center gap-1">
-                      {(() => {
-                        const curRate = loanRates.find(r => r.loanRateID === formData.loanRateID);
-                        const isDepScheme = curRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(curRate.collateralCategory || '');
-                        if (!isDepScheme) return null;
-                        return (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!formData.customerID) {
-                                alert('कृपया आधी मुख्य कर्जदार ग्राहक (Customer) निवडा.');
-                                return;
-                              }
-                              setShowDepositModal(true);
-                            }}
-                            className="text-[10px] text-emerald-950 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-emerald-100/90 px-2 py-0.5 rounded border border-emerald-400 shadow-2xs"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
-                            <span>
-                              {curRate?.collateralCategory === 'FixedDeposit' 
-                                ? 'FD ठेव निवडा' 
-                                : curRate?.collateralCategory === 'PigmyDeposit' 
-                                  ? 'पिग्मी ठेव निवडा' 
-                                  : curRate?.collateralCategory === 'RecurringDeposit'
-                                    ? 'RD ठेव निवडा'
-                                    : 'बचत ठेव निवडा'}
-                            </span>
-                          </button>
-                        );
-                      })()}
-                      <button
-                        type="button"
-                        onClick={() => setShowGoldModal(true)}
-                        className="text-[10px] text-amber-900 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-amber-100/80 px-1.5 py-0.2 rounded border border-amber-300"
-                      >
-                        <Sparkles className="w-3 h-3 text-amber-700" />
-                        <span>सुवर्ण तारण</span>
-                      </button>
-                    </div>
+                    )}
                   </div>
-                  <input
-                    type="number"
-                    name="securityValue"
-                    value={formData.securityValue || ''}
-                    onChange={handleInputChange}
-                    className={`${inputClass} font-mono font-bold text-amber-900`}
-                    min="0"
-                    placeholder="0.00"
+
+                  <div>
+                    <label className={labelClass}>जामीनदार २ (Guarantor 2)</label>
+                    <CustomerSearchSelect
+                      customers={members.filter((m: any) => {
+                        const mCustId = m.customerID || m.id;
+                        return (formData.customerID ? mCustId !== formData.customerID : true) &&
+                               (formData.guarantor1CustomerID ? mCustId !== formData.guarantor1CustomerID : true);
+                      })}
+                      value={formData.guarantor2CustomerID ? Number(formData.guarantor2CustomerID) : ''}
+                      onChange={(val) => {
+                        setFormData(p => ({
+                          ...p,
+                          guarantor2CustomerID: val ? Number(val) : 0
+                        }));
+                      }}
+                      placeholder="-- जामीनदार २ शोधा --"
+                    />
+                    {guarantor2Summary && (
+                      <div className="mt-1 p-1 bg-amber-50 border border-amber-300 rounded text-[9.5px] text-amber-900 flex justify-between items-center shadow-2xs">
+                        <span>🛡️ <b>{guarantor2Summary.activeGuaranteedLoansCount}</b> चालू जामीन | बाकी: ₹{(guarantor2Summary.totalCurrentBalance || 0).toLocaleString('en-IN')}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedGuarantorForModal(guarantor2Summary)}
+                          className="px-1 py-0.2 bg-amber-200 hover:bg-amber-300 text-amber-950 rounded text-[9px] font-bold cursor-pointer"
+                        >
+                          तपशील
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 4: तारण, शिफारस व कारण */}
+              <div className="bg-white p-2.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2 shadow-2xs">
+                <div className="flex items-center gap-1.5 border-b border-gray-200 pb-1">
+                  <Landmark className="w-3.5 h-3.5 text-primary" />
+                  <h2 className="text-xs font-bold text-primary">४. तारण, शिफारस व कारण (Security & Details)</h2>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className={labelClass}>तारण तपशील (Security Details)</label>
+                    <SearchableSelect
+                      options={secOptions}
+                      value={formData.securityDetails || ''}
+                      onChange={(e: any) => setFormData(p => ({ ...p, securityDetails: e.target.value }))}
+                      placeholder="-- तारण प्रकार निवडा --"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className={labelClass}>तारण मूल्य (Security ₹)</label>
+                      <div className="flex items-center gap-1">
+                        {(() => {
+                          const curRate = loanRates.find(r => r.loanRateID === formData.loanRateID);
+                          const isDepScheme = curRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(curRate.collateralCategory || '');
+                          if (!isDepScheme) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!formData.customerID) {
+                                  alert('कृपया आधी मुख्य कर्जदार ग्राहक (Customer) निवडा.');
+                                  return;
+                                }
+                                setShowDepositModal(true);
+                              }}
+                              className="text-[9.5px] text-emerald-950 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-emerald-100/90 px-1.5 py-0.2 rounded border border-emerald-400 shadow-2xs"
+                            >
+                              <ShieldCheck className="w-3 h-3 text-emerald-700" />
+                              <span>
+                                {curRate?.collateralCategory === 'FixedDeposit' 
+                                  ? 'FD ठेव' 
+                                  : curRate?.collateralCategory === 'PigmyDeposit' 
+                                    ? 'पिग्मी' 
+                                    : curRate?.collateralCategory === 'RecurringDeposit'
+                                      ? 'RD ठेव'
+                                      : 'बचत ठेव'}
+                              </span>
+                            </button>
+                          );
+                        })()}
+                        <button
+                          type="button"
+                          onClick={() => setShowGoldModal(true)}
+                          className="text-[9.5px] text-amber-900 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-amber-100/80 px-1.5 py-0.2 rounded border border-amber-300"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-700" />
+                          <span>सुवर्ण</span>
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="number"
+                      name="securityValue"
+                      value={formData.securityValue || ''}
+                      onChange={handleInputChange}
+                      className={`${inputClass} font-mono font-bold text-amber-900`}
+                      min="0"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className={labelClass}>संचालक शिफारस (Director Recommendation)</label>
+                  <CustomerSearchSelect
+                    customers={members}
+                    value={formData.recommendedByDirectorID ? Number(formData.recommendedByDirectorID) : ''}
+                    onChange={(val) => setFormData(p => ({ ...p, recommendedByDirectorID: val ? Number(val) : 0 }))}
+                    placeholder="-- संचालक शिफारस खातेदार निवडा --"
                   />
+                  {directorSummary && (
+                    <div className="mt-1 p-1 bg-purple-50/70 border border-purple-200 rounded text-[9.5px] text-purple-900 flex justify-between items-center shadow-2xs">
+                      <div>
+                        <span>👔 <b>{directorSummary.activeRecommendedLoansCount}</b> चालू शिफारस कर्जे | <b>{directorSummary.pendingRecommendedAppsCount}</b> अर्ज</span>
+                        <span className="ml-2 font-mono text-purple-950 font-bold">बाकी: ₹{(directorSummary.totalRecommendedCurrentBalance || 0).toLocaleString('en-IN')}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDirectorForModal(directorSummary)}
+                        className="px-1.5 py-0.2 bg-purple-200 hover:bg-purple-300 text-purple-950 rounded text-[9px] font-bold cursor-pointer"
+                      >
+                        तपशील
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1701,78 +1608,94 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                   />
                 </div>
               </div>
+
             </div>
 
-            {/* Form Action Buttons Bar */}
-            <div className="pt-2 flex flex-wrap justify-between items-center gap-2 border-t border-gray-200">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowListModal(true)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5"
-                >
-                  <Layers className="w-3.5 h-3.5 text-slate-600" />
-                  <span>कर्ज अर्ज यादी ({applications.length})</span>
-                </button>
-                
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!showSchedule) {
-                      calculateSchedule();
-                    } else {
-                      setShowSchedule(false);
-                    }
-                  }}
-                  className={`px-3 py-1.5 font-bold rounded-sm text-xs border cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all ${
-                    showSchedule 
-                      ? 'bg-primary text-white border-primary shadow-xs' 
-                      : 'bg-primary/10 hover:bg-primary/20 text-primary border-primary/20'
-                  }`}
-                  title={showSchedule ? "हप्ता वेळापत्रक पत्रक लपवा" : "हप्ता वेळापत्रक पत्रक उघडा"}
-                >
-                  <Calculator className="w-3.5 h-3.5" />
-                  <span>{showSchedule ? 'हप्ता पत्रक लपवा' : '📊 वेळापत्रक पत्रक'}</span>
-                </button>
-              </div>
+          </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleResetForm}
-                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>{isEditing ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className={`px-6 py-1.5 ${
-                    isEditing ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary hover:opacity-90'
-                  } text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all`}
-                >
-                  <Save className="w-4 h-4" />
-                  <span>
-                    {loading
-                      ? 'जतन होत आहे...'
-                      : isEditing
-                      ? 'बदल सेव्ह करा (Update)'
-                      : onNext
-                      ? 'कर्ज अर्ज सेव्ह करा व पुढे जा (Save & Proceed)'
-                      : 'कर्ज अर्ज सेव्ह करा (Save Application)'}
-                  </span>
-                </button>
-              </div>
+          {/* Form Action Buttons Bar (Full Width) */}
+          <div className="pt-2 flex flex-wrap justify-between items-center gap-2 border-t border-gray-200 bg-slate-50/60 -mx-2.5 sm:-mx-3 -mb-2.5 sm:-mb-3 p-2 rounded-b-sm">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  fetchData();
+                  setShowListModal(true);
+                }}
+                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5"
+              >
+                <Layers className="w-3.5 h-3.5 text-slate-600" />
+                <span>कर्ज अर्ज यादी ({applications.length})</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => {
+                  if (!showSchedule) {
+                    calculateSchedule();
+                  } else {
+                    setShowSchedule(false);
+                  }
+                }}
+                className={`px-3 py-1.5 font-bold rounded-sm text-xs border cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all ${
+                  showSchedule 
+                    ? 'bg-primary text-white border-primary shadow-xs' 
+                    : 'bg-primary/10 hover:bg-primary/20 text-primary border-primary/20'
+                }`}
+                title={showSchedule ? "हप्ता वेळापत्रक पत्रक लपवा" : "हप्ता वेळापत्रक पत्रक उघडा"}
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                <span>{showSchedule ? 'हप्ता पत्रक बंद' : '📊 वेळापत्रक पत्रक'}</span>
+              </button>
             </div>
 
-          </form>
-        </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleResetForm}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{isEditing ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
+              </button>
 
-        {/* Right Live Installment Schedule Preview (Displayed only on-demand when showSchedule is true) */}
-        {showSchedule && (
-          <div className="w-full lg:w-5/12 bg-white p-3.5 rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary sticky top-2 min-h-[480px] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+              <button
+                type="submit"
+                disabled={loading}
+                className={`px-6 py-1.5 ${
+                  isEditing ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary hover:opacity-90'
+                } text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all`}
+              >
+                <Save className="w-4 h-4" />
+                <span>
+                  {loading
+                    ? 'जतन होत आहे...'
+                    : isEditing
+                    ? 'बदल सेव्ह करा (Update)'
+                    : onNext
+                    ? 'कर्ज अर्ज सेव्ह करा व पुढे जा (Save & Proceed)'
+                    : 'कर्ज अर्ज सेव्ह करा (Save Application)'}
+                </span>
+              </button>
+            </div>
+          </div>
+
+        </form>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SLIDE-OVER DRAWER: LIVE INSTALLMENT SCHEDULE (Non-Disruptive View)        */}
+      {/* ========================================================================= */}
+      {showSchedule && (
+        <div className="fixed inset-0 z-50 overflow-hidden flex justify-end animate-in fade-in duration-150">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-2xs transition-opacity cursor-pointer" 
+            onClick={() => setShowSchedule(false)} 
+          />
+          
+          {/* Slide-over Drawer Panel */}
+          <div className="relative w-full max-w-lg md:max-w-xl bg-white shadow-2xl border-l border-slate-300 flex flex-col z-10 animate-in slide-in-from-right duration-200 h-full p-3.5">
             <div className="flex items-center justify-between border-b border-gray-200 pb-2 mb-2">
               <div className="flex items-center gap-1.5">
                 <Calendar className="w-4 h-4 text-primary" />
@@ -1788,15 +1711,15 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                   type="button"
                   onClick={() => setShowSchedule(false)}
                   className="text-gray-400 hover:text-gray-700 hover:bg-slate-100 p-1 rounded-sm transition-colors cursor-pointer"
-                  title="पत्रक लपवा (Hide Schedule)"
+                  title="पत्रक बंद करा (Close)"
                 >
-                  <X size={16} />
+                  <X size={18} />
                 </button>
               </div>
             </div>
 
             {/* Mini Summary Banner */}
-            <div className="grid grid-cols-3 gap-1 text-[10px] bg-primary/5 p-2 rounded-sm border border-primary/20 mb-1.5">
+            <div className="grid grid-cols-3 gap-1 text-[10px] bg-primary/5 p-2 rounded-sm border border-primary/20 mb-2">
               <div>
                 <span className="text-gray-500 block">मागणी रक्कम:</span>
                 <span className="font-bold text-gray-900 font-mono">₹{(formData.requestedAmount || 0).toLocaleString('en-IN')}</span>
@@ -1835,7 +1758,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
             {scheduleData.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-400 bg-slate-50/50 rounded border border-dashed border-gray-200">
                 <Calculator className="w-8 h-8 text-gray-300 mb-2 stroke-[1.5]" />
-                <p className="text-xs font-semibold text-gray-600">हप्ता पत्रक तयार करण्यासाठी डावीकडील कर्ज रक्कम व माहिती भरा.</p>
+                <p className="text-xs font-semibold text-gray-600">हप्ता पत्रक तयार करण्यासाठी कर्ज रक्कम व माहिती भरा.</p>
                 <button
                   type="button"
                   onClick={calculateSchedule}
@@ -1845,7 +1768,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                 </button>
               </div>
             ) : (
-              <div className="flex-1 overflow-auto max-h-[58vh] border border-gray-200 rounded-sm">
+              <div className="flex-1 overflow-auto border border-gray-200 rounded-sm">
                 <table className="w-full text-left border-collapse text-[10px]">
                   <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
                     <tr>
@@ -1892,9 +1815,8 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
               </div>
             )}
           </div>
-        )}
-
-      </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* POP-UP MODAL 1: LOAN APPLICATIONS LIST                                   */}

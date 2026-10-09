@@ -40,6 +40,8 @@ export default function PigmyOpeningBalance() {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
   const [successModalData, setSuccessModalData] = useState<any | null>(null);
+  const [glRecon, setGlRecon] = useState<any | null>(null);
+  const [reconciling, setReconciling] = useState(false);
 
   const formContainerRef = useRef<HTMLDivElement>(null);
   const balanceInputRef = useRef<HTMLInputElement>(null);
@@ -61,7 +63,33 @@ export default function PigmyOpeningBalance() {
   useEffect(() => {
     fetchMasters();
     fetchMigratedAccounts();
+    fetchGlReconciliation();
   }, []);
+
+  const fetchGlReconciliation = async () => {
+    try {
+      setReconciling(true);
+      const res = await axios.get('/api/PigmyAccounts/GlReconciliation');
+      if (res.data) setGlRecon(res.data);
+    } catch (error) {
+      console.error('Failed to fetch Pigmy GL reconciliation', error);
+    } finally {
+      setReconciling(false);
+    }
+  };
+
+  const handleSyncAllGl = async () => {
+    try {
+      setReconciling(true);
+      const res = await axios.post('/api/PigmyAccounts/SyncAllGlOpeningBalances');
+      toast.success(res.data?.message || 'पिग्मी खतावणी यशस्वीरीत्या सिंक झाली!');
+      await Promise.all([fetchGlReconciliation(), fetchMigratedAccounts()]);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'सिंक करताना त्रुटी आली.');
+    } finally {
+      setReconciling(false);
+    }
+  };
 
   const computeAsOfDateFromStartDate = (startDateStr: string): string => {
     if (!startDateStr) return '';
@@ -190,6 +218,7 @@ export default function PigmyOpeningBalance() {
       await axios.delete(`/api/PigmyAccounts/${id}?force=true`);
       toast.success(`पिग्मी खाते '${accNo}' यशस्वीरीत्या डिलीट झाले.`);
       fetchMigratedAccounts();
+      fetchGlReconciliation();
       if (editingAccountId === id) {
         resetForm();
       }
@@ -288,6 +317,7 @@ export default function PigmyOpeningBalance() {
 
       resetForm();
       fetchMigratedAccounts();
+      fetchGlReconciliation();
     } catch (error: any) {
       console.error('Error migrating account', error);
       const errMsg = error.response?.data?.message || error.response?.data || 'खाते स्थलांतर करताना त्रुटी आली.';
@@ -460,6 +490,55 @@ export default function PigmyOpeningBalance() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Real-time GL Reconciliation Banner */}
+      <div className={`p-3 rounded-sm border shadow-xs mb-3 flex flex-wrap items-center justify-between gap-3 ${
+        glRecon?.summary?.status === 'Reconciled' 
+          ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950' 
+          : 'bg-amber-50/80 border-amber-300 text-amber-950'
+      }`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white shadow-xs ${
+            glRecon?.summary?.status === 'Reconciled' ? 'bg-emerald-600' : 'bg-amber-600 animate-pulse'
+          }`}>
+            {glRecon?.summary?.status === 'Reconciled' ? '✓' : '!'}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-xs tracking-tight">
+                🏛️ मुख्य खतावणी व ताळेबंद ताळमेळ (GL & Balance Sheet Reconciliation):
+              </span>
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border shadow-2xs ${
+                glRecon?.summary?.status === 'Reconciled'
+                  ? 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                  : 'bg-amber-100 text-amber-900 border-amber-400'
+              }`}>
+                {glRecon?.summary?.status === 'Reconciled' ? 'पूर्णतः जुळले (Reconciled) ✅' : 'तफावत (Pending)'}
+              </span>
+            </div>
+            <div className="text-[11px] font-medium opacity-90 mt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span>उप-खाती एकूण: <b>₹{Number(glRecon?.summary?.slTotalMigratedBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Cr</b></span>
+              <span>•</span>
+              <span>मुख्य खतावणी (GL): <b>₹{Number(glRecon?.summary?.glLiabilityOpeningBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Cr</b></span>
+              <span>•</span>
+              <span>तफावत: <b>₹{Number(glRecon?.summary?.difference || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b></span>
+              <span>•</span>
+              <span className="italic text-gray-600">{glRecon?.summary?.statusMessage || 'सर्व योजनांचा ताळमेळ सक्रिय आहे.'}</span>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSyncAllGl}
+          disabled={reconciling}
+          className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-sm text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+          title="सर्व पिग्मी योजनांची मुख्य खतावणी (GL) तेरीज व ताळेबंदशी पुन्हा ताडून सिंक करा"
+        >
+          <RotateCcw className={`w-3.5 h-3.5 ${reconciling ? 'animate-spin text-primary' : ''}`} />
+          <span>{reconciling ? 'सिंक होत आहे...' : '🔄 खतावणी रि-सिंक करा'}</span>
+        </button>
       </div>
 
       {/* MAIN SINGLE UNIFIED FORM */}

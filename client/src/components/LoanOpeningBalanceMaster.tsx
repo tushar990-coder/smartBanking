@@ -41,14 +41,6 @@ interface Customer {
   mobileNo?: string;
 }
 
-interface Member {
-  memberID: number;
-  firstName: string;
-  middleName: string;
-  lastName: string;
-  cifNo: string;
-}
-
 interface LoanRate {
   loanRateID: number;
   loanType: string;
@@ -74,10 +66,11 @@ interface LoanOpeningBalance {
     branchCode: string;
   };
   customerID?: number;
-  memberID?: number;
   loanRateID: number;
   loanAccountNo: string;
   legacyAccountNumber?: string;
+  isOpeningBalance?: boolean;
+  status?: string;
   
   purePrincipalBalance?: number;
   capitalizedInterestAmount?: number;
@@ -108,7 +101,6 @@ interface LoanOpeningBalance {
   depositCollaterals?: any[];
 
   customer?: Customer;
-  member?: Member;
   loanRate?: LoanRate;
 }
 
@@ -168,7 +160,6 @@ const getDisbursedAmt = (b: any): number => {
 
 export default function LoanOpeningBalanceMaster() {
   const [allAccounts, setAllAccounts] = useState<LoanOpeningBalance[]>([]);
-  const [showAllLoans, setShowAllLoans] = useState(false);
   const [showListModal, setShowListModal] = useState(false);
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [showGoldModal, setShowGoldModal] = useState(false);
@@ -282,13 +273,13 @@ export default function LoanOpeningBalanceMaster() {
     }));
     setShowGoldModal(false);
   };
-  const [members, setMembers] = useState<Member[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loanRates, setLoanRates] = useState<LoanRate[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [installmentChart, setInstallmentChart] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [loanFilterType, setLoanFilterType] = useState<'all' | 'opening' | 'regular'>('all');
   const [cutoffDate, setCutoffDate] = useState<string>('2025-03-31');
   const [firstFyInfo, setFirstFyInfo] = useState<{ yearCode?: string, startDate?: string } | null>(null);
   const formContainerRef = useRef<HTMLDivElement>(null);
@@ -309,11 +300,26 @@ export default function LoanOpeningBalanceMaster() {
   const [glRecon, setGlRecon] = useState<GlReconciliationResponse | null>(null);
   const [isLoadingRecon, setIsLoadingRecon] = useState<boolean>(false);
   const [showReconBreakdown, setShowReconBreakdown] = useState<boolean>(false);
+  const [isSyncingGl, setIsSyncingGl] = useState<boolean>(false);
+
+  const handleSyncAllGlBalances = async () => {
+    if (!window.confirm('सर्व कर्ज योजनांची मुख्य खतावणी (GL) आरंभिक शिल्लक उप-खात्यांनुसार सिंक करावी का? यामुळे तेरीज पत्रक व ताळेबंद अचूक जुळेल.')) return;
+    try {
+      setIsSyncingGl(true);
+      const res = await axios.post('/api/LoanAccounts/SyncAllGlOpeningBalances');
+      alert(res.data?.message || 'सर्व खतावणी शिल्लक यशस्वीरित्या सिंक झाली!');
+      fetchBalances();
+      fetchGlReconciliation(formData.branchID, formData.loanRateID);
+    } catch (err: any) {
+      alert('सिंक करताना त्रुटी आली: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setIsSyncingGl(false);
+    }
+  };
   const [formData, setFormData] = useState({
     loanOpeningBalanceID: 0,
     branchID: '1',
     customerID: '',
-    memberID: '',
     loanRateID: '',
     loanAccountNo: '',
     legacyAccountNumber: '',
@@ -348,7 +354,6 @@ export default function LoanOpeningBalanceMaster() {
   const API_URL = '/api/LoanAccounts/OpeningBalance';
   const GET_API_URL = '/api/LoanAccounts';
   const CUSTOMERS_API = '/api/Customers';
-  const MEMBERS_API = '/api/Members';
   const LOAN_RATES_API = '/api/LoanRates';
   const BRANCHES_API = '/api/Branches';
   const FINANCIAL_YEARS_API = '/api/FinancialYears';
@@ -357,7 +362,6 @@ export default function LoanOpeningBalanceMaster() {
     fetchFinancialYears();
     fetchBalances();
     fetchCustomers();
-    fetchMembers();
     fetchLoanRates();
     fetchBranches();
     fetchNextAccountNo();
@@ -503,14 +507,18 @@ export default function LoanOpeningBalanceMaster() {
     }
   };
 
-  const balances = showAllLoans 
-    ? allAccounts 
-    : allAccounts.filter((d: any) => d.isOpeningBalance === true);
+  const balances = loanFilterType === 'opening'
+    ? allAccounts.filter((d: any) => d.isOpeningBalance === true)
+    : (loanFilterType === 'regular' 
+        ? allAccounts.filter((d: any) => d.isOpeningBalance !== true) 
+        : allAccounts);
 
   const filteredBalances = balances.filter(balance => {
     const term = searchTerm.toLowerCase();
-    const customerName = `${balance.customer?.firstName || balance.member?.firstName || ''} ${balance.customer?.lastName || balance.member?.lastName || ''}`.toLowerCase();
-    const cifNo = (balance.customer?.cifNo || balance.member?.cifNo || '').toLowerCase();
+    const customerName = (balance.customer 
+      ? `${balance.customer.firstName || ''} ${balance.customer.lastName || ''}` 
+      : '').toLowerCase();
+    const cifNo = (balance.customer?.cifNo || '').toLowerCase();
     const loanAccountNo = (balance.loanAccountNo || '').toLowerCase();
     const oldAccountNo = (balance.legacyAccountNumber || '').toLowerCase();
     return customerName.includes(term) || cifNo.includes(term) || loanAccountNo.includes(term) || oldAccountNo.includes(term);
@@ -539,18 +547,6 @@ export default function LoanOpeningBalanceMaster() {
       }
     } catch (error) {
       console.error("Error fetching customers", error);
-    }
-  };
-
-  const fetchMembers = async () => {
-    try {
-      const response = await fetch(MEMBERS_API);
-      if (response.ok) {
-        const data = await response.json();
-        setMembers(data);
-      }
-    } catch (error) {
-      console.error("Error fetching members", error);
     }
   };
 
@@ -958,7 +954,6 @@ export default function LoanOpeningBalanceMaster() {
       loanOpeningBalanceID: 0,
       branchID: '1',
       customerID: '',
-      memberID: '',
       loanRateID: '',
       loanAccountNo: '',
       legacyAccountNumber: '',
@@ -1006,7 +1001,7 @@ export default function LoanOpeningBalanceMaster() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!formData.customerID && !formData.memberID) || !formData.loanRateID || !formData.loanAccountNo) {
+    if (!formData.customerID || !formData.loanRateID || !formData.loanAccountNo) {
         alert("कृपया कर्जदार खातेदार व आवश्यक माहिती भरा!");
         return;
     }
@@ -1067,8 +1062,7 @@ export default function LoanOpeningBalanceMaster() {
         legacyAccountNumber: formData.legacyAccountNumber || null,
         loanOpeningBalanceID: isEditing ? formData.loanOpeningBalanceID : 0,
         branchID: parseInt(formData.branchID),
-        customerID: formData.customerID ? parseInt(formData.customerID) : null,
-        memberID: formData.memberID ? parseInt(formData.memberID) : null,
+        customerID: parseInt(formData.customerID),
         loanRateID: parseInt(formData.loanRateID),
         
         purePrincipalBalance: parseFloat(formData.purePrincipalBalance || formData.principalBalance || '0'),
@@ -1167,8 +1161,9 @@ export default function LoanOpeningBalanceMaster() {
       });
 
       if (response.ok) {
-        alert(isEditMode ? 'कर्ज खाते यशस्वीरित्या अद्यतनित (Updated) झाले!' : 'नवीन कर्ज आरंभिक शिल्लक यशस्वीरित्या नोंदवली (Saved) गेली!');
+        alert(isEditMode ? 'कर्ज खाते यशस्वीरित्या अद्यतनित (Updated) झाले असून मुख्य खतावणी (GL) शिल्लक तेरीज व ताळेबंदशी सिंक झाली आहे!' : 'नवीन कर्ज आरंभिक शिल्लक यशस्वीरित्या नोंदवली गेली असून मुख्य खतावणीत (GL) तेरीज व ताळेबंदसाठी शिल्लक थेट जोडली गेली आहे!');
         fetchBalances();
+        fetchGlReconciliation(formData.branchID, formData.loanRateID);
         handleNew();
       } else {
         const errText = await response.text();
@@ -1192,7 +1187,6 @@ export default function LoanOpeningBalanceMaster() {
       loanOpeningBalanceID: balance.loanOpeningBalanceID || balance.loanAccountID,
       branchID: balance.branchID.toString(),
       customerID: custId ? custId.toString() : '',
-      memberID: balance.memberID ? balance.memberID.toString() : '',
       loanRateID: balance.loanRateID.toString(),
       loanAccountNo: balance.loanAccountNo,
       legacyAccountNumber: balance.legacyAccountNumber || '',
@@ -1281,8 +1275,9 @@ export default function LoanOpeningBalanceMaster() {
           method: 'DELETE'
         });
         if(response.ok) {
-          alert('खाते यशस्वीरित्या डिलीट झाले!');
+          alert('खाते यशस्वीरित्या डिलीट झाले असून मुख्य खतावणीतून (GL) शिल्लक वजा करण्यात आली आहे!');
           fetchBalances();
+          fetchGlReconciliation(formData.branchID, formData.loanRateID);
           handleNew();
         } else {
           const errText = await response.text();
@@ -1300,7 +1295,10 @@ export default function LoanOpeningBalanceMaster() {
       'अ.क्र.': i + 1,
       'दिनांक': new Date(b.openingDate).toLocaleDateString('en-GB'),
       'शाखा': b.branch?.branchName || '-',
-      'सभासद': `${b.member?.firstName || ''} ${b.member?.lastName || ''}`.trim(),
+      'खातेदार (ग्राहक)': b.customer 
+        ? `${b.customer.firstName || ''} ${b.customer.lastName || ''}`.trim() 
+        : '-',
+      'प्रकार': b.isOpeningBalance ? 'आरंभिक शिल्लक (OB)' : 'नियमित कर्ज (Regular)',
       'कर्ज प्रकार': `${b.loanRate?.loanCode || ''} - ${b.loanRate?.shortName || ''}`,
       'खाते क्र.': b.loanAccountNo,
       'जुना खाते क्र.': b.legacyAccountNumber || '-',
@@ -1329,23 +1327,10 @@ export default function LoanOpeningBalanceMaster() {
       label: `${c.cifNo ? '[' + c.cifNo + '] ' : ''}${c.firstName} ${c.middleName ? c.middleName + ' ' : ''}${c.lastName}`.trim()
   }));
 
-  const memberOptions = members.map(m => ({ 
-      value: m.memberID.toString(), 
-      label: `${m.cifNo ? m.cifNo + ' - ' : ''}${m.firstName} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName}`
+  const guarantorOptions = customers.map(c => ({
+      value: c.customerID.toString(),
+      label: `${c.cifNo ? '[' + c.cifNo + '] ' : ''}${c.firstName} ${c.middleName ? c.middleName + ' ' : ''}${c.lastName}`.trim()
   }));
-
-  const guarantorOptions = customers.length > 0
-    ? customers.map(c => ({
-        value: c.customerID.toString(),
-        label: `${c.cifNo ? '[' + c.cifNo + '] ' : ''}${c.firstName} ${c.middleName ? c.middleName + ' ' : ''}${c.lastName}`.trim()
-      }))
-    : members.map(m => {
-        const fullName = `${m.firstName} ${m.middleName ? m.middleName + ' ' : ''}${m.lastName}`.trim();
-        return {
-            value: m.memberID.toString(),
-            label: `${m.cifNo ? m.cifNo + ' - ' : ''}${fullName}`
-        };
-    });
 
   const loanRateOptions = loanRates.map(r => ({
       value: r.loanRateID.toString(),
@@ -1354,9 +1339,9 @@ export default function LoanOpeningBalanceMaster() {
 
   // KPI Calculations
   const openingAccounts = allAccounts.filter((d: any) => d.isOpeningBalance === true);
-  const totalSanctioned = openingAccounts.reduce((sum, a) => sum + (a.sanctionedAmount || 0), 0);
-  const totalPrincipal = openingAccounts.reduce((sum, a) => sum + (a.principalBalance || 0), 0);
-  const totalInterest = openingAccounts.reduce((sum, a) => sum + (a.interestBalance || 0), 0);
+  const totalSanctioned = allAccounts.reduce((sum, a) => sum + (a.sanctionedAmount || 0), 0);
+  const totalPrincipal = allAccounts.reduce((sum, a) => sum + (a.principalBalance || 0), 0);
+  const totalInterest = allAccounts.reduce((sum, a) => sum + (a.interestBalance || 0), 0);
 
   return (
     <div className="p-2 sm:p-3 max-w-6xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
@@ -1416,7 +1401,7 @@ export default function LoanOpeningBalanceMaster() {
             title="सर्व नोंदवलेली कर्ज बाकी यादी पॉप-अप मध्ये पहा"
           >
             <List className="w-4 h-4" />
-            <span>📋 नोंदवलेली यादी पहा ({openingAccounts.length})</span>
+            <span>📋 नोंदवलेली कर्ज यादी पहा ({allAccounts.length})</span>
           </button>
         </div>
       </div>
@@ -1428,8 +1413,11 @@ export default function LoanOpeningBalanceMaster() {
             <Users className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">नोंदवलेली कर्ज खाती</div>
-            <div className="text-sm font-black text-gray-900">{openingAccounts.length}</div>
+            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">नोंदवलेली एकूण कर्ज खाती</div>
+            <div className="text-sm font-black text-gray-900 flex items-center gap-1.5">
+              <span>{allAccounts.length}</span>
+              <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1 py-0.2 rounded border border-emerald-200 font-normal">आरंभिक बाकी: {openingAccounts.length}</span>
+            </div>
           </div>
         </div>
 
@@ -1536,6 +1524,17 @@ export default function LoanOpeningBalanceMaster() {
 
             {/* Quick Action Controls */}
             <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleSyncAllGlBalances}
+                disabled={isSyncingGl}
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                title="सर्व कर्ज योजनांची मुख्य खतावणी (GL) आरंभिक शिल्लक उप-खात्यांनुसार री-सिंक करा"
+              >
+                <Sparkles className={`w-3 h-3 ${isSyncingGl ? 'animate-spin' : ''}`} />
+                <span>{isSyncingGl ? 'सिंक चालू...' : '⚡ खतावणी थेट सिंक करा'}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => fetchGlReconciliation()}
@@ -1749,31 +1748,44 @@ export default function LoanOpeningBalanceMaster() {
               <div className="lg:col-span-2 sm:col-span-2">
                 <label className={labelClass}>कर्जदार खातेदार (Borrower Customer) <span className="text-red-500">*</span></label>
                 <SearchableSelect 
+                  id="loan-borrower-customer"
                   name="customerID" 
                   value={formData.customerID} 
                   onChange={(e: any) => {
                     const cIdStr = e.target.value;
-                    const cId = parseInt(cIdStr);
-                    const matchedCust = customers.find(c => c.customerID === cId);
-                    const matchedMem = members.find(m => m.cifNo && matchedCust?.cifNo && m.cifNo === matchedCust.cifNo);
                     setFormData(prev => ({
                       ...prev,
-                      customerID: cIdStr,
-                      memberID: matchedMem ? matchedMem.memberID.toString() : ''
+                      customerID: cIdStr
                     }));
                   }} 
-                  options={customerOptions.length > 0 ? customerOptions : memberOptions} 
+                  options={customerOptions} 
                   placeholder="कर्जदार खातेदार निवडा (CIF किंवा नाव)..." 
                   disabled={isEditing} 
                 />
               </div>
               <div className="lg:col-span-1 sm:col-span-1">
                 <label className={labelClass}>कर्ज प्रकार (Loan Type) <span className="text-red-500">*</span></label>
-                <SearchableSelect name="loanRateID" value={formData.loanRateID} onChange={handleChange} options={loanRateOptions} disabled={isEditing} />
+                <SearchableSelect 
+                  id="loan-rate-scheme"
+                  name="loanRateID" 
+                  value={formData.loanRateID} 
+                  onChange={handleChange} 
+                  options={loanRateOptions} 
+                  disabled={isEditing} 
+                />
               </div>
               <div className="lg:col-span-1 sm:col-span-1">
                 <label className={labelClass}>कर्ज खाते क्र. (Auto) <span className="text-red-500">*</span></label>
-                <input type="text" name="loanAccountNo" value={format14DigitDisplay(formData.loanAccountNo)} readOnly className={`${inputClass} bg-slate-100 cursor-not-allowed font-bold text-primary`} placeholder="उदा. 001-201-0000001-0" required />
+                <input 
+                  type="text" 
+                  name="loanAccountNo" 
+                  value={format14DigitDisplay(formData.loanAccountNo)} 
+                  readOnly 
+                  tabIndex={-1}
+                  className={`${inputClass} bg-slate-100 cursor-not-allowed font-bold text-primary`} 
+                  placeholder="उदा. 001-201-0000001-0" 
+                  required 
+                />
               </div>
               <div className="lg:col-span-1 sm:col-span-1">
                 <label className={labelClass}>जुना कर्ज खाते क्र. (Old A/C)</label>
@@ -2276,7 +2288,7 @@ export default function LoanOpeningBalanceMaster() {
                     </span>
                   </h2>
                   <div className="text-[10px] text-white/80 font-normal">
-                    खाते क्र.: {format14DigitDisplay(formData.loanAccountNo) || '-'} | खातेदार: {members.find(m => m.memberID.toString() === formData.memberID)?.firstName || '-'} | कर्ज वाटप दिनांक: {formData.loanDisbursementDate ? new Date(formData.loanDisbursementDate).toLocaleDateString('en-GB') : '-'}
+                    खाते क्र.: {format14DigitDisplay(formData.loanAccountNo) || '-'} | खातेदार: {customers.find(c => c.customerID.toString() === formData.customerID)?.firstName || '-'} | कर्ज वाटप दिनांक: {formData.loanDisbursementDate ? new Date(formData.loanDisbursementDate).toLocaleDateString('en-GB') : '-'}
                   </div>
                 </div>
               </div>
@@ -2747,17 +2759,39 @@ export default function LoanOpeningBalanceMaster() {
 
             {/* Modal Filter Toolbar */}
             <div className="p-2.5 bg-slate-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 shrink-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-slate-200/70 p-0.5 rounded-sm border border-slate-300">
                 <button
                   type="button"
-                  onClick={() => setShowAllLoans(!showAllLoans)}
-                  className={`px-3 py-1 rounded-sm text-xs font-bold transition-all shadow-2xs cursor-pointer border flex items-center gap-1 ${
-                    showAllLoans 
-                      ? 'bg-primary text-white border-primary hover:opacity-90' 
-                      : 'bg-white text-primary border-primary hover:bg-primary/5'
+                  onClick={() => setLoanFilterType('all')}
+                  className={`px-2.5 py-1 rounded-sm text-xs font-bold transition-all cursor-pointer ${
+                    loanFilterType === 'all'
+                      ? 'bg-primary text-white shadow-2xs'
+                      : 'text-slate-700 hover:bg-white/60'
                   }`}
                 >
-                  {showAllLoans ? '📋 फक्त बाकी कर्ज पहा' : '🔍 सर्व कर्ज खाती पहा'}
+                  🌟 सर्व कर्ज खाती ({allAccounts.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoanFilterType('opening')}
+                  className={`px-2.5 py-1 rounded-sm text-xs font-bold transition-all cursor-pointer ${
+                    loanFilterType === 'opening'
+                      ? 'bg-emerald-700 text-white shadow-2xs'
+                      : 'text-slate-700 hover:bg-white/60'
+                  }`}
+                >
+                  📗 फक्त आरंभिक शिल्लक ({openingAccounts.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoanFilterType('regular')}
+                  className={`px-2.5 py-1 rounded-sm text-xs font-bold transition-all cursor-pointer ${
+                    loanFilterType === 'regular'
+                      ? 'bg-indigo-700 text-white shadow-2xs'
+                      : 'text-slate-700 hover:bg-white/60'
+                  }`}
+                >
+                  📘 नियमित कर्ज ({allAccounts.length - openingAccounts.length})
                 </button>
               </div>
 
@@ -2845,13 +2879,22 @@ export default function LoanOpeningBalanceMaster() {
                           {balance.branch?.branchName || '-'}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-primary">
-                          {balance.member?.firstName} {balance.member?.lastName}
+                          {balance.customer 
+                            ? `${balance.customer.firstName || ''} ${balance.customer.lastName || ''}`.trim() 
+                            : '-'}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-700">
                           {balance.loanRate?.loanCode} - {balance.loanRate?.shortName}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-gray-900 font-mono">
-                          {balance.loanAccountNo}
+                          <div className="flex items-center gap-1">
+                            <span>{balance.loanAccountNo}</span>
+                            {balance.isOpeningBalance ? (
+                              <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1 py-0.2 rounded border border-emerald-300">OB</span>
+                            ) : (
+                              <span className="text-[9px] bg-slate-100 text-slate-700 font-bold px-1 py-0.2 rounded border border-slate-300">नियमित</span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-600 font-mono">
                           {balance.legacyAccountNumber || '-'}

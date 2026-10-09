@@ -175,22 +175,64 @@ namespace Bhisi.Api.Controllers
             var groups = await _context.AccountGroups.ToListAsync();
             var ledgers = await _context.Ledgers.ToListAsync();
             
+            // Check active Financial Year to determine starting baseline
+            DateTime? fyStartDate = null;
+            var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive);
+            if (activeFy != null)
+            {
+                fyStartDate = activeFy.StartDate.Date;
+            }
+
+            // 1. Current period vouchers query
             var query = _context.VoucherDetails.Include(vd => vd.Voucher)
                 .Where(vd => vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled")
                 .AsQueryable();
+
             if (fromDate.HasValue)
-                query = query.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value);
+                query = query.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date);
             if (toDate.HasValue)
             {
                 var toDateEnd = toDate.Value.Date.AddDays(1).AddTicks(-1);
                 query = query.Where(vd => vd.Voucher != null && vd.Voucher.VoucherDate <= toDateEnd);
             }
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(vd => vd.Voucher != null && vd.Voucher.BranchID == branchId.Value);
             }
 
             var voucherDetails = await query.ToListAsync();
+
+            // 2. Prior period vouchers (between Financial Year start and fromDate) to compute exact opening balance as of fromDate
+            Dictionary<int, (decimal Dr, decimal Cr)> priorDict = new();
+            if (fromDate.HasValue)
+            {
+                var priorVouchersQuery = _context.VoucherDetails
+                    .Include(vd => vd.Voucher)
+                    .Where(vd => vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled")
+                    .Where(vd => vd.Voucher!.VoucherDate < fromDate.Value.Date);
+
+                if (fyStartDate.HasValue)
+                {
+                    priorVouchersQuery = priorVouchersQuery.Where(vd => vd.Voucher!.VoucherDate >= fyStartDate.Value);
+                }
+
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    priorVouchersQuery = priorVouchersQuery.Where(vd => vd.Voucher!.BranchID == branchId.Value);
+                }
+
+                var priorSummary = await priorVouchersQuery
+                    .GroupBy(vd => vd.LedgerID)
+                    .Select(g => new
+                    {
+                        LedgerID = g.Key,
+                        PriorDr = g.Where(x => x.DrCr == "Dr").Sum(x => x.Amount),
+                        PriorCr = g.Where(x => x.DrCr == "Cr").Sum(x => x.Amount)
+                    })
+                    .ToListAsync();
+
+                priorDict = priorSummary.ToDictionary(x => x.LedgerID, x => (Dr: x.PriorDr, Cr: x.PriorCr));
+            }
 
             var ledgersByGroupId = new Dictionary<int, List<ReportNodeDto>>();
 
@@ -200,12 +242,31 @@ namespace Bhisi.Api.Controllers
                 decimal totalDr = ledgerVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
                 decimal totalCr = ledgerVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
 
-                decimal openingBal = ledger.OpeningBalance;
-                decimal drBal = ledger.OpeningBalanceType == "Dr" ? openingBal : 0;
-                decimal crBal = ledger.OpeningBalanceType == "Cr" ? openingBal : 0;
+                decimal baseOpeningBal = ledger.OpeningBalance;
+                decimal initialDr = ledger.OpeningBalanceType == "Dr" ? baseOpeningBal : 0;
+                decimal initialCr = ledger.OpeningBalanceType == "Cr" ? baseOpeningBal : 0;
 
-                drBal += totalDr;
-                crBal += totalCr;
+                if (priorDict.TryGetValue(ledger.LedgerID, out var prior))
+                {
+                    initialDr += prior.Dr;
+                    initialCr += prior.Cr;
+                }
+
+                decimal openingBal = 0;
+                string openingType = "";
+                if (initialDr > initialCr)
+                {
+                    openingBal = initialDr - initialCr;
+                    openingType = "Dr";
+                }
+                else if (initialCr > initialDr)
+                {
+                    openingBal = initialCr - initialDr;
+                    openingType = "Cr";
+                }
+
+                decimal drBal = initialDr + totalDr;
+                decimal crBal = initialCr + totalCr;
 
                 decimal closingBal = 0;
                 string closingType = "";
@@ -228,7 +289,7 @@ namespace Bhisi.Api.Controllers
                     Code = !string.IsNullOrWhiteSpace(ledger.LedgerCode) ? ledger.LedgerCode.Trim() : ledger.LedgerID.ToString(),
                     IsGroup = false,
                     OpeningBalance = openingBal,
-                    OpeningType = ledger.OpeningBalanceType ?? "",
+                    OpeningType = openingType,
                     TotalDebit = totalDr,
                     TotalCredit = totalCr,
                     ClosingBalance = closingBal,
@@ -1811,7 +1872,27 @@ namespace Bhisi.Api.Controllers
 
                 decimal netBal = 0;
                 decimal prevNetBal = 0;
-                if (targetNature == "Assets" || targetNature == "Expenses")
+                if (targetNature == "Expenses")
+                {
+                    decimal periodDr = ledgerVds.Where(vd => vd.DrCr == "Dr" && (!fromDate.HasValue || (vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date))).Sum(vd => vd.Amount);
+                    decimal periodCr = ledgerVds.Where(vd => vd.DrCr == "Cr" && (!fromDate.HasValue || (vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date))).Sum(vd => vd.Amount);
+                    netBal = periodDr - periodCr;
+
+                    decimal pastDr = fromDate.HasValue ? ledgerVds.Where(vd => vd.DrCr == "Dr" && vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value.Date).Sum(vd => vd.Amount) : 0;
+                    decimal pastCr = fromDate.HasValue ? ledgerVds.Where(vd => vd.DrCr == "Cr" && vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value.Date).Sum(vd => vd.Amount) : 0;
+                    prevNetBal = pastDr - pastCr;
+                }
+                else if (targetNature == "Income")
+                {
+                    decimal periodDr = ledgerVds.Where(vd => vd.DrCr == "Dr" && (!fromDate.HasValue || (vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date))).Sum(vd => vd.Amount);
+                    decimal periodCr = ledgerVds.Where(vd => vd.DrCr == "Cr" && (!fromDate.HasValue || (vd.Voucher != null && vd.Voucher.VoucherDate >= fromDate.Value.Date))).Sum(vd => vd.Amount);
+                    netBal = periodCr - periodDr;
+
+                    decimal pastDr = fromDate.HasValue ? ledgerVds.Where(vd => vd.DrCr == "Dr" && vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value.Date).Sum(vd => vd.Amount) : 0;
+                    decimal pastCr = fromDate.HasValue ? ledgerVds.Where(vd => vd.DrCr == "Cr" && vd.Voucher != null && vd.Voucher.VoucherDate < fromDate.Value.Date).Sum(vd => vd.Amount) : 0;
+                    prevNetBal = pastCr - pastDr;
+                }
+                else if (targetNature == "Assets")
                 {
                     netBal = drBal - crBal;
                     prevNetBal = drBalOpening - crBalOpening;
@@ -2029,6 +2110,9 @@ namespace Bhisi.Api.Controllers
 
             dto.PreviousYearLabel = fromDate.HasValue ? fromDate.Value.AddDays(-1).ToString("dd/MM/yyyy") : "मागील वर्ष";
             dto.CurrentYearLabel = toDate.HasValue ? toDate.Value.ToString("dd/MM/yyyy") : "चालू वर्ष";
+
+            dto.Difference = Math.Abs(dto.TotalLiabilities - dto.TotalAssets);
+            dto.IsTallied = dto.Difference < 0.01m;
 
             return dto;
         }
@@ -4722,7 +4806,18 @@ namespace Bhisi.Api.Controllers
 
                 if (!string.IsNullOrWhiteSpace(kycStatus) && kycStatus != "सर्व" && kycStatus != "All")
                 {
-                    query = query.Where(c => c.KYCStatus == kycStatus);
+                    if (kycStatus == "Pending" || kycStatus == "अपूर्ण")
+                    {
+                        query = query.Where(c => c.KYCStatus == "Pending" || c.KYCStatus == "अपूर्ण" || string.IsNullOrEmpty(c.KYCStatus));
+                    }
+                    else if (kycStatus == "Verified" || kycStatus == "पूर्ण")
+                    {
+                        query = query.Where(c => c.KYCStatus == "Verified" || c.KYCStatus == "पूर्ण");
+                    }
+                    else
+                    {
+                        query = query.Where(c => c.KYCStatus == kycStatus);
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(status) && status != "सर्व" && status != "All")
@@ -4792,7 +4887,7 @@ namespace Bhisi.Api.Controllers
                         Taluka = c.Taluka,
                         District = c.District,
                         CustomerType = c.CustomerType ?? "Individual",
-                        KYCStatus = c.KYCStatus ?? "Verified",
+                        KYCStatus = string.IsNullOrWhiteSpace(c.KYCStatus) ? "Pending" : c.KYCStatus,
                         AadhaarNoMasked = MaskAadhaar(c.AadhaarNo),
                         PANNo = string.IsNullOrWhiteSpace(c.PANNo) ? "-" : c.PANNo,
                         Gender = c.Gender,
@@ -4846,13 +4941,13 @@ namespace Bhisi.Api.Controllers
                     { 
                         b.LedgerID, 
                         LedgerName = b.Ledger != null ? b.Ledger.LedgerName : "इतर लेजर", 
-                        AccountType = b.Ledger != null ? b.Ledger.AccountType : "" 
+                        AccountType = (b.Ledger != null && b.Ledger.AccountType != null) ? b.Ledger.AccountType : "" 
                     })
                     .Select(g => new LedgerOptionWithEntryDto
                     {
                         LedgerID = g.Key.LedgerID,
                         LedgerName = g.Key.LedgerName,
-                        AccountType = g.Key.AccountType,
+                        AccountType = g.Key.AccountType ?? "",
                         EntryCount = g.Count(),
                         TotalDebit = g.Where(x => x.BalanceType == "Dr").Sum(x => x.Amount),
                         TotalCredit = g.Where(x => x.BalanceType == "Cr").Sum(x => x.Amount),
@@ -5693,6 +5788,247 @@ namespace Bhisi.Api.Controllers
             var list = new List<object>();
             return Ok(list);
         }
+
+        // GET: api/Reports/LoanOutstandingReport
+        [HttpGet("LoanOutstandingReport")]
+        public async Task<ActionResult<LoanOutstandingReportResponseDto>> GetLoanOutstandingReport(
+            [FromQuery] DateTime? asOnDate,
+            [FromQuery] int? loanRateId,
+            [FromQuery] int? branchId,
+            [FromQuery] bool includeZeroBalance = false)
+        {
+            try
+            {
+                var targetDate = (asOnDate ?? DateTime.Today).Date;
+                var targetDateEnd = targetDate.AddDays(1).AddTicks(-1);
+
+                var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
+
+                // 1. Base query for loan accounts
+                var query = _context.LoanAccounts
+                    .Include(la => la.LoanRate)
+                    .Include(la => la.Customer)
+                    .Include(la => la.Member).ThenInclude(m => m!.Customer)
+                    .AsQueryable();
+
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    query = query.Where(la => la.BranchID == branchId.Value);
+                }
+
+                if (loanRateId.HasValue && loanRateId.Value > 0)
+                {
+                    query = query.Where(la => la.LoanRateID == loanRateId.Value);
+                }
+
+                var accounts = await query.ToListAsync();
+
+                // Filter out loans that were disbursed / opened AFTER the targetDate
+                accounts = accounts.Where(la =>
+                {
+                    var dDate = la.LoanDisbursementDate ?? la.OpeningDate;
+                    return dDate.Date <= targetDate;
+                }).ToList();
+
+                var accountIds = accounts.Select(la => la.LoanAccountID).ToList();
+
+                // 2. Fetch post-targetDate collections and disbursements if targetDate is in the past
+                Dictionary<int, decimal> postCutoffCollections = new();
+                Dictionary<int, decimal> postCutoffDisbursements = new();
+
+                if (targetDate < DateTime.Today)
+                {
+                    var postCollections = await _context.LoanCollections
+                        .Where(c => accountIds.Contains(c.LoanAccountID) && c.CollectionDate > targetDateEnd)
+                        .GroupBy(c => c.LoanAccountID)
+                        .Select(g => new { LoanAccountID = g.Key, TotalPrincipal = g.Sum(x => x.PrincipalCollected) })
+                        .ToListAsync();
+
+                    postCutoffCollections = postCollections.ToDictionary(x => x.LoanAccountID, x => x.TotalPrincipal);
+
+                    var postDisbursements = await _context.LoanDisbursements
+                        .Where(d => accountIds.Contains(d.LoanAccountID) && d.DisbursementDate > targetDateEnd)
+                        .GroupBy(d => d.LoanAccountID)
+                        .Select(g => new { LoanAccountID = g.Key, TotalDisb = g.Sum(x => x.DisbursementAmount) })
+                        .ToListAsync();
+
+                    postCutoffDisbursements = postDisbursements.ToDictionary(x => x.LoanAccountID, x => x.TotalDisb);
+                }
+
+                var allDisbursements = await _context.LoanDisbursements
+                    .Where(d => accountIds.Contains(d.LoanAccountID) && d.DisbursementDate <= targetDateEnd)
+                    .ToListAsync();
+
+                var disbursementsByAccount = allDisbursements
+                    .GroupBy(d => d.LoanAccountID)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                // Fetch collections up to targetDateEnd for Principal, Interest and Penalty breakdowns
+                var collectionsTillCutoff = await _context.LoanCollections
+                    .Where(c => accountIds.Contains(c.LoanAccountID) && c.CollectionDate <= targetDateEnd)
+                    .GroupBy(c => c.LoanAccountID)
+                    .Select(g => new
+                    {
+                        LoanAccountID = g.Key,
+                        TotalPrincipal = g.Sum(x => x.PrincipalCollected),
+                        TotalInterest = g.Sum(x => x.InterestCollected),
+                        TotalPenalty = g.Sum(x => x.PenaltyInterestCollected)
+                    })
+                    .ToListAsync();
+
+                var collectionsByAccount = collectionsTillCutoff.ToDictionary(x => x.LoanAccountID, x => x);
+
+                var rows = new List<LoanOutstandingReportRowDto>();
+
+                foreach (var la in accounts)
+                {
+                    // Calculate As-On-Date Outstanding Balance
+                    decimal outstanding = la.PrincipalBalance;
+                    if (targetDate < DateTime.Today)
+                    {
+                        decimal postColl = postCutoffCollections.GetValueOrDefault(la.LoanAccountID, 0m);
+                        decimal postDisb = postCutoffDisbursements.GetValueOrDefault(la.LoanAccountID, 0m);
+                        outstanding = la.PrincipalBalance + postColl - postDisb;
+                    }
+
+                    if (!includeZeroBalance && outstanding <= 0)
+                    {
+                        continue;
+                    }
+
+                    // Resolve Borrower Name
+                    var cust = la.Customer;
+                    var mem = la.Member;
+                    var memCust = mem?.Customer;
+                    string bName = cust != null
+                        ? string.Join(" ", new[] { cust.FirstName, cust.MiddleName, cust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim()
+                        : (memCust != null ? string.Join(" ", new[] { memCust.FirstName, memCust.MiddleName, memCust.LastName }.Where(s => !string.IsNullOrWhiteSpace(s))).Trim() : "");
+
+                    if (string.IsNullOrWhiteSpace(bName) && mem != null)
+                    {
+                        bName = mem.MemberCode ?? "";
+                    }
+
+                    // Sanctioned / Disbursed Amount (कर्ज वाटप रक्कम)
+                    decimal vatapRakkam = la.SanctionedAmount;
+                    if (vatapRakkam <= 0 && disbursementsByAccount.TryGetValue(la.LoanAccountID, out var dList))
+                    {
+                        vatapRakkam = dList.Sum(d => d.DisbursementAmount);
+                    }
+                    if (vatapRakkam <= 0)
+                    {
+                        vatapRakkam = Math.Max(la.PrincipalBalance, outstanding);
+                    }
+
+                    // Collections Breakdown (मुद्दल जमा, व्याज जमा, दंड व्याज जमा)
+                    decimal collPrincipal = 0m;
+                    decimal collInterest = 0m;
+                    decimal collPenalty = 0m;
+                    if (collectionsByAccount.TryGetValue(la.LoanAccountID, out var cInfo))
+                    {
+                        collPrincipal = cInfo.TotalPrincipal;
+                        collInterest = cInfo.TotalInterest;
+                        collPenalty = cInfo.TotalPenalty;
+                    }
+
+                    // मुद्दल जमा = कर्ज रक्कम व येणे बाकी यातील फरक किंवा संकलित मुद्दल
+                    decimal principalPaid = collPrincipal;
+                    if (vatapRakkam > outstanding)
+                    {
+                        principalPaid = Math.Max(collPrincipal, vatapRakkam - outstanding);
+                    }
+
+                    var loanTypeStr = !string.IsNullOrWhiteSpace(la.LoanRate?.LoanType) 
+                        ? la.LoanRate.LoanType 
+                        : (!string.IsNullOrWhiteSpace(la.LoanRate?.ShortName) ? la.LoanRate.ShortName : "इतर कर्ज");
+
+                    var disbDate = la.LoanDisbursementDate ?? la.OpeningDate;
+
+                    rows.Add(new LoanOutstandingReportRowDto
+                    {
+                        LoanAccountID = la.LoanAccountID,
+                        LoanRateID = la.LoanRateID,
+                        LoanType = loanTypeStr,
+                        LoanAccountNo = la.LoanAccountNo ?? "",
+                        BorrowerName = bName,
+                        MemberCode = mem?.MemberCode ?? "",
+                        DisbursementDate = disbDate,
+                        DisbursementDateDisplay = disbDate.ToString("dd/MM/yyyy"),
+                        SanctionedAmount = vatapRakkam,
+                        OutstandingAmount = outstanding,
+                        PrincipalPaid = principalPaid,
+                        InterestPaid = collInterest,
+                        PenaltyInterestPaid = collPenalty,
+                        InterestRate = la.InterestRate,
+                        Status = la.Status
+                    });
+                }
+
+                // Sort: Scheme-wise and then numerically by LoanAccountNo
+                rows = rows
+                    .OrderBy(r => r.LoanType)
+                    .ThenBy(r => int.TryParse(r.LoanAccountNo, out int num) ? num : int.MaxValue)
+                    .ThenBy(r => r.LoanAccountNo)
+                    .ToList();
+
+                // Assign 1-based SrNo
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    rows[i].SrNo = i + 1;
+                }
+
+                // Group by Scheme
+                var schemeGroups = rows
+                    .GroupBy(r => new { r.LoanRateID, r.LoanType })
+                    .Select(g => new LoanOutstandingSchemeGroupDto
+                    {
+                        LoanRateID = g.Key.LoanRateID,
+                        LoanType = g.Key.LoanType,
+                        AccountCount = g.Count(),
+                        TotalSanctionedAmount = g.Sum(x => x.SanctionedAmount),
+                        TotalOutstandingAmount = g.Sum(x => x.OutstandingAmount),
+                        TotalPrincipalPaid = g.Sum(x => x.PrincipalPaid),
+                        TotalInterestPaid = g.Sum(x => x.InterestPaid),
+                        TotalPenaltyInterestPaid = g.Sum(x => x.PenaltyInterestPaid),
+                        Accounts = g.ToList()
+                    })
+                    .OrderBy(g => g.LoanType)
+                    .ToList();
+
+                string selectedSchemeName = "सर्व कर्ज प्रकार (एकत्रित)";
+                if (loanRateId.HasValue && loanRateId.Value > 0)
+                {
+                    var selRate = await _context.LoanRates.FindAsync(loanRateId.Value);
+                    if (selRate != null)
+                    {
+                        selectedSchemeName = selRate.LoanType;
+                    }
+                }
+
+                var response = new LoanOutstandingReportResponseDto
+                {
+                    SansthaInfo = sanstha,
+                    AsOnDate = targetDate,
+                    AsOnDateDisplay = targetDate.ToString("dd/MM/yyyy"),
+                    SelectedLoanRateId = loanRateId,
+                    SelectedLoanTypeName = selectedSchemeName,
+                    TotalAccounts = rows.Count,
+                    GrandTotalSanctionedAmount = rows.Sum(r => r.SanctionedAmount),
+                    GrandTotalOutstandingAmount = rows.Sum(r => r.OutstandingAmount),
+                    GrandTotalPrincipalPaid = rows.Sum(r => r.PrincipalPaid),
+                    GrandTotalInterestPaid = rows.Sum(r => r.InterestPaid),
+                    GrandTotalPenaltyInterestPaid = rows.Sum(r => r.PenaltyInterestPaid),
+                    Rows = rows,
+                    SchemeGroups = schemeGroups
+                };
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error generating Loan Outstanding Report", error = ex.Message });
+            }
+        }
     }
 
 
@@ -5885,3 +6221,54 @@ namespace Bhisi.Api.Controllers
         public int TotalShares { get; set; }
         public decimal TotalShareCapital { get; set; }
     }
+
+    public class LoanOutstandingReportRowDto
+    {
+        public int SrNo { get; set; }
+        public int LoanAccountID { get; set; }
+        public int LoanRateID { get; set; }
+        public string LoanType { get; set; } = string.Empty;
+        public string LoanAccountNo { get; set; } = string.Empty;
+        public string BorrowerName { get; set; } = string.Empty;
+        public string MemberCode { get; set; } = string.Empty;
+        public DateTime? DisbursementDate { get; set; }
+        public string DisbursementDateDisplay { get; set; } = string.Empty;
+        public decimal SanctionedAmount { get; set; } // कर्ज रक्कम (वाटप रक्कम)
+        public decimal OutstandingAmount { get; set; } // येणे बाकी (निवडलेल्या तारखेअखेर) / शिल्लक रक्कम
+        public decimal PrincipalPaid { get; set; } // आज अखेर मुद्दल जमा
+        public decimal InterestPaid { get; set; } // आज अखेर व्याज जमा
+        public decimal PenaltyInterestPaid { get; set; } // दंड व्याज जमा
+        public decimal InterestRate { get; set; }
+        public string Status { get; set; } = "Active";
+    }
+
+    public class LoanOutstandingSchemeGroupDto
+    {
+        public int LoanRateID { get; set; }
+        public string LoanType { get; set; } = string.Empty;
+        public int AccountCount { get; set; }
+        public decimal TotalSanctionedAmount { get; set; }
+        public decimal TotalOutstandingAmount { get; set; }
+        public decimal TotalPrincipalPaid { get; set; }
+        public decimal TotalInterestPaid { get; set; }
+        public decimal TotalPenaltyInterestPaid { get; set; }
+        public List<LoanOutstandingReportRowDto> Accounts { get; set; } = new();
+    }
+
+    public class LoanOutstandingReportResponseDto
+    {
+        public SansthaDetail? SansthaInfo { get; set; }
+        public DateTime AsOnDate { get; set; }
+        public string AsOnDateDisplay { get; set; } = string.Empty;
+        public int? SelectedLoanRateId { get; set; }
+        public string SelectedLoanTypeName { get; set; } = "सर्व कर्ज प्रकार (एकत्रित)";
+        public int TotalAccounts { get; set; }
+        public decimal GrandTotalSanctionedAmount { get; set; }
+        public decimal GrandTotalOutstandingAmount { get; set; }
+        public decimal GrandTotalPrincipalPaid { get; set; }
+        public decimal GrandTotalInterestPaid { get; set; }
+        public decimal GrandTotalPenaltyInterestPaid { get; set; }
+        public List<LoanOutstandingReportRowDto> Rows { get; set; } = new();
+        public List<LoanOutstandingSchemeGroupDto> SchemeGroups { get; set; } = new();
+    }
+

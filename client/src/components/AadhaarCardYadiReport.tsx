@@ -10,6 +10,7 @@ import {
   Calendar
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { maskAadhaar } from '../utils/kycValidation';
 
 interface AadhaarRow {
   srNo: number;
@@ -132,7 +133,7 @@ export default function AadhaarCardYadiReport() {
       'CIF नं.': row.cifNo,
       'खातेदार नाव': row.accountHolderName,
       'बचत खाते नं.': row.savingAccountNo,
-      'आधारकार्ड नं.': row.aadhaarNo
+      'आधारकार्ड नं. (Masked)': maskAadhaar(row.aadhaarNo)
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(excelData);
@@ -336,6 +337,9 @@ export default function AadhaarCardYadiReport() {
               <h2 className="text-sm sm:text-base font-extrabold text-gray-950 tracking-wider uppercase font-serif text-center">
                 आधार कार्ड यादी (Aadhaar Card List)
               </h2>
+              <div className="text-[10px] font-semibold text-emerald-800 text-center flex items-center justify-center gap-1 mt-0.5">
+                <span>🔒 UIDAI सुरक्षित - मास्क्ड आधार (Masked Format)</span>
+              </div>
             </div>
 
             {/* Date Tag on Right */}
@@ -354,7 +358,7 @@ export default function AadhaarCardYadiReport() {
                   <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-center">CIF नं.</th>
                   <th className="border border-gray-900 py-1.5 px-3 w-[40%] text-left">खातेदार नाव</th>
                   <th className="border border-gray-900 py-1.5 px-2 w-[18%] text-center">बचत खाते नं.</th>
-                  <th className="border border-gray-900 py-1.5 px-2 w-[20%] text-center">आधारकार्ड नं.</th>
+                  <th className="border border-gray-900 py-1.5 px-2 w-[20%] text-center">आधारकार्ड नं. (Masked)</th>
                 </tr>
               </thead>
               <tbody>
@@ -386,7 +390,7 @@ export default function AadhaarCardYadiReport() {
                         {row.savingAccountNo || '-'}
                       </td>
                       <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-primary">
-                        {row.aadhaarNo || '-'}
+                        {maskAadhaar(row.aadhaarNo)}
                       </td>
                     </tr>
                   ))

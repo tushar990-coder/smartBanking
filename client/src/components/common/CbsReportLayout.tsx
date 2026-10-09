@@ -34,6 +34,8 @@ export interface CbsReportLayoutProps {
   defaultPaperSize?: CbsPaperSize;
   /** Allow switching paper size from toolbar */
   allowPaperSizeToggle?: boolean;
+  /** Title rendering style: 'ribbon' (default full width bar) | 'classic-badge' (centered box with border as in desktop CBS) */
+  titleStyle?: 'ribbon' | 'classic-badge';
   /** Main Marathi Report Title */
   reportTitle: string;
   /** Subtitle / English Title */
@@ -44,6 +46,8 @@ export interface CbsReportLayoutProps {
   branchName?: string;
   /** Custom Sanstha Info (if already loaded) */
   sansthaInfo?: SansthaDetails | null;
+  /** Optional custom header to replace standard CBS header (e.g. boxed society header) */
+  customHeader?: React.ReactNode;
   /** Optional summary strip (e.g., Member details, account balance) */
   summaryBanner?: React.ReactNode;
   /** Signature block type: '3-tier' (default), '4-tier', 'voucher-3-tier', 'none' */
@@ -90,11 +94,13 @@ export const formatDisplayDate = (dStr?: string | null) => {
 export default function CbsReportLayout({
   defaultPaperSize = 'a4-portrait',
   allowPaperSizeToggle = true,
+  titleStyle = 'ribbon',
   reportTitle,
   reportSubtitle,
   periodText,
   branchName,
   sansthaInfo: propSansthaInfo,
+  customHeader,
   summaryBanner,
   signatureTier = '3-tier',
   signatureTitles,
@@ -334,62 +340,80 @@ export default function CbsReportLayout({
         >
           <div>
             
-            {/* 🏛️ Standard CBS Compact Header (Max 65px Vertical Space) */}
-            <div className="cbs-compact-header">
-              
-              {/* Registration No & Date Top Bar */}
-              <div className="cbs-reg-bar">
-                <div>
-                  <span>रजि. नं.: </span>
-                  <span className="font-mono font-bold text-slate-900">{activeSanstha?.registrationNo || '-'}</span>
+            {customHeader ? (
+              customHeader
+            ) : (
+              <>
+                {/* 🏛️ Standard CBS Compact Header (Max 65px Vertical Space) */}
+                <div className="cbs-compact-header">
+                  
+                  {/* Registration No & Date Top Bar */}
+                  <div className="cbs-reg-bar">
+                    <div>
+                      <span>रजि. नं.: </span>
+                      <span className="font-mono font-bold text-slate-900">{activeSanstha?.registrationNo || '-'}</span>
+                    </div>
+                    {branchName && (
+                      <div>
+                        <span>शाखा: </span>
+                        <span className="font-bold text-slate-900">{branchName}</span>
+                      </div>
+                    )}
+                    <div>
+                      <span>रजि. दि.: </span>
+                      <span className="font-mono font-bold text-slate-900">
+                        {activeSanstha?.registrationDate ? formatDisplayDate(activeSanstha.registrationDate) : '-'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Sanstha Name */}
+                  <h1 className="cbs-sanstha-title">
+                    {activeSanstha?.sansthaName || 'सहकारी पतसंस्था मर्यादित'}
+                  </h1>
+
+                  {/* Clean Address Bar */}
+                  <p className="cbs-address-text">
+                    {[
+                      activeSanstha?.address,
+                      (!activeSanstha?.address?.includes(activeSanstha?.village || '___') && activeSanstha?.village) ? `मु. ${activeSanstha.village}` : null,
+                      (!activeSanstha?.address?.includes(activeSanstha?.taluka || '___') && activeSanstha?.taluka) ? `ता. ${activeSanstha.taluka}` : null,
+                      (!activeSanstha?.address?.includes(activeSanstha?.district || '___') && activeSanstha?.district) ? `जि. ${activeSanstha.district}` : null,
+                      activeSanstha?.pinCode ? `पिन: ${activeSanstha.pinCode}` : null
+                    ].filter(Boolean).join(', ')}
+                  </p>
+
                 </div>
-                {branchName && (
-                  <div>
-                    <span>शाखा: </span>
-                    <span className="font-bold text-slate-900">{branchName}</span>
+
+                {/* 🎗️ Report Ribbon / Classic Title Badge */}
+                {titleStyle === 'classic-badge' ? (
+                  <div className="my-2.5 flex items-center justify-between relative px-1">
+                    <div className="flex-1"></div>
+                    <div className="inline-block border-2 border-slate-900 bg-white px-8 py-1 text-center font-bold text-sm text-slate-950 shadow-xs tracking-wider">
+                      {reportTitle}
+                    </div>
+                    <div className="flex-1 text-right text-xs font-bold text-slate-900 font-mono">
+                      {periodText}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="cbs-ribbon">
+                    <div className="cbs-ribbon-title flex items-center gap-1.5">
+                      <span>{reportTitle}</span>
+                      {reportSubtitle && (
+                        <span className="text-[9.5px] font-normal text-slate-600">({reportSubtitle})</span>
+                      )}
+                    </div>
+                    {periodText && (
+                      <div className="cbs-ribbon-meta">
+                        <span className="text-slate-600 font-medium">कालावधी: </span>
+                        <span className="font-mono">{periodText}</span>
+                      </div>
+                    )}
                   </div>
                 )}
-                <div>
-                  <span>रजि. दि.: </span>
-                  <span className="font-mono font-bold text-slate-900">
-                    {activeSanstha?.registrationDate ? formatDisplayDate(activeSanstha.registrationDate) : '-'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Sanstha Name */}
-              <h1 className="cbs-sanstha-title">
-                {activeSanstha?.sansthaName || 'सहकारी पतसंस्था मर्यादित'}
-              </h1>
-
-              {/* Clean Address Bar */}
-              <p className="cbs-address-text">
-                {[
-                  activeSanstha?.address,
-                  (!activeSanstha?.address?.includes(activeSanstha?.village || '___') && activeSanstha?.village) ? `मु. ${activeSanstha.village}` : null,
-                  (!activeSanstha?.address?.includes(activeSanstha?.taluka || '___') && activeSanstha?.taluka) ? `ता. ${activeSanstha.taluka}` : null,
-                  (!activeSanstha?.address?.includes(activeSanstha?.district || '___') && activeSanstha?.district) ? `जि. ${activeSanstha.district}` : null,
-                  activeSanstha?.pinCode ? `पिन: ${activeSanstha.pinCode}` : null
-                ].filter(Boolean).join(', ')}
-              </p>
-
-            </div>
-
-            {/* 🎗️ Report Ribbon (Title & Period) */}
-            <div className="cbs-ribbon">
-              <div className="cbs-ribbon-title flex items-center gap-1.5">
-                <span>{reportTitle}</span>
-                {reportSubtitle && (
-                  <span className="text-[9.5px] font-normal text-slate-600">({reportSubtitle})</span>
-                )}
-              </div>
-              {periodText && (
-                <div className="cbs-ribbon-meta">
-                  <span className="text-slate-600 font-medium">कालावधी: </span>
-                  <span className="font-mono">{periodText}</span>
-                </div>
-              )}
-            </div>
+              </>
+            )}
 
             {/* 👤 Optional Summary Strip (Member details, Account stats, etc.) */}
             {summaryBanner && (

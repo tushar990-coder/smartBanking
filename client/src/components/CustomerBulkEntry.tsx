@@ -28,6 +28,7 @@ import {
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { transliterateMarathi } from '../utils/transliterateMarathi';
+import { isValidAadhaar, isValidPAN } from '../utils/kycValidation';
 
 export interface BulkCustomerRow {
   id: string; // unique client id
@@ -300,11 +301,12 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
           }
         }
 
-        // Aadhaar validation
+        // Aadhaar validation (with Verhoeff Checksum)
         const aadh = r.aadhaarNo.trim();
         if (aadh) {
-          if (!aadhaarRegex.test(aadh)) {
-            errors.push('आधार क्रमांक १२ अंकी वैध असावा.');
+          const aCheck = isValidAadhaar(aadh);
+          if (!aCheck.isValid) {
+            errors.push(aCheck.error || 'आधार क्रमांक १२ अंकी वैध असावा.');
           } else if (aadhaarFreq[aadh] > 1) {
             errors.push(`आधार क्रमांक '${aadh}' ग्रिडमध्ये पुनरावृत्ती (Duplicate) झाला आहे.`);
           }
@@ -313,8 +315,9 @@ export default function CustomerBulkEntry({ onBack, onNavigateToCustomers }: Cus
         // PAN validation
         const pan = r.panNo.trim().toUpperCase();
         if (pan) {
-          if (!panRegex.test(pan)) {
-            errors.push('पॅन नंबर १० अक्षरी वैध फॉरमॅटमध्ये असावा (उदा. ABCDE1234F).');
+          const pCheck = isValidPAN(pan);
+          if (!pCheck.isValid) {
+            errors.push(pCheck.error || 'पॅन नंबर १० अक्षरी वैध फॉरमॅटमध्ये असावा (उदा. ABCDE1234F).');
           } else if (panFreq[pan] > 1) {
             errors.push(`पॅन नंबर '${pan}' ग्रिडमध्ये पुनरावृत्ती (Duplicate) झाला आहे.`);
           }

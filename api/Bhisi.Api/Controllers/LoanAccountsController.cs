@@ -814,6 +814,9 @@ namespace Bhisi.Api.Controllers
                 // Synchronize Initial NPA Classification with LoanAccountNpaStatuses
                 await EnsureInitialNpaStatusAsync(loanAccount, dto);
 
+                // Auto-Sync Scheme General Ledger (GL) Opening Balance with Sub-Ledger for Trial Balance and Balance Sheet
+                await SyncLoanSchemeGlOpeningBalanceAsync(loanAccount.LoanRateID);
+
                 await transaction.CommitAsync();
                 return Ok(loanAccount);
             }
@@ -1256,6 +1259,13 @@ namespace Bhisi.Api.Controllers
 
                 // Synchronize Initial NPA Classification with LoanAccountNpaStatuses
                 await EnsureInitialNpaStatusAsync(loanAccount, dto);
+
+                // Auto-Sync Scheme General Ledger (GL) Opening Balance with Sub-Ledger for Trial Balance and Balance Sheet
+                await SyncLoanSchemeGlOpeningBalanceAsync(loanAccount.LoanRateID);
+                if (oldSnapshot.LoanRateID != loanAccount.LoanRateID)
+                {
+                    await SyncLoanSchemeGlOpeningBalanceAsync(oldSnapshot.LoanRateID);
+                }
 
                 await transaction.CommitAsync();
                 return NoContent();
@@ -1832,6 +1842,89 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        // POST: api/LoanAccounts/SyncAllGlOpeningBalances
+        [HttpPost("SyncAllGlOpeningBalances")]
+        public async Task<IActionResult> SyncAllGlOpeningBalances()
+        {
+            try
+            {
+                var rates = await _context.LoanRates.AsNoTracking().ToListAsync();
+                int syncedCount = 0;
+                foreach (var rate in rates)
+                {
+                    if (rate.LoanLedgerID.HasValue && rate.LoanLedgerID.Value > 0)
+                    {
+                        await SyncLoanSchemeGlOpeningBalanceAsync(rate.LoanRateID);
+                        syncedCount++;
+                    }
+                }
+                return Ok(new { message = $"सर्व कर्ज योजनांची मुख्य खतावणी (GL) आरंभिक शिल्लक तेरीज व ताळेबंदशी यशस्वीरित्या सिंक झाली आहे. (एकूण {syncedCount} योजना अद्यतनित)", syncedCount });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "खतावणी सिंक करताना त्रुटी आली: " + ex.Message);
+            }
+        }
+
+        private async Task SyncLoanSchemeGlOpeningBalanceAsync(int loanRateId)
+        {
+            try
+            {
+                var loanRate = await _context.LoanRates.FindAsync(loanRateId);
+                if (loanRate == null) return;
+
+                // 1. Sync Principal Loan Ledger (मालमत्ता - कर्ज येणे)
+                if (loanRate.LoanLedgerID.HasValue && loanRate.LoanLedgerID.Value > 0)
+                {
+                    int loanLedgerId = loanRate.LoanLedgerID.Value;
+                    var ledger = await _context.Ledgers.FindAsync(loanLedgerId);
+                    if (ledger != null)
+                    {
+                        var mappedRateIds = await _context.LoanRates
+                            .Where(r => r.LoanLedgerID == loanLedgerId)
+                            .Select(r => r.LoanRateID)
+                            .ToListAsync();
+
+                        decimal totalPrincipal = await _context.LoanAccounts
+                            .Where(a => mappedRateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
+                            .SumAsync(a => a.PrincipalBalance);
+
+                        ledger.OpeningBalance = totalPrincipal;
+                        ledger.OpeningBalanceType = "Dr";
+                        _context.Entry(ledger).State = EntityState.Modified;
+                    }
+                }
+
+                // 2. Sync Receivable Interest Ledger (येणे व्याज)
+                if (loanRate.ReceivableInterestLedgerID.HasValue && loanRate.ReceivableInterestLedgerID.Value > 0)
+                {
+                    int intLedgerId = loanRate.ReceivableInterestLedgerID.Value;
+                    var intLedger = await _context.Ledgers.FindAsync(intLedgerId);
+                    if (intLedger != null)
+                    {
+                        var intMappedRateIds = await _context.LoanRates
+                            .Where(r => r.ReceivableInterestLedgerID == intLedgerId)
+                            .Select(r => r.LoanRateID)
+                            .ToListAsync();
+
+                        decimal totalInterest = await _context.LoanAccounts
+                            .Where(a => intMappedRateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
+                            .SumAsync(a => a.InterestBalance + a.OverdueInterestBalance);
+
+                        intLedger.OpeningBalance = totalInterest;
+                        intLedger.OpeningBalanceType = "Dr";
+                        _context.Entry(intLedger).State = EntityState.Modified;
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WARNING] SyncLoanSchemeGlOpeningBalanceAsync error for LoanRateID {loanRateId}: {ex.Message}");
+            }
+        }
+
         // PUT: api/LoanAccounts/5
         [HttpPut("{id}")]
         public async Task<IActionResult> PutLoanAccount(int id, LoanAccount loanAccount)
@@ -2037,11 +2130,17 @@ namespace Bhisi.Api.Controllers
                 IPAddress = deleteIp,
                 Details = $"Loan Account DELETED: A/C {loanAccount.LoanAccountNo} (ID: {loanAccount.LoanAccountID}). Principal: ₹{loanAccount.PrincipalBalance:N2}, PurePrincipal: ₹{loanAccount.PurePrincipalBalance:N2}, Int: ₹{loanAccount.InterestBalance:N2}, NPA: {loanAccount.InitialNpaClassification}, OpeningDate: {loanAccount.OpeningDate:yyyy-MM-dd}. Operator: {deleteUsername} (IP: {deleteIp})"
             });
-            await _context.SaveChangesAsync();
+            int deletedLoanRateId = loanAccount.LoanRateID;
+            bool wasOpeningBalance = loanAccount.IsOpeningBalance;
 
             // 11. Delete the Loan Account itself
             _context.LoanAccounts.Remove(loanAccount);
             await _context.SaveChangesAsync();
+
+            if (wasOpeningBalance)
+            {
+                await SyncLoanSchemeGlOpeningBalanceAsync(deletedLoanRateId);
+            }
 
             // If the deleted record was the highest/only LoanAccountID, automatically decrement/reseed identity counter
             try
@@ -2137,6 +2236,7 @@ namespace Bhisi.Api.Controllers
             {
                 int successCount = 0;
                 var errors = new List<string>();
+                var affectedRateIds = new HashSet<int>();
 
                 foreach (var row in rows)
                 {
@@ -2213,6 +2313,7 @@ namespace Bhisi.Api.Controllers
                         await _context.SaveChangesAsync();
                     }
 
+                    affectedRateIds.Add(loanRate.LoanRateID);
                     successCount++;
                 }
 
@@ -2220,6 +2321,12 @@ namespace Bhisi.Api.Controllers
                 {
                     await transaction.RollbackAsync();
                     return BadRequest(new { message = "Import failed. No valid rows found.", errors });
+                }
+
+                // Auto-sync Scheme GL Opening Balances for all affected schemes
+                foreach (var rateId in affectedRateIds)
+                {
+                    await SyncLoanSchemeGlOpeningBalanceAsync(rateId);
                 }
 
                 await transaction.CommitAsync();

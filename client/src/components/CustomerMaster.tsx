@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { transliterateMarathi } from '../utils/transliterateMarathi';
+import { isValidAadhaar, isValidPAN, maskAadhaar } from '../utils/kycValidation';
 import DeceasedClaimSettlementModal from './DeceasedClaimSettlementModal';
 import CustomerBulkEntry from './CustomerBulkEntry';
 
@@ -62,6 +63,10 @@ interface Customer {
   panDocPath?: string;
   employerId?: number;
   legacyCustomerNo?: string;
+  customerType?: string;
+  kycStatus?: string;
+  riskCategory?: string;
+  ckycNo?: string;
 }
 
 interface Branch {
@@ -180,7 +185,11 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
     signaturePath: '',
     aadhaarDocPath: '',
     panDocPath: '',
-    employerId: ''
+    employerId: '',
+    customerType: 'Individual',
+    kycStatus: 'Verified',
+    riskCategory: 'Low',
+    ckycNo: ''
   });
 
   const [sansthaDefaults, setSansthaDefaults] = useState({
@@ -365,7 +374,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
 
     setUploading(true);
     try {
-      const response = await fetch('/api/Upload', {
+      const response = await fetch('/api/Customers/upload', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: uploadFormData
@@ -455,7 +464,7 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       const uploadFormData = new FormData();
       uploadFormData.append('file', file);
 
-      const response = await fetch('/api/Upload', {
+      const response = await fetch('/api/Customers/upload', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: uploadFormData
@@ -543,6 +552,33 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       return;
     }
 
+    if (name === 'aadhaarNo') {
+      const cleanAadhaar = value.replace(/\D/g, '').slice(0, 12);
+      setFormData(prev => ({
+        ...prev,
+        aadhaarNo: cleanAadhaar
+      }));
+      return;
+    }
+
+    if (name === 'panNo') {
+      const cleanPan = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+      setFormData(prev => ({
+        ...prev,
+        panNo: cleanPan
+      }));
+      return;
+    }
+
+    if (name === 'ckycNo') {
+      const cleanCkyc = value.replace(/\D/g, '').slice(0, 14);
+      setFormData(prev => ({
+        ...prev,
+        ckycNo: cleanCkyc
+      }));
+      return;
+    }
+
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
@@ -572,12 +608,24 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       return;
     }
 
-    if (isAadhaarCompulsory && !formData.aadhaarNo?.trim()) {
+    if (formData.aadhaarNo && formData.aadhaarNo.trim()) {
+      const aadhaarCheck = isValidAadhaar(formData.aadhaarNo);
+      if (!aadhaarCheck.isValid) {
+        alert(`आधार क्रमांक अमान्य: ${aadhaarCheck.error}`);
+        return;
+      }
+    } else if (isAadhaarCompulsory) {
       alert("आधार नंबर अनिवार्य आहे.");
       return;
     }
 
-    if (isPanCompulsory && !formData.panNo?.trim()) {
+    if (formData.panNo && formData.panNo.trim()) {
+      const panCheck = isValidPAN(formData.panNo);
+      if (!panCheck.isValid) {
+        alert(`पॅन क्रमांक अमान्य: ${panCheck.error}`);
+        return;
+      }
+    } else if (isPanCompulsory) {
       alert("पॅन नंबर अनिवार्य आहे.");
       return;
     }
@@ -760,7 +808,11 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       signaturePath: customer.signaturePath || '',
       aadhaarDocPath: customer.aadhaarDocPath || '',
       panDocPath: customer.panDocPath || '',
-      employerId: customer.employerId ? customer.employerId.toString() : ''
+      employerId: customer.employerId ? customer.employerId.toString() : '',
+      customerType: customer.customerType || 'Individual',
+      kycStatus: customer.kycStatus || 'Verified',
+      riskCategory: customer.riskCategory || 'Low',
+      ckycNo: customer.ckycNo || ''
     });
 
     setIsListModalOpen(false);
@@ -865,7 +917,11 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
       signaturePath: '',
       aadhaarDocPath: '',
       panDocPath: '',
-      employerId: ''
+      employerId: '',
+      customerType: 'Individual',
+      kycStatus: 'Verified',
+      riskCategory: 'Low',
+      ckycNo: ''
     });
     fetchNextCif();
     setTimeout(() => {
@@ -1611,6 +1667,17 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                   className={`${inputClass} font-mono`}
                   placeholder={isAadhaarCompulsory ? "१२ अंकी आधार (आवश्यक) *" : "१२ अंकी आधार"}
                 />
+                {formData.aadhaarNo && formData.aadhaarNo.length > 0 && (
+                  <div className="mt-1 text-[10px]">
+                    {formData.aadhaarNo.length < 12 ? (
+                      <span className="text-amber-600 font-medium">१२ अंक प्रविष्ट करा ({formData.aadhaarNo.length}/१२)</span>
+                    ) : isValidAadhaar(formData.aadhaarNo).isValid ? (
+                      <span className="text-emerald-700 font-bold flex items-center gap-1">✓ वैध आधार (Verhoeff Checksum पास)</span>
+                    ) : (
+                      <span className="text-rose-600 font-bold flex items-center gap-1">⚠ {isValidAadhaar(formData.aadhaarNo).error}</span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1637,6 +1704,66 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                   maxLength={10}
                   className={`${inputClass} uppercase font-mono font-bold`}
                   placeholder={isPanCompulsory ? "ABCDE1234F (आवश्यक) *" : "ABCDE1234F"}
+                />
+                {formData.panNo && formData.panNo.length > 0 && (
+                  <div className="mt-1 text-[10px]">
+                    {formData.panNo.length < 10 ? (
+                      <span className="text-amber-600 font-medium">१० अक्षरे प्रविष्ट करा ({formData.panNo.length}/१०)</span>
+                    ) : isValidPAN(formData.panNo).isValid ? (
+                      <span className="text-emerald-700 font-bold flex items-center gap-1">✓ वैध पॅन फॉरमॅट</span>
+                    ) : (
+                      <span className="text-rose-600 font-bold flex items-center gap-1">⚠ {isValidPAN(formData.panNo).error}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* KYC Status, Risk Category, and CKYC Number Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+              <div>
+                <label className={labelClass}>केवायसी स्थिती (KYC Status)</label>
+                <select
+                  name="kycStatus"
+                  value={formData.kycStatus || 'Verified'}
+                  onChange={handleChange}
+                  className={`${inputClass} font-bold ${
+                    formData.kycStatus === 'Verified' ? 'text-emerald-700 bg-emerald-50/50' :
+                    formData.kycStatus === 'Pending' ? 'text-amber-700 bg-amber-50/50' : 'text-blue-700'
+                  }`}
+                >
+                  <option value="Verified">पूर्ण (Verified)</option>
+                  <option value="Pending">अपूर्ण (Pending)</option>
+                  <option value="ReKYCDue">रि-केवायसी बाकी (Re-KYC Due)</option>
+                  <option value="Simplified">सुलभीकृत (Simplified)</option>
+                  <option value="Exempted">सूट दिलेले (Exempted)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>जोखीम वर्गवारी (Risk Category)</label>
+                <select
+                  name="riskCategory"
+                  value={formData.riskCategory || 'Low'}
+                  onChange={handleChange}
+                  className={inputClass}
+                >
+                  <option value="Low">कमी जोखीम (Low Risk - १० वर्षे)</option>
+                  <option value="Medium">मध्यम जोखीम (Medium Risk - ८ वर्षे)</option>
+                  <option value="High">उच्च जोखीम (High Risk - २ वर्षे)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className={labelClass}>सी-केवायसी क्रमांक (CKYC No)</label>
+                <input
+                  type="text"
+                  name="ckycNo"
+                  value={formData.ckycNo || ''}
+                  onChange={handleChange}
+                  maxLength={14}
+                  className={`${inputClass} font-mono`}
+                  placeholder="१४ अंकी CKYC क्रमांक"
                 />
               </div>
             </div>

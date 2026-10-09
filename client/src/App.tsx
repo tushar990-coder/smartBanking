@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -76,6 +76,7 @@ import LoanRateMaster from './components/LoanRateMaster';
 import LoanDisbursementRegister from './components/LoanDisbursementRegister';
 import LoanCollectionRegister from './components/LoanCollectionRegister';
 import LoanLedgerReport from './components/LoanLedgerReport';
+import LoanOutstandingReport from './components/LoanOutstandingReport';
 import LoanOverdueReport from './components/LoanOverdueReport';
 import LoanRecoveryNoticeReport from './components/LoanRecoveryNoticeReport';
 import GuarantorReport from './components/GuarantorReport';
@@ -774,6 +775,7 @@ function App() {
         {activeTab === 'loan-disbursement-register' && <LoanDisbursementRegister />}
         {activeTab === 'loan-collection-register' && <LoanCollectionRegister />}
         {activeTab === 'loan-ledger-report' && <LoanLedgerReport />}
+        {activeTab === 'loan-outstanding-report' && <LoanOutstandingReport />}
         {activeTab === 'loan-overdue-report' && <LoanOverdueReport />}
         {activeTab === 'loan-recovery-notice-report' && <LoanRecoveryNoticeReport />}
         {activeTab === 'interest-waiver-register' && <InterestWaiverRegister />}

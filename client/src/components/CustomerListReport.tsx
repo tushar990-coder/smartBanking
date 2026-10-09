@@ -221,7 +221,7 @@ export default function CustomerListReport() {
       'तालुका': r.taluka || '',
       'जिल्हा': r.district || '',
       'खातेदार प्रकार': r.customerType || 'Individual',
-      'केवायसी स्थिती': r.kycStatus || 'Verified',
+      'केवायसी स्थिती': (r.kycStatus === 'Verified' || r.kycStatus === 'पूर्ण') ? 'पूर्ण (Verified)' : 'अपूर्ण (Pending)',
       'आधार क्र. (Masked)': r.aadhaarNoMasked || '',
       'पॅन क्र.': r.panNo || '',
       'लिंग': r.gender || '',
@@ -609,6 +609,7 @@ export default function CustomerListReport() {
                   एकूण खातेदार संख्या: <strong className="text-primary font-bold">{displayedRows.length}</strong> 
                   {' '}| सक्रिय: <strong className="text-emerald-700 font-bold">{displayedRows.filter(x => x.status === 'Active').length}</strong>
                   {' '}| केवायसी पूर्ण: <strong className="text-blue-700 font-bold">{displayedRows.filter(x => x.kycStatus === 'Verified' || x.kycStatus === 'पूर्ण').length}</strong>
+                  {' '}| केवायसी अपूर्ण: <strong className="text-amber-700 font-bold">{displayedRows.filter(x => !(x.kycStatus === 'Verified' || x.kycStatus === 'पूर्ण')).length}</strong>
                 </td>
               </tr>
             </tfoot>

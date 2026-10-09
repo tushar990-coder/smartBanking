@@ -2591,6 +2591,110 @@ using (var scope = app.Services.CreateScope())
     {
         Log.Warning(ex, "Failed to auto-sync ShareScheme mappings on startup");
     }
+
+    try
+    {
+        // Core Banking Loan Opening Balance to GL Auto-Sync Startup Initialization
+        var loanRatesWithLedgers = db.LoanRates
+            .Where(r => r.LoanLedgerID.HasValue && r.LoanLedgerID.Value > 0)
+            .ToList();
+
+        foreach (var rate in loanRatesWithLedgers)
+        {
+            int loanLedgerId = rate.LoanLedgerID!.Value;
+            var ledger = db.Ledgers.Find(loanLedgerId);
+            if (ledger != null)
+            {
+                var mappedRateIds = db.LoanRates
+                    .Where(r => r.LoanLedgerID == loanLedgerId)
+                    .Select(r => r.LoanRateID)
+                    .ToList();
+
+                decimal totalPrincipal = db.LoanAccounts
+                    .Where(a => mappedRateIds.Contains(a.LoanRateID) && a.IsOpeningBalance)
+                    .Sum(a => a.PrincipalBalance);
+
+                if (totalPrincipal > 0 || ledger.OpeningBalance != totalPrincipal)
+                {
+                    ledger.OpeningBalance = totalPrincipal;
+                    ledger.OpeningBalanceType = "Dr";
+                }
+            }
+        }
+        db.SaveChanges();
+        Log.Information("Loan Schemes GL Opening Balances auto-synchronized with sub-ledger on startup.");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Failed to auto-sync Loan Schemes GL Opening Balances on startup");
+    }
+
+    try
+    {
+        // Core Banking Pigmy Opening Balance to GL Auto-Sync Startup Initialization
+        var pigmySchemes = db.PigmySchemes.ToList();
+
+        foreach (var scheme in pigmySchemes)
+        {
+            int liabilityLedgerId = 0;
+            if (scheme.PigmyLiabilityLedgerID.HasValue && scheme.PigmyLiabilityLedgerID.Value > 0)
+            {
+                liabilityLedgerId = scheme.PigmyLiabilityLedgerID.Value;
+            }
+            else
+            {
+                var fallback = db.Ledgers.FirstOrDefault(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"));
+                if (fallback != null)
+                {
+                    liabilityLedgerId = fallback.LedgerID;
+                    scheme.PigmyLiabilityLedgerID = liabilityLedgerId;
+                }
+            }
+
+            if (liabilityLedgerId > 0)
+            {
+                var ledger = db.Ledgers.Find(liabilityLedgerId);
+                if (ledger != null)
+                {
+                    var mappedSchemeIds = db.PigmySchemes
+                        .Where(s => s.PigmyLiabilityLedgerID == liabilityLedgerId)
+                        .Select(s => s.PigmySchemeID)
+                        .ToList();
+                    if (!mappedSchemeIds.Contains(scheme.PigmySchemeID))
+                    {
+                        mappedSchemeIds.Add(scheme.PigmySchemeID);
+                    }
+
+                    var accounts = db.PigmyAccounts
+                        .Where(a => mappedSchemeIds.Contains(a.PigmySchemeID) && a.Status == "Active")
+                        .Select(a => a.PigmyAccountID)
+                        .ToList();
+
+                    decimal totalOpeningCr = 0;
+                    if (accounts.Any())
+                    {
+                        totalOpeningCr = db.PigmyOpeningBalances
+                            .Where(o => accounts.Contains(o.PigmyAccountID))
+                            .GroupBy(o => o.PigmyAccountID)
+                            .Select(g => g.OrderByDescending(x => x.PigmyOpeningBalanceID).Select(x => x.MigratedBalanceAmount).FirstOrDefault())
+                            .Sum();
+                    }
+
+                    if (totalOpeningCr > 0 || ledger.OpeningBalance != totalOpeningCr)
+                    {
+                        ledger.OpeningBalance = totalOpeningCr;
+                        ledger.OpeningBalanceType = "Cr";
+                    }
+                }
+            }
+        }
+        db.SaveChanges();
+        Log.Information("Pigmy Schemes GL Opening Balances auto-synchronized with sub-ledger on startup.");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Failed to auto-sync Pigmy Schemes GL Opening Balances on startup");
+    }
 }
 
 // Enable Swagger UI for easy testing

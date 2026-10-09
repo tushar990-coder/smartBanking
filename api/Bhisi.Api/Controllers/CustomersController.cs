@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -456,6 +457,10 @@ namespace Bhisi.Api.Controllers
 
             if (!string.IsNullOrWhiteSpace(customer.AadhaarNo))
             {
+                if (!KycValidationHelper.IsValidAadhaar(customer.AadhaarNo, out var aadhaarErr))
+                {
+                    return BadRequest(new { message = $"आधार क्रमांक अमान्य: {aadhaarErr}" });
+                }
                 bool aadhaarExists = await _context.Customers.AnyAsync(c => c.AadhaarNo == customer.AadhaarNo);
                 if (aadhaarExists)
                 {
@@ -465,6 +470,10 @@ namespace Bhisi.Api.Controllers
 
             if (!string.IsNullOrWhiteSpace(customer.PANNo))
             {
+                if (!KycValidationHelper.IsValidPan(customer.PANNo, out var panErr))
+                {
+                    return BadRequest(new { message = $"पॅन क्रमांक अमान्य: {panErr}" });
+                }
                 bool panExists = await _context.Customers.AnyAsync(c => c.PANNo == customer.PANNo);
                 if (panExists)
                 {
@@ -569,8 +578,37 @@ namespace Bhisi.Api.Controllers
             existingCustomer.Taluka = customer.Taluka;
             existingCustomer.District = customer.District;
             existingCustomer.MobileNo = string.IsNullOrWhiteSpace(customer.MobileNo) ? null : customer.MobileNo.Trim();
-            existingCustomer.AadhaarNo = string.IsNullOrWhiteSpace(customer.AadhaarNo) ? null : customer.AadhaarNo.Trim();
-            existingCustomer.PANNo = string.IsNullOrWhiteSpace(customer.PANNo) ? null : customer.PANNo.Trim().ToUpper();
+            customer.AadhaarNo = string.IsNullOrWhiteSpace(customer.AadhaarNo) ? null : customer.AadhaarNo.Trim();
+            customer.PANNo = string.IsNullOrWhiteSpace(customer.PANNo) ? null : customer.PANNo.Trim().ToUpper();
+
+            if (!string.IsNullOrWhiteSpace(customer.AadhaarNo))
+            {
+                if (!KycValidationHelper.IsValidAadhaar(customer.AadhaarNo, out var aadhaarErr))
+                {
+                    return BadRequest(new { message = $"आधार क्रमांक अमान्य: {aadhaarErr}" });
+                }
+                bool aadhaarExists = await _context.Customers.AnyAsync(c => c.CustomerID != id && c.AadhaarNo == customer.AadhaarNo);
+                if (aadhaarExists)
+                {
+                    return BadRequest(new { message = $"हा आधार नंबर ({customer.AadhaarNo}) आधीच दुसऱ्या ग्राहकाकडे नोंदवला आहे." });
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(customer.PANNo))
+            {
+                if (!KycValidationHelper.IsValidPan(customer.PANNo, out var panErr))
+                {
+                    return BadRequest(new { message = $"पॅन क्रमांक अमान्य: {panErr}" });
+                }
+                bool panExists = await _context.Customers.AnyAsync(c => c.CustomerID != id && c.PANNo == customer.PANNo);
+                if (panExists)
+                {
+                    return BadRequest(new { message = $"हा पॅन नंबर ({customer.PANNo}) आधीच दुसऱ्या ग्राहकाकडे नोंदवला आहे." });
+                }
+            }
+
+            existingCustomer.AadhaarNo = customer.AadhaarNo;
+            existingCustomer.PANNo = customer.PANNo;
             existingCustomer.PhotoPath = customer.PhotoPath;
             existingCustomer.SignaturePath = customer.SignaturePath;
             existingCustomer.AadhaarDocPath = customer.AadhaarDocPath;
@@ -597,6 +635,14 @@ namespace Bhisi.Api.Controllers
             existingCustomer.NomineeGuardianName = customer.NomineeGuardianName;
             existingCustomer.Status = customer.Status;
             existingCustomer.EmployerId = customer.EmployerId;
+            if (!string.IsNullOrWhiteSpace(customer.KYCStatus))
+                existingCustomer.KYCStatus = customer.KYCStatus.Trim();
+            if (!string.IsNullOrWhiteSpace(customer.CustomerType))
+                existingCustomer.CustomerType = customer.CustomerType.Trim();
+            if (!string.IsNullOrWhiteSpace(customer.RiskCategory))
+                existingCustomer.RiskCategory = customer.RiskCategory.Trim();
+            if (!string.IsNullOrWhiteSpace(customer.CKYCNo))
+                existingCustomer.CKYCNo = customer.CKYCNo.Trim();
             existingCustomer.UpdatedBy = userId;
             existingCustomer.UpdatedOn = DateTime.Now;
 
@@ -800,7 +846,12 @@ namespace Bhisi.Api.Controllers
             }
 
             var fileUrl = $"/uploads/{uniqueFileName}";
-            return Ok(new { url = fileUrl });
+            return Ok(new
+            {
+                url = fileUrl,
+                filePath = fileUrl,
+                path = fileUrl
+            });
         }
     }
 }

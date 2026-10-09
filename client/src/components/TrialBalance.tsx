@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import CbsReportLayout, { formatDisplayDate, CbsPaperSize } from './common/CbsReportLayout';
 import { useAuth } from '../context/AuthContext';
 import { 
-  Printer, 
-  FileSpreadsheet, 
-  RefreshCw, 
   Search, 
-  FileText, 
+  RefreshCw, 
   LayoutGrid, 
-  ListFilter 
+  ListFilter,
+  CheckCircle2,
+  AlertTriangle,
+  BookOpen
 } from 'lucide-react';
 
 interface ReportNode {
@@ -36,28 +37,20 @@ interface NodeTotals {
   clCr: number;
 }
 
-const fmtCurrency = (n: number | null | undefined) => {
-  return (n || 0).toLocaleString('en-IN', {
+// Marathi Digits Converter
+export const toMarathiDigits = (val: string | number | null | undefined): string => {
+  if (val === null || val === undefined) return '';
+  const str = String(val);
+  const marathiDigits = ['०', '१', '२', '३', '४', '५', '६', '७', '८', '९'];
+  return str.replace(/[0-9]/g, d => marathiDigits[parseInt(d, 10)]);
+};
+
+const fmtCurrency = (n: number | null | undefined, isMarathi: boolean = false) => {
+  const formatted = (n || 0).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
-};
-
-const formatDisplayDate = (dStr?: string | null) => {
-  if (!dStr) return '-';
-  try {
-    const clean = dStr.split('T')[0];
-    const parts = clean.split('-');
-    if (parts.length === 3) {
-      const [y, m, d] = parts;
-      return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
-    }
-    const d = new Date(dStr);
-    if (isNaN(d.getTime())) return dStr;
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  } catch {
-    return dStr;
-  }
+  return isMarathi ? toMarathiDigits(formatted) : formatted;
 };
 
 const getNodeTotals = (node: ReportNode): NodeTotals => {
@@ -87,7 +80,13 @@ const getNodeTotals = (node: ReportNode): NodeTotals => {
   return totals;
 };
 
-const TreeNode: React.FC<{ node: ReportNode, level: number, indexStr: string }> = ({ node, level, indexStr }) => {
+// Tree Node Component for Group Tree View
+const TreeNode: React.FC<{ 
+  node: ReportNode; 
+  level: number; 
+  indexStr: string; 
+  isMarathiDigits: boolean; 
+}> = ({ node, level, indexStr, isMarathiDigits }) => {
   const [expanded, setExpanded] = useState(true);
 
   const hasChildren = node.children && node.children.length > 0;
@@ -95,30 +94,36 @@ const TreeNode: React.FC<{ node: ReportNode, level: number, indexStr: string }> 
   
   let netOpStr = '-';
   if (totals.opDr > totals.opCr) {
-    netOpStr = `${fmtCurrency(totals.opDr - totals.opCr)} Dr`;
+    netOpStr = `${fmtCurrency(totals.opDr - totals.opCr, isMarathiDigits)} Dr`;
   } else if (totals.opCr > totals.opDr) {
-    netOpStr = `${fmtCurrency(totals.opCr - totals.opDr)} Cr`;
+    netOpStr = `${fmtCurrency(totals.opCr - totals.opDr, isMarathiDigits)} Cr`;
   }
 
   let netClosingStr = '-';
   if (totals.clDr > totals.clCr) {
-    netClosingStr = `${fmtCurrency(totals.clDr - totals.clCr)} Dr`;
+    netClosingStr = `${fmtCurrency(totals.clDr - totals.clCr, isMarathiDigits)} Dr`;
   } else if (totals.clCr > totals.clDr) {
-    netClosingStr = `${fmtCurrency(totals.clCr - totals.clDr)} Cr`;
+    netClosingStr = `${fmtCurrency(totals.clCr - totals.clDr, isMarathiDigits)} Cr`;
   }
+
+  const idxText = isMarathiDigits ? toMarathiDigits(indexStr) : indexStr;
+  const codeRaw = node.isGroup 
+    ? (node.displayOrder && node.displayOrder > 0 ? `${node.displayOrder} -` : (node.code ? `${node.code} -` : '')) 
+    : `${node.code || node.id} -`;
+  const codeText = isMarathiDigits ? toMarathiDigits(codeRaw) : codeRaw;
 
   return (
     <React.Fragment>
-      <tr className={`hover:bg-slate-50 border-b border-gray-900 ${node.isGroup ? 'font-bold bg-slate-100/80 text-[11px] text-gray-950' : 'text-[11px] text-gray-900'}`}>
-        <td className="border border-gray-900 p-1 text-center font-mono font-medium text-gray-700">
-          {indexStr}
+      <tr className={`hover:bg-slate-50 border-b border-slate-900 ${node.isGroup ? 'font-bold bg-slate-100/80 text-[11px] text-slate-950' : 'text-[11px] text-slate-900'}`}>
+        <td className="border border-slate-900 p-1 text-center font-mono font-medium text-slate-700">
+          {idxText}
         </td>
-        <td className="border border-gray-900 p-1 align-middle" style={{ paddingLeft: `${level * 0.8 + 0.4}rem` }}>
+        <td className="border border-slate-900 p-1 align-middle" style={{ paddingLeft: `${level * 0.8 + 0.4}rem` }}>
           {hasChildren ? (
             <button 
               type="button"
               onClick={() => setExpanded(!expanded)} 
-              className="mr-1.5 w-3.5 h-3.5 inline-flex items-center justify-center rounded bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold text-[9px] cursor-pointer print:hidden select-none"
+              className="mr-1.5 w-3.5 h-3.5 inline-flex items-center justify-center rounded bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-[9px] cursor-pointer print:hidden select-none"
             >
               {expanded ? '−' : '+'}
             </button>
@@ -127,29 +132,33 @@ const TreeNode: React.FC<{ node: ReportNode, level: number, indexStr: string }> 
           )}
 
           <span className="text-primary font-mono font-bold text-[11px] mr-1.5">
-            {node.isGroup 
-              ? (node.displayOrder && node.displayOrder > 0 ? `${node.displayOrder} -` : (node.code ? `${node.code} -` : '')) 
-              : `${node.code || node.id} -`}
+            {codeText}
           </span>
           <span>{node.name}</span>
         </td>
         
-        <td className="border border-gray-900 p-1 text-right font-mono font-medium whitespace-nowrap">
+        <td className="border border-slate-900 p-1 text-right font-mono font-medium whitespace-nowrap cbs-num-cell">
           {netOpStr}
         </td>
-        <td className="border border-gray-900 p-1 text-right font-mono font-medium whitespace-nowrap text-red-700">
-          {totals.transDr > 0 ? fmtCurrency(totals.transDr) : '-'}
+        <td className="border border-slate-900 p-1 text-right font-mono font-medium whitespace-nowrap text-red-700 cbs-num-cell">
+          {totals.transDr > 0 ? fmtCurrency(totals.transDr, isMarathiDigits) : '-'}
         </td>
-        <td className="border border-gray-900 p-1 text-right font-mono font-medium whitespace-nowrap text-emerald-800">
-          {totals.transCr > 0 ? fmtCurrency(totals.transCr) : '-'}
+        <td className="border border-slate-900 p-1 text-right font-mono font-medium whitespace-nowrap text-emerald-800 cbs-num-cell">
+          {totals.transCr > 0 ? fmtCurrency(totals.transCr, isMarathiDigits) : '-'}
         </td>
-        <td className="border border-gray-900 p-1 text-right font-mono font-bold whitespace-nowrap text-gray-950">
+        <td className="border border-slate-900 p-1 text-right font-mono font-bold whitespace-nowrap text-slate-950 cbs-num-cell">
           {netClosingStr}
         </td>
       </tr>
 
       {expanded && hasChildren && node.children.map((child, idx) => (
-        <TreeNode key={`${child.id}-${idx}`} node={child} level={level + 1} indexStr={`${indexStr}.${idx + 1}`} />
+        <TreeNode 
+          key={`${child.id}-${idx}`} 
+          node={child} 
+          level={level + 1} 
+          indexStr={`${indexStr}.${idx + 1}`}
+          isMarathiDigits={isMarathiDigits}
+        />
       ))}
     </React.Fragment>
   );
@@ -165,8 +174,9 @@ export default function TrialBalance() {
   const [branches, setBranches] = useState<any[]>([]);
   const [filterMode, setFilterMode] = useState<'active' | 'transactionsOnly' | 'all'>('active');
   const [viewMode, setViewMode] = useState<'flat' | 'tree'>('flat');
+  const [digitMode, setDigitMode] = useState<'marathi' | 'english'>('marathi');
+  const [paperSize, setPaperSize] = useState<CbsPaperSize>('a4-portrait');
   const [searchTerm, setSearchTerm] = useState('');
-  const reportRef = useRef<HTMLDivElement>(null);
 
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
@@ -223,15 +233,17 @@ export default function TrialBalance() {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      let url = `/api/Reports/TrialBalance?fromDate=${fromDate}&toDate=${toDate}`;
-      if (selectedBranchId !== 'all') {
-        url += `&branchId=${selectedBranchId}`;
-      }
+      let url = '/api/Reports/TrialBalance';
+      const params = new URLSearchParams();
+      if (fromDate) params.append('fromDate', fromDate);
+      if (toDate) params.append('toDate', toDate);
+      if (selectedBranchId !== 'all') params.append('branchId', selectedBranchId);
+      if (params.toString()) url += `?${params.toString()}`;
 
       const res = await axios.get(url);
       setReportData(res.data || []);
     } catch (error) {
-      console.error('Failed to fetch trial balance', error);
+      console.error('Error fetching trial balance', error);
     } finally {
       setLoading(false);
     }
@@ -243,44 +255,21 @@ export default function TrialBalance() {
     }
   }, [fromDate, toDate, selectedBranchId]);
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const filterNodes = (nodes: ReportNode[]): ReportNode[] => {
-    return nodes
-      .map(node => {
-        let keep = true;
-        if (!node.isGroup) {
-          const hasTx = Math.abs(node.totalDebit) >= 0.01 || Math.abs(node.totalCredit) >= 0.01;
-          const hasBal = Math.abs(node.openingBalance) >= 0.01 || Math.abs(node.closingBalance) >= 0.01;
-          if (filterMode === 'transactionsOnly') keep = hasTx;
-          else if (filterMode === 'active') keep = (hasTx || hasBal);
-          else if (filterMode === 'all') keep = true;
-        }
-
-        const filteredChildren = node.children && node.children.length > 0 ? filterNodes(node.children) : [];
-        if (node.isGroup) {
-          keep = filteredChildren.length > 0;
-        }
-
-        if (!keep) return null;
-
-        return {
-          ...node,
-          children: filteredChildren
-        };
-      })
-      .filter((n): n is ReportNode => n !== null);
-  };
-
-  const filteredReportData = filterNodes(reportData);
-
+  // Recursively flatten ledgers for Flat list view
   const flattenLedgers = (nodes: ReportNode[]): ReportNode[] => {
     let result: ReportNode[] = [];
     for (const node of nodes) {
       if (!node.isGroup) {
-        result.push(node);
+        const hasTransactions = Math.abs(node.totalDebit) >= 0.01 || Math.abs(node.totalCredit) >= 0.01;
+        const hasBalance = Math.abs(node.openingBalance) >= 0.01 || Math.abs(node.closingBalance) >= 0.01;
+
+        if (filterMode === 'transactionsOnly') {
+          if (hasTransactions) result.push(node);
+        } else if (filterMode === 'active') {
+          if (hasTransactions || hasBalance) result.push(node);
+        } else {
+          result.push(node);
+        }
       }
       if (node.children && node.children.length > 0) {
         result = result.concat(flattenLedgers(node.children));
@@ -289,7 +278,7 @@ export default function TrialBalance() {
     return result;
   };
 
-  const flatList = flattenLedgers(filteredReportData).filter(item => {
+  const flatList = flattenLedgers(reportData).filter(item => {
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase().trim();
     return (
@@ -299,6 +288,46 @@ export default function TrialBalance() {
     );
   });
 
+  const filterTreeNodes = (nodes: ReportNode[]): ReportNode[] => {
+    return nodes
+      .map(node => {
+        if (!node.isGroup) {
+          const hasTransactions = Math.abs(node.totalDebit) >= 0.01 || Math.abs(node.totalCredit) >= 0.01;
+          const hasBalance = Math.abs(node.openingBalance) >= 0.01 || Math.abs(node.closingBalance) >= 0.01;
+          let matchFilter = true;
+
+          if (filterMode === 'transactionsOnly') matchFilter = hasTransactions;
+          else if (filterMode === 'active') matchFilter = hasTransactions || hasBalance;
+
+          let matchSearch = true;
+          if (searchTerm.trim()) {
+            const term = searchTerm.toLowerCase().trim();
+            matchSearch = itemMatchesSearch(node, term);
+          }
+
+          return matchFilter && matchSearch ? node : null;
+        }
+
+        const filteredChildren = filterTreeNodes(node.children);
+        if (filteredChildren.length > 0) {
+          return { ...node, children: filteredChildren };
+        }
+        return null;
+      })
+      .filter((n): n is ReportNode => n !== null);
+  };
+
+  const itemMatchesSearch = (item: ReportNode, term: string) => {
+    return (
+      item.name.toLowerCase().includes(term) ||
+      (item.code && item.code.toLowerCase().includes(term)) ||
+      item.id.toString().includes(term)
+    );
+  };
+
+  const filteredReportData = filterTreeNodes(reportData);
+
+  // Gross Totals for Gross Trial Balance
   let totalOpeningDr = 0;
   let totalOpeningCr = 0;
   let totalTransDr = 0;
@@ -317,6 +346,13 @@ export default function TrialBalance() {
     if (item.closingType === 'Cr') totalClosingCr += item.closingBalance;
   });
 
+  const isMarathiDigits = digitMode === 'marathi';
+
+  // Balance Integrity check: Difference between Total Dr and Total Cr
+  const closingDifference = Math.abs(totalClosingDr - totalClosingCr);
+  const isBalanced = closingDifference < 0.01;
+
+  // Excel Export
   const handleExportExcel = () => {
     if (flatList.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
     const excelRows = flatList.map((node, i) => ({
@@ -345,371 +381,296 @@ export default function TrialBalance() {
     XLSX.writeFile(wb, `Trial_Balance_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  return (
-    <div className="p-2 sm:p-4 md:p-6 bg-slate-50 min-h-screen font-sans text-slate-800">
-      
-      {/* Print Specific CSS */}
-      <style>
-        {`
-          @media print {
-            @page {
-              size: A4 portrait;
-              margin: 8mm 8mm 8mm 8mm;
-            }
-            body * {
-              visibility: hidden;
-            }
-            .print-area, .print-area * {
-              visibility: visible;
-            }
-            .print-area {
-              position: absolute;
-              left: 0;
-              top: 0;
-              width: 100% !important;
-              max-width: 100% !important;
-              padding: 0 !important;
-              margin: 0 !important;
-              box-shadow: none !important;
-              border: none !important;
-              background: transparent !important;
-            }
-            .no-print {
-              display: none !important;
-            }
-            table {
-              page-break-inside: auto;
-            }
-            tr {
-              page-break-inside: avoid;
-              page-break-after: auto;
-            }
-            thead {
-              display: table-header-group;
-            }
-            tfoot {
-              display: table-footer-group;
-            }
-          }
-        `}
-      </style>
+  const handlePrint = () => {
+    window.print();
+  };
 
-      {/* Sleek Compact CBS Header & Filter Control Panel (Hidden on Print) */}
-      <div className="bg-white px-3 py-2 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 no-print space-y-1.5">
-        
-        {/* Row 1: Title + Inline Filters + Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-          
-          {/* Left: Compact Title */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-              <FileText size={14} className="stroke-[2.5]" />
-            </div>
-            <h1 className="text-xs font-bold text-gray-900 tracking-tight flex items-center gap-1">
-              <span>तेरीज पत्रक</span>
-              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Trial Balance Report)</span>
-            </h1>
-          </div>
-
-          {/* Center: Integrated Inline Filter Inputs */}
-          <div className="flex flex-wrap items-center gap-1.5 flex-1 justify-end sm:justify-center">
-            
-            {/* View Type Flat/Tree */}
-            <div className="inline-flex rounded-sm border border-gray-300 p-0.5 bg-gray-50 h-6 items-center">
-              <button
-                type="button"
-                onClick={() => setViewMode('flat')}
-                className={`px-1.5 py-0.5 text-[10px] font-bold rounded-xs transition-all flex items-center gap-0.5 cursor-pointer ${viewMode === 'flat' ? 'bg-primary text-white' : 'text-gray-700 hover:text-gray-900'}`}
-              >
-                <LayoutGrid size={10} />
-                <span>सरळ यादी</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('tree')}
-                className={`px-1.5 py-0.5 text-[10px] font-bold rounded-xs transition-all flex items-center gap-0.5 cursor-pointer ${viewMode === 'tree' ? 'bg-primary text-white' : 'text-gray-700 hover:text-gray-900'}`}
-              >
-                <ListFilter size={10} />
-                <span>ग्रुप ट्री</span>
-              </button>
-            </div>
-
-            {/* Branch */}
-            <div className="flex items-center gap-1">
-              <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">शाखा:</label>
-              <select
-                value={selectedBranchId}
-                onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32"
-              >
-                <option value="all">सर्व शाखा (All)</option>
-                {branches.map((b) => (
-                  <option key={b.branchID} value={b.branchID.toString()}>
-                    {b.branchName}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Dates */}
-            <div className="flex items-center gap-1">
-              <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">पासून:</label>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28"
-              />
-            </div>
-
-            <div className="flex items-center gap-1">
-              <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">पर्यंत:</label>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28"
-              />
-            </div>
-
-            {/* Filter Mode */}
-            <div className="w-auto min-w-[190px]">
-              <select
-                value={filterMode}
-                onChange={(e: any) => setFilterMode(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-bold bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-full text-primary"
-              >
-                <option value="active">● सक्रिय खाती (शिल्लक / व्यवहार असलेली)</option>
-                <option value="transactionsOnly">फक्त चालू कालावधीत व्यवहार झालेली खाती</option>
-                <option value="all">सर्व खाती (शून्य शिल्लकसह)</option>
-              </select>
-            </div>
-
-            {/* View Button */}
-            <button
-              onClick={fetchReport}
-              disabled={loading}
-              className="h-6 bg-primary hover:opacity-90 text-white px-2.5 rounded-sm text-[11px] font-bold shadow-2xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-            >
-              {loading ? <RefreshCw size={11} className="animate-spin" /> : <Search size={11} />}
-              <span>पहा</span>
-            </button>
-          </div>
-
-          {/* Right: Export & Print Action Buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={handleExportExcel}
-              disabled={flatList.length === 0}
-              className={`h-6 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${flatList.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title="एक्सेल फाइल डाउनलोड करा"
-            >
-              <FileSpreadsheet size={12} />
-              <span>एक्सेल</span>
-            </button>
-
-            <button
-              onClick={handlePrint}
-              disabled={flatList.length === 0}
-              className={`h-6 bg-slate-800 hover:bg-slate-900 text-white px-2 py-0.5 rounded-sm text-[11px] font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer ${flatList.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title="A4 प्रिंट काढा"
-            >
-              <Printer size={12} />
-              <span>प्रिंट (A4)</span>
-            </button>
-          </div>
-
-        </div>
-
-        {/* Row 2: In-Table Search + Summary Metrics Strip */}
-        <div className="pt-1.5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="relative w-64 max-w-full">
-            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="खाते नाव किंवा कोड शोधा..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-6 pr-2 py-0.5 h-6 border border-gray-300 rounded-sm text-[11px] focus:outline-none focus:border-primary bg-gray-50/50 focus:bg-white"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 text-[11px] text-gray-600">
-            <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
-              एकूण खाती: <strong className="text-primary font-bold">{flatList.length}</strong>
-            </span>
-            <span className="bg-emerald-50 px-2 py-0.5 rounded text-emerald-800 border border-emerald-200">
-              नावे व्यवहार: <strong className="text-red-700 font-bold">₹ {fmtCurrency(totalTransDr)}</strong> | जमा व्यवहार: <strong className="text-emerald-700 font-bold">₹ {fmtCurrency(totalTransCr)}</strong>
-            </span>
-          </div>
-        </div>
-
+  // CBS Unified Toolbar Controls
+  const filterToolbarControls = (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      {/* View Type Flat/Tree */}
+      <div className="inline-flex rounded-sm border border-slate-300 p-0.5 bg-slate-50 h-6 items-center">
+        <button
+          type="button"
+          onClick={() => setViewMode('flat')}
+          className={`px-1.5 py-0.5 text-[10px] font-bold rounded-xs transition-all flex items-center gap-0.5 cursor-pointer ${
+            viewMode === 'flat' ? 'bg-primary text-white shadow-2xs' : 'text-slate-700 hover:text-slate-900'
+          }`}
+        >
+          <LayoutGrid size={10} />
+          <span>सरळ यादी</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode('tree')}
+          className={`px-1.5 py-0.5 text-[10px] font-bold rounded-xs transition-all flex items-center gap-0.5 cursor-pointer ${
+            viewMode === 'tree' ? 'bg-primary text-white shadow-2xs' : 'text-slate-700 hover:text-slate-900'
+          }`}
+        >
+          <ListFilter size={10} />
+          <span>ग्रुप ट्री</span>
+        </button>
       </div>
 
-      {/* Main Printable A4 Document Frame */}
-      <div 
-        ref={reportRef} 
-        className="print-area bg-white mx-auto max-w-5xl p-5 md:p-8 rounded-sm shadow-md border border-slate-300 min-h-[900px] flex flex-col justify-between text-xs"
+      {/* Branch */}
+      {branches.length > 1 && (
+        <div className="flex items-center gap-1">
+          <label className="text-[10.5px] font-semibold text-slate-700 whitespace-nowrap">शाखा:</label>
+          <select
+            value={selectedBranchId}
+            onChange={(e) => setSelectedBranchId(e.target.value)}
+            className="h-6 border border-slate-300 rounded px-1 text-[10.5px] font-medium bg-white focus:outline-none focus:border-primary max-w-[110px]"
+          >
+            <option value="all">सर्व शाखा (All)</option>
+            {branches.map((b) => (
+              <option key={b.branchID} value={b.branchID.toString()}>
+                {b.branchName}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Dates */}
+      <div className="flex items-center gap-1">
+        <label className="text-[10.5px] font-semibold text-slate-700 whitespace-nowrap">पासून:</label>
+        <input
+          type="date"
+          value={fromDate}
+          onChange={(e) => setFromDate(e.target.value)}
+          className="h-6 border border-slate-300 rounded px-1 text-[10.5px] font-mono bg-white focus:outline-none focus:border-primary"
+        />
+      </div>
+
+      <div className="flex items-center gap-1">
+        <label className="text-[10.5px] font-semibold text-slate-700 whitespace-nowrap">पर्यंत:</label>
+        <input
+          type="date"
+          value={toDate}
+          onChange={(e) => setToDate(e.target.value)}
+          className="h-6 border border-slate-300 rounded px-1 text-[10.5px] font-mono bg-white focus:outline-none focus:border-primary"
+        />
+      </div>
+
+      {/* Filter Mode */}
+      <div className="flex items-center gap-1">
+        <select
+          value={filterMode}
+          onChange={(e: any) => setFilterMode(e.target.value)}
+          className="h-6 border border-slate-300 rounded px-1 text-[10.5px] font-semibold bg-white focus:outline-none focus:border-primary text-primary"
+        >
+          <option value="active">सक्रिय खाती (Active)</option>
+          <option value="transactionsOnly">व्यवहार झालेली खाती</option>
+          <option value="all">सर्व खाती (शून्य शिल्लकसह)</option>
+        </select>
+      </div>
+
+      {/* Numerals Format Toggle */}
+      <div className="flex items-center gap-1">
+        <select
+          value={digitMode}
+          onChange={(e) => setDigitMode(e.target.value as 'marathi' | 'english')}
+          className="h-6 border border-slate-300 rounded px-1 text-[10.5px] font-semibold bg-white focus:outline-none focus:border-primary"
+        >
+          <option value="marathi">मराठी अंक (१, २, ३)</option>
+          <option value="english">इंग्रजी अंक (1, 2, 3)</option>
+        </select>
+      </div>
+
+      {/* Search */}
+      <div className="relative w-32 sm:w-40">
+        <Search size={11} className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          placeholder="खाते / लेजर शोधा..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full pl-5 pr-1 py-0.5 h-6 border border-slate-300 rounded text-[10.5px] focus:outline-none focus:border-primary bg-white"
+        />
+      </div>
+
+      {/* View Button */}
+      <button
+        type="button"
+        onClick={fetchReport}
+        disabled={loading}
+        className="h-6 bg-primary hover:opacity-90 text-white px-2.5 rounded text-[11px] font-bold shadow-2xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
       >
-        <div>
-          
-          {/* Official Bank Header Box (Exact Reference Format) */}
-          <div className="border border-gray-900 p-3 relative text-center">
-            
-            {/* Registration Top Bar */}
-            <div className="flex justify-between items-center text-[12px] font-bold text-gray-900 border-b border-gray-300 pb-1 mb-2">
-              <div>
-                <span>रजि. नं. - </span>
-                <span className="font-mono">{sansthaDetail?.registrationNo || '-'}</span>
-              </div>
-              <div>
-                <span>रजि. दि. - </span>
-                <span className="font-mono">{sansthaDetail?.registrationDate ? formatDisplayDate(sansthaDetail.registrationDate) : '-'}</span>
-              </div>
-            </div>
-
-            {/* Central Sanstha Name */}
-            <h1 className="text-lg sm:text-xl font-extrabold text-gray-950 tracking-tight leading-snug font-serif uppercase">
-              {sansthaDetail?.sansthaName || 'सहकारी पतसंस्था मर्यादित'}
-            </h1>
-
-            {/* Subtitle / Address */}
-            <p className="text-xs sm:text-[13px] font-bold text-gray-800 mt-1">
-              {sansthaDetail?.address || ''} {sansthaDetail?.village ? `मु. ${sansthaDetail.village}, ` : ''}{sansthaDetail?.taluka ? `ता. ${sansthaDetail.taluka}, ` : ''}{sansthaDetail?.district ? `जि. ${sansthaDetail.district}` : ''}
-            </p>
-          </div>
-
-          {/* Report Title Banner Section */}
-          <div className="mt-3 mb-2 flex items-center justify-between">
-            <div className="w-28 hidden sm:block"></div>
-
-            {/* Title Banner Box */}
-            <div className="mx-auto inline-block border border-gray-400 bg-gray-50/80 px-8 py-1 rounded-xs shadow-2xs text-center">
-              <h2 className="text-sm sm:text-base font-extrabold text-gray-950 tracking-wider uppercase font-serif">
-                तेरीज पत्रक (Trial Balance Report)
-              </h2>
-            </div>
-
-            {/* Date Tag on Right */}
-            <div className="text-right text-xs font-bold text-gray-800">
-              <span>कालावधी : </span>
-              <span className="font-mono">{formatDisplayDate(fromDate)} ते {formatDisplayDate(toDate)}</span>
-            </div>
-          </div>
-
-          {/* Trial Balance Data Table */}
-          <div className="overflow-x-auto mt-2">
-            <table className="w-full border-collapse border border-gray-900 text-xs">
-              <thead>
-                <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
-                  <th className="border border-gray-900 py-1.5 px-1 w-[6%] text-center">अ. क्र.</th>
-                  <th className="border border-gray-900 py-1.5 px-3 w-[34%] text-left">खाते / लेजर नाव</th>
-                  <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-right">आरंभीची शिल्लक (₹)</th>
-                  <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-right">नावे व्यवहार (Dr ₹)</th>
-                  <th className="border border-gray-900 py-1.5 px-2 w-[14%] text-right">जमा व्यवहार (Cr ₹)</th>
-                  <th className="border border-gray-900 py-1.5 px-2 w-[16%] text-right font-extrabold">अखेरची शिल्लक (₹)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
-                      तेरीज अहवाल तयार होत आहे, कृपया प्रतीक्षा करा...
-                    </td>
-                  </tr>
-                ) : (viewMode === 'flat' ? flatList.length === 0 : filteredReportData.length === 0) ? (
-                  <tr>
-                    <td colSpan={6} className="py-6 text-center text-gray-500 font-semibold border border-gray-900">
-                      या कालावधीत कोणतीही तेरीज नोंद आढळली नाही.
-                    </td>
-                  </tr>
-                ) : viewMode === 'flat' ? (
-                  flatList.map((node, index) => {
-                    let opStr = '-';
-                    if (node.openingBalance !== 0) {
-                      opStr = `${fmtCurrency(node.openingBalance)} ${node.openingType}`;
-                    }
-
-                    let closingStr = '-';
-                    if (node.closingBalance !== 0) {
-                      closingStr = `${fmtCurrency(node.closingBalance)} ${node.closingType}`;
-                    }
-
-                    return (
-                      <tr key={node.id} className="hover:bg-slate-50 text-gray-900 text-[11px]">
-                        <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{index + 1}</td>
-                        <td className="border border-gray-900 py-1 px-3">
-                          <span className="text-primary font-mono font-bold mr-1.5">{node.code || node.id} -</span>
-                          <span className="font-medium">{node.name}</span>
-                        </td>
-                        <td className="border border-gray-900 py-1 px-2 text-right font-mono">{opStr}</td>
-                        <td className="border border-gray-900 py-1 px-2 text-right font-mono text-red-700">
-                          {node.totalDebit > 0 ? fmtCurrency(node.totalDebit) : '-'}
-                        </td>
-                        <td className="border border-gray-900 py-1 px-2 text-right font-mono text-emerald-800 font-medium">
-                          {node.totalCredit > 0 ? fmtCurrency(node.totalCredit) : '-'}
-                        </td>
-                        <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-gray-950">{closingStr}</td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  filteredReportData.map((node, index) => (
-                    <TreeNode key={node.id} node={node} level={0} indexStr={`${index + 1}`} />
-                  ))
-                )}
-              </tbody>
-              {flatList.length > 0 && (
-                <tfoot>
-                  <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
-                    <td colSpan={2} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
-                      एकूण तेरीज बेरीज (Grand Total):
-                    </td>
-                    <td className="border border-gray-900 py-1.5 px-2 text-right font-mono text-[11px]">
-                      <div>Dr: ₹{fmtCurrency(totalOpeningDr)}</div>
-                      <div>Cr: ₹{fmtCurrency(totalOpeningCr)}</div>
-                    </td>
-                    <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-bold text-red-700">
-                      ₹ {fmtCurrency(totalTransDr)}
-                    </td>
-                    <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-bold text-emerald-800">
-                      ₹ {fmtCurrency(totalTransCr)}
-                    </td>
-                    <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-black bg-primary/10 text-primary text-[11px]">
-                      <div>Dr: ₹{fmtCurrency(totalClosingDr)}</div>
-                      <div>Cr: ₹{fmtCurrency(totalClosingCr)}</div>
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
-
-        </div>
-
-        {/* Verification Signatures Section */}
-        <div className="mt-14 pt-4 border-t border-dashed border-gray-400 grid grid-cols-3 text-center text-xs font-bold text-gray-900">
-          <div>
-            <div className="h-10"></div>
-            <p className="border-t border-gray-800 mx-4 pt-1">लेखापाल / तेरीज लेखक</p>
-            <span className="text-[10px] text-gray-500 font-normal">(Accountant)</span>
-          </div>
-
-          <div>
-            <div className="h-10"></div>
-            <p className="border-t border-gray-800 mx-4 pt-1">तपासनीस / मुख्य लेखापरीक्षक</p>
-            <span className="text-[10px] text-gray-500 font-normal">(Internal Auditor)</span>
-          </div>
-
-          <div>
-            <div className="h-10"></div>
-            <p className="border-t border-gray-800 mx-4 pt-1">शाखा व्यवस्थापक / मानद सचिव</p>
-            <span className="text-[10px] text-gray-500 font-normal">(Manager / Secretary)</span>
-          </div>
-        </div>
-
-      </div>
-
+        <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+        <span>पहा</span>
+      </button>
     </div>
+  );
+
+  // Compact CBS Summary Strip
+  const summaryBanner = (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center text-xs">
+      <div>
+        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण लेजर्स संख्या</span>
+        <strong className="text-primary text-[11px] font-mono">
+          {isMarathiDigits ? toMarathiDigits(flatList.length) : flatList.length} खाती
+        </strong>
+      </div>
+      <div>
+        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">कालावधी नावे व्यवहार</span>
+        <strong className="text-red-700 font-mono text-[11px]">
+          ₹ {fmtCurrency(totalTransDr, isMarathiDigits)}
+        </strong>
+      </div>
+      <div>
+        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">कालावधी जमा व्यवहार</span>
+        <strong className="text-emerald-700 font-mono text-[11px]">
+          ₹ {fmtCurrency(totalTransCr, isMarathiDigits)}
+        </strong>
+      </div>
+      <div className="sm:text-right">
+        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">तेरीज ताळा स्थिती</span>
+        {isBalanced ? (
+          <span className="inline-flex items-center gap-1 text-emerald-700 font-bold text-xs font-mono">
+            <CheckCircle2 size={13} className="stroke-[2.5]" />
+            संतुलित (₹ {fmtCurrency(0, isMarathiDigits)})
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-rose-700 font-bold text-xs font-mono">
+            <AlertTriangle size={13} className="stroke-[2.5]" />
+            तफावत: ₹ {fmtCurrency(closingDifference, isMarathiDigits)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+
+  // Formatted Period
+  const fromDisplay = formatDisplayDate(fromDate);
+  const toDisplay = formatDisplayDate(toDate);
+  const periodTextStr = isMarathiDigits 
+    ? `कालावधी : ${toMarathiDigits(fromDisplay)} ते ${toMarathiDigits(toDisplay)}`
+    : `कालावधी : ${fromDisplay} ते ${toDisplay}`;
+
+  return (
+    <CbsReportLayout
+      defaultPaperSize={paperSize}
+      allowPaperSizeToggle={true}
+      titleStyle="classic-badge"
+      reportTitle="तेरीज पत्रक"
+      reportSubtitle="Trial Balance Report"
+      periodText={periodTextStr}
+      sansthaInfo={sansthaDetail}
+      summaryBanner={summaryBanner}
+      signatureTier="4-tier"
+      signatureTitles={[
+        { title: 'लिपिक / तेरीज लेखक', subtitle: '(Clerk / Maker)' },
+        { title: 'लेखापाल / तपासनीस', subtitle: '(Accountant / Checker)' },
+        { title: 'शाखा व्यवस्थापक / मानद सचिव', subtitle: '(Manager / Secretary)' },
+        { title: 'अध्यक्ष / संचालक मंडळ', subtitle: '(Chairman / Board of Directors)' }
+      ]}
+      onExportExcel={handleExportExcel}
+      onPrint={handlePrint}
+      extraToolbarControls={filterToolbarControls}
+      isLoading={loading}
+      hasData={flatList.length > 0}
+      preparedBy="Admin"
+      emptyState={
+        <div className="bg-white p-12 text-center text-slate-500 rounded-xs border border-slate-200 shadow-xs max-w-4xl mx-auto">
+          <BookOpen size={36} className="mx-auto mb-2 text-primary/40" />
+          <p className="font-semibold text-xs text-slate-700">या कालावधीत कोणतीही तेरीज नोंद आढळली नाही.</p>
+          <p className="text-[11px] text-slate-500 mt-1">कृपया कालावधी निवडून 'पहा' बटणावर क्लिक करा.</p>
+        </div>
+      }
+    >
+      {/* Official CBS Table */}
+      <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
+        <thead>
+          <tr className="bg-slate-100 text-slate-950 border-b border-slate-900 text-center font-bold">
+            <th className="border border-slate-900 py-1.5 px-1 w-[6%] text-center">अ. क्र.</th>
+            <th className="border border-slate-900 py-1.5 px-3 text-left">खाते / लेजर नाव</th>
+            <th className="border border-slate-900 py-1.5 px-2 w-[15%] text-right">आरंभीची शिल्लक (₹)</th>
+            <th className="border border-slate-900 py-1.5 px-2 w-[15%] text-right">नावे व्यवहार (Dr ₹)</th>
+            <th className="border border-slate-900 py-1.5 px-2 w-[15%] text-right">जमा व्यवहार (Cr ₹)</th>
+            <th className="border border-slate-900 py-1.5 px-2 w-[16%] text-right font-extrabold">अखेरची शिल्लक (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? (
+            <tr>
+              <td colSpan={6} className="py-6 text-center text-slate-500 font-semibold border border-slate-900">
+                तेरीज अहवाल तयार होत आहे, कृपया प्रतीक्षा करा...
+              </td>
+            </tr>
+          ) : viewMode === 'flat' ? (
+            // Flat List View
+            flatList.map((node, index) => {
+              let opStr = '-';
+              if (node.openingBalance !== 0) {
+                opStr = `${fmtCurrency(node.openingBalance, isMarathiDigits)} ${node.openingType}`;
+              }
+
+              let closingStr = '-';
+              if (node.closingBalance !== 0) {
+                closingStr = `${fmtCurrency(node.closingBalance, isMarathiDigits)} ${node.closingType}`;
+              }
+
+              const idxText = isMarathiDigits ? toMarathiDigits(index + 1) : String(index + 1);
+              const codeRaw = `${node.code || node.id} -`;
+              const codeText = isMarathiDigits ? toMarathiDigits(codeRaw) : codeRaw;
+
+              return (
+                <tr key={node.id} className="hover:bg-slate-50 text-slate-900 text-[11.5px]">
+                  <td className="border border-slate-900 py-1 px-1 text-center font-mono font-medium">{idxText}</td>
+                  <td className="border border-slate-900 py-1 px-3">
+                    <span className="text-primary font-mono font-bold mr-1.5">{codeText}</span>
+                    <span className="font-medium">{node.name}</span>
+                  </td>
+                  <td className="border border-slate-900 py-1 px-2 text-right font-mono cbs-num-cell">{opStr}</td>
+                  <td className="border border-slate-900 py-1 px-2 text-right font-mono text-red-700 cbs-num-cell">
+                    {node.totalDebit > 0 ? fmtCurrency(node.totalDebit, isMarathiDigits) : '-'}
+                  </td>
+                  <td className="border border-slate-900 py-1 px-2 text-right font-mono text-emerald-800 font-medium cbs-num-cell">
+                    {node.totalCredit > 0 ? fmtCurrency(node.totalCredit, isMarathiDigits) : '-'}
+                  </td>
+                  <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-slate-950 cbs-num-cell">
+                    {closingStr}
+                  </td>
+                </tr>
+              );
+            })
+          ) : (
+            // Group Tree View
+            filteredReportData.map((node, index) => (
+              <TreeNode 
+                key={node.id} 
+                node={node} 
+                level={0} 
+                indexStr={`${index + 1}`}
+                isMarathiDigits={isMarathiDigits}
+              />
+            ))
+          )}
+        </tbody>
+        {flatList.length > 0 && (
+          <tfoot>
+            <tr className="bg-slate-200 font-bold text-slate-950 border-t-2 border-b-2 border-slate-900 text-xs">
+              <td colSpan={2} className="border border-slate-900 py-2 px-3 text-right uppercase tracking-wider">
+                एकूण तेरीज बेरीज (Grand Total):
+              </td>
+              <td className="border border-slate-900 py-2 px-2 text-right font-mono text-[11px] cbs-num-cell">
+                <div>Dr: ₹{fmtCurrency(totalOpeningDr, isMarathiDigits)}</div>
+                <div>Cr: ₹{fmtCurrency(totalOpeningCr, isMarathiDigits)}</div>
+              </td>
+              <td className="border border-slate-900 py-2 px-2 text-right font-mono font-bold text-red-700 cbs-num-cell">
+                ₹ {fmtCurrency(totalTransDr, isMarathiDigits)}
+              </td>
+              <td className="border border-slate-900 py-2 px-2 text-right font-mono font-bold text-emerald-800 cbs-num-cell">
+                ₹ {fmtCurrency(totalTransCr, isMarathiDigits)}
+              </td>
+              <td className="border border-slate-900 py-2 px-2 text-right font-mono font-black text-slate-950 text-[11px] cbs-num-cell">
+                <div>Dr: ₹{fmtCurrency(totalClosingDr, isMarathiDigits)}</div>
+                <div>Cr: ₹{fmtCurrency(totalClosingCr, isMarathiDigits)}</div>
+              </td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </CbsReportLayout>
   );
 }

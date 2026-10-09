@@ -15,7 +15,30 @@ interface SearchableSelectProps {
   disabled?: boolean;
   className?: string;
   required?: boolean;
+  tabIndex?: number;
 }
+
+const focusNext = (current: HTMLElement | null) => {
+  if (!current) return;
+  const selector = 'input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]:not([disabled])';
+  const elements = Array.from(document.querySelectorAll<HTMLElement>(selector))
+    .filter(el => el.offsetParent !== null && !el.hasAttribute('disabled') && el.getAttribute('tabindex') !== '-1');
+  const idx = elements.indexOf(current);
+  if (idx !== -1 && idx + 1 < elements.length) {
+    elements[idx + 1].focus();
+  }
+};
+
+const focusPrev = (current: HTMLElement | null) => {
+  if (!current) return;
+  const selector = 'input:not([disabled]):not([tabindex="-1"]), select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"]), button:not([disabled]):not([tabindex="-1"]), [tabindex="0"]:not([disabled])';
+  const elements = Array.from(document.querySelectorAll<HTMLElement>(selector))
+    .filter(el => el.offsetParent !== null && !el.hasAttribute('disabled') && el.getAttribute('tabindex') !== '-1');
+  const idx = elements.indexOf(current);
+  if (idx > 0) {
+    elements[idx - 1].focus();
+  }
+};
 
 const SearchableSelect: React.FC<SearchableSelectProps> = ({
   id,
@@ -25,11 +48,13 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   name,
   placeholder = "- निवडा -",
   disabled = false,
-  className
+  className,
+  tabIndex
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
 
   const inputId = id ? `${id}-input` : (name ? `${name}-input` : 'searchable-select-input');
   const inputName = name ? `${name}Search` : 'searchableSelectSearch';
@@ -70,16 +95,27 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const defaultWrapperClass = `w-full border border-slate-300 px-3 py-2 rounded-lg flex justify-between items-center transition duration-150 text-xs font-medium ${
     disabled
       ? 'bg-slate-100 border-slate-200 cursor-not-allowed opacity-70 text-slate-400'
-      : 'bg-white cursor-pointer hover:border-slate-400 focus-within:border-indigo-600 focus-within:ring-2 focus-within:ring-indigo-500/20 text-slate-900'
+      : 'bg-white cursor-pointer hover:border-slate-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none focus-within:border-indigo-600 focus-within:ring-2 focus-within:ring-indigo-500/20 text-slate-900'
   }`;
 
   return (
     <div className="relative w-full" ref={dropdownRef}>
       <div
+        ref={triggerRef}
         id={id}
-        className={className || defaultWrapperClass}
+        tabIndex={disabled ? -1 : (tabIndex ?? 0)}
+        role="combobox"
+        aria-expanded={isOpen}
+        className={className ? `${className} focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600` : defaultWrapperClass}
         onClick={() => {
           if (!disabled) setIsOpen(!isOpen);
+        }}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            setIsOpen(true);
+          }
         }}
       >
         <span className="truncate text-slate-800 text-xs font-medium" title={selectedOption ? selectedOption.label : ''}>
@@ -107,9 +143,24 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                     triggerChange(filteredOptions[0].value);
                     setIsOpen(false);
                     setSearchTerm('');
+                    setTimeout(() => triggerRef.current?.focus(), 0);
                   }
                 } else if (e.key === 'Escape') {
                   setIsOpen(false);
+                  setTimeout(() => triggerRef.current?.focus(), 0);
+                } else if (e.key === 'Tab') {
+                  if (filteredOptions.length > 0 && searchTerm.trim() !== '') {
+                    triggerChange(filteredOptions[0].value);
+                  }
+                  setIsOpen(false);
+                  setSearchTerm('');
+                  if (!e.shiftKey) {
+                    e.preventDefault();
+                    focusNext(triggerRef.current);
+                  } else {
+                    e.preventDefault();
+                    focusPrev(triggerRef.current);
+                  }
                 }
               }}
               onClick={(e) => e.stopPropagation()}
@@ -122,6 +173,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
               triggerChange('');
               setIsOpen(false);
               setSearchTerm('');
+              setTimeout(() => triggerRef.current?.focus(), 0);
             }}
           >
             {placeholder}
@@ -139,6 +191,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 triggerChange(option.value);
                 setIsOpen(false);
                 setSearchTerm('');
+                setTimeout(() => triggerRef.current?.focus(), 0);
               }}
             >
               {option.label}

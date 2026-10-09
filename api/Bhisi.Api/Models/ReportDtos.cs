@@ -72,6 +72,8 @@ namespace Bhisi.Api.Models
         public decimal TotalAssets { get; set; }
         public decimal TotalPreviousYearLiabilities { get; set; }
         public decimal TotalPreviousYearAssets { get; set; }
+        public decimal Difference { get; set; }
+        public bool IsTallied { get; set; }
         public string? PreviousYearLabel { get; set; }
         public string? CurrentYearLabel { get; set; }
     }

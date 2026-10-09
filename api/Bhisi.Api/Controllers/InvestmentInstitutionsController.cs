@@ -34,22 +34,7 @@ namespace Bhisi.Api.Controllers
 
             var list = await query.ToListAsync();
 
-            if (!list.Any())
-            {
-                var mainBranch = await _context.Branches.FirstOrDefaultAsync();
-                int defaultBranchId = mainBranch?.BranchID ?? 1;
 
-                var defaultInsts = new List<InvestmentInstitution>
-                {
-                    new InvestmentInstitution { InstitutionMasterID = 1, BranchID = defaultBranchId, InstitutionName = "जिल्हा मध्यवर्ती सहकारी बँक (DCC Bank)", InstitutionType = "Cooperative", InstitutionBranchName = "मुख्य शाखा", IsActive = true },
-                    new InvestmentInstitution { InstitutionMasterID = 1, BranchID = defaultBranchId, InstitutionName = "स्टेट बँक ऑफ इंडिया (SBI)", InstitutionType = "Bank", InstitutionBranchName = "मुख्य शाखा", IsActive = true },
-                    new InvestmentInstitution { InstitutionMasterID = 1, BranchID = defaultBranchId, InstitutionName = "महाराष्ट्र बँक (Bank of Maharashtra)", InstitutionType = "Bank", InstitutionBranchName = "मुख्य शाखा", IsActive = true },
-                    new InvestmentInstitution { InstitutionMasterID = 1, BranchID = defaultBranchId, InstitutionName = "एचडीएफसी बँक (HDFC Bank)", InstitutionType = "Bank", InstitutionBranchName = "मुख्य शाखा", IsActive = true }
-                };
-                _context.InvestmentInstitutions.AddRange(defaultInsts);
-                await _context.SaveChangesAsync();
-                list = defaultInsts;
-            }
 
             var branchesMap = await _context.Branches.ToDictionaryAsync(b => b.BranchID, b => b.BranchName);
 
@@ -152,6 +137,37 @@ namespace Bhisi.Api.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        // POST: api/InvestmentInstitutions/SeedDefaults
+        [HttpPost("SeedDefaults")]
+        public async Task<IActionResult> SeedDefaults([FromQuery] int branchId = 1)
+        {
+            var mainBranch = await _context.Branches.FirstOrDefaultAsync(b => b.BranchID == branchId) 
+                             ?? await _context.Branches.FirstOrDefaultAsync();
+            int defaultBranchId = mainBranch?.BranchID ?? 1;
+
+            var defaultInsts = new List<InvestmentInstitution>
+            {
+                new InvestmentInstitution { InstitutionMasterID = 1, BranchID = defaultBranchId, InstitutionName = "जिल्हा मध्यवर्ती सहकारी बँक (DCC Bank)", InstitutionType = "Cooperative", InstitutionBranchName = "मुख्य शाखा", IsActive = true, CreatedDate = DateTime.Now },
+                new InvestmentInstitution { InstitutionMasterID = 1, BranchID = defaultBranchId, InstitutionName = "स्टेट बँक ऑफ इंडिया (SBI)", InstitutionType = "Bank", InstitutionBranchName = "मुख्य शाखा", IsActive = true, CreatedDate = DateTime.Now },
+                new InvestmentInstitution { InstitutionMasterID = 1, BranchID = defaultBranchId, InstitutionName = "महाराष्ट्र बँक (Bank of Maharashtra)", InstitutionType = "Bank", InstitutionBranchName = "मुख्य शाखा", IsActive = true, CreatedDate = DateTime.Now },
+                new InvestmentInstitution { InstitutionMasterID = 1, BranchID = defaultBranchId, InstitutionName = "एचडीएफसी बँक (HDFC Bank)", InstitutionType = "Bank", InstitutionBranchName = "मुख्य शाखा", IsActive = true, CreatedDate = DateTime.Now }
+            };
+
+            var existingNames = await _context.InvestmentInstitutions
+                .Where(i => i.BranchID == defaultBranchId)
+                .Select(i => i.InstitutionName.ToLower().Trim())
+                .ToListAsync();
+
+            var toAdd = defaultInsts.Where(d => !existingNames.Contains(d.InstitutionName.ToLower().Trim())).ToList();
+            if (toAdd.Any())
+            {
+                _context.InvestmentInstitutions.AddRange(toAdd);
+                await _context.SaveChangesAsync();
+            }
+
+            return Ok(new { message = $"{toAdd.Count} डीफॉल्ट बँका / वित्तीय संस्था यशस्वीरीत्या जोडल्या!", addedCount = toAdd.Count });
         }
     }
 }

@@ -707,6 +707,9 @@ namespace Bhisi.Api.Controllers
 
                 await transaction.CommitAsync();
 
+                // Auto-sync Pigmy Scheme GL Liability Opening Balance with sub-ledger
+                await SyncPigmyGlOpeningBalanceAsync(pigmyAccount.PigmySchemeID);
+
                 pigmyAccount.FormattedAccountNo = LuhnHelper.Format14Digit(pigmyAccount.AccountNo);
                 return CreatedAtAction("GetPigmyAccount", new { id = pigmyAccount.PigmyAccountID }, pigmyAccount);
             }
@@ -910,6 +913,13 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                // Auto-sync Pigmy Scheme GL Liability Opening Balance with sub-ledger
+                await SyncPigmyGlOpeningBalanceAsync(existing.PigmySchemeID);
+                if (dto.PigmySchemeID > 0 && dto.PigmySchemeID != existing.PigmySchemeID)
+                {
+                    await SyncPigmyGlOpeningBalanceAsync(dto.PigmySchemeID);
+                }
+
                 return Ok(new { 
                     message = "पिग्मी खाते माहिती, सुरुवातीची शिल्लक आणि व्यवहार यशस्वीरीत्या अद्ययावत (Updated) झाले!",
                     openingBalance = targetOpeningBal ?? existing.TotalDepositedAmount,
@@ -932,6 +942,7 @@ namespace Bhisi.Api.Controllers
             {
                 return NotFound(new { message = "पिग्मी खाते सापडले नाही." });
             }
+            int schemeIdToSync = pigmyAccount.PigmySchemeID;
 
             var collectionsCount = await _context.PigmyCollections.CountAsync(c => c.PigmyAccountId == id);
             var transactionsCount = await _context.PigmyTransactions.CountAsync(t => t.PigmyAccountID == id);
@@ -1001,6 +1012,7 @@ namespace Bhisi.Api.Controllers
                     _context.PigmyAccountSequences.Update(seq);
                     await _context.SaveChangesAsync();
                     
+                    await SyncPigmyGlOpeningBalanceAsync(schemeIdToSync);
                     return Ok(new { message = "पिग्मी खाते यशस्वीरीत्या हटवले!" });
                 }
 
@@ -1021,6 +1033,7 @@ namespace Bhisi.Api.Controllers
                 {
                     Console.WriteLine($"[WARNING] PigmyAccount reseed error: {reseedEx.Message}");
                 }
+                await SyncPigmyGlOpeningBalanceAsync(schemeIdToSync);
                 return Ok(new { message = "पिग्मी खाते यशस्वीरीत्या डिलीट झाले." });
             }
             catch (Exception ex)
@@ -1051,6 +1064,17 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                // Reset all Pigmy Liability Ledgers OpeningBalance to 0
+                var pigmyLedgers = await _context.Ledgers
+                    .Where(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"))
+                    .ToListAsync();
+                foreach (var l in pigmyLedgers)
+                {
+                    l.OpeningBalance = 0;
+                    l.OpeningBalanceType = "Cr";
+                }
+                await _context.SaveChangesAsync();
+
                 return Ok(new { message = "पिग्मी मॉड्युलमधील योजना, एजंट, खाती आणि सर्व व्यवहारांचा डेटा यशस्वीरीत्या डिलीट झाला आहे!" });
             }
             catch (Exception ex)
@@ -1059,5 +1083,268 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, new { message = "डेटा डिलीट करताना त्रुटी आली: " + ex.Message });
             }
         }
+
+        // ==========================================
+        // PIGMY REAL-TIME GL RECONCILIATION & AUTO-SYNC
+        // ==========================================
+
+        // POST/GET: api/PigmyAccounts/SyncAllGlOpeningBalances
+        [HttpPost("SyncAllGlOpeningBalances")]
+        [HttpGet("SyncAllGlOpeningBalances")]
+        public async Task<IActionResult> SyncAllGlOpeningBalances()
+        {
+            try
+            {
+                var schemes = await _context.PigmySchemes.ToListAsync();
+                int syncedCount = 0;
+                foreach (var scheme in schemes)
+                {
+                    await SyncPigmyGlOpeningBalanceAsync(scheme.PigmySchemeID);
+                    syncedCount++;
+                }
+                return Ok(new { message = $"सर्व पिग्मी योजनांची मुख्य खतावणी (GL) आरंभिक शिल्लक तेरीज व ताळेबंदशी यशस्वीरित्या सिंक झाली आहे. (एकूण {syncedCount} योजना अद्यतनित)", syncedCount });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "पिग्मी खतावणी सिंक करताना त्रुटी आली: " + ex.Message);
+            }
+        }
+
+        // GET: api/PigmyAccounts/GlReconciliation?branchId=1
+        [HttpGet("GlReconciliation")]
+        public async Task<ActionResult<PigmyGlReconciliationResponseDto>> GetGlReconciliation([FromQuery] int branchId = 1)
+        {
+            var schemes = await _context.PigmySchemes.ToListAsync();
+            var response = new PigmyGlReconciliationResponseDto();
+
+            decimal grandTotalGl = 0;
+            decimal grandTotalSl = 0;
+            int grandTotalAccounts = 0;
+
+            foreach (var scheme in schemes)
+            {
+                var item = new PigmyGlReconciliationDto
+                {
+                    BranchID = branchId,
+                    PigmySchemeID = scheme.PigmySchemeID,
+                    SchemeName = scheme.SchemeName,
+                    SchemeCode = scheme.SchemeCode ?? scheme.PigmySchemeID.ToString("D3"),
+                    PigmyLiabilityLedgerID = scheme.PigmyLiabilityLedgerID
+                };
+
+                Ledger? ledger = null;
+                if (scheme.PigmyLiabilityLedgerID.HasValue && scheme.PigmyLiabilityLedgerID.Value > 0)
+                {
+                    ledger = await _context.Ledgers.FindAsync(scheme.PigmyLiabilityLedgerID.Value);
+                }
+                else
+                {
+                    ledger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"));
+                }
+
+                var processedLedgers = new HashSet<int>();
+
+                if (ledger != null)
+                {
+                    item.PigmyLiabilityLedgerID = ledger.LedgerID;
+                    item.PigmyLiabilityLedgerName = ledger.LedgerName;
+                    item.GlLiabilityOpeningBalance = ledger.OpeningBalance;
+                    item.GlOpeningBalanceType = ledger.OpeningBalanceType ?? "Cr";
+                }
+                else
+                {
+                    item.PigmyLiabilityLedgerName = "(खतावणी लिंक नाही)";
+                    item.Status = "NoLedger";
+                    item.StatusMessage = "योजनेला मुख्य खतावणी लिंक केलेली नाही.";
+                }
+
+                var accounts = await _context.PigmyAccounts
+                    .Where(a => a.PigmySchemeID == scheme.PigmySchemeID && (branchId <= 0 || a.BranchID == branchId) && a.Status == "Active")
+                    .Select(a => a.PigmyAccountID)
+                    .ToListAsync();
+
+                item.TotalAccountsCount = accounts.Count;
+
+                decimal totalSl = 0;
+                if (accounts.Any())
+                {
+                    totalSl = await _context.PigmyOpeningBalances
+                        .Where(o => accounts.Contains(o.PigmyAccountID))
+                        .GroupBy(o => o.PigmyAccountID)
+                        .Select(g => g.OrderByDescending(x => x.PigmyOpeningBalanceID).Select(x => x.MigratedBalanceAmount).FirstOrDefault())
+                        .SumAsync();
+                }
+
+                item.SlTotalMigratedBalance = totalSl;
+
+                if (ledger != null)
+                {
+                    var mappedSchemeIds = await _context.PigmySchemes
+                        .Where(s => s.PigmyLiabilityLedgerID == ledger.LedgerID)
+                        .Select(s => s.PigmySchemeID)
+                        .ToListAsync();
+
+                    if (!mappedSchemeIds.Contains(scheme.PigmySchemeID))
+                    {
+                        mappedSchemeIds.Add(scheme.PigmySchemeID);
+                    }
+
+                    var allAccountsUnderLedger = await _context.PigmyAccounts
+                        .Where(a => mappedSchemeIds.Contains(a.PigmySchemeID) && (branchId <= 0 || a.BranchID == branchId) && a.Status == "Active")
+                        .Select(a => a.PigmyAccountID)
+                        .ToListAsync();
+
+                    decimal totalSlForLedger = 0;
+                    if (allAccountsUnderLedger.Any())
+                    {
+                        totalSlForLedger = await _context.PigmyOpeningBalances
+                            .Where(o => allAccountsUnderLedger.Contains(o.PigmyAccountID))
+                            .GroupBy(o => o.PigmyAccountID)
+                            .Select(g => g.OrderByDescending(x => x.PigmyOpeningBalanceID).Select(x => x.MigratedBalanceAmount).FirstOrDefault())
+                            .SumAsync();
+                    }
+
+                    item.Difference = item.GlLiabilityOpeningBalance - totalSlForLedger;
+
+                    if (item.Difference == 0)
+                    {
+                        item.Status = "Reconciled";
+                        item.StatusMessage = mappedSchemeIds.Count > 1 
+                            ? $"मुख्य खतावणी आणि सर्व संलग्न उप-खाती पूर्णतः जुळली आहेत. (एकत्रित शिल्लक: ₹{totalSlForLedger:N2})"
+                            : "मुख्य खतावणी व उप-खाती पूर्णतः जुळलेली आहेत.";
+                    }
+                    else
+                    {
+                        item.Status = "Difference";
+                        item.StatusMessage = $"तफावत: ₹{Math.Abs(item.Difference):N2} (GL: ₹{item.GlLiabilityOpeningBalance:N2}, उप-खाते: ₹{totalSlForLedger:N2})";
+                    }
+                }
+
+                response.Schemes.Add(item);
+                grandTotalSl += item.SlTotalMigratedBalance;
+                grandTotalAccounts += item.TotalAccountsCount;
+            }
+
+            var uniqueLiabilityLedgerIds = schemes
+                .Where(s => s.PigmyLiabilityLedgerID.HasValue && s.PigmyLiabilityLedgerID.Value > 0)
+                .Select(s => s.PigmyLiabilityLedgerID!.Value)
+                .Distinct()
+                .ToList();
+
+            if (uniqueLiabilityLedgerIds.Any())
+            {
+                grandTotalGl = await _context.Ledgers
+                    .Where(l => uniqueLiabilityLedgerIds.Contains(l.LedgerID))
+                    .SumAsync(l => l.OpeningBalance);
+            }
+            else
+            {
+                grandTotalGl = await _context.Ledgers
+                    .Where(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"))
+                    .SumAsync(l => l.OpeningBalance);
+            }
+
+            response.Summary = new PigmyGlReconciliationDto
+            {
+                SchemeName = "सर्व पिग्मी योजना (एकूण बेरीज)",
+                GlLiabilityOpeningBalance = grandTotalGl,
+                SlTotalMigratedBalance = grandTotalSl,
+                TotalAccountsCount = grandTotalAccounts,
+                Difference = grandTotalGl - grandTotalSl,
+                Status = (grandTotalGl - grandTotalSl) == 0 ? "Reconciled" : "Difference",
+                StatusMessage = (grandTotalGl - grandTotalSl) == 0 
+                    ? "सर्व योजनांचा मुख्य खतावणी आणि ताळेबंद ताळमेळ १००% अचूक आहे." 
+                    : $"एकूण तफावत: ₹{Math.Abs(grandTotalGl - grandTotalSl):N2}"
+            };
+
+            return Ok(response);
+        }
+
+        private async Task SyncPigmyGlOpeningBalanceAsync(int schemeId)
+        {
+            try
+            {
+                var scheme = await _context.PigmySchemes.FindAsync(schemeId);
+                if (scheme == null) return;
+
+                int liabilityLedgerId = 0;
+                if (scheme.PigmyLiabilityLedgerID.HasValue && scheme.PigmyLiabilityLedgerID.Value > 0)
+                {
+                    liabilityLedgerId = scheme.PigmyLiabilityLedgerID.Value;
+                }
+                else
+                {
+                    var fallback = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"));
+                    if (fallback != null)
+                    {
+                        liabilityLedgerId = fallback.LedgerID;
+                        scheme.PigmyLiabilityLedgerID = liabilityLedgerId;
+                        await _context.SaveChangesAsync();
+                    }
+                }
+
+                if (liabilityLedgerId <= 0) return;
+
+                var ledger = await _context.Ledgers.FindAsync(liabilityLedgerId);
+                if (ledger == null) return;
+
+                var mappedSchemeIds = await _context.PigmySchemes
+                    .Where(s => s.PigmyLiabilityLedgerID == liabilityLedgerId)
+                    .Select(s => s.PigmySchemeID)
+                    .ToListAsync();
+
+                if (!mappedSchemeIds.Contains(schemeId))
+                {
+                    mappedSchemeIds.Add(schemeId);
+                }
+
+                var accounts = await _context.PigmyAccounts
+                    .Where(a => mappedSchemeIds.Contains(a.PigmySchemeID) && a.Status == "Active")
+                    .Select(a => a.PigmyAccountID)
+                    .ToListAsync();
+
+                decimal totalOpeningCr = 0;
+                if (accounts.Any())
+                {
+                    totalOpeningCr = await _context.PigmyOpeningBalances
+                        .Where(o => accounts.Contains(o.PigmyAccountID))
+                        .GroupBy(o => o.PigmyAccountID)
+                        .Select(g => g.OrderByDescending(x => x.PigmyOpeningBalanceID).Select(x => x.MigratedBalanceAmount).FirstOrDefault())
+                        .SumAsync();
+                }
+
+                ledger.OpeningBalance = totalOpeningCr;
+                ledger.OpeningBalanceType = "Cr";
+                _context.Entry(ledger).State = EntityState.Modified;
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WARNING] SyncPigmyGlOpeningBalanceAsync error for Scheme {schemeId}: {ex.Message}");
+            }
+        }
+    }
+
+    public class PigmyGlReconciliationDto
+    {
+        public int BranchID { get; set; } = 1;
+        public int PigmySchemeID { get; set; }
+        public string SchemeName { get; set; } = string.Empty;
+        public string SchemeCode { get; set; } = string.Empty;
+        public int? PigmyLiabilityLedgerID { get; set; }
+        public string PigmyLiabilityLedgerName { get; set; } = string.Empty;
+        public decimal GlLiabilityOpeningBalance { get; set; }
+        public string GlOpeningBalanceType { get; set; } = "Cr";
+        public decimal SlTotalMigratedBalance { get; set; }
+        public int TotalAccountsCount { get; set; }
+        public decimal Difference { get; set; } // GL - SL
+        public string Status { get; set; } = "Pending"; // "Reconciled", "Difference", "NoLedger"
+        public string StatusMessage { get; set; } = string.Empty;
+    }
+
+    public class PigmyGlReconciliationResponseDto
+    {
+        public PigmyGlReconciliationDto Summary { get; set; } = new();
+        public List<PigmyGlReconciliationDto> Schemes { get; set; } = new();
     }
 }

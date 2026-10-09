@@ -63,7 +63,7 @@ export default function Sidebar({
   const isLockerActive = activeTab === 'locker' || activeTab.startsWith('locker-');
   const isNpaActive = activeTab === 'npa-dashboard' || activeTab === 'npa-statement' || activeTab === 'collateral-compliance' || activeTab === 'npa-defaulters';
   const isLegalActive = activeTab === 'legal-recovery' || activeTab.startsWith('sec101-');
-  const isReportsActive = activeTab === 'reports' || activeTab === 'trial-balance' || activeTab === 'trial-balance-namuna-n' || activeTab === 'daybook' || activeTab === 'daybook-summary' || activeTab === 'profit-loss' || activeTab === 'balance-sheet' || activeTab === 'balance-sheet-form-n' || activeTab === 'general-ledger' || activeTab === 'member-balance-report' || activeTab === 'loan-disbursement-register' || activeTab === 'loan-collection-register' || activeTab === 'loan-ledger-report' || activeTab === 'loan-overdue-report' || activeTab === 'saving-account-list-report' || activeTab === 'saving-khatavani-report' || activeTab === 'npa-register' || activeTab === 'loan-rate' || activeTab === 'sabhasad-labhansh-report' || activeTab === 'shares-khatavani-report';
+  const isReportsActive = activeTab === 'reports' || activeTab === 'trial-balance' || activeTab === 'trial-balance-namuna-n' || activeTab === 'daybook' || activeTab === 'daybook-summary' || activeTab === 'profit-loss' || activeTab === 'balance-sheet' || activeTab === 'balance-sheet-form-n' || activeTab === 'general-ledger' || activeTab === 'member-balance-report' || activeTab === 'loan-disbursement-register' || activeTab === 'loan-collection-register' || activeTab === 'loan-ledger-report' || activeTab === 'loan-outstanding-report' || activeTab === 'loan-overdue-report' || activeTab === 'saving-account-list-report' || activeTab === 'saving-khatavani-report' || activeTab === 'npa-register' || activeTab === 'loan-rate' || activeTab === 'sabhasad-labhansh-report' || activeTab === 'shares-khatavani-report';
 
   const getItemClass = (isActive: boolean) => `
     w-full flex items-center ${isSidebarOpen ? 'px-2.5 justify-start' : 'px-0 justify-center'} py-1.5 rounded-lg text-[11px] transition-all duration-150 select-none group ${
@@ -267,6 +267,9 @@ export default function Sidebar({
             </li>
             <li className={getSubItemClass(activeTab === 'loan-collection')} onClick={() => handleNavigate('loan-collection')}>
               <span className="truncate">&rsaquo; कर्ज वसुली नोंदी</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'loan-outstanding-report')} onClick={() => handleNavigate('loan-outstanding-report')}>
+              <span className="truncate text-emerald-800 font-semibold">&rsaquo; कर्ज येणे बाकी अहवाल</span>
             </li>
             <li className={getSubItemClass(activeTab === 'loan-interest-posting')} onClick={() => handleNavigate('loan-interest-posting')}>
               <span className="truncate">&rsaquo; कर्ज व्याज आकारणी</span>

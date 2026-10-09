@@ -5557,6 +5557,35 @@ BEGIN
 END
 GO
 
+-- 5. Customer KYC & Compliance Columns (Safe Check & Add)
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Customers')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Customers]') AND name = 'CustomerType')
+    BEGIN
+        ALTER TABLE [Customers] ADD [CustomerType] nvarchar(30) NOT NULL CONSTRAINT DF_Customers_CustomerType DEFAULT 'Individual';
+        PRINT '  -> Added CustomerType to Customers table';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Customers]') AND name = 'KYCStatus')
+    BEGIN
+        ALTER TABLE [Customers] ADD [KYCStatus] nvarchar(20) NOT NULL CONSTRAINT DF_Customers_KYCStatus DEFAULT 'Verified';
+        PRINT '  -> Added KYCStatus to Customers table';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Customers]') AND name = 'CKYCNo')
+    BEGIN
+        ALTER TABLE [Customers] ADD [CKYCNo] nvarchar(14) NULL;
+        PRINT '  -> Added CKYCNo to Customers table';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Customers]') AND name = 'RiskCategory')
+    BEGIN
+        ALTER TABLE [Customers] ADD [RiskCategory] nvarchar(20) NOT NULL CONSTRAINT DF_Customers_RiskCategory DEFAULT 'Low';
+        PRINT '  -> Added RiskCategory to Customers table';
+    END
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

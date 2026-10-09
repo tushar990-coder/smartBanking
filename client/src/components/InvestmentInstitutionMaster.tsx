@@ -191,6 +191,20 @@ const InvestmentInstitutionMaster: React.FC = () => {
     }
   };
 
+  const handleSeedDefaults = async () => {
+    if (!window.confirm('तुम्हाला डीफॉल्ट प्रमुख बँकांची यादी लोड करायची आहे का?')) return;
+    try {
+      setLoading(true);
+      const res = await axios.post(`${API_URL}/InvestmentInstitutions/SeedDefaults?branchId=1`);
+      setSuccess(res.data?.message || 'डीफॉल्ट बँका यशस्वीरीत्या जोडल्या!');
+      await fetchInstitutions();
+    } catch (err: any) {
+      setError(typeof err.response?.data === 'string' ? err.response.data : 'डीफॉल्ट बँका लोड करताना त्रुटी.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleExportExcel = () => {
     if (institutions.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा उपलब्ध नाही.');
     const rows = institutions.map((i, idx) => ({
@@ -622,8 +636,16 @@ const InvestmentInstitutionMaster: React.FC = () => {
                       </tr>
                     ) : filteredInstitutions.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-6 py-10 text-center text-gray-400 font-bold">
-                          कोणतीही संस्था सापडली नाही.
+                        <td colSpan={9} className="px-6 py-8 text-center bg-slate-50/50">
+                          <p className="text-gray-500 font-bold mb-2">नोंदवलेली कोणतीही गुंतवणूक संस्था उपलब्ध नाही.</p>
+                          <button
+                            type="button"
+                            onClick={handleSeedDefaults}
+                            className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-sm text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                          >
+                            <Building2 size={14} />
+                            <span>🏛️ डीफॉल्ट बँकांची यादी लोड करा (DCC, SBI, BOM, HDFC)</span>
+                          </button>
                         </td>
                       </tr>
                     ) : (

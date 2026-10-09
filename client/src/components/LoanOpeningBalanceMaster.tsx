@@ -91,6 +91,8 @@ interface LoanOpeningBalance {
   
   loanDisbursementDate?: string;
   sanctionedAmount: number;
+  disbursedAmount?: number;
+  loanDisbursements?: any[];
   interestRate: number;
   durationMonths: number;
   installmentAmount: number;
@@ -150,6 +152,19 @@ interface GlReconciliationResponse {
   summary: GlReconciliationSchemeItem;
   schemes: GlReconciliationSchemeItem[];
 }
+
+const getDisbursedAmt = (b: any): number => {
+  if (b.disbursedAmount !== undefined && b.disbursedAmount !== null && Number(b.disbursedAmount) > 0) {
+    return Number(b.disbursedAmount);
+  }
+  if (b.loanDisbursements && Array.isArray(b.loanDisbursements) && b.loanDisbursements.length > 0) {
+    const obDisb = b.loanDisbursements.find((d: any) => d.paymentMode === 'Opening Balance' || d.remarks?.includes('Opening Balance')) || b.loanDisbursements[0];
+    if (obDisb && Number(obDisb.disbursementAmount) > 0) {
+      return Number(obDisb.disbursementAmount);
+    }
+  }
+  return Number(b.sanctionedAmount) || 0;
+};
 
 export default function LoanOpeningBalanceMaster() {
   const [allAccounts, setAllAccounts] = useState<LoanOpeningBalance[]>([]);
@@ -314,6 +329,7 @@ export default function LoanOpeningBalanceMaster() {
 
     loanDisbursementDate: '2025-03-31',
     sanctionedAmount: '',
+    disbursedAmount: '',
     interestRate: '',
     durationMonths: '',
     noOfInstallments: '',
@@ -571,8 +587,13 @@ export default function LoanOpeningBalanceMaster() {
     if (name === 'installmentAmount') {
       setIsInstAmountEdited(true);
     }
-    if (name === 'sanctionedAmount' || name === 'loanRateID' || name === 'durationMonths' || name === 'installmentFrequency') {
+    if (name === 'sanctionedAmount' || name === 'disbursedAmount' || name === 'loanRateID' || name === 'durationMonths' || name === 'installmentFrequency') {
       setIsInstAmountEdited(false);
+    }
+    if (name === 'sanctionedAmount') {
+      if (!formData.disbursedAmount || formData.disbursedAmount === formData.sanctionedAmount) {
+        updates.disbursedAmount = value;
+      }
     }
 
     if (name === 'loanRateID') {
@@ -678,6 +699,7 @@ export default function LoanOpeningBalanceMaster() {
     calculateEMI();
   }, [
     formData.sanctionedAmount, 
+    formData.disbursedAmount,
     formData.interestRate, 
     formData.durationMonths, 
     formData.noOfInstallments, 
@@ -843,15 +865,16 @@ export default function LoanOpeningBalanceMaster() {
     formData.principalBalance, 
     formData.interestRate, 
     formData.sanctionedAmount, 
+    formData.disbursedAmount,
     installmentChart
   ]);
 
   const calculateEMI = async () => {
-    const principal = parseFloat(formData.sanctionedAmount) || 0;
+    const calcBasePrincipal = (parseFloat(formData.disbursedAmount) > 0 ? parseFloat(formData.disbursedAmount) : parseFloat(formData.sanctionedAmount)) || 0;
     const rate = parseFloat(formData.interestRate) || 0;
     const months = parseInt(formData.durationMonths) || 0;
     
-    if (principal <= 0 || rate <= 0 || months <= 0 || !formData.loanRateID) {
+    if (calcBasePrincipal <= 0 || rate <= 0 || months <= 0 || !formData.loanRateID) {
       if(!isEditing) setFormData(prev => ({ ...prev, installmentAmount: '' }));
       setInstallmentChart([]);
       return;
@@ -874,7 +897,7 @@ export default function LoanOpeningBalanceMaster() {
       const customInst = isInstAmountEdited ? (parseFloat(formData.installmentAmount) || 0) : 0;
       const payload = {
         loanRateID: parseInt(formData.loanRateID),
-        loanAmount: principal,
+        loanAmount: calcBasePrincipal,
         interestRate: rate,
         noOfInstallments: count,
         durationMonths: months,
@@ -950,6 +973,7 @@ export default function LoanOpeningBalanceMaster() {
       openingDate: getDefaultDate(),
       loanDisbursementDate: getTodayDate(),
       sanctionedAmount: '',
+      disbursedAmount: '',
       interestRate: '',
       durationMonths: '',
       noOfInstallments: '',
@@ -1010,6 +1034,32 @@ export default function LoanOpeningBalanceMaster() {
         return;
       }
     }
+
+    const sancAmt = parseFloat(formData.sanctionedAmount || '0');
+    const disbAmt = parseFloat(formData.disbursedAmount || formData.sanctionedAmount || '0');
+    const princBal = parseFloat(formData.principalBalance || '0');
+    const pureBal = parseFloat(formData.purePrincipalBalance || formData.principalBalance || '0');
+
+    if (sancAmt <= 0) {
+      alert("कृपया वैध कर्ज मंजूर रक्कम टाका!");
+      return;
+    }
+    if (disbAmt <= 0) {
+      alert("कृपया वैध कर्ज वाटप रक्कम टाका!");
+      return;
+    }
+    if (disbAmt > sancAmt) {
+      alert(`कर्ज वाटप रक्कम (₹ ${disbAmt.toLocaleString('en-IN')}) मंजूर रकमेपेक्षा (₹ ${sancAmt.toLocaleString('en-IN')}) जास्त असू शकत नाही!`);
+      return;
+    }
+    if (pureBal > disbAmt) {
+      alert(`शुद्ध मुद्दल बाकी (₹ ${pureBal.toLocaleString('en-IN')}) वाटप रकमेपेक्षा (₹ ${disbAmt.toLocaleString('en-IN')}) जास्त असू शकत नाही!`);
+      return;
+    }
+    if (parseFloat(formData.capitalizedInterestAmount || '0') <= 0 && princBal > disbAmt) {
+      alert(`एकूण मुद्दल बाकी (₹ ${princBal.toLocaleString('en-IN')}) वाटप रकमेपेक्षा (₹ ${disbAmt.toLocaleString('en-IN')}) जास्त असू शकत नाही!`);
+      return;
+    }
     
     try {
       const dataToSubmit = {
@@ -1030,7 +1080,8 @@ export default function LoanOpeningBalanceMaster() {
         initialNpaClassification: formData.initialNpaClassification || 'Standard',
         chargeInterestOnCapitalizedAmount: Boolean(formData.chargeInterestOnCapitalizedAmount),
         
-        sanctionedAmount: parseFloat(formData.sanctionedAmount || '0'),
+        sanctionedAmount: sancAmt,
+        disbursedAmount: disbAmt,
         interestRate: parseFloat(formData.interestRate || '0'),
         durationMonths: parseInt(formData.durationMonths || '0'),
         installmentAmount: parseFloat(formData.installmentAmount || '0'),
@@ -1156,6 +1207,7 @@ export default function LoanOpeningBalanceMaster() {
       openingDate: balance.openingDate ? balance.openingDate.split('T')[0] : '',
       loanDisbursementDate: balance.loanDisbursementDate ? balance.loanDisbursementDate.split('T')[0] : '',
       sanctionedAmount: balance.sanctionedAmount.toString(),
+      disbursedAmount: getDisbursedAmt(balance).toString(),
       interestRate: balance.interestRate.toString(),
       durationMonths: balance.durationMonths.toString(),
       noOfInstallments: (balance as any).noOfInstallments?.toString() || '',
@@ -1253,6 +1305,7 @@ export default function LoanOpeningBalanceMaster() {
       'खाते क्र.': b.loanAccountNo,
       'जुना खाते क्र.': b.legacyAccountNumber || '-',
       'मंजूर रक्कम (₹)': b.sanctionedAmount,
+      'वाटप रक्कम (₹)': getDisbursedAmt(b),
       'कर्ज वाटप दिनांक': b.loanDisbursementDate ? new Date(b.loanDisbursementDate).toLocaleDateString('en-GB') : '-',
       'शुद्ध मुद्दल बाकी (₹)': b.purePrincipalBalance || b.principalBalance,
       'समाविष्ट व्याज (₹)': b.capitalizedInterestAmount || 0,
@@ -1751,10 +1804,14 @@ export default function LoanOpeningBalanceMaster() {
                 )}
               </button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-x-2.5 gap-y-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-x-2.5 gap-y-2.5">
               <div>
                 <label className={labelClass}>कर्ज मंजूर रक्कम (₹) *</label>
                 <input type="number" step="0.01" name="sanctionedAmount" value={formData.sanctionedAmount} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-gray-900`} placeholder="0.00" />
+              </div>
+              <div>
+                <label className={labelClass}>कर्ज वाटप रक्कम (₹) *</label>
+                <input type="number" step="0.01" name="disbursedAmount" value={formData.disbursedAmount} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-indigo-950 bg-indigo-50/40 border-indigo-300`} placeholder="0.00" title="प्रत्यक्ष वाटप केलेली रक्कम (व्याज व हप्ता गणनेचा आधार)" />
               </div>
               <div>
                 <label className={labelClass}>कर्ज वाटप दिनांक *</label>
@@ -2750,6 +2807,7 @@ export default function LoanOpeningBalanceMaster() {
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र.</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">जुना खाते क्र.</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">मंजूर रक्कम (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">वाटप रक्कम (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">वाटप दिनांक</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">मुद्दल बाकी (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">व्याज बाकी (₹)</th>
@@ -2801,7 +2859,10 @@ export default function LoanOpeningBalanceMaster() {
                         <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-gray-800">
                           {(balance.sanctionedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-indigo-700 font-medium whitespace-nowrap">
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-indigo-950 bg-indigo-50/20">
+                          {getDisbursedAmt(balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-slate-700 font-medium whitespace-nowrap">
                           {balance.loanDisbursementDate ? new Date(balance.loanDisbursementDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono">
@@ -2838,7 +2899,7 @@ export default function LoanOpeningBalanceMaster() {
                     ))}
                     {filteredBalances.length === 0 && (
                       <tr>
-                        <td colSpan={11} className="px-6 py-10 text-center text-gray-400 font-bold">
+                        <td colSpan={14} className="px-6 py-10 text-center text-gray-400 font-bold">
                           कोणतीही नोंद सापडली नाही (No loan opening balances found).
                         </td>
                       </tr>

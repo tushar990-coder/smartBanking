@@ -284,6 +284,7 @@ namespace Bhisi.Api.Models
         public DateTime OpeningDate { get; set; }
         public DateTime? LoanDisbursementDate { get; set; }
         public decimal SanctionedAmount { get; set; }
+        public decimal? DisbursedAmount { get; set; }
         public decimal InterestRate { get; set; }
         public int DurationMonths { get; set; }
         public decimal InstallmentAmount { get; set; }

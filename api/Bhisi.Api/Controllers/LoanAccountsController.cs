@@ -102,6 +102,7 @@ namespace Bhisi.Api.Controllers
                 .Include(l => l.Guarantor1Customer)
                 .Include(l => l.Guarantor2Customer)
                 .Include(l => l.Branch)
+                .Include(l => l.LoanDisbursements)
                 .AsQueryable();
 
             if (branchId.HasValue && branchId.Value > 0)
@@ -595,18 +596,22 @@ namespace Bhisi.Api.Controllers
                 _context.LoanAccounts.Add(loanAccount);
                 await _context.SaveChangesAsync();
 
+                decimal actualDisbursementAmount = (dto.DisbursedAmount.HasValue && dto.DisbursedAmount.Value > 0)
+                    ? dto.DisbursedAmount.Value
+                    : dto.SanctionedAmount;
+
                 var disbursement = new LoanDisbursement
                 {
                     LoanAccountID = loanAccount.LoanAccountID,
                     DisbursementDate = dto.LoanDisbursementDate ?? dto.OpeningDate,
                     SanctionedAmount = dto.SanctionedAmount,
-                    DisbursementAmount = dto.SanctionedAmount,
+                    DisbursementAmount = actualDisbursementAmount,
                     ProcessingFee = 0,
                     ShareDeduction = 0,
                     InsuranceDeduction = 0,
                     StationeryCharges = 0,
                     OtherDeductions = 0,
-                    NetAmountPaid = dto.SanctionedAmount,
+                    NetAmountPaid = actualDisbursementAmount,
                     PaymentMode = "Opening Balance",
                     Remarks = "Opening Balance (मागील येणे कर्ज)",
                     LoanInstallmentType = loanRate?.LoanInstallmentType
@@ -619,7 +624,7 @@ namespace Bhisi.Api.Controllers
                     decimal pureBal = dto.PurePrincipalBalance > 0 
                         ? dto.PurePrincipalBalance 
                         : (dto.CapitalizedInterestAmount > 0 ? (dto.PrincipalBalance - dto.CapitalizedInterestAmount) : dto.PrincipalBalance);
-                    decimal totalPrincipalPaid = Math.Max(0, dto.SanctionedAmount - pureBal);
+                    decimal totalPrincipalPaid = Math.Max(0, actualDisbursementAmount - pureBal);
                     foreach (var s in dto.Schedule)
                     {
                         string status = "Pending";
@@ -955,10 +960,14 @@ namespace Bhisi.Api.Controllers
                     disbursement = new LoanDisbursement { LoanAccountID = id };
                     _context.LoanDisbursements.Add(disbursement);
                 }
+                decimal actualDisbursementAmount = (dto.DisbursedAmount.HasValue && dto.DisbursedAmount.Value > 0)
+                    ? dto.DisbursedAmount.Value
+                    : dto.SanctionedAmount;
+
                 disbursement.DisbursementDate = dto.LoanDisbursementDate ?? dto.OpeningDate;
                 disbursement.SanctionedAmount = dto.SanctionedAmount;
-                disbursement.DisbursementAmount = dto.SanctionedAmount;
-                disbursement.NetAmountPaid = dto.SanctionedAmount;
+                disbursement.DisbursementAmount = actualDisbursementAmount;
+                disbursement.NetAmountPaid = actualDisbursementAmount;
                 disbursement.PaymentMode = "Opening Balance";
                 disbursement.Remarks = "Opening Balance (मागील येणे कर्ज)";
                 disbursement.LoanInstallmentType = loanRate?.LoanInstallmentType;
@@ -975,7 +984,7 @@ namespace Bhisi.Api.Controllers
                     decimal pureBal = dto.PurePrincipalBalance > 0 
                         ? dto.PurePrincipalBalance 
                         : (dto.CapitalizedInterestAmount > 0 ? (dto.PrincipalBalance - dto.CapitalizedInterestAmount) : dto.PrincipalBalance);
-                    decimal totalPrincipalPaid = Math.Max(0, dto.SanctionedAmount - pureBal);
+                    decimal totalPrincipalPaid = Math.Max(0, actualDisbursementAmount - pureBal);
                     foreach (var s in dto.Schedule)
                     {
                         string status = "Pending";
@@ -1482,6 +1491,12 @@ namespace Bhisi.Api.Controllers
             if (dto.SanctionedAmount <= 0)
                 return "कर्ज मंजूर रक्कम (Sanctioned Amount) ₹ ० पेक्षा जास्त असणे बंधनकारक आहे.";
 
+            if (dto.DisbursedAmount.HasValue && dto.DisbursedAmount.Value < 0)
+                return "कर्ज वाटप रक्कम (Disbursed Amount) उणे (Negative) असू शकत नाही.";
+
+            if (dto.DisbursedAmount.HasValue && dto.DisbursedAmount.Value > dto.SanctionedAmount)
+                return $"कर्ज वाटप रक्कम (₹ {dto.DisbursedAmount.Value:N2}) मंजूर रकमेपेक्षा (₹ {dto.SanctionedAmount:N2}) जास्त असू शकत नाही.";
+
             if (dto.PrincipalBalance < 0)
                 return "मुद्दल बाकी (Principal Balance) उणे (Negative) असू शकत नाही.";
 
@@ -1491,20 +1506,24 @@ namespace Bhisi.Api.Controllers
             if (dto.CapitalizedInterestAmount < 0)
                 return "मुद्दलात समाविष्ट व्याज (Capitalized Interest Amount) उणे (Negative) असू शकत नाही.";
 
-            // CBS Prudential Rule: Pure principal disbursed cannot exceed sanctioned limit
+            // CBS Prudential Rule: Pure principal disbursed cannot exceed actual disbursed amount
             decimal effectivePurePrincipal = dto.PurePrincipalBalance > 0 
                 ? dto.PurePrincipalBalance 
                 : (dto.CapitalizedInterestAmount > 0 ? (dto.PrincipalBalance - dto.CapitalizedInterestAmount) : dto.PrincipalBalance);
 
-            if (effectivePurePrincipal > dto.SanctionedAmount)
+            decimal actualDisbursed = (dto.DisbursedAmount.HasValue && dto.DisbursedAmount.Value > 0)
+                ? dto.DisbursedAmount.Value
+                : dto.SanctionedAmount;
+
+            if (effectivePurePrincipal > actualDisbursed)
             {
-                return $"शुद्ध मुद्दल बाकी (₹ {effectivePurePrincipal:N2}) मंजूर रकमेपेक्षा (₹ {dto.SanctionedAmount:N2}) जास्त असू शकत नाही.";
+                return $"शुद्ध मुद्दल बाकी (₹ {effectivePurePrincipal:N2}) वाटप रकमेपेक्षा (₹ {actualDisbursed:N2}) जास्त असू शकत नाही.";
             }
 
-            // If no capitalized interest is reported, total principal balance cannot exceed sanctioned limit
-            if (dto.CapitalizedInterestAmount <= 0 && dto.PrincipalBalance > dto.SanctionedAmount)
+            // If no capitalized interest is reported, total principal balance cannot exceed actual disbursed amount
+            if (dto.CapitalizedInterestAmount <= 0 && dto.PrincipalBalance > actualDisbursed)
             {
-                return $"मुद्दल बाकी (₹ {dto.PrincipalBalance:N2}) मंजूर रकमेपेक्षा (₹ {dto.SanctionedAmount:N2}) जास्त असू शकत नाही. जर मुद्दलात व्याज समाविष्ट असेल तर कृपया 'मुद्दलात समाविष्ट व्याज' रकान्यात नोंद करा.";
+                return $"मुद्दल बाकी (₹ {dto.PrincipalBalance:N2}) वाटप रकमेपेक्षा (₹ {actualDisbursed:N2}) जास्त असू शकत नाही. जर मुद्दलात व्याज समाविष्ट असेल तर कृपया 'मुद्दलात समाविष्ट व्याज' रकान्यात नोंद करा.";
             }
 
             if (dto.InterestBalance < 0)

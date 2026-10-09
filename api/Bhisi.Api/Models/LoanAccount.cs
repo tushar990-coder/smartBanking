@@ -127,5 +127,6 @@ namespace Bhisi.Api.Models
         public string Status { get; set; } = "Active"; // Active, Closed
 
         public virtual ICollection<LoanInstallmentSchedule> LoanInstallmentSchedules { get; set; } = new List<LoanInstallmentSchedule>();
+        public virtual ICollection<LoanDisbursement> LoanDisbursements { get; set; } = new List<LoanDisbursement>();
     }
 }

@@ -2479,19 +2479,239 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        private (decimal PrematureRate, decimal SlabRate, decimal PenaltyDeduction, string MatchedSlabText, bool IsMinimumPeriodViolated, string RateResolutionNote) ResolvePrematureRate(
+            FdAccount account,
+            int actualDays,
+            DateTime closureDate)
+        {
+            var scheme = account.FdScheme;
+            if (scheme == null && account.FdSchemeID > 0)
+            {
+                scheme = _context.FdSchemes.Include(s => s.Slabs).FirstOrDefault(s => s.FdSchemeID == account.FdSchemeID);
+            }
+
+            if (account.Customer == null && account.CustomerID > 0)
+            {
+                account.Customer = _context.Customers.FirstOrDefault(c => c.CustomerID == account.CustomerID);
+            }
+
+            bool isSenior = account.Customer?.BirthDate.HasValue == true
+                && (account.Customer.BirthDate.Value.Date <= closureDate.Date.AddYears(-60));
+
+            // Default regulatory premature penalty across co-operative banking is 1.00%
+            decimal standardPenalty = 1.0m;
+
+            if (scheme?.Slabs != null && scheme.Slabs.Any(s => s.IsActive))
+            {
+                var activeSlabs = scheme.Slabs.Where(s => s.IsActive).OrderBy(s => s.FromDays).ToList();
+                int minFromDays = activeSlabs.Min(s => s.FromDays);
+                if (scheme.MinDurationDays.HasValue && scheme.MinDurationDays.Value > 0)
+                {
+                    minFromDays = Math.Min(minFromDays, scheme.MinDurationDays.Value);
+                }
+
+                // 1. Minimum Holding Period Rule: RBI & MCS Act mandates 0% interest if closed before minimum tenor
+                if (actualDays < minFromDays)
+                {
+                    return (
+                        0m,
+                        0m,
+                        0m,
+                        $"किमान {minFromDays} दिवस आवश्यक (ठेव फक्त {actualDays} दिवस)",
+                        true,
+                        $"आरबीआय नियमानुसार किमान ठेव कालावधीपूर्वी ({actualDays} दिवस < {minFromDays} दिवस) बंद केल्याने ०.००% (शून्य) व्याज देय आहे."
+                    );
+                }
+
+                // 2. Exact Run Period Slab Match
+                var matchedSlab = activeSlabs.FirstOrDefault(s => actualDays >= s.FromDays && actualDays <= s.ToDays);
+                if (matchedSlab != null)
+                {
+                    decimal sRate = (isSenior && matchedSlab.SeniorCitizenRate > 0) ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+
+                    // Case A: Slab has explicit premature rate configured
+                    if (matchedSlab.PrematureRate > 0)
+                    {
+                        decimal slabPrematureRate = Math.Min(account.InterestRate, matchedSlab.PrematureRate);
+                        decimal effectivePenalty = Math.Max(0m, account.InterestRate - slabPrematureRate);
+                        return (
+                            slabPrematureRate,
+                            sRate,
+                            effectivePenalty,
+                            $"{matchedSlab.FromDays} ते {matchedSlab.ToDays} दिवस (स्लॅब दर: {sRate}%)",
+                            false,
+                            $"कालावधी स्लॅब ({matchedSlab.FromDays}-{matchedSlab.ToDays} दिवस) पूर्वनिर्धारित मुदतपूर्व दर {slabPrematureRate}% थेट लागू."
+                        );
+                    }
+
+                    // Case B: Standard Golden Rule: Base Rate = min(ContractedRate, RunPeriodSlabRate), Final = max(0, Base - Penalty)
+                    decimal baseRate = Math.Min(account.InterestRate, sRate);
+                    decimal finalPrematureRate = Math.Max(0m, baseRate - standardPenalty);
+                    return (
+                        finalPrematureRate,
+                        sRate,
+                        standardPenalty,
+                        $"{matchedSlab.FromDays} ते {matchedSlab.ToDays} दिवस (स्लॅब दर: {sRate}%)",
+                        false,
+                        $"आरबीआय स्लॅब नियम: प्रत्यक्ष {actualDays} दिवस स्लॅब ({matchedSlab.FromDays}-{matchedSlab.ToDays} दिवस) दर {sRate}%, मूळ करार दर {account.InterestRate}%, दंड -{standardPenalty}% -> अंतिम लागू मुदतपूर्व दर: {finalPrematureRate}%"
+                    );
+                }
+
+                // Held beyond highest configured slab (e.g. multi-year deposits held beyond highest slab but before maturity)
+                var maxSlab = activeSlabs.OrderByDescending(s => s.ToDays).FirstOrDefault();
+                if (maxSlab != null && actualDays > maxSlab.ToDays)
+                {
+                    decimal sRate = (isSenior && maxSlab.SeniorCitizenRate > 0) ? maxSlab.SeniorCitizenRate : maxSlab.InterestRate;
+                    decimal baseRate = Math.Min(account.InterestRate, sRate);
+                    decimal finalPrematureRate = Math.Max(0m, baseRate - standardPenalty);
+                    return (
+                        finalPrematureRate,
+                        sRate,
+                        standardPenalty,
+                        $"{maxSlab.FromDays} ते {maxSlab.ToDays}+ दिवस (कमाल स्लॅब दर: {sRate}%)",
+                        false,
+                        $"आरबीआय स्लॅब नियम: प्रत्यक्ष {actualDays} दिवस कमाल स्लॅब ({maxSlab.FromDays}-{maxSlab.ToDays} दिवस) दर {sRate}%, करार दर {account.InterestRate}%, दंड -{standardPenalty}% -> अंतिम लागू मुदतपूर्व दर: {finalPrematureRate}%"
+                    );
+                }
+            }
+
+            // Case C: Fixed scheme fallback (no active slabs)
+            int minHoldingDays = scheme?.MinDurationDays ?? 7;
+            if (actualDays < minHoldingDays)
+            {
+                return (
+                    0m,
+                    0m,
+                    0m,
+                    $"किमान {minHoldingDays} दिवस आवश्यक (ठेव फक्त {actualDays} दिवस)",
+                    true,
+                    $"आरबीआय नियमानुसार किमान ठेव कालावधीपूर्वी ({actualDays} दिवस < {minHoldingDays} दिवस) बंद केल्याने ०.००% (शून्य) व्याज देय आहे."
+                );
+            }
+
+            decimal fixedPenalty = 1.0m;
+            decimal fixedPremature = (scheme?.PrematureInterestRate > 0)
+                ? Math.Min(account.InterestRate, scheme.PrematureInterestRate)
+                : Math.Max(0m, account.InterestRate - fixedPenalty);
+            decimal effPenalty = (scheme?.PrematureInterestRate > 0)
+                ? Math.Max(0m, account.InterestRate - fixedPremature)
+                : fixedPenalty;
+
+            return (
+                fixedPremature,
+                account.InterestRate,
+                effPenalty,
+                "फिक्स्ड योजना (विना-स्लॅब)",
+                false,
+                $"फिक्स्ड योजना करार दर: {account.InterestRate}%, दंड: -{effPenalty}% -> अंतिम मुदतपूर्व दर: {fixedPremature}%"
+            );
+        }
+
+        private decimal ResolvePrematureRate(FdAccount account, int actualDays, FdScheme? scheme)
+        {
+            var res = ResolvePrematureRate(account, actualDays, DateTime.Today);
+            return res.PrematureRate;
+        }
+
+        // GET: api/FdAccounts/5/PrematurePreview?closureDate=2026-03-31
+        [HttpGet("{id}/PrematurePreview")]
+        public async Task<IActionResult> GetPrematurePreview(int id, [FromQuery] DateTime? closureDate = null)
+        {
+            var account = await _context.FdAccounts
+                .Include(a => a.Customer)
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.Slabs)
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.FdLiabilityLedger)
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.InterestPayableLedger)
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.InterestExpenseLedger)
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.PrematurePenaltyLedger)
+                .FirstOrDefaultAsync(a => a.FdAccountID == id);
+
+            if (account == null)
+            {
+                return NotFound("मुदत ठेव खाते सापडले नाही.");
+            }
+
+            DateTime effectiveClosureDate = closureDate?.Date ?? DateTime.Today;
+            int actualDays = Math.Max(1, (effectiveClosureDate - account.OpeningDate.Date).Days);
+
+            var (prematureRate, slabRate, penaltyDeduction, matchedSlabText, isMinPeriodViolated, resolutionNote) =
+                ResolvePrematureRate(account, actualDays, effectiveClosureDate);
+
+            decimal recalculatedInterest = Math.Round((account.DepositAmount * prematureRate * actualDays) / 36500.0m, 2);
+
+            decimal dbAccrued = await _context.FdTransactions
+                .Where(t => t.FdAccountID == id && t.TransactionType == "Accrual")
+                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+            decimal alreadyAccruedInt = Math.Max(dbAccrued, account.LegacyAccruedInt);
+
+            bool isPeriodicPayout = account.FdScheme != null &&
+                (account.FdScheme.InterestType == "MIS" || account.FdScheme.InterestType == "Monthly Interest");
+
+            decimal penaltyClawback = 0m;
+            decimal netPayoutAmount = account.DepositAmount + recalculatedInterest;
+
+            if (isPeriodicPayout)
+            {
+                if (alreadyAccruedInt > recalculatedInterest)
+                {
+                    penaltyClawback = alreadyAccruedInt - recalculatedInterest;
+                    netPayoutAmount = Math.Max(0m, account.DepositAmount - penaltyClawback);
+                }
+            }
+            else
+            {
+                if (alreadyAccruedInt > recalculatedInterest)
+                {
+                    penaltyClawback = alreadyAccruedInt - recalculatedInterest;
+                }
+            }
+
+            return Ok(new
+            {
+                fdAccountID = account.FdAccountID,
+                accountNo = account.AccountNo,
+                depositAmount = account.DepositAmount,
+                contractedRate = account.InterestRate,
+                openingDate = account.OpeningDate,
+                maturityDate = account.MaturityDate,
+                closureDate = effectiveClosureDate,
+                actualDays = actualDays,
+                isSeniorCitizen = account.Customer?.BirthDate.HasValue == true && (account.Customer.BirthDate.Value.Date <= effectiveClosureDate.AddYears(-60)),
+                matchedSlabText = matchedSlabText,
+                slabRate = slabRate,
+                penaltyRate = penaltyDeduction,
+                prematureRate = prematureRate,
+                recalculatedInterest = recalculatedInterest,
+                alreadyAccruedInterest = alreadyAccruedInt,
+                penaltyClawback = penaltyClawback,
+                netPayoutAmount = netPayoutAmount,
+                isPeriodicPayout = isPeriodicPayout,
+                isMinimumPeriodViolated = isMinPeriodViolated,
+                resolutionNote = resolutionNote
+            });
+        }
+
         // POST: api/FdAccounts/5/PrematureClose
         [HttpPost("{id}/PrematureClose")]
         public async Task<IActionResult> PrematureClose(int id, [FromQuery] DateTime? closureDate = null, [FromBody] FdClosureRequest? req = null)
         {
             var account = await _context.FdAccounts
+                .Include(a => a.Customer)
                 .Include(a => a.FdScheme)
-                .ThenInclude(s => s!.FdLiabilityLedger)
+                    .ThenInclude(s => s!.Slabs)
                 .Include(a => a.FdScheme)
-                .ThenInclude(s => s!.InterestPayableLedger)
+                    .ThenInclude(s => s!.FdLiabilityLedger)
                 .Include(a => a.FdScheme)
-                .ThenInclude(s => s!.InterestExpenseLedger)
+                    .ThenInclude(s => s!.InterestPayableLedger)
                 .Include(a => a.FdScheme)
-                .ThenInclude(s => s!.PrematurePenaltyLedger)
+                    .ThenInclude(s => s!.InterestExpenseLedger)
+                .Include(a => a.FdScheme)
+                    .ThenInclude(s => s!.PrematurePenaltyLedger)
                 .FirstOrDefaultAsync(a => a.FdAccountID == id);
 
             if (account == null || account.Status != "Active")
@@ -2614,10 +2834,9 @@ namespace Bhisi.Api.Controllers
                     // 1. Calculate actual days held (Same-day close receives minimum 1 day)
                     int actualDays = Math.Max(1, (effectiveClosureDate.Date - account.OpeningDate.Date).Days);
 
-                    // 2. Determine premature interest rate
-                    decimal originalRate = account.InterestRate;
-                    decimal prematureRate = account.FdScheme?.PrematureInterestRate ?? (originalRate - 1.0m);
-                    if (prematureRate < 0) prematureRate = 0;
+                    // 2. Determine premature interest rate via Tenor Slabs Resolution (RBI / MCS Co-op Rule)
+                    var (prematureRate, slabRate, penaltyDeduction, matchedSlabText, isMinPeriodViolated, rateResolutionNote) =
+                        ResolvePrematureRate(account, actualDays, effectiveClosureDate);
 
                     // 3. Recalculate interest
                     decimal recalculatedInterest = Math.Round((account.DepositAmount * prematureRate * actualDays) / 36500.0m, 2);
@@ -2707,8 +2926,8 @@ namespace Bhisi.Api.Controllers
                     account.Status = "Closed";
                     account.Remarks = (account.Remarks ?? "") + 
                         (req?.AdjustInLoan == true 
-                            ? $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} [कर्ज वजावट: ₹{loanAdjustAmount:N2} -> कर्ज क्र: {targetLoan?.LoanAccountNo}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} ({req.SurplusPaymentMode})]"
-                            : $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} ({paymentMode})")
+                            ? $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} [{rateResolutionNote}] [कर्ज वजावट: ₹{loanAdjustAmount:N2} -> कर्ज क्र: {targetLoan?.LoanAccountNo}, शिल्लक परतावा: ₹{surplusPayoutAmount:N2} ({req.SurplusPaymentMode})]"
+                            : $" | मुदतपूर्व बंद: {effectiveClosureDate:dd/MM/yyyy} [{rateResolutionNote}] ({paymentMode})")
                         + manualAuditNote;
                     await _context.SaveChangesAsync();
 
@@ -2886,13 +3105,19 @@ namespace Bhisi.Api.Controllers
                         {
                             Message = $"मुदतपूर्व बंद करून कर्ज खात्यात ₹{loanAdjustAmount:N2} वर्ग करण्यात आले." + (surplusPayoutAmount > 0 ? $" शिल्लक रक्कम ₹{surplusPayoutAmount:N2} ({surplusMode}) अदा केली." : ""),
                             ActualDays = actualDays,
+                            ContractedRate = account.InterestRate,
+                            MatchedSlab = matchedSlabText,
+                            SlabRate = slabRate,
+                            PenaltyRate = penaltyDeduction,
+                            PrematureRate = prematureRate,
                             RecalcInt = recalculatedInterest,
                             Clawback = penaltyClawback,
                             NetPayout = netPayoutAmount,
                             LoanAdjusted = loanAdjustAmount,
                             SurplusPaid = surplusPayoutAmount,
                             LoanAccountNo = settledLoan.LoanAccountNo,
-                            RemainingLoanBalance = settledLoan.PrincipalBalance + settledLoan.InterestBalance + settledLoan.OverdueInterestBalance
+                            RemainingLoanBalance = settledLoan.PrincipalBalance + settledLoan.InterestBalance + settledLoan.OverdueInterestBalance,
+                            ResolutionNote = rateResolutionNote
                         });
                     }
                     else
@@ -3019,7 +3244,20 @@ namespace Bhisi.Api.Controllers
 
                         await _context.SaveChangesAsync();
                         await transaction.CommitAsync();
-                        return Ok(new { Message = $"FD Prematurely Closed ({paymentMode})", ActualDays = actualDays, RecalcInt = recalculatedInterest, Clawback = penaltyClawback, NetPayout = netPayoutAmount });
+                        return Ok(new
+                        {
+                            Message = $"FD Prematurely Closed ({paymentMode})",
+                            ActualDays = actualDays,
+                            ContractedRate = account.InterestRate,
+                            MatchedSlab = matchedSlabText,
+                            SlabRate = slabRate,
+                            PenaltyRate = penaltyDeduction,
+                            PrematureRate = prematureRate,
+                            RecalcInt = recalculatedInterest,
+                            Clawback = penaltyClawback,
+                            NetPayout = netPayoutAmount,
+                            ResolutionNote = rateResolutionNote
+                        });
                     }
                 }
                 catch (Exception ex)

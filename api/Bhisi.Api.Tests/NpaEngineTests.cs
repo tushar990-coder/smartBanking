@@ -56,11 +56,15 @@ namespace Bhisi.Api.Tests
                 new LoanRate { LoanRateID = 2, LoanType = "सोने तारण कर्ज", LoanLedgerID = 71, InterestLedgerID = 196, OverdueInterestLedgerID = 196, InterestRate = 10m, IsCcOrOd = false, SecurityType = "सोने तारण" }
             });
 
-            // Seed Members
+            // Seed Customers & Members
+            var cust1 = new Customer { CustomerID = 1, FirstName = "Amit", LastName = "Patil", AadhaarNo = "111122223333", MobileNo = "9999999999" };
+            var cust2 = new Customer { CustomerID = 2, FirstName = "Rahul", LastName = "Joshi", AadhaarNo = "444455556666", MobileNo = "8888888888" };
+            context.Customers.AddRange(cust1, cust2);
+
             context.Members.AddRange(new[]
             {
-                new Member { MemberID = 1, MemberCode = "M001", FirstName = "Amit", LastName = "Patil", BranchID = 1, AadhaarNo = "111122223333", Village = "Pune", MobileNo = "9999999999" },
-                new Member { MemberID = 2, MemberCode = "M002", FirstName = "Rahul", LastName = "Joshi", BranchID = 1, AadhaarNo = "444455556666", Village = "Pune", MobileNo = "8888888888" }
+                new Member { MemberID = 1, MemberCode = "M001", BranchID = 1, CustomerID = 1 },
+                new Member { MemberID = 2, MemberCode = "M002", BranchID = 1, CustomerID = 2 }
             });
 
             await context.SaveChangesAsync();

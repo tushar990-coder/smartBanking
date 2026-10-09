@@ -99,6 +99,26 @@ interface FdAccount {
   isSeniorCitizen?: boolean;
 }
 
+export interface FdSchemeInterestSlab {
+  slabID?: number;
+  fdSchemeID?: number;
+  fromDays: number | string;
+  toDays: number | string;
+  interestRate: number | string;
+  seniorCitizenRate: number | string;
+  prematureRate?: number | string;
+  isActive?: boolean;
+}
+
+export interface PrematureRateResolution {
+  prematureRate: number;
+  slabRate: number;
+  penaltyRate: number;
+  matchedSlabText: string;
+  isMinimumPeriodViolated: boolean;
+  resolutionNote: string;
+}
+
 interface FdScheme {
   fdSchemeID: number;
   schemeName: string;
@@ -126,6 +146,7 @@ interface FdScheme {
   overdueInterestRate?: number | null;
   overdueGraceDays?: number | null;
   overdueRenewalPolicy?: string | null;
+  slabs?: FdSchemeInterestSlab[];
 }
 
 const FdWithdrawalMaturity: React.FC = () => {
@@ -165,6 +186,10 @@ const FdWithdrawalMaturity: React.FC = () => {
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
   const [showInlineSchedule, setShowInlineSchedule] = useState<boolean>(false);
 
+  // 🛡️ Live Premature Preview State from Backend (RBI Tenor Slabs Resolution)
+  const [prematurePreview, setPrematurePreview] = useState<any>(null);
+  const [loadingPreview, setLoadingPreview] = useState<boolean>(false);
+
   // ✍️ Manual Amount Override states (Legacy Reconciliation)
   const [isManualOverride, setIsManualOverride] = useState<boolean>(false);
   const [manualOverrideReason, setManualOverrideReason] = useState<string>('');
@@ -178,6 +203,122 @@ const FdWithdrawalMaturity: React.FC = () => {
     setCustomAccruedInterest('');
     setCustomOverdueInterest('');
     setCustomPrematureInterest('');
+  };
+
+  const calculatePrematureRate = (
+    account: FdAccount,
+    scheme: FdScheme | null | undefined,
+    actualDays: number
+  ): number => {
+    return resolvePrematureRateDetails(account, scheme, actualDays).prematureRate;
+  };
+
+  const resolvePrematureRateDetails = (
+    account: FdAccount,
+    scheme: FdScheme | null | undefined,
+    actualDays: number
+  ): PrematureRateResolution => {
+    const isSenior = account.isSeniorCitizen || (account.birthDate ? (new Date(closureDate).getTime() - new Date(account.birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000) >= 60 : false);
+
+    if (scheme?.slabs && scheme.slabs.length > 0) {
+      const activeSlabs = scheme.slabs.filter(s => s.isActive !== false);
+      if (activeSlabs.length > 0) {
+        let minFromDays = Math.min(...activeSlabs.map(s => Number(s.fromDays)));
+        if ((scheme as any)?.minDurationDays && Number((scheme as any).minDurationDays) > 0) {
+          minFromDays = Math.min(minFromDays, Number((scheme as any).minDurationDays));
+        }
+
+        // 1. Minimum Holding Period Rule: RBI & MCS Act mandates 0% interest if closed before minimum tenor
+        if (actualDays < minFromDays) {
+          return {
+            prematureRate: 0,
+            slabRate: 0,
+            penaltyRate: 0,
+            matchedSlabText: `किमान ${minFromDays} दिवस आवश्यक (ठेव फक्त ${actualDays} दिवस)`,
+            isMinimumPeriodViolated: true,
+            resolutionNote: `आरबीआय नियमानुसार किमान ठेव कालावधीपूर्वी (${actualDays} दिवस < ${minFromDays} दिवस) बंद केल्याने ०.००% (शून्य) व्याज देय आहे.`
+          };
+        }
+
+        // 2. Exact Run Period Slab Match
+        const matched = activeSlabs.find(s => actualDays >= Number(s.fromDays) && actualDays <= Number(s.toDays));
+        if (matched) {
+          const sRate = isSenior && Number(matched.seniorCitizenRate) > 0 ? Number(matched.seniorCitizenRate) : Number(matched.interestRate);
+          if (Number(matched.prematureRate) > 0) {
+            const finalPrematureRate = Math.min(account.interestRate, Number(matched.prematureRate));
+            const penalty = Math.max(0, account.interestRate - finalPrematureRate);
+            return {
+              prematureRate: finalPrematureRate,
+              slabRate: sRate,
+              penaltyRate: penalty,
+              matchedSlabText: `${matched.fromDays} ते ${matched.toDays} दिवस (स्लॅब दर: ${sRate}%)`,
+              isMinimumPeriodViolated: false,
+              resolutionNote: `कालावधी स्लॅब (${matched.fromDays}-${matched.toDays} दिवस) पूर्वनिर्धारित मुदतपूर्व दर ${finalPrematureRate}% थेट लागू.`
+            };
+          }
+
+          const penalty = 1.0;
+          const baseRate = Math.min(account.interestRate, sRate);
+          const finalPrematureRate = Math.max(0, baseRate - penalty);
+          return {
+            prematureRate: finalPrematureRate,
+            slabRate: sRate,
+            penaltyRate: penalty,
+            matchedSlabText: `${matched.fromDays} ते ${matched.toDays} दिवस (स्लॅब दर: ${sRate}%)`,
+            isMinimumPeriodViolated: false,
+            resolutionNote: `आरबीआय स्लॅब नियम: प्रत्यक्ष ${actualDays} दिवस स्लॅब (${matched.fromDays}-${matched.toDays} दिवस) दर ${sRate}%, मूळ करार दर ${account.interestRate}%, दंड -${penalty}% -> अंतिम लागू मुदतपूर्व दर: ${finalPrematureRate}%`
+          };
+        }
+
+        // Held beyond max slab
+        const sorted = [...activeSlabs].sort((a, b) => Number(b.toDays) - Number(a.toDays));
+        const maxSlab = sorted[0];
+        if (maxSlab && actualDays > Number(maxSlab.toDays)) {
+          const sRate = isSenior && Number(maxSlab.seniorCitizenRate) > 0 ? Number(maxSlab.seniorCitizenRate) : Number(maxSlab.interestRate);
+          const penalty = 1.0;
+          const baseRate = Math.min(account.interestRate, sRate);
+          const finalPrematureRate = Math.max(0, baseRate - penalty);
+          return {
+            prematureRate: finalPrematureRate,
+            slabRate: sRate,
+            penaltyRate: penalty,
+            matchedSlabText: `${maxSlab.fromDays} ते ${maxSlab.toDays}+ दिवस (कमाल स्लॅब दर: ${sRate}%)`,
+            isMinimumPeriodViolated: false,
+            resolutionNote: `आरबीआय स्लॅब नियम: प्रत्यक्ष ${actualDays} दिवस कमाल स्लॅब (${maxSlab.fromDays}-${maxSlab.toDays} दिवस) दर ${sRate}%, करार दर ${account.interestRate}%, दंड -${penalty}% -> अंतिम लागू मुदतपूर्व दर: ${finalPrematureRate}%`
+          };
+        }
+      }
+    }
+
+    // Fallback for Fixed schemes with no active slabs
+    const minHoldingDays = (scheme as any)?.minDurationDays || 7;
+    if (actualDays < minHoldingDays) {
+      return {
+        prematureRate: 0,
+        slabRate: 0,
+        penaltyRate: 0,
+        matchedSlabText: `किमान ${minHoldingDays} दिवस आवश्यक (ठेव फक्त ${actualDays} दिवस)`,
+        isMinimumPeriodViolated: true,
+        resolutionNote: `आरबीआय नियमानुसार किमान ठेव कालावधीपूर्वी (${actualDays} दिवस < ${minHoldingDays} दिवस) बंद केल्याने ०.००% (शून्य) व्याज देय आहे.`
+      };
+    }
+
+    const fixedPenalty = 1.0;
+    const fixedPremature = (scheme?.prematureInterestRate && scheme.prematureInterestRate > 0)
+      ? Math.min(account.interestRate, Number(scheme.prematureInterestRate))
+      : Math.max(0, account.interestRate - fixedPenalty);
+    const effPenalty = (scheme?.prematureInterestRate && scheme.prematureInterestRate > 0)
+      ? Math.max(0, account.interestRate - fixedPremature)
+      : fixedPenalty;
+
+    return {
+      prematureRate: fixedPremature,
+      slabRate: account.interestRate,
+      penaltyRate: effPenalty,
+      matchedSlabText: 'फिक्स्ड योजना (विना-स्लॅब)',
+      isMinimumPeriodViolated: false,
+      resolutionNote: `फिक्स्ड योजना करार दर: ${account.interestRate}%, दंड: -${effPenalty}% -> अंतिम मुदतपूर्व दर: ${fixedPremature}%`
+    };
   };
 
   const [loading, setLoading] = useState(false);
@@ -268,6 +409,36 @@ const FdWithdrawalMaturity: React.FC = () => {
       setLoadingLoans(false);
     }
   };
+
+  // 🛡️ Fetch Live Premature Preview from Server API
+  const fetchPrematurePreview = async (accId: number, asOfDateStr?: string) => {
+    if (!accId || accId <= 0) {
+      setPrematurePreview(null);
+      return;
+    }
+    setLoadingPreview(true);
+    try {
+      const qDate = asOfDateStr || closureDate;
+      const res = await axios.get(`${API_URL}/FdAccounts/${accId}/PrematurePreview`, {
+        params: qDate ? { closureDate: qDate } : {}
+      });
+      setPrematurePreview(res.data);
+    } catch (err) {
+      console.error('Error fetching premature preview', err);
+      setPrematurePreview(null);
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  // 🔄 Re-fetch premature preview whenever closureDate, selectedAccId or actionType changes
+  useEffect(() => {
+    if (actionType === 'PrematureClose' && selectedAccId && selectedAccId > 0 && closureDate) {
+      fetchPrematurePreview(selectedAccId, closureDate);
+    } else if (actionType !== 'PrematureClose') {
+      setPrematurePreview(null);
+    }
+  }, [actionType, selectedAccId, closureDate]);
 
   // 🔄 Re-fetch active loans with recalculated accrued interest whenever closureDate or selectedAccount changes
   useEffect(() => {
@@ -558,14 +729,15 @@ const FdWithdrawalMaturity: React.FC = () => {
       const principal = selectedAccount.depositAmount;
       const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
       const ledgers = getSchemeLedgers();
-      const prematureRate = ledgers?.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
-      const systemRecalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
+      const resolution = resolvePrematureRateDetails(selectedAccount, ledgers?.scheme, actualDays);
+      const prematureRate = prematurePreview?.prematureRate ?? resolution.prematureRate;
+      const systemRecalcInt = prematurePreview?.recalculatedInterest ?? Math.round((principal * prematureRate * actualDays) / 36500);
 
       const effRecalcInt = isManualOverride && customPrematureInterest !== ''
         ? Math.max(0, parseFloat(customPrematureInterest) || 0)
         : systemRecalcInt;
 
-      const alreadyAccrued = selectedAccount.legacyAccruedInt || 0;
+      const alreadyAccrued = prematurePreview?.alreadyAccruedInterest ?? (selectedAccount.legacyAccruedInt || 0);
       const isPeriodic = ledgers?.scheme?.interestType === 'MIS' || ledgers?.scheme?.interestType === 'Monthly Interest';
       if (isPeriodic && alreadyAccrued > effRecalcInt) {
         return Math.max(0, principal - (alreadyAccrued - effRecalcInt));
@@ -679,10 +851,16 @@ const FdWithdrawalMaturity: React.FC = () => {
         const resData = response.data;
         if (typeof resData === 'string') {
           setSuccess(resData);
-        } else if (resData?.message) {
-          setSuccess(`✅ ${resData.message}`);
+        } else if (resData?.message || resData?.Message) {
+          const msg = resData.message || resData.Message;
+          const aDays = resData.actualDays ?? resData.ActualDays;
+          const sText = resData.matchedSlab ?? resData.MatchedSlab;
+          const pRate = resData.prematureRate ?? resData.PrematureRate;
+          const nPayout = resData.netPayout ?? resData.NetPayout;
+          const cBack = resData.clawback ?? resData.Clawback;
+          setSuccess(`✅ ${msg} [कालावधी: ${aDays} दिवस | लागू स्लॅब: ${sText || '-'} | अंतिम दर: ${pRate}% | परतावा: ₹${Number(nPayout || 0).toLocaleString()}${cBack > 0 ? ` | संस्थेची बचत: ₹${Number(cBack).toLocaleString()}` : ''}]`);
         } else {
-          setSuccess(`✅ मुदत पूर्व बंद यशस्वी (${paymentMode})! दिवसांची संख्या: ${resData.actualDays}, मूळ मुद्दल: ₹${selectedAccount.depositAmount.toLocaleString()}, पुनर्गणना केलेले व्याज: ₹${resData.recalcInt}, दंडात्मक कपात: ₹${resData.clawback}, अंतिम पेआउट: ₹${resData.netPayout}`);
+          setSuccess(`✅ मुदत पूर्व बंद यशस्वी (${paymentMode})! दिवसांची संख्या: ${resData.actualDays || resData.ActualDays}, मूळ मुद्दल: ₹${selectedAccount.depositAmount.toLocaleString()}, पुनर्गणना केलेले व्याज: ₹${resData.recalcInt || resData.RecalcInt}, दंडात्मक कपात: ₹${resData.clawback || resData.Clawback}, अंतिम पेआउट: ₹${resData.netPayout || resData.NetPayout}`);
         }
       } else if (actionType === 'Renewal') {
         if (targetSchemeId === 0) {
@@ -813,14 +991,15 @@ const FdWithdrawalMaturity: React.FC = () => {
     } else if (actionType === 'PrematureClose') {
       const principal = selectedAccount.depositAmount;
       const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
-      const prematureRate = ledgers.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
-      const systemRecalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
+      const resolution = resolvePrematureRateDetails(selectedAccount, ledgers.scheme, actualDays);
+      const prematureRate = prematurePreview?.prematureRate ?? resolution.prematureRate;
+      const systemRecalcInt = prematurePreview?.recalculatedInterest ?? Math.round((principal * prematureRate * actualDays) / 36500);
 
       const recalculatedInterest = isManualOverride && customPrematureInterest !== ''
         ? Math.max(0, parseFloat(customPrematureInterest) || 0)
         : systemRecalcInt;
 
-      const alreadyAccruedInt = selectedAccount.legacyAccruedInt || 0;
+      const alreadyAccruedInt = prematurePreview?.alreadyAccruedInterest ?? (selectedAccount.legacyAccruedInt || 0);
       const isPeriodicPayout = ledgers.scheme?.interestType === 'MIS' || ledgers.scheme?.interestType === 'Monthly Interest';
       
       let clawback = 0;
@@ -1226,36 +1405,128 @@ const FdWithdrawalMaturity: React.FC = () => {
                   const ledgers = getSchemeLedgers();
                   const principal = selectedAccount.depositAmount;
                   const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
-                  const prematureRate = ledgers?.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
-                  const recalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
-                  const alreadyAccrued = selectedAccount.legacyAccruedInt || 0;
+                  const resolution = resolvePrematureRateDetails(selectedAccount, ledgers?.scheme, actualDays);
+
+                  const prematureRate = prematurePreview?.prematureRate ?? resolution.prematureRate;
+                  const recalcInt = prematurePreview?.recalculatedInterest ?? Math.round((principal * prematureRate * actualDays) / 36500);
+                  const alreadyAccrued = prematurePreview?.alreadyAccruedInterest ?? (selectedAccount.legacyAccruedInt || 0);
                   const isPeriodic = ledgers?.scheme?.interestType === 'MIS' || ledgers?.scheme?.interestType === 'Monthly Interest';
-                  const clawback = alreadyAccrued > recalcInt ? (alreadyAccrued - recalcInt) : 0;
-                  const netPayout = isPeriodic 
+                  const clawback = prematurePreview?.penaltyClawback ?? (alreadyAccrued > recalcInt ? (alreadyAccrued - recalcInt) : 0);
+                  const netPayout = prematurePreview?.netPayoutAmount ?? (isPeriodic 
                     ? (alreadyAccrued > recalcInt ? principal - clawback : principal + recalcInt)
-                    : principal + recalcInt;
+                    : principal + recalcInt);
+                  const matchedSlabText = prematurePreview?.matchedSlabText ?? resolution.matchedSlabText;
+                  const slabRate = prematurePreview?.slabRate ?? resolution.slabRate;
+                  const penaltyRate = prematurePreview?.penaltyRate ?? resolution.penaltyRate;
+                  const isMinViolated = prematurePreview?.isMinimumPeriodViolated ?? resolution.isMinimumPeriodViolated;
+                  const resolutionNote = prematurePreview?.resolutionNote ?? resolution.resolutionNote;
 
                   return (
-                    <div className="bg-emerald-50/70 border border-emerald-300 rounded p-3 text-xs grid grid-cols-2 md:grid-cols-4 gap-3 shadow-2xs">
-                      <div className="bg-white p-2 rounded border border-emerald-200">
-                        <span className="text-gray-500 block text-[10px] font-semibold uppercase">मूळ मुद्दल:</span>
-                        <strong className="text-gray-900 font-mono text-sm">₹ {principal.toLocaleString()}</strong>
+                    <div className="space-y-3">
+                      {/* 1. Audit Header & 6-Item Tenor Slabs Resolution Grid */}
+                      <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white rounded-lg p-3.5 shadow-sm space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-700/60 pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="p-1 rounded bg-blue-800 text-blue-200">
+                              <ShieldCheck className="w-4 h-4" />
+                            </span>
+                            <div>
+                              <h3 className="text-xs font-bold tracking-wide uppercase">
+                                आरबीआय व सहकार बँकिंग मुदतपूर्व परतावा दर पडताळणी (Tenor Slabs & Penalty Audit)
+                              </h3>
+                              <p className="text-[10px] text-blue-200">
+                                प्रत्यक्ष कालावधीचा स्लॅब दर शोधून संस्थेची व्याज गळती (Financial Leakage) रोखण्याचे अधिकृत सूत्र
+                              </p>
+                            </div>
+                          </div>
+                          {loadingPreview && (
+                            <span className="text-[10px] bg-blue-800 px-2 py-0.5 rounded text-blue-200 animate-pulse">
+                              थेट सर्व्हर पडताळणी सुरू...
+                            </span>
+                          )}
+                        </div>
+
+                        {/* 6-Card Audit Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+                          {/* 1. Contracted Rate */}
+                          <div className="bg-white/10 backdrop-blur-xs p-2 rounded border border-white/15">
+                            <span className="text-blue-200 block text-[10px] uppercase font-medium">१. मूळ करार दर</span>
+                            <strong className="text-white font-mono text-sm block mt-0.5">{selectedAccount.interestRate}%</strong>
+                            <span className="text-[9px] text-blue-300 block">ठेव पावती दर</span>
+                          </div>
+
+                          {/* 2. Run Days */}
+                          <div className="bg-white/10 backdrop-blur-xs p-2 rounded border border-white/15">
+                            <span className="text-blue-200 block text-[10px] uppercase font-medium">२. प्रत्यक्ष कालावधी</span>
+                            <strong className="text-amber-300 font-mono text-sm block mt-0.5">{actualDays} दिवस</strong>
+                            <span className="text-[9px] text-blue-300 block">ठेव ठेवलेला काळ</span>
+                          </div>
+
+                          {/* 3. Matched Slab */}
+                          <div className="bg-white/10 backdrop-blur-xs p-2 rounded border border-white/15">
+                            <span className="text-blue-200 block text-[10px] uppercase font-medium">३. लागू स्लॅब दर</span>
+                            <strong className="text-emerald-300 font-mono text-sm block mt-0.5">{slabRate}%</strong>
+                            <span className="text-[9px] text-blue-300 block truncate" title={matchedSlabText}>{matchedSlabText}</span>
+                          </div>
+
+                          {/* 4. Penalty Deduction */}
+                          <div className="bg-white/10 backdrop-blur-xs p-2 rounded border border-white/15">
+                            <span className="text-rose-200 block text-[10px] uppercase font-medium">४. दंडात्मक वजावट</span>
+                            <strong className="text-rose-300 font-mono text-sm block mt-0.5">-{penaltyRate}%</strong>
+                            <span className="text-[9px] text-rose-200 block">आरबीआय / सहकार दंड</span>
+                          </div>
+
+                          {/* 5. Final Effective Premature Rate */}
+                          <div className="bg-emerald-500/20 backdrop-blur-xs p-2 rounded border border-emerald-400/40">
+                            <span className="text-emerald-200 block text-[10px] uppercase font-bold">५. अंतिम लागू दर</span>
+                            <strong className="text-emerald-300 font-mono text-base font-black block mt-0.5">{prematureRate}%</strong>
+                            <span className="text-[9px] text-emerald-200 block">पुनर्गणना व्याज दर</span>
+                          </div>
+
+                          {/* 6. Clawback Savings */}
+                          <div className="bg-amber-400/20 backdrop-blur-xs p-2 rounded border border-amber-300/40">
+                            <span className="text-amber-200 block text-[10px] uppercase font-bold">६. नफ्यातील बचत</span>
+                            <strong className="text-amber-300 font-mono text-sm font-black block mt-0.5">₹ {clawback.toLocaleString()}</strong>
+                            <span className="text-[9px] text-amber-200 block">संस्थेचा वाचलेला खर्च</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="bg-white p-2 rounded border border-emerald-200">
-                        <span className="text-gray-500 block text-[10px] font-semibold uppercase">मुदतपूर्व व्याज ({actualDays} दिवस):</span>
-                        <strong className="text-blue-900 font-mono text-sm">{prematureRate}% (₹ {recalcInt.toLocaleString()})</strong>
+
+                      {/* 2. Financial Amount Summary Cards */}
+                      <div className="bg-emerald-50/70 border border-emerald-300 rounded-lg p-3 text-xs grid grid-cols-2 md:grid-cols-4 gap-3 shadow-2xs">
+                        <div className="bg-white p-2.5 rounded border border-emerald-200">
+                          <span className="text-gray-500 block text-[10px] font-semibold uppercase">मूळ ठेव मुद्दल:</span>
+                          <strong className="text-gray-900 font-mono text-sm">₹ {principal.toLocaleString()}</strong>
+                        </div>
+                        <div className="bg-white p-2.5 rounded border border-emerald-200">
+                          <span className="text-gray-500 block text-[10px] font-semibold uppercase">पुनर्गणित व्याज ({actualDays} दिवस @ {prematureRate}%):</span>
+                          <strong className="text-blue-900 font-mono text-sm">₹ {recalcInt.toLocaleString()}</strong>
+                        </div>
+                        <div className="bg-white p-2.5 rounded border border-emerald-200">
+                          <span className="text-gray-500 block text-[10px] font-semibold uppercase">
+                            {isPeriodic ? 'मुद्दलातून कपात (Clawback):' : 'तरतूद रिव्हर्सल (To P&L):'}
+                          </span>
+                          <strong className={`font-mono text-sm ${clawback > 0 ? 'text-amber-800' : 'text-gray-600'}`}>
+                            ₹ {clawback.toLocaleString()}
+                          </strong>
+                        </div>
+                        <div className="bg-emerald-100/90 p-2.5 rounded border border-emerald-300">
+                          <span className="text-emerald-900 block text-[10px] font-bold uppercase">एकूण मुदतपूर्व परतावा:</span>
+                          <strong className="text-emerald-950 font-mono text-base font-black">₹ {netPayout.toLocaleString()}</strong>
+                        </div>
                       </div>
-                      <div className="bg-white p-2 rounded border border-emerald-200">
-                        <span className="text-gray-500 block text-[10px] font-semibold uppercase">
-                          {isPeriodic ? 'मुद्दलातून कपात (Clawback):' : 'तरतूद रिव्हर्सल (To P&L):'}
-                        </span>
-                        <strong className={`font-mono text-sm ${clawback > 0 ? 'text-amber-800' : 'text-gray-600'}`}>
-                          ₹ {clawback.toLocaleString()}
-                        </strong>
-                      </div>
-                      <div className="bg-emerald-100/80 p-2 rounded border border-emerald-300">
-                        <span className="text-emerald-900 block text-[10px] font-bold uppercase">एकूण मुदतपूर्व परतावा:</span>
-                        <strong className="text-emerald-950 font-mono text-base font-black">₹ {netPayout.toLocaleString()}</strong>
+
+                      {/* 3. RBI & MCS Act Legal Compliance Banner */}
+                      <div className={`p-2.5 rounded text-[11px] border flex items-center justify-between gap-3 ${isMinViolated ? 'bg-rose-50 border-rose-300 text-rose-900' : 'bg-blue-50 border-blue-200 text-blue-950'}`}>
+                        <div className="flex items-center gap-2">
+                          <Info className={`w-4 h-4 shrink-0 ${isMinViolated ? 'text-rose-600' : 'text-blue-600'}`} />
+                          <span><b>आरबीआय व सहकार लेखापरीक्षण शेरा:</b> {resolutionNote}</span>
+                        </div>
+                        {clawback > 0 && (
+                          <span className="bg-emerald-100 border border-emerald-300 text-emerald-900 px-2.5 py-1 rounded font-bold text-[10px] shrink-0">
+                            🛡️ संस्थेची व्याज गळती रोखली (P&L Reversal): ₹ {clawback.toLocaleString()}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -1562,7 +1833,8 @@ const FdWithdrawalMaturity: React.FC = () => {
                     const principal = selectedAccount.depositAmount;
                     const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
                     const ledgers = getSchemeLedgers();
-                    const prematureRate = ledgers?.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
+                    const resolution = resolvePrematureRateDetails(selectedAccount, ledgers?.scheme, actualDays);
+                    const prematureRate = resolution.prematureRate;
                     const recalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
                     const alreadyAccrued = selectedAccount.legacyAccruedInt || 0;
                     const clawback = alreadyAccrued > recalcInt ? (alreadyAccrued - recalcInt) : 0;
@@ -1571,16 +1843,22 @@ const FdWithdrawalMaturity: React.FC = () => {
                       <div className="p-2.5 bg-amber-50 border border-amber-300 rounded text-xs space-y-1">
                         <div className="flex items-center gap-1.5 font-bold text-amber-950">
                           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span>⚠️ मुदतपूर्व बंद हिशोब पुनर्गणना (Premature Closure Recalculation):</span>
+                          <span>⚠️ मुदतपूर्व बंद हिशोब पुनर्गणना (Premature Closure Tenor Slabs Resolution):</span>
                         </div>
                         <p className="text-[11px] text-amber-900">
                           ठेवीदाराने करार मुदत ({formatDateDisplay(selectedAccount.maturityDate)}) पूर्ण न करता {actualDays} दिवसांतच ठेव बंद केली आहे. 
-                          नियमानुसार नियमित दर {selectedAccount.interestRate}% ऐवजी मुदतपूर्व सवलत दर <b>{prematureRate}%</b> लागू केला आहे.
+                          {resolution.isMinimumPeriodViolated ? (
+                            <b className="text-red-700"> {resolution.resolutionNote}</b>
+                          ) : (
+                            <>
+                              {' '}नियमानुसार प्रत्यक्ष कालावधीचा स्लॅब दर ({resolution.matchedSlabText}) व करार दर {selectedAccount.interestRate}% यातून नियमानुसार दंड कपात करून अंतिम दर <b>{prematureRate}%</b> लागू केला आहे.
+                            </>
+                          )}
                         </p>
                         <div className="flex flex-wrap items-center gap-4 text-[11px] font-semibold text-amber-950 pt-1 border-t border-amber-200">
                           <span>पुनर्गणित व्याज: <b>₹ {recalcInt.toLocaleString()}</b></span>
                           <span>लेजरमध्ये साचलेली तरतूद: <b>₹ {alreadyAccrued.toLocaleString()}</b></span>
-                          {clawback > 0 && <span className="text-red-700">P&L रिव्हर्सल / कपात: <b>₹ {clawback.toLocaleString()}</b></span>}
+                          {clawback > 0 && <span className="text-emerald-800 font-bold">P&L रिव्हर्सल / संस्थेची बचत: <b>₹ {clawback.toLocaleString()}</b></span>}
                         </div>
                       </div>
                     );
@@ -1903,8 +2181,9 @@ const FdWithdrawalMaturity: React.FC = () => {
                             const principal = selectedAccount.depositAmount;
                             const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
                             const ledgers = getSchemeLedgers();
-                            const prematureRate = ledgers?.scheme?.prematureInterestRate ?? Math.max(0, selectedAccount.interestRate - 1.0);
-                            const systemRecalcInt = Math.round((principal * prematureRate * actualDays) / 36500);
+                            const resolution = resolvePrematureRateDetails(selectedAccount, ledgers?.scheme, actualDays);
+                            const prematureRate = prematurePreview?.prematureRate ?? resolution.prematureRate;
+                            const systemRecalcInt = prematurePreview?.recalculatedInterest ?? Math.round((principal * prematureRate * actualDays) / 36500);
                             setCustomPrematureInterest(systemRecalcInt.toString());
                           }
                         } else {

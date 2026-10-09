@@ -21,7 +21,11 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-interface Member extends CustomerOption {}
+interface Member extends CustomerOption {
+  memberProfile?: { memberID?: number; [key: string]: any };
+  legacyMemberNo?: string;
+  memberID?: number;
+}
 
 interface ShareScheme {
   shareSchemeId: number;

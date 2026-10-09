@@ -620,7 +620,7 @@ export default function LoanOpeningBalanceMaster() {
     if ((name === 'loanDisbursementDate' || name === 'lastInstallmentPaidDate' || name === 'openingDate') && value) {
       if (cutoffDate && value > cutoffDate) {
         const fieldLabels: Record<string, string> = {
-          loanDisbursementDate: 'कर्ज उचल दिनांक',
+          loanDisbursementDate: 'कर्ज वाटप दिनांक',
           lastInstallmentPaidDate: 'शेवटचा हप्ता भरल्याची दिनांक',
           openingDate: 'बाकी दिनांक (As of Date)'
         };
@@ -998,7 +998,7 @@ export default function LoanOpeningBalanceMaster() {
     if (cutoffDate) {
       const formattedCutoff = new Date(cutoffDate).toLocaleDateString('en-GB');
       if (formData.loanDisbursementDate && formData.loanDisbursementDate > cutoffDate) {
-        alert(`कर्ज उचल दिनांक ही कट-ऑफ दिनांक (${formattedCutoff}) च्या आधीची किंवा त्या दिनांकाचीच असावी!`);
+        alert(`कर्ज वाटप दिनांक ही कट-ऑफ दिनांक (${formattedCutoff}) च्या आधीची किंवा त्या दिनांकाचीच असावी!`);
         return;
       }
       if (formData.openingDate && formData.openingDate > cutoffDate) {
@@ -1253,6 +1253,7 @@ export default function LoanOpeningBalanceMaster() {
       'खाते क्र.': b.loanAccountNo,
       'जुना खाते क्र.': b.legacyAccountNumber || '-',
       'मंजूर रक्कम (₹)': b.sanctionedAmount,
+      'कर्ज वाटप दिनांक': b.loanDisbursementDate ? new Date(b.loanDisbursementDate).toLocaleDateString('en-GB') : '-',
       'शुद्ध मुद्दल बाकी (₹)': b.purePrincipalBalance || b.principalBalance,
       'समाविष्ट व्याज (₹)': b.capitalizedInterestAmount || 0,
       'एकूण मुद्दल बाकी (₹)': b.principalBalance,
@@ -1752,19 +1753,19 @@ export default function LoanOpeningBalanceMaster() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-x-2.5 gap-y-2.5">
               <div>
-                <label className={labelClass}>कर्ज उचल दिनांक</label>
-                <input type="date" name="loanDisbursementDate" value={formData.loanDisbursementDate} onChange={handleChange} max={cutoffDate} className={inputClass} />
-              </div>
-              <div>
-                <label className={labelClass}>कर्ज मंजूर रक्कम</label>
+                <label className={labelClass}>कर्ज मंजूर रक्कम (₹) *</label>
                 <input type="number" step="0.01" name="sanctionedAmount" value={formData.sanctionedAmount} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-gray-900`} placeholder="0.00" />
               </div>
               <div>
-                <label className={labelClass}>व्याज दर (%)</label>
+                <label className={labelClass}>कर्ज वाटप दिनांक *</label>
+                <input type="date" name="loanDisbursementDate" value={formData.loanDisbursementDate} onChange={handleChange} max={cutoffDate} className={inputClass} title="कर्ज प्रत्यक्ष वाटप केल्याची तारीख" />
+              </div>
+              <div>
+                <label className={labelClass}>व्याज दर (%) *</label>
                 <input type="number" step="0.01" name="interestRate" value={formData.interestRate} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-gray-900`} placeholder="0.00" />
               </div>
               <div>
-                <label className={labelClass}>मुदत (महिने)</label>
+                <label className={labelClass}>मुदत (महिने) *</label>
                 <input type="number" name="durationMonths" value={formData.durationMonths} onChange={handleChange} onFocus={(e) => e.target.select()} className={`${inputClass} font-bold text-gray-900`} placeholder="0" />
               </div>
               <div>
@@ -2218,7 +2219,7 @@ export default function LoanOpeningBalanceMaster() {
                     </span>
                   </h2>
                   <div className="text-[10px] text-white/80 font-normal">
-                    खाते क्र.: {format14DigitDisplay(formData.loanAccountNo) || '-'} | खातेदार: {members.find(m => m.memberID.toString() === formData.memberID)?.firstName || '-'}
+                    खाते क्र.: {format14DigitDisplay(formData.loanAccountNo) || '-'} | खातेदार: {members.find(m => m.memberID.toString() === formData.memberID)?.firstName || '-'} | कर्ज वाटप दिनांक: {formData.loanDisbursementDate ? new Date(formData.loanDisbursementDate).toLocaleDateString('en-GB') : '-'}
                   </div>
                 </div>
               </div>
@@ -2748,6 +2749,8 @@ export default function LoanOpeningBalanceMaster() {
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज प्रकार</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र.</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">जुना खाते क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-right">मंजूर रक्कम (₹)</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center">वाटप दिनांक</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">मुद्दल बाकी (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">व्याज बाकी (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">व्याज तरतूद (₹)</th>
@@ -2794,6 +2797,12 @@ export default function LoanOpeningBalanceMaster() {
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-600 font-mono">
                           {balance.legacyAccountNumber || '-'}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-gray-800">
+                          {(balance.sanctionedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center font-mono text-indigo-700 font-medium whitespace-nowrap">
+                          {balance.loanDisbursementDate ? new Date(balance.loanDisbursementDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono">
                           <div className="font-bold text-emerald-700">

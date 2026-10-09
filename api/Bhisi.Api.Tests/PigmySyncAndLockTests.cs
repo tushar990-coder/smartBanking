@@ -31,7 +31,6 @@ namespace Bhisi.Api.Tests
             {
                 PigmyAgentID = 1,
                 AgentName = "Santosh Shinde",
-                MobileNo = "9890012345",
                 MaxCashLimit = 20000m,
                 Status = "Active"
             };
@@ -71,7 +70,6 @@ namespace Bhisi.Api.Tests
             {
                 PigmyAgentID = 2,
                 AgentName = "Ramesh Pawar",
-                MobileNo = "9890054321",
                 MaxCashLimit = 20000m,
                 Status = "Active"
             };
@@ -122,7 +120,6 @@ namespace Bhisi.Api.Tests
             {
                 PigmyAgentID = 10,
                 AgentName = "Vikas Patil",
-                MobileNo = "9822011223",
                 MaxCashLimit = 20000m,
                 Status = "Active"
             };
@@ -208,7 +205,6 @@ namespace Bhisi.Api.Tests
             {
                 PigmyAgentID = 20,
                 AgentName = "Mahesh More",
-                MobileNo = "9822099887",
                 MaxCashLimit = 20000m,
                 Status = "Active"
             };
@@ -275,7 +271,6 @@ namespace Bhisi.Api.Tests
             {
                 PigmyAgentID = 30,
                 AgentName = "Anil Shinde",
-                MobileNo = "9822000111",
                 MaxCashLimit = 50000m,
                 Status = "Active"
             };

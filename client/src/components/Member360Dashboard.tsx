@@ -318,7 +318,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
             setData(res.data);
         } catch (err) {
             console.error("Failed to load 360 summary", err);
-            setError("सभासद ३६०° सारांश लोड करता आला नाही.");
+            setError("खातेदार ३६०° सारांश लोड करता आला नाही.");
             setData(null);
         } finally {
             setLoading(false);
@@ -383,8 +383,8 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                         </div>
                         <div>
                             <h2 className="text-sm md:text-base font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                                <span>खातेदार ३६०° डॅशबोर्ड</span>
-                                <span className="text-xs font-semibold text-slate-400 hidden sm:inline">(Khatedar 360° Comprehensive View)</span>
+                                <span>खातेदार ३६०°</span>
+                                <span className="text-xs font-semibold text-slate-400 hidden sm:inline">(Khatedar 360°)</span>
                             </h2>
                             <p className="text-[11px] text-slate-500 hidden sm:block">सर्वसमावेशक खातेदार माहिती, पोर्टफोलिओ शिल्लक व जलद व्यवहार</p>
                         </div>
@@ -398,8 +398,9 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     members={rawMembers}
                                     value={selectedMemberId ? Number(selectedMemberId) : ''}
                                     onChange={(val) => setSelectedMemberId(val ? String(val) : '')}
-                                    placeholder="-- खातेदार नाव, CIF किंवा जुना नं शोधा --"
+                                    placeholder="-- खातेदार नाव किंवा CIF नं शोधा --"
                                     valueType="customerId"
+                                    hideMemberRef={true}
                                 />
                             </div>
                         </div>
@@ -477,6 +478,12 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                         <span className="text-amber-300 text-xs font-semibold">({data.memberInfo.nickName})</span>
                                     )}
 
+                                    {data.memberInfo.cifNo && (
+                                        <span className="text-[10px] bg-sky-500/20 text-sky-200 border border-sky-400/30 px-2.5 py-0.5 rounded font-mono font-bold">
+                                            CIF: {data.memberInfo.cifNo}
+                                        </span>
+                                    )}
+
                                     {data.memberInfo.memberCode ? (
                                         <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 rounded font-mono font-bold tracking-wider">
                                             सभासद: {data.memberInfo.memberCode}
@@ -484,12 +491,6 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     ) : (
                                         <span className="text-[10px] bg-amber-400/20 text-amber-200 border border-amber-400/30 px-2.5 py-0.5 rounded font-semibold">
                                             नाममात्र खातेदार
-                                        </span>
-                                    )}
-
-                                    {data.memberInfo.cifNo && (
-                                        <span className="text-[10px] bg-sky-500/20 text-sky-200 border border-sky-400/30 px-2.5 py-0.5 rounded font-mono font-bold">
-                                            CIF: {data.memberInfo.cifNo}
                                         </span>
                                     )}
 

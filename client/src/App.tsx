@@ -621,7 +621,7 @@ function App() {
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
                 <span className="text-xs font-bold tracking-wide">
-                  खातेदार ३६०° डॅशबोर्डवरून उघडलेला फॉर्म (Navigated from Khatedar 360°)
+                  खातेदार ३६०° वरून उघडलेला फॉर्म (Navigated from Khatedar 360°)
                 </span>
               </div>
               <button

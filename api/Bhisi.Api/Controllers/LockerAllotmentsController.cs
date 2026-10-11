@@ -384,6 +384,119 @@ namespace Bhisi.Api.Controllers
             await _context.SaveChangesAsync();
             return Ok(new { message = "लॉकर तपशील यशस्वीरीत्या अपडेट केले." });
         }
+
+        // GET: api/LockerAllotments/by-voucher/{voucherId}
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = "व्हाउचर सापडले नाही." });
+            }
+
+            var allotment = await _context.LockerAllotments
+                .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
+                .Include(a => a.Customer)
+                .Include(a => a.Member).ThenInclude(m => m!.Customer)
+                .Include(a => a.JointMember1).ThenInclude(j => j!.Customer)
+                .Include(a => a.JointMember2).ThenInclude(j => j!.Customer)
+                .Include(a => a.LinkedSavingAccount)
+                .FirstOrDefaultAsync(a => a.DepositVoucherID == voucherId || a.AdvanceRentVoucherID == voucherId);
+
+            if (allotment == null)
+            {
+                var rentPosting = await _context.LockerRentPostings
+                    .FirstOrDefaultAsync(rp => rp.VoucherID == voucherId);
+                if (rentPosting != null)
+                {
+                    allotment = await _context.LockerAllotments
+                        .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
+                        .Include(a => a.Customer)
+                        .Include(a => a.Member).ThenInclude(m => m!.Customer)
+                        .Include(a => a.JointMember1).ThenInclude(j => j!.Customer)
+                        .Include(a => a.JointMember2).ThenInclude(j => j!.Customer)
+                        .Include(a => a.LinkedSavingAccount)
+                        .FirstOrDefaultAsync(a => a.AllotmentID == rentPosting.AllotmentID);
+                }
+            }
+
+            if (allotment == null && !string.IsNullOrEmpty(voucher.Narration))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(voucher.Narration, @"(LKR-\d{2}-\d{4})");
+                if (match.Success)
+                {
+                    var accNo = match.Groups[1].Value;
+                    allotment = await _context.LockerAllotments
+                        .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
+                        .Include(a => a.Customer)
+                        .Include(a => a.Member).ThenInclude(m => m!.Customer)
+                        .Include(a => a.JointMember1).ThenInclude(j => j!.Customer)
+                        .Include(a => a.JointMember2).ThenInclude(j => j!.Customer)
+                        .Include(a => a.LinkedSavingAccount)
+                        .FirstOrDefaultAsync(a => a.LockerAccountNo == accNo);
+                }
+            }
+
+            var memberName = allotment?.Customer != null 
+                ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}".Trim() 
+                : (allotment?.Member?.Customer != null 
+                    ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}".Trim() 
+                    : "");
+
+            return Ok(new
+            {
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.TotalAmount
+                },
+                canPass = voucher.Status == "Pending" || voucher.Status == "Draft" || voucher.Status != "Approved",
+                allotment = allotment != null ? new
+                {
+                    allotment.AllotmentID,
+                    allotment.BranchID,
+                    allotment.LockerAccountNo,
+                    allotment.LockerID,
+                    LockerNo = allotment.Locker?.LockerNo,
+                    CabinetNo = allotment.Locker?.CabinetNo,
+                    KeyNo = allotment.Locker?.KeyNo,
+                    TypeName = allotment.Locker?.LockerType?.TypeName,
+                    allotment.CustomerID,
+                    allotment.MemberID,
+                    MemberNo = allotment.Member != null ? (allotment.Member.MemberCode ?? allotment.Member.MemberID.ToString()) : "",
+                    MemberName = memberName,
+                    MemberPhone = allotment.Customer?.MobileNo ?? allotment.Member?.Customer?.MobileNo,
+                    MemberAddress = allotment.Customer?.Address ?? allotment.Member?.Customer?.Address,
+                    allotment.AllotmentDate,
+                    allotment.RentStartDate,
+                    allotment.ExpiryDate,
+                    allotment.AnnualRent,
+                    allotment.SecurityDepositAmount,
+                    allotment.AdvanceRentPaid,
+                    allotment.OperatingInstruction,
+                    allotment.LinkedSavingAccountID,
+                    LinkedSavingAccountNo = allotment.LinkedSavingAccount?.AccountNo,
+                    allotment.IsAutoDebitEnabled,
+                    allotment.NomineeName,
+                    allotment.NomineeRelation,
+                    allotment.NomineeAge,
+                    allotment.NomineeAadhaar,
+                    allotment.NomineeAddress,
+                    allotment.Remarks,
+                    allotment.Status
+                } : null
+            });
+        }
     }
 
     public class LockerAllotmentCreateDto

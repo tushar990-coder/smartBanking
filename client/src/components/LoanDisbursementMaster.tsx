@@ -12,6 +12,7 @@ import {
 import SearchableSelect from './SearchableSelect';
 import LoanDistributionListModal from './LoanDistributionListModal';
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
+import { useAuth } from '../context/AuthContext';
 
 interface Member {
     memberID: number;
@@ -136,6 +137,7 @@ interface Props {
     editingDisbursement?: any;
     onRequestEditApplication?: (d: any) => void;
     onSaveSuccess?: () => void;
+    onNavigate?: (tab: string, params?: any) => void;
 }
 
 const formatDateSafe = (dateVal: any): string => {
@@ -174,7 +176,18 @@ export const format14DigitDisplay = (num?: string) => {
     return num;
 };
 
-const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisbursement, onRequestEditApplication, onSaveSuccess }) => {
+const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisbursement, onRequestEditApplication, onSaveSuccess, onNavigate }) => {
+    const { user } = useAuth();
+    
+    // Passing / Checker Mode URL Parameters
+    const queryParams = new URLSearchParams(window.location.search);
+    const voucherIdFromUrl = queryParams.get('voucherId');
+    const isPassingMode = queryParams.get('passingMode') === 'true' && Boolean(voucherIdFromUrl);
+
+    const [passingVoucher, setPassingVoucher] = useState<any>(null);
+    const [passingActionLoading, setPassingActionLoading] = useState(false);
+    const [rejectModalOpen, setRejectModalOpen] = useState(false);
+    const [rejectionReason, setRejectionReason] = useState('');
     const [disbursements, setDisbursements] = useState<LoanDisbursement[]>([]);
     const [applications, setApplications] = useState<LoanApplication[]>([]);
     const [accounts, setAccounts] = useState<LoanAccount[]>([]);
@@ -347,6 +360,159 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             }
         });
     }, [draftApplication, editingDisbursement]);
+
+    // Load Loan Disbursement in Passing Mode
+    useEffect(() => {
+        if (!isPassingMode || !voucherIdFromUrl) return;
+
+        const loadPassingDisbursement = async () => {
+            try {
+                setLoading(true);
+                const res = await axios.get(`/api/LoanDisbursements/by-voucher/${voucherIdFromUrl}`);
+                const d = res.data;
+                if (!d) return;
+
+                setPassingVoucher(d.voucher || null);
+                setEditingId(d.loanDisbursementID);
+                setSourceType('ExistingAccount');
+                setSelectedSourceId(d.loanAccountID);
+
+                const autoDisbDate = d.disbursementDate 
+                    ? d.disbursementDate.split('T')[0] 
+                    : new Date().toISOString().split('T')[0];
+
+                setFormData({
+                    loanDisbursementID: d.loanDisbursementID,
+                    loanAccountID: d.loanAccountID,
+                    disbursementDate: autoDisbDate,
+                    paymentMode: d.paymentMode || 'Cash',
+                    sanctionedAmount: d.sanctionedAmount || 0,
+                    disbursementAmount: d.disbursementAmount || 0,
+                    netAmountPaid: d.netAmountPaid || 0,
+                    processingFee: d.processingFee || 0,
+                    shareDeduction: d.shareDeduction || 0,
+                    insuranceDeduction: d.insuranceDeduction || 0,
+                    stationeryCharges: d.stationeryCharges || 0,
+                    otherDeductions: d.otherDeductions || 0,
+                    bankAccountLedgerID: d.bankAccountLedgerID,
+                    chequeNo: d.chequeNo || '',
+                    transferToSavingAccountNo: d.transferToSavingAccountNo || '',
+                    remarks: d.remarks || '',
+                    loanInstallmentType: d.loanInstallmentType || 'कर्जावरती'
+                });
+
+                if (d.deductions && d.deductions.length > 0) {
+                    setDeductions(d.deductions.map((ded: any) => ({
+                        ledgerID: ded.ledgerID,
+                        amount: ded.amount,
+                        ledgerName: ded.ledger?.ledgerName || allLedgers.find(l => l.ledgerID === ded.ledgerID)?.ledgerName
+                    })));
+                }
+
+                if (d.loanAccount) {
+                    setAccounts(prev => {
+                        if (!prev.some(a => a.loanAccountID === d.loanAccountID)) {
+                            return [d.loanAccount, ...prev];
+                        }
+                        return prev;
+                    });
+                    if (d.loanAccount.customerID) {
+                        fetchCustomerShareBalance(d.loanAccount.customerID);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to load disbursement for passing:", err);
+                alert("कर्ज वितरण पावती लोड करताना त्रुटी आली.");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadPassingDisbursement();
+    }, [isPassingMode, voucherIdFromUrl]);
+
+    const handlePassVoucher = async () => {
+        const vId = passingVoucher?.voucherID || voucherIdFromUrl;
+        const vNo = passingVoucher?.voucherNo || `Voucher #${vId}`;
+        if (!vId) return;
+
+        if (!window.confirm(`तुम्हाला कर्ज वितरण व्हाउचर क्र. ${vNo} पास व मंजूर करायचे आहे का?`)) {
+            return;
+        }
+
+        setPassingActionLoading(true);
+        try {
+            const payload = {
+                voucherIds: [Number(vId)],
+                approvedBy: user?.userID || 1
+            };
+
+            const res = await fetch('/api/VoucherPosting/Post', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const scrollInfo = data.results && data.results[0] ? ` (Scroll No: ${data.results[0].scrollNo})` : '';
+                alert(`कर्ज वितरण व्हाउचर क्र. ${vNo} यशस्वीरीत्या पास करण्यात आले!${scrollInfo}`);
+                if (onNavigate) {
+                    onNavigate('voucher-posting');
+                } else {
+                    window.location.href = '/voucher/passing';
+                }
+            } else {
+                const errText = await res.text();
+                alert(`त्रुटी: ${errText}`);
+            }
+        } catch (e) {
+            alert('व्हाउचर पास करताना नेटवर्क त्रुटी आली.');
+        } finally {
+            setPassingActionLoading(false);
+        }
+    };
+
+    const handleRejectVoucher = async () => {
+        const vId = passingVoucher?.voucherID || voucherIdFromUrl;
+        const vNo = passingVoucher?.voucherNo || `Voucher #${vId}`;
+        if (!vId) return;
+        if (!rejectionReason.trim()) {
+            alert('कृपया नामंजूर करण्याचे कारण लिहा.');
+            return;
+        }
+
+        setPassingActionLoading(true);
+        try {
+            const res = await fetch(`/api/VoucherPosting/${vId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    reason: rejectionReason.trim(),
+                    userId: user?.userID || 1,
+                    username: user?.username || 'Admin',
+                    userRole: user?.roleName || user?.role || 'Admin'
+                })
+            });
+
+            const resData = await res.json().catch(() => null);
+            if (res.ok) {
+                alert(resData?.message || `कर्ज वितरण व्हाउचर क्र. ${vNo} नामंजूर / रद्द करण्यात आले.`);
+                setRejectModalOpen(false);
+                if (onNavigate) {
+                    onNavigate('voucher-posting');
+                } else {
+                    window.location.href = '/voucher/passing';
+                }
+            } else {
+                alert(resData?.message || resData || 'व्हाउचर नामंजूर करताना त्रुटी आली.');
+            }
+        } catch (e) {
+            alert('व्हाउचर नामंजूर करताना त्रुटी आली.');
+        } finally {
+            setPassingActionLoading(false);
+        }
+    };
 
     const fetchData = async () => {
         setLoading(true);
@@ -1061,6 +1227,62 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     return (
         <div ref={formContainerRef} className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
             
+            {/* ⚠️ Passing Mode Verification Alert Banner */}
+            {isPassingMode && (
+                <div className="mb-2 p-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-sm shadow-md border border-amber-600 flex flex-wrap items-center justify-between gap-2 animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2.5">
+                        <span className="text-xl">⚠️</span>
+                        <div>
+                            <div className="font-black text-xs tracking-wide uppercase flex items-center gap-1.5">
+                                <span>व्हाउचर तपासणी व पासिंग मोड (Checker Passing Mode)</span>
+                                <span className="bg-amber-900/50 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                                    फक्त वाचन (Read-Only)
+                                </span>
+                            </div>
+                            <div className="text-[11px] text-amber-100 flex flex-wrap items-center gap-3 mt-0.5">
+                                <span>व्हाउचर क्र: <strong className="font-mono text-white">{passingVoucher?.voucherNo || `Voucher #${voucherIdFromUrl}`}</strong></span>
+                                {passingVoucher?.scrollNo && <span>स्क्रोल क्र: <strong className="font-mono text-white">{passingVoucher.scrollNo}</strong></span>}
+                                {passingVoucher?.createdByUser?.username && (
+                                    <span>नोंद करणारा (Maker): <strong className="text-white">{passingVoucher.createdByUser.username}</strong></span>
+                                )}
+                                <span>निव्वळ वाटप रक्कम: <strong className="font-mono text-white">₹{(formData.netAmountPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                            </div>
+                            <div className="text-[10.5px] text-amber-100 font-medium mt-0.5">
+                                कोर बँकिंग नियंत्रण: ही नोंद केवळ तपासणी व मंजुरीसाठी उघडली आहे. यात बदल किंवा डिलीट करता येणार नाही.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/voucher/passing'}
+                            className="bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold px-2.5 py-1 rounded shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                            <span>↩️ मागे जा (Back to Queue)</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setRejectModalOpen(true)}
+                            disabled={passingActionLoading}
+                            className="bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-bold px-2.5 py-1 rounded shadow-2xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>व्हाउचर रिजेक्ट करा</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handlePassVoucher}
+                            disabled={passingActionLoading}
+                            className="bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold px-3 py-1 rounded shadow-2xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{passingActionLoading ? 'पास होत आहे...' : 'व्हाउचर पास करा (Approve)'}</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+            
             {/* ========================================================================= */}
             {/* TOP ERP HEADER CARD (Matching LoanApplicationMaster.tsx)                   */}
             {/* ========================================================================= */}
@@ -1168,6 +1390,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             {/* ========================================================================= */}
             <div className="w-full bg-white p-2.5 sm:p-3 rounded-sm shadow-xs border border-gray-200">
                 <form onSubmit={handleSubmit} className="space-y-3">
+                    <fieldset disabled={isPassingMode} className="contents space-y-3">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
                         
                         {/* ===================================================================== */}
@@ -1741,6 +1964,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                             </div>
                         </div>
                     </div>
+                    </fieldset>
 
                     {/* Form Action Buttons Bar (Full Width) */}
                     <div className="pt-2 flex flex-wrap justify-between items-center gap-2 border-t border-gray-200 bg-slate-50/70 -mx-2.5 sm:-mx-3 -mb-2.5 sm:-mb-3 p-2 rounded-b-sm">
@@ -1772,31 +1996,64 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={handleResetForm}
-                                className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
-                            >
-                                <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
-                                <span>{editingId ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
-                            </button>
+                            {isPassingMode ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/voucher/passing'}
+                                        className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
+                                    >
+                                        <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+                                        <span>पासिंग यादीवर परत जा (Back)</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setRejectModalOpen(true)}
+                                        disabled={passingActionLoading}
+                                        className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                        <span>व्हाउचर रिजेक्ट करा (Reject)</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handlePassVoucher}
+                                        disabled={passingActionLoading}
+                                        className="px-6 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
+                                    >
+                                        <CheckCircle2 className="w-4 h-4" />
+                                        <span>{passingActionLoading ? 'पास होत आहे...' : 'कर्ज वितरण व्हाउचर पास करा (Approve & Pass)'}</span>
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={handleResetForm}
+                                        className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
+                                    >
+                                        <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+                                        <span>{editingId ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
+                                    </button>
 
-                            <button
-                                type="submit"
-                                disabled={isSaving || isExceedingPendingLimit}
-                                className={`px-6 py-1.5 ${
-                                    editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary hover:opacity-90'
-                                } text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all`}
-                            >
-                                <Save className="w-4 h-4" />
-                                <span>
-                                    {isSaving
-                                        ? 'जतन होत आहे...'
-                                        : editingId
-                                        ? 'बदल सेव्ह करा (Update)'
-                                        : `वितरण सेव्ह करा (${alreadyDisbursedAmount > 0 ? `टप्पा ${currentTrancheNo}` : 'Save & Disburse'})`}
-                                </span>
-                            </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isSaving || isExceedingPendingLimit}
+                                        className={`px-6 py-1.5 ${
+                                            editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary hover:opacity-90'
+                                        } text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all`}
+                                    >
+                                        <Save className="w-4 h-4" />
+                                        <span>
+                                            {isSaving
+                                                ? 'जतन होत आहे...'
+                                                : editingId
+                                                ? 'बदल सेव्ह करा (Update)'
+                                                : `वितरण सेव्ह करा (${alreadyDisbursedAmount > 0 ? `टप्पा ${currentTrancheNo}` : 'Save & Disburse'})`}
+                                        </span>
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </form>
@@ -2107,6 +2364,58 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     onEdit={handleEdit} 
                     onDelete={() => { fetchData(); fetchDropdowns(); }} 
                 />
+            )}
+
+            {/* Rejection Reason Modal */}
+            {rejectModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-lg shadow-xl border border-rose-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+                        <div className="bg-rose-50 px-4 py-3 border-b border-rose-100 flex items-center gap-2.5">
+                            <Trash2 className="w-5 h-5 text-rose-600" />
+                            <div>
+                                <h3 className="text-sm font-bold text-rose-900">कर्ज वितरण व्हाउचर नामंजूर / रद्द करा (Reject Disbursement)</h3>
+                                <p className="text-[11px] text-rose-700">व्हाउचर क्र: <span className="font-mono font-bold">{passingVoucher?.voucherNo || `Voucher #${voucherIdFromUrl}`}</span></p>
+                            </div>
+                        </div>
+                        
+                        <div className="p-4 space-y-3">
+                            <label className="block text-xs font-semibold text-gray-700">
+                                नामंजूर करण्याचे कारण लिहा (Reason for Rejection): <span className="text-rose-500">*</span>
+                            </label>
+                            <textarea
+                                value={rejectionReason}
+                                onChange={(e) => setRejectionReason(e.target.value)}
+                                placeholder="उदा. कर्ज मंजुरी कागदपत्रे अपूर्ण आहेत / खात्यात त्रुटी आढळली / चुकीची रक्कम..."
+                                rows={3}
+                                className="w-full text-xs border border-gray-300 rounded p-2 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                                autoFocus
+                            />
+                        </div>
+
+                        <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setRejectModalOpen(false);
+                                    setRejectionReason('');
+                                }}
+                                disabled={passingActionLoading}
+                                className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-xs rounded transition-colors cursor-pointer"
+                            >
+                                रद्द करा (Cancel)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleRejectVoucher}
+                                disabled={passingActionLoading || !rejectionReason.trim()}
+                                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>{passingActionLoading ? 'प्रक्रिया सुरू आहे...' : 'नामंजूर निश्चित करा (Confirm Reject)'}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

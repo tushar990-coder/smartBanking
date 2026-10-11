@@ -2,6 +2,7 @@ import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import React, { useState, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import { ArrowLeft, CheckCircle, XCircle, ShieldCheck } from 'lucide-react';
 
 interface Member extends MemberOption {}
 
@@ -14,7 +15,22 @@ interface ShareAccount {
   transactions: any[];
 }
 
-const ShareWithdrawal: React.FC = () => {
+export interface ShareWithdrawalProps {
+  onNavigate?: (tab: string, params?: any) => void;
+  voucherId?: string | number | null;
+  isPassingMode?: boolean;
+}
+
+const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId, isPassingMode }) => {
+  const queryParams = new URLSearchParams(window.location.search);
+  const effectiveVoucherId = voucherId || queryParams.get('voucherId');
+  const isPassing = isPassingMode || queryParams.get('passingMode') === 'true';
+
+  const [passingVoucherData, setPassingVoucherData] = useState<any | null>(null);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<string>('');
   const [shareAccount, setShareAccount] = useState<ShareAccount | null>(null);
@@ -30,6 +46,98 @@ const ShareWithdrawal: React.FC = () => {
   const [memberSavingAccounts, setMemberSavingAccounts] = useState<any[]>([]);
   const [selectedSavingAccountId, setSelectedSavingAccountId] = useState<number | ''>('');
   const [chequeNo, setChequeNo] = useState('');
+
+  useEffect(() => {
+    if (isPassing && effectiveVoucherId) {
+      loadPassingWithdrawal(effectiveVoucherId);
+    }
+  }, [isPassing, effectiveVoucherId]);
+
+  const loadPassingWithdrawal = async (vId: string | number) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/ShareAccounts/by-voucher/${vId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPassingVoucherData(data);
+        if (data.member?.memberID) {
+          setSelectedMemberId(data.member.memberID.toString());
+          loadShareAccount(data.member.memberID.toString());
+        }
+        if (data.numberOfShares) {
+          setFormData({
+            numberOfShares: data.numberOfShares.toString(),
+            narration: data.voucher?.narration || 'Share Withdrawal'
+          });
+        }
+        if (data.paymentMode) {
+          if (data.paymentMode === 'Transfer') setPaymentMode('Transfer');
+          else if (data.paymentMode === 'Bank') setPaymentMode('Bank');
+          else setPaymentMode('Cash');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load passing voucher', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDirectPass = async () => {
+    if (!effectiveVoucherId) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/VoucherPosting/Post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([Number(effectiveVoucherId)])
+      });
+      if (res.ok) {
+        alert('शेअर परतावा व्हाउचर यशस्वीरित्या पास (मंजूर) करण्यात आले!');
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert('पासिंग अयशस्वी: ' + (err.message || 'सर्व्हर त्रुटी'));
+      }
+    } catch (e) {
+      alert('सर्व्हर त्रुटी.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!effectiveVoucherId || !rejectReason.trim()) {
+      alert('कृपया नामंजूर करण्याचे कारण प्रविष्ट करा.');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/VoucherPosting/${effectiveVoucherId}?reason=${encodeURIComponent(rejectReason)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        alert('शेअर परतावा व्हाउचर नामंजूर / रद्द करण्यात आले!');
+        setRejectModalOpen(false);
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert('रद्द करणे अयशस्वी: ' + (err.message || 'सर्व्हर त्रुटी'));
+      }
+    } catch (e) {
+      alert('सर्व्हर त्रुटी.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchMembers();
@@ -190,6 +298,30 @@ const ShareWithdrawal: React.FC = () => {
         </div>
       </div>
 
+      {/* ⚠️ Amber Checker Alert Banner */}
+      {isPassing && (
+        <div className="mb-2 p-2.5 bg-amber-500/10 border-2 border-amber-500/80 rounded flex items-center justify-between text-amber-900 animate-pulse">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <div className="font-bold text-xs uppercase tracking-wider text-amber-950">
+                व्हाउचर तपासणी व मंजुरी मोड (Voucher Passing / Checker Mode)
+              </div>
+              <div className="text-[10px] text-amber-800">
+                व्हाउचर क्र: <span className="font-mono font-bold text-amber-950">{passingVoucherData?.voucher?.voucherNo || effectiveVoucherId}</span> | 
+                रक्कम: <span className="font-mono font-bold text-amber-950">₹{passingVoucherData?.voucher?.totalAmount ?? ((parseInt(formData.numberOfShares) || 0) * 100)}</span> | 
+                तारीख: <span className="font-mono font-bold text-amber-950">{passingVoucherData?.voucher?.voucherDate ? new Date(passingVoucherData.voucher.voucherDate).toLocaleDateString('en-GB') : '-'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-200 text-amber-900 border border-amber-300">
+              कडक वाचन मोड (Read-Only Lockdown)
+            </span>
+          </div>
+        </div>
+      )}
+
       {message && (
         <div className={`mb-2 p-2 rounded-sm font-bold text-xs border flex items-center gap-2 ${message.includes('failed') || message.includes('Error') || message.includes('आवश्यक') || message.includes('शकता') || message.includes('⚠️') ? 'bg-red-50 text-red-800 border-red-200' : 'bg-green-50 text-green-800 border-green-200'}`}>
           <span>{message.includes('failed') || message.includes('Error') || message.includes('आवश्यक') || message.includes('शकता') || message.includes('⚠️') ? '⚠️' : '✅'}</span>
@@ -205,6 +337,7 @@ const ShareWithdrawal: React.FC = () => {
           value={selectedMemberId ? Number(selectedMemberId) : ''} 
           onChange={(val) => handleMemberChange({ target: { value: val ? String(val) : '' } })} 
           placeholder="-- सभासद नाव, कोड किंवा मोबाईलने शोधा --"
+          isDisabled={isPassing}
         />
       </div>
 
@@ -281,7 +414,7 @@ const ShareWithdrawal: React.FC = () => {
               </h3>
               
               <form onSubmit={handleWithdraw} className="space-y-3 flex-1 flex flex-col justify-between">
-                <div className="space-y-3">
+                <fieldset disabled={isPassing} className="space-y-3">
                   <div>
                     <label className="block text-[11px] font-bold text-gray-700 mb-0.5">काढायच्या शेअर्सची संख्या (Quantity) *</label>
                     <div className="flex gap-2 items-center">
@@ -291,7 +424,7 @@ const ShareWithdrawal: React.FC = () => {
                         min="1"
                         max={shareAccount?.totalShareCount || 9999}
                         placeholder="उदा. 5"
-                        className="w-24 border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors text-xs bg-white font-bold text-gray-800"
+                        className="w-24 border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors text-xs bg-white font-bold text-gray-800 disabled:bg-gray-100 disabled:cursor-not-allowed"
                         value={formData.numberOfShares}
                         onChange={handleChange}
                         required
@@ -350,7 +483,7 @@ const ShareWithdrawal: React.FC = () => {
                         <select
                           value={selectedSavingAccountId}
                           onChange={(e) => setSelectedSavingAccountId(e.target.value === '' ? '' : parseInt(e.target.value))}
-                          className="w-full border border-indigo-300 px-2 py-1 rounded-sm text-xs bg-white font-bold text-indigo-950"
+                          className="w-full border border-indigo-300 px-2 py-1 rounded-sm text-xs bg-white font-bold text-indigo-950 disabled:bg-gray-100 disabled:cursor-not-allowed"
                         >
                           {memberSavingAccounts.map((acc: any) => (
                             <option key={acc.savingAccountID} value={acc.savingAccountID}>
@@ -372,7 +505,7 @@ const ShareWithdrawal: React.FC = () => {
                       <label className="block text-[10px] font-bold text-amber-900 mb-0.5">चेक / संदर्भ क्र. (Cheque / Ref No)</label>
                       <input 
                         type="text" 
-                        className="w-full border border-amber-300 px-2 py-1 rounded-sm text-xs bg-white font-bold"
+                        className="w-full border border-amber-300 px-2 py-1 rounded-sm text-xs bg-white font-bold disabled:bg-gray-100 disabled:cursor-not-allowed"
                         placeholder="उदा. CHQ123456 / UTR987654"
                         value={chequeNo}
                         onChange={(e) => setChequeNo(e.target.value)}
@@ -385,29 +518,104 @@ const ShareWithdrawal: React.FC = () => {
                     <input 
                       type="text" 
                       name="narration"
-                      className="w-full border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-xs bg-white"
+                      className="w-full border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-xs bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                       value={formData.narration}
                       onChange={handleChange}
                       required
                     />
                   </div>
-                </div>
+                </fieldset>
 
                 <div className="border-t border-gray-200 pt-3">
-                  <button 
-                    type="submit"
-                    className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-sm font-bold shadow-xs transition-colors text-xs disabled:opacity-50 uppercase tracking-wide cursor-pointer flex items-center justify-center gap-1.5"
-                    disabled={loading || !formData.numberOfShares || parseInt(formData.numberOfShares) <= 0 || (shareAccount ? parseInt(formData.numberOfShares) > shareAccount.totalShareCount : false)}
-                  >
-                    <span>📤</span>
-                    <span>{loading ? 'Processing...' : 'शेअर्स काढा आणि पेमेंट व्हाउचर बनवा (Withdraw & Create Voucher)'}</span>
-                  </button>
+                  {!isPassing ? (
+                    <button 
+                      type="submit"
+                      className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-sm font-bold shadow-xs transition-colors text-xs disabled:opacity-50 uppercase tracking-wide cursor-pointer flex items-center justify-center gap-1.5"
+                      disabled={loading || !formData.numberOfShares || parseInt(formData.numberOfShares) <= 0 || (shareAccount ? parseInt(formData.numberOfShares) > shareAccount.totalShareCount : false)}
+                    >
+                      <span>📤</span>
+                      <span>{loading ? 'Processing...' : 'शेअर्स काढा आणि पेमेंट व्हाउचर बनवा (Withdraw & Create Voucher)'}</span>
+                    </button>
+                  ) : (
+                    <div className="p-3 bg-slate-900 rounded-lg shadow-xl border border-amber-500/30 flex items-center justify-between z-40">
+                      <button
+                        type="button"
+                        onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded border border-slate-600 flex items-center gap-2 cursor-pointer"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span>↩️ पासिंग यादीवर परत जा</span>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setRejectReason(''); setRejectModalOpen(true); }}
+                          className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          <span>❌ नामंजूर / रद्द करा</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDirectPass}
+                          disabled={actionLoading}
+                          className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded shadow flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                          <span>{actionLoading ? 'पास होत आहे...' : '✅ मंजूर व पास करा (Authorize)'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </form>
             </div>
           </div>
         )}
       </div>
+
+      {/* Rejection Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-5 border border-slate-200">
+            <h3 className="text-base font-bold text-rose-600 flex items-center gap-2">
+              <XCircle className="w-5 h-5" />
+              व्हाउचर नामंजूर / रद्द करा (Reject Voucher)
+            </h3>
+            <p className="text-xs text-slate-600 mt-1">
+              व्हाउचर क्र: <span className="font-mono font-bold text-slate-900">{passingVoucherData?.voucher?.voucherNo || effectiveVoucherId}</span>
+            </p>
+            <div className="mt-3">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                नामंजूर करण्याचे कारण प्रविष्ट करा (Reason) <span className="text-rose-500">*</span>:
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="उदा. चुकीचा शेअर परतावा / शिल्लक शेअर्स त्रुटी..."
+                className="w-full h-24 p-2 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-rose-500 focus:outline-none"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded cursor-pointer"
+              >
+                रद्द करा (Back)
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={actionLoading || !rejectReason.trim()}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow cursor-pointer disabled:opacity-50"
+              >
+                {actionLoading ? 'प्रक्रिया सुरू आहे...' : 'नामंजूर करा (Reject)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

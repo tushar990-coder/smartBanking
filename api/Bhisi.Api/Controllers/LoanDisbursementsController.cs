@@ -768,6 +768,32 @@ namespace Bhisi.Api.Controllers
             return disbursement;
         }
 
+        // GET: api/LoanDisbursements/by-voucher/5
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<ActionResult<LoanDisbursement>> GetLoanDisbursementByVoucher(int voucherId)
+        {
+            var disbursement = await _context.LoanDisbursements
+                .Include(d => d.LoanAccount)
+                    .ThenInclude(l => l!.Customer)
+                .Include(d => d.LoanAccount)
+                    .ThenInclude(l => l!.Member)
+                .Include(d => d.LoanAccount)
+                    .ThenInclude(l => l!.LoanRate)
+                .Include(d => d.LoanAccount)
+                    .ThenInclude(l => l!.LoanApplication)
+                .Include(d => d.Deductions)
+                    .ThenInclude(ded => ded.Ledger)
+                .Include(d => d.Voucher)
+                .FirstOrDefaultAsync(d => d.VoucherID == voucherId);
+
+            if (disbursement == null)
+            {
+                return NotFound("या व्हाउचरशी जोडलेली कोणतीही कर्ज वितरण नोंद सापडली नाही.");
+            }
+
+            return disbursement;
+        }
+
         [HttpPut("{id}")]
         public async Task<IActionResult> PutLoanDisbursement(int id, LoanDisbursement disbursement)
         {

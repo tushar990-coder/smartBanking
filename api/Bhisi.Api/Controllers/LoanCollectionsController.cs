@@ -665,6 +665,26 @@ namespace Bhisi.Api.Controllers
             return collection;
         }
 
+        // GET: api/LoanCollections/by-voucher/5
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<ActionResult<LoanCollection>> GetLoanCollectionByVoucher(int voucherId)
+        {
+            var collection = await _context.LoanCollections
+                .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.Member)
+                .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.Customer)
+                .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.LoanRate)
+                .Include(c => c.Fees)
+                    .ThenInclude(f => f.Ledger)
+                .Include(c => c.Voucher)
+                .FirstOrDefaultAsync(c => c.VoucherID == voucherId);
+
+            if (collection == null) return NotFound("या व्हाउचरशी जोडलेली कोणतीही कर्ज वसुली पावती सापडली नाही.");
+            return collection;
+        }
+
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateLoanCollectionMinor(int id, LoanCollection updatedData)
         {

@@ -91,7 +91,30 @@ interface RdAccountItem {
   nomineeName?: string;
 }
 
-export default function RdAccountOpening() {
+export interface RdAccountOpeningProps {
+  voucherId?: number;
+  isPassingMode?: boolean;
+  onNavigate?: (tab: string) => void;
+}
+
+export default function RdAccountOpening({
+  voucherId: propVoucherId,
+  isPassingMode: propIsPassingMode,
+  onNavigate
+}: RdAccountOpeningProps = {}) {
+  const urlParams = new URLSearchParams(window.location.search);
+  const voucherIdFromUrl = urlParams.get('voucherId') ? parseInt(urlParams.get('voucherId')!) : undefined;
+  const isPassingModeFromUrl = urlParams.get('passingMode') === 'true';
+
+  const voucherId = propVoucherId || voucherIdFromUrl;
+  const isPassingMode = propIsPassingMode || isPassingModeFromUrl;
+
+  const [passingVoucherData, setPassingVoucherData] = useState<any | null>(null);
+  const [passingLoading, setPassingLoading] = useState<boolean>(false);
+  const [passingActionLoading, setPassingActionLoading] = useState<boolean>(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState<boolean>(false);
+  const [rejectReason, setRejectReason] = useState<string>('');
+
   const [view, setView] = useState<'form' | 'list'>('form');
   const [members, setMembers] = useState<Member[]>([]);
   const [schemes, setSchemes] = useState<RdScheme[]>([]);
@@ -147,6 +170,7 @@ export default function RdAccountOpening() {
 
 
   const fetchNextAccountNo = async (branchId: number, schemeId?: string | number) => {
+    if (isPassingMode) return;
     setLoadingAccountNo(true);
     try {
       const q = schemeId ? `?branchId=${branchId}&schemeId=${schemeId}&t=${Date.now()}` : `?branchId=${branchId}&t=${Date.now()}`;
@@ -158,6 +182,89 @@ export default function RdAccountOpening() {
       setNextAccountNo('---');
     } finally {
       setLoadingAccountNo(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isPassingMode && voucherId) {
+      loadPassingVoucher(voucherId);
+    }
+  }, [isPassingMode, voucherId]);
+
+  const loadPassingVoucher = async (vId: number) => {
+    setPassingLoading(true);
+    try {
+      const res = await axios.get(`/api/RdAccounts/by-voucher/${vId}`);
+      const { rdAccount, voucher } = res.data;
+      setPassingVoucherData(voucher);
+
+      if (rdAccount) {
+        setNextAccountNo(rdAccount.accountNo);
+        setFormData(prev => ({
+          ...prev,
+          branchID: rdAccount.branchID || 1,
+          memberID: rdAccount.customerID?.toString() || '',
+          rdSchemeID: rdAccount.rdSchemeID?.toString() || '',
+          installmentAmount: rdAccount.installmentAmount,
+          durationMonths: rdAccount.durationMonths,
+          interestRate: rdAccount.interestRate,
+          openingDate: rdAccount.openingDate ? rdAccount.openingDate.split('T')[0] : prev.openingDate,
+          maturityDate: rdAccount.maturityDate ? rdAccount.maturityDate.split('T')[0] : '',
+          maturityAmount: rdAccount.maturityAmount,
+          nomineeName: rdAccount.nomineeName || '',
+          nomineeRelation: rdAccount.nomineeRelation || '',
+          remarks: rdAccount.remarks || '',
+          paymentMode: rdAccount.paymentMode || 'Cash',
+          savingAccountID: rdAccount.savingAccountID?.toString() || ''
+        }));
+      }
+    } catch (err: any) {
+      console.error('Error loading RD voucher:', err);
+      setError('व्हाउचरशी संबंधित आरडी माहिती लोड करताना त्रुटी आली: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setPassingLoading(false);
+    }
+  };
+
+  const handlePassVoucher = async () => {
+    if (!voucherId) return;
+    if (!window.confirm('आपण खात्रीपूर्वक हे आवर्ती ठेव (RD) व्हाउचर मंजूर व पास करू इच्छिता?')) return;
+    setPassingActionLoading(true);
+    try {
+      await axios.post('/api/VoucherPosting/Post', [voucherId]);
+      alert('व्हाउचर यशस्वीरीत्या मंजूर व पास करण्यात आले!');
+      if (onNavigate) {
+        onNavigate('voucher-posting');
+      } else {
+        window.location.href = '/?tab=voucher-posting';
+      }
+    } catch (err: any) {
+      alert('व्हाउचर पास करताना त्रुटी: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setPassingActionLoading(false);
+    }
+  };
+
+  const handleRejectVoucher = async () => {
+    if (!voucherId) return;
+    if (!rejectReason.trim()) {
+      alert('कृपया नामंजूर / रद्द करण्याचे कारण नमूद करा.');
+      return;
+    }
+    setPassingActionLoading(true);
+    try {
+      await axios.delete(`/api/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason)}`);
+      alert('व्हाउचर यशस्वीरित्या नामंजूर / रद्द करण्यात आले!');
+      setRejectModalOpen(false);
+      if (onNavigate) {
+        onNavigate('voucher-posting');
+      } else {
+        window.location.href = '/?tab=voucher-posting';
+      }
+    } catch (err: any) {
+      alert('व्हाउचर रद्द करताना त्रुटी: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setPassingActionLoading(false);
     }
   };
 
@@ -548,31 +655,62 @@ export default function RdAccountOpening() {
 
           {/* View Switcher Buttons */}
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setView('form')}
-              className={`px-2.5 py-0.5 rounded-sm text-xs font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
-                view === 'form' 
-                  ? 'bg-white text-primary font-bold border-white' 
-                  : 'bg-blue-800/60 hover:bg-blue-800 text-white border-blue-400/40'
-              }`}
-            >
-              <span>✍️ नवीन अर्ज (New Form)</span>
-            </button>
+            {!isPassingMode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setView('form')}
+                  className={`px-2.5 py-0.5 rounded-sm text-xs font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
+                    view === 'form' 
+                      ? 'bg-white text-primary font-bold border-white' 
+                      : 'bg-blue-800/60 hover:bg-blue-800 text-white border-blue-400/40'
+                  }`}
+                >
+                  <span>✍️ नवीन अर्ज (New Form)</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => { setView('list'); fetchRdList(); }}
-              className={`px-2.5 py-0.5 rounded-sm text-xs font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
-                view === 'list' 
-                  ? 'bg-white text-primary font-bold border-white' 
-                  : 'bg-blue-800/60 hover:bg-blue-800 text-white border-blue-400/40'
-              }`}
-            >
-              <span>👁️ खाती यादी (Account List)</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => { setView('list'); fetchRdList(); }}
+                  className={`px-2.5 py-0.5 rounded-sm text-xs font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
+                    view === 'list' 
+                      ? 'bg-white text-primary font-bold border-white' 
+                      : 'bg-blue-800/60 hover:bg-blue-800 text-white border-blue-400/40'
+                  }`}
+                >
+                  <span>👁️ खाती यादी (Account List)</span>
+                </button>
+              </>
+            ) : (
+              <span className="bg-amber-400 text-slate-950 font-bold px-2.5 py-0.5 rounded text-xs flex items-center gap-1">
+                🔒 व्हाउचर तपासणी मोड (Checker Mode)
+              </span>
+            )}
           </div>
         </div>
+
+        {/* Checker Mode Amber Alert Banner */}
+        {isPassingMode && (
+          <div className="bg-amber-500 text-slate-950 p-3 mx-3 mt-3 rounded shadow-md border-2 border-amber-600 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">⚠️</span>
+              <div>
+                <div className="font-extrabold text-sm uppercase tracking-wide">
+                  आवर्ती ठेव पावती व्हाउचर तपासणी (RD Opening Voucher Checker Mode)
+                </div>
+                <div className="text-xs text-amber-950 font-medium mt-0.5">
+                  व्हाउचर क्र: <span className="font-mono font-bold">{passingVoucherData?.voucherNo || voucherId}</span> |
+                  हप्ता रक्कम: <span className="font-bold">₹{passingVoucherData?.totalAmount?.toLocaleString('en-IN') || formData.installmentAmount}</span> |
+                  तारीख: <span className="font-bold">{passingVoucherData?.voucherDate ? new Date(passingVoucherData.voucherDate).toLocaleDateString('mr-IN') : formData.openingDate}</span> |
+                  स्थिती: <span className="bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold text-[10px]">{passingVoucherData?.status || 'Pending'}</span>
+                </div>
+              </div>
+            </div>
+            <div className="text-xs font-bold bg-amber-100 text-amber-950 px-2.5 py-1 rounded border border-amber-400">
+              🔒 तपासणी मोड: फक्त वाचन अनुज्ञेय (Read Only Lockdown)
+            </div>
+          </div>
+        )}
 
         <div className="p-3">
           {/* ==================== FORM VIEW ==================== */}
@@ -597,6 +735,7 @@ export default function RdAccountOpening() {
 
           {/* Main Form Card */}
           <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-xs border border-slate-200 divide-y divide-slate-100">
+            <fieldset disabled={isPassingMode} className="contents">
             
             {/* Section 1: Basic Info & Operating Mode */}
             <div className="p-4 space-y-3">
@@ -637,6 +776,7 @@ export default function RdAccountOpening() {
                     value={formData.memberID ? Number(formData.memberID) : ''}
                     onChange={(val) => handleMemberSelect(val ? String(val) : '')}
                     placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
+                    isDisabled={isPassingMode}
                   />
                 </div>
 
@@ -671,6 +811,7 @@ export default function RdAccountOpening() {
                     value={formData.jointMemberID ? Number(formData.jointMemberID) : ''}
                     onChange={(val) => setFormData((prev) => ({ ...prev, jointMemberID: val ? String(val) : '' }))}
                     placeholder="-- दुसरा खातेदार (CIF / नाव / मोबाईलने शोधा) --"
+                    isDisabled={isPassingMode}
                   />
                 </div>
               )}
@@ -976,35 +1117,71 @@ export default function RdAccountOpening() {
               </div>
             </div>
 
+            </fieldset>
+
             {/* Bottom Footer */}
             <div className="p-4 bg-slate-50 rounded-b-xl flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs text-slate-600">
-                <Info className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span>
-                  {formData.paymentMode === 'AutoDebit_Saving'
-                    ? 'पहिला हप्ता बचत खात्यातून ऑटो-डेबिट होऊन व्हाउचर सेव्ह होईल.'
-                    : 'पहिला हप्ता रोख जमा होऊन स्वयंचलित पावती व्हाउचर पोस्ट होईल.'}
-                </span>
-              </div>
+              {isPassingMode ? (
+                <div className="w-full flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting')}
+                    className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-lg shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <span>↩️</span> पासिंग यादीवर परत जा
+                  </button>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={() => resetForm()}
-                  className="flex-1 sm:flex-initial px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg transition text-xs"
-                >
-                  फॉर्म रीसेट करा
-                </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRejectModalOpen(true)}
+                      disabled={passingActionLoading}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <span>❌</span> नामंजूर / रद्द करा
+                    </button>
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 sm:flex-initial px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-xs transition text-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>{loading ? 'जतन होत आहे...' : 'खाते उघडा (Open Account)'}</span>
-                </button>
-              </div>
+                    <button
+                      type="button"
+                      onClick={handlePassVoucher}
+                      disabled={passingActionLoading}
+                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <span>✅</span> {passingActionLoading ? 'मंजूर होत आहे...' : 'मंजूर व पास करा (Pass)'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <Info className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span>
+                      {formData.paymentMode === 'AutoDebit_Saving'
+                        ? 'पहिला हप्ता बचत खात्यातून ऑटो-डेबिट होऊन व्हाउचर सेव्ह होईल.'
+                        : 'पहिला हप्ता रोख जमा होऊन स्वयंचलित पावती व्हाउचर पोस्ट होईल.'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => resetForm()}
+                      className="flex-1 sm:flex-initial px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg transition text-xs"
+                    >
+                      फॉर्म रीसेट करा
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 sm:flex-initial px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-xs transition text-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>{loading ? 'जतन होत आहे...' : 'खाते उघडा (Open Account)'}</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </form>
         </div>
@@ -1212,6 +1389,49 @@ export default function RdAccountOpening() {
           </div>
         </div>
       )}
+        {/* Reject Confirmation Modal */}
+        {rejectModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-5 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
+              <div className="flex items-center gap-2 text-rose-600 border-b border-rose-100 pb-2">
+                <span className="text-xl">❌</span>
+                <h3 className="font-bold text-sm">आवर्ती ठेव (RD) व्हाउचर नामंजूर / रद्द करा</h3>
+              </div>
+
+              <p className="text-xs text-gray-600">
+                व्हाउचर क्र. <strong className="text-gray-900 font-mono">{passingVoucherData?.voucherNo || voucherId}</strong> नामंजूर करण्याचे कारण खालीलप्रमाणे नोंदवा:
+              </p>
+
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="नामंजूर / रद्द करण्याचे कारण प्रविष्ट करा..."
+                rows={3}
+                className="w-full text-xs border border-gray-300 rounded p-2.5 focus:outline-none focus:ring-2 focus:ring-rose-500 font-sans"
+                required
+              />
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setRejectModalOpen(false)}
+                  disabled={passingActionLoading}
+                  className="px-3 py-1.5 text-xs font-semibold rounded border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer"
+                >
+                  मागे फिरा
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRejectVoucher}
+                  disabled={passingActionLoading || !rejectReason.trim()}
+                  className="px-4 py-1.5 text-xs font-bold rounded bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {passingActionLoading ? 'रद्द होत आहे...' : 'होय, व्हाउचर रद्द करा'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         </div>
       </div>
     </div>

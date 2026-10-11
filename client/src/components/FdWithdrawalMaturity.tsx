@@ -149,7 +149,30 @@ interface FdScheme {
   slabs?: FdSchemeInterestSlab[];
 }
 
-const FdWithdrawalMaturity: React.FC = () => {
+export interface FdWithdrawalMaturityProps {
+  voucherId?: number;
+  isPassingMode?: boolean;
+  onNavigate?: (tab: string) => void;
+}
+
+const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
+  voucherId: propVoucherId,
+  isPassingMode: propIsPassingMode,
+  onNavigate
+}) => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const voucherIdFromUrl = urlParams.get('voucherId') ? parseInt(urlParams.get('voucherId')!) : undefined;
+  const isPassingModeFromUrl = urlParams.get('passingMode') === 'true';
+
+  const voucherId = propVoucherId || voucherIdFromUrl;
+  const isPassingMode = propIsPassingMode || isPassingModeFromUrl;
+
+  const [passingVoucherData, setPassingVoucherData] = useState<any | null>(null);
+  const [passingLoading, setPassingLoading] = useState<boolean>(false);
+  const [passingActionLoading, setPassingActionLoading] = useState<boolean>(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState<boolean>(false);
+  const [rejectReason, setRejectReason] = useState<string>('');
+
   const [accounts, setAccounts] = useState<FdAccount[]>([]);
   const [schemes, setSchemes] = useState<FdScheme[]>([]);
   const [bankLedgers, setBankLedgers] = useState<Ledger[]>([]);
@@ -203,6 +226,82 @@ const FdWithdrawalMaturity: React.FC = () => {
     setCustomAccruedInterest('');
     setCustomOverdueInterest('');
     setCustomPrematureInterest('');
+  };
+
+  useEffect(() => {
+    if (isPassingMode && voucherId) {
+      loadPassingClosure(voucherId);
+    }
+  }, [isPassingMode, voucherId]);
+
+  const loadPassingClosure = async (vId: number) => {
+    setPassingLoading(true);
+    try {
+      const res = await axios.get(`/api/FdAccounts/closure-by-voucher/${vId}`);
+      const { fdAccount, closureDetails, voucher } = res.data;
+      setPassingVoucherData(voucher);
+
+      if (fdAccount) {
+        setSelectedAccId(fdAccount.fdAccountID);
+        setSelectedAccount(fdAccount);
+      }
+      if (closureDetails) {
+        setActionType(closureDetails.closureType || 'MaturityClose');
+        if (closureDetails.closureDate) {
+          setClosureDate(closureDetails.closureDate.split('T')[0]);
+        }
+        if (closureDetails.narration) {
+          setNarration(closureDetails.narration);
+        }
+      }
+    } catch (err: any) {
+      console.error('Error loading FD closure voucher:', err);
+      alert('मुदत ठेव क्लोजर व्हाउचर लोड करताना त्रुटी आली: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setPassingLoading(false);
+    }
+  };
+
+  const handlePassVoucher = async () => {
+    if (!voucherId) return;
+    if (!window.confirm('आपण खात्रीपूर्वक हे मुदत ठेव क्लोजर व्हाउचर मंजूर व पास करू इच्छिता?')) return;
+    setPassingActionLoading(true);
+    try {
+      await axios.post('/api/VoucherPosting/Post', [voucherId]);
+      alert('व्हाउचर यशस्वीरीत्या मंजूर व पास करण्यात आले!');
+      if (onNavigate) {
+        onNavigate('voucher-posting');
+      } else {
+        window.location.href = '/?tab=voucher-posting';
+      }
+    } catch (err: any) {
+      alert('व्हाउचर पास करताना त्रुटी: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setPassingActionLoading(false);
+    }
+  };
+
+  const handleRejectVoucher = async () => {
+    if (!voucherId) return;
+    if (!rejectReason.trim()) {
+      alert('कृपया नामंजूर / रद्द करण्याचे कारण नमूद करा.');
+      return;
+    }
+    setPassingActionLoading(true);
+    try {
+      await axios.delete(`/api/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason)}`);
+      alert('व्हाउचर यशस्वीरित्या नामंजूर / रद्द करण्यात आले!');
+      setRejectModalOpen(false);
+      if (onNavigate) {
+        onNavigate('voucher-posting');
+      } else {
+        window.location.href = '/?tab=voucher-posting';
+      }
+    } catch (err: any) {
+      alert('व्हाउचर रद्द करताना त्रुटी: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setPassingActionLoading(false);
+    }
   };
 
   const calculatePrematureRate = (
@@ -1184,6 +1283,29 @@ const FdWithdrawalMaturity: React.FC = () => {
         </div>
       </div>
 
+      {/* Checker Mode Amber Alert Banner */}
+      {isPassingMode && (
+        <div className="bg-amber-500 text-slate-950 p-3 rounded shadow-md border-2 border-amber-600 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-slate-950 shrink-0" />
+            <div>
+              <div className="font-extrabold text-sm uppercase tracking-wide">
+                मुदत ठेव बंद / मुदतपूर्ती व्हाउचर तपासणी (FD Withdrawal / Maturity Checker Mode)
+              </div>
+              <div className="text-xs text-amber-950 font-medium mt-0.5">
+                व्हाउचर क्र: <span className="font-mono font-bold">{passingVoucherData?.voucherNo || voucherId}</span> |
+                रक्कम: <span className="font-bold">₹{passingVoucherData?.totalAmount?.toLocaleString('en-IN') || (selectedAccount?.maturityAmount ?? selectedAccount?.depositAmount)}</span> |
+                तारीख: <span className="font-bold">{passingVoucherData?.voucherDate ? new Date(passingVoucherData.voucherDate).toLocaleDateString('mr-IN') : closureDate}</span> |
+                स्थिती: <span className="bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold text-[10px]">{passingVoucherData?.status || 'Pending'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-xs font-bold bg-amber-100 text-amber-950 px-2.5 py-1 rounded border border-amber-400">
+            🔒 तपासणी मोड: फक्त वाचन अनुज्ञेय (Read Only Lockdown)
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 border border-red-300 text-red-800 text-xs p-3 rounded-sm font-medium flex items-center gap-2 shadow-2xs">
           <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
@@ -1198,6 +1320,7 @@ const FdWithdrawalMaturity: React.FC = () => {
       )}
 
       <form onSubmit={handleSubmit} className="bg-white p-4 rounded-sm shadow-sm border border-gray-200 space-y-4">
+        <fieldset disabled={isPassingMode} className="contents">
         {/* ================= STEP 1: ACCOUNT & TRANSACTION DATE ================= */}
         <div className="bg-slate-50/70 p-3.5 rounded border border-slate-200 space-y-3">
           <div className="flex items-center justify-between border-b border-slate-200 pb-2">
@@ -1220,6 +1343,7 @@ const FdWithdrawalMaturity: React.FC = () => {
                 value={selectedAccId.toString()}
                 onChange={handleAccountSelect}
                 placeholder="पावती क्र., खातेदार नाव किंवा CIF ने शोधा..."
+                disabled={isPassingMode}
               />
             </div>
 
@@ -2055,6 +2179,7 @@ const FdWithdrawalMaturity: React.FC = () => {
                             setBankAccountLedgerID(parseInt(String(v || 0)));
                           }}
                           placeholder="बँक खाते शोधा..."
+                          disabled={isPassingMode}
                         />
                       </div>
 
@@ -2409,60 +2534,96 @@ const FdWithdrawalMaturity: React.FC = () => {
           </div>
         )}
 
+        </fieldset>
+
         {/* Bottom Submission Bar */}
         <div className="bg-slate-100 p-3 rounded border border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-[11px] text-gray-600 flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>व्यवहार पूर्ण केल्यावर मुदत ठेव खाते अद्ययावत होऊन व्हाऊचर त्वरित लेजरमध्ये पोस्ट केले जाईल.</span>
-          </div>
+          {isPassingMode ? (
+            <div className="w-full flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting')}
+                className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <span>↩️</span> पासिंग यादीवर परत जा
+              </button>
 
-          <button
-            type="submit"
-            disabled={
-              loading ||
-              !selectedAccount ||
-              isPendingMaturityAction ||
-              isBeforeOpeningDate ||
-              isBeforeLastAccrual ||
-              isFutureDate ||
-              isBackdatedSavingsTransfer ||
-              (isManualOverride && !manualOverrideReason.trim())
-            }
-            className={`px-5 py-2.5 rounded font-bold text-xs shadow-xs transition duration-150 flex items-center gap-2 cursor-pointer ${
-              loading ||
-              !selectedAccount ||
-              isPendingMaturityAction ||
-              isBeforeOpeningDate ||
-              isBeforeLastAccrual ||
-              isFutureDate ||
-              isBackdatedSavingsTransfer ||
-              (isManualOverride && !manualOverrideReason.trim())
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : actionType === 'PrematureClose'
-                ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-900/20'
-                : actionType === 'Renewal'
-                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-900/20'
-                : 'bg-primary hover:bg-[#004a75] text-white shadow-blue-900/20'
-            }`}
-          >
-            {loading ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>प्रक्रिया होत आहे...</span>
-              </>
-            ) : (
-              <>
-                <CheckCircle className="w-4 h-4" />
-                <span>
-                  {actionType === 'MaturityClose'
-                    ? 'मुदतपूर्ती पेमेंट पूर्ण करा (Process Maturity Payout)'
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectModalOpen(true)}
+                  disabled={passingActionLoading}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <span>❌</span> नामंजूर / रद्द करा
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePassVoucher}
+                  disabled={passingActionLoading}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <span>✅</span> {passingActionLoading ? 'मंजूर होत आहे...' : 'मंजूर व पास करा (Pass)'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="text-[11px] text-gray-600 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>व्यवहार पूर्ण केल्यावर मुदत ठेव खाते अद्ययावत होऊन व्हाऊचर त्वरित लेजरमध्ये पोस्ट केले जाईल.</span>
+              </div>
+
+              <button
+                type="submit"
+                disabled={
+                  loading ||
+                  !selectedAccount ||
+                  isPendingMaturityAction ||
+                  isBeforeOpeningDate ||
+                  isBeforeLastAccrual ||
+                  isFutureDate ||
+                  isBackdatedSavingsTransfer ||
+                  (isManualOverride && !manualOverrideReason.trim())
+                }
+                className={`px-5 py-2.5 rounded font-bold text-xs shadow-xs transition duration-150 flex items-center gap-2 cursor-pointer ${
+                  loading ||
+                  !selectedAccount ||
+                  isPendingMaturityAction ||
+                  isBeforeOpeningDate ||
+                  isBeforeLastAccrual ||
+                  isFutureDate ||
+                  isBackdatedSavingsTransfer ||
+                  (isManualOverride && !manualOverrideReason.trim())
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : actionType === 'PrematureClose'
-                    ? 'मुदतपूर्व बंद व पेआउट करा (Process Premature Close)'
-                    : 'नूतनीकरण पूर्ण करा (Process Renewal)'}
-                </span>
-              </>
-            )}
-          </button>
+                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-900/20'
+                    : actionType === 'Renewal'
+                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-900/20'
+                    : 'bg-primary hover:bg-[#004a75] text-white shadow-blue-900/20'
+                }`}
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>प्रक्रिया होत आहे...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    <span>
+                      {actionType === 'MaturityClose'
+                        ? 'मुदतपूर्ती पेमेंट पूर्ण करा (Process Maturity Payout)'
+                        : actionType === 'PrematureClose'
+                        ? 'मुदतपूर्व बंद व पेआउट करा (Process Premature Close)'
+                        : 'नूतनीकरण पूर्ण करा (Process Renewal)'}
+                    </span>
+                  </>
+                )}
+              </button>
+            </>
+          )}
         </div>
       </form>
 
@@ -2479,6 +2640,50 @@ const FdWithdrawalMaturity: React.FC = () => {
           isSeniorCitizen={selectedAccount.isSeniorCitizen}
           overdueDetails={overdueModalDetails}
         />
+      )}
+
+      {/* Reject Confirmation Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-5 max-w-md w-full shadow-2xl border border-gray-200 space-y-4">
+            <div className="flex items-center gap-2 text-rose-600 border-b border-rose-100 pb-2">
+              <span className="text-xl">❌</span>
+              <h3 className="font-bold text-sm">मुदत ठेव क्लोजर व्हाउचर नामंजूर / रद्द करा</h3>
+            </div>
+
+            <p className="text-xs text-gray-600">
+              व्हाउचर क्र. <strong className="text-gray-900 font-mono">{passingVoucherData?.voucherNo || voucherId}</strong> नामंजूर करण्याचे कारण खालीलप्रमाणे नोंदवा:
+            </p>
+
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="नामंजूर / रद्द करण्याचे कारण प्रविष्ट करा..."
+              rows={3}
+              className="w-full text-xs border border-gray-300 rounded p-2.5 focus:outline-none focus:ring-2 focus:ring-rose-500 font-sans"
+              required
+            />
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                disabled={passingActionLoading}
+                className="px-3 py-1.5 text-xs font-semibold rounded border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer"
+              >
+                मागे फिरा
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectVoucher}
+                disabled={passingActionLoading || !rejectReason.trim()}
+                className="px-4 py-1.5 text-xs font-bold rounded bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {passingActionLoading ? 'रद्द होत आहे...' : 'होय, व्हाउचर रद्द करा'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

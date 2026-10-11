@@ -62,6 +62,115 @@ namespace Bhisi.Api.Controllers
             return Ok(list);
         }
 
+        // GET: api/LockerSurrender/by-voucher/5
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<ActionResult<object>> GetSurrenderByVoucher(int voucherId)
+        {
+            var s = await _context.LockerSurrenders
+                .Include(x => x.Allotment).ThenInclude(a => a!.Locker).ThenInclude(l => l!.LockerType)
+                .Include(x => x.Allotment).ThenInclude(a => a!.Customer)
+                .Include(x => x.Allotment).ThenInclude(a => a!.Member).ThenInclude(m => m!.Customer)
+                .Include(x => x.Voucher).ThenInclude(v => v!.VoucherDetails).ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(x => x.VoucherID == voucherId);
+
+            if (s == null)
+            {
+                // Fallback: check if voucher exists directly
+                var voucher = await _context.Vouchers
+                    .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Ledger)
+                    .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+                if (voucher == null)
+                {
+                    return NotFound(new { message = "व्हाउचर नोंद सापडली नाही." });
+                }
+
+                return Ok(new {
+                    SurrenderID = 0,
+                    BranchID = voucher.BranchID,
+                    AllotmentID = 0,
+                    LockerAccountNo = "",
+                    LockerNo = "",
+                    CabinetNo = "",
+                    KeyNo = "",
+                    LockerTypeName = "",
+                    MemberName = "",
+                    CustomerCode = "",
+                    SurrenderDate = voucher.VoucherDate,
+                    KeyReceived = true,
+                    KeysCondition = "Good",
+                    DepositAmount = voucher.TotalAmount,
+                    UnpaidRentDeduction = 0,
+                    DamagePenaltyDeduction = 0,
+                    NetRefundAmount = voucher.TotalAmount,
+                    RefundPaymentMode = voucher.VoucherType == "Journal" ? "SavingCredit" : "Cash",
+                    Remarks = voucher.Narration,
+                    Voucher = new {
+                        voucher.VoucherID,
+                        voucher.VoucherNo,
+                        voucher.VoucherDate,
+                        voucher.VoucherType,
+                        voucher.TotalAmount,
+                        voucher.Narration,
+                        voucher.Status,
+                        Details = voucher.VoucherDetails.Select(d => new {
+                            d.VoucherDetailID,
+                            d.LedgerID,
+                            LedgerName = d.Ledger != null ? d.Ledger.LedgerName : "",
+                            d.DrCr,
+                            d.Amount
+                        })
+                    }
+                });
+            }
+
+            return Ok(new {
+                s.SurrenderID,
+                s.BranchID,
+                s.AllotmentID,
+                LockerAccountNo = s.Allotment != null ? s.Allotment.LockerAccountNo : "",
+                LockerNo = s.Allotment != null && s.Allotment.Locker != null ? s.Allotment.Locker.LockerNo : "",
+                CabinetNo = s.Allotment != null && s.Allotment.Locker != null ? s.Allotment.Locker.CabinetNo : "",
+                KeyNo = s.Allotment != null && s.Allotment.Locker != null ? s.Allotment.Locker.KeyNo : "",
+                LockerTypeName = s.Allotment != null && s.Allotment.Locker != null && s.Allotment.Locker.LockerType != null ? s.Allotment.Locker.LockerType.TypeName : "",
+                MemberName = s.Allotment != null && s.Allotment.Customer != null 
+                    ? $"{s.Allotment.Customer.FirstName} {s.Allotment.Customer.LastName}" 
+                    : (s.Allotment != null && s.Allotment.Member != null && s.Allotment.Member.Customer != null 
+                        ? $"{s.Allotment.Member.Customer.FirstName} {s.Allotment.Member.Customer.LastName}" 
+                        : ""),
+                CustomerCode = s.Allotment != null && s.Allotment.Customer != null 
+                    ? (s.Allotment.Customer.CIFNo ?? "") 
+                    : (s.Allotment != null && s.Allotment.Member != null && s.Allotment.Member.Customer != null 
+                        ? (s.Allotment.Member.Customer.CIFNo ?? "") 
+                        : ""),
+                s.SurrenderDate,
+                s.KeyReceived,
+                s.KeysCondition,
+                s.DepositAmount,
+                s.UnpaidRentDeduction,
+                s.DamagePenaltyDeduction,
+                s.NetRefundAmount,
+                s.RefundPaymentMode,
+                s.Remarks,
+                Voucher = s.Voucher != null ? new {
+                    s.Voucher.VoucherID,
+                    s.Voucher.VoucherNo,
+                    s.Voucher.VoucherDate,
+                    s.Voucher.VoucherType,
+                    s.Voucher.TotalAmount,
+                    s.Voucher.Narration,
+                    s.Voucher.Status,
+                    Details = s.Voucher.VoucherDetails.Select(d => new {
+                        d.VoucherDetailID,
+                        d.LedgerID,
+                        LedgerName = d.Ledger != null ? d.Ledger.LedgerName : "",
+                        d.DrCr,
+                        d.Amount
+                    })
+                } : null
+            });
+        }
+
         // POST: api/LockerSurrender
         [HttpPost]
         public async Task<ActionResult<object>> PostSurrender([FromBody] LockerSurrenderCreateDto dto)

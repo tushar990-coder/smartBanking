@@ -91,7 +91,23 @@ interface WithdrawalHistoryItem {
   slabDescription?: string;
 }
 
-const PigmyClosureMaster: React.FC = () => {
+interface PigmyClosureMasterProps {
+  voucherId?: number;
+  isPassingMode?: boolean;
+  onNavigate?: (tab: string, subTab?: string) => void;
+}
+
+const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: propVoucherId, isPassingMode: propIsPassingMode, onNavigate }) => {
+  const queryParams = new URLSearchParams(window.location.search);
+  const voucherId = propVoucherId || (queryParams.get('voucherId') ? parseInt(queryParams.get('voucherId')!, 10) : undefined);
+  const isPassingMode = propIsPassingMode ?? (queryParams.get('passingMode') === 'true');
+
+  const [passingVoucherData, setPassingVoucherData] = useState<any>(null);
+  const [passingLoading, setPassingLoading] = useState<boolean>(false);
+  const [passingActionLoading, setPassingActionLoading] = useState<boolean>(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState<boolean>(false);
+  const [rejectReason, setRejectReason] = useState<string>('');
+
   const [activeTab, setActiveTab] = useState<'withdrawal' | 'closure'>('withdrawal');
   const [accountNo, setAccountNo] = useState('');
   const [withdrawalAmount, setWithdrawalAmount] = useState('');
@@ -106,6 +122,91 @@ const PigmyClosureMaster: React.FC = () => {
   const [managerOverride, setManagerOverride] = useState(false);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const loadPassingClosure = async (vId: number) => {
+    setPassingLoading(true);
+    try {
+      const res = await axios.get(`/api/PigmyClosure/by-voucher/${vId}`);
+      const { pigmyAccount, closureDetails, voucher } = res.data;
+      setPassingVoucherData(voucher);
+
+      if (pigmyAccount?.accountNo) {
+        setAccountNo(pigmyAccount.accountNo);
+        if (closureDetails?.closureType === 'Withdrawal') {
+          setActiveTab('withdrawal');
+          setWithdrawalAmount(closureDetails.requestedAmount?.toString() || '');
+        } else {
+          setActiveTab('closure');
+        }
+        if (closureDetails?.narration) {
+          setNarration(closureDetails.narration);
+        }
+
+        // Load full preview for this account
+        try {
+          const pRes = await axios.get(`/api/PigmyClosure/Preview/${encodeURIComponent(pigmyAccount.accountNo.trim())}`);
+          setClosurePreview(pRes.data);
+          const hRes = await axios.get(`/api/PigmyClosure/WithdrawalsHistory/${encodeURIComponent(pigmyAccount.accountNo.trim())}`);
+          setWithdrawalHistory(hRes.data || []);
+        } catch (e) {
+          console.error('Error fetching preview data:', e);
+        }
+      }
+    } catch (err: any) {
+      console.error('Error loading Pigmy closure voucher:', err);
+      toast.error('व्हाउचर लोड करताना त्रुटी आली: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setPassingLoading(false);
+    }
+  };
+
+  const handlePassVoucher = async () => {
+    if (!voucherId) return;
+    if (!window.confirm('आपण खात्रीपूर्वक हे पिग्मी व्हाउचर मंजूर व पास करू इच्छिता?')) return;
+    setPassingActionLoading(true);
+    try {
+      await axios.post('/api/VoucherPosting/Post', [voucherId]);
+      toast.success('व्हाउचर यशस्वीरीत्या मंजूर व पास करण्यात आले!');
+      if (onNavigate) {
+        onNavigate('voucher-posting');
+      } else {
+        window.location.href = '/?tab=voucher-posting';
+      }
+    } catch (err: any) {
+      toast.error('व्हाउचर पास करताना त्रुटी: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setPassingActionLoading(false);
+    }
+  };
+
+  const handleRejectVoucher = async () => {
+    if (!voucherId) return;
+    if (!rejectReason.trim()) {
+      toast.error('कृपया नामंजूर / रद्द करण्याचे कारण नमूद करा.');
+      return;
+    }
+    setPassingActionLoading(true);
+    try {
+      await axios.delete(`/api/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason)}`);
+      toast.success('व्हाउचर यशस्वीरित्या नामंजूर / रद्द करण्यात आले!');
+      setRejectModalOpen(false);
+      if (onNavigate) {
+        onNavigate('voucher-posting');
+      } else {
+        window.location.href = '/?tab=voucher-posting';
+      }
+    } catch (err: any) {
+      toast.error('व्हाउचर रद्द करताना त्रुटी: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setPassingActionLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (voucherId) {
+      loadPassingClosure(voucherId);
+    }
+  }, [voucherId]);
 
   const fetchWithdrawalsHistory = async (accNo: string) => {
     try {
@@ -251,6 +352,32 @@ const PigmyClosureMaster: React.FC = () => {
 
   return (
     <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
+      {/* Passing Mode Banner */}
+      {isPassingMode && (
+        <div className="bg-amber-500 text-white p-3 rounded-sm shadow flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <p className="font-bold text-sm">व्हाउचर तपासणी व पासिंग मोड (Checker Inspection Mode)</p>
+              <p className="text-xs text-amber-100">
+                व्हाउचर क्र: <span className="font-mono font-bold text-white">{passingVoucherData?.voucherNo || voucherId}</span> | 
+                रक्कम: <span className="font-bold text-white">₹{passingVoucherData?.totalAmount?.toLocaleString('en-IN') || withdrawalAmount}</span> | 
+                स्थिती: <span className="font-bold text-white">{passingVoucherData?.status || 'तपासणीसाठी प्रलंबित'}</span>
+                {passingVoucherData?.narration && ` | तपशील: ${passingVoucherData.narration}`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting')}
+              className="px-3 py-1 bg-white text-amber-800 text-xs font-bold rounded shadow hover:bg-amber-50"
+            >
+              ↩️ पासिंग यादीवर परत जा
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* Outer Container matching Standard ERP Theme */}
       <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden flex flex-col">
@@ -260,6 +387,7 @@ const PigmyClosureMaster: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold tracking-wide flex items-center gap-1.5">
               <span>पिग्मी विड्रॉल व खाते बंद व्यवस्थापन (Pigmy Withdrawal & Closure)</span>
+              {isPassingMode && <span className="ml-2 text-xs font-normal text-amber-200 bg-amber-700/50 px-2 py-0.5 rounded border border-amber-400/40">(फक्त वाचन मोड)</span>}
             </h2>
             <p className="text-[10px] text-blue-100 font-normal">
               अंशतः विड्रॉल (Day 1 Reset), सायकल ट्रॅकिंग, मुदतपूर्ती (Option B Fixed Expiry) व खाते बंद परतावा
@@ -270,6 +398,7 @@ const PigmyClosureMaster: React.FC = () => {
           <div className="flex items-center gap-1 bg-white/10 p-0.5 rounded border border-white/20">
             <button
               type="button"
+              disabled={isPassingMode}
               onClick={() => {
                 setActiveTab('withdrawal');
                 setWithdrawalPreview(null);
@@ -283,6 +412,7 @@ const PigmyClosureMaster: React.FC = () => {
             </button>
             <button
               type="button"
+              disabled={isPassingMode}
               onClick={() => {
                 setActiveTab('closure');
                 setWithdrawalPreview(null);
@@ -297,6 +427,7 @@ const PigmyClosureMaster: React.FC = () => {
           </div>
         </div>
 
+        <fieldset disabled={isPassingMode} className="contents">
         <div className="p-3 space-y-3">
 
           {message && (
@@ -520,17 +651,19 @@ const PigmyClosureMaster: React.FC = () => {
                           />
                         </div>
 
-                        <div className="flex justify-end pt-1">
-                          <button
-                            type="button"
-                            onClick={handleExecuteWithdrawal}
-                            disabled={loading || (withdrawalPreview.hasActiveLoanLien && !managerOverride)}
-                            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded font-bold text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition"
-                          >
-                            <BanknotesIcon className="w-4 h-4" />
-                            <span>💸 विड्रॉल पूर्ण करा आणि नवीन सायकल सुरू करा (Process & Reset Day 1)</span>
-                          </button>
-                        </div>
+                        {!isPassingMode && (
+                          <div className="flex justify-end pt-1">
+                            <button
+                              type="button"
+                              onClick={handleExecuteWithdrawal}
+                              disabled={loading || (withdrawalPreview.hasActiveLoanLien && !managerOverride)}
+                              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded font-bold text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition"
+                            >
+                              <BanknotesIcon className="w-4 h-4" />
+                              <span>💸 विड्रॉल पूर्ण करा आणि नवीन सायकल सुरू करा (Process & Reset Day 1)</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -620,16 +753,18 @@ const PigmyClosureMaster: React.FC = () => {
                     />
                   </div>
 
-                  <div className="pt-2 border-t border-gray-200 flex justify-end">
-                    <button 
-                      className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-5 py-2 rounded-sm font-bold text-xs transition shadow-xs cursor-pointer flex items-center gap-1.5"
-                      onClick={handleClose}
-                      disabled={loading || (closurePreview.hasActiveLoanLien && !managerOverride)}
-                    >
-                      <XCircleIcon className="w-4 h-4" />
-                      <span>खाते कायमस्वरूपी बंद करा आणि ₹ {closurePreview.netPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })} अदा करा</span>
-                    </button>
-                  </div>
+                  {!isPassingMode && (
+                    <div className="pt-2 border-t border-gray-200 flex justify-end">
+                      <button 
+                        className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-5 py-2 rounded-sm font-bold text-xs transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                        onClick={handleClose}
+                        disabled={loading || (closurePreview.hasActiveLoanLien && !managerOverride)}
+                      >
+                        <XCircleIcon className="w-4 h-4" />
+                        <span>खाते कायमस्वरूपी बंद करा आणि ₹ {closurePreview.netPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })} अदा करा</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -637,7 +772,75 @@ const PigmyClosureMaster: React.FC = () => {
           )}
 
         </div>
+        </fieldset>
       </div>
+
+      {/* Passing Mode Actions Bar */}
+      {isPassingMode && (
+        <div className="bg-white p-4 rounded-sm shadow-sm border border-gray-200 flex justify-between items-center">
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting')}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-750 font-bold rounded text-xs border border-gray-300 transition"
+          >
+            ↩️ पासिंग यादीवर परत जा (Back to Queue)
+          </button>
+          <div className="flex space-x-3">
+            <button
+              type="button"
+              disabled={passingActionLoading}
+              onClick={() => setRejectModalOpen(true)}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded text-xs shadow transition disabled:opacity-50"
+            >
+              ❌ नामंजूर / रद्द करा (Reject Voucher)
+            </button>
+            <button
+              type="button"
+              disabled={passingActionLoading}
+              onClick={handlePassVoucher}
+              className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs shadow transition disabled:opacity-50"
+            >
+              {passingActionLoading ? 'पास करत आहे...' : '✅ मंजूर व पास करा (Approve & Pass)'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-md max-w-md w-full p-4 space-y-3 shadow-xl">
+            <h3 className="text-sm font-bold text-red-600">व्हाउचर नामंजूर / रद्द करा</h3>
+            <p className="text-xs text-gray-600">
+              कृपया हे व्हाउचर का नामंजूर किंवा रद्द करत आहात याचे स्पष्ट कारण लिहा (उदा. अयोग्य परतावा रक्कम, सायकल त्रुटी इ.):
+            </p>
+            <textarea
+              className="w-full border border-gray-300 rounded p-2 text-xs focus:ring-1 focus:ring-red-500"
+              rows={3}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="नामंजूरीचे कारण नमूद करा..."
+            />
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="px-3 py-1.5 border border-gray-300 rounded text-xs font-semibold hover:bg-gray-50"
+              >
+                रद्द करा (Cancel)
+              </button>
+              <button
+                type="button"
+                disabled={passingActionLoading || !rejectReason.trim()}
+                onClick={handleRejectVoucher}
+                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold transition disabled:opacity-50"
+              >
+                {passingActionLoading ? 'प्रक्रिया सुरू...' : 'पुष्टी करा व रद्द करा'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

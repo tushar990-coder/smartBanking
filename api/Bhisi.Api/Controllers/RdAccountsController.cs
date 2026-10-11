@@ -1875,5 +1875,352 @@ namespace Bhisi.Api.Controllers
             await _context.SaveChangesAsync();
             return new { TotalDepositsSynced = totalDepositsSynced, TotalAccruedSynced = totalAccruedSynced };
         }
+
+        // GET: api/RdAccounts/by-voucher/{voucherId}
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetRdAccountByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = $"व्हाउचर क्र. {voucherId} सिस्टीममध्ये सापडले नाही." });
+            }
+
+            RdAccount? account = null;
+            string vNo = voucher.VoucherNo ?? "";
+
+            // 1. Try parsing AccountNo from VoucherNo (e.g. JV-RD-OP-00150100000001)
+            if (vNo.StartsWith("JV-RD-OP-"))
+            {
+                string accNoCandidate = vNo.Substring("JV-RD-OP-".Length).Trim();
+                account = await _context.RdAccounts
+                    .Include(a => a.Customer)
+                    .Include(a => a.RdScheme)
+                    .Include(a => a.Branch)
+                    .FirstOrDefaultAsync(a => a.AccountNo == accNoCandidate);
+            }
+
+            // 2. Try CustomerID in VoucherDetails
+            if (account == null)
+            {
+                var custId = voucher.VoucherDetails.FirstOrDefault(vd => vd.CustomerID.HasValue && vd.CustomerID.Value > 0)?.CustomerID;
+                if (custId.HasValue)
+                {
+                    account = await _context.RdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.RdScheme)
+                        .Include(a => a.Branch)
+                        .Where(a => a.CustomerID == custId.Value)
+                        .OrderByDescending(a => a.RdAccountID)
+                        .FirstOrDefaultAsync();
+                }
+            }
+
+            if (account == null)
+            {
+                return NotFound(new { message = $"सदर व्हाउचरशी (ID: {voucherId}) संबंधित आरडी खाते सापडले नाही." });
+            }
+
+            // Determine payment mode
+            string paymentMode = "Cash";
+            int? bankLedgerId = null;
+            int? savingAccountId = null;
+
+            var debitDetail = voucher.VoucherDetails.FirstOrDefault(vd => vd.DrCr == "Dr");
+            if (debitDetail?.Ledger != null)
+            {
+                if (debitDetail.Ledger.AccountType == "Bank" || debitDetail.Ledger.LedgerName.Contains("Bank") || debitDetail.Ledger.LedgerName.Contains("बँक"))
+                {
+                    paymentMode = "Bank";
+                    bankLedgerId = debitDetail.LedgerID;
+                }
+                else if (debitDetail.Ledger.AccountType == "Savings" || debitDetail.Ledger.LedgerName.Contains("बचत") || debitDetail.Ledger.LedgerName.Contains("Savings"))
+                {
+                    paymentMode = "Transfer";
+                    var sb = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.CustomerID == account.CustomerID);
+                    savingAccountId = sb?.SavingAccountID;
+                }
+            }
+
+            var seniorCutoffDate = DateTime.Today.AddYears(-60);
+            var isSenior = account.Customer != null && account.Customer.BirthDate.HasValue && (account.Customer.BirthDate.Value.Date <= seniorCutoffDate);
+
+            return Ok(new
+            {
+                rdAccount = new
+                {
+                    account.RdAccountID,
+                    account.BranchID,
+                    BranchName = account.Branch?.BranchName ?? "",
+                    account.CustomerID,
+                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CIFNo = account.Customer?.CIFNo ?? "",
+                    account.RdSchemeID,
+                    SchemeName = account.RdScheme?.SchemeName ?? "",
+                    account.AccountNo,
+                    account.OpeningDate,
+                    account.InstallmentAmount,
+                    account.DurationMonths,
+                    account.InterestRate,
+                    account.MaturityDate,
+                    account.MaturityAmount,
+                    account.Status,
+                    account.NomineeName,
+                    account.NomineeRelation,
+                    account.Remarks,
+                    PaymentMode = paymentMode,
+                    BankAccountLedgerID = bankLedgerId,
+                    SavingAccountID = savingAccountId,
+                    IsSeniorCitizen = isSenior
+                },
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.TotalAmount,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.ApprovedBy,
+                    voucher.ApprovedOn,
+                    CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending"
+                }
+            });
+        }
+
+        // GET: api/RdAccounts/installment-by-voucher/{voucherId}
+        [HttpGet("installment-by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetRdInstallmentByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = $"व्हाउचर क्र. {voucherId} सिस्टीममध्ये सापडले नाही." });
+            }
+
+            // 1. Try finding RdTransaction with this VoucherID
+            var tx = await _context.RdTransactions
+                .Include(t => t.RdAccount)
+                    .ThenInclude(a => a!.Customer)
+                .Include(t => t.RdAccount)
+                    .ThenInclude(a => a!.RdScheme)
+                .Include(t => t.RdAccount)
+                    .ThenInclude(a => a!.Branch)
+                .FirstOrDefaultAsync(t => t.VoucherID == voucherId && t.TransactionType == "Installment");
+
+            RdAccount? account = tx?.RdAccount;
+
+            // 2. Try parsing AccountNo from VoucherNo (e.g. JV-RD-COLL-00150100000001-2)
+            if (account == null)
+            {
+                string vNo = voucher.VoucherNo ?? "";
+                if (vNo.StartsWith("JV-RD-COLL-"))
+                {
+                    var parts = vNo.Substring("JV-RD-COLL-".Length).Split('-');
+                    if (parts.Length > 0)
+                    {
+                        string accNo = parts[0].Trim();
+                        account = await _context.RdAccounts
+                            .Include(a => a.Customer)
+                            .Include(a => a.RdScheme)
+                            .Include(a => a.Branch)
+                            .FirstOrDefaultAsync(a => a.AccountNo == accNo);
+                    }
+                }
+            }
+
+            // 3. Fallback: Search by Customer
+            if (account == null)
+            {
+                var custId = voucher.VoucherDetails.FirstOrDefault(vd => vd.CustomerID.HasValue && vd.CustomerID.Value > 0)?.CustomerID;
+                if (custId.HasValue)
+                {
+                    account = await _context.RdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.RdScheme)
+                        .Include(a => a.Branch)
+                        .Where(a => a.CustomerID == custId.Value)
+                        .OrderByDescending(a => a.RdAccountID)
+                        .FirstOrDefaultAsync();
+                }
+            }
+
+            if (account == null)
+            {
+                return NotFound(new { message = $"सदर आरडी हप्ता भरणा व्हाउचरशी (ID: {voucherId}) संबंधित खाते सापडले नाही." });
+            }
+
+            var schedules = await _context.RDInstallmentSchedules
+                .Where(s => s.VoucherID == voucherId)
+                .OrderBy(s => s.InstallmentNo)
+                .ToListAsync();
+
+            int installmentCount = schedules.Count > 0 ? schedules.Count : 1;
+            decimal penalty = schedules.Sum(s => s.PenaltyCharged);
+
+            return Ok(new
+            {
+                rdAccount = new
+                {
+                    account.RdAccountID,
+                    account.BranchID,
+                    BranchName = account.Branch?.BranchName ?? "",
+                    account.CustomerID,
+                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CIFNo = account.Customer?.CIFNo ?? "",
+                    account.RdSchemeID,
+                    SchemeName = account.RdScheme?.SchemeName ?? "",
+                    account.AccountNo,
+                    account.InstallmentAmount,
+                    account.DurationMonths,
+                    account.TotalPaidInstallments,
+                    account.TotalDepositedAmount,
+                    account.InterestRate,
+                    account.Status
+                },
+                installmentDetails = new
+                {
+                    InstallmentCount = installmentCount,
+                    PenaltyAmount = penalty,
+                    TotalAmount = voucher.TotalAmount,
+                    CollectionDate = voucher.VoucherDate,
+                    Narration = voucher.Narration
+                },
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.TotalAmount,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.ApprovedBy,
+                    voucher.ApprovedOn,
+                    CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending"
+                }
+            });
+        }
+
+        // GET: api/RdAccounts/closure-by-voucher/{voucherId}
+        [HttpGet("closure-by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetRdClosureByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = $"व्हाउचर क्र. {voucherId} सिस्टीममध्ये सापडले नाही." });
+            }
+
+            // 1. Try finding RdTransaction
+            var tx = await _context.RdTransactions
+                .Include(t => t.RdAccount)
+                    .ThenInclude(a => a!.Customer)
+                .Include(t => t.RdAccount)
+                    .ThenInclude(a => a!.RdScheme)
+                .Include(t => t.RdAccount)
+                    .ThenInclude(a => a!.Branch)
+                .FirstOrDefaultAsync(t => t.VoucherID == voucherId && (t.TransactionType == "Payout" || t.TransactionType == "Renewal"));
+
+            RdAccount? account = tx?.RdAccount;
+
+            // 2. Parse from VoucherNo (e.g. JV-RD-CLOSE-..., JV-RD-PRECLOSE-...)
+            if (account == null)
+            {
+                string vNo = voucher.VoucherNo ?? "";
+                string accNoCandidate = "";
+                if (vNo.StartsWith("JV-RD-CLOSE-")) accNoCandidate = vNo.Substring("JV-RD-CLOSE-".Length).Trim();
+                else if (vNo.StartsWith("JV-RD-PRECLOSE-")) accNoCandidate = vNo.Substring("JV-RD-PRECLOSE-".Length).Trim();
+
+                if (!string.IsNullOrEmpty(accNoCandidate))
+                {
+                    account = await _context.RdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.RdScheme)
+                        .Include(a => a.Branch)
+                        .FirstOrDefaultAsync(a => a.AccountNo == accNoCandidate);
+                }
+            }
+
+            // 3. Fallback: Search by Customer
+            if (account == null)
+            {
+                var custId = voucher.VoucherDetails.FirstOrDefault(vd => vd.CustomerID.HasValue && vd.CustomerID.Value > 0)?.CustomerID;
+                if (custId.HasValue)
+                {
+                    account = await _context.RdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.RdScheme)
+                        .Include(a => a.Branch)
+                        .Where(a => a.CustomerID == custId.Value)
+                        .OrderByDescending(a => a.RdAccountID)
+                        .FirstOrDefaultAsync();
+                }
+            }
+
+            if (account == null)
+            {
+                return NotFound(new { message = $"सदर आरडी क्लोजरशी (ID: {voucherId}) संबंधित खाते सापडले नाही." });
+            }
+
+            string closureType = (voucher.VoucherNo?.Contains("PRECLOSE") == true) ? "PrematureClose" : "MaturityClose";
+
+            return Ok(new
+            {
+                rdAccount = new
+                {
+                    account.RdAccountID,
+                    account.BranchID,
+                    BranchName = account.Branch?.BranchName ?? "",
+                    account.CustomerID,
+                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CIFNo = account.Customer?.CIFNo ?? "",
+                    account.RdSchemeID,
+                    SchemeName = account.RdScheme?.SchemeName ?? "",
+                    account.AccountNo,
+                    account.InstallmentAmount,
+                    account.DurationMonths,
+                    account.TotalPaidInstallments,
+                    account.TotalDepositedAmount,
+                    account.OpeningDate,
+                    account.MaturityDate,
+                    account.MaturityAmount,
+                    account.Status
+                },
+                closureDetails = new
+                {
+                    ClosureDate = tx?.TransactionDate ?? voucher.VoucherDate,
+                    ClosureType = closureType,
+                    TotalPayoutAmount = voucher.TotalAmount,
+                    Narration = voucher.Narration
+                },
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.TotalAmount,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.ApprovedBy,
+                    voucher.ApprovedOn,
+                    CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending"
+                }
+            });
+        }
     }
 }

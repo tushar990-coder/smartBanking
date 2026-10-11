@@ -1,6 +1,7 @@
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 import {
   ArrowDownCircle,
   ArrowUpCircle,
@@ -98,7 +99,23 @@ const format14DigitDisplay = (num?: string) => {
   return num;
 };
 
-const SavingTransactionEntry: React.FC = () => {
+interface SavingTransactionEntryProps {
+  voucherId?: number;
+  isReadOnly?: boolean;
+  onNavigate?: (tab: string, params?: any) => void;
+}
+
+const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucherId, isReadOnly, onNavigate }) => {
+  const queryParams = new URLSearchParams(window.location.search);
+  const voucherIdFromUrl = voucherId || (queryParams.get('voucherId') ? Number(queryParams.get('voucherId')) : undefined);
+  const isPassingMode = Boolean(isReadOnly || queryParams.get('passingMode') === 'true');
+
+  const [passingVoucher, setPassingVoucher] = useState<any>(null);
+  const [passingActionLoading, setPassingActionLoading] = useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const { user } = useAuth();
+
   const [accounts, setAccounts] = useState<SavingAccount[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [bankLedgers, setBankLedgers] = useState<Ledger[]>([]);
@@ -135,6 +152,59 @@ const SavingTransactionEntry: React.FC = () => {
     fetchTransactions();
     fetchBankLedgers();
   }, []);
+
+  // Voucher Passing Mode: Fetch transaction details linked to voucher
+  useEffect(() => {
+    if (!isPassingMode || !voucherIdFromUrl) return;
+
+    const loadPassingTxn = async () => {
+      setLoading(true);
+      try {
+        const res = await axios.get(`${API_URL}/SavingTransactions/by-voucher/${voucherIdFromUrl}`);
+        const d = res.data;
+        if (!d) return;
+
+        setPassingVoucher(d.voucher);
+        setFormData({
+          savingAccountID: d.savingAccountID || d.savingAccount?.savingAccountID || 0,
+          targetSavingAccountID: d.targetSavingAccountID || 0,
+          bankLedgerID: 0,
+          transactionDate: d.transactionDate ? d.transactionDate.split('T')[0] : new Date().toISOString().split('T')[0],
+          transactionType: d.transactionType || 'Deposit',
+          paymentMode: d.paymentMode || 'Cash',
+          amount: String(d.amount || ''),
+          narration: d.narration || '',
+          checkNo: d.checkNo || ''
+        });
+
+        if (d.savingAccount) {
+          setSelectedAccount({
+            savingAccountID: d.savingAccount.savingAccountID,
+            accountNo: d.savingAccount.accountNo,
+            currentBalance: d.savingAccount.currentBalance,
+            customerName: d.savingAccount.customer?.fullName || '',
+            cifNo: d.savingAccount.customer?.cifNo || '',
+            status: d.savingAccount.status
+          } as any);
+        }
+        if (d.targetSavingAccount) {
+          setSelectedTargetAccount({
+            savingAccountID: d.targetSavingAccount.savingAccountID,
+            accountNo: d.targetSavingAccount.accountNo,
+            currentBalance: d.targetSavingAccount.currentBalance,
+            customerName: d.targetSavingAccount.customer?.fullName || ''
+          } as any);
+        }
+      } catch (err) {
+        console.error('Failed to load saving transaction for passing:', err);
+        setError('बचत व्हाउचर नोंद लोड करताना त्रुटी आली.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPassingTxn();
+  }, [isPassingMode, voucherIdFromUrl]);
 
   const fetchBankLedgers = async () => {
     try {
@@ -465,6 +535,89 @@ const SavingTransactionEntry: React.FC = () => {
     }
   };
 
+  const handlePassVoucher = async () => {
+    const vId = passingVoucher?.voucherID || voucherIdFromUrl;
+    const vNo = passingVoucher?.voucherNo || `Voucher #${vId}`;
+    if (!vId) return;
+
+    if (!window.confirm(`तुम्हाला बचत व्यवहार व्हाउचर क्र. ${vNo} पास व मंजूर करायचे आहे का?`)) {
+      return;
+    }
+
+    setPassingActionLoading(true);
+    try {
+      const payload = {
+        voucherIds: [Number(vId)],
+        approvedBy: user?.userID || 1
+      };
+
+      const res = await fetch('/api/VoucherPosting/Post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const scrollInfo = data.results && data.results[0] ? ` (Scroll No: ${data.results[0].scrollNo})` : '';
+        alert(`बचत व्यवहार व्हाउचर क्र. ${vNo} यशस्वीरीत्या पास करण्यात आले!${scrollInfo}`);
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const errText = await res.text();
+        alert(`त्रुटी: ${errText}`);
+      }
+    } catch (e) {
+      alert('व्हाउचर पास करताना नेटवर्क त्रुटी आली.');
+    } finally {
+      setPassingActionLoading(false);
+    }
+  };
+
+  const handleRejectVoucher = async () => {
+    const vId = passingVoucher?.voucherID || voucherIdFromUrl;
+    const vNo = passingVoucher?.voucherNo || `Voucher #${vId}`;
+    if (!vId) return;
+    if (!rejectionReason.trim()) {
+      alert('कृपया नामंजूर करण्याचे कारण लिहा.');
+      return;
+    }
+
+    setPassingActionLoading(true);
+    try {
+      const res = await fetch(`/api/VoucherPosting/${vId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason: rejectionReason.trim(),
+          userId: user?.userID || 1,
+          username: user?.username || 'Admin',
+          userRole: user?.roleName || user?.role || 'Admin'
+        })
+      });
+
+      const resData = await res.json().catch(() => null);
+      if (res.ok) {
+        alert(resData?.message || `बचत व्हाउचर क्र. ${vNo} नामंजूर / रद्द करण्यात आले.`);
+        setRejectModalOpen(false);
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        alert(resData?.message || resData || 'व्हाउचर नामंजूर करताना त्रुटी आली.');
+      }
+    } catch (e) {
+      alert('व्हाउचर नामंजूर करताना नेटवर्क त्रुटी आली.');
+    } finally {
+      setPassingActionLoading(false);
+    }
+  };
+
   // Live Real-Time Projected Balance Calculations
   const txnAmountNum = parseFloat(formData.amount) || 0;
   const currentBalNum = selectedAccount?.currentBalance || 0;
@@ -495,6 +648,34 @@ const SavingTransactionEntry: React.FC = () => {
   return (
     <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans">
       
+      {/* Passing Checker Banner */}
+      {isPassingMode && (
+        <div className="mb-3 bg-amber-50 border-2 border-amber-400 rounded-sm p-3 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="flex h-3 w-3 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+              </span>
+              <div className="font-bold text-amber-950 text-xs">
+                ⚠️ व्हाउचर पासिंग तपासणी मोड (Checker Verification Mode) - पूर्णपणे केवळ वाचन (Read-Only)
+              </div>
+            </div>
+            <div className="flex items-center gap-3 text-xs font-semibold">
+              <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-mono border border-amber-300">
+                व्हाउचर क्र.: {passingVoucher?.voucherNo || voucherIdFromUrl}
+              </span>
+              <span className="text-amber-800">
+                रक्कम: <b>₹{Number(formData.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b>
+              </span>
+              <span className="bg-amber-200/70 text-amber-900 px-2 py-0.5 rounded">
+                प्रकार: {formData.transactionType === 'Deposit' ? 'बचत ठेव (Deposit)' : 'बचत उपसा (Withdrawal)'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Sleek CBS Header Banner */}
       <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
         <div className="flex items-center gap-2.5">
@@ -606,6 +787,7 @@ const SavingTransactionEntry: React.FC = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-3">
+            <fieldset disabled={isPassingMode} className="contents space-y-3">
             {/* Transaction Type Segmented Toggle */}
             <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded border border-gray-200 inline-flex">
               <label className={`cursor-pointer px-4 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${formData.transactionType === 'Deposit' ? 'bg-emerald-600 text-white shadow-xs' : 'text-gray-600 hover:bg-slate-200'}`}>
@@ -644,6 +826,7 @@ const SavingTransactionEntry: React.FC = () => {
                 <select
                   value={selectedLedgerID}
                   onChange={handleLedgerChange}
+                  disabled={isPassingMode}
                   className="w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium h-[30px]"
                 >
                   <option value={0}>-- सर्व बचत योजना (All Schemes) --</option>
@@ -665,6 +848,7 @@ const SavingTransactionEntry: React.FC = () => {
                   value={formData.savingAccountID}
                   onChange={handleAccountChange}
                   name="savingAccountID"
+                  disabled={isPassingMode}
                   placeholder="-- खाते क्रमांक, जुना क्र. किंवा नाव शोधा --"
                 />
               </div>
@@ -887,6 +1071,7 @@ const SavingTransactionEntry: React.FC = () => {
                       value={formData.targetSavingAccountID}
                       onChange={handleTargetAccountChange}
                       name="targetSavingAccountID"
+                      disabled={isPassingMode}
                       placeholder="-- टार्गेट खाते निवडा --"
                     />
                   </div>
@@ -908,27 +1093,59 @@ const SavingTransactionEntry: React.FC = () => {
                 </div>
               </div>
             )}
+            </fieldset>
 
-            {/* Submit Button */}
-            <div className="pt-2 flex justify-end">
-              <button
-                type="submit"
-                disabled={loading || isInsufficient}
-                className={`px-6 py-2 rounded-sm font-bold text-xs text-white shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                  formData.transactionType === 'Deposit'
-                    ? 'bg-emerald-600 hover:bg-emerald-700'
-                    : 'bg-rose-600 hover:bg-rose-700'
-                }`}
-              >
-                <Save size={14} />
-                <span>
-                  {loading ? 'जतन करत आहे...' : (
-                    formData.transactionType === 'Deposit' 
-                      ? 'रक्कम जमा करा (Save Deposit)' 
-                      : 'रक्कम नावे करा (Save Withdrawal)'
-                  )}
-                </span>
-              </button>
+            {/* Submit / Passing Action Buttons */}
+            <div className="pt-2 flex justify-end gap-2 items-center">
+              {isPassingMode ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
+                    className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+                    <span>पासिंग यादीवर परत जा (Back)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRejectModalOpen(true)}
+                    disabled={passingActionLoading}
+                    className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>व्हाउचर नामंजूर / रद्द करा (Reject)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePassVoucher}
+                    disabled={passingActionLoading}
+                    className="px-6 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    <span>{passingActionLoading ? 'पास होत आहे...' : 'बचत व्हाउचर पास करा (Approve & Pass)'}</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={loading || isInsufficient}
+                  className={`px-6 py-2 rounded-sm font-bold text-xs text-white shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                    formData.transactionType === 'Deposit'
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                  }`}
+                >
+                  <Save size={14} />
+                  <span>
+                    {loading ? 'जतन करत आहे...' : (
+                      formData.transactionType === 'Deposit' 
+                        ? 'रक्कम जमा करा (Save Deposit)' 
+                        : 'रक्कम नावे करा (Save Withdrawal)'
+                    )}
+                  </span>
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -1283,6 +1500,63 @@ const SavingTransactionEntry: React.FC = () => {
               >
                 पॉपअप बंद करा (Close)
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Reason Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-md shadow-2xl max-w-md w-full overflow-hidden border border-rose-200">
+            <div className="bg-rose-600 px-4 py-3 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <Trash2 className="w-4 h-4" />
+                <span>बचत व्हाउचर नामंजूर / रद्द करणे (Reject Voucher)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="text-white hover:bg-rose-700 p-1 rounded cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-xs text-slate-700 font-medium">
+                व्हाउचर क्र.: <b className="font-mono text-slate-900">{passingVoucher?.voucherNo || voucherIdFromUrl}</b>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  नामंजूर करण्याचे कारण (Reason for Rejection) *
+                </label>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="उदा. चुकीची रक्कम, चुकीचे बचत खाते, संशयास्पद व्यवहार इत्यादी..."
+                  rows={3}
+                  className="w-full text-xs border border-slate-300 rounded p-2 focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectModalOpen(false)}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold cursor-pointer"
+                >
+                  रद्द करा (Cancel)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRejectVoucher}
+                  disabled={passingActionLoading || !rejectionReason.trim()}
+                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{passingActionLoading ? 'रद्द होत आहे...' : 'खात्रीपूर्वक नामंजूर करा'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

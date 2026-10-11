@@ -194,7 +194,18 @@ const formatDateSafe = (dateVal: any): string => {
   return String(dateVal);
 };
 
-const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApplicationId?: number }> = ({ onNext, editingApplicationId }) => {
+interface LoanApplicationMasterProps {
+  onNext?: (data: any) => void;
+  editingApplicationId?: number;
+  isReadOnly?: boolean;
+  onNavigate?: (tab: string, params?: any) => void;
+}
+
+const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, editingApplicationId, isReadOnly, onNavigate }) => {
+  const queryParams = new URLSearchParams(window.location.search);
+  const voucherIdFromUrl = queryParams.get('voucherId');
+  const isPassingMode = Boolean(isReadOnly || queryParams.get('passingMode') === 'true');
+
   const [applications, setApplications] = useState<LoanApplication[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [loanRates, setLoanRates] = useState<LoanRate[]>([]);
@@ -273,6 +284,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
   const [showCoBorrowers, setShowCoBorrowers] = useState<boolean>(false);
 
   const fetchNextAppNo = async () => {
+    if (isPassingMode || editingApplicationId || voucherIdFromUrl) return;
     try {
       const res = await axios.get('/api/LoanApplications/next-number');
       if (res.data) {
@@ -289,7 +301,9 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
   useEffect(() => {
     fetchData();
     fetchDropdowns();
-    fetchNextAppNo();
+    if (!isPassingMode && !editingApplicationId && !voucherIdFromUrl) {
+      fetchNextAppNo();
+    }
   }, []);
 
   useEffect(() => {
@@ -323,24 +337,53 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
   }, [formData.recommendedByDirectorID]);
 
   useEffect(() => {
-    if (editingApplicationId) {
-      const fetchApp = async () => {
-        try {
-          let app = applications.find(a => a.loanApplicationID === editingApplicationId);
-          if (!app) {
-            const res = await axios.get(`/api/LoanApplications/${editingApplicationId}`);
-            app = res.data;
+    let isCancelled = false;
+
+    const loadTargetApplication = async () => {
+      try {
+        let targetId = editingApplicationId;
+
+        // Fallback: If no explicit editingApplicationId but in passing mode with a voucherId in URL
+        if (!targetId && isPassingMode && voucherIdFromUrl) {
+          try {
+            const disbRes = await axios.get(`/api/LoanDisbursements/by-voucher/${voucherIdFromUrl}`);
+            if (disbRes.data) {
+              const disb = disbRes.data;
+              targetId = 
+                disb.loanAccount?.loanApplicationID || 
+                disb.loanAccount?.loanApplicationId || 
+                disb.loanAccount?.LoanApplicationID ||
+                disb.loanAccount?.loanApplication?.loanApplicationID ||
+                disb.loanAccount?.loanApplication?.loanApplicationId;
+            }
+          } catch (e) {
+            console.error("Failed to resolve application from voucher:", e);
           }
-          if (app) {
-            handleEdit(app);
-          }
-        } catch (err) {
-          console.error("Failed to load application for editing", err);
         }
-      };
-      fetchApp();
-    }
-  }, [editingApplicationId, applications]);
+
+        if (!targetId) return;
+
+        // Try to find in loaded applications list or fetch directly from API
+        let app = applications.find(a => (a.loanApplicationID || (a as any).loanApplicationId) === targetId);
+        if (!app) {
+          const res = await axios.get(`/api/LoanApplications/${targetId}`);
+          app = res.data;
+        }
+
+        if (app && !isCancelled) {
+          handleEdit(app);
+        }
+      } catch (err) {
+        console.error("Failed to load application in passing/edit mode", err);
+      }
+    };
+
+    loadTargetApplication();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [editingApplicationId, isPassingMode, voucherIdFromUrl, applications]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -682,24 +725,56 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     }
   };
 
-  const handleEdit = async (app: LoanApplication) => {
+  const handleEdit = async (app: LoanApplication | any) => {
     setIsInstAmountEdited(true);
     setError('');
     setSuccess('');
-    setShowCoBorrowers(Boolean(app.coCustomerID || (app as any).coCustomer2ID || (app as any).coMemberID || (app as any).coMember2ID));
+
+    const rawApp: any = app;
+    const resolvedCustId = rawApp.customerID || rawApp.customerId || rawApp.CustomerID || 0;
+    const resolvedCoCustId = rawApp.coCustomerID || rawApp.coCustomerId || rawApp.CoCustomerID || 0;
+    const resolvedCoCust2Id = rawApp.coCustomer2ID || rawApp.coCustomer2Id || rawApp.CoCustomer2ID || 0;
+    const resolvedGuar1Id = rawApp.guarantor1CustomerID || rawApp.guarantor1CustomerId || rawApp.Guarantor1CustomerID || 0;
+    const resolvedGuar2Id = rawApp.guarantor2CustomerID || rawApp.guarantor2CustomerId || rawApp.Guarantor2CustomerID || 0;
+    const resolvedDirectorId = rawApp.recommendedByDirectorID || rawApp.recommendedByDirectorId || rawApp.RecommendedByDirectorID || 0;
+    const resolvedRateId = rawApp.loanRateID || rawApp.loanRateId || rawApp.LoanRateID || 0;
+    const resolvedAppId = rawApp.loanApplicationID || rawApp.loanApplicationId || rawApp.LoanApplicationID || 0;
+
+    setShowCoBorrowers(Boolean(resolvedCoCustId || resolvedCoCust2Id || rawApp.coMemberID || rawApp.coMember2ID));
+
     setFormData({
-      ...app,
-      applicationDate: app.applicationDate ? app.applicationDate.split('T')[0] : '',
-      firstInstallmentDate: app.firstInstallmentDate ? app.firstInstallmentDate.split('T')[0] : '',
-      maturityDate: app.maturityDate ? app.maturityDate.split('T')[0] : ''
+      ...rawApp,
+      loanApplicationID: resolvedAppId,
+      customerID: resolvedCustId,
+      coCustomerID: resolvedCoCustId,
+      coCustomer2ID: resolvedCoCust2Id,
+      guarantor1CustomerID: resolvedGuar1Id,
+      guarantor2CustomerID: resolvedGuar2Id,
+      recommendedByDirectorID: resolvedDirectorId,
+      loanRateID: resolvedRateId,
+      applicationNo: rawApp.applicationNo || rawApp.ApplicationNo || '',
+      requestedAmount: rawApp.requestedAmount ?? rawApp.RequestedAmount ?? 0,
+      interestRate: rawApp.interestRate ?? rawApp.InterestRate ?? 0,
+      durationMonths: rawApp.durationMonths ?? rawApp.DurationMonths ?? 12,
+      installmentFrequency: rawApp.installmentFrequency || rawApp.InstallmentFrequency || 'मासिक',
+      noOfInstallments: rawApp.noOfInstallments ?? rawApp.NoOfInstallments ?? 12,
+      installmentAmount: rawApp.installmentAmount ?? rawApp.InstallmentAmount ?? 0,
+      securityDetails: rawApp.securityDetails || rawApp.SecurityDetails || '',
+      securityValue: rawApp.securityValue ?? rawApp.SecurityValue ?? 0,
+      purpose: rawApp.purpose || rawApp.Purpose || '',
+      applicationDate: rawApp.applicationDate ? String(rawApp.applicationDate).split('T')[0] : '',
+      firstInstallmentDate: rawApp.firstInstallmentDate ? String(rawApp.firstInstallmentDate).split('T')[0] : '',
+      maturityDate: rawApp.maturityDate ? String(rawApp.maturityDate).split('T')[0] : ''
     });
 
     // Fetch collaterals if any
-    try {
-      const colRes = await axios.get(`/api/LoanCollaterals/ByApplication/${app.loanApplicationID}`);
-      setDepositCollaterals(colRes.data || []);
-    } catch {
-      setDepositCollaterals([]);
+    if (resolvedAppId) {
+      try {
+        const colRes = await axios.get(`/api/LoanCollaterals/ByApplication/${resolvedAppId}`);
+        setDepositCollaterals(colRes.data || []);
+      } catch {
+        setDepositCollaterals([]);
+      }
     }
     
     if (formContainerRef.current) {
@@ -709,18 +784,21 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
     }
     
     // Auto-fetch schedule for edited application
-    if (app.requestedAmount && app.interestRate && app.noOfInstallments && app.loanRateID) {
+    const reqAmount = rawApp.requestedAmount ?? rawApp.RequestedAmount;
+    const intRate = rawApp.interestRate ?? rawApp.InterestRate;
+    const noInst = rawApp.noOfInstallments ?? rawApp.NoOfInstallments;
+    if (reqAmount && intRate && noInst && resolvedRateId) {
       try {
         const payload = {
-          loanRateID: app.loanRateID,
-          loanAmount: app.requestedAmount,
-          interestRate: app.interestRate,
-          noOfInstallments: app.noOfInstallments,
-          durationMonths: app.durationMonths || 12,
-          installmentFrequency: app.installmentFrequency || 'मासिक',
-          loanDisbursementDate: app.applicationDate || new Date().toISOString().split('T')[0],
-          firstInstallmentDate: app.firstInstallmentDate ? app.firstInstallmentDate : null,
-          customInstallmentAmount: app.installmentAmount && app.installmentAmount > 0 ? app.installmentAmount : null
+          loanRateID: resolvedRateId,
+          loanAmount: reqAmount,
+          interestRate: intRate,
+          noOfInstallments: noInst,
+          durationMonths: rawApp.durationMonths || 12,
+          installmentFrequency: rawApp.installmentFrequency || 'मासिक',
+          loanDisbursementDate: rawApp.applicationDate || new Date().toISOString().split('T')[0],
+          firstInstallmentDate: rawApp.firstInstallmentDate ? rawApp.firstInstallmentDate : null,
+          customInstallmentAmount: rawApp.installmentAmount && rawApp.installmentAmount > 0 ? rawApp.installmentAmount : null
         };
         const res = await axios.post('/api/LoanAccounts/PreviewSchedule', payload);
         const mappedSchedule = res.data.map((row: any) => ({
@@ -1129,6 +1207,61 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
       {/* TOP SLEEK CBS HEADER BANNER (Matching SavingOpeningBalance.tsx)          */}
       {/* ========================================================================= */}
       {/* ========================================================================= */}
+      {/* ========================================================================= */}
+      {/* PASSING MODE CHECKER ALERT BANNER                                         */}
+      {/* ========================================================================= */}
+      {isPassingMode && (
+        <div className="mb-2.5 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 text-white p-2.5 sm:p-3 rounded-sm shadow-xs border-2 border-amber-300 flex flex-wrap items-center justify-between gap-2.5 animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-white/20 rounded-full shrink-0">
+              <ShieldCheck className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-xs sm:text-sm tracking-wide">
+                  🛡️ व्हाउचर पासिंग तपासणी मोड (Voucher Passing Checker Mode)
+                </span>
+                <span className="bg-white text-amber-900 text-[9.5px] font-black px-2 py-0.2 rounded-full uppercase shadow-2xs">
+                  केवळ वाचन (Read-Only)
+                </span>
+              </div>
+              <p className="text-[10.5px] text-amber-100 font-medium">
+                हा कर्ज अर्ज व्हाउचर पासिंग अंतर्गत फक्त तपासणीसाठी उघडण्यात आला आहे. सर्व मूळ तपशील सुरक्षितपणे खाली दिसत असून त्यामध्ये कोणताही बदल करता येणार नाही.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (onNavigate) {
+                  onNavigate('voucher-posting');
+                } else {
+                  window.location.href = '/?tab=voucher-posting';
+                }
+              }}
+              className="bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-sm text-xs font-bold transition flex items-center gap-1 border border-white/40 cursor-pointer shadow-2xs"
+            >
+              <span>↩️ व्हाउचर यादी</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (onNext) {
+                  onNext(formData);
+                } else if (onNavigate) {
+                  onNavigate('loan-process', { subTab: '2', voucherId: voucherIdFromUrl, passingMode: 'true' });
+                }
+              }}
+              className="bg-emerald-800 hover:bg-emerald-900 text-white px-3.5 py-1.5 rounded-sm text-xs font-black transition flex items-center gap-1.5 border border-emerald-500 cursor-pointer shadow-xs"
+            >
+              <span>पुढील टप्पा: कर्ज वाटप तपासा व पास करा ➔</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* TOP SLEEK CBS HEADER BANNER WITH COMPACT KPI BAR                          */}
       {/* ========================================================================= */}
       <div className="bg-white px-3 py-2 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-2.5 flex flex-wrap justify-between items-center gap-2">
@@ -1142,11 +1275,15 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                 कर्ज अर्ज नोंदणी व मंजुरी
               </h1>
               <span className="text-[10px] font-semibold text-primary font-mono hidden md:inline">(Loan Application Master)</span>
-              {isEditing && (
+              {isPassingMode ? (
+                <span className="bg-amber-100 text-amber-900 text-[9.5px] font-black px-2 py-0.2 rounded-full border border-amber-300">
+                  🛡️ तपासणी / पासिंग मोड (#{formData.applicationNo || formData.loanApplicationID || '-'})
+                </span>
+              ) : isEditing ? (
                 <span className="bg-amber-100 text-amber-900 text-[9.5px] font-black px-2 py-0.2 rounded-full border border-amber-300 animate-pulse">
                   ✏️ संपादन (#{formData.applicationNo || formData.loanApplicationID})
                 </span>
-              )}
+              ) : null}
             </div>
             {/* Ultra-compact inline KPI metrics strip */}
             <div className="flex items-center gap-2 text-[10px] text-gray-500 font-medium mt-0.5 flex-wrap">
@@ -1163,7 +1300,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
 
         {/* Header Action Controls */}
         <div className="flex items-center gap-1.5">
-          {isEditing && (
+          {!isPassingMode && isEditing && (
             <button
               type="button"
               onClick={handleResetForm}
@@ -1175,15 +1312,17 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={handleResetForm}
-            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-sm text-[10.5px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-            title="नवीन फॉर्म रिकामा करा"
-          >
-            <Plus className="w-3 h-3" />
-            <span>नवीन नोंद</span>
-          </button>
+          {!isPassingMode && (
+            <button
+              type="button"
+              onClick={handleResetForm}
+              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-sm text-[10.5px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+              title="नवीन फॉर्म रिकामा करा"
+            >
+              <Plus className="w-3 h-3" />
+              <span>नवीन नोंद</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -1223,10 +1362,15 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
       <div 
         ref={formContainerRef}
         className={`w-full bg-white p-2.5 sm:p-3 rounded-sm shadow-xs border transition-all duration-300 ${
-          isEditing ? 'border-primary ring-2 ring-primary/20 bg-blue-50/15' : 'border-gray-200'
+          isPassingMode
+            ? 'border-amber-300 ring-2 ring-amber-400/20 bg-amber-50/10'
+            : isEditing 
+            ? 'border-primary ring-2 ring-primary/20 bg-blue-50/15' 
+            : 'border-gray-200'
         }`}
       >
         <form onSubmit={handleSubmit} className="space-y-2.5">
+          <fieldset disabled={isPassingMode} className="contents space-y-2.5">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-start">
             
             {/* =================================================================== */}
@@ -1241,19 +1385,21 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                     <UserCheck className="w-3.5 h-3.5 text-primary" />
                     <h2 className="text-xs font-bold text-primary">१. अर्जदार व सह-कर्जदार (Applicant Details)</h2>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowCoBorrowers(p => !p)}
-                    className={`text-[10px] px-2 py-0.5 rounded font-bold transition flex items-center gap-1 cursor-pointer border ${
-                      showCoBorrowers || Boolean(formData.coCustomerID || formData.coCustomer2ID)
-                        ? 'bg-primary/10 text-primary border-primary/30'
-                        : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-300'
-                    }`}
-                    title="सह-कर्जदार जोडा किंवा बदला"
-                  >
-                    <UserPlus className="w-3 h-3" />
-                    <span>{showCoBorrowers || Boolean(formData.coCustomerID || formData.coCustomer2ID) ? 'सह-कर्जदार बंद' : '+ सह-कर्जदार'}</span>
-                  </button>
+                  {!isPassingMode && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCoBorrowers(p => !p)}
+                      className={`text-[10px] px-2 py-0.5 rounded font-bold transition flex items-center gap-1 cursor-pointer border ${
+                        showCoBorrowers || Boolean(formData.coCustomerID || formData.coCustomer2ID)
+                          ? 'bg-primary/10 text-primary border-primary/30'
+                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-300'
+                      }`}
+                      title="सह-कर्जदार जोडा किंवा बदला"
+                    >
+                      <UserPlus className="w-3 h-3" />
+                      <span>{showCoBorrowers || Boolean(formData.coCustomerID || formData.coCustomer2ID) ? 'सह-कर्जदार बंद' : '+ सह-कर्जदार'}</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Row 1: App No & App Date */}
@@ -1303,6 +1449,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                         }));
                       }}
                       placeholder="-- अर्जदार CIF / नाव / मोबाईलने शोधा --"
+                      isDisabled={isPassingMode}
                     />
                   </div>
                 </div>
@@ -1345,16 +1492,18 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       <span className="text-[10.5px] font-bold text-primary flex items-center gap-1">
                         <UserPlus className="w-3 h-3" /> सह-कर्जदार (Co-Borrowers)
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFormData(p => ({ ...p, coCustomerID: 0, coCustomer2ID: 0 }));
-                          setShowCoBorrowers(false);
-                        }}
-                        className="text-[9.5px] text-rose-600 hover:text-rose-800 font-bold hover:underline cursor-pointer"
-                      >
-                        ✕ सह-कर्जदार काढा (Remove)
-                      </button>
+                      {!isPassingMode && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData(p => ({ ...p, coCustomerID: 0, coCustomer2ID: 0 }));
+                            setShowCoBorrowers(false);
+                          }}
+                          className="text-[9.5px] text-rose-600 hover:text-rose-800 font-bold hover:underline cursor-pointer"
+                        >
+                          ✕ सह-कर्जदार काढा (Remove)
+                        </button>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1368,6 +1517,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                           value={formData.coCustomerID ? Number(formData.coCustomerID) : ''}
                           onChange={(val) => setFormData(p => ({ ...p, coCustomerID: val ? Number(val) : 0 }))}
                           placeholder="-- सह-कर्जदार १ निवडा --"
+                          isDisabled={isPassingMode}
                         />
                       </div>
                       <div>
@@ -1381,6 +1531,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                           value={formData.coCustomer2ID ? Number(formData.coCustomer2ID) : ''}
                           onChange={(val) => setFormData(p => ({ ...p, coCustomer2ID: val ? Number(val) : 0 }))}
                           placeholder="-- सह-कर्जदार २ निवडा --"
+                          isDisabled={isPassingMode}
                         />
                       </div>
                     </div>
@@ -1406,6 +1557,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       value={formData.loanRateID || ''}
                       onChange={(e) => handleLoanRateChange(parseInt(e.target.value, 10))}
                       className={inputClass}
+                      disabled={isPassingMode}
                       required
                     >
                       <option value="">-- कर्ज योजना निवडा --</option>
@@ -1462,6 +1614,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       value={formData.installmentFrequency}
                       onChange={handleInputChange}
                       className={inputClass}
+                      disabled={isPassingMode}
                     >
                       {InstallmentFrequencies.map(f => (
                         <option key={f} value={f}>{f}</option>
@@ -1504,7 +1657,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       <label className={labelClass}>
                         हप्ता रक्कम (Inst ₹) <span className="text-red-500">*</span>
                       </label>
-                      {isInstAmountEdited && (
+                      {!isPassingMode && isInstAmountEdited && (
                         <button
                           type="button"
                           onClick={handleResetInstAmount}
@@ -1601,6 +1754,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       }));
                     }}
                     placeholder="-- जामीनदार १ शोधा (CIF / नाव / मोबाईल) --"
+                    isDisabled={isPassingMode}
                   />
                   {guarantor1Summary && (
                     <div className="mt-1 p-1 bg-amber-50 border border-amber-300 rounded text-[9.5px] text-amber-900 flex justify-between items-center shadow-2xs">
@@ -1635,6 +1789,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       }));
                     }}
                     placeholder="-- जामीनदार २ शोधा (CIF / नाव / मोबाईल) --"
+                    isDisabled={isPassingMode}
                   />
                   {guarantor2Summary && (
                     <div className="mt-1 p-1 bg-amber-50 border border-amber-300 rounded text-[9.5px] text-amber-900 flex justify-between items-center shadow-2xs">
@@ -1670,51 +1825,54 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                       onChange={(e: any) => setFormData(p => ({ ...p, securityDetails: e.target.value }))}
                       placeholder="-- तारण प्रकार निवडा --"
                       className={`${inputClass} flex justify-between items-center text-left cursor-pointer`}
+                      disabled={isPassingMode}
                     />
                   </div>
 
                   <div>
                     <div className="flex items-center justify-between mb-1 h-[15px]">
                       <label className={labelClass}>तारण मूल्य (Security ₹)</label>
-                      <div className="flex items-center gap-1">
-                        {(() => {
-                          const curRate = loanRates.find(r => r.loanRateID === formData.loanRateID);
-                          const isDepScheme = curRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(curRate.collateralCategory || '');
-                          if (!isDepScheme) return null;
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!formData.customerID) {
-                                  alert('कृपया आधी मुख्य कर्जदार ग्राहक (Customer) निवडा.');
-                                  return;
-                                }
-                                setShowDepositModal(true);
-                              }}
-                              className="text-[9.5px] text-emerald-950 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-emerald-100/90 px-1.5 py-0.2 rounded border border-emerald-400 shadow-2xs"
-                            >
-                              <ShieldCheck className="w-3 h-3 text-emerald-700" />
-                              <span>
-                                {curRate?.collateralCategory === 'FixedDeposit' 
-                                  ? 'FD ठेव' 
-                                  : curRate?.collateralCategory === 'PigmyDeposit' 
-                                    ? 'पिग्मी' 
-                                    : curRate?.collateralCategory === 'RecurringDeposit'
-                                      ? 'RD ठेव'
-                                      : 'बचत ठेव'}
-                              </span>
-                            </button>
-                          );
-                        })()}
-                        <button
-                          type="button"
-                          onClick={() => setShowGoldModal(true)}
-                          className="text-[9.5px] text-amber-900 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-amber-100/80 px-1.5 py-0.2 rounded border border-amber-300"
-                        >
-                          <Sparkles className="w-3 h-3 text-amber-700" />
-                          <span>सुवर्ण</span>
-                        </button>
-                      </div>
+                      {!isPassingMode && (
+                        <div className="flex items-center gap-1">
+                          {(() => {
+                            const curRate = loanRates.find(r => r.loanRateID === formData.loanRateID);
+                            const isDepScheme = curRate && ['FixedDeposit', 'PigmyDeposit', 'RecurringDeposit', 'SavingDeposit'].includes(curRate.collateralCategory || '');
+                            if (!isDepScheme) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!formData.customerID) {
+                                    alert('कृपया आधी मुख्य कर्जदार ग्राहक (Customer) निवडा.');
+                                    return;
+                                  }
+                                  setShowDepositModal(true);
+                                }}
+                                className="text-[9.5px] text-emerald-950 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-emerald-100/90 px-1.5 py-0.2 rounded border border-emerald-400 shadow-2xs"
+                              >
+                                <ShieldCheck className="w-3 h-3 text-emerald-700" />
+                                <span>
+                                  {curRate?.collateralCategory === 'FixedDeposit' 
+                                    ? 'FD ठेव' 
+                                    : curRate?.collateralCategory === 'PigmyDeposit' 
+                                      ? 'पिग्मी' 
+                                      : curRate?.collateralCategory === 'RecurringDeposit'
+                                        ? 'RD ठेव'
+                                        : 'बचत ठेव'}
+                                </span>
+                              </button>
+                            );
+                          })()}
+                          <button
+                            type="button"
+                            onClick={() => setShowGoldModal(true)}
+                            className="text-[9.5px] text-amber-900 font-bold hover:underline flex items-center gap-0.5 cursor-pointer bg-amber-100/80 px-1.5 py-0.2 rounded border border-amber-300"
+                          >
+                            <Sparkles className="w-3 h-3 text-amber-700" />
+                            <span>सुवर्ण</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <input
                       type="number"
@@ -1736,6 +1894,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
                     value={formData.recommendedByDirectorID ? Number(formData.recommendedByDirectorID) : ''}
                     onChange={(val) => setFormData(p => ({ ...p, recommendedByDirectorID: val ? Number(val) : 0 }))}
                     placeholder="-- संचालक शिफारस खातेदार निवडा --"
+                    isDisabled={isPassingMode}
                   />
                   {directorSummary && (
                     <div className="mt-1 p-1 bg-purple-50/70 border border-purple-200 rounded text-[9.5px] text-purple-900 flex justify-between items-center shadow-2xs">
@@ -1771,6 +1930,7 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
             </div>
 
           </div>
+          </fieldset>
 
           {/* Form Action Buttons Bar (Full Width) */}
           <div className="pt-2 flex flex-wrap justify-between items-center gap-2 border-t border-gray-200 bg-slate-50/70 -mx-2.5 sm:-mx-3 -mb-2.5 sm:-mb-3 p-2 rounded-b-sm">
@@ -1801,35 +1961,66 @@ const LoanApplicationMaster: React.FC<{ onNext?: (data: any) => void; editingApp
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleResetForm}
-                className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
-                <span>{isEditing ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
-              </button>
+            {isPassingMode ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onNavigate) {
+                      onNavigate('voucher-posting');
+                    } else {
+                      window.location.href = '/?tab=voucher-posting';
+                    }
+                  }}
+                  className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
+                >
+                  <span>↩️ पासिंग यादीवर परत जा</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onNext) {
+                      onNext(formData);
+                    } else if (onNavigate) {
+                      onNavigate('loan-process', { subTab: '2', voucherId: voucherIdFromUrl, passingMode: 'true' });
+                    }
+                  }}
+                  className="px-5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-black rounded-sm text-xs shadow-xs flex items-center gap-1.5 cursor-pointer transition-all border border-emerald-800"
+                >
+                  <span>पुढील टप्पा: कर्ज वाटप तपासा व पास करा ➔</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetForm}
+                  className="px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5 transition-all"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+                  <span>{isEditing ? 'संपादन रद्द करा' : 'नवीन फॉर्म (Reset)'}</span>
+                </button>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className={`px-6 py-1.5 ${
-                  isEditing ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary hover:opacity-90'
-                } text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all`}
-              >
-                <Save className="w-4 h-4" />
-                <span>
-                  {loading
-                    ? 'जतन होत आहे...'
-                    : isEditing
-                    ? 'बदल सेव्ह करा (Update)'
-                    : onNext
-                    ? 'कर्ज अर्ज सेव्ह करा व पुढे जा (Save & Proceed)'
-                    : 'कर्ज अर्ज सेव्ह करा (Save Application)'}
-                </span>
-              </button>
-            </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className={`px-6 py-1.5 ${
+                    isEditing ? 'bg-amber-600 hover:bg-amber-700' : 'bg-primary hover:opacity-90'
+                  } text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all`}
+                >
+                  <Save className="w-4 h-4" />
+                  <span>
+                    {loading
+                      ? 'जतन होत आहे...'
+                      : isEditing
+                      ? 'बदल सेव्ह करा (Update)'
+                      : onNext
+                      ? 'कर्ज अर्ज सेव्ह करा व पुढे जा (Save & Proceed)'
+                      : 'कर्ज अर्ज सेव्ह करा (Save Application)'}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
 
         </form>

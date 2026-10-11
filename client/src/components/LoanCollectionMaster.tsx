@@ -3,6 +3,11 @@ import axios from 'axios';
 import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import LoanCollectionReceiptPrint from './LoanCollectionReceiptPrint';
+import { useAuth } from '../context/AuthContext';
+
+export interface LoanCollectionMasterProps {
+    onNavigate?: (tab: string, params?: any) => void;
+}
 
 export const format14DigitDisplay = (num?: string) => {
     if (!num) return '-';
@@ -201,12 +206,22 @@ interface LienReleasePrompt {
     collectionId?: number;
 }
 
-const LoanCollectionMaster: React.FC = () => {
+const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate }) => {
+    const { user } = useAuth();
     const [collections, setCollections] = useState<LoanCollection[]>([]);
     const [accounts, setAccounts] = useState<LoanAccount[]>([]);
     const [ledgers, setLedgers] = useState<Ledger[]>([]);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+
+    // Passing Mode State (व्हाउचर तपासणी व मंजुरी मोड)
+    const [isPassingMode, setIsPassingMode] = useState(false);
+    const [passingVoucherId, setPassingVoucherId] = useState<number | null>(null);
+    const [passingCollection, setPassingCollection] = useState<LoanCollection | null>(null);
+    const [passingVoucher, setPassingVoucher] = useState<any | null>(null);
+    const [passingActionLoading, setPassingActionLoading] = useState(false);
+    const [rejectModalOpen, setRejectModalOpen] = useState(false);
+    const [rejectionReason, setRejectionReason] = useState('');
     
     // Printing state
     const [lastSavedCollectionId, setLastSavedCollectionId] = useState<number | null>(null);
@@ -334,12 +349,158 @@ const LoanCollectionMaster: React.FC = () => {
         }
     };
 
+    const loadCollectionForPassing = async (vId: number) => {
+        setLoading(true);
+        try {
+            const res = await axios.get(`/api/LoanCollections/by-voucher/${vId}`);
+            const col: LoanCollection = res.data;
+            if (!col) {
+                alert('या व्हाउचरशी जोडलेली कोणतीही कर्ज वसुली पावती सापडली नाही.');
+                return;
+            }
+            setPassingCollection(col);
+            setPassingVoucher((col as any).voucher || null);
+            setFormData({
+                ...col,
+                collectionDate: col.collectionDate ? col.collectionDate.split('T')[0] : new Date().toISOString().split('T')[0],
+                fees: col.fees || []
+            });
+            setLastSavedCollectionId(col.loanCollectionID);
+
+            if (col.loanAccount) {
+                const acc = col.loanAccount;
+                setSelectedAccount(acc);
+                const custId = acc.customerID || acc.customer?.customerID;
+                const bKey = custId ? `C_${custId}` : (acc.memberID ? `M_${acc.memberID}` : `ACC_${acc.loanAccountID}`);
+                setSelectedBorrowerKey(bKey);
+                setSelectedCustomerId(custId || null);
+                (window as any).selectedLoanCustomerId = custId;
+                (window as any).selectedLoanAccountId = acc.loanAccountID;
+                (window as any).selectedLoanMemberId = acc.memberID;
+
+                try {
+                    const schedRes = await axios.get(`/api/LoanAccounts/${col.loanAccountID}/AccountDetailsAndSchedule`);
+                    if (schedRes.data) {
+                        setAccountDetails(schedRes.data);
+                    }
+                } catch (e) {
+                    console.error('Error fetching loan schedule in passing mode:', e);
+                }
+
+                try {
+                    const npaRes = await axios.get(`/api/Npa/status/${col.loanAccountID}`);
+                    if (npaRes.data) {
+                        setNpaStatus(npaRes.data);
+                    }
+                } catch (e) {}
+            }
+        } catch (err: any) {
+            console.error('Failed to load collection for passing:', err);
+            alert('कर्ज वसुली पावती लोड करताना त्रुटी आली.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePassVoucher = async () => {
+        const vId = passingVoucher?.voucherID || passingVoucherId;
+        const vNo = passingVoucher?.voucherNo || formData.receiptNo;
+        if (!vId) {
+            alert('व्हाउचर आयडी सापडला नाही.');
+            return;
+        }
+
+        setPassingActionLoading(true);
+        try {
+            const payload = {
+                voucherIds: [vId],
+                approvedBy: user?.userID || 1
+            };
+
+            const res = await fetch('/api/VoucherPosting/Post', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const scrollInfo = data.results && data.results[0] ? ` (Scroll No: ${data.results[0].scrollNo})` : '';
+                alert(`कर्ज वसुली व्हाउचर क्र. ${vNo} यशस्वीरीत्या पास करण्यात आले!${scrollInfo}`);
+                if (onNavigate) {
+                    onNavigate('voucher-posting');
+                } else {
+                    window.location.href = '/?tab=voucher-posting';
+                }
+            } else {
+                const errText = await res.text();
+                alert(`त्रुटी: ${errText}`);
+            }
+        } catch (e) {
+            alert('व्हाउचर पास करताना नेटवर्क त्रुटी आली.');
+        } finally {
+            setPassingActionLoading(false);
+        }
+    };
+
+    const handleRejectVoucher = async () => {
+        const vId = passingVoucher?.voucherID || passingVoucherId;
+        const vNo = passingVoucher?.voucherNo || formData.receiptNo;
+        if (!vId) return;
+        if (!rejectionReason.trim()) {
+            alert('कृपया नामंजूर करण्याचे कारण लिहा.');
+            return;
+        }
+
+        setPassingActionLoading(true);
+        try {
+            const res = await fetch(`/api/VoucherPosting/${vId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    reason: rejectionReason.trim(),
+                    userId: user?.userID || 1,
+                    username: user?.username || 'Admin',
+                    userRole: user?.roleName || user?.role || 'Admin'
+                })
+            });
+
+            const resData = await res.json().catch(() => null);
+            if (res.ok) {
+                alert(resData?.message || `कर्ज वसुली पावती/व्हाउचर क्र. ${vNo} नामंजूर / रद्द करण्यात आले.`);
+                setRejectModalOpen(false);
+                if (onNavigate) {
+                    onNavigate('voucher-posting');
+                } else {
+                    window.location.href = '/?tab=voucher-posting';
+                }
+            } else {
+                alert(resData?.message || resData || 'व्हाउचर नामंजूर करताना त्रुटी आली.');
+            }
+        } catch (e) {
+            alert('व्हाउचर नामंजूर करताना त्रुटी आली.');
+        } finally {
+            setPassingActionLoading(false);
+        }
+    };
+
     useEffect(() => {
         fetchSanstha();
         fetchData();
         fetchAccounts();
         fetchLedgers();
-        fetchNextReceiptNo();
+
+        const params = new URLSearchParams(window.location.search);
+        const mode = params.get('passingMode');
+        const vId = params.get('voucherId');
+        if (mode === 'true' && vId) {
+            setIsPassingMode(true);
+            setPassingVoucherId(Number(vId));
+            loadCollectionForPassing(Number(vId));
+        } else {
+            fetchNextReceiptNo();
+        }
+
         return () => {
             (window as any).selectedLoanCustomerId = undefined;
             (window as any).selectedLoanAccountId = undefined;
@@ -560,35 +721,39 @@ const LoanCollectionMaster: React.FC = () => {
 
     const getInterestStartDate = (acc: any): string | null => {
         if (!acc) return null;
-        let latestDate: Date | null = null;
-        let latestDateStr: string | null = null;
 
-        const checkDate = (dStr: string | undefined | null) => {
+        const candidates: Array<{ date: Date; dateStr: string }> = [];
+
+        const addCandidate = (dStr: string | undefined | null) => {
             if (!dStr) return;
             const d = parseDateSafe(dStr);
             if (!isNaN(d.getTime())) {
-                if (!latestDate || d.getTime() > latestDate.getTime()) {
-                    latestDate = d;
-                    latestDateStr = dStr;
-                }
+                candidates.push({ date: d, dateStr: dStr });
             }
         };
 
-        checkDate(acc.lastInterestPostingDate);
-        checkDate(acc.lastInstallmentPaidDate);
+        addCandidate(acc.lastInterestPostingDate);
+        addCandidate(acc.lastInstallmentPaidDate);
+
+        let latest: { date: Date; dateStr: string } | null = null;
+        for (const c of candidates) {
+            if (!latest || c.date.getTime() > latest.date.getTime()) {
+                latest = c;
+            }
+        }
 
         // Core Banking Rule: For opening balance loans, interest begins from openingDate (migration cutoff date e.g. 31/03/2026), NOT historical disbursementDate (e.g. 31/03/2025)
         if (acc.isOpeningBalance && acc.openingDate) {
             const opDate = parseDateSafe(acc.openingDate);
             if (!isNaN(opDate.getTime())) {
-                if (!latestDate || latestDate.getTime() < opDate.getTime()) {
+                if (!latest || latest.date.getTime() < opDate.getTime()) {
                     return acc.openingDate;
                 }
             }
         }
 
-        if (latestDateStr) {
-            return latestDateStr;
+        if (latest) {
+            return latest.dateStr;
         }
 
         return acc.loanDisbursementDate || acc.openingDate || null;
@@ -640,6 +805,7 @@ const LoanCollectionMaster: React.FC = () => {
 
     // Watch for collectionDate and accountDetails changes to recalculate interest and due amount
     useEffect(() => {
+        if (isPassingMode) return;
         if (selectedAccount) {
             const loanRate = selectedAccount.loanRate;
             const isDailyReducing = loanRate && 
@@ -847,6 +1013,9 @@ const LoanCollectionMaster: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isPassingMode) {
+            return;
+        }
         
         if ((formData.isOTS || (formData.interestWaived || 0) > 0 || (formData.penaltyWaived || 0) > 0) && !formData.resolutionNo?.trim()) {
             alert('एकरकम तडजोड (OTS) किंवा व्याज सूटीसाठी संचालक मंडळाचा ठराव क्रमांक (Resolution No.) प्रविष्ट करणे अनिवार्य आहे.');
@@ -1008,6 +1177,59 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                 </div>
             </div>
 
+            {/* ⚠️ Passing Mode Verification Alert Banner */}
+            {isPassingMode && (
+                <div className="mb-2 p-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-sm shadow-md border border-amber-600 flex flex-wrap items-center justify-between gap-2 animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2.5">
+                        <span className="text-xl">⚠️</span>
+                        <div>
+                            <div className="font-black text-xs tracking-wide uppercase flex items-center gap-1.5">
+                                <span>व्हाउचर तपासणी व मंजुरी मोड (Voucher Passing & Verification Mode)</span>
+                                <span className="bg-amber-900/50 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                                    फक्त वाचन (Read-Only)
+                                </span>
+                            </div>
+                            <div className="text-[11px] text-amber-100 flex flex-wrap items-center gap-3 mt-0.5">
+                                <span>पावती / व्हाउचर क्र: <strong className="font-mono text-white">{passingVoucher?.voucherNo || formData.receiptNo || '-'}</strong></span>
+                                {passingVoucher?.scrollNo && <span>स्क्रोल क्र: <strong className="font-mono text-white">{passingVoucher.scrollNo}</strong></span>}
+                                {passingVoucher?.createdByUser?.username && (
+                                    <span>नोंद करणारा (Maker): <strong className="text-white">{passingVoucher.createdByUser.username}</strong></span>
+                                )}
+                                <span>जमा रक्कम: <strong className="font-mono text-white">₹{(formData.totalAmountReceived || 0).toFixed(2)}</strong></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
+                            className="bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold px-2.5 py-1 rounded shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                            <span>↩️ मागे जा</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setRejectModalOpen(true)}
+                            disabled={passingActionLoading}
+                            className="bg-rose-700 hover:bg-rose-800 text-white text-[11px] font-bold px-2.5 py-1 rounded shadow-2xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                            <Trash2 size={13} />
+                            <span>रिजेक्ट करा</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handlePassVoucher}
+                            disabled={passingActionLoading}
+                            className="bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-black px-3 py-1 rounded shadow-sm transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                            <CheckCircle size={14} />
+                            <span>{passingActionLoading ? 'पास होत आहे...' : '✅ पास करा (Approve)'}</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <form onSubmit={handleSubmit}>
             <div className="flex flex-col lg:flex-row gap-2.5">
                 {/* Left Sidebar - Payment Details */}
@@ -1027,52 +1249,56 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                         <div className="space-y-1.5 text-[11px]">
                             <div className="flex justify-between items-center bg-primary/10 p-1.5 rounded-sm border border-primary/30 mb-2">
                                 <label className="font-bold text-primary">एकूण जमा रक्कम (Total)</label>
-                                <input type="number" name="totalAmountReceived" value={formData.totalAmountReceived || ''} onChange={handleTotalAmountChange} min="0"
-                                    className="w-28 border-2 border-primary px-2 py-1 font-bold focus:outline-none focus:ring-1 focus:ring-primary rounded-sm text-right bg-white text-primary" placeholder="₹0.00" />
+                                <input type="number" name="totalAmountReceived" value={formData.totalAmountReceived || ''} onChange={handleTotalAmountChange} min="0" disabled={isPassingMode}
+                                    className={`w-28 border-2 border-primary px-2 py-1 font-bold focus:outline-none focus:ring-1 focus:ring-primary rounded-sm text-right ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-primary'}`} placeholder="₹0.00" />
                             </div>
 
                             <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
                                 <label className="font-semibold text-gray-700">रक्कम (Principal)</label>
-                                <input type="number" name="principalCollected" value={formData.principalCollected !== undefined ? formData.principalCollected : ''} onChange={handleSplitChange} min="0"
-                                    className="w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary bg-white text-right font-medium text-gray-800" />
+                                <input type="number" name="principalCollected" value={formData.principalCollected !== undefined ? formData.principalCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
+                                    className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
                             </div>
                             <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
                                 <label className="font-semibold text-gray-700">मेंबर व्याज (Interest)</label>
-                                <input type="number" name="interestCollected" value={formData.interestCollected !== undefined ? formData.interestCollected : ''} onChange={handleSplitChange} min="0"
-                                    className="w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary bg-white text-right font-medium text-gray-800" />
+                                <input type="number" name="interestCollected" value={formData.interestCollected !== undefined ? formData.interestCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
+                                    className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
                             </div>
                             <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
                                 <label className="font-semibold text-gray-700">जादा व्याज (Penal Int)</label>
-                                <input type="number" name="penaltyInterestCollected" value={formData.penaltyInterestCollected !== undefined ? formData.penaltyInterestCollected : ''} onChange={handleSplitChange} min="0"
-                                    className="w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary bg-white text-right font-medium text-gray-800" />
+                                <input type="number" name="penaltyInterestCollected" value={formData.penaltyInterestCollected !== undefined ? formData.penaltyInterestCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
+                                    className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
                             </div>
                             <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
                                 <label className="font-semibold text-gray-700">देणे सरचार्ज (Surcharge)</label>
-                                <input type="number" name="surchargeCollected" value={formData.surchargeCollected !== undefined ? formData.surchargeCollected : ''} onChange={handleSplitChange} min="0"
-                                    className="w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary bg-white text-right font-medium text-gray-800" />
+                                <input type="number" name="surchargeCollected" value={formData.surchargeCollected !== undefined ? formData.surchargeCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
+                                    className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
                             </div>
      
                             {/* Dynamic Ledgers */}
                             <div className="pt-2 border-t border-gray-200 mt-2">
                                 <div className="flex justify-between items-center mb-1">
                                     <span className="font-bold text-primary text-[11px]">इतर वसूल खाते</span>
-                                    <button type="button" onClick={addFeeRow} className="text-emerald-700 hover:text-emerald-900 flex items-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer">
-                                        <PlusCircle size={12} /> खाते जोडा
-                                    </button>
+                                    {!isPassingMode && (
+                                        <button type="button" onClick={addFeeRow} className="text-emerald-700 hover:text-emerald-900 flex items-center gap-0.5 text-[10px] font-bold transition-colors cursor-pointer">
+                                            <PlusCircle size={12} /> खाते जोडा
+                                        </button>
+                                    )}
                                 </div>
                                 
                                 {formData.fees?.map((fee, index) => (
                                     <div key={index} className="flex gap-1 mb-1 items-center bg-gray-50 p-1 rounded-sm border border-gray-200">
-                                        <select value={fee.ledgerID} onChange={(e) => handleFeeChange(index, 'ledgerID', e.target.value)}
-                                            className="w-full border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-primary text-[10px] rounded-sm bg-white">
+                                        <select value={fee.ledgerID} onChange={(e) => handleFeeChange(index, 'ledgerID', e.target.value)} disabled={isPassingMode}
+                                            className="w-full border border-gray-300 px-1 py-0.5 focus:outline-none focus:border-primary text-[10px] rounded-sm bg-white disabled:bg-slate-100 disabled:cursor-not-allowed">
                                             <option value="0">खाते निवडा...</option>
                                             {ledgers.map(l => (
                                                 <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
                                             ))}
                                         </select>
-                                        <input type="number" value={fee.amount || ''} onChange={(e) => handleFeeChange(index, 'amount', e.target.value)} min="0" placeholder="रक्कम"
-                                            className="w-16 border border-gray-300 px-1.5 py-0.5 focus:outline-none focus:border-primary text-[10px] rounded-sm text-right font-medium bg-white" />
-                                        <button type="button" onClick={() => removeFeeRow(index)} className="text-rose-500 hover:text-rose-700 transition-colors cursor-pointer"><Trash2 size={12}/></button>
+                                        <input type="number" value={fee.amount || ''} onChange={(e) => handleFeeChange(index, 'amount', e.target.value)} min="0" placeholder="रक्कम" disabled={isPassingMode}
+                                            className="w-16 border border-gray-300 px-1.5 py-0.5 focus:outline-none focus:border-primary text-[10px] rounded-sm text-right font-medium bg-white disabled:bg-slate-100 disabled:cursor-not-allowed" />
+                                        {!isPassingMode && (
+                                            <button type="button" onClick={() => removeFeeRow(index)} className="text-rose-500 hover:text-rose-700 transition-colors cursor-pointer"><Trash2 size={12}/></button>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -1108,8 +1334,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2">
                                 <div>
                                     <label className={labelClass}>दिनांक (Date)</label>
-                                    <input type="date" name="collectionDate" value={formData.collectionDate} onChange={(e) => setFormData(p => ({ ...p, collectionDate: e.target.value }))} required 
-                                        className={inputClass} />
+                                    <input type="date" name="collectionDate" value={formData.collectionDate} onChange={(e) => setFormData(p => ({ ...p, collectionDate: e.target.value }))} required disabled={isPassingMode}
+                                        className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} />
                                 </div>
                                 
                                 <div className="md:col-span-2">
@@ -1118,13 +1344,14 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         options={borrowerOptions}
                                         value={selectedBorrowerKey || (selectedCustomerId ? `C_${selectedCustomerId}` : '')} 
                                         onChange={handleMemberChange} 
+                                        disabled={isPassingMode}
                                         placeholder="कर्जदार खातेदार निवडा (CIF / नाव)..." required />
                                 </div>
                                 
                                 <div>
                                     <label className={labelClass}>मोड (Payment Mode)</label>
-                                    <select name="paymentMode" value={formData.paymentMode} onChange={(e) => setFormData(p => ({ ...p, paymentMode: e.target.value }))}
-                                        className={inputClass}>
+                                    <select name="paymentMode" value={formData.paymentMode} onChange={(e) => setFormData(p => ({ ...p, paymentMode: e.target.value }))} disabled={isPassingMode}
+                                        className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`}>
                                         <option value="Cash">Cash (रोख)</option>
                                         <option value="Bank">Bank Transfer (बँक ट्रान्सफर)</option>
                                         <option value="Cheque">Cheque (चेक)</option>
@@ -1141,8 +1368,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         <select 
                                             value={formData.loanAccountID?.toString() || ''} 
                                             onChange={handleLoanAccountSelect}
-                                            disabled={(!selectedBorrowerKey && !selectedCustomerId) || borrowerLoans.length === 0}
-                                            className={`${inputClass} font-bold text-xs ${(!selectedBorrowerKey && !selectedCustomerId) ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-primary/5 text-primary border-primary/30 shadow-2xs'}`}
+                                            disabled={isPassingMode || (!selectedBorrowerKey && !selectedCustomerId) || borrowerLoans.length === 0}
+                                            className={`${inputClass} font-bold text-xs ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : (!selectedBorrowerKey && !selectedCustomerId) ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-primary/5 text-primary border-primary/30 shadow-2xs'}`}
                                             required>
                                             <option value="">{selectedBorrowerKey || selectedCustomerId ? (borrowerLoans.length === 0 ? "कर्ज उपलब्ध नाही" : "-- कर्ज प्रकार व खाते निवडा --") : "आधी कर्जदार निवडा..."}</option>
                                             {borrowerLoans.map((a: any) => (
@@ -1188,7 +1415,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                             
                             <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center mt-2 border-t pt-2 border-gray-100">
                                 {formData.paymentMode === 'Bank' && (
-                                    <select name="bankAccountLedgerID" value={formData.bankAccountLedgerID || ''} 
+                                    <select name="bankAccountLedgerID" value={formData.bankAccountLedgerID || ''} disabled={isPassingMode}
                                         onChange={(e) => {
                                             const ledgerId = parseInt(e.target.value);
                                             const selectedBank = bankLedgers.find(l => l.ledgerID === ledgerId);
@@ -1198,10 +1425,10 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 bankName: selectedBank ? selectedBank.ledgerName : undefined
                                             }));
                                         }}
-                                        className={inputClass} required>
+                                        className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} required>
                                         <option value="">-- बँक खाते निवडा (Select Bank A/c) --</option>
                                         {bankLedgers.map(l => (
-                                            <option key={l.ledgerID} value={l.ledgerID}>
+                                             <option key={l.ledgerID} value={l.ledgerID}>
                                                 {l.ledgerName}{l.accountGroup?.groupName ? ` (${l.accountGroup.groupName})` : ''}
                                             </option>
                                         ))}
@@ -1209,7 +1436,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 )}
                                 {formData.paymentMode === 'Cheque' && (
                                     <>
-                                        <select name="bankAccountLedgerID" value={formData.bankAccountLedgerID || ''} 
+                                        <select name="bankAccountLedgerID" value={formData.bankAccountLedgerID || ''} disabled={isPassingMode}
                                             onChange={(e) => {
                                                 const ledgerId = parseInt(e.target.value);
                                                 const selectedBank = bankLedgers.find(l => l.ledgerID === ledgerId);
@@ -1219,7 +1446,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                     bankName: selectedBank ? selectedBank.ledgerName : undefined
                                                 }));
                                             }}
-                                            className={inputClass} required>
+                                            className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} required>
                                             <option value="">-- बँक खाते निवडा (Select Bank A/c) --</option>
                                             {bankLedgers.map(l => (
                                                 <option key={l.ledgerID} value={l.ledgerID}>
@@ -1227,15 +1454,15 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 </option>
                                             ))}
                                         </select>
-                                        <input type="text" value={formData.chequeNo || ''} onChange={(e) => setFormData(p => ({ ...p, chequeNo: e.target.value }))} placeholder="चेक नंबर (Cheque No)" className={inputClass} required />
+                                        <input type="text" value={formData.chequeNo || ''} onChange={(e) => setFormData(p => ({ ...p, chequeNo: e.target.value }))} placeholder="चेक नंबर (Cheque No)" disabled={isPassingMode} className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} required />
                                     </>
                                 )}
                                 {formData.paymentMode === 'Saving Transfer' && (
-                                    <input type="text" value={formData.transferFromSavingAccountNo || ''} onChange={(e) => setFormData(p => ({ ...p, transferFromSavingAccountNo: e.target.value }))} placeholder="Saving Account No" className={inputClass} />
+                                    <input type="text" value={formData.transferFromSavingAccountNo || ''} onChange={(e) => setFormData(p => ({ ...p, transferFromSavingAccountNo: e.target.value }))} placeholder="Saving Account No" disabled={isPassingMode} className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} />
                                 )}
                                 
                                 <label className={labelClass + " whitespace-nowrap !mb-0"}>तपशील</label>
-                                <input type="text" value={formData.remarks || ''} onChange={(e) => setFormData(p => ({ ...p, remarks: e.target.value }))} className={inputClass} placeholder="अधिक माहिती..." />
+                                <input type="text" value={formData.remarks || ''} onChange={(e) => setFormData(p => ({ ...p, remarks: e.target.value }))} disabled={isPassingMode} className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} placeholder="अधिक माहिती..." />
                             </div>
 
                             {/* OTS & Interest Waiver Section */}
@@ -1246,7 +1473,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             type="checkbox"
                                             checked={formData.isOTS || false}
                                             onChange={(e) => setFormData(p => ({ ...p, isOTS: e.target.checked }))}
-                                            className="w-4 h-4 text-amber-600 rounded-sm focus:ring-amber-500 cursor-pointer"
+                                            disabled={isPassingMode}
+                                            className="w-4 h-4 text-amber-600 rounded-sm focus:ring-amber-500 cursor-pointer disabled:cursor-not-allowed"
                                         />
                                         <span className="text-xs font-bold text-amber-900">
                                             🏆 एकरकमी तडजोड (OTS / One Time Settlement) / व्याज सूट सवलत
@@ -1267,7 +1495,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 type="number"
                                                 value={formData.interestWaived || ''}
                                                 onChange={(e) => setFormData(p => ({ ...p, interestWaived: parseFloat(e.target.value) || 0 }))}
-                                                className="w-full text-xs border border-amber-300 rounded-sm px-2 py-1 bg-white font-bold text-amber-900 focus:outline-none focus:border-amber-600"
+                                                disabled={isPassingMode}
+                                                className={`w-full text-xs border border-amber-300 rounded-sm px-2 py-1 font-bold text-amber-900 focus:outline-none focus:border-amber-600 ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
                                                 placeholder="0.00"
                                             />
                                         </div>
@@ -1277,7 +1506,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 type="number"
                                                 value={formData.penaltyWaived || ''}
                                                 onChange={(e) => setFormData(p => ({ ...p, penaltyWaived: parseFloat(e.target.value) || 0 }))}
-                                                className="w-full text-xs border border-amber-300 rounded-sm px-2 py-1 bg-white font-bold text-amber-900 focus:outline-none focus:border-amber-600"
+                                                disabled={isPassingMode}
+                                                className={`w-full text-xs border border-amber-300 rounded-sm px-2 py-1 font-bold text-amber-900 focus:outline-none focus:border-amber-600 ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
                                                 placeholder="0.00"
                                             />
                                         </div>
@@ -1289,7 +1519,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 type="text"
                                                 value={formData.resolutionNo || ''}
                                                 onChange={(e) => setFormData(p => ({ ...p, resolutionNo: e.target.value }))}
-                                                className="w-full text-xs border border-amber-300 rounded-sm px-2 py-1 bg-white font-bold text-amber-900 focus:outline-none focus:border-amber-600"
+                                                disabled={isPassingMode}
+                                                className={`w-full text-xs border border-amber-300 rounded-sm px-2 py-1 font-bold text-amber-900 focus:outline-none focus:border-amber-600 ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'}`}
                                                 placeholder="उदा. BR-2026/45 (आवश्यक)"
                                                 required
                                             />
@@ -1555,52 +1786,98 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                     {/* Bottom Area - Actions & Summary */}
                     <div className="flex flex-col md:flex-row gap-2.5">
                         {/* Actions */}
-                        <div className="w-full md:w-1/4 flex flex-col gap-1.5">
-                            <button type="submit" className="bg-primary hover:bg-primary/90 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
-                                <Save size={14} /> जतन (Save)
-                            </button>
-                            <button type="button" onClick={() => {
-                                setFormData({
-                                    collectionDate: new Date().toISOString().split('T')[0],
-                                    receiptNo: '',
-                                    paymentMode: "Cash",
-                                    totalAmountReceived: 0,
-                                    surchargeCollected: 0,
-                                    penaltyInterestCollected: 0,
-                                    interestCollected: 0,
-                                    principalCollected: 0,
-                                    fees: []
-                                });
-                                setSelectedCustomerId(null);
-                                setSelectedBorrowerKey(null);
-                                setSelectedAccount(null);
-                                setAccountDetails(null);
-                                (window as any).selectedLoanCustomerId = undefined;
-                                (window as any).selectedLoanAccountId = undefined;
-                                (window as any).selectedLoanMemberId = undefined;
-                                setLastSavedCollectionId(null);
-                                fetchNextReceiptNo();
-                            }} className="bg-slate-700 hover:bg-slate-800 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
-                                <PlusCircle size={14} /> नवीन पावती (New)
-                            </button>
-                            <button type="button" onClick={handlePrintClick} className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
-                                <Printer size={14} /> प्रिंट (Print)
-                            </button>
-                            <button type="button" onClick={() => {
-                                if (lastSavedCollectionId) {
-                                    const found = collections.find(c => c.loanCollectionID === lastSavedCollectionId);
-                                    if (found) handleDirectWhatsAppShare(found);
-                                    else alert('पावती सापडली नाही.');
-                                } else {
-                                    alert('कृपया आधी जमा माहिती जतन (Save) करा.');
-                                }
-                            }} className="bg-green-600 hover:bg-green-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
-                                <span>📲</span> WhatsApp पाठवा
-                            </button>
-                            <button type="button" onClick={() => setShowReceiptsModal(true)} className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 mt-0.5 cursor-pointer">
-                                <Search size={14} /> सर्व जमापावती पहा
-                            </button>
-                        </div>
+                        {isPassingMode ? (
+                            <div className="w-full md:w-1/4 flex flex-col gap-2 p-2.5 bg-amber-50/80 border-2 border-amber-400 rounded-sm shadow-xs">
+                                <div className="text-[11px] font-bold text-amber-900 border-b border-amber-200 pb-1 flex items-center justify-between">
+                                    <span>पासिंग / मंजुरी पर्याय</span>
+                                    <span className="bg-amber-200 text-amber-800 text-[10px] px-1.5 py-0.5 rounded font-bold">Passing Mode</span>
+                                </div>
+
+                                <button 
+                                    type="button" 
+                                    onClick={handlePassVoucher}
+                                    disabled={passingActionLoading}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black py-2.5 px-3 rounded-sm shadow-md transition-all flex justify-center items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                >
+                                    <CheckCircle size={15} />
+                                    <span>{passingActionLoading ? 'पास होत आहे...' : '✅ पावती पास करा (Approve & Pass)'}</span>
+                                </button>
+
+                                <button 
+                                    type="button" 
+                                    onClick={() => setRejectModalOpen(true)}
+                                    disabled={passingActionLoading}
+                                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold py-2 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                >
+                                    <Trash2 size={14} />
+                                    <span>❌ पावती रिजेक्ट करा (Reject)</span>
+                                </button>
+
+                                <button 
+                                    type="button" 
+                                    onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
+                                    disabled={passingActionLoading}
+                                    className="bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold py-2 px-3 rounded-sm shadow-2xs transition-colors flex justify-center items-center gap-1.5 cursor-pointer"
+                                >
+                                    <span>↩️ मागे जा (Back to Queue)</span>
+                                </button>
+
+                                <button 
+                                    type="button" 
+                                    onClick={handlePrintClick} 
+                                    className="bg-slate-600 hover:bg-slate-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer mt-1"
+                                >
+                                    <Printer size={13} /> 🖨️ प्रिंट पूर्वावलोकन (Preview)
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="w-full md:w-1/4 flex flex-col gap-1.5">
+                                <button type="submit" className="bg-primary hover:bg-primary/90 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
+                                    <Save size={14} /> जतन (Save)
+                                </button>
+                                <button type="button" onClick={() => {
+                                    setFormData({
+                                        collectionDate: new Date().toISOString().split('T')[0],
+                                        receiptNo: '',
+                                        paymentMode: "Cash",
+                                        totalAmountReceived: 0,
+                                        surchargeCollected: 0,
+                                        penaltyInterestCollected: 0,
+                                        interestCollected: 0,
+                                        principalCollected: 0,
+                                        fees: []
+                                    });
+                                    setSelectedCustomerId(null);
+                                    setSelectedBorrowerKey(null);
+                                    setSelectedAccount(null);
+                                    setAccountDetails(null);
+                                    (window as any).selectedLoanCustomerId = undefined;
+                                    (window as any).selectedLoanAccountId = undefined;
+                                    (window as any).selectedLoanMemberId = undefined;
+                                    setLastSavedCollectionId(null);
+                                    fetchNextReceiptNo();
+                                }} className="bg-slate-700 hover:bg-slate-800 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
+                                    <PlusCircle size={14} /> नवीन पावती (New)
+                                </button>
+                                <button type="button" onClick={handlePrintClick} className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
+                                    <Printer size={14} /> प्रिंट (Print)
+                                </button>
+                                <button type="button" onClick={() => {
+                                    if (lastSavedCollectionId) {
+                                        const found = collections.find(c => c.loanCollectionID === lastSavedCollectionId);
+                                        if (found) handleDirectWhatsAppShare(found);
+                                        else alert('पावती सापडली नाही.');
+                                    } else {
+                                        alert('कृपया आधी जमा माहिती जतन (Save) करा.');
+                                    }
+                                }} className="bg-green-600 hover:bg-green-700 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
+                                    <span>📲</span> WhatsApp पाठवा
+                                </button>
+                                <button type="button" onClick={() => setShowReceiptsModal(true)} className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 mt-0.5 cursor-pointer">
+                                    <Search size={14} /> सर्व जमापावती पहा
+                                </button>
+                            </div>
+                        )}
                         
                         {/* Summary Table */}
                         <div className="w-full md:w-3/4 border border-gray-300 bg-white rounded-sm shadow-xs overflow-hidden text-[11px]">
@@ -2259,6 +2536,58 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         <CheckCircle size={14} /> होय, बोजा तात्काळ मोकळा करा
                                     </>
                                 )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 🛑 Rejection Reason Modal */}
+            {rejectModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-2xs">
+                    <div className="bg-white rounded-md shadow-2xl w-full max-w-md overflow-hidden border border-rose-300 border-t-4 border-t-rose-600 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="bg-rose-50 px-4 py-3 border-b border-rose-100 flex items-center gap-2">
+                            <Trash2 className="w-5 h-5 text-rose-600" />
+                            <div>
+                                <h3 className="text-sm font-bold text-rose-900">कर्ज पावती नामंजूर / रद्द करा (Reject Collection)</h3>
+                                <p className="text-[11px] text-rose-700">पावती / व्हाउचर क्र: <span className="font-mono font-bold">{passingVoucher?.voucherNo || formData.receiptNo || '-'}</span></p>
+                            </div>
+                        </div>
+                        
+                        <div className="p-4 space-y-3">
+                            <label className="block text-xs font-semibold text-gray-700">
+                                नामंजूर करण्याचे कारण लिहा (Reason for Rejection): <span className="text-rose-500">*</span>
+                            </label>
+                            <textarea
+                                value={rejectionReason}
+                                onChange={(e) => setRejectionReason(e.target.value)}
+                                placeholder="उदा. रक्कम जुळत नाही / चुकीच्या कर्ज खात्यात जमा केली आहे / चेक बाऊन्स झाला आहे..."
+                                rows={3}
+                                className="w-full text-xs border border-gray-300 rounded p-2 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                                autoFocus
+                            />
+                        </div>
+
+                        <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setRejectModalOpen(false);
+                                    setRejectionReason('');
+                                }}
+                                disabled={passingActionLoading}
+                                className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-xs rounded transition-colors cursor-pointer"
+                            >
+                                रद्द करा (Cancel)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleRejectVoucher}
+                                disabled={passingActionLoading || !rejectionReason.trim()}
+                                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>{passingActionLoading ? 'प्रक्रिया सुरू आहे...' : 'नामंजूर निश्चित करा (Confirm Reject)'}</span>
                             </button>
                         </div>
                     </div>

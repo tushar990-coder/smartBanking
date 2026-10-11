@@ -275,5 +275,108 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, "रोख रक्कम भरणा करताना त्रुटी आली: " + ex.Message);
             }
         }
+
+        // GET: api/AgentDayBook/by-voucher/{voucherId}
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetDayBookByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = $"व्हाउचर क्र. {voucherId} सिस्टीममध्ये सापडले नाही." });
+            }
+
+            // 1. Try finding deposit by VoucherId
+            var deposit = await _context.PigmyAgentCashDeposits
+                .Include(d => d.Agent)
+                .FirstOrDefaultAsync(d => d.VoucherId == voucherId);
+
+            // 2. Fallback: Parse ReceiptNo from Narration (e.g. Ref: REMD-...)
+            if (deposit == null && !string.IsNullOrEmpty(voucher.Narration))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(
+                    voucher.Narration,
+                    @"REMD-[0-9\-]+",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                );
+                if (match.Success)
+                {
+                    string refNo = match.Value;
+                    deposit = await _context.PigmyAgentCashDeposits
+                        .Include(d => d.Agent)
+                        .FirstOrDefaultAsync(d => d.ReceiptNo == refNo);
+                }
+            }
+
+            PigmyAgent? agent = deposit?.Agent;
+
+            // 3. Fallback: Parse Agent ID from Narration (e.g. "Agent ID 5")
+            if (agent == null && !string.IsNullOrEmpty(voucher.Narration))
+            {
+                var matchAgent = System.Text.RegularExpressions.Regex.Match(
+                    voucher.Narration,
+                    @"Agent\s+(?:ID\s+)?(\d+)",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                );
+                if (matchAgent.Success && int.TryParse(matchAgent.Groups[1].Value, out int aId))
+                {
+                    agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == aId);
+                }
+            }
+
+            // Also check cash denominations
+            var denom = await _context.CashDenominations
+                .Where(cd => cd.Remarks != null && cd.Remarks.Contains(deposit != null ? deposit.ReceiptNo : voucher.VoucherNo ?? ""))
+                .FirstOrDefaultAsync();
+
+            return Ok(new
+            {
+                agent = agent != null ? new
+                {
+                    agent.PigmyAgentID,
+                    agent.AgentName,
+                    AgentCode = agent.Username ?? ("AGT-" + agent.PigmyAgentID),
+                    MobileNo = agent.Customer?.MobileNo ?? ""
+                } : null,
+                deposit = new
+                {
+                    DepositId = deposit?.DepositId ?? 0,
+                    ReceiptNo = deposit?.ReceiptNo ?? "",
+                    DepositDate = deposit?.DepositDate ?? voucher.VoucherDate,
+                    Amount = deposit?.Amount ?? voucher.TotalAmount,
+                    PaymentMode = deposit?.PaymentMode ?? "CASH",
+                    Narration = deposit?.Narration ?? voucher.Narration
+                },
+                denominations = denom != null ? new
+                {
+                    denom.Count500,
+                    denom.Count200,
+                    denom.Count100,
+                    denom.Count50,
+                    denom.Count20,
+                    denom.Count10,
+                    denom.Count5,
+                    denom.CountCoins,
+                    denom.TotalAmount
+                } : null,
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.TotalAmount,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.ApprovedBy,
+                    voucher.ApprovedOn,
+                    CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending"
+                }
+            });
+        }
     }
 }

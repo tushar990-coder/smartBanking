@@ -21,6 +21,7 @@ import {
   Building,
   Wallet,
   ArrowRight,
+  ArrowLeft,
   FileSpreadsheet,
   Layers,
   IndianRupee,
@@ -97,12 +98,22 @@ interface ShareTransactionData {
   accountNo?: string;
 }
 
-interface ShareMasterProps {
+export interface ShareMasterProps {
   initialMemberId?: string | number | null;
   onNavigate?: (tab: string, params?: any) => void;
+  voucherId?: string | number | null;
+  isPassingMode?: boolean;
 }
 
-export default function ShareMaster({ initialMemberId, onNavigate }: ShareMasterProps = {}) {
+export default function ShareMaster({ initialMemberId, onNavigate, voucherId, isPassingMode }: ShareMasterProps = {}) {
+  const queryParams = new URLSearchParams(window.location.search);
+  const effectiveVoucherId = voucherId || queryParams.get('voucherId');
+  const isPassing = isPassingMode || queryParams.get('passingMode') === 'true';
+
+  const [passingVoucherData, setPassingVoucherData] = useState<any | null>(null);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
   // Master Data
   const [members, setMembers] = useState<Member[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<number | ''>('');
@@ -217,6 +228,92 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
       isMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (isPassing && effectiveVoucherId) {
+      loadPassingVoucher(effectiveVoucherId);
+    }
+  }, [isPassing, effectiveVoucherId]);
+
+  const loadPassingVoucher = async (vId: string | number) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/ShareAccounts/by-voucher/${vId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPassingVoucherData(data);
+        if (data.member?.memberID) {
+          setSelectedMemberId(data.member.memberID);
+          setLegacyMemberNo(data.member.legacyMemberNo || '');
+          loadShareData(data.member.memberID);
+        }
+        if (data.numberOfShares) setNumberOfShares(data.numberOfShares);
+        if (data.paymentMode) setPaymentMode(data.paymentMode);
+        if (data.voucher?.narration) setNarration(data.voucher.narration);
+        if (data.voucher?.voucherDate) setTransactionDate(data.voucher.voucherDate.split('T')[0]);
+      }
+    } catch (e) {
+      console.error('Failed to load passing voucher', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDirectPass = async () => {
+    if (!effectiveVoucherId) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/VoucherPosting/Post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([Number(effectiveVoucherId)])
+      });
+      if (res.ok) {
+        alert('व्हाउचर यशस्वीरित्या मंजूर व पास करण्यात आले!');
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert('पासिंग अयशस्वी: ' + (err.message || 'सर्व्हर त्रुटी'));
+      }
+    } catch (e) {
+      alert('सर्व्हर त्रुटी.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!effectiveVoucherId || !rejectReason.trim()) {
+      alert('कृपया नामंजूर करण्याचे कारण प्रविष्ट करा.');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/VoucherPosting/${effectiveVoucherId}?reason=${encodeURIComponent(rejectReason)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        alert('व्हाउचर नामंजूर / रद्द करण्यात आले!');
+        setRejectModalOpen(false);
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert('रद्द करणे अयशस्वी: ' + (err.message || 'सर्व्हर त्रुटी'));
+      }
+    } catch (e) {
+      alert('सर्व्हर त्रुटी.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const fetchPendingMembers = async () => {
     try {
@@ -776,6 +873,43 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
         </div>
       )}
 
+      {/* ⚠️ Checker Mode Notification Banner */}
+      {isPassing && (
+        <div className="mb-3 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/5 border-2 border-amber-500/40 rounded-sm p-3 shadow-xs">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-500 text-slate-950 rounded font-bold text-base">
+                🛡️
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-amber-500 text-slate-950 text-[10px] font-black rounded uppercase tracking-wider">
+                    चेकर मोड (Checker Mode) - भाग भांडवल वाटप
+                  </span>
+                  <span className="text-xs text-amber-700 font-semibold font-mono">
+                    व्हाउचर क्र: {passingVoucherData?.voucher?.voucherNo || effectiveVoucherId}
+                  </span>
+                </div>
+                <h2 className="text-sm font-bold text-slate-900 mt-0.5">
+                  शेअर वाटप पडताळणी व पासिंग (Strict Read-Only Verification)
+                </h2>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  मेकर-चेकर नियमानुसार सर्व माहिती लॉक करण्यात आली आहे. कृपया शेअर्स वाटप, रक्कम व खातेदार माहिती तपासून व्हाउचर मंजूर अथवा नामंजूर करा.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
+              className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 text-xs font-semibold rounded border border-amber-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>पासिंग यादीकडे परत जा</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* 3. MAIN CLEAN SINGLE UNIFIED ALLOTMENT FORM                               */}
       {/* ========================================================================= */}
@@ -784,6 +918,7 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
         className="bg-white p-3.5 sm:p-4 rounded-sm shadow-xs border border-gray-200 space-y-3"
       >
         <form onSubmit={handleAllot} className="space-y-3">
+          <fieldset disabled={isPassing} className="space-y-3">
           
           {/* Section 1: Member Selection & Share Details */}
           <div className="bg-white p-3.5 rounded-sm border border-gray-200 border-t-2 border-primary space-y-2.5">
@@ -816,6 +951,7 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
               <MemberSearchSelect
                 members={members}
                 value={selectedMemberId}
+                isDisabled={isPassing}
                 onChange={(val, selMember) => {
                   if (val) {
                     const sel = selMember || members.find(m => m.memberID === val || m.customerID === val);
@@ -1071,33 +1207,66 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
               </div>
             </div>
           </div>
+          </fieldset>
 
           {/* Form Action Buttons */}
-          <div className="pt-2 flex justify-end gap-2 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={resetForm}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>रद्द करा (Reset)</span>
-            </button>
+          {!isPassing ? (
+            <div className="pt-2 flex justify-end gap-2 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={resetForm}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>रद्द करा (Reset)</span>
+              </button>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-6 py-2 bg-primary hover:opacity-90 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
-            >
-              <Save className="w-4 h-4" />
-              <span>
-                {loading 
-                  ? 'प्रक्रिया सुरू आहे...' 
-                  : (!shareAccount || shareAccount.totalShareCount === 0)
-                  ? '💾 प्रथम शेअर्स वाटप करा व व्हाऊचर तयार करा (Initial Allotment)'
-                  : '➕ अतिरिक्त शेअर्स वाटप करा व व्हाऊचर तयार करा (Allot Additional Shares)'}
-              </span>
-            </button>
-          </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-6 py-2 bg-primary hover:opacity-90 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer transition-all"
+              >
+                <Save className="w-4 h-4" />
+                <span>
+                  {loading 
+                    ? 'प्रक्रिया सुरू आहे...' 
+                    : (!shareAccount || shareAccount.totalShareCount === 0)
+                    ? '💾 प्रथम शेअर्स वाटप करा व व्हाऊचर तयार करा (Initial Allotment)'
+                    : '➕ अतिरिक्त शेअर्स वाटप करा व व्हाऊचर तयार करा (Allot Additional Shares)'}
+                </span>
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 p-3 bg-slate-900 rounded-lg shadow-xl border border-amber-500/30 flex items-center justify-between z-40">
+              <button
+                type="button"
+                onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded border border-slate-600 flex items-center gap-2 cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>↩️ पासिंग यादीवर परत जा</span>
+              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setRejectReason(''); setRejectModalOpen(true); }}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow flex items-center gap-1.5 cursor-pointer"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>❌ नामंजूर / रद्द करा</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDirectPass}
+                  disabled={actionLoading}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded shadow flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>{actionLoading ? 'पास होत आहे...' : '✅ मंजूर व पास करा (Authorize)'}</span>
+                </button>
+              </div>
+            </div>
+          )}
 
         </form>
       </div>
@@ -1784,7 +1953,49 @@ export default function ShareMaster({ initialMemberId, onNavigate }: ShareMaster
                 बंद करा
               </button>
             </div>
+          </div>
+        </div>
+      )}
 
+      {/* Rejection Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-5 border border-slate-200">
+            <h3 className="text-base font-bold text-rose-600 flex items-center gap-2">
+              <XCircle className="w-5 h-5" />
+              व्हाउचर नामंजूर / रद्द करा (Reject Voucher)
+            </h3>
+            <p className="text-xs text-slate-600 mt-1">
+              व्हाउचर क्र: <span className="font-mono font-bold text-slate-900">{passingVoucherData?.voucher?.voucherNo || effectiveVoucherId}</span>
+            </p>
+            <div className="mt-3">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                नामंजूर करण्याचे कारण प्रविष्ट करा (Reason) <span className="text-rose-500">*</span>:
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="उदा. चुकीचे शेअर्स वाटप / अपूर्ण कागदपत्रे..."
+                className="w-full h-24 p-2 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-rose-500 focus:outline-none"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded cursor-pointer"
+              >
+                रद्द करा (Back)
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={actionLoading || !rejectReason.trim()}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow cursor-pointer disabled:opacity-50"
+              >
+                {actionLoading ? 'प्रक्रिया सुरू आहे...' : 'नामंजूर करा (Reject)'}
+              </button>
+            </div>
           </div>
         </div>
       )}

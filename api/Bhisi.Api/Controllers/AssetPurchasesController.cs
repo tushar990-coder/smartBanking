@@ -204,5 +204,56 @@ namespace Bhisi.Api.Controllers
             int count = await _context.Vouchers.CountAsync(v => v.BranchID == branchId && v.VoucherType == voucherType) + 1;
             return $"{branchCode}-{typeCode}-{fy}-{count:D5}";
         }
+
+        // GET: api/AssetPurchases/by-voucher/{voucherId}
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = "व्हाउचर सापडले नाही." });
+            }
+
+            var purchase = await _context.AssetPurchases
+                .Include(p => p.Branch)
+                .Include(p => p.BankLedger)
+                .FirstOrDefaultAsync(p => p.VoucherID == voucherId);
+
+            return Ok(new
+            {
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.TotalAmount
+                },
+                canPass = voucher.Status == "Pending" || voucher.Status == "Draft" || voucher.Status != "Approved",
+                purchase = purchase != null ? new
+                {
+                    purchase.PurchaseID,
+                    purchase.BranchID,
+                    BranchName = purchase.Branch?.BranchName,
+                    purchase.InvoiceNo,
+                    purchase.InvoiceDate,
+                    purchase.SupplierName,
+                    purchase.TotalAmount,
+                    purchase.TaxableAmount,
+                    GSTAmount = purchase.GstAmount,
+                    purchase.PaymentMode,
+                    purchase.BankLedgerID,
+                    BankName = purchase.BankLedger?.LedgerName,
+                    purchase.AssetIdsJson
+                } : null
+            });
+        }
     }
 }

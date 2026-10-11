@@ -300,6 +300,100 @@ namespace Bhisi.Api.Controllers
                 details
             });
         }
+
+        // GET: api/LockerRent/by-voucher/{voucherId}
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = "व्हाउचर सापडले नाही." });
+            }
+
+            var rentPosting = await _context.LockerRentPostings
+                .Include(r => r.Allotment).ThenInclude(a => a!.Locker).ThenInclude(l => l!.LockerType)
+                .Include(r => r.Allotment).ThenInclude(a => a!.Customer)
+                .Include(r => r.Allotment).ThenInclude(a => a!.Member).ThenInclude(m => m!.Customer)
+                .Include(r => r.Allotment).ThenInclude(a => a!.LinkedSavingAccount)
+                .FirstOrDefaultAsync(r => r.VoucherID == voucherId);
+
+            LockerAllotment? allotment = rentPosting?.Allotment;
+
+            if (allotment == null && !string.IsNullOrEmpty(voucher.Narration))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(voucher.Narration, @"(LKR-\d{2}-\d{4})");
+                if (match.Success)
+                {
+                    var accNo = match.Groups[1].Value;
+                    allotment = await _context.LockerAllotments
+                        .Include(a => a.Locker).ThenInclude(l => l!.LockerType)
+                        .Include(a => a.Customer)
+                        .Include(a => a.Member).ThenInclude(m => m!.Customer)
+                        .Include(a => a.LinkedSavingAccount)
+                        .FirstOrDefaultAsync(a => a.LockerAccountNo == accNo);
+                }
+            }
+
+            var memberName = allotment?.Customer != null 
+                ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}".Trim() 
+                : (allotment?.Member?.Customer != null 
+                    ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}".Trim() 
+                    : "Member");
+
+            return Ok(new
+            {
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.TotalAmount
+                },
+                canPass = voucher.Status == "Pending" || voucher.Status == "Draft" || voucher.Status != "Approved",
+                rentPosting = rentPosting != null ? new
+                {
+                    rentPosting.PostingID,
+                    rentPosting.AllotmentID,
+                    rentPosting.FinancialYear,
+                    rentPosting.FromDate,
+                    rentPosting.ToDate,
+                    rentPosting.RentAmount,
+                    rentPosting.GstAmount,
+                    rentPosting.PenaltyAmount,
+                    rentPosting.TotalAmount,
+                    rentPosting.PaymentMode,
+                    rentPosting.PaymentDate,
+                    rentPosting.ReceiptNo,
+                    rentPosting.Remarks
+                } : null,
+                allotment = allotment != null ? new
+                {
+                    allotment.AllotmentID,
+                    allotment.BranchID,
+                    allotment.LockerAccountNo,
+                    allotment.LockerID,
+                    LockerNo = allotment.Locker?.LockerNo,
+                    CabinetNo = allotment.Locker?.CabinetNo,
+                    KeyNo = allotment.Locker?.KeyNo,
+                    TypeName = allotment.Locker?.LockerType?.TypeName,
+                    allotment.CustomerID,
+                    allotment.MemberID,
+                    MemberNo = allotment.Member != null ? (allotment.Member.MemberCode ?? allotment.Member.MemberID.ToString()) : "",
+                    MemberName = memberName,
+                    MemberPhone = allotment.Customer?.MobileNo ?? allotment.Member?.Customer?.MobileNo,
+                    allotment.ExpiryDate,
+                    AnnualRent = allotment.AnnualRent
+                } : null
+            });
+        }
     }
 
     public class RentCollectionDto

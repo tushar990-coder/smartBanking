@@ -1,18 +1,59 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { FileText, Banknote, ChevronRight } from 'lucide-react';
 import LoanApplicationMaster from './LoanApplicationMaster';
 import LoanDisbursementMaster from './LoanDisbursementMaster';
 
-const LoanProcessMaster: React.FC = () => {
+interface LoanProcessMasterProps {
+    onNavigate?: (tab: string, params?: any) => void;
+}
+
+const LoanProcessMaster: React.FC<LoanProcessMasterProps> = ({ onNavigate }) => {
     const [activeTab, setActiveTab] = useState(() => {
         const params = new URLSearchParams(window.location.search);
         const subTab = params.get('subTab');
-        return subTab ? parseInt(subTab, 10) : 1;
+        if (subTab) return parseInt(subTab, 10);
+        if (params.get('passingMode') === 'true' && params.get('voucherId')) return 2;
+        return 1;
     });
     const [draftApplication, setDraftApplication] = useState<any>(null);
     const [editingDisbursement, setEditingDisbursement] = useState<any>(null);
 
+    const queryParams = new URLSearchParams(window.location.search);
+    const voucherIdParam = queryParams.get('voucherId');
+    const isPassingMode = queryParams.get('passingMode') === 'true' && Boolean(voucherIdParam);
+    const [passingDisbursement, setPassingDisbursement] = useState<any>(null);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const subTab = params.get('subTab');
+        if (subTab) {
+            setActiveTab(parseInt(subTab, 10));
+        } else if (params.get('passingMode') === 'true' && params.get('voucherId')) {
+            setActiveTab(2);
+        }
+
+        if (isPassingMode && voucherIdParam) {
+            axios.get(`/api/LoanDisbursements/by-voucher/${voucherIdParam}`)
+                .then(res => {
+                    if (res.data) setPassingDisbursement(res.data);
+                })
+                .catch(err => console.error("LoanProcessMaster failed to load passing disbursement:", err));
+        }
+    }, [isPassingMode, voucherIdParam]);
+
+    const passingApplicationId = 
+        passingDisbursement?.loanAccount?.loanApplicationID || 
+        passingDisbursement?.loanAccount?.loanApplicationId || 
+        passingDisbursement?.loanAccount?.LoanApplicationID ||
+        passingDisbursement?.loanAccount?.loanApplication?.loanApplicationID ||
+        passingDisbursement?.loanAccount?.loanApplication?.loanApplicationId;
+
     const handleNext = (appData: any) => {
+        if (isPassingMode) {
+            setActiveTab(2);
+            return;
+        }
         setDraftApplication({...appData});
         setActiveTab(2);
     };
@@ -36,6 +77,11 @@ const LoanProcessMaster: React.FC = () => {
                 >
                     <FileText size={15} className={activeTab === 1 ? "text-primary" : "text-gray-400"} />
                     <span>१. कर्ज मागणी / अर्ज (Loan Application)</span>
+                    {isPassingMode && (
+                        <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[9.5px] px-1.5 py-0.2 rounded-full font-bold">
+                            फक्त वाचन (Read-Only)
+                        </span>
+                    )}
                 </button>
                 <button 
                     onClick={() => setActiveTab(2)}
@@ -47,6 +93,11 @@ const LoanProcessMaster: React.FC = () => {
                 >
                     <Banknote size={15} className={activeTab === 2 ? "text-primary" : "text-gray-400"} />
                     <span>२. कर्ज वितरण / वाटप (Loan Disbursement)</span>
+                    {isPassingMode && (
+                        <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-[9.5px] px-1.5 py-0.2 rounded-full font-bold">
+                            पासिंग मोड (Passing)
+                        </span>
+                    )}
                 </button>
             </div>
             
@@ -54,7 +105,9 @@ const LoanProcessMaster: React.FC = () => {
                 <div className={`${activeTab === 1 ? 'block' : 'hidden'}`}>
                     <LoanApplicationMaster 
                         onNext={handleNext} 
-                        editingApplicationId={editingDisbursement?.loanAccount?.loanApplicationID} 
+                        editingApplicationId={passingApplicationId || editingDisbursement?.loanAccount?.loanApplicationID}
+                        isReadOnly={isPassingMode}
+                        onNavigate={onNavigate}
                     />
                 </div>
                 <div className={`${activeTab === 2 ? 'block' : 'hidden'}`}>
@@ -63,6 +116,7 @@ const LoanProcessMaster: React.FC = () => {
                         editingDisbursement={editingDisbursement}
                         onRequestEditApplication={handleRequestEditApplication}
                         onSaveSuccess={() => { setActiveTab(1); setDraftApplication(null); setEditingDisbursement(null); }}
+                        onNavigate={onNavigate}
                     />
                 </div>
             </div>

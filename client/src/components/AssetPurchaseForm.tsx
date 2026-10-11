@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
 
 interface Category {
   categoryID: number;
@@ -12,7 +13,22 @@ interface Ledger {
   ledgerName: string;
 }
 
-const AssetPurchaseForm: React.FC = () => {
+export interface AssetPurchaseFormProps {
+  onNavigate?: (tab: string, params?: any) => void;
+  voucherId?: string | number | null;
+  isPassingMode?: boolean;
+}
+
+const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, voucherId, isPassingMode }) => {
+  const queryParams = new URLSearchParams(window.location.search);
+  const effectiveVoucherId = voucherId || queryParams.get('voucherId');
+  const isPassing = isPassingMode || queryParams.get('passingMode') === 'true';
+
+  const [passingVoucherData, setPassingVoucherData] = useState<any | null>(null);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -44,6 +60,112 @@ const AssetPurchaseForm: React.FC = () => {
     debitLedgerID: 0,
     creditLedgerID: 0,
   });
+
+  useEffect(() => {
+    if (isPassing && effectiveVoucherId) {
+      loadPassingPurchase(effectiveVoucherId);
+    }
+  }, [isPassing, effectiveVoucherId]);
+
+  const loadPassingPurchase = async (vId: string | number) => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/AssetPurchases/by-voucher/${vId}`);
+      if (res.data) {
+        const data = res.data;
+        setPassingVoucherData(data);
+        if (data.purchase) {
+          const p = data.purchase;
+          setFormData(prev => ({
+            ...prev,
+            purchase: {
+              ...prev.purchase,
+              branchID: p.branchID || 1,
+              supplierName: p.supplierName || '',
+              invoiceNo: p.invoiceNo || '',
+              invoiceDate: p.invoiceDate ? p.invoiceDate.split('T')[0] : new Date().toISOString().split('T')[0],
+              taxableAmount: p.taxableAmount || 0,
+              gstAmount: p.gstAmount || p.GSTAmount || 0,
+              totalAmount: p.totalAmount || data.voucher?.totalAmount || 0,
+              paymentMode: p.paymentMode || 'Bank',
+              bankLedgerID: p.bankLedgerID || 0
+            },
+            postVoucher: true
+          }));
+        } else if (data.voucher) {
+          setFormData(prev => ({
+            ...prev,
+            purchase: {
+              ...prev.purchase,
+              totalAmount: data.voucher.totalAmount || 0,
+              taxableAmount: data.voucher.totalAmount || 0,
+              invoiceDate: data.voucher.voucherDate ? data.voucher.voucherDate.split('T')[0] : new Date().toISOString().split('T')[0]
+            }
+          }));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load passing asset purchase', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDirectPass = async () => {
+    if (!effectiveVoucherId) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/VoucherPosting/Post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([Number(effectiveVoucherId)])
+      });
+      if (res.ok) {
+        alert('मालमत्ता खरेदी व्हाउचर यशस्वीरित्या पास (मंजूर) करण्यात आले!');
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert('पासिंग अयशस्वी: ' + (err.message || 'सर्व्हर त्रुटी'));
+      }
+    } catch (e) {
+      alert('सर्व्हर त्रुटी.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!effectiveVoucherId || !rejectReason.trim()) {
+      alert('कृपया नामंजूर करण्याचे कारण प्रविष्ट करा.');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/VoucherPosting/${effectiveVoucherId}?reason=${encodeURIComponent(rejectReason)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        alert('मालमत्ता खरेदी व्हाउचर नामंजूर / रद्द करण्यात आले!');
+        setRejectModalOpen(false);
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert('रद्द करणे अयशस्वी: ' + (err.message || 'सर्व्हर त्रुटी'));
+      }
+    } catch (e) {
+      alert('सर्व्हर त्रुटी.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchCategories();
@@ -182,13 +304,38 @@ const AssetPurchaseForm: React.FC = () => {
   };
 
   return (
-    <div className="p-3 max-w-4xl mx-auto">
+    <div className="p-3 max-w-4xl mx-auto space-y-3">
+      {/* ⚠️ Amber Checker Alert Banner */}
+      {isPassing && (
+        <div className="p-3 bg-amber-500/10 border-2 border-amber-500/80 rounded-lg flex items-center justify-between text-amber-900 animate-pulse">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <div className="font-bold text-xs uppercase tracking-wider text-amber-950">
+                व्हाउचर तपासणी व मंजुरी मोड (Voucher Passing / Checker Mode)
+              </div>
+              <div className="text-[10px] text-amber-800">
+                व्हाउचर क्र: <span className="font-mono font-bold text-amber-950">{passingVoucherData?.voucher?.voucherNo || effectiveVoucherId}</span> | 
+                रक्कम: <span className="font-mono font-bold text-amber-950">₹{passingVoucherData?.voucher?.totalAmount ?? formData.purchase.totalAmount}</span> | 
+                तारीख: <span className="font-mono font-bold text-amber-950">{passingVoucherData?.voucher?.voucherDate ? new Date(passingVoucherData.voucher.voucherDate).toLocaleDateString('en-GB') : '-'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="px-2.5 py-1 rounded text-[10px] font-bold uppercase bg-amber-200 text-amber-900 border border-amber-300">
+              कडक वाचन मोड (Read-Only Lockdown)
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded shadow-sm border border-gray-200">
         <div className="bg-primary text-white px-4 py-2 rounded-t flex items-center justify-between">
           <h2 className="text-sm font-bold">🛒 नवीन मालमत्ता खरेदी नोंद (New Asset Purchase Entry)</h2>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <fieldset disabled={isPassing} className="space-y-4">
           {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-sm text-xs font-semibold">{error}</div>}
           {success && <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-sm text-xs font-semibold">{success}</div>}
 
@@ -335,18 +482,96 @@ const AssetPurchaseForm: React.FC = () => {
               )}
             </div>
           </div>
+          </fieldset>
 
-          <div className="flex gap-2 pt-2 border-t justify-end">
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-sm text-xs font-semibold shadow-sm"
-            >
-              {loading ? 'जतन होत आहे...' : '💾 खरेदी नोंदवा (Record Asset Purchase)'}
-            </button>
+          <div className="pt-2 border-t">
+            {!isPassing ? (
+              <div className="flex gap-2 justify-end">
+                <button 
+                  type="submit" 
+                  disabled={loading}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-sm text-xs font-semibold shadow-sm cursor-pointer"
+                >
+                  {loading ? 'जतन होत आहे...' : '💾 खरेदी नोंदवा (Record Asset Purchase)'}
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 bg-slate-900 rounded-lg shadow-xl border border-amber-500/30 flex items-center justify-between z-40">
+                <button
+                  type="button"
+                  onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded border border-slate-600 flex items-center gap-2 cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>↩️ पासिंग यादीवर परत जा</span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setRejectReason(''); setRejectModalOpen(true); }}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    <span>❌ नामंजूर / रद्द करा</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDirectPass}
+                    disabled={actionLoading}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded shadow flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    <span>{actionLoading ? 'पास होत आहे...' : '✅ मंजूर व पास करा (Authorize)'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </form>
       </div>
+
+      {/* Rejection Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-5 border border-slate-200">
+            <h3 className="text-base font-bold text-rose-600 flex items-center gap-2">
+              <XCircle className="w-5 h-5" />
+              व्हाउचर नामंजूर / रद्द करा (Reject Voucher)
+            </h3>
+            <p className="text-xs text-slate-600 mt-1">
+              व्हाउचर क्र: <span className="font-mono font-bold text-slate-900">{passingVoucherData?.voucher?.voucherNo || effectiveVoucherId}</span>
+            </p>
+            <div className="mt-3">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                नामंजूर करण्याचे कारण प्रविष्ट करा (Reason) <span className="text-rose-500">*</span>:
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="उदा. चुकीची मालमत्ता नोंद / इनव्हॉइस त्रुटी..."
+                className="w-full h-24 p-2 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-rose-500 focus:outline-none"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded cursor-pointer"
+              >
+                रद्द करा (Back)
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={actionLoading || !rejectReason.trim()}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow cursor-pointer disabled:opacity-50"
+              >
+                {actionLoading ? 'प्रक्रिया सुरू आहे...' : 'नामंजूर करा (Reject)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

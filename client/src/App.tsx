@@ -67,6 +67,7 @@ import Daybook from './components/Daybook';
 import DaybookSummary from './components/DaybookSummary';
 import BalanceSheet from './components/BalanceSheet';
 import BalanceSheetFormN from './components/BalanceSheetFormN';
+import SwanidhiReport from './components/SwanidhiReport';
 import GeneralLedger from './components/GeneralLedger';
 import CashBookReport from './components/CashBookReport';
 import VoucherPrint from './components/VoucherPrint';
@@ -383,6 +384,7 @@ function App() {
     'profit-loss': '/reports/profit-loss',
     'balance-sheet': '/reports/balance-sheet',
     'balance-sheet-form-n': '/reports/balance-sheet-form-n',
+    'swanidhi-report': '/reports/swanidhi',
     'general-ledger': '/reports/general-ledger',
     'member-balance-report': '/reports/member-balance',
     'loan-disbursement-register': '/reports/loan-disbursement',
@@ -648,7 +650,7 @@ function App() {
         
         {/* Vouchers & Accounting */}
         {activeTab === 'vouchers' && <VoucherDashboard onNavigate={handleNavigate} />}
-        {activeTab === 'voucher' && <VoucherMaster />}
+        {activeTab === 'voucher' && <VoucherMaster onNavigate={handleNavigate} />}
         {(activeTab === 'voucher-posting' || activeTab === 'voucher-approval') && <VoucherPosting onNavigate={handleNavigate} />}
 
         {/* Cash Management & Cashier Window */}
@@ -665,16 +667,16 @@ function App() {
         {activeTab === 'member-opening' && <MemberOpeningBalance />}
         {activeTab === 'member-closure' && <MemberClosure />}
         {activeTab === 'share-master' && <ShareMaster initialMemberId={lastMemberId} onNavigate={handleNavigate} />}
-        {activeTab === 'share-transfer' && <ShareTransferMaster />}
-        {activeTab === 'share-withdrawal' && <ShareWithdrawal />}
+        {activeTab === 'share-transfer' && <ShareTransferMaster onNavigate={handleNavigate} />}
+        {activeTab === 'share-withdrawal' && <ShareWithdrawal onNavigate={handleNavigate} />}
 
         {/* Loan */}
         {activeTab === 'loan' && <LoanDashboard onNavigate={handleNavigate} />}
-        {activeTab === 'loan-process' && <LoanProcessMaster />}
+        {activeTab === 'loan-process' && <LoanProcessMaster onNavigate={handleNavigate} />}
         {activeTab === 'gold-loan-details' && <GoldLoanDetails />}
         {activeTab === 'employee-bank' && <EmployeeBankDetails onNavigate={handleNavigate} />}
         {activeTab === 'employer-master' && <EmployerMaster />}
-        {activeTab === 'loan-collection' && <LoanCollectionMaster />}
+        {activeTab === 'loan-collection' && <LoanCollectionMaster onNavigate={handleNavigate} />}
         {activeTab === 'loan-interest-posting' && <LoanInterestPostingMaster />}
         {activeTab === 'loan-documents' && <LoanDocumentsUpload />}
         {(activeTab === 'loan-ob' || activeTab === 'loan-opening') && <SettingsDashboard defaultCategory="opening-balance" defaultSub="loan-ob" />}
@@ -692,18 +694,18 @@ function App() {
         {/* Saving Module */}
         {activeTab === 'saving' && <SavingDashboard onNavigate={handleNavigate} />}
         {activeTab === 'saving-account' && <SavingAccountMaster />}
-        {activeTab === 'saving-transaction' && <SavingTransactionEntry />}
+        {activeTab === 'saving-transaction' && <SavingTransactionEntry onNavigate={handleNavigate} />}
         {activeTab === 'saving-setting' && <SavingInterestSettingMaster />}
         {activeTab === 'saving-posting' && <SavingInterestPostingMaster />}
-        {activeTab === 'saving-closing' && <SavingAccountClosingMaster />}
+        {activeTab === 'saving-closing' && <SavingAccountClosingMaster onNavigate={handleNavigate} />}
         {activeTab === 'saving-passbook' && <SavingPassbookMaster />}
 
         {/* Fixed Deposit Module */}
         {activeTab === 'fd' && <FdRdDashboard onNavigate={handleNavigate} />}
         {activeTab === 'fd-scheme' && <SettingsDashboard defaultCategory="schemes" defaultSub="fd-scheme-sub" />}
         {activeTab === 'fd-migrate' && <SettingsDashboard defaultCategory="opening-balance" defaultSub="fd-ob" />}
-        {activeTab === 'fd-account' && <FdAccountOpening />}
-        {activeTab === 'fd-withdrawal' && <FdWithdrawalMaturity />}
+        {activeTab === 'fd-account' && <FdAccountOpening onNavigate={handleNavigate} />}
+        {activeTab === 'fd-withdrawal' && <FdWithdrawalMaturity onNavigate={handleNavigate} />}
         {activeTab === 'fd-accrual' && <FdAccrualPosting />}
         {activeTab === 'fd-reports' && <FdReports onNavigate={handleNavigate} />}
         {activeTab === 'fd-customer-summary' && <FdCustomerSummaryReport onNavigate={handleNavigate} />}
@@ -712,21 +714,21 @@ function App() {
         {activeTab === 'pigmy' && <PigmyDashboard onNavigate={handleNavigate} />}
         {activeTab === 'pigmy-scheme' && <PigmySchemeMaster />}
         {activeTab === 'pigmy-agent' && <PigmyAgentMaster />}
-        {activeTab === 'pigmy-account' && <PigmyAccountOpening />}
-        {(activeTab === 'pigmy-collection' || activeTab === 'pigmy-collect') && <PigmyCollectionMaster />}
-        {activeTab === 'pigmy-daybook' && <AgentDayBookMaster />}
+        {activeTab === 'pigmy-account' && <PigmyAccountOpening onNavigate={handleNavigate} />}
+        {(activeTab === 'pigmy-collection' || activeTab === 'pigmy-collect') && <PigmyCollectionMaster onNavigate={handleNavigate} />}
+        {activeTab === 'pigmy-daybook' && <AgentDayBookMaster onNavigate={handleNavigate} />}
         {activeTab === 'pigmy-commission' && <AgentCommissionMaster />}
         {activeTab === 'pigmy-interest' && <PigmyInterestPosting />}
-        {activeTab === 'pigmy-closure' && <PigmyClosureMaster />}
+        {activeTab === 'pigmy-closure' && <PigmyClosureMaster onNavigate={handleNavigate} />}
         {activeTab.startsWith('pigmy-reports') && <PigmyReports />}
 
         {/* Recurring Deposit Module */}
         {(activeTab === 'rd' || activeTab === 'rd-dashboard') && <RdDashboard onNavigate={handleNavigate} />}
         {activeTab === 'rd-scheme' && <SettingsDashboard defaultCategory="schemes" defaultSub="rd-scheme-sub" />}
         {activeTab === 'rd-migrate' && <RdOpeningBalanceMigration />}
-        {activeTab === 'rd-account' && <RdAccountOpening />}
-        {(activeTab === 'rd-collect' || activeTab === 'rd-collection') && <RdInstallmentCollection />}
-        {activeTab === 'rd-withdrawal' && <RdWithdrawalMaturity />}
+        {activeTab === 'rd-account' && <RdAccountOpening onNavigate={handleNavigate} />}
+        {(activeTab === 'rd-collect' || activeTab === 'rd-collection') && <RdInstallmentCollection onNavigate={handleNavigate} />}
+        {activeTab === 'rd-withdrawal' && <RdWithdrawalMaturity onNavigate={handleNavigate} />}
         {activeTab === 'rd-accrual' && <RdAccrualPosting />}
         {activeTab === 'rd-reports' && <RdReports />}
 
@@ -741,17 +743,17 @@ function App() {
         {/* Asset Management Module */}
         {(activeTab === 'assets' || activeTab === 'asset-category') && <AssetCategoryMaster />}
         {activeTab === 'asset-master' && <AssetMaster />}
-        {activeTab === 'asset-purchase' && <AssetPurchaseForm />}
+        {activeTab === 'asset-purchase' && <AssetPurchaseForm onNavigate={handleNavigate} />}
         {activeTab === 'asset-reports' && <AssetReports />}
         
         {/* Locker Management Module Views */}
         {(activeTab === 'locker' || activeTab === 'locker-dashboard') && <LockerDashboard onNavigate={handleNavigate} />}
         {activeTab === 'locker-types' && <LockerTypeMaster />}
         {activeTab === 'locker-master' && <LockerMaster onNavigateToAllotment={(lid) => handleNavigate('locker-allotment', { lockerId: lid })} />}
-        {activeTab === 'locker-allotment' && <LockerAllotmentMaster initialLockerId={Number(new URLSearchParams(window.location.search).get('lockerId')) || undefined} />}
+        {activeTab === 'locker-allotment' && <LockerAllotmentMaster onNavigate={handleNavigate} initialLockerId={Number(new URLSearchParams(window.location.search).get('lockerId')) || undefined} />}
         {activeTab === 'locker-visit-register' && <LockerVisitRegister />}
-        {activeTab === 'locker-rent-renewal' && <LockerRentRenewal />}
-        {activeTab === 'locker-surrender' && <LockerSurrenderMaster />}
+        {activeTab === 'locker-rent-renewal' && <LockerRentRenewal onNavigate={handleNavigate} />}
+        {activeTab === 'locker-surrender' && <LockerSurrenderMaster onNavigate={handleNavigate} />}
         {activeTab === 'locker-reports' && <LockerReports />}
 
         {/* Legal Recovery (Sec 101 / 91) Module */}
@@ -768,6 +770,7 @@ function App() {
         {activeTab === 'profit-loss' && <ProfitAndLoss />}
         {activeTab === 'balance-sheet' && <BalanceSheet />}
         {activeTab === 'balance-sheet-form-n' && <BalanceSheetFormN />}
+        {activeTab === 'swanidhi-report' && <SwanidhiReport />}
         {activeTab === 'general-ledger' && <GeneralLedger />}
         {activeTab === 'voucher-batch-print' && <VoucherBatchPrint />}
         {activeTab === 'member-balance-report' && <MemberBalanceReport />}

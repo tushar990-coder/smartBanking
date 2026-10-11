@@ -26,7 +26,23 @@ interface DayBookSummary {
   recentRemittances: RemittanceItem[];
 }
 
-const AgentDayBookMaster: React.FC = () => {
+interface AgentDayBookMasterProps {
+  voucherId?: number;
+  isPassingMode?: boolean;
+  onNavigate?: (tab: string, subTab?: string) => void;
+}
+
+const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: propVoucherId, isPassingMode: propIsPassingMode, onNavigate }) => {
+  const queryParams = new URLSearchParams(window.location.search);
+  const voucherId = propVoucherId || (queryParams.get('voucherId') ? parseInt(queryParams.get('voucherId')!, 10) : undefined);
+  const isPassingMode = propIsPassingMode ?? (queryParams.get('passingMode') === 'true');
+
+  const [passingVoucherData, setPassingVoucherData] = useState<any>(null);
+  const [passingLoading, setPassingLoading] = useState<boolean>(false);
+  const [passingActionLoading, setPassingActionLoading] = useState<boolean>(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState<boolean>(false);
+  const [rejectReason, setRejectReason] = useState<string>('');
+
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('');
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -39,6 +55,106 @@ const AgentDayBookMaster: React.FC = () => {
   const [narration, setNarration] = useState('');
   const [message, setMessage] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<RemittanceItem | null>(null);
+
+  const loadPassingVoucher = async (vId: number) => {
+    setPassingLoading(true);
+    try {
+      const res = await fetch(`/api/AgentDayBook/by-voucher/${vId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPassingVoucherData(data.voucher);
+
+        if (data.agent) {
+          setSelectedAgentId(data.agent.pigmyAgentID);
+        }
+        if (data.deposit) {
+          setDepositAmount(data.deposit.amount);
+          setPaymentMode(data.deposit.paymentMode || 'CASH');
+          if (data.deposit.depositDate) {
+            setSelectedDate(data.deposit.depositDate.split('T')[0]);
+          }
+          setNarration(data.deposit.narration || '');
+        }
+        if (data.denominations) {
+          setDenominations({
+            500: data.denominations.count500 || 0,
+            200: data.denominations.count200 || 0,
+            100: data.denominations.count100 || 0,
+            50: data.denominations.count50 || 0,
+            20: data.denominations.count20 || 0,
+            10: data.denominations.count10 || 0,
+            5: data.denominations.count5 || 0,
+            coins: data.denominations.countCoins || 0
+          });
+        }
+      } else {
+        alert('व्हाउचर माहिती लोड करताना त्रुटी आली.');
+      }
+    } catch (err: any) {
+      console.error('Error loading Agent Daybook voucher:', err);
+      alert('व्हाउचर लोड करताना त्रुटी: ' + err.message);
+    } finally {
+      setPassingLoading(false);
+    }
+  };
+
+  const handlePassVoucher = async () => {
+    if (!voucherId) return;
+    if (!window.confirm('आपण खात्रीपूर्वक हे एजंट भरणा व्हाउचर मंजूर व पास करू इच्छिता?')) return;
+    setPassingActionLoading(true);
+    try {
+      const res = await fetch('/api/VoucherPosting/Post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voucherIds: [voucherId], approvedBy: 1 })
+      });
+      if (res.ok) {
+        alert('व्हाउचर यशस्वीरीत्या मंजूर व पास करण्यात आले!');
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const errText = await res.text();
+        alert('व्हाउचर पास करताना त्रुटी: ' + errText);
+      }
+    } catch (err: any) {
+      alert('व्हाउचर पास करताना नेटवर्क त्रुटी: ' + err.message);
+    } finally {
+      setPassingActionLoading(false);
+    }
+  };
+
+  const handleRejectVoucher = async () => {
+    if (!voucherId) return;
+    if (!rejectReason.trim()) {
+      alert('कृपया नामंजूर / रद्द करण्याचे कारण नमूद करा.');
+      return;
+    }
+    setPassingActionLoading(true);
+    try {
+      const res = await fetch(`/api/VoucherPosting/${voucherId}?reason=${encodeURIComponent(rejectReason)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        alert('व्हाउचर यशस्वीरित्या नामंजूर / रद्द करण्यात आले!');
+        setRejectModalOpen(false);
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const errText = await res.text();
+        alert('व्हाउचर रद्द करताना त्रुटी: ' + errText);
+      }
+    } catch (err: any) {
+      alert('व्हाउचर रद्द करताना नेटवर्क त्रुटी: ' + err.message);
+    } finally {
+      setPassingActionLoading(false);
+    }
+  };
 
   // Cash Denominations State
   const [showDenomGrid, setShowDenomGrid] = useState<boolean>(true);
@@ -107,6 +223,12 @@ const AgentDayBookMaster: React.FC = () => {
       fetchSummary();
     }
   }, [selectedAgentId, selectedDate]);
+
+  useEffect(() => {
+    if (voucherId) {
+      loadPassingVoucher(voucherId);
+    }
+  }, [voucherId]);
 
   const fetchSummary = async () => {
     if (!selectedAgentId || !selectedDate) return;
@@ -192,6 +314,32 @@ const AgentDayBookMaster: React.FC = () => {
 
   return (
     <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
+      {/* Passing Mode Banner */}
+      {isPassingMode && (
+        <div className="bg-amber-500 text-white p-3 rounded-sm shadow flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <p className="font-bold text-sm">व्हाउचर तपासणी व पासिंग मोड (Checker Inspection Mode)</p>
+              <p className="text-xs text-amber-100">
+                व्हाउचर क्र: <span className="font-mono font-bold text-white">{passingVoucherData?.voucherNo || voucherId}</span> | 
+                रक्कम: <span className="font-bold text-white">₹{passingVoucherData?.totalAmount?.toLocaleString('en-IN') || depositAmount}</span> | 
+                स्थिती: <span className="font-bold text-white">{passingVoucherData?.status || 'तपासणीसाठी प्रलंबित'}</span>
+                {passingVoucherData?.narration && ` | तपशील: ${passingVoucherData.narration}`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting')}
+              className="px-3 py-1 bg-white text-amber-800 text-xs font-bold rounded shadow hover:bg-amber-50"
+            >
+              ↩️ पासिंग यादीवर परत जा
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* Outer Container matching Standard ERP Theme */}
       <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden flex flex-col">
@@ -201,6 +349,7 @@ const AgentDayBookMaster: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold tracking-wide flex items-center gap-1.5">
               <span>📖 एजंट डे बुक (Agent Day Book - Cash Remittance)</span>
+              {isPassingMode && <span className="ml-2 text-xs font-normal text-amber-200 bg-amber-700/50 px-2 py-0.5 rounded border border-amber-400/40">(फक्त वाचन मोड)</span>}
             </h2>
             <p className="text-[10px] text-blue-100 font-normal">एजंट दैनंदिन संकलन ताळमेळ, रोख भरणा, पावती जनरेशन आणि शिल्लक तपासणी</p>
           </div>
@@ -287,6 +436,7 @@ const AgentDayBookMaster: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         
         {/* Receive Cash Form */}
+        <fieldset disabled={isPassingMode} className="contents">
         <div className="bg-white p-3 rounded-sm shadow-sm border border-gray-200 h-fit">
           <div className="text-[12px] font-bold text-primary border-b border-gray-200 pb-1 mb-2.5 flex justify-between items-center">
             <span>एजंट रोख रक्कम भरणा नोंद (Receive Remittance)</span>
@@ -419,14 +569,17 @@ const AgentDayBookMaster: React.FC = () => {
             />
           </div>
 
-          <button
-            className="w-full bg-primary hover:bg-[#004a75] text-white px-3 py-1.5 rounded-sm font-bold shadow-sm transition-colors text-xs disabled:opacity-50"
-            disabled={!summary || summary.closingBalance <= 0 || !depositAmount}
-            onClick={handleDeposit}
-          >
-            रक्कम जमा करा व व्हाउचर जनरेट करा (Receive & Create Voucher)
-          </button>
+          {!isPassingMode && (
+            <button
+              className="w-full bg-primary hover:bg-[#004a75] text-white px-3 py-1.5 rounded-sm font-bold shadow-sm transition-colors text-xs disabled:opacity-50"
+              disabled={!summary || summary.closingBalance <= 0 || !depositAmount}
+              onClick={handleDeposit}
+            >
+              रक्कम जमा करा व व्हाउचर जनरेट करा (Receive & Create Voucher)
+            </button>
+          )}
         </div>
+        </fieldset>
 
         {/* Remittance History Sheet */}
         <div className="md:col-span-2 bg-white p-3 rounded-sm shadow-sm border border-gray-200">
@@ -497,6 +650,8 @@ const AgentDayBookMaster: React.FC = () => {
         </div>
 
       </div>
+    </div>
+  </div>
 
       {/* Printable Cash Remittance Receipt Modal */}
       {selectedReceipt && (
@@ -574,10 +729,75 @@ const AgentDayBookMaster: React.FC = () => {
         </div>
       )}
 
+      {/* Passing Mode Actions Bar */}
+      {isPassingMode && (
+        <div className="bg-white p-4 rounded-sm shadow-sm border border-gray-200 flex justify-between items-center">
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting')}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-750 font-bold rounded text-xs border border-gray-300 transition"
+          >
+            ↩️ पासिंग यादीवर परत जा (Back to Queue)
+          </button>
+          <div className="flex space-x-3">
+            <button
+              type="button"
+              disabled={passingActionLoading}
+              onClick={() => setRejectModalOpen(true)}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded text-xs shadow transition disabled:opacity-50"
+            >
+              ❌ नामंजूर / रद्द करा (Reject Voucher)
+            </button>
+            <button
+              type="button"
+              disabled={passingActionLoading}
+              onClick={handlePassVoucher}
+              className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs shadow transition disabled:opacity-50"
+            >
+              {passingActionLoading ? 'पास करत आहे...' : '✅ मंजूर व पास करा (Approve & Pass)'}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Reject Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-md max-w-md w-full p-4 space-y-3 shadow-xl">
+            <h3 className="text-sm font-bold text-red-600">व्हाउचर नामंजूर / रद्द करा</h3>
+            <p className="text-xs text-gray-600">
+              कृपया हे व्हाउचर का नामंजूर किंवा रद्द करत आहात याचे स्पष्ट कारण लिहा (उदा. रोख भरणा तफावत, चुकीचा एजंट इ.):
+            </p>
+            <textarea
+              className="w-full border border-gray-300 rounded p-2 text-xs focus:ring-1 focus:ring-red-500"
+              rows={3}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="नामंजूरीचे कारण नमूद करा..."
+            />
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="px-3 py-1.5 border border-gray-300 rounded text-xs font-semibold hover:bg-gray-50"
+              >
+                रद्द करा (Cancel)
+              </button>
+              <button
+                type="button"
+                disabled={passingActionLoading || !rejectReason.trim()}
+                onClick={handleRejectVoucher}
+                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold transition disabled:opacity-50"
+              >
+                {passingActionLoading ? 'प्रक्रिया सुरू...' : 'पुष्टी करा व रद्द करा'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default AgentDayBookMaster;
+

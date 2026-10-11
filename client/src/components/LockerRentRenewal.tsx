@@ -12,7 +12,9 @@ import {
   Wallet, 
   AlertTriangle, 
   X, 
-  Save 
+  Save,
+  ArrowLeft,
+  XCircle
 } from 'lucide-react';
 
 interface PendingRenewal {
@@ -42,7 +44,22 @@ interface PendingRenewal {
   savingsBalance: number;
 }
 
-const LockerRentRenewal: React.FC = () => {
+export interface LockerRentRenewalProps {
+  onNavigate?: (tab: string, params?: any) => void;
+  voucherId?: string | number | null;
+  isPassingMode?: boolean;
+}
+
+const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, voucherId, isPassingMode }) => {
+  const queryParams = new URLSearchParams(window.location.search);
+  const effectiveVoucherId = voucherId || queryParams.get('voucherId');
+  const isPassing = isPassingMode || queryParams.get('passingMode') === 'true';
+
+  const [passingVoucherData, setPassingVoucherData] = useState<any | null>(null);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+
   const [renewals, setRenewals] = useState<PendingRenewal[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -61,6 +78,120 @@ const LockerRentRenewal: React.FC = () => {
     totalAmount: 0,
     remarks: ''
   });
+
+  useEffect(() => {
+    if (isPassing && effectiveVoucherId) {
+      loadPassingRenewal(effectiveVoucherId);
+    }
+  }, [isPassing, effectiveVoucherId]);
+
+  const loadPassingRenewal = async (vId: string | number) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/LockerRent/by-voucher/${vId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPassingVoucherData(data);
+        if (data.allotment) {
+          const a = data.allotment;
+          const rp = data.rentPosting;
+          setSelectedAllotment({
+            allotmentID: a.allotmentID,
+            branchID: a.branchID || 1,
+            lockerAccountNo: a.lockerAccountNo,
+            lockerID: a.lockerID,
+            lockerNo: a.lockerNo,
+            cabinetNo: a.cabinetNo,
+            keyNo: a.keyNo,
+            typeName: a.typeName,
+            memberID: a.memberID || 0,
+            memberNo: a.memberNo || '',
+            memberName: a.memberName || '',
+            memberPhone: a.memberPhone || '',
+            expiryDate: a.expiryDate || '',
+            isOverdue: false,
+            overdueDays: 0,
+            overdueMonths: 0,
+            baseRent: rp ? rp.rentAmount : (a.annualRent || 0),
+            lateFee: rp ? rp.penaltyAmount : 0,
+            gstAmount: rp ? rp.gstAmount : 0,
+            totalPayable: rp ? rp.totalAmount : (data.voucher?.totalAmount || 0),
+            isAutoDebitEnabled: false,
+            savingsBalance: 0
+          });
+          setPayData({
+            paymentDate: rp?.paymentDate ? rp.paymentDate.split('T')[0] : (data.voucher?.voucherDate ? data.voucher.voucherDate.split('T')[0] : new Date().toISOString().split('T')[0]),
+            paymentMode: rp?.paymentMode || 'Cash',
+            rentAmount: rp ? rp.rentAmount : (data.voucher?.totalAmount || 0),
+            penaltyAmount: rp ? rp.penaltyAmount : 0,
+            gstAmount: rp ? rp.gstAmount : 0,
+            totalAmount: rp ? rp.totalAmount : (data.voucher?.totalAmount || 0),
+            remarks: rp?.remarks || data.voucher?.narration || 'वार्षिक लॉकर भाडे नूतनीकरण'
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load passing renewal', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDirectPass = async () => {
+    if (!effectiveVoucherId) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/VoucherPosting/Post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([Number(effectiveVoucherId)])
+      });
+      if (res.ok) {
+        alert('लॉकर भाडे नूतनीकरण व्हाउचर यशस्वीरित्या पास (मंजूर) करण्यात आले!');
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert('पासिंग अयशस्वी: ' + (err.message || 'सर्व्हर त्रुटी'));
+      }
+    } catch (e) {
+      alert('सर्व्हर त्रुटी.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!effectiveVoucherId || !rejectReason.trim()) {
+      alert('कृपया नामंजूर करण्याचे कारण प्रविष्ट करा.');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/VoucherPosting/${effectiveVoucherId}?reason=${encodeURIComponent(rejectReason)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        alert('लॉकर भाडे नूतनीकरण व्हाउचर नामंजूर / रद्द करण्यात आले!');
+        setRejectModalOpen(false);
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert('रद्द करणे अयशस्वी: ' + (err.message || 'सर्व्हर त्रुटी'));
+      }
+    } catch (e) {
+      alert('सर्व्हर त्रुटी.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // Batch Auto-Debit Result Modal
   const [batchResult, setBatchResult] = useState<{
@@ -227,6 +358,149 @@ const LockerRentRenewal: React.FC = () => {
         </div>
       )}
 
+      {/* ⚠️ Amber Checker Alert Banner */}
+      {isPassing && (
+        <div className="p-3 bg-amber-500/10 border-2 border-amber-500/80 rounded-lg flex items-center justify-between text-amber-900 animate-pulse">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <div className="font-bold text-xs uppercase tracking-wider text-amber-950">
+                व्हाउचर तपासणी व मंजुरी मोड (Voucher Passing / Checker Mode)
+              </div>
+              <div className="text-[10px] text-amber-800">
+                व्हाउचर क्र: <span className="font-mono font-bold text-amber-950">{passingVoucherData?.voucher?.voucherNo || effectiveVoucherId}</span> | 
+                रक्कम: <span className="font-mono font-bold text-amber-950">₹{passingVoucherData?.voucher?.totalAmount ?? payData.totalAmount}</span> | 
+                तारीख: <span className="font-mono font-bold text-amber-950">{passingVoucherData?.voucher?.voucherDate ? new Date(passingVoucherData.voucher.voucherDate).toLocaleDateString('en-GB') : '-'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="px-2.5 py-1 rounded text-[10px] font-bold uppercase bg-amber-200 text-amber-900 border border-amber-300">
+              कडक वाचन मोड (Read-Only Lockdown)
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Passing Form View */}
+      {isPassing ? (
+        <div className="bg-white rounded-xl shadow-md border border-slate-200 max-w-2xl mx-auto overflow-hidden">
+          <div className="p-3.5 bg-slate-900 text-white flex justify-between items-center">
+            <h3 className="text-sm font-bold flex items-center gap-1.5">
+              <DollarSign size={16} className="text-emerald-400" /> लॉकर भाडे नूतनीकरण व्हाउचर तपासणी (Locker Rent Renewal Voucher)
+            </h3>
+            <span className="text-xs bg-amber-400 text-amber-950 font-bold px-2 py-0.5 rounded">
+              Checker Mode
+            </span>
+          </div>
+
+          <div className="p-4 space-y-4">
+            {selectedAllotment ? (
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">खाते क्रमांक</span>
+                  <p className="font-mono font-bold text-slate-800">{selectedAllotment.lockerAccountNo}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">लॉकर व कपाट</span>
+                  <p className="font-bold text-slate-800">लॉकर: {selectedAllotment.lockerNo} | कपाट: {selectedAllotment.cabinetNo}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">सभासद नाव</span>
+                  <p className="font-bold text-slate-800">{selectedAllotment.memberName}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">मोबाईल क्र.</span>
+                  <p className="font-mono font-bold text-slate-800">{selectedAllotment.memberPhone || '-'}</p>
+                </div>
+              </div>
+            ) : null}
+
+            <fieldset disabled={isPassing} className="space-y-3">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className={labelClass}>जमा दिनांक (Payment Date)</label>
+                  <input
+                    type="date"
+                    value={payData.paymentDate}
+                    readOnly
+                    className={`${inputClass} bg-slate-100 cursor-not-allowed`}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>पेमेंट पद्धत (Payment Mode)</label>
+                  <input
+                    type="text"
+                    value={payData.paymentMode}
+                    readOnly
+                    className={`${inputClass} bg-slate-100 cursor-not-allowed`}
+                  />
+                </div>
+              </div>
+
+              {/* Breakdown */}
+              <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-200 space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-slate-700">वार्षिक भाडे (Annual Rent):</span>
+                  <span className="font-mono font-bold text-slate-800 text-sm">₹{Number(payData.rentAmount).toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-rose-700">विलंब शुल्क / दंड (Late Fee):</span>
+                  <span className="font-mono font-bold text-rose-700 text-sm">₹{Number(payData.penaltyAmount).toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between items-center border-t border-emerald-200 pt-2">
+                  <span className="font-black text-slate-900 text-sm">एकूण स्वीकारलेली रक्कम (Total Amount):</span>
+                  <span className="font-mono font-black text-emerald-800 text-base">₹{Number(payData.totalAmount).toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className={labelClass}>तपशील / शेरा (Remarks)</label>
+                <input
+                  type="text"
+                  value={payData.remarks}
+                  readOnly
+                  className={`${inputClass} bg-slate-100 cursor-not-allowed`}
+                />
+              </div>
+            </fieldset>
+
+            {/* 3 Checker Action Buttons */}
+            <div className="mt-4 p-3 bg-slate-900 rounded-lg shadow-xl border border-amber-500/30 flex items-center justify-between z-40">
+              <button
+                type="button"
+                onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded border border-slate-600 flex items-center gap-2 cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>↩️ पासिंग यादीवर परत जा</span>
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setRejectReason(''); setRejectModalOpen(true); }}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow flex items-center gap-1.5 cursor-pointer"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>❌ नामंजूर / रद्द करा</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDirectPass}
+                  disabled={actionLoading}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded shadow flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>{actionLoading ? 'पास होत आहे...' : '✅ मंजूर व पास करा (Authorize)'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <div className="bg-white p-3 rounded-lg shadow-xs border border-slate-200">
@@ -542,6 +816,51 @@ const LockerRentRenewal: React.FC = () => {
                 className="px-4 py-1.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-md"
               >
                 समजले
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      </>
+    )}
+
+      {/* Rejection Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-5 border border-slate-200">
+            <h3 className="text-base font-bold text-rose-600 flex items-center gap-2">
+              <XCircle className="w-5 h-5" />
+              व्हाउचर नामंजूर / रद्द करा (Reject Voucher)
+            </h3>
+            <p className="text-xs text-slate-600 mt-1">
+              व्हाउचर क्र: <span className="font-mono font-bold text-slate-900">{passingVoucherData?.voucher?.voucherNo || effectiveVoucherId}</span>
+            </p>
+            <div className="mt-3">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                नामंजूर करण्याचे कारण प्रविष्ट करा (Reason) <span className="text-rose-500">*</span>:
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="उदा. चुकीचे भाडे नूतनीकरण / चुकीची रक्कम..."
+                className="w-full h-24 p-2 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-rose-500 focus:outline-none"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectModalOpen(false)}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded cursor-pointer"
+              >
+                रद्द करा (Back)
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={actionLoading || !rejectReason.trim()}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow cursor-pointer disabled:opacity-50"
+              >
+                {actionLoading ? 'प्रक्रिया सुरू आहे...' : 'नामंजूर करा (Reject)'}
               </button>
             </div>
           </div>

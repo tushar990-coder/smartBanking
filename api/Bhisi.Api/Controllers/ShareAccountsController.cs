@@ -3234,5 +3234,123 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, $"अद्ययावत करताना त्रुटी: {ex.Message}");
             }
         }
+
+        // GET: api/ShareAccounts/by-voucher/{voucherId}
+        [AllowAnonymous]
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = "व्हाउचर सापडले नाही." });
+            }
+
+            var txns = await _context.ShareTransactions
+                .Include(t => t.ShareAccount)
+                    .ThenInclude(s => s!.Member)
+                        .ThenInclude(m => m!.Customer)
+                .Include(t => t.ShareAccount)
+                    .ThenInclude(s => s!.Customer)
+                .Where(t => t.VoucherId == voucherId)
+                .ToListAsync();
+
+            var outTxn = txns.FirstOrDefault(t => t.TransactionType == "Transfer-Out");
+            var inTxn = txns.FirstOrDefault(t => t.TransactionType == "Transfer-In");
+            var mainTxn = txns.FirstOrDefault();
+
+            int? memberId = null;
+            if (mainTxn != null && mainTxn.ShareAccount != null)
+            {
+                memberId = mainTxn.ShareAccount.MemberId;
+            }
+            else
+            {
+                var vdWithMember = voucher.VoucherDetails?.FirstOrDefault(vd => vd.MemberID.HasValue && vd.MemberID > 0);
+                if (vdWithMember != null) memberId = vdWithMember.MemberID;
+            }
+
+            Member? member = null;
+            ShareAccount? shareAccount = null;
+            if (memberId.HasValue && memberId.Value > 0)
+            {
+                member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == memberId.Value);
+                shareAccount = await _context.ShareAccounts.Include(s => s.Certificates).FirstOrDefaultAsync(s => s.MemberId == memberId.Value);
+            }
+
+            var cert = shareAccount?.Certificates?.OrderByDescending(c => c.CertificateId).FirstOrDefault();
+            bool isTransfer = outTxn != null || inTxn != null || voucher.Narration?.Contains("हस्तांतरण") == true;
+
+            var result = new
+            {
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.TotalAmount
+                },
+                canPass = voucher.Status == "Pending" || voucher.Status == "Draft" || voucher.Status != "Approved",
+                transaction = mainTxn != null ? new
+                {
+                    mainTxn.TransactionId,
+                    mainTxn.TransactionDate,
+                    mainTxn.TransactionType,
+                    mainTxn.NumberOfShares,
+                    mainTxn.Amount,
+                    mainTxn.Narration
+                } : null,
+                shareAccount = shareAccount != null ? new
+                {
+                    shareAccount.ShareAccountId,
+                    shareAccount.AccountNo,
+                    shareAccount.TotalShareCount,
+                    shareAccount.TotalShareAmount
+                } : null,
+                member = member != null ? new
+                {
+                    member.MemberID,
+                    member.MemberCode,
+                    member.LegacyMemberNo,
+                    FullName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : member.MemberCode,
+                    Mobile = member.Customer?.MobileNo,
+                    Address = member.Customer?.Address
+                } : null,
+                certificate = cert != null ? new
+                {
+                    cert.CertificateId,
+                    cert.CertificateNo,
+                    cert.FromShareNo,
+                    cert.ToShareNo,
+                    cert.NumberOfShares,
+                    cert.FaceValue
+                } : null,
+                isTransfer,
+                fromMember = outTxn?.ShareAccount?.Member != null ? new
+                {
+                    outTxn.ShareAccount.Member.MemberID,
+                    outTxn.ShareAccount.Member.MemberCode,
+                    FullName = outTxn.ShareAccount.Member.Customer != null ? $"{outTxn.ShareAccount.Member.Customer.FirstName} {outTxn.ShareAccount.Member.Customer.LastName}".Trim() : outTxn.ShareAccount.Member.MemberCode
+                } : null,
+                toMember = inTxn?.ShareAccount?.Member != null ? new
+                {
+                    inTxn.ShareAccount.Member.MemberID,
+                    inTxn.ShareAccount.Member.MemberCode,
+                    FullName = inTxn.ShareAccount.Member.Customer != null ? $"{inTxn.ShareAccount.Member.Customer.FirstName} {inTxn.ShareAccount.Member.Customer.LastName}".Trim() : inTxn.ShareAccount.Member.MemberCode
+                } : null,
+                numberOfShares = mainTxn?.NumberOfShares ?? (int)(voucher.TotalAmount / 100),
+                amount = voucher.TotalAmount,
+                paymentMode = voucher.VoucherType == "Journal" ? "Transfer" : (voucher.VoucherType == "Receipt" ? "Cash" : "Payment")
+            };
+
+            return Ok(result);
+        }
     }
 }

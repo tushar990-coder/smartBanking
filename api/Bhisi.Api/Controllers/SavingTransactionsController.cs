@@ -462,5 +462,106 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, new { message = $"Error deleting transaction: {ex.Message}" });
             }
         }
+
+        // GET: api/SavingTransactions/by-voucher/{voucherId}
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<ActionResult<object>> GetSavingTransactionByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(d => d.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = "व्हाउचर सापडले नाही (Voucher not found)." });
+            }
+
+            // 1. Try matching by VoucherNo on SavingTransaction
+            SavingTransaction? txn = null;
+            if (!string.IsNullOrEmpty(voucher.VoucherNo))
+            {
+                txn = await _context.SavingTransactions
+                    .Include(t => t.SavingAccount)
+                        .ThenInclude(s => s!.Customer)
+                    .Include(t => t.Customer)
+                    .Include(t => t.TargetSavingAccount)
+                        .ThenInclude(ts => ts!.Customer)
+                    .FirstOrDefaultAsync(t => t.VoucherNo == voucher.VoucherNo);
+            }
+
+            // 2. Fallback: match by CustomerID & Amount from VoucherDetails
+            if (txn == null)
+            {
+                var custId = voucher.VoucherDetails.FirstOrDefault(d => d.CustomerID.HasValue && d.CustomerID.Value > 0)?.CustomerID;
+                if (custId.HasValue)
+                {
+                    txn = await _context.SavingTransactions
+                        .Include(t => t.SavingAccount)
+                            .ThenInclude(s => s!.Customer)
+                        .Include(t => t.Customer)
+                        .Include(t => t.TargetSavingAccount)
+                            .ThenInclude(ts => ts!.Customer)
+                        .Where(t => t.CustomerID == custId.Value && t.Amount == voucher.TotalAmount)
+                        .OrderByDescending(t => t.TransactionID)
+                        .FirstOrDefaultAsync();
+                }
+            }
+
+            if (txn == null)
+            {
+                return NotFound(new { message = "सदर व्हाउचरशी जोडलेला बचत व्यवहार सापडला नाही." });
+            }
+
+            return Ok(new
+            {
+                txn.TransactionID,
+                txn.SavingAccountID,
+                txn.CustomerID,
+                txn.TargetSavingAccountID,
+                txn.TransactionDate,
+                txn.TransactionType,
+                txn.PaymentMode,
+                txn.Amount,
+                txn.BalanceAfterTxn,
+                txn.Narration,
+                txn.VoucherNo,
+                SavingAccount = txn.SavingAccount != null ? new
+                {
+                    txn.SavingAccount.SavingAccountID,
+                    txn.SavingAccount.AccountNo,
+                    txn.SavingAccount.CurrentBalance,
+                    txn.SavingAccount.Status,
+                    Customer = txn.SavingAccount.Customer != null ? new
+                    {
+                        txn.SavingAccount.Customer.CustomerID,
+                        FullName = $"{txn.SavingAccount.Customer.FirstName} {txn.SavingAccount.Customer.LastName}".Trim(),
+                        txn.SavingAccount.Customer.MobileNo,
+                        txn.SavingAccount.Customer.CIFNo
+                    } : null
+                } : null,
+                TargetSavingAccount = txn.TargetSavingAccount != null ? new
+                {
+                    txn.TargetSavingAccount.SavingAccountID,
+                    txn.TargetSavingAccount.AccountNo,
+                    txn.TargetSavingAccount.CurrentBalance,
+                    Customer = txn.TargetSavingAccount.Customer != null ? new
+                    {
+                        txn.TargetSavingAccount.Customer.CustomerID,
+                        FullName = $"{txn.TargetSavingAccount.Customer.FirstName} {txn.TargetSavingAccount.Customer.LastName}".Trim()
+                    } : null
+                } : null,
+                Voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.Narration,
+                    voucher.TotalAmount,
+                    voucher.Status
+                }
+            });
+        }
     }
 }

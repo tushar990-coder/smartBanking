@@ -5435,6 +5435,258 @@ namespace Bhisi.Api.Controllers
 
             return Ok(logs);
         }
+
+        // GET: api/FdAccounts/by-voucher/{voucherId}
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetFdAccountByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = $"व्हाउचर क्र. {voucherId} सिस्टीममध्ये सापडले नाही." });
+            }
+
+            // 1. Try to find FdTransaction linked to this Voucher
+            var fdTx = await _context.FdTransactions
+                .Include(t => t.FdAccount)
+                    .ThenInclude(a => a!.Customer)
+                .Include(t => t.FdAccount)
+                    .ThenInclude(a => a!.FdScheme)
+                .Include(t => t.FdAccount)
+                    .ThenInclude(a => a!.Branch)
+                .FirstOrDefaultAsync(t => t.VoucherID == voucherId && (t.TransactionType == "Opening" || t.TransactionType == "Renewal"));
+
+            FdAccount? account = fdTx?.FdAccount;
+
+            // 2. If not found via FdTransaction, try parsing from VoucherNo (e.g. REC-FD-OP-00140100000001) or Narration
+            if (account == null)
+            {
+                string vNo = voucher.VoucherNo ?? "";
+                string accNoCandidate = "";
+                if (vNo.StartsWith("REC-FD-OP-"))
+                {
+                    accNoCandidate = vNo.Substring("REC-FD-OP-".Length).Trim();
+                }
+
+                if (!string.IsNullOrEmpty(accNoCandidate))
+                {
+                    account = await _context.FdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.FdScheme)
+                        .Include(a => a.Branch)
+                        .FirstOrDefaultAsync(a => a.AccountNo == accNoCandidate);
+                }
+            }
+
+            // 3. Fallback: Search by Customer linked in VoucherDetails
+            if (account == null)
+            {
+                var custId = voucher.VoucherDetails.FirstOrDefault(vd => vd.CustomerID.HasValue && vd.CustomerID.Value > 0)?.CustomerID;
+                if (custId.HasValue)
+                {
+                    account = await _context.FdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.FdScheme)
+                        .Include(a => a.Branch)
+                        .Where(a => a.CustomerID == custId.Value)
+                        .OrderByDescending(a => a.FdAccountID)
+                        .FirstOrDefaultAsync();
+                }
+            }
+
+            if (account == null)
+            {
+                return NotFound(new { message = $"सदर व्हाउचरशी (ID: {voucherId}) संबंधित मुदत ठेव खाते (FD Account) सापडले नाही." });
+            }
+
+            // Determine payment mode and debit ledger from voucher details
+            string paymentMode = "Cash";
+            int? bankLedgerId = null;
+            int? savingAccountId = null;
+
+            var debitDetail = voucher.VoucherDetails.FirstOrDefault(vd => vd.DrCr == "Dr");
+            if (debitDetail?.Ledger != null)
+            {
+                if (debitDetail.Ledger.AccountType == "Bank" || debitDetail.Ledger.LedgerName.Contains("Bank") || debitDetail.Ledger.LedgerName.Contains("बँक"))
+                {
+                    paymentMode = "Bank";
+                    bankLedgerId = debitDetail.LedgerID;
+                }
+                else if (debitDetail.Ledger.AccountType == "Savings" || debitDetail.Ledger.LedgerName.Contains("बचत") || debitDetail.Ledger.LedgerName.Contains("Savings"))
+                {
+                    paymentMode = "Transfer";
+                    var sb = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.CustomerID == account.CustomerID);
+                    savingAccountId = sb?.SavingAccountID;
+                }
+            }
+
+            var seniorCutoffDate = DateTime.Today.AddYears(-60);
+            var isSenior = account.Customer != null && account.Customer.BirthDate.HasValue && (account.Customer.BirthDate.Value.Date <= seniorCutoffDate);
+
+            return Ok(new
+            {
+                fdAccount = new
+                {
+                    account.FdAccountID,
+                    account.BranchID,
+                    BranchName = account.Branch?.BranchName ?? "",
+                    account.CustomerID,
+                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CIFNo = account.Customer?.CIFNo ?? "",
+                    account.FdSchemeID,
+                    SchemeName = account.FdScheme?.SchemeName ?? "",
+                    SchemeCode = account.FdScheme?.SchemeCode ?? "",
+                    account.AccountNo,
+                    account.LegacyAccountNumber,
+                    account.OpeningDate,
+                    account.DepositAmount,
+                    account.DurationType,
+                    account.DurationValue,
+                    account.DurationInDays,
+                    account.InterestRate,
+                    account.MaturityDate,
+                    account.MaturityAmount,
+                    account.Status,
+                    account.NomineeName,
+                    account.NomineeRelation,
+                    account.Remarks,
+                    PaymentMode = paymentMode,
+                    BankAccountLedgerID = bankLedgerId,
+                    SavingAccountID = savingAccountId,
+                    IsSeniorCitizen = isSenior
+                },
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.TotalAmount,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.ApprovedBy,
+                    voucher.ApprovedOn,
+                    CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending"
+                }
+            });
+        }
+
+        // GET: api/FdAccounts/closure-by-voucher/{voucherId}
+        [HttpGet("closure-by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetFdClosureByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = $"व्हाउचर क्र. {voucherId} सिस्टीममध्ये सापडले नाही." });
+            }
+
+            // 1. Try to find FdTransaction linked to this closure voucher
+            var fdTx = await _context.FdTransactions
+                .Include(t => t.FdAccount)
+                    .ThenInclude(a => a!.Customer)
+                .Include(t => t.FdAccount)
+                    .ThenInclude(a => a!.FdScheme)
+                .Include(t => t.FdAccount)
+                    .ThenInclude(a => a!.Branch)
+                .FirstOrDefaultAsync(t => t.VoucherID == voucherId && (t.TransactionType == "Payout" || t.TransactionType == "Premature_Close"));
+
+            FdAccount? account = fdTx?.FdAccount;
+
+            // 2. Fallback: Parse from VoucherNo (e.g. JV-FD-CLOSE-..., JV-FD-PRECLOSE-..., PMT-FD-CLOSE-...)
+            if (account == null)
+            {
+                string vNo = voucher.VoucherNo ?? "";
+                string accNoCandidate = "";
+                if (vNo.StartsWith("JV-FD-CLOSE-")) accNoCandidate = vNo.Substring("JV-FD-CLOSE-".Length).Trim();
+                else if (vNo.StartsWith("JV-FD-PRECLOSE-")) accNoCandidate = vNo.Substring("JV-FD-PRECLOSE-".Length).Trim();
+                else if (vNo.StartsWith("PMT-FD-CLOSE-")) accNoCandidate = vNo.Substring("PMT-FD-CLOSE-".Length).Trim();
+
+                if (!string.IsNullOrEmpty(accNoCandidate))
+                {
+                    account = await _context.FdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.FdScheme)
+                        .Include(a => a.Branch)
+                        .FirstOrDefaultAsync(a => a.AccountNo == accNoCandidate);
+                }
+            }
+
+            // 3. Fallback: Search by Customer linked in VoucherDetails
+            if (account == null)
+            {
+                var custId = voucher.VoucherDetails.FirstOrDefault(vd => vd.CustomerID.HasValue && vd.CustomerID.Value > 0)?.CustomerID;
+                if (custId.HasValue)
+                {
+                    account = await _context.FdAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.FdScheme)
+                        .Include(a => a.Branch)
+                        .Where(a => a.CustomerID == custId.Value)
+                        .OrderByDescending(a => a.FdAccountID)
+                        .FirstOrDefaultAsync();
+                }
+            }
+
+            if (account == null)
+            {
+                return NotFound(new { message = $"सदर मुदत ठेव क्लोजरशी (ID: {voucherId}) संबंधित खाते सापडले नाही." });
+            }
+
+            string closureType = (fdTx?.TransactionType == "Premature_Close" || voucher.VoucherNo?.Contains("PRECLOSE") == true)
+                ? "PrematureClose"
+                : "MaturityClose";
+
+            return Ok(new
+            {
+                fdAccount = new
+                {
+                    account.FdAccountID,
+                    account.BranchID,
+                    BranchName = account.Branch?.BranchName ?? "",
+                    account.CustomerID,
+                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CIFNo = account.Customer?.CIFNo ?? "",
+                    account.FdSchemeID,
+                    SchemeName = account.FdScheme?.SchemeName ?? "",
+                    account.AccountNo,
+                    account.DepositAmount,
+                    account.InterestRate,
+                    account.OpeningDate,
+                    account.MaturityDate,
+                    account.MaturityAmount,
+                    account.Status
+                },
+                closureDetails = new
+                {
+                    ClosureDate = fdTx?.TransactionDate ?? voucher.VoucherDate,
+                    ClosureType = closureType,
+                    TotalPayoutAmount = voucher.TotalAmount,
+                    Narration = voucher.Narration
+                },
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.TotalAmount,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.ApprovedBy,
+                    voucher.ApprovedOn,
+                    CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending"
+                }
+            });
+        }
     }
 
     public class FdInterestPreviewRequestDto

@@ -67,7 +67,7 @@ interface Voucher {
 }
 
 interface VoucherPostingProps {
-  onNavigate?: (tab: string) => void;
+  onNavigate?: (tab: string, params?: any) => void;
 }
 
 const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
@@ -201,6 +201,268 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     setTargetVoucherToDelete(null);
     setDeleteReason('');
     setDeleteError('');
+  };
+
+  // Open the entry in its original entry form in Passing Mode (Intelligent CBS Multi-Module Dispatcher)
+  const handleOpenFormView = (v: Voucher) => {
+    const narr = (v.narration || '').toLowerCase();
+    const vNo = v.voucherNo || '';
+
+    // 1. Loan Collection
+    const isLoanCollection = 
+      narr.includes('loan collection') ||
+      vNo.startsWith('LC-') ||
+      (vNo.includes('-REC-') && narr.includes('rect no'));
+
+    // 2. Loan Disbursement
+    const isLoanDisbursement = 
+      narr.includes('loan disbursed') || 
+      narr.includes('loan disbursement') ||
+      v.narration?.includes('कर्ज वितरण') ||
+      v.narration?.includes('कर्ज वाटप') ||
+      vNo.startsWith('LD-');
+
+    // 3. Saving Account Closing
+    const isSavingClosing =
+      vNo.startsWith('VCH-SAV-CLS-') ||
+      v.narration?.includes('बचत खाते बंद') ||
+      narr.includes('saving account closed') ||
+      narr.includes('saving account closure');
+
+    // 4. Saving Deposit / Withdrawal Transaction
+    const isSavingTransaction =
+      vNo.startsWith('SAV-') ||
+      vNo.startsWith('REC-SAV-') ||
+      vNo.startsWith('PAY-SAV-') ||
+      v.narration?.includes('बचत जमा') ||
+      v.narration?.includes('बचत नावे') ||
+      v.narration?.includes('बचत हस्तांतरण') ||
+      narr.includes('saving deposit') ||
+      narr.includes('saving withdrawal') ||
+      narr.includes('saving transfer');
+
+    // 5. Fixed Deposit Withdrawal / Closure
+    const isFdWithdrawal =
+      vNo.startsWith('JV-FD-CLOSE-') ||
+      vNo.startsWith('JV-FD-PRECLOSE-') ||
+      narr.includes('fd maturity payout') ||
+      v.narration?.includes('मुदत ठेव पूर्ण क्लोजर') ||
+      narr.includes('fd premature') ||
+      v.narration?.includes('मुदतपूर्व परतावा') ||
+      v.narration?.includes('मुदत ठेव बंद');
+
+    // 6. Fixed Deposit Account Opening
+    const isFdOpening =
+      vNo.startsWith('REC-FD-OP-') ||
+      vNo.startsWith('JV-FD-OP-') ||
+      vNo.startsWith('REC-FD-') ||
+      v.narration?.includes('मुदत ठेव रक्कम जमा') ||
+      v.narration?.includes('नवीन मुदत ठेव खाते') ||
+      v.narration?.includes('मुदत ठेव खाते उघडले') ||
+      narr.includes('fd account opened');
+
+    // 7. Recurring Deposit (RD)
+    const isRdOpening =
+      vNo.startsWith('REC-RD-OP-') ||
+      v.narration?.includes('आवर्ती ठेव खाते उघडले') ||
+      narr.includes('rd account opened');
+
+    const isRdWithdrawal =
+      vNo.startsWith('JV-RD-CLOSE-') ||
+      v.narration?.includes('आवर्ती ठेव बंद') ||
+      narr.includes('rd maturity') ||
+      narr.includes('rd closed');
+
+    const isRdCollection =
+      vNo.startsWith('REC-RD-') ||
+      v.narration?.includes('आवर्ती ठेव हप्ता') ||
+      narr.includes('rd installment');
+
+    // 8. Pigmy Deposit
+    const isPigmyDaybook =
+      vNo.startsWith('PG-DAYBOOK-') ||
+      v.narration?.includes('एजंट डे-बुक') ||
+      narr.includes('agent daybook');
+
+    const isPigmyClosure =
+      vNo.startsWith('PG-CLOSE-') ||
+      v.narration?.includes('पिग्मी खाते बंद') ||
+      narr.includes('pigmy closed') ||
+      narr.includes('pigmy closure');
+
+    const isPigmyCollection =
+      vNo.startsWith('REC-PG-') ||
+      v.narration?.includes('पिग्मी वसुली') ||
+      narr.includes('pigmy collection');
+
+    // 9. Share Capital & Members
+    const isShareTransfer =
+      vNo.startsWith('JV-SH-TRF-') ||
+      v.narration?.includes('भाग हस्तांतरण') ||
+      narr.includes('share transfer');
+
+    const isShareWithdrawal =
+      vNo.startsWith('PAY-SH-') ||
+      v.narration?.includes('भाग परतावा') ||
+      narr.includes('share withdrawal');
+
+    const isShareMaster =
+      vNo.startsWith('REC-SH-') ||
+      v.narration?.includes('भाग भांडवल') ||
+      narr.includes('share capital') ||
+      narr.includes('share purchase') ||
+      v.narration?.includes('नवीन भाग खरेदी');
+
+    const isMemberClosure =
+      v.narration?.includes('सभासदत्व रद्द') ||
+      narr.includes('member closure');
+
+    // 10. Lockers
+    const isLockerAllotment =
+      v.narration?.includes('लॉकर वाटप') ||
+      narr.includes('locker allotment');
+
+    const isLockerRentRenewal =
+      v.narration?.includes('लॉकर भाडे') ||
+      narr.includes('locker rent');
+
+    const isLockerSurrender =
+      v.narration?.includes('लॉकर सरेंडर') ||
+      narr.includes('locker surrender');
+
+    // 11. Assets
+    const isAssetPurchase =
+      v.narration?.includes('मालमत्ता खरेदी') ||
+      narr.includes('asset purchase');
+
+    // Navigation execution
+    if (isLoanCollection) {
+      if (onNavigate) {
+        onNavigate('loan-collection', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=loan-collection&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isLoanDisbursement) {
+      if (onNavigate) {
+        onNavigate('loan-process', { subTab: '2', voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/karjvibhag/karjmagni?subTab=2&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isSavingClosing) {
+      if (onNavigate) {
+        onNavigate('saving-closing', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=saving-closing&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isSavingTransaction) {
+      if (onNavigate) {
+        onNavigate('saving-transaction', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=saving-transaction&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isFdWithdrawal) {
+      if (onNavigate) {
+        onNavigate('fd-withdrawal', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=fd-withdrawal&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isFdOpening) {
+      if (onNavigate) {
+        onNavigate('fd-account', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=fd-account&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isRdOpening) {
+      if (onNavigate) {
+        onNavigate('rd-account', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=rd-account&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isRdWithdrawal) {
+      if (onNavigate) {
+        onNavigate('rd-withdrawal', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=rd-withdrawal&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isRdCollection) {
+      if (onNavigate) {
+        onNavigate('rd-collection', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=rd-collection&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isPigmyDaybook) {
+      if (onNavigate) {
+        onNavigate('pigmy-daybook', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=pigmy-daybook&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isPigmyClosure) {
+      if (onNavigate) {
+        onNavigate('pigmy-closure', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=pigmy-closure&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isPigmyCollection) {
+      if (onNavigate) {
+        onNavigate('pigmy-collection', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=pigmy-collection&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isShareTransfer) {
+      if (onNavigate) {
+        onNavigate('share-transfer', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=share-transfer&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isShareWithdrawal) {
+      if (onNavigate) {
+        onNavigate('share-withdrawal', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=share-withdrawal&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isShareMaster) {
+      if (onNavigate) {
+        onNavigate('share-master', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=share-master&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isMemberClosure) {
+      if (onNavigate) {
+        onNavigate('member-closure', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=member-closure&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isLockerAllotment) {
+      if (onNavigate) {
+        onNavigate('locker-allotment', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=locker-allotment&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isLockerRentRenewal) {
+      if (onNavigate) {
+        onNavigate('locker-rent-renewal', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=locker-rent-renewal&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isLockerSurrender) {
+      if (onNavigate) {
+        onNavigate('locker-surrender', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=locker-surrender&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else if (isAssetPurchase) {
+      if (onNavigate) {
+        onNavigate('asset-purchase', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=asset-purchase&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    } else {
+      if (onNavigate) {
+        onNavigate('voucher', { voucherId: v.voucherID, passingMode: 'true' });
+      } else {
+        window.location.href = `/?tab=voucher&voucherId=${v.voucherID}&passingMode=true`;
+      }
+    }
   };
 
   // Execute Single Delete with optional Reason & Audit Log
@@ -596,15 +858,26 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                               {v.voucherDetails?.length || 0} खाती
                             </td>
                             <td className="px-2 py-1.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                onClick={() => openSingleDeleteModal(v)}
-                                className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 px-2 py-0.5 rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1 mx-auto"
-                                title="व्हाउचर कायमचे रद्द व हटवा"
-                              >
-                                <Trash2 className="w-3 h-3 text-rose-600" />
-                                <span>रद्द / हटवा</span>
-                              </button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenFormView(v)}
+                                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 hover:border-emerald-400 px-2 py-0.5 rounded-sm font-bold text-[10px] transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  title="मूळ फॉर्ममध्ये एन्ट्री पहा व पास करा (Open in Original Entry Form & Pass)"
+                                >
+                                  <FileText className="w-3 h-3 text-emerald-700" />
+                                  <span>फॉर्म व्ह्यू (Form View)</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openSingleDeleteModal(v)}
+                                  className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 px-2 py-0.5 rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1"
+                                  title="व्हाउचर कायमचे रद्द व हटवा"
+                                >
+                                  <Trash2 className="w-3 h-3 text-rose-600" />
+                                  <span>रद्द / हटवा</span>
+                                </button>
+                              </div>
                             </td>
                           </tr>
 
@@ -639,6 +912,18 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenFormView(v);
+                                        }}
+                                        className="bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1 rounded text-[10.5px] font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1 border border-emerald-800"
+                                        title="या नोंदीचा मूळ फॉर्म उघडा व थेट पास करा (Open Original Form to Pass)"
+                                      >
+                                        <FileText className="w-3.5 h-3.5" />
+                                        <span>मूळ फॉर्ममध्ये उघडा व पास करा (Open Form View)</span>
+                                      </button>
                                       <span className="text-[11px] font-black bg-emerald-50 text-emerald-800 px-2.5 py-0.5 rounded border border-emerald-300">
                                         एकूण रक्कम: ₹{v.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                       </span>

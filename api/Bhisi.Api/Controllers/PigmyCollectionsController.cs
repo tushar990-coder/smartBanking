@@ -829,5 +829,115 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, "मासिक चार्ट आयात सेव्ह करताना सर्व्हर त्रुटी आली: " + ex.Message);
             }
         }
+
+        // GET: api/PigmyCollections/by-voucher/{voucherId}
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetCollectionByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = $"व्हाउचर क्र. {voucherId} सिस्टीममध्ये सापडले नाही." });
+            }
+
+            // 1. Try finding collection by VoucherId
+            var collection = await _context.PigmyCollections
+                .Include(c => c.PigmyAccount)
+                    .ThenInclude(a => a!.Customer)
+                .Include(c => c.PigmyAccount)
+                    .ThenInclude(a => a!.PigmyScheme)
+                .Include(c => c.Agent)
+                .FirstOrDefaultAsync(c => c.VoucherId == voucherId);
+
+            PigmyAccount? account = collection?.PigmyAccount;
+            PigmyAgent? agent = collection?.Agent;
+
+            // 2. Fallback: Parse AccountNo from Narration (e.g. "for A/C 1234")
+            if (account == null && !string.IsNullOrEmpty(voucher.Narration))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(
+                    voucher.Narration,
+                    @"(?:A\/C|खाते|Account)\s+([A-Za-z0-9\-]+)",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                );
+                if (match.Success)
+                {
+                    string accCandidate = match.Groups[1].Value.Trim();
+                    account = await _context.PigmyAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.PigmyScheme)
+                        .FirstOrDefaultAsync(a => a.AccountNo == accCandidate);
+                }
+            }
+
+            // 3. Fallback: Lookup by Customer in VoucherDetails
+            if (account == null)
+            {
+                var custId = voucher.VoucherDetails.FirstOrDefault(vd => vd.CustomerID.HasValue && vd.CustomerID.Value > 0)?.CustomerID;
+                if (custId.HasValue)
+                {
+                    account = await _context.PigmyAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.PigmyScheme)
+                        .Where(a => a.CustomerID == custId.Value)
+                        .OrderByDescending(a => a.PigmyAccountID)
+                        .FirstOrDefaultAsync();
+                }
+            }
+
+            if (account != null && agent == null && account.PigmyAgentID > 0)
+            {
+                agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == account.PigmyAgentID);
+            }
+
+            return Ok(new
+            {
+                collection = collection != null ? new
+                {
+                    collection.CollectionId,
+                    collection.ReceiptNo,
+                    collection.CollectionDate,
+                    collection.CollectionAmount,
+                    collection.CollectionSource,
+                    collection.OpeningBalance,
+                    collection.ClosingBalance
+                } : null,
+                account = account != null ? new
+                {
+                    account.PigmyAccountID,
+                    account.AccountNo,
+                    account.CustomerID,
+                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CIFNo = account.Customer?.CIFNo ?? "",
+                    account.TotalDepositedAmount,
+                    account.Status,
+                    SchemeName = account.PigmyScheme?.SchemeName ?? ""
+                } : null,
+                agent = agent != null ? new
+                {
+                    agent.PigmyAgentID,
+                    agent.AgentName,
+                    AgentCode = agent.Username ?? ("AGT-" + agent.PigmyAgentID),
+                    MobileNo = agent.Customer?.MobileNo ?? ""
+                } : null,
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.TotalAmount,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.ApprovedBy,
+                    voucher.ApprovedOn,
+                    CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending"
+                }
+            });
+        }
     }
 }

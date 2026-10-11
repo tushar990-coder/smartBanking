@@ -63,7 +63,11 @@ interface Voucher {
   }[];
 }
 
-export default function VoucherMaster() {
+interface VoucherMasterProps {
+  onNavigate?: (tab: string, params?: any) => void;
+}
+
+export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -79,6 +83,13 @@ export default function VoucherMaster() {
   const [isListModalOpen, setIsListModalOpen] = useState(false);
   const [listSearchQuery, setListSearchQuery] = useState('');
   const [listTypeFilter, setListTypeFilter] = useState('All');
+
+  // 🔒 Core Banking Passing Mode States (तपासणी व मंजुरी मोड)
+  const [isPassingMode, setIsPassingMode] = useState(false);
+  const [passingVoucher, setPassingVoucher] = useState<Voucher | null>(null);
+  const [passingActionLoading, setPassingActionLoading] = useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
   
   const { user } = useAuth();
   
@@ -124,6 +135,109 @@ export default function VoucherMaster() {
     fetchBranches();
     fetchBranchBusinessDate(selectedBranchId);
   }, []);
+
+  // Check URL params for Passing Mode (उदा. व्हाउचर पासिंग स्क्रीनवरून आलेली तपासणी विनंती)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pMode = params.get('passingMode') === 'true';
+    const vIdStr = params.get('voucherId') || params.get('id');
+    if (pMode && vIdStr) {
+      const vId = parseInt(vIdStr, 10);
+      setIsPassingMode(true);
+      loadVoucherForPassing(vId);
+    }
+  }, [ledgers]);
+
+  const loadVoucherForPassing = async (id: number) => {
+    try {
+      const res = await fetch(`${API_URL}/${id}`);
+      if (res.ok) {
+        const v: Voucher = await res.json();
+        setPassingVoucher(v);
+        handleEdit(v);
+      }
+    } catch (err) {
+      console.error('Failed to load voucher for passing', err);
+    }
+  };
+
+  const handlePassVoucher = async () => {
+    const vId = passingVoucher?.voucherID || editingVoucherId;
+    const vNo = passingVoucher?.voucherNo || voucherNo;
+    if (!vId) return;
+    if (!window.confirm(`तुम्हाला खात्री आहे का की व्हाउचर क्र. ${vNo} मंजूर व पास करायचे आहे?`)) return;
+
+    setPassingActionLoading(true);
+    try {
+      const res = await fetch('/api/VoucherPosting/Post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voucherIds: [vId],
+          approvedBy: user?.userID || 1,
+        }),
+      });
+
+      if (res.ok) {
+        const resData = await res.json();
+        const scrollInfo = resData?.vouchers?.[0]?.scrollNo ? ` (स्क्रॉल क्र.: #${resData.vouchers[0].scrollNo})` : '';
+        alert(`✅ व्हाउचर क्र. ${vNo} यशस्वीरीत्या पास झाले!${scrollInfo}`);
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        const errText = await res.text();
+        alert(`त्रुटी: ${errText}`);
+      }
+    } catch (e) {
+      alert('व्हाउचर पास करताना नेटवर्क त्रुटी आली.');
+    } finally {
+      setPassingActionLoading(false);
+    }
+  };
+
+  const handleRejectVoucher = async () => {
+    const vId = passingVoucher?.voucherID || editingVoucherId;
+    const vNo = passingVoucher?.voucherNo || voucherNo;
+    if (!vId) return;
+    if (!rejectionReason.trim()) {
+      alert('कृपया नामंजूर करण्याचे कारण लिहा.');
+      return;
+    }
+
+    setPassingActionLoading(true);
+    try {
+      const res = await fetch(`/api/VoucherPosting/${vId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason: rejectionReason.trim(),
+          userId: user?.userID || 1,
+          username: user?.username || 'Admin',
+          userRole: user?.roleName || user?.role || 'Admin',
+        }),
+      });
+
+      const resData = await res.json().catch(() => null);
+      if (res.ok) {
+        alert(resData?.message || `व्हाउचर क्र. ${vNo} नामंजूर / रद्द करण्यात आले.`);
+        setRejectModalOpen(false);
+        if (onNavigate) {
+          onNavigate('voucher-posting');
+        } else {
+          window.location.href = '/?tab=voucher-posting';
+        }
+      } else {
+        alert(resData?.message || resData || 'व्हाउचर नामंजूर करताना त्रुटी आली.');
+      }
+    } catch (e) {
+      alert('व्हाउचर नामंजूर करताना त्रुटी आली.');
+    } finally {
+      setPassingActionLoading(false);
+    }
+  };
 
   const fetchBranchBusinessDate = async (bId: number) => {
     try {
@@ -591,105 +705,136 @@ export default function VoucherMaster() {
     <div className="p-2 sm:p-3 max-w-6xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans pb-8">
       
       {/* 🌟 1. TOP SLEEK CBS HEADER BANNER */}
-      <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
-            <Receipt size={18} className="stroke-[2.5]" />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
-              <span>व्हाउचर एंट्री मास्टर</span>
-              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Voucher & Journal Entry Master)</span>
-              {editingVoucherId !== null && (
-                <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
-                  ✏️ संपादन चालू (#{editingVoucherId})
+      {isPassingMode ? (
+        <div className="bg-gradient-to-r from-amber-600 via-amber-700 to-amber-900 text-white px-3.5 py-2.5 rounded-sm shadow-md border border-amber-500 mb-3 flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-white/20 rounded shadow-xs">
+              <CheckCircle2 size={20} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-xs font-bold tracking-wide flex items-center gap-2">
+                <span>🔒 व्हाउचर तपासणी व पासिंग मोड (Checker Passing Mode)</span>
+                <span className="bg-amber-950 px-2 py-0.5 rounded text-[10px] font-mono border border-amber-300 font-bold">
+                  {passingVoucher?.voucherNo || voucherNo}
                 </span>
-              )}
-            </h1>
-            <p className="text-[11px] text-gray-500 font-medium">
-              रिसिप्ट (Receipt), पेमेंट (Payment), जर्नल (Journal) व कॉन्ट्रा (Contra) रोजकीर्द नोंदी व खतावणी
-            </p>
+              </h2>
+              <p className="text-[10.5px] text-amber-100 font-normal">
+                कोअर बँकिंग नियंत्रण: ही नोंद केवळ तपासणी व मंजुरीसाठी उघडली आहे. यात बदल किंवा डिलीट करता येणार नाही.
+              </p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
+            className="bg-white/10 hover:bg-white/20 text-white px-3 py-1 rounded text-xs font-bold border border-white/30 transition-all flex items-center gap-1 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>पासिंग यादीवर परत जा (Back)</span>
+          </button>
         </div>
+      ) : (
+        <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
+              <Receipt size={18} className="stroke-[2.5]" />
+            </div>
+            <div>
+              <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
+                <span>व्हाउचर एंट्री मास्टर</span>
+                <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Voucher & Journal Entry Master)</span>
+                {editingVoucherId !== null && (
+                  <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
+                    ✏️ संपादन चालू (#{editingVoucherId})
+                  </span>
+                )}
+              </h1>
+              <p className="text-[11px] text-gray-500 font-medium">
+                रिसिप्ट (Receipt), पेमेंट (Payment), जर्नल (Journal) व कॉन्ट्रा (Contra) रोजकीर्द नोंदी व खतावणी
+              </p>
+            </div>
+          </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-2">
-          {editingVoucherId !== null && (
+          {/* Action Controls */}
+          <div className="flex items-center gap-2">
+            {editingVoucherId !== null && (
+              <button
+                type="button"
+                onClick={cancelEdit}
+                className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                title="संपादन रद्द करा"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>रद्द करा</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={cancelEdit}
-              className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-              title="संपादन रद्द करा"
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+              title="नवीन नोंद (Reset)"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>रद्द करा</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>नवीन व्हाउचर</span>
             </button>
-          )}
 
-          <button
-            type="button"
-            onClick={cancelEdit}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-            title="नवीन नोंद (Reset)"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>नवीन व्हाउचर</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsListModalOpen(true)}
-            className="px-2.5 py-1 bg-primary hover:opacity-90 text-white rounded-sm text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-            title="नोंदणीकृत व्हाउचर्स यादी पहा"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>📋 व्हाउचर्स यादी ({vouchers.length})</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setIsListModalOpen(true)}
+              className="px-2.5 py-1 bg-primary hover:opacity-90 text-white rounded-sm text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+              title="नोंदणीकृत व्हाउचर्स यादी पहा"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>📋 व्हाउचर्स यादी ({vouchers.length})</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 📊 2. SUMMARY KPI CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-primary/10 text-primary border border-primary/20 rounded">
-            <FileText className="w-4 h-4" />
+      {!isPassingMode && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+          <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
+            <div className="p-2 bg-primary/10 text-primary border border-primary/20 rounded">
+              <FileText className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण व्हाउचर्स</div>
+              <div className="text-sm font-black text-gray-900">{vouchers.length}</div>
+            </div>
           </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण व्हाउचर्स</div>
-            <div className="text-sm font-black text-gray-900">{vouchers.length}</div>
-          </div>
-        </div>
 
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
-            <ArrowDownLeft className="w-4 h-4" />
+          <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
+            <div className="p-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
+              <ArrowDownLeft className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">रिसिप्ट नोंदी (Receipts)</div>
+              <div className="text-sm font-black text-emerald-800">{receiptCount}</div>
+            </div>
           </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">रिसिप्ट नोंदी (Receipts)</div>
-            <div className="text-sm font-black text-emerald-800">{receiptCount}</div>
-          </div>
-        </div>
 
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-rose-50 text-rose-700 border border-rose-200 rounded">
-            <ArrowUpRight className="w-4 h-4" />
+          <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
+            <div className="p-2 bg-rose-50 text-rose-700 border border-rose-200 rounded">
+              <ArrowUpRight className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">पेमेंट नोंदी (Payments)</div>
+              <div className="text-sm font-black text-rose-800">{paymentCount}</div>
+            </div>
           </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">पेमेंट नोंदी (Payments)</div>
-            <div className="text-sm font-black text-rose-800">{paymentCount}</div>
-          </div>
-        </div>
 
-        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
-          <div className="p-2 bg-amber-50 text-amber-700 border border-amber-200 rounded">
-            <Calendar className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">आजच्या नोंदी (Today)</div>
-            <div className="text-sm font-black text-amber-800">{todayCount}</div>
+          <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
+            <div className="p-2 bg-amber-50 text-amber-700 border border-amber-200 rounded">
+              <Calendar className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">आजच्या नोंदी (Today)</div>
+              <div className="text-sm font-black text-amber-800">{todayCount}</div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* 📝 3. MAIN VOUCHER FORM */}
       <div 
@@ -717,7 +862,7 @@ export default function VoucherMaster() {
                 <select 
                   value={selectedBranchId} 
                   onChange={handleBranchChange} 
-                  disabled={editingVoucherId !== null || hasGlobalBranch}
+                  disabled={isPassingMode || editingVoucherId !== null || hasGlobalBranch}
                   className={`${inputClass} font-bold disabled:bg-slate-100 disabled:text-slate-500`}
                 >
                   {branches.map(b => (
@@ -731,7 +876,7 @@ export default function VoucherMaster() {
                 <select 
                   value={voucherType} 
                   onChange={handleVoucherTypeChange} 
-                  disabled={editingVoucherId !== null}
+                  disabled={isPassingMode || editingVoucherId !== null}
                   className={`${inputClass} font-bold disabled:bg-slate-100 disabled:text-slate-500`}
                 >
                   <option value="Receipt">📥 रिसिप्ट (Receipt - रोख आवक)</option>
@@ -747,8 +892,9 @@ export default function VoucherMaster() {
                   type="date" 
                   value={voucherDate} 
                   onChange={e => setVoucherDate(e.target.value)} 
+                  disabled={isPassingMode}
                   required
-                  className={inputClass} 
+                  className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed`} 
                 />
               </div>
 
@@ -772,14 +918,16 @@ export default function VoucherMaster() {
                 <h2 className="text-xs font-bold text-primary">२. व्हाउचर खतावणी तपशील (Account Ledgers & Amount Allocation)</h2>
               </div>
 
-              <button 
-                type="button" 
-                onClick={handleAddRow} 
-                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>ओळ जोडा (Add Row)</span>
-              </button>
+              {!isPassingMode && (
+                <button 
+                  type="button" 
+                  onClick={handleAddRow} 
+                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>ओळ जोडा (Add Row)</span>
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto border border-gray-200 rounded-sm max-h-[420px] shadow-2xs">
@@ -799,7 +947,7 @@ export default function VoucherMaster() {
                         <select 
                           value={detail.drCr} 
                           onChange={e => handleDetailChange(index, 'drCr', e.target.value)} 
-                          disabled={detail.isLocked || voucherType === 'Payment' || voucherType === 'Receipt'}
+                          disabled={isPassingMode || detail.isLocked || voucherType === 'Payment' || voucherType === 'Receipt'}
                           className="w-full text-center border border-gray-300 rounded-sm px-1 py-1 text-[11px] bg-white disabled:bg-slate-100 disabled:text-slate-500 font-bold cursor-pointer h-[28px]"
                         >
                           <option value="Dr">Dr</option>
@@ -809,7 +957,7 @@ export default function VoucherMaster() {
 
                       <td className="p-2 border-r border-gray-200 text-left min-w-[280px]">
                         <SearchableSelect
-                          disabled={detail.isLocked}
+                          disabled={isPassingMode || detail.isLocked}
                           value={detail.ledgerID ? detail.ledgerID.toString() : ''}
                           onChange={(e) => {
                             const lId = parseInt(String(e.target.value)) || 0;
@@ -819,7 +967,7 @@ export default function VoucherMaster() {
                           }}
                           options={ledgerOptions}
                           placeholder="-- खाते नाव किंवा नंबर शोधा (Search Ledger) --"
-                          className={detail.isLocked 
+                          className={isPassingMode || detail.isLocked 
                             ? "w-full border border-gray-300 px-2 py-1 rounded-sm text-[11px] bg-slate-100 font-bold text-gray-700 cursor-not-allowed flex justify-between items-center h-[28px]"
                             : "w-full border border-gray-300 px-2 py-1 rounded-sm text-[11px] bg-white flex justify-between items-center hover:border-primary cursor-pointer focus-within:border-primary focus-within:ring-1 focus-within:ring-primary h-[28px]"
                           }
@@ -841,7 +989,7 @@ export default function VoucherMaster() {
                             <MemberSearchSelect
                               members={members}
                               value={detail.memberID || ''}
-                              onChange={(val) => handleDetailChange(index, 'memberID', val)}
+                              onChange={(val) => !isPassingMode && handleDetailChange(index, 'memberID', val)}
                               placeholder="-- सभासद निवडा (Select Member) --"
                               className="w-full text-[11px]"
                             />
@@ -856,16 +1004,16 @@ export default function VoucherMaster() {
                           step="0.01" 
                           value={detail.amount || ''} 
                           onChange={e => handleDetailChange(index, 'amount', e.target.value)} 
-                          readOnly={detail.isLocked}
+                          readOnly={isPassingMode || detail.isLocked}
                           placeholder="0.00"
                           className={`w-full text-right font-mono font-bold text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary h-[28px] ${
-                            detail.isLocked ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-900'
+                            isPassingMode || detail.isLocked ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-900'
                           }`} 
                         />
                       </td>
 
                       <td className="p-2 text-center">
-                        {!detail.isLocked ? (
+                        {!isPassingMode && !detail.isLocked ? (
                           <button 
                             type="button" 
                             onClick={() => handleRemoveRow(index)} 
@@ -913,34 +1061,72 @@ export default function VoucherMaster() {
               ref={narrationInputRef}
               value={narration} 
               onChange={e => setNarration(e.target.value)} 
+              readOnly={isPassingMode}
               placeholder="व्यवहाराचा सविस्तर तपशील (उदा. चेक नंबर, बँकेचे नाव, कुणाकडून मिळाले, कशाबद्दल दिले इत्यादी)..."
               rows={2}
-              className="w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1.5 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-slate-50/50 text-gray-900 font-medium" 
+              className={`w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1.5 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none text-gray-900 font-medium ${
+                isPassingMode ? 'bg-slate-100 cursor-not-allowed' : 'bg-slate-50/50'
+              }`} 
             />
           </div>
 
           {/* Form Action Footer */}
-          <div className="pt-2 flex justify-end items-center gap-2 border-t border-gray-200">
-            {editingVoucherId && (
+          {isPassingMode ? (
+            <div className="pt-2.5 flex flex-wrap justify-between items-center gap-2 border-t-2 border-amber-400 bg-amber-50/70 p-2.5 rounded-b-sm">
               <button 
                 type="button" 
-                onClick={cancelEdit}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1"
+                onClick={() => onNavigate ? onNavigate('voucher-posting') : window.location.href = '/?tab=voucher-posting'}
+                disabled={passingActionLoading}
+                className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-sm text-xs cursor-pointer shadow-2xs flex items-center gap-1 transition-colors"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>रद्द करा</span>
+                <span>↩️ मागे जा (Back to Passing Queue)</span>
               </button>
-            )}
 
-            <button 
-              type="submit" 
-              disabled={totalDr !== totalCr || totalDr === 0}
-              className="px-6 py-2 bg-primary hover:opacity-90 disabled:bg-slate-400 text-white font-bold rounded-sm text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
-            >
-              <CheckSquare className="w-4 h-4" />
-              <span>{editingVoucherId ? '✏️ व्हाउचर अपडेट करा (Update)' : '💾 व्हाउचर सेव्ह करा (Save Voucher)'}</span>
-            </button>
-          </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  type="button" 
+                  onClick={() => setRejectModalOpen(true)}
+                  disabled={passingActionLoading}
+                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-sm text-xs cursor-pointer shadow-xs flex items-center gap-1 transition-colors disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>❌ व्हाउचर नामंजूर / रद्द करा (Reject)</span>
+                </button>
+
+                <button 
+                  type="button" 
+                  onClick={handlePassVoucher}
+                  disabled={passingActionLoading}
+                  className="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-sm text-xs cursor-pointer shadow-md flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{passingActionLoading ? 'पास होत आहे...' : '✅ व्हाउचर पास करा (Pass & Approve)'}</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="pt-2 flex justify-end items-center gap-2 border-t border-gray-200">
+              {editingVoucherId && (
+                <button 
+                  type="button" 
+                  onClick={cancelEdit}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-sm text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>रद्द करा</span>
+                </button>
+              )}
+
+              <button 
+                type="submit" 
+                disabled={totalDr !== totalCr || totalDr === 0}
+                className="px-6 py-2 bg-primary hover:opacity-90 disabled:bg-slate-400 text-white font-bold rounded-sm text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
+              >
+                <CheckSquare className="w-4 h-4" />
+                <span>{editingVoucherId ? '✏️ व्हाउचर अपडेट करा (Update)' : '💾 व्हाउचर सेव्ह करा (Save Voucher)'}</span>
+              </button>
+            </div>
+          )}
         </form>
       </div>
 
@@ -1138,6 +1324,58 @@ export default function VoucherMaster() {
                 className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-1 rounded-sm font-bold transition-colors cursor-pointer shadow-2xs"
               >
                 बंद करा (Close)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🛑 Rejection Reason Modal */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-2xs">
+          <div className="bg-white rounded-md shadow-2xl w-full max-w-md overflow-hidden border border-rose-300 border-t-4 border-t-rose-600 animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-rose-50 px-4 py-3 border-b border-rose-100 flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-rose-600" />
+              <div>
+                <h3 className="text-sm font-bold text-rose-900">व्हाउचर नामंजूर / रद्द करा (Reject Voucher)</h3>
+                <p className="text-[11px] text-rose-700">व्हाउचर क्र: <span className="font-mono font-bold">{passingVoucher?.voucherNo || voucherNo}</span></p>
+              </div>
+            </div>
+            
+            <div className="p-4 space-y-3">
+              <label className="block text-xs font-semibold text-gray-700">
+                नामंजूर करण्याचे कारण लिहा (Reason for Rejection): <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="उदा. खात्याचा तपशील चुकीचा आहे / रक्कम जुळत नाही / सपोर्टिंग डॉक्युमेंट नाही..."
+                rows={3}
+                className="w-full text-xs border border-gray-300 rounded p-2 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                autoFocus
+              />
+            </div>
+
+            <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRejectModalOpen(false);
+                  setRejectionReason('');
+                }}
+                disabled={passingActionLoading}
+                className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold text-xs rounded transition-colors"
+              >
+                रद्द करा (Cancel)
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectVoucher}
+                disabled={passingActionLoading || !rejectionReason.trim()}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{passingActionLoading ? 'प्रक्रिया सुरू आहे...' : 'नामंजूर निश्चित करा (Confirm Reject)'}</span>
               </button>
             </div>
           </div>

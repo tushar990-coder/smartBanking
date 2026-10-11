@@ -269,6 +269,85 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
+
+        // GET: api/SavingAccountClosings/by-voucher/{voucherId}
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<ActionResult<object>> GetSavingAccountClosingByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers.FindAsync(voucherId);
+            if (voucher == null)
+            {
+                return NotFound(new { message = "व्हाउचर सापडले नाही (Voucher not found)." });
+            }
+
+            SavingAccountClosing? closing = null;
+            if (!string.IsNullOrEmpty(voucher.VoucherNo))
+            {
+                closing = await _context.SavingAccountClosings
+                    .Include(c => c.SavingAccount)
+                        .ThenInclude(s => s!.Customer)
+                    .Include(c => c.Customer)
+                    .FirstOrDefaultAsync(c => c.VoucherNo == voucher.VoucherNo);
+            }
+
+            // Fallback: match by CustomerID
+            if (closing == null)
+            {
+                var custId = voucher.VoucherDetails.FirstOrDefault(d => d.CustomerID.HasValue && d.CustomerID.Value > 0)?.CustomerID;
+                if (custId.HasValue)
+                {
+                    closing = await _context.SavingAccountClosings
+                        .Include(c => c.SavingAccount)
+                            .ThenInclude(s => s!.Customer)
+                        .Include(c => c.Customer)
+                        .Where(c => c.CustomerID == custId.Value)
+                        .OrderByDescending(c => c.ClosingID)
+                        .FirstOrDefaultAsync();
+                }
+            }
+
+            if (closing == null)
+            {
+                return NotFound(new { message = "सदर व्हाउचरशी जोडलेली बचत खाते बंद नोंद सापडली नाही." });
+            }
+
+            return Ok(new
+            {
+                closing.ClosingID,
+                closing.SavingAccountID,
+                closing.CustomerID,
+                closing.ClosureDate,
+                closing.GrossBalance,
+                closing.ClosingCharges,
+                closing.NetPayable,
+                closing.PaymentMode,
+                closing.VoucherNo,
+                SavingAccount = closing.SavingAccount != null ? new
+                {
+                    closing.SavingAccount.SavingAccountID,
+                    closing.SavingAccount.AccountNo,
+                    closing.SavingAccount.CurrentBalance,
+                    closing.SavingAccount.Status,
+                    Customer = closing.SavingAccount.Customer != null ? new
+                    {
+                        closing.SavingAccount.Customer.CustomerID,
+                        FullName = $"{closing.SavingAccount.Customer.FirstName} {closing.SavingAccount.Customer.LastName}".Trim(),
+                        closing.SavingAccount.Customer.MobileNo,
+                        closing.SavingAccount.Customer.CIFNo
+                    } : null
+                } : null,
+                Voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.Narration,
+                    voucher.TotalAmount,
+                    voucher.Status
+                }
+            });
+        }
     }
 
     public class SavingAccountClosingRequest

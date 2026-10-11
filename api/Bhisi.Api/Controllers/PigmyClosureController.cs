@@ -792,5 +792,122 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, "खाते बंद करताना सर्व्हर त्रुटी आली: " + ex.Message);
             }
         }
+
+        // GET: api/PigmyClosure/by-voucher/{voucherId}
+        [HttpGet("by-voucher/{voucherId}")]
+        public async Task<IActionResult> GetClosureByVoucher(int voucherId)
+        {
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
+
+            if (voucher == null)
+            {
+                return NotFound(new { message = $"व्हाउचर क्र. {voucherId} सिस्टीममध्ये सापडले नाही." });
+            }
+
+            PigmyAccount? account = null;
+            PigmyWithdrawal? withdrawal = null;
+
+            // 1. Try finding in PigmyWithdrawals by VoucherNo
+            if (!string.IsNullOrEmpty(voucher.VoucherNo))
+            {
+                withdrawal = await _context.PigmyWithdrawals
+                    .Include(w => w.PigmyAccount)
+                        .ThenInclude(a => a!.Customer)
+                    .Include(w => w.PigmyAccount)
+                        .ThenInclude(a => a!.PigmyScheme)
+                    .FirstOrDefaultAsync(w => w.VoucherNo == voucher.VoucherNo);
+
+                if (withdrawal != null)
+                {
+                    account = withdrawal.PigmyAccount;
+                }
+            }
+
+            // 2. Try parsing AccountNo from Narration (e.g., "खाते 1234", "A/c 1234", "account 1234")
+            if (account == null && !string.IsNullOrEmpty(voucher.Narration))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(
+                    voucher.Narration, 
+                    @"(?:A\/c|खाते|Account)\s+([A-Za-z0-9\-]+)", 
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                );
+                if (match.Success)
+                {
+                    string accCandidate = match.Groups[1].Value.Trim();
+                    account = await _context.PigmyAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.PigmyScheme)
+                        .FirstOrDefaultAsync(a => a.AccountNo == accCandidate);
+                }
+            }
+
+            // 3. Fallback to Customer ID from VoucherDetails
+            if (account == null)
+            {
+                var custId = voucher.VoucherDetails.FirstOrDefault(vd => vd.CustomerID.HasValue && vd.CustomerID.Value > 0)?.CustomerID;
+                if (custId.HasValue)
+                {
+                    account = await _context.PigmyAccounts
+                        .Include(a => a.Customer)
+                        .Include(a => a.PigmyScheme)
+                        .Where(a => a.CustomerID == custId.Value)
+                        .OrderByDescending(a => a.PigmyAccountID)
+                        .FirstOrDefaultAsync();
+                }
+            }
+
+            if (account == null)
+            {
+                return NotFound(new { message = $"सदर पिग्मी व्हाउचरशी (ID: {voucherId}) संबंधित खाते सापडले नाही." });
+            }
+
+            string closureType = (voucher.VoucherNo?.StartsWith("VCH-WDR-") == true || voucher.Narration?.Contains("विड्रॉल") == true)
+                ? "Withdrawal"
+                : "Closure";
+
+            return Ok(new
+            {
+                pigmyAccount = new
+                {
+                    account.PigmyAccountID,
+                    account.AccountNo,
+                    account.CustomerID,
+                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CIFNo = account.Customer?.CIFNo ?? "",
+                    account.CurrentCycleNumber,
+                    account.OpeningDate,
+                    account.MaturityDate,
+                    account.TotalDepositedAmount,
+                    account.Status,
+                    SchemeName = account.PigmyScheme?.SchemeName ?? ""
+                },
+                closureDetails = new
+                {
+                    ClosureDate = withdrawal?.WithdrawalDate ?? voucher.VoucherDate,
+                    ClosureType = closureType,
+                    RequestedAmount = withdrawal?.RequestedAmount ?? voucher.TotalAmount,
+                    PenaltyAmount = withdrawal?.PenaltyAmount ?? 0,
+                    InterestAmount = withdrawal?.InterestAmount ?? 0,
+                    NetPayable = voucher.TotalAmount,
+                    Narration = voucher.Narration
+                },
+                voucher = new
+                {
+                    voucher.VoucherID,
+                    voucher.VoucherNo,
+                    voucher.VoucherDate,
+                    voucher.VoucherType,
+                    voucher.TotalAmount,
+                    voucher.Status,
+                    voucher.Narration,
+                    voucher.ApprovedBy,
+                    voucher.ApprovedOn,
+                    CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending"
+                }
+            });
+        }
     }
 }

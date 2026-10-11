@@ -505,7 +505,16 @@ namespace Bhisi.Api.Controllers
                 decimal fdBalance = await _context.FdAccounts.Where(f => f.Status == "Active").SumAsync(f => f.DepositAmount);
                 decimal rdBalance = await _context.RdAccounts.Where(r => r.Status == "Active").SumAsync(r => r.TotalDepositedAmount);
                 decimal pigmyBalance = await _context.PigmyAccounts.Where(p => p.Status == "Active").SumAsync(p => p.TotalDepositedAmount - p.TotalWithdrawnAmount);
-                decimal actualOutsideLiabilities = savingBalance + fdBalance + rdBalance + pigmyBalance;
+                
+                // Outside Bank Loans / External Borrowings if any
+                var borrowingLedgers = await _context.Ledgers
+                    .Where(l => l.AccountGroup != null &&
+                                (l.AccountGroup.NatureOfGroup == "Liability" || l.AccountGroup.NatureOfGroup == "Liabilities") &&
+                                (l.LedgerName.Contains("बँक कर्ज") || l.LedgerName.Contains("शिखर") || l.LedgerName.Contains("मध्यवर्ती") || l.LedgerName.Contains("कर्ज उचल") || l.LedgerName.Contains("उचल कर्ज")))
+                    .ToListAsync();
+                decimal outsideBankLoans = borrowingLedgers.Sum(l => Math.Max(0, GetCreditBalance(l)));
+
+                decimal actualOutsideLiabilities = savingBalance + fdBalance + rdBalance + pigmyBalance + outsideBankLoans;
 
                 decimal surplusHeadroom = maxBorrowingLimit - actualOutsideLiabilities;
                 bool isComplied = surplusHeadroom >= 0;
@@ -516,13 +525,70 @@ namespace Bhisi.Api.Controllers
                     m.LedgerID, m.Ledger?.LedgerName ?? "", GetCreditBalance(m.Ledger)
                 )).ToList();
 
+                var borrowingCapacityObj = new
+                {
+                    GrossOwnedFunds = totalGrossSwanidhi,
+                    GrossOwnedFundsInLakhs = ToLakh(totalGrossSwanidhi),
+                    TotalDeductions = totalDeductions,
+                    TotalDeductionsInLakhs = ToLakh(totalDeductions),
+                    NetOwnedFunds = netOwnedFunds,
+                    NetOwnedFundsInLakhs = ToLakh(netOwnedFunds),
+                    Multiplier = multiplier,
+                    MaxBorrowingLimit = maxBorrowingLimit,
+                    MaxBorrowingLimitInLakhs = ToLakh(maxBorrowingLimit),
+                    SavingBalance = savingBalance,
+                    SavingBalanceInLakhs = ToLakh(savingBalance),
+                    FdBalance = fdBalance,
+                    FdBalanceInLakhs = ToLakh(fdBalance),
+                    RdBalance = rdBalance,
+                    RdBalanceInLakhs = ToLakh(rdBalance),
+                    PigmyBalance = pigmyBalance,
+                    PigmyBalanceInLakhs = ToLakh(pigmyBalance),
+                    OutsideBankLoans = outsideBankLoans,
+                    OutsideBankLoansInLakhs = ToLakh(outsideBankLoans),
+                    ActualOutsideLiabilities = actualOutsideLiabilities,
+                    ActualOutsideLiabilitiesInLakhs = ToLakh(actualOutsideLiabilities),
+                    SurplusHeadroom = surplusHeadroom,
+                    SurplusHeadroomInLakhs = ToLakh(surplusHeadroom),
+                    IsComplied = isComplied,
+                    ComplianceStatusText = isComplied ? "✅ नियम ३५ चे तंतोतंत पालन (मर्यादा सुरक्षित)" : "⚠️ मर्यादा ओलांडली (तूट)",
+                    ComplianceText = isComplied 
+                        ? "✅ नियम ३५ नुसार संस्था सुरक्षित असून कमाल उचल मर्यादेचे तंतोतंत पालन झालेले आहे." 
+                        : "⚠️ सावधान: बाह्य देणी कमाल उचल मर्यादेपेक्षा जास्त आहेत. स्वनिधी वाढवणे आवश्यक आहे.",
+                    DetailedComplianceNote = isComplied
+                        ? $"संस्थेची प्रत्यक्ष बाह्य देणी ₹ {actualOutsideLiabilities:N2} ({ToLakh(actualOutsideLiabilities)} लाख) ही नियम ३५ अन्वये अनुज्ञेय कमाल मर्यादा ₹ {maxBorrowingLimit:N2} ({ToLakh(maxBorrowingLimit)} लाख) च्या आत मर्यादित असून, संस्थेकडे अजून ₹ {surplusHeadroom:N2} ({ToLakh(surplusHeadroom)} लाख) इतकी उचल मर्यादा शिल्लक आहे. सबब संस्थेने महाराष्ट्र सहकारी संस्था नियम, १९६१ मधील नियम ३५ चे तंतोतंत पालन केले असून संस्था सुरक्षित आहे."
+                        : $"सावधान: संस्थेची प्रत्यक्ष बाह्य देणी ₹ {actualOutsideLiabilities:N2} ({ToLakh(actualOutsideLiabilities)} लाख) ही नियम ३५ अन्वये अनुज्ञेय कमाल मर्यादा ₹ {maxBorrowingLimit:N2} ({ToLakh(maxBorrowingLimit)} लाख) पेक्षा जास्त आहेत. संस्थेकडे ₹ {Math.Abs(surplusHeadroom):N2} ({ToLakh(Math.Abs(surplusHeadroom))} लाख) इतकी मर्यादा तूट आहे. नियम ३५ चे पालन करण्यासाठी स्वनिधी वाढवणे आवश्यक आहे."
+                };
+
+                var divCalcObj = new
+                {
+                    Year1DividendRate = y1,
+                    Year2DividendRate = y2,
+                    Year3DividendRate = y3,
+                    AverageDividendRate = avgDivRate,
+                    CertifiedNetProfit = netProfit,
+                    EstimatedDividendAmount = proposedDividendAmount,
+                    SurplusProfitInOwnedFunds = undistributedNetProfit,
+                    Year1Rate = y1,
+                    Year2Rate = y2,
+                    Year3Rate = y3,
+                    AverageRate = avgDivRate,
+                    ProposedDividendAmount = proposedDividendAmount,
+                    SurplusNetProfit = undistributedNetProfit
+                };
+
                 var response = new
                 {
                     Sanstha = new
                     {
                         SansthaName = sanstha?.SansthaName ?? "सहकारी पतसंस्था मर्यादित",
                         RegistrationNo = sanstha?.RegistrationNo ?? "",
+                        RegistrationDate = sanstha?.RegistrationDate != null ? sanstha.RegistrationDate.Value.ToString("dd/MM/yyyy") : "",
                         Address = sanstha?.Address ?? "",
+                        Village = sanstha?.Village ?? "",
+                        Taluka = sanstha?.Taluka ?? "",
+                        District = sanstha?.District ?? "",
+                        Pincode = sanstha?.PinCode ?? "",
                         PhoneNo = sanstha?.ContactNo ?? ""
                     },
                     TargetDate = targetDate.ToString("yyyy-MM-dd"),
@@ -535,7 +601,7 @@ namespace Bhisi.Api.Controllers
                         new {
                             SrNo = "१.",
                             Particular = "वसूल भाग भांडवल",
-                            Reference = "",
+                            Reference = "नियमित व नाममात्र",
                             AmountInRupees = paidUpCapital,
                             AmountInLakhs = ToLakh(paidUpCapital),
                             Items = capItems
@@ -543,7 +609,7 @@ namespace Bhisi.Api.Controllers
                         new {
                             SrNo = "२.",
                             Particular = "राखीव निधी",
-                            Reference = "",
+                            Reference = "कलम ६६ प्रमाणे २५%",
                             AmountInRupees = statutoryReserve,
                             AmountInLakhs = ToLakh(statutoryReserve),
                             Items = resItems
@@ -551,7 +617,7 @@ namespace Bhisi.Api.Controllers
                         new {
                             SrNo = "३.",
                             Particular = "इमारत निधी",
-                            Reference = "",
+                            Reference = "नफ्यातून निर्मित",
                             AmountInRupees = buildingFund,
                             AmountInLakhs = ToLakh(buildingFund),
                             Items = bldItems
@@ -567,7 +633,7 @@ namespace Bhisi.Api.Controllers
                         new {
                             SrNo = "५.",
                             Particular = "उत्तम जिंदगी तरतूद",
-                            Reference = "",
+                            Reference = "०.४०% सामान्य तरतूद",
                             AmountInRupees = standardAssetProvision,
                             AmountInLakhs = ToLakh(standardAssetProvision),
                             Items = stdItems
@@ -584,6 +650,42 @@ namespace Bhisi.Api.Controllers
                                 new { Label = $"मागील ३ वर्षांची लाभांश सरासरी ({avgDivRate}%)", Amount = proposedDividendAmount },
                                 new { Label = "शिल्लक उर्वरित नफा (स्वनिधीत ग्राह्य)", Amount = undistributedNetProfit }
                             }
+                        },
+                        new {
+                            SrNo = "",
+                            Particular = "एकूण - (अ) सकल स्वनिधी (Gross Owned Funds)",
+                            Reference = "",
+                            AmountInRupees = totalGrossSwanidhi,
+                            AmountInLakhs = ToLakh(totalGrossSwanidhi),
+                            IsTotal = true,
+                            Items = (object)null!
+                        },
+                        new {
+                            SrNo = "ब)",
+                            Particular = "वजा: संचित तोटा (Accumulated Losses)",
+                            Reference = "ताळेबंद तोटा",
+                            AmountInRupees = accumulatedLoss,
+                            AmountInLakhs = ToLakh(accumulatedLoss),
+                            IsDeduction = true,
+                            Items = lossItems
+                        },
+                        new {
+                            SrNo = "",
+                            Particular = "एकूण - (ब) एकूण वजावटी (Total Deductions)",
+                            Reference = "",
+                            AmountInRupees = totalDeductions,
+                            AmountInLakhs = ToLakh(totalDeductions),
+                            IsTotal = true,
+                            Items = (object)null!
+                        },
+                        new {
+                            SrNo = "क)",
+                            Particular = "एकूण - निव्वळ स्वनिधी (Net Owned Funds / Swanidhi) [अ - ब]",
+                            Reference = "",
+                            AmountInRupees = netOwnedFunds,
+                            AmountInLakhs = ToLakh(netOwnedFunds),
+                            IsGrandTotal = true,
+                            Items = (object)null!
                         }
                     },
 
@@ -597,9 +699,9 @@ namespace Bhisi.Api.Controllers
                     Deductions = new List<object>
                     {
                         new {
-                            SrNo = "",
+                            SrNo = "१.",
                             Particular = "संचित तोटा",
-                            Reference = "",
+                            Reference = "ताळेबंद तोटा",
                             AmountInRupees = accumulatedLoss,
                             AmountInLakhs = ToLakh(accumulatedLoss),
                             Items = lossItems
@@ -620,33 +722,39 @@ namespace Bhisi.Api.Controllers
                         AmountInLakhs = ToLakh(netOwnedFunds)
                     },
 
-                    // Borrowing Power & Limits
-                    Compliance = new
+                    // Part 2 - Rule 35 Borrowing Limit vs Liabilities Statement
+                    Part2 = new
                     {
+                        Title = "भाग - २ : नियम ३५ अन्वये कमाल उचल मर्यादा व प्रत्यक्ष देयता ताळमेळ विवरणपत्र",
+                        NetOwnedFunds = netOwnedFunds,
+                        NetOwnedFundsInLakhs = ToLakh(netOwnedFunds),
                         Multiplier = multiplier,
                         MaxBorrowingLimit = maxBorrowingLimit,
                         MaxBorrowingLimitInLakhs = ToLakh(maxBorrowingLimit),
-                        ActualOutsideLiabilities = actualOutsideLiabilities,
-                        ActualOutsideLiabilitiesInLakhs = ToLakh(actualOutsideLiabilities),
+                        LiabilitiesBreakdown = new List<object>
+                        {
+                            new { SrNo = "(अ)", Particular = "बचत ठेवी (Savings Bank Deposits)", Basis = "प्रत्यक्ष ठेव शिल्लक", AmountInRupees = savingBalance, AmountInLakhs = ToLakh(savingBalance) },
+                            new { SrNo = "(ब)", Particular = "मुदत ठेवी (Fixed Deposits)", Basis = "प्रत्यक्ष ठेव शिल्लक", AmountInRupees = fdBalance, AmountInLakhs = ToLakh(fdBalance) },
+                            new { SrNo = "(क)", Particular = "आवर्ती ठेवी (Recurring Deposits - RD)", Basis = "प्रत्यक्ष ठेव शिल्लक", AmountInRupees = rdBalance, AmountInLakhs = ToLakh(rdBalance) },
+                            new { SrNo = "(ड)", Particular = "दैनिक / पिग्मी ठेवी (Daily / Pigmy Deposits)", Basis = "प्रत्यक्ष ठेव शिल्लक", AmountInRupees = pigmyBalance, AmountInLakhs = ToLakh(pigmyBalance) },
+                            new { SrNo = "(इ)", Particular = "इतर बाह्य वित्तीय संस्थांची कर्जे / देयता (Outside Loans)", Basis = "प्रत्यक्ष बाह्य देणी", AmountInRupees = outsideBankLoans, AmountInLakhs = ToLakh(outsideBankLoans) }
+                        },
+                        TotalActualLiabilities = actualOutsideLiabilities,
+                        TotalActualLiabilitiesInLakhs = ToLakh(actualOutsideLiabilities),
                         SurplusHeadroom = surplusHeadroom,
                         SurplusHeadroomInLakhs = ToLakh(surplusHeadroom),
                         IsComplied = isComplied,
-                        ComplianceText = isComplied 
-                            ? "✅ नियम ३५ नुसार संस्था सुरक्षित असून कमाल उचल मर्यादेचे तंतोतंत पालन झालेले आहे." 
-                            : "⚠️ सावधान: बाह्य देणी कमाल उचल मर्यादेपेक्षा जास्त आहेत. स्वनिधी वाढवणे आवश्यक आहे."
+                        ComplianceStatusText = borrowingCapacityObj.ComplianceStatusText,
+                        DetailedComplianceNote = borrowingCapacityObj.DetailedComplianceNote
                     },
 
+                    // Borrowing Power & Limits
+                    BorrowingCapacity = borrowingCapacityObj,
+                    Compliance = borrowingCapacityObj,
+
                     // 3-Year Dividend Breakdown for Explanation-2
-                    DividendCalc = new
-                    {
-                        Year1Rate = y1,
-                        Year2Rate = y2,
-                        Year3Rate = y3,
-                        AverageRate = avgDivRate,
-                        CertifiedNetProfit = netProfit,
-                        ProposedDividendAmount = proposedDividendAmount,
-                        SurplusNetProfit = undistributedNetProfit
-                    },
+                    Explanation2Breakdown = divCalcObj,
+                    DividendCalc = divCalcObj,
 
                     // Excluded Reserves List
                     ExcludedReserves = excludedItems,

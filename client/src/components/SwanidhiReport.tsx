@@ -261,42 +261,85 @@ export default function SwanidhiReport() {
   };
 
   const handleExportExcel = () => {
-    if (!reportData || !reportData.rows) return;
+    if (!reportData) return;
+
+    const bCap = reportData.borrowingCapacity || reportData.compliance || {};
+    const exp2 = reportData.explanation2Breakdown || reportData.dividendCalc || {};
+    const netSwanidhi = bCap.netOwnedFunds ?? (reportData?.netSwanidhi?.amountInRupees || 0);
+    const maxLimit = bCap.maxBorrowingLimit ?? (netSwanidhi * selectedMultiplier);
+    const actualLiab = bCap.actualOutsideLiabilities || 0;
+    const surplus = bCap.surplusHeadroom ?? (maxLimit - actualLiab);
 
     const wb = XLSX.utils.book_new();
     const rows = [
       [reportData.sanstha?.sansthaName || 'सहकारी पतसंस्था मर्यादित'],
-      ['स्वनिधी (Owned Funds - Rule 35) परिपत्रकानुसार विवरणपत्रक'],
-      [`दिनांक: ${reportData.targetDateDisplay || asOnDate}`, `कमाल उचल मर्यादा: ${selectedMultiplier} पट`],
+      [reportData.sanstha?.address || ''],
+      [`नोंदणी क्र.: ${reportData.sanstha?.registrationNo || '-'}`, `नोंदणी दिनांक: ${reportData.sanstha?.registrationDate || '-'}`],
       [],
-      ['अ.क्र.', 'तपशिल', 'रुपयांत', 'लाखांत']
+      ['महाराष्ट्र सहकारी संस्था नियम, १९६१ चे नियम ३५ अन्वये स्वनिधी व कमाल उचल मर्यादा विवरणपत्र'],
+      [`दिनांक: ${reportData.targetDateDisplay || asOnDate} रोजी अखेर`, `कमाल उचल मर्यादा गुणक: ${selectedMultiplier} पट`, 'आकडे: रुपयांत (₹) व लाखांत'],
+      [],
+      ['=== भाग - १ : स्वनिधी गणन विवरणपत्र (Calculation of Owned Funds) ==='],
+      ['अ.क्र.', 'तपशिल (Particulars)', 'संदर्भ / आधार', 'रक्कम रुपयांत (₹)', 'रक्कम लाखांत (Lakhs)'],
+      ['(अ)', 'स्वनिधीमध्ये समाविष्ट होणारे घटक (Inclusions):', '', '', '']
     ];
 
-    reportData.rows.forEach((r: any) => {
+    // Part 1 Rows 1 to 6
+    const inclusionRows = (reportData.rows || []).filter((r: any) => !r.isTotal && !r.isGrandTotal && !r.isDeduction && r.srNo !== 'ब)' && r.srNo !== 'क)');
+    inclusionRows.forEach((r: any) => {
       rows.push([
         r.srNo || '',
         r.particular || '',
+        r.reference || '',
         r.amountInRupees !== null && r.amountInRupees !== undefined ? r.amountInRupees : '',
         r.amountInLakhs !== null && r.amountInLakhs !== undefined ? r.amountInLakhs : ''
       ]);
-      if (r.subItems && r.subItems.length > 0) {
-        r.subItems.forEach((si: any) => {
-          rows.push(['', `   - ${si.ledgerName}`, si.balance, (si.balance / 100000).toFixed(2)]);
+      if (r.items && r.items.length > 0) {
+        r.items.forEach((si: any) => {
+          rows.push(['', `   ↳ ${si.ledgerName || si.label}`, '', si.balance ?? si.amount, ((si.balance ?? si.amount) / 100000).toFixed(2)]);
         });
       }
     });
 
+    const grossSwanidhi = bCap.grossOwnedFunds ?? (reportData.totalA?.amountInRupees || 0);
+    rows.push(['', 'एकूण - (अ) सकल स्वनिधी (Total Gross Owned Funds)', '', grossSwanidhi, (grossSwanidhi / 100000).toFixed(2)]);
+    
+    rows.push(['(ब)', 'वजावटी (Deductions):', '', '', '']);
+    const dedRows = reportData.deductions || [];
+    dedRows.forEach((d: any) => {
+      rows.push([d.srNo || '१.', d.particular || 'संचित तोटा', d.reference || '', d.amountInRupees, d.amountInLakhs]);
+    });
+    const totalDeductions = bCap.totalDeductions ?? (reportData.totalB?.amountInRupees || 0);
+    rows.push(['', 'एकूण - (ब) एकूण वजावटी (Total Deductions)', '', totalDeductions, (totalDeductions / 100000).toFixed(2)]);
+
+    rows.push(['(क)', 'एकूण - निव्वळ स्वनिधी (Net Owned Funds) [अ - ब]', '', netSwanidhi, (netSwanidhi / 100000).toFixed(2)]);
+
     rows.push([]);
-    rows.push(['--- नियम ३५ कमाल उचल मर्यादा तुलना ---']);
-    rows.push(['निव्वळ स्वनिधी (Net Owned Funds):', '', reportData.borrowingCapacity?.netOwnedFunds, (reportData.borrowingCapacity?.netOwnedFunds / 100000).toFixed(2)]);
-    rows.push([`कमाल उचल मर्यादा (${selectedMultiplier} पट):`, '', reportData.borrowingCapacity?.maxBorrowingLimit, (reportData.borrowingCapacity?.maxBorrowingLimit / 100000).toFixed(2)]);
-    rows.push(['प्रत्यक्ष बाह्य देयता (ठेवी + बाह्य कर्जे):', '', reportData.borrowingCapacity?.actualOutsideLiabilities, (reportData.borrowingCapacity?.actualOutsideLiabilities / 100000).toFixed(2)]);
-    rows.push(['शिल्लक उचल मर्यादा (Surplus Headroom):', '', reportData.borrowingCapacity?.surplusHeadroom, (reportData.borrowingCapacity?.surplusHeadroom / 100000).toFixed(2)]);
-    rows.push(['अनुपालन स्थिती (Compliance Status):', '', reportData.borrowingCapacity?.complianceStatusText]);
+    rows.push(['=== भाग - २ : नियम ३५ अन्वये कमाल उचल मर्यादा व प्रत्यक्ष देयता ताळमेळ विवरणपत्र ===']);
+    rows.push(['अ.क्र.', 'तपशिल / विवरण', 'नियम / आधार', 'रक्कम रुपयांत (₹)', 'रक्कम लाखांत (Lakhs)']);
+    rows.push(['१.', 'निव्वळ स्वनिधी (Net Owned Funds)', 'भाग-१ मधील (क) प्रमाणे', netSwanidhi, (netSwanidhi / 100000).toFixed(2)]);
+    rows.push(['२.', 'अनुज्ञेय कमाल उचल मर्यादा गुणक', 'पोटनियम व नियम ३५ नुसार', `${selectedMultiplier} पट`, `${selectedMultiplier} पट`]);
+    rows.push(['३.', `एकूण अनुज्ञेय कमाल उचल मर्यादा [१ × २]`, `स्वनिधीच्या ${selectedMultiplier} पट`, maxLimit, (maxLimit / 100000).toFixed(2)]);
+    rows.push(['४.', 'संस्थेची प्रत्यक्ष बाह्य देणी / उचल (Actual Liabilities):', '', '', '']);
+    rows.push(['   (अ)', 'बचत ठेवी (Savings Bank Deposits)', 'प्रत्यक्ष ठेव शिल्लक', bCap.savingBalance || 0, ((bCap.savingBalance || 0) / 100000).toFixed(2)]);
+    rows.push(['   (ब)', 'मुदत ठेवी (Fixed Deposits)', 'प्रत्यक्ष ठेव शिल्लक', bCap.fdBalance || 0, ((bCap.fdBalance || 0) / 100000).toFixed(2)]);
+    rows.push(['   (क)', 'आवर्ती ठेवी (Recurring Deposits - RD)', 'प्रत्यक्ष ठेव शिल्लक', bCap.rdBalance || 0, ((bCap.rdBalance || 0) / 100000).toFixed(2)]);
+    rows.push(['   (ड)', 'दैनिक / पिग्मी ठेवी (Daily / Pigmy Deposits)', 'प्रत्यक्ष ठेव शिल्लक', bCap.pigmyBalance || 0, ((bCap.pigmyBalance || 0) / 100000).toFixed(2)]);
+    rows.push(['   (इ)', 'इतर बाह्य वित्तीय संस्था कर्जे (Outside Bank Loans)', 'प्रत्यक्ष बाह्य देणी', bCap.outsideBankLoans || 0, ((bCap.outsideBankLoans || 0) / 100000).toFixed(2)]);
+    rows.push(['', 'एकूण प्रत्यक्ष बाह्य देयता / उचल [अ+ब+क+ड+इ]', 'एकूण बाह्य देणी', actualLiab, (actualLiab / 100000).toFixed(2)]);
+    rows.push(['५.', bCap.isComplied ? 'शिल्लक सुरक्षित उचल मर्यादा (Surplus Headroom) [३ वजा ४]' : 'अतिरिक्त उचल / तूट (Excess / Deficit) [३ वजा ४]', bCap.isComplied ? 'मर्यादा शिल्लक' : 'तूट', Math.abs(surplus), (Math.abs(surplus) / 100000).toFixed(2)]);
+    rows.push(['६.', 'नियम ३५ चे पालन व वैधानिक निष्कर्ष', bCap.complianceStatusText || '', bCap.detailedComplianceNote || bCap.complianceText || '', '']);
+
+    rows.push([]);
+    rows.push(['=== भाग - ३ : स्पष्टीकरण-२ शिल्लक निव्वळ नफा संगणन ===']);
+    rows.push(['१. प्रमाणित निव्वळ नफा (₹):', exp2.certifiedNetProfit || 0]);
+    rows.push([`२. मागील ३ वर्षांचे लाभांश दर सरासरी (%):`, `${exp2.averageDividendRate || exp2.averageRate || avgDiv}%`]);
+    rows.push(['३. वजा: नियोजित लाभांश रक्कम (₹):', exp2.estimatedDividendAmount || exp2.proposedDividendAmount || 0]);
+    rows.push(['४. स्वनिधीत ग्राह्य शिल्लक नफा (₹):', exp2.surplusProfitInOwnedFunds || exp2.surplusNetProfit || 0]);
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'स्वनिधी अहवाल');
-    XLSX.writeFile(wb, `Swanidhi_Report_${asOnDate}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'नियम ३५ स्वनिधी अहवाल');
+    XLSX.writeFile(wb, `Rule35_Swanidhi_Report_${asOnDate}.xlsx`);
   };
 
   const toggleRow = (srNo: string) => {
@@ -308,11 +351,81 @@ export default function SwanidhiReport() {
   const labelClass = "block text-[11px] font-bold text-gray-700 mb-1";
   const inputClass = "w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[30px]";
 
+  // Calculations for safe rendering
+  const bCap = reportData?.borrowingCapacity || reportData?.compliance || {};
+  const exp2 = reportData?.explanation2Breakdown || reportData?.dividendCalc || {};
+  const grossOwnedFunds = bCap.grossOwnedFunds ?? (reportData?.totalA?.amountInRupees || 0);
+  const totalDeductions = bCap.totalDeductions ?? (reportData?.totalB?.amountInRupees || 0);
+  const netOwnedFunds = bCap.netOwnedFunds ?? (reportData?.netSwanidhi?.amountInRupees || 0);
+  const maxBorrowingLimit = bCap.maxBorrowingLimit ?? (netOwnedFunds * selectedMultiplier);
+  const savingBalance = bCap.savingBalance || 0;
+  const fdBalance = bCap.fdBalance || 0;
+  const rdBalance = bCap.rdBalance || 0;
+  const pigmyBalance = bCap.pigmyBalance || 0;
+  const outsideBankLoans = bCap.outsideBankLoans || 0;
+  const actualOutsideLiabilities = bCap.actualOutsideLiabilities || (savingBalance + fdBalance + rdBalance + pigmyBalance + outsideBankLoans);
+  const surplusHeadroom = bCap.surplusHeadroom ?? (maxBorrowingLimit - actualOutsideLiabilities);
+  const isComplied = bCap.isComplied ?? (surplusHeadroom >= 0);
+  const complianceStatusText = bCap.complianceStatusText || (isComplied ? '✅ नियम ३५ चे तंतोतंत पालन (मर्यादा सुरक्षित)' : '⚠️ मर्यादा ओलांडली (तूट)');
+  const detailedComplianceNote = bCap.detailedComplianceNote || bCap.complianceText || (isComplied 
+    ? `संस्थेची प्रत्यक्ष बाह्य देणी ₹ ${fmtCur(actualOutsideLiabilities)} ही नियम ३५ अन्वये अनुज्ञेय कमाल मर्यादा ₹ ${fmtCur(maxBorrowingLimit)} च्या आत मर्यादित असून, संस्थेकडे अजून ₹ ${fmtCur(surplusHeadroom)} (${fmtLakh(surplusHeadroom / 100000)} लाख) इतकी उचल मर्यादा शिल्लक आहे. सबब संस्थेने महाराष्ट्र सहकारी संस्था नियम, १९६१ मधील नियम ३५ चे तंतोतंत पालन केले असून संस्था सुरक्षित आहे.` 
+    : `सावधान: संस्थेची प्रत्यक्ष बाह्य देणी ₹ ${fmtCur(actualOutsideLiabilities)} ही नियम ३५ अन्वये अनुज्ञेय कमाल मर्यादा ₹ ${fmtCur(maxBorrowingLimit)} पेक्षा जास्त आहेत. संस्थेकडे ₹ ${fmtCur(Math.abs(surplusHeadroom))} ची तूट आहे.`);
+
+  // Inclusions rows (1 to 6)
+  const inclusionRows = (reportData?.rows || []).filter((r: any) => 
+    !r.isTotal && !r.isGrandTotal && !r.isDeduction && r.srNo !== 'ब)' && r.srNo !== 'क)' && !r.particular?.includes('एकूण') && !r.particular?.includes('वजा')
+  );
+
+  // Deductions rows
+  const deductionRows = reportData?.deductions && reportData.deductions.length > 0 
+    ? reportData.deductions 
+    : (reportData?.rows || []).filter((r: any) => r.isDeduction || r.srNo === 'ब)' || r.particular?.includes('तोटा'));
+
   return (
     <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans print:p-0 print:bg-white">
       
+      {/* Print Specific CSS */}
+      <style>
+        {`
+          @media print {
+            body * {
+              visibility: hidden;
+            }
+            .print-area, .print-area * {
+              visibility: visible;
+            }
+            .print-area {
+              position: static !important;
+              width: 100% !important;
+              max-width: 100% !important;
+              padding: 0 !important;
+              margin: 0 auto !important;
+              box-shadow: none !important;
+              border: none !important;
+              background: white !important;
+              overflow: visible !important;
+              display: block !important;
+            }
+            .no-print {
+              display: none !important;
+            }
+            table {
+              page-break-inside: auto !important;
+              break-inside: auto !important;
+            }
+            tr {
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+            thead {
+              display: table-header-group !important;
+            }
+          }
+        `}
+      </style>
+
       {/* Top Sleek CBS Header Banner */}
-      <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-slate-300 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2 print:hidden">
+      <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-slate-300 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2 no-print">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-sm bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
             <Building2 size={18} className="stroke-[2.5]" />
@@ -361,7 +474,7 @@ export default function SwanidhiReport() {
             <>
               <button
                 onClick={handlePrint}
-                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-[11px] font-bold rounded-sm flex items-center gap-1.5 shadow-2xs transition-colors"
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white border border-slate-700 text-[11px] font-bold rounded-sm flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
                 title="A4 Print"
               >
                 <Printer className="w-3.5 h-3.5" />
@@ -369,7 +482,7 @@ export default function SwanidhiReport() {
               </button>
               <button
                 onClick={handleExportExcel}
-                className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold rounded-sm flex items-center gap-1.5 shadow-2xs transition-colors"
+                className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold rounded-sm flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
                 title="Excel Export"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -382,25 +495,25 @@ export default function SwanidhiReport() {
 
       {/* Alert Messages */}
       {saveSuccessMsg && (
-        <div className="mb-3 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] rounded-sm flex items-center gap-2 shadow-2xs animate-fade-in print:hidden font-medium">
+        <div className="mb-3 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] rounded-sm flex items-center gap-2 shadow-2xs animate-fade-in no-print font-medium">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{saveSuccessMsg}</span>
         </div>
       )}
       {errorMsg && (
-        <div className="mb-3 p-2.5 bg-rose-50 border border-rose-200 text-rose-800 text-[11px] rounded-sm flex items-center gap-2 shadow-2xs animate-fade-in print:hidden font-medium">
+        <div className="mb-3 p-2.5 bg-rose-50 border border-rose-200 text-rose-800 text-[11px] rounded-sm flex items-center gap-2 shadow-2xs animate-fade-in no-print font-medium">
           <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
           <span>{errorMsg}</span>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 1: OFFICIAL REPORT                                                   */}
+      {/* TAB 1: OFFICIAL STATUTORY REPORT (MAHARASHTRA COOP CIRCULAR TEMPLATE)    */}
       {/* ========================================================================= */}
       {activeTab === 'report' && (
         <div className="space-y-3">
           {/* Filter Bar */}
-          <div className="bg-white px-3.5 py-2 rounded-sm border border-slate-300 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-[11px] print:hidden">
+          <div className="bg-white px-3.5 py-2 rounded-sm border border-slate-300 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-[11px] no-print">
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-primary" />
@@ -443,21 +556,21 @@ export default function SwanidhiReport() {
             </div>
           </div>
 
-          {/* KPI Dashboard Cards */}
-          {reportData && reportData.borrowingCapacity && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 print:hidden">
+          {/* KPI Dashboard Cards (Screen Only) */}
+          {reportData && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 no-print">
               {/* Gross Owned Funds */}
               <div className="bg-white p-3 rounded-sm border border-slate-300 border-l-4 border-l-primary shadow-2xs flex items-center gap-3">
                 <div className="p-2 bg-primary/10 text-primary rounded-sm">
                   <Building2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण स्वनिधी (अ)</div>
+                  <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण सकल स्वनिधी (अ)</div>
                   <div className="text-sm font-bold text-gray-900 font-mono">
-                    ₹ {fmtCur(reportData.borrowingCapacity.grossOwnedFunds)}
+                    ₹ {fmtCur(grossOwnedFunds)}
                   </div>
                   <div className="text-[10px] text-primary font-bold">
-                    {fmtLakh(reportData.borrowingCapacity.grossOwnedFunds / 100000)} लाख
+                    {fmtLakh(grossOwnedFunds / 100000)} लाख
                   </div>
                 </div>
               </div>
@@ -470,10 +583,10 @@ export default function SwanidhiReport() {
                 <div>
                   <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">निव्वळ स्वनिधी (अ - ब)</div>
                   <div className="text-sm font-bold text-emerald-800 font-mono">
-                    ₹ {fmtCur(reportData.borrowingCapacity.netOwnedFunds)}
+                    ₹ {fmtCur(netOwnedFunds)}
                   </div>
                   <div className="text-[10px] text-emerald-700 font-bold">
-                    {fmtLakh(reportData.borrowingCapacity.netOwnedFunds / 100000)} लाख
+                    {fmtLakh(netOwnedFunds / 100000)} लाख
                   </div>
                 </div>
               </div>
@@ -488,24 +601,24 @@ export default function SwanidhiReport() {
                     कमाल उचल मर्यादा ({selectedMultiplier} पट)
                   </div>
                   <div className="text-sm font-bold text-purple-900 font-mono">
-                    ₹ {fmtCur(reportData.borrowingCapacity.maxBorrowingLimit)}
+                    ₹ {fmtCur(maxBorrowingLimit)}
                   </div>
                   <div className="text-[10px] text-purple-700 font-bold">
-                    {fmtLakh(reportData.borrowingCapacity.maxBorrowingLimit / 100000)} लाख
+                    {fmtLakh(maxBorrowingLimit / 100000)} लाख
                   </div>
                 </div>
               </div>
 
               {/* Compliance Status */}
               <div className={`p-3 rounded-sm border shadow-2xs flex items-center gap-3 ${
-                reportData.borrowingCapacity.isComplied
+                isComplied
                   ? 'bg-emerald-50/70 border-emerald-300 border-l-4 border-l-emerald-600'
                   : 'bg-rose-50/70 border-rose-300 border-l-4 border-l-rose-600'
               }`}>
                 <div className={`p-2 rounded-sm ${
-                  reportData.borrowingCapacity.isComplied ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                  isComplied ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
                 }`}>
-                  {reportData.borrowingCapacity.isComplied ? (
+                  {isComplied ? (
                     <CheckCircle2 className="w-5 h-5" />
                   ) : (
                     <AlertTriangle className="w-5 h-5" />
@@ -514,137 +627,163 @@ export default function SwanidhiReport() {
                 <div>
                   <div className="text-[10px] font-bold text-gray-600 uppercase tracking-wider">नियम ३५ अनुपालन</div>
                   <div className={`text-xs font-bold ${
-                    reportData.borrowingCapacity.isComplied ? 'text-emerald-900' : 'text-rose-900'
+                    isComplied ? 'text-emerald-900' : 'text-rose-900'
                   }`}>
-                    {reportData.borrowingCapacity.complianceStatusText}
+                    {complianceStatusText}
                   </div>
                   <div className="text-[10px] text-gray-600 font-medium">
-                    शिल्लक उचल: ₹ {fmtCur(reportData.borrowingCapacity.surplusHeadroom)}
+                    शिल्लक उचल: ₹ {fmtCur(surplusHeadroom)} ({fmtLakh(surplusHeadroom / 100000)} लाख)
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Printable Report Canvas */}
-          <div ref={printAreaRef} className="bg-white p-5 rounded-sm border border-slate-300 shadow-2xs print:shadow-none print:border-none print:p-0">
-            {/* Sanstha Header (Matching Official Spec) */}
-            <div className="text-center pb-3 border-b-2 border-gray-800 mb-4">
-              <h2 className="text-base font-extrabold text-gray-900 tracking-wide">
-                {reportData?.sanstha?.sansthaName || 'सहकारी पतसंस्था मर्यादित'}
-              </h2>
-              {reportData?.sanstha?.address && (
-                <div className="text-[11px] text-gray-600">{reportData.sanstha.address}</div>
-              )}
-              {reportData?.sanstha?.registrationNo && (
-                <div className="text-[10px] text-gray-500 font-medium">
-                  नोंदणी क्र.: {reportData.sanstha.registrationNo}
+          {/* ========================================================================= */}
+          {/* STATUTORY A4 PRINTABLE CANVAS (100% MATCHED TO CIRCULAR TEMPLATE)        */}
+          {/* ========================================================================= */}
+          <div ref={printAreaRef} className="print-area bg-white p-5 md:p-7 rounded-sm border border-slate-300 shadow-md print:shadow-none print:border-none print:p-0">
+            
+            {/* 1. Official Co-operative Society Header Box */}
+            <div className="border-2 border-gray-900 p-3 text-center bg-white mb-2">
+              <div className="flex justify-between items-center text-[11px] font-bold text-gray-900 border-b border-gray-300 pb-1 mb-1.5">
+                <div>
+                  <span>नोंदणी क्र. : </span>
+                  <span className="font-mono">{reportData?.sanstha?.registrationNo || '-'}</span>
                 </div>
-              )}
-              <div className="mt-2 inline-block px-3 py-0.5 bg-gray-100 rounded-sm text-[11px] font-bold text-gray-800 border border-gray-300">
-                स्वनिधी (Owned Funds - Rule 35) परिपत्रकानुसार विवरणपत्रक
+                <div>
+                  <span>नोंदणी दिनांक : </span>
+                  <span className="font-mono">{reportData?.sanstha?.registrationDate || '-'}</span>
+                </div>
               </div>
-              <div className="flex justify-between items-center text-[11px] text-gray-600 mt-2 px-2 font-medium">
-                <div>तारीख: <strong>{reportData?.targetDateDisplay || asOnDate}</strong> रोजी अखेर</div>
-                <div>कमाल उचल मर्यादा: <strong>{selectedMultiplier} पट</strong></div>
-                <div className="font-semibold text-gray-800">आकडे लाखात (Amounts in Lakhs)</div>
+
+              <h1 className="text-base sm:text-lg font-black text-gray-950 tracking-tight font-serif uppercase">
+                {reportData?.sanstha?.sansthaName || 'सहकारी पतसंस्था मर्यादित'}
+              </h1>
+
+              <p className="text-[11px] font-bold text-gray-800 mt-0.5">
+                {reportData?.sanstha?.address || ''}
+                {reportData?.sanstha?.village ? ` मु. ${reportData.sanstha.village}, ` : ''}
+                {reportData?.sanstha?.taluka ? `ता. ${reportData.sanstha.taluka}, ` : ''}
+                {reportData?.sanstha?.district ? `जि. ${reportData.sanstha.district} ` : ''}
+                {reportData?.sanstha?.pincode ? `- ${reportData.sanstha.pincode} ` : ''}
+                {reportData?.sanstha?.phoneNo ? `| फोन : ${reportData.sanstha.phoneNo}` : ''}
+              </p>
+            </div>
+
+            {/* 2. Official Statutory Report Title Box */}
+            <div className="mb-3 text-center">
+              <div className="inline-block border-2 border-gray-900 bg-gray-50/90 px-6 py-1 rounded-xs shadow-2xs">
+                <h2 className="text-xs sm:text-sm font-black text-gray-950 tracking-wide font-serif">
+                  महाराष्ट्र सहकारी संस्था नियम, १९६१ चे नियम ३५ अन्वये स्वनिधी व कमाल उचल मर्यादा विवरणपत्र
+                </h2>
+                <div className="text-[10px] font-bold text-gray-700 tracking-normal">
+                  (Statement of Owned Funds and Maximum Borrowing Limit under Rule 35 of MCS Rules, 1961)
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center text-[11px] font-bold text-gray-900 mt-2 px-1 border-b-2 border-gray-800 pb-1">
+                <div>दिनांक : <span className="font-mono">{reportData?.targetDateDisplay || asOnDate}</span> रोजी अखेर</div>
+                <div>अनुज्ञेय कमाल उचल मर्यादा : <span className="text-primary font-mono">{selectedMultiplier} पट</span></div>
+                <div>आकडे : <span className="font-mono">रुपयांत (₹) व लाखांत (Lakhs)</span></div>
               </div>
             </div>
 
-            {/* Official Report Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px] border-collapse border border-gray-400">
+            {/* ========================================================================= */}
+            {/* PART 1 : STATUTORY TABLE FOR CALCULATION OF OWNED FUNDS (स्वनिधी गणन)     */}
+            {/* ========================================================================= */}
+            <div className="mt-4 mb-1">
+              <div className="bg-gray-800 text-white px-3 py-1 font-bold text-xs flex justify-between items-center rounded-t-xs border border-gray-800">
+                <span>भाग - १ : स्वनिधी गणन विवरणपत्र (Calculation of Owned Funds / Swanidhi)</span>
+                <span className="text-[10px] font-normal text-gray-200">महाराष्ट्र शासन सहकार आयुक्त व निबंधक परिपत्रकानुसार</span>
+              </div>
+
+              <table className="w-full text-[11px] border-collapse border-2 border-gray-900">
                 <thead>
-                  <tr className="bg-slate-100 text-gray-800 font-bold border-b border-gray-400">
-                    <th className="border border-gray-400 px-3 py-1.5 text-center w-14">अ.क्र.</th>
-                    <th className="border border-gray-400 px-3 py-1.5 text-left">तपशिल (Particulars)</th>
-                    <th className="border border-gray-400 px-3 py-1.5 text-right w-44">रुपयांत (₹)</th>
-                    <th className="border border-gray-400 px-3 py-1.5 text-right w-36">लाखांत (Lakhs)</th>
+                  <tr className="bg-gray-100 text-gray-900 font-bold border-b-2 border-gray-900 text-center">
+                    <th className="border border-gray-700 px-2 py-1 w-12 text-center">अ.क्र.</th>
+                    <th className="border border-gray-700 px-3 py-1 text-left">तपशिल (Particulars)</th>
+                    <th className="border border-gray-700 px-2 py-1 text-left w-48">संदर्भ / आधार (Reference)</th>
+                    <th className="border border-gray-700 px-3 py-1 text-right w-44">रुपयांत (₹)</th>
+                    <th className="border border-gray-700 px-3 py-1 text-right w-36">लाखांत (Lakhs)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {reportData?.rows?.map((row: any, idx: number) => {
-                    const isGroupHeader = row.isSubHeader;
-                    const isTotalRow = row.isTotal;
-                    const isGrandTotal = row.isGrandTotal;
-                    const isDeduction = row.particular?.includes('वजा') || row.srNo === 'ब)';
-                    const hasDrillDown = row.hasSubItems && row.subItems && row.subItems.length > 0;
+                  {/* Section A: Inclusions */}
+                  <tr className="bg-slate-200/90 font-black text-gray-950 border-b border-gray-700">
+                    <td className="border border-gray-700 px-2 py-1 text-center font-black">(अ)</td>
+                    <td colSpan={4} className="border border-gray-700 px-3 py-1 uppercase tracking-wide">
+                      स्वनिधीमध्ये समाविष्ट होणारे घटक (Inclusions to Owned Funds)
+                    </td>
+                  </tr>
+
+                  {/* Rows 1 to 6 */}
+                  {inclusionRows.map((row: any, idx: number) => {
+                    const hasDrillDown = row.items && row.items.length > 0;
                     const isExpanded = expandedRows[row.srNo];
 
                     return (
-                      <React.Fragment key={idx}>
-                        <tr
-                          className={`transition-colors ${
-                            isGrandTotal
-                              ? 'bg-emerald-50 font-extrabold text-emerald-950 border-t-2 border-b-2 border-emerald-600'
-                              : isTotalRow
-                              ? 'bg-slate-100 font-bold text-gray-900 border-t border-b border-gray-400'
-                              : isGroupHeader
-                              ? 'bg-primary/5 font-bold text-primary'
-                              : 'hover:bg-slate-50 text-gray-800'
-                          }`}
-                        >
-                          <td className="border border-gray-300 px-3 py-1 text-center font-semibold">
+                      <React.Fragment key={`inc-${idx}`}>
+                        <tr className="hover:bg-slate-50 text-gray-900 border-b border-gray-300">
+                          <td className="border border-gray-600 px-2 py-1 text-center font-bold">
                             {row.srNo}
                           </td>
-                          <td className="border border-gray-300 px-3 py-1">
+                          <td className="border border-gray-600 px-3 py-1">
                             <div className="flex items-center justify-between">
-                              <span className={isGrandTotal ? 'font-black' : isTotalRow ? 'font-bold' : ''}>
+                              <span className="font-semibold text-gray-900">
                                 {row.particular}
                               </span>
                               {hasDrillDown && (
                                 <button
                                   type="button"
                                   onClick={() => toggleRow(row.srNo)}
-                                  className="text-primary hover:opacity-80 text-[10px] font-bold flex items-center gap-1 print:hidden"
+                                  className="text-primary hover:opacity-80 text-[10px] font-bold flex items-center gap-1 no-print cursor-pointer"
                                 >
                                   {isExpanded ? (
                                     <>
                                       <ChevronDown className="w-3.5 h-3.5" />
-                                      तपशील बंद करा ({row.subItems.length})
+                                      तपशील बंद करा ({row.items.length})
                                     </>
                                   ) : (
                                     <>
                                       <ChevronRight className="w-3.5 h-3.5" />
-                                      लेजर तपशील पाहा ({row.subItems.length})
+                                      लेजर तपशील ({row.items.length})
                                     </>
                                   )}
                                 </button>
                               )}
                             </div>
                           </td>
-                          <td className={`border border-gray-300 px-3 py-1 text-right font-mono ${
-                            isDeduction ? 'text-rose-700 font-semibold' : ''
-                          }`}>
-                            {row.amountInRupees !== null && row.amountInRupees !== undefined
-                              ? fmtCur(row.amountInRupees)
-                              : ''}
+                          <td className="border border-gray-600 px-2 py-1 text-gray-600 text-[10.5px]">
+                            {row.reference || '-'}
                           </td>
-                          <td className={`border border-gray-300 px-3 py-1 text-right font-mono font-bold ${
-                            isGrandTotal ? 'text-emerald-900' : isDeduction ? 'text-rose-700' : 'text-gray-900'
-                          }`}>
-                            {row.amountInLakhs !== null && row.amountInLakhs !== undefined
-                              ? fmtLakh(row.amountInLakhs)
-                              : ''}
+                          <td className="border border-gray-600 px-3 py-1 text-right font-mono text-gray-900 font-semibold">
+                            {row.amountInRupees !== null && row.amountInRupees !== undefined ? fmtCur(row.amountInRupees) : '-'}
+                          </td>
+                          <td className="border border-gray-600 px-3 py-1 text-right font-mono font-bold text-gray-900">
+                            {row.amountInLakhs !== null && row.amountInLakhs !== undefined ? fmtLakh(row.amountInLakhs) : '-'}
                           </td>
                         </tr>
 
                         {/* Expandable Sub-items for Free and Development Reserves */}
                         {hasDrillDown && isExpanded && (
-                          row.subItems.map((si: any, sIdx: number) => (
-                            <tr key={`${idx}-sub-${sIdx}`} className="bg-primary/5 text-[10px] text-gray-700">
-                              <td className="border border-gray-200 px-3 py-0.5 text-center text-gray-400">
+                          row.items.map((si: any, sIdx: number) => (
+                            <tr key={`inc-${idx}-sub-${sIdx}`} className="bg-primary/5 text-[10px] text-gray-700">
+                              <td className="border border-gray-300 px-2 py-0.5 text-center text-gray-400">
                                 ↳
                               </td>
-                              <td className="border border-gray-200 px-6 py-0.5 italic flex items-center justify-between">
-                                <span>{si.ledgerName}</span>
-                                <span className="text-[10px] text-gray-400 font-mono">GL-{si.ledgerID}</span>
+                              <td className="border border-gray-300 px-6 py-0.5 italic flex items-center justify-between">
+                                <span>{si.ledgerName || si.label}</span>
+                                {si.ledgerID && <span className="text-[10px] text-gray-400 font-mono">GL-{si.ledgerID}</span>}
                               </td>
-                              <td className="border border-gray-200 px-3 py-0.5 text-right font-mono text-gray-600">
-                                {fmtCur(si.balance)}
+                              <td className="border border-gray-300 px-2 py-0.5 text-gray-500 italic text-[9.5px]">
+                                उप-लेजर
                               </td>
-                              <td className="border border-gray-200 px-3 py-0.5 text-right font-mono text-gray-500">
-                                {fmtLakh(si.balance / 100000)}
+                              <td className="border border-gray-300 px-3 py-0.5 text-right font-mono text-gray-600">
+                                {fmtCur(si.balance ?? si.amount)}
+                              </td>
+                              <td className="border border-gray-300 px-3 py-0.5 text-right font-mono text-gray-500">
+                                {fmtLakh((si.balance ?? si.amount) / 100000)}
                               </td>
                             </tr>
                           ))
@@ -652,90 +791,419 @@ export default function SwanidhiReport() {
                       </React.Fragment>
                     );
                   })}
+
+                  {/* Total A Row */}
+                  <tr className="bg-amber-50/70 font-extrabold text-gray-950 border-t-2 border-b-2 border-gray-900">
+                    <td className="border border-gray-700 px-2 py-1 text-center font-black"></td>
+                    <td colSpan={2} className="border border-gray-700 px-3 py-1 text-left font-black tracking-wide">
+                      एकूण - (अ) सकल स्वनिधी (Total Gross Owned Funds)
+                    </td>
+                    <td className="border border-gray-700 px-3 py-1 text-right font-mono font-black text-gray-950">
+                      ₹ {fmtCur(grossOwnedFunds)}
+                    </td>
+                    <td className="border border-gray-700 px-3 py-1 text-right font-mono font-black text-gray-950">
+                      {fmtLakh(grossOwnedFunds / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* Section B: Deductions */}
+                  <tr className="bg-rose-50/80 font-black text-rose-950 border-b border-gray-700">
+                    <td className="border border-gray-700 px-2 py-1 text-center font-black">(ब)</td>
+                    <td colSpan={4} className="border border-gray-700 px-3 py-1 uppercase tracking-wide">
+                      वजावटी (Deductions from Owned Funds)
+                    </td>
+                  </tr>
+
+                  {/* Deduction Rows */}
+                  {deductionRows.map((dRow: any, dIdx: number) => (
+                    <tr key={`ded-${dIdx}`} className="hover:bg-slate-50 text-gray-800 border-b border-gray-300">
+                      <td className="border border-gray-600 px-2 py-1 text-center font-bold">
+                        {dRow.srNo || `${dIdx + 1}.`}
+                      </td>
+                      <td className="border border-gray-600 px-3 py-1 text-rose-900 font-semibold">
+                        {dRow.particular || 'संचित तोटा (Accumulated Losses)'}
+                      </td>
+                      <td className="border border-gray-600 px-2 py-1 text-gray-600 text-[10.5px]">
+                        {dRow.reference || 'ताळेबंद तोटा'}
+                      </td>
+                      <td className="border border-gray-600 px-3 py-1 text-right font-mono text-rose-700 font-semibold">
+                        {fmtCur(dRow.amountInRupees || 0)}
+                      </td>
+                      <td className="border border-gray-600 px-3 py-1 text-right font-mono text-rose-700 font-bold">
+                        {fmtLakh(dRow.amountInLakhs ?? ((dRow.amountInRupees || 0) / 100000))}
+                      </td>
+                    </tr>
+                  ))}
+
+                  {/* Total B Row */}
+                  <tr className="bg-rose-50/50 font-bold text-rose-950 border-t border-b-2 border-gray-900">
+                    <td className="border border-gray-700 px-2 py-1 text-center font-black"></td>
+                    <td colSpan={2} className="border border-gray-700 px-3 py-1 text-left font-black tracking-wide">
+                      एकूण - (ब) एकूण वजावटी (Total Deductions)
+                    </td>
+                    <td className="border border-gray-700 px-3 py-1 text-right font-mono font-black text-rose-800">
+                      ₹ {fmtCur(totalDeductions)}
+                    </td>
+                    <td className="border border-gray-700 px-3 py-1 text-right font-mono font-black text-rose-800">
+                      {fmtLakh(totalDeductions / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* Section C: Net Owned Funds (Grand Total) */}
+                  <tr className="bg-emerald-50 font-black text-emerald-950 border-t-2 border-b-4 border-emerald-900 text-xs">
+                    <td className="border border-emerald-800 px-2 py-1.5 text-center font-black text-xs">(क)</td>
+                    <td colSpan={2} className="border border-emerald-800 px-3 py-1.5 text-left font-black tracking-wide text-xs">
+                      एकूण - निव्वळ स्वनिधी [अ - ब] (Net Owned Funds / Swanidhi)
+                    </td>
+                    <td className="border border-emerald-800 px-3 py-1.5 text-right font-mono font-black text-emerald-950 text-xs">
+                      ₹ {fmtCur(netOwnedFunds)}
+                    </td>
+                    <td className="border border-emerald-800 px-3 py-1.5 text-right font-mono font-black text-emerald-950 text-xs">
+                      {fmtLakh(netOwnedFunds / 100000)}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
 
-            {/* Explanation 2 Breakdown Card */}
-            {reportData?.explanation2Breakdown && (
-              <div className="mt-3 p-3 bg-amber-50/60 border border-amber-200 rounded-sm text-[11px]">
-                <div className="font-bold text-amber-900 flex items-center gap-1.5 mb-1.5">
-                  <Calculator className="w-4 h-4 text-amber-700" />
-                  स्पष्टीकरण-२: शिल्लक निव्वळ नफा संगणन (Explanation-2 Net Profit Breakdown)
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-gray-800 text-[10px]">
-                  <div className="p-2 bg-white rounded-sm border border-amber-200">
-                    <span className="text-gray-500 block">१. प्रमाणित निव्वळ नफा:</span>
-                    <strong className="text-[11px] font-mono">
-                      ₹ {fmtCur(reportData.explanation2Breakdown.certifiedNetProfit)}
-                    </strong>
-                  </div>
-                  <div className="p-2 bg-white rounded-sm border border-amber-200">
-                    <span className="text-gray-500 block">२. मागील ३ वर्षे सरासरी लाभांश दर:</span>
-                    <strong className="text-[11px] text-primary">
-                      {reportData.explanation2Breakdown.averageDividendRate}%
-                    </strong>
-                    <span className="text-[9px] text-gray-500 block">
-                      ({reportData.explanation2Breakdown.year1DividendRate}%, {reportData.explanation2Breakdown.year2DividendRate}%, {reportData.explanation2Breakdown.year3DividendRate}%)
-                    </span>
-                  </div>
-                  <div className="p-2 bg-white rounded-sm border border-amber-200">
-                    <span className="text-gray-500 block">३. वजा: नियोजित लाभांश रक्कम:</span>
-                    <strong className="text-[11px] text-rose-700 font-mono">
-                      - ₹ {fmtCur(reportData.explanation2Breakdown.estimatedDividendAmount)}
-                    </strong>
-                  </div>
-                  <div className="p-2 bg-white rounded-sm border border-amber-200">
-                    <span className="text-gray-500 block">४. स्वनिधीत ग्राह्य शिल्लक नफा:</span>
-                    <strong className="text-[11px] text-emerald-800 font-mono">
-                      ₹ {fmtCur(reportData.explanation2Breakdown.surplusProfitInOwnedFunds)}
-                    </strong>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Official Circular Explanation Notes (Verbatim from Circular) */}
-            <div className="mt-5 pt-3 border-t-2 border-gray-300 space-y-2.5 text-[11px] leading-relaxed text-gray-700">
-              <div className="p-2.5 bg-slate-50 rounded-sm border border-slate-300">
-                <h4 className="font-bold text-gray-900 mb-1 flex items-center gap-1.5">
-                  <Info className="w-3.5 h-3.5 text-primary" />
-                  स्पष्टीकरण-१ (Explanation 1): मुक्त निधी व विकास निधी
-                </h4>
-                <p className="whitespace-pre-line text-gray-600 text-[10px] leading-relaxed">
-                  {reportData?.explanation1Text}
-                </p>
+            {/* ========================================================================= */}
+            {/* PART 2 : STATUTORY TABLE FOR RULE 35 BORROWING LIMIT VS LIABILITIES       */}
+            {/* ========================================================================= */}
+            <div className="mt-5 mb-1">
+              <div className="bg-gray-800 text-white px-3 py-1 font-bold text-xs flex justify-between items-center rounded-t-xs border border-gray-800">
+                <span>भाग - २ : नियम ३५ अन्वये कमाल उचल मर्यादा व प्रत्यक्ष देयता ताळमेळ विवरणपत्र</span>
+                <span className="text-[10px] font-normal text-gray-200">MCS Rules, 1961 - Rule 35 Borrowing Limit Reconciliation</span>
               </div>
 
-              <div className="p-2.5 bg-slate-50 rounded-sm border border-slate-300">
-                <h4 className="font-bold text-gray-900 mb-1 flex items-center gap-1.5">
-                  <Info className="w-3.5 h-3.5 text-amber-700" />
-                  स्पष्टीकरण-२ (Explanation 2): शिल्लक निव्वळ नफा निश्चिती
-                </h4>
-                <p className="whitespace-pre-line text-gray-600 text-[10px] leading-relaxed">
-                  {reportData?.explanation2Text}
-                </p>
+              <table className="w-full text-[11px] border-collapse border-2 border-gray-900">
+                <thead>
+                  <tr className="bg-gray-100 text-gray-900 font-bold border-b-2 border-gray-900 text-center">
+                    <th className="border border-gray-700 px-2 py-1 w-12 text-center">अ.क्र.</th>
+                    <th className="border border-gray-700 px-3 py-1 text-left">तपशिल / विवरण (Particulars)</th>
+                    <th className="border border-gray-700 px-2 py-1 text-left w-48">नियम / आधार (Norm / Basis)</th>
+                    <th className="border border-gray-700 px-3 py-1 text-right w-44">रुपयांत (₹)</th>
+                    <th className="border border-gray-700 px-3 py-1 text-right w-36">लाखांत (Lakhs)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* 1. Net Swanidhi */}
+                  <tr className="hover:bg-slate-50 text-gray-900 font-bold border-b border-gray-400">
+                    <td className="border border-gray-600 px-2 py-1 text-center font-bold">१.</td>
+                    <td className="border border-gray-600 px-3 py-1 font-bold">
+                      निव्वळ स्वनिधी (Net Owned Funds)
+                    </td>
+                    <td className="border border-gray-600 px-2 py-1 text-gray-600">
+                      भाग-१ मधील (क) प्रमाणे
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono font-bold text-gray-950">
+                      ₹ {fmtCur(netOwnedFunds)}
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono font-bold text-gray-950">
+                      {fmtLakh(netOwnedFunds / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* 2. Permissible Multiplier */}
+                  <tr className="hover:bg-slate-50 text-gray-800 border-b border-gray-400">
+                    <td className="border border-gray-600 px-2 py-1 text-center font-bold">२.</td>
+                    <td className="border border-gray-600 px-3 py-1">
+                      नियम ३५ अन्वये अनुज्ञेय कमाल उचल मर्यादा गुणक (Permissible Multiplier)
+                    </td>
+                    <td className="border border-gray-600 px-2 py-1 text-gray-600">
+                      पोटनियम व नियम ३५ नुसार
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono font-bold text-primary">
+                      {selectedMultiplier} पट
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono font-bold text-primary">
+                      {selectedMultiplier} पट
+                    </td>
+                  </tr>
+
+                  {/* 3. Total Permissible Limit */}
+                  <tr className="bg-purple-50 font-black text-purple-950 border-t-2 border-b-2 border-purple-800">
+                    <td className="border border-purple-700 px-2 py-1.5 text-center font-black">३.</td>
+                    <td className="border border-purple-700 px-3 py-1.5 font-black tracking-wide">
+                      एकूण अनुज्ञेय कमाल उचल मर्यादा [१ × २] (Max Permissible Limit)
+                    </td>
+                    <td className="border border-purple-700 px-2 py-1.5 text-purple-900 font-bold">
+                      स्वनिधीच्या {selectedMultiplier} पट
+                    </td>
+                    <td className="border border-purple-700 px-3 py-1.5 text-right font-mono font-black text-purple-950">
+                      ₹ {fmtCur(maxBorrowingLimit)}
+                    </td>
+                    <td className="border border-purple-700 px-3 py-1.5 text-right font-mono font-black text-purple-950">
+                      {fmtLakh(maxBorrowingLimit / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* 4. Actual Outside Liabilities Header */}
+                  <tr className="bg-slate-200/90 font-black text-gray-950 border-b border-gray-700">
+                    <td className="border border-gray-700 px-2 py-1 text-center font-black">४.</td>
+                    <td colSpan={4} className="border border-gray-700 px-3 py-1 uppercase tracking-wide">
+                      संस्थेची प्रत्यक्ष बाह्य देणी / उचल (Actual Outside Liabilities as on Date)
+                    </td>
+                  </tr>
+
+                  {/* (A) Saving */}
+                  <tr className="hover:bg-slate-50 text-gray-800 border-b border-gray-300">
+                    <td className="border border-gray-600 px-2 py-1 text-center">(अ)</td>
+                    <td className="border border-gray-600 px-3 py-1 pl-6">
+                      बचत ठेवी (Savings Bank Deposits)
+                    </td>
+                    <td className="border border-gray-600 px-2 py-1 text-gray-500">
+                      प्रत्यक्ष ठेव शिल्लक
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono">
+                      {fmtCur(savingBalance)}
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono">
+                      {fmtLakh(savingBalance / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* (B) FD */}
+                  <tr className="hover:bg-slate-50 text-gray-800 border-b border-gray-300">
+                    <td className="border border-gray-600 px-2 py-1 text-center">(ब)</td>
+                    <td className="border border-gray-600 px-3 py-1 pl-6">
+                      मुदत ठेवी (Fixed Deposits)
+                    </td>
+                    <td className="border border-gray-600 px-2 py-1 text-gray-500">
+                      प्रत्यक्ष ठेव शिल्लक
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono">
+                      {fmtCur(fdBalance)}
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono">
+                      {fmtLakh(fdBalance / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* (C) RD */}
+                  <tr className="hover:bg-slate-50 text-gray-800 border-b border-gray-300">
+                    <td className="border border-gray-600 px-2 py-1 text-center">(क)</td>
+                    <td className="border border-gray-600 px-3 py-1 pl-6">
+                      आवर्ती ठेवी (Recurring Deposits - RD)
+                    </td>
+                    <td className="border border-gray-600 px-2 py-1 text-gray-500">
+                      प्रत्यक्ष ठेव शिल्लक
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono">
+                      {fmtCur(rdBalance)}
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono">
+                      {fmtLakh(rdBalance / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* (D) Pigmy */}
+                  <tr className="hover:bg-slate-50 text-gray-800 border-b border-gray-300">
+                    <td className="border border-gray-600 px-2 py-1 text-center">(ड)</td>
+                    <td className="border border-gray-600 px-3 py-1 pl-6">
+                      दैनिक / पिग्मी ठेवी (Daily / Pigmy Deposits)
+                    </td>
+                    <td className="border border-gray-600 px-2 py-1 text-gray-500">
+                      प्रत्यक्ष ठेव शिल्लक
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono">
+                      {fmtCur(pigmyBalance)}
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono">
+                      {fmtLakh(pigmyBalance / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* (E) Outside Loans */}
+                  <tr className="hover:bg-slate-50 text-gray-800 border-b border-gray-400">
+                    <td className="border border-gray-600 px-2 py-1 text-center">(इ)</td>
+                    <td className="border border-gray-600 px-3 py-1 pl-6">
+                      इतर बाह्य वित्तीय संस्थांची कर्जे / उचल (Outside Bank Loans)
+                    </td>
+                    <td className="border border-gray-600 px-2 py-1 text-gray-500">
+                      प्रत्यक्ष बाह्य देणी
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono">
+                      {fmtCur(outsideBankLoans)}
+                    </td>
+                    <td className="border border-gray-600 px-3 py-1 text-right font-mono">
+                      {fmtLakh(outsideBankLoans / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* Total Actual Liabilities */}
+                  <tr className="bg-slate-100 font-extrabold text-gray-950 border-t-2 border-b-2 border-gray-900">
+                    <td className="border border-gray-700 px-2 py-1 text-center"></td>
+                    <td colSpan={2} className="border border-gray-700 px-3 py-1 text-left font-black tracking-wide">
+                      एकूण प्रत्यक्ष बाह्य देयता / उचल [अ+ब+क+ड+इ] (Total Actual Outside Liabilities)
+                    </td>
+                    <td className="border border-gray-700 px-3 py-1 text-right font-mono font-black text-gray-950">
+                      ₹ {fmtCur(actualOutsideLiabilities)}
+                    </td>
+                    <td className="border border-gray-700 px-3 py-1 text-right font-mono font-black text-gray-950">
+                      {fmtLakh(actualOutsideLiabilities / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* 5. Surplus Headroom / Deficit */}
+                  <tr className={`font-black border-t-2 border-b-2 ${
+                    isComplied 
+                      ? 'bg-emerald-50 text-emerald-950 border-emerald-800' 
+                      : 'bg-rose-50 text-rose-950 border-rose-800'
+                  }`}>
+                    <td className="border border-gray-700 px-2 py-1.5 text-center font-black">५.</td>
+                    <td className="border border-gray-700 px-3 py-1.5 font-black">
+                      {isComplied ? 'शिल्लक सुरक्षित उचल मर्यादा (Surplus Borrowing Headroom) [३ वजा ४]' : 'अतिरिक्त उचल / मर्यादा तूट (Excess Outside Liabilities / Deficit) [३ वजा ४]'}
+                    </td>
+                    <td className="border border-gray-700 px-2 py-1.5 font-bold">
+                      {isComplied ? 'सुरक्षित मर्यादा शिल्लक' : 'मर्यादा ओलांडली (तूट)'}
+                    </td>
+                    <td className="border border-gray-700 px-3 py-1.5 text-right font-mono font-black text-xs">
+                      ₹ {fmtCur(Math.abs(surplusHeadroom))}
+                    </td>
+                    <td className="border border-gray-700 px-3 py-1.5 text-right font-mono font-black text-xs">
+                      {fmtLakh(Math.abs(surplusHeadroom) / 100000)}
+                    </td>
+                  </tr>
+
+                  {/* 6. Compliance Conclusion Note */}
+                  <tr className="bg-gray-50 border-b-2 border-gray-900">
+                    <td className="border border-gray-700 px-2 py-2 text-center font-bold">६.</td>
+                    <td colSpan={4} className="border border-gray-700 p-2.5">
+                      <div className="flex items-start gap-2">
+                        {isComplied ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-rose-700 shrink-0 mt-0.5" />
+                        )}
+                        <div>
+                          <div className={`font-black text-xs ${isComplied ? 'text-emerald-900' : 'text-rose-900'}`}>
+                            नियम ३५ वैधानिक निष्कर्ष व अनुपालन शेरा : {isComplied ? '✅ नियम ३५ चे तंतोतंत पालन (संस्था आर्थिकदृष्ट्या सुरक्षित)' : '⚠️ सावधान: नियम ३५ कमाल मर्यादा उल्लंघन'}
+                          </div>
+                          <p className="text-[10.5px] text-gray-700 mt-1 leading-relaxed">
+                            {detailedComplianceNote}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* ========================================================================= */}
+            {/* PART 3 : EXPLANATION NOTES & WORKINGS (STATUTORY DETAILS)                 */}
+            {/* ========================================================================= */}
+            <div className="mt-5 space-y-3">
+              
+              {/* Explanation 2 Breakdown Card */}
+              {exp2 && (
+                <div className="p-3 bg-amber-50/60 border border-amber-300 rounded-xs text-[11px]">
+                  <div className="font-bold text-amber-950 flex items-center gap-1.5 mb-2">
+                    <Calculator className="w-4 h-4 text-amber-700" />
+                    <span>स्पष्टीकरण-२ : शिल्लक निव्वळ नफा संगणन कार्यपत्रिका (Explanation-2 Net Profit Breakdown)</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-gray-800 text-[10.5px]">
+                    <div className="p-2 bg-white rounded-xs border border-amber-200">
+                      <span className="text-gray-500 block text-[10px]">१. प्रमाणित निव्वळ नफा :</span>
+                      <strong className="text-[11px] font-mono font-bold text-gray-900">
+                        ₹ {fmtCur(exp2.certifiedNetProfit || 0)}
+                      </strong>
+                    </div>
+                    <div className="p-2 bg-white rounded-xs border border-amber-200">
+                      <span className="text-gray-500 block text-[10px]">२. मागील ३ वर्षे सरासरी लाभांश दर :</span>
+                      <strong className="text-[11px] text-primary font-mono font-bold">
+                        {exp2.averageDividendRate || exp2.averageRate || avgDiv}%
+                      </strong>
+                      <span className="text-[9px] text-gray-500 block">
+                        ({exp2.year1DividendRate || exp2.year1Rate || settings.year1DividendRate}%, {exp2.year2DividendRate || exp2.year2Rate || settings.year2DividendRate}%, {exp2.year3DividendRate || exp2.year3Rate || settings.year3DividendRate}%)
+                      </span>
+                    </div>
+                    <div className="p-2 bg-white rounded-xs border border-amber-200">
+                      <span className="text-gray-500 block text-[10px]">३. वजा: नियोजित लाभांश रक्कम :</span>
+                      <strong className="text-[11px] text-rose-700 font-mono font-bold">
+                        - ₹ {fmtCur(exp2.estimatedDividendAmount || exp2.proposedDividendAmount || 0)}
+                      </strong>
+                    </div>
+                    <div className="p-2 bg-white rounded-xs border border-amber-200">
+                      <span className="text-gray-500 block text-[10px]">४. स्वनिधीत ग्राह्य शिल्लक नफा :</span>
+                      <strong className="text-[11px] text-emerald-800 font-mono font-bold">
+                        ₹ {fmtCur(exp2.surplusProfitInOwnedFunds || exp2.surplusNetProfit || 0)}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Official Circular Explanation Notes (Verbatim from Circular) */}
+              <div className="space-y-2 text-[11px] leading-relaxed text-gray-700">
+                <div className="p-2.5 bg-slate-50 rounded-xs border border-slate-300">
+                  <h4 className="font-bold text-gray-900 mb-1 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-primary" />
+                    स्पष्टीकरण-१ (Explanation 1): मुक्त निधी व विकास निधी
+                  </h4>
+                  <p className="whitespace-pre-line text-gray-600 text-[10px] leading-relaxed">
+                    {reportData?.explanation1Text || "मुक्त व विकास निधीमध्ये जे निधी निव्वळ नफा वितरणामधून वार्षिक सभेचे मान्यतेने निर्माण झाले असून, जे निधी कोणत्याही अन्य कारणासाठी देय नाहीत किंवा ज्यामधून प्रतिवर्षी रक्कम अदा केली जात नाही अशा निधींचा समावेश होणे आवश्यक आहे."}
+                  </p>
+                </div>
+
+                <div className="p-2.5 bg-slate-50 rounded-xs border border-slate-300">
+                  <h4 className="font-bold text-gray-900 mb-1 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-amber-700" />
+                    स्पष्टीकरण-२ (Explanation 2): शिल्लक निव्वळ नफा निश्चिती
+                  </h4>
+                  <p className="whitespace-pre-line text-gray-600 text-[10px] leading-relaxed">
+                    {reportData?.explanation2Text || "वैधानिक लेखापरिक्षकाने प्रमाणित केलेल्या निव्वळ नफा रकमेमधून नजिकचे वार्षिक सर्वसाधारण सभेचे मान्यतेनंतर जी रक्कम पुन्हा मुक्त व विकास निधीच्या स्वरुपात, स्वनिधीमध्ये घेण्यात येणार आहे, तेवढीच रक्कम शिल्लक निव्वळ नफा म्हणून गृहीत धरावी."}
+                  </p>
+                </div>
+
+                {/* Excluded Reserves info */}
+                {reportData?.excludedReserves && reportData.excludedReserves.length > 0 && (
+                  <div className="p-2.5 bg-rose-50/50 rounded-xs border border-rose-200">
+                    <h4 className="font-bold text-rose-950 mb-1 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-rose-700" />
+                      स्वनिधीत समाविष्ट न केलेले बाह्य देयता निधी (Excluded Non-Free Reserves)
+                    </h4>
+                    <p className="text-[10px] text-gray-600 mb-1.5">
+                      परिपत्रकानुसार ज्या निधींवर बाह्य देयता आहे अशा खालील निधींचा स्वनिधीमध्ये समावेश केलेला नाही:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {reportData.excludedReserves.map((er: any, eIdx: number) => (
+                        <span key={`excl-${eIdx}`} className="px-2 py-0.5 bg-white border border-rose-200 rounded text-[10px] font-medium text-rose-900">
+                          {er.ledgerName} : ₹ {fmtCur(er.balance)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Signatures Area for Statutory Audit & Print */}
-            <div className="mt-8 pt-4 grid grid-cols-3 gap-6 text-center text-[11px] text-gray-800 border-t border-gray-300">
-              <div>
-                <div className="h-8"></div>
-                <div className="font-bold">लिपिक / व्यवस्थापक</div>
-                <div className="text-[10px] text-gray-500">तयार केले</div>
+            {/* ========================================================================= */}
+            {/* PART 4 : STATUTORY AUDIT & SANSTHA SIGNATURES BLOCK                      */}
+            {/* ========================================================================= */}
+            <div className="mt-8 pt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center text-[11px] text-gray-900 border-t-2 border-gray-900">
+              <div className="p-2 border border-gray-300 rounded-xs bg-slate-50/50">
+                <div className="h-10"></div>
+                <div className="font-bold">लिपिक / रोखपाल</div>
+                <div className="text-[10px] text-gray-500 font-medium">तयार केले</div>
               </div>
-              <div>
-                <div className="h-8"></div>
-                <div className="font-bold">मुख्य कार्यकारी अधिकारी / चेअरमन</div>
-                <div className="text-[10px] text-gray-500">तपासले व मंजूर केले</div>
+              <div className="p-2 border border-gray-300 rounded-xs bg-slate-50/50">
+                <div className="h-10"></div>
+                <div className="font-bold">व्यवस्थापक / मुख्य कार्यकारी अधिकारी</div>
+                <div className="text-[10px] text-gray-500 font-medium">तपासले</div>
               </div>
-              <div>
-                <div className="h-8"></div>
-                <div className="font-bold">वैधानिक लेखापरिक्षक (Statutory Auditor)</div>
-                <div className="text-[10px] text-gray-500">प्रमाणित केले</div>
+              <div className="p-2 border border-gray-300 rounded-xs bg-slate-50/50">
+                <div className="h-10"></div>
+                <div className="font-bold">चेअरमन / व्हा. चेअरमन</div>
+                <div className="text-[10px] text-gray-500 font-medium">मंजूर केले</div>
+              </div>
+              <div className="p-2 border border-gray-300 rounded-xs bg-slate-50/50">
+                <div className="h-10"></div>
+                <div className="font-bold">वैधानिक लेखापरीक्षक</div>
+                <div className="text-[10px] text-gray-500 font-medium">प्रमाणित केले</div>
               </div>
             </div>
+
           </div>
         </div>
       )}

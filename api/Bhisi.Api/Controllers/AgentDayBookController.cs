@@ -21,11 +21,23 @@ namespace Bhisi.Api.Controllers
             public int DepositId { get; set; }
             public string ReceiptNo { get; set; } = string.Empty;
             public DateTime DepositDate { get; set; }
+            public DateTime? CollectionDateFrom { get; set; }
+            public DateTime? CollectionDateTo { get; set; }
             public decimal Amount { get; set; }
             public string PaymentMode { get; set; } = "CASH";
             public string Narration { get; set; } = string.Empty;
             public int? VoucherId { get; set; }
             public string? VoucherNo { get; set; }
+        }
+
+        public class DayBreakupDto
+        {
+            public DateTime Date { get; set; }
+            public int Count { get; set; }
+            public decimal Amount { get; set; }
+            public decimal RemittedAmount { get; set; }
+            public decimal PendingAmount { get; set; }
+            public bool IsRemitted { get; set; }
         }
 
         public class DayBookSummary
@@ -34,38 +46,237 @@ namespace Bhisi.Api.Controllers
             public decimal TodaysCollection { get; set; }
             public decimal CashDeposited { get; set; }
             public decimal ClosingBalance { get; set; }
+            public DateTime CollectionDateFrom { get; set; }
+            public DateTime CollectionDateTo { get; set; }
+            public DateTime DepositDate { get; set; }
+            public decimal RangeCollectionAmount { get; set; } // Pending unremitted collection
+            public int RangeCollectionCount { get; set; }
+            public decimal RangeTotalCollected { get; set; }   // Total collected in this range
+            public decimal RangeAlreadyRemitted { get; set; }  // Total already remitted for this range
+            public bool IsFullyRemitted { get; set; }
+            public decimal TotalPendingCash { get; set; }
+            public List<DayBreakupDto> DayBreakup { get; set; } = new List<DayBreakupDto>();
             public List<RemittanceItemDto> RecentRemittances { get; set; } = new List<RemittanceItemDto>();
         }
 
+        private static (DateTime? fromDate, DateTime? toDate) GetDepositCollectionRange(PigmyAgentCashDeposit d)
+        {
+            if (d.CollectionDateFrom.HasValue && d.CollectionDateTo.HasValue)
+            {
+                return (d.CollectionDateFrom.Value.Date, d.CollectionDateTo.Value.Date);
+            }
+            if (d.CollectionDateFrom.HasValue)
+            {
+                return (d.CollectionDateFrom.Value.Date, d.CollectionDateFrom.Value.Date);
+            }
+
+            // Extract from Narration if present: "[संकलन: 01/08/2026 ते 02/08/2026]" or "[संकलन: 01/08/2026]"
+            if (!string.IsNullOrEmpty(d.Narration) && d.Narration.Contains("[संकलन:"))
+            {
+                try
+                {
+                    int startIdx = d.Narration.IndexOf("[संकलन:") + 7;
+                    int endIdx = d.Narration.IndexOf("]", startIdx);
+                    if (endIdx > startIdx)
+                    {
+                        string tag = d.Narration.Substring(startIdx, endIdx - startIdx).Trim();
+                        if (tag.Contains("ते"))
+                        {
+                            var parts = tag.Split(new[] { "ते" }, StringSplitOptions.None);
+                            if (parts.Length == 2)
+                            {
+                                bool fOk = DateTime.TryParseExact(parts[0].Trim(), "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var pFrom)
+                                           || DateTime.TryParse(parts[0].Trim(), out pFrom);
+                                bool tOk = DateTime.TryParseExact(parts[1].Trim(), "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var pTo)
+                                           || DateTime.TryParse(parts[1].Trim(), out pTo);
+                                if (fOk && tOk)
+                                {
+                                    return (pFrom.Date, pTo.Date);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (DateTime.TryParseExact(tag.Trim(), "dd/MM/yyyy", null, System.Globalization.DateTimeStyles.None, out var singleDate)
+                                || DateTime.TryParse(tag.Trim(), out singleDate))
+                            {
+                                return (singleDate.Date, singleDate.Date);
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // ignore parse failures
+                }
+            }
+
+            return (null, null);
+        }
+
+        private class DayAllocationItem
+        {
+            public DateTime Date { get; set; }
+            public int Count { get; set; }
+            public decimal TotalAmount { get; set; }
+            public decimal RemittedAmount { get; set; }
+            public decimal PendingAmount => Math.Max(0m, TotalAmount - RemittedAmount);
+        }
+
+        private async Task<List<DayAllocationItem>> ComputeAgentDayAllocations(int agentId)
+        {
+            var dailyCollections = await _context.PigmyCollections
+                .Where(c => c.AgentId == agentId && c.CollectionAmount > 0)
+                .GroupBy(c => c.CollectionDate.Date)
+                .Select(g => new
+                {
+                    Date = g.Key,
+                    Count = g.Count(),
+                    Amount = g.Sum(x => x.CollectionAmount)
+                })
+                .OrderBy(x => x.Date)
+                .ToListAsync();
+
+            var allocations = dailyCollections.Select(d => new DayAllocationItem
+            {
+                Date = d.Date,
+                Count = d.Count,
+                TotalAmount = d.Amount,
+                RemittedAmount = 0m
+            }).ToList();
+
+            var agentDeposits = await _context.PigmyAgentCashDeposits
+                .Where(d => d.AgentId == agentId)
+                .OrderBy(d => d.DepositDate)
+                .ThenBy(d => d.DepositId)
+                .ToListAsync();
+
+            foreach (var d in agentDeposits)
+            {
+                var (dFrom, dTo) = GetDepositCollectionRange(d);
+                decimal unallocatedDeposit = d.Amount;
+
+                if (dFrom.HasValue && dTo.HasValue)
+                {
+                    // Strict date range: only allocate to dates between dFrom and dTo
+                    var targetDays = allocations
+                        .Where(a => a.Date >= dFrom.Value && a.Date <= dTo.Value)
+                        .OrderBy(a => a.Date);
+
+                    foreach (var target in targetDays)
+                    {
+                        if (unallocatedDeposit <= 0) break;
+                        decimal needed = target.PendingAmount;
+                        if (needed > 0)
+                        {
+                            decimal give = Math.Min(unallocatedDeposit, needed);
+                            target.RemittedAmount += give;
+                            unallocatedDeposit -= give;
+                        }
+                    }
+                }
+                else
+                {
+                    // Legacy deposit without range: allocate chronologically to unremitted days up to deposit date
+                    var targetDays = allocations
+                        .Where(a => a.Date <= d.DepositDate.Date)
+                        .OrderBy(a => a.Date);
+
+                    foreach (var target in targetDays)
+                    {
+                        if (unallocatedDeposit <= 0) break;
+                        decimal needed = target.PendingAmount;
+                        if (needed > 0)
+                        {
+                            decimal give = Math.Min(unallocatedDeposit, needed);
+                            target.RemittedAmount += give;
+                            unallocatedDeposit -= give;
+                        }
+                    }
+                }
+            }
+
+            return allocations;
+        }
+
         // GET: api/AgentDayBook/Summary/5/2024-03-20
-        [HttpGet("Summary/{agentId}/{date}")]
-        public async Task<ActionResult<DayBookSummary>> GetSummary(int agentId, DateTime date)
+        // GET: api/AgentDayBook/Summary/5?fromDate=2024-03-01&toDate=2024-03-05&depositDate=2024-03-06
+        [HttpGet("Summary/{agentId}/{date?}")]
+        [HttpGet("Summary/{agentId}")]
+        public async Task<ActionResult<DayBookSummary>> GetSummary(
+            int agentId, 
+            DateTime? date, 
+            [FromQuery] DateTime? fromDate, 
+            [FromQuery] DateTime? toDate, 
+            [FromQuery] DateTime? depositDate)
         {
             var agentExists = await _context.PigmyAgents.AnyAsync(a => a.PigmyAgentID == agentId);
             if (!agentExists) return NotFound("Agent not found.");
 
-            // Total Historical Collections (Before date)
+            var effectiveDepositDate = (depositDate ?? date ?? DateTime.Today).Date;
+            var effectiveFromDate = (fromDate ?? date ?? DateTime.Today).Date;
+            var effectiveToDate = (toDate ?? date ?? DateTime.Today).Date;
+
+            // Total Historical Collections (Before deposit date)
             var historicalCollections = await _context.PigmyCollections
-                .Where(c => c.AgentId == agentId && c.CollectionDate.Date < date.Date)
+                .Where(c => c.AgentId == agentId && c.CollectionDate.Date < effectiveDepositDate)
                 .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
 
-            // Total Historical Deposits (Before date)
+            // Total Historical Deposits (Before deposit date)
             var historicalDeposits = await _context.PigmyAgentCashDeposits
-                .Where(d => d.AgentId == agentId && d.DepositDate.Date < date.Date)
+                .Where(d => d.AgentId == agentId && d.DepositDate.Date < effectiveDepositDate)
                 .SumAsync(d => (decimal?)d.Amount) ?? 0m;
 
-            // Today's Collection
+            // Today's Collection on deposit date
             var todaysCollection = await _context.PigmyCollections
-                .Where(c => c.AgentId == agentId && c.CollectionDate.Date == date.Date)
+                .Where(c => c.AgentId == agentId && c.CollectionDate.Date == effectiveDepositDate)
                 .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
 
-            // Today's Cash Deposited
+            // Today's Cash Deposited on deposit date
             var todaysDeposit = await _context.PigmyAgentCashDeposits
-                .Where(d => d.AgentId == agentId && d.DepositDate.Date == date.Date)
+                .Where(d => d.AgentId == agentId && d.DepositDate.Date == effectiveDepositDate)
                 .SumAsync(d => (decimal?)d.Amount) ?? 0m;
 
             var openingBalance = historicalCollections - historicalDeposits;
             var closingBalance = openingBalance + todaysCollection - todaysDeposit;
+
+            // Compute strict date-bound allocations across all agent collections
+            var allAllocations = await ComputeAgentDayAllocations(agentId);
+
+            // Filter for the requested multi-day range [effectiveFromDate, effectiveToDate]
+            var rangeAllocations = allAllocations
+                .Where(a => a.Date >= effectiveFromDate && a.Date <= effectiveToDate)
+                .OrderBy(a => a.Date)
+                .ToList();
+
+            var rangeTotalCollected = rangeAllocations.Sum(a => a.TotalAmount);
+            var rangeAlreadyRemitted = rangeAllocations.Sum(a => a.RemittedAmount);
+            var totalPendingRangeAmount = rangeAllocations.Sum(a => a.PendingAmount);
+            var pendingCount = rangeAllocations.Where(a => a.PendingAmount > 0).Sum(a => a.Count);
+
+            var dayBreakup = rangeAllocations.Select(a => new DayBreakupDto
+            {
+                Date = a.Date,
+                Count = a.Count,
+                Amount = a.TotalAmount,
+                RemittedAmount = a.RemittedAmount,
+                PendingAmount = a.PendingAmount,
+                IsRemitted = (a.PendingAmount == 0)
+            }).ToList();
+
+            bool isFullyRemitted = (rangeTotalCollected > 0 && totalPendingRangeAmount == 0);
+
+            // Total Pending Cash up to deposit date across all time
+            var allCollectionsUpToDeposit = await _context.PigmyCollections
+                .Where(c => c.AgentId == agentId && c.CollectionDate.Date <= effectiveDepositDate)
+                .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+
+            var allDepositsUpToDeposit = await _context.PigmyAgentCashDeposits
+                .Where(d => d.AgentId == agentId && d.DepositDate.Date <= effectiveDepositDate)
+                .SumAsync(d => (decimal?)d.Amount) ?? 0m;
+
+            var totalPendingCash = allCollectionsUpToDeposit - allDepositsUpToDeposit;
+            if (totalPendingCash < 0) totalPendingCash = 0;
 
             // Recent Deposits for this Agent
             var deposits = await _context.PigmyAgentCashDeposits
@@ -80,16 +291,22 @@ namespace Bhisi.Api.Controllers
                 .Where(v => voucherIds.Contains(v.VoucherID))
                 .ToDictionaryAsync(v => v.VoucherID, v => v.VoucherNo);
 
-            var historyItems = deposits.Select(d => new RemittanceItemDto
+            var historyItems = deposits.Select(d =>
             {
-                DepositId = d.DepositId,
-                ReceiptNo = d.ReceiptNo,
-                DepositDate = d.DepositDate,
-                Amount = d.Amount,
-                PaymentMode = d.PaymentMode ?? "CASH",
-                Narration = d.Narration ?? "",
-                VoucherId = d.VoucherId,
-                VoucherNo = (d.VoucherId.HasValue && vouchersMap.ContainsKey(d.VoucherId.Value)) ? vouchersMap[d.VoucherId.Value] : null
+                var (cFrom, cTo) = GetDepositCollectionRange(d);
+                return new RemittanceItemDto
+                {
+                    DepositId = d.DepositId,
+                    ReceiptNo = d.ReceiptNo,
+                    DepositDate = d.DepositDate,
+                    CollectionDateFrom = cFrom,
+                    CollectionDateTo = cTo,
+                    Amount = d.Amount,
+                    PaymentMode = d.PaymentMode ?? "CASH",
+                    Narration = d.Narration ?? "",
+                    VoucherId = d.VoucherId,
+                    VoucherNo = (d.VoucherId.HasValue && vouchersMap.ContainsKey(d.VoucherId.Value)) ? vouchersMap[d.VoucherId.Value] : null
+                };
             }).ToList();
 
             return Ok(new DayBookSummary
@@ -98,6 +315,16 @@ namespace Bhisi.Api.Controllers
                 TodaysCollection = todaysCollection,
                 CashDeposited = todaysDeposit,
                 ClosingBalance = closingBalance,
+                CollectionDateFrom = effectiveFromDate,
+                CollectionDateTo = effectiveToDate,
+                DepositDate = effectiveDepositDate,
+                RangeCollectionAmount = totalPendingRangeAmount,
+                RangeCollectionCount = pendingCount,
+                RangeTotalCollected = rangeTotalCollected,
+                RangeAlreadyRemitted = rangeAlreadyRemitted,
+                IsFullyRemitted = isFullyRemitted,
+                TotalPendingCash = totalPendingCash,
+                DayBreakup = dayBreakup,
                 RecentRemittances = historyItems
             });
         }
@@ -105,6 +332,8 @@ namespace Bhisi.Api.Controllers
         public class CashDepositDto
         {
             public int AgentId { get; set; }
+            public DateTime? CollectionDateFrom { get; set; }
+            public DateTime? CollectionDateTo { get; set; }
             public DateTime DepositDate { get; set; }
             public decimal Amount { get; set; }
             public string PaymentMode { get; set; } = "CASH";
@@ -128,6 +357,35 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> DepositCash([FromBody] CashDepositDto request)
         {
             if (request.Amount <= 0) return BadRequest("जमा रक्कम शून्यपेक्षा जास्त असणे आवश्यक आहे.");
+
+            if (request.CollectionDateFrom.HasValue && request.CollectionDateTo.HasValue)
+            {
+                var cFrom = request.CollectionDateFrom.Value.Date;
+                var cTo = request.CollectionDateTo.Value.Date;
+                if (cFrom > cTo)
+                {
+                    return BadRequest("संकलन सुरू दिनांक (From Date) ही संकलन शेवट दिनांक (To Date) पेक्षा मोठी असू शकत नाही.");
+                }
+
+                var allAllocations = await ComputeAgentDayAllocations(request.AgentId);
+                var rangeAllocations = allAllocations
+                    .Where(a => a.Date >= cFrom && a.Date <= cTo)
+                    .ToList();
+
+                var rangeCollSum = rangeAllocations.Sum(a => a.TotalAmount);
+                var alreadyRemitted = rangeAllocations.Sum(a => a.RemittedAmount);
+                var pendingInRange = rangeAllocations.Sum(a => a.PendingAmount);
+
+                if (pendingInRange <= 0 && rangeCollSum > 0)
+                {
+                    return BadRequest($"या कालावधीतील ({cFrom:dd/MM/yyyy} ते {cTo:dd/MM/yyyy}) एकूण संकलन (₹{rangeCollSum:N2}) आधीच शाखेत पूर्ण जमा (Remitted) झालेले आहे. दुबार भरणा करता येणार नाही.");
+                }
+
+                if (request.Amount > pendingInRange && pendingInRange > 0)
+                {
+                    return BadRequest($"या कालावधीतील उर्वरित शिल्लक संकलन फक्त ₹{pendingInRange:N2} आहे. त्यापेक्षा जास्त रक्कम (₹{request.Amount:N2}) भरता येणार नाही.");
+                }
+            }
 
             // Calculate current holding for validation
             var historicalCollections = await _context.PigmyCollections
@@ -180,6 +438,26 @@ namespace Bhisi.Api.Controllers
                 }
                 var receiptNo = $"REMD-{todayStr}-{nextSeq:D4}";
 
+                // Format Collection Range Tag in Narration
+                string dateRangeTag = "";
+                if (request.CollectionDateFrom.HasValue && request.CollectionDateTo.HasValue)
+                {
+                    if (request.CollectionDateFrom.Value.Date == request.CollectionDateTo.Value.Date)
+                    {
+                        dateRangeTag = $"[संकलन: {request.CollectionDateFrom.Value:dd/MM/yyyy}] ";
+                    }
+                    else
+                    {
+                        dateRangeTag = $"[संकलन: {request.CollectionDateFrom.Value:dd/MM/yyyy} ते {request.CollectionDateTo.Value:dd/MM/yyyy}] ";
+                    }
+                }
+                else if (request.CollectionDateFrom.HasValue)
+                {
+                    dateRangeTag = $"[संकलन: {request.CollectionDateFrom.Value:dd/MM/yyyy}] ";
+                }
+
+                string combinedNarration = $"{dateRangeTag}{request.Narration}".Trim();
+
                 // Voucher Auto Generation Logic
                 var debitLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash"));
                 var creditLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy") || l.LedgerName.Contains("Suspense"));
@@ -195,7 +473,7 @@ namespace Bhisi.Api.Controllers
                     VoucherType = "Receipt",
                     Status = "Pending",
                     TotalAmount = request.Amount,
-                    Narration = $"Pigmy Cash Remittance by Agent ID {request.AgentId}. Ref: {receiptNo} " + request.Narration,
+                    Narration = $"Pigmy Cash Remittance by Agent ID {request.AgentId}. Ref: {receiptNo} {combinedNarration}".Trim(),
                     CreatedBy = 1,
                     CreatedOn = DateTime.Now,
                     VoucherDetails = new List<VoucherDetail>
@@ -212,10 +490,12 @@ namespace Bhisi.Api.Controllers
                 {
                     AgentId = request.AgentId,
                     DepositDate = request.DepositDate,
+                    CollectionDateFrom = request.CollectionDateFrom,
+                    CollectionDateTo = request.CollectionDateTo,
                     Amount = request.Amount,
                     PaymentMode = string.IsNullOrEmpty(request.PaymentMode) ? "CASH" : request.PaymentMode,
                     ReceiptNo = receiptNo,
-                    Narration = request.Narration,
+                    Narration = combinedNarration,
                     VoucherId = voucher.VoucherID,
                     CreatedBy = 1,
                     CreatedOn = DateTime.Now

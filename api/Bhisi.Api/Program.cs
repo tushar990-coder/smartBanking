@@ -1244,6 +1244,18 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgentCashDeposits')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyAgentCashDeposits]') AND name = 'CollectionDateFrom')
+                BEGIN
+                    ALTER TABLE [PigmyAgentCashDeposits] ADD [CollectionDateFrom] datetime2 NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyAgentCashDeposits]') AND name = 'CollectionDateTo')
+                BEGIN
+                    ALTER TABLE [PigmyAgentCashDeposits] ADD [CollectionDateTo] datetime2 NULL;
+                END
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingAccountMasters')
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingAccountMasters]') AND name = 'LastInterestPostingDate')

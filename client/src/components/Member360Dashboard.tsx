@@ -22,6 +22,7 @@ interface Member360DashboardProps {
 }
 
 interface MemberInfoDto {
+    customerID?: number;
     memberID: number;
     memberCode: string;
     membershipType?: string;
@@ -101,6 +102,21 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
         } else {
             onNavigate(rawId, { memberId: selectedMemberId });
         }
+    };
+
+    const getSavingNavParams = (type?: string) => {
+        const custId = data?.memberInfo?.customerID || (selectedMemberId ? Number(selectedMemberId) : undefined);
+        const cif = data?.memberInfo?.cifNo || '';
+        const memId = data?.memberInfo?.memberID || (selectedMemberId ? Number(selectedMemberId) : undefined);
+        const name = data?.memberInfo ? `${data.memberInfo.firstName} ${data.memberInfo.lastName}`.trim() : '';
+        const params: any = {
+            customerId: custId,
+            cifNo: cif,
+            memberId: memId,
+            customerName: name
+        };
+        if (type) params.type = type;
+        return params;
     };
 
     const moduleReportsConfig = {
@@ -574,7 +590,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                         <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
                                             <div className="flex flex-col gap-1.5">
                                                 <button 
-                                                    onClick={() => onNavigate('saving-account', { memberId: selectedMemberId })} 
+                                                    onClick={() => onNavigate('saving-account', getSavingNavParams())} 
                                                     className="w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-blue-50/90 hover:bg-blue-100 text-blue-900 border-blue-200 hover:border-blue-300 group/btn"
                                                 >
                                                     <span className="truncate">{!hasSavings ? '+ नवीन बचत खाते' : 'नवे बचत खाते उघडा'}</span> 
@@ -583,11 +599,11 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                                                 {hasSavings && (
                                                     <>
-                                                        <button onClick={() => onNavigate('saving-transaction', { memberId: selectedMemberId, type: 'Deposit' })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('saving-transaction', getSavingNavParams('Deposit'))} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-blue-900">बचत जमा नोंदणी</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('saving-transaction', { memberId: selectedMemberId, type: 'Withdrawal' })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('saving-transaction', getSavingNavParams('Withdrawal'))} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-blue-900">बचत उचल नोंदणी</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
@@ -595,11 +611,11 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                                             <span className="truncate group-hover/btn:text-blue-900">व्याज जमा पोस्टिंग</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('saving-passbook', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('saving-passbook', getSavingNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-blue-900">पासबुक प्रिंट करा</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('saving-closing', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('saving-closing', getSavingNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-blue-900">खाते बंद प्रक्रिया</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-blue-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>

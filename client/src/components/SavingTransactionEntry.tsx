@@ -1,5 +1,5 @@
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -22,7 +22,8 @@ import {
   Percent,
   Receipt,
   FileText,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 
@@ -36,6 +37,7 @@ interface SavingAccount {
   legacyAccountNumber?: string;
   cifNo?: string;
   customerID?: number;
+  memberID?: number;
   customerName?: string;
   customerNameEng?: string;
 
@@ -132,6 +134,17 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   const [success, setSuccess] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showTxnModal, setShowTxnModal] = useState(false);
+
+  // CIF-First Multi-Account Selection State
+  const amountInputRef = useRef<HTMLInputElement>(null);
+  const [showMultiAccountModal, setShowMultiAccountModal] = useState(false);
+  const [customerMatchingAccounts, setCustomerMatchingAccounts] = useState<SavingAccount[]>([]);
+  const [multiAccountCustomerInfo, setMultiAccountCustomerInfo] = useState<{
+    name: string;
+    cifNo: string;
+    customerId: number;
+  } | null>(null);
+  const [noAccountFoundAlert, setNoAccountFoundAlert] = useState<string | null>(null);
 
   const API_URL = '/api';
 
@@ -298,40 +311,90 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
       setLedgers(ledgerList);
 
       const params = new URLSearchParams(window.location.search);
+      const cifStr = params.get('cifNo') || params.get('cif');
       const customerIdStr = params.get('customerId') || params.get('customerID');
+      const memberIdStr = params.get('memberId') || params.get('memberID');
       const accountIdStr = params.get('accountId') || params.get('savingAccountId');
       const typeStr = params.get('type');
+      const customerNameStr = params.get('customerName');
 
-      if (!preserveAccountId) {
+      if (!preserveAccountId && !isPassingMode) {
         if (accountIdStr) {
           const accId = parseInt(accountIdStr, 10);
           const matchedAcc = accData.find((a: any) => a.savingAccountID === accId);
           if (matchedAcc) {
-            setSelectedLedgerID(matchedAcc.ledgerID || 7);
-            setFormData((prev) => ({
-              ...prev,
-              savingAccountID: matchedAcc.savingAccountID,
-              transactionType: typeStr || prev.transactionType
-            }));
-            setSelectedAccount(matchedAcc);
+            applySelectedAccount(matchedAcc, typeStr);
+            setCustomerMatchingAccounts([matchedAcc]);
           }
-        } else if (customerIdStr) {
-          const cId = parseInt(customerIdStr, 10);
-          const matchedAcc = accData.find((a: any) => a.customerID === cId);
-          if (matchedAcc) {
-            setSelectedLedgerID(matchedAcc.ledgerID || 7);
-            setFormData((prev) => ({
-              ...prev,
-              savingAccountID: matchedAcc.savingAccountID,
-              transactionType: typeStr || prev.transactionType
-            }));
-            setSelectedAccount(matchedAcc);
+        } else if (cifStr || customerIdStr || memberIdStr) {
+          const cId = customerIdStr ? parseInt(customerIdStr, 10) : undefined;
+          const mId = memberIdStr ? parseInt(memberIdStr, 10) : undefined;
+          const cleanCif = cifStr ? cifStr.trim().toUpperCase() : undefined;
+
+          // Tiered CIF-First Matching Architecture
+          let matched: SavingAccount[] = [];
+          if (cleanCif) {
+            matched = accData.filter(a => a.cifNo && a.cifNo.trim().toUpperCase() === cleanCif);
+          }
+          if (matched.length === 0 && cId) {
+            matched = accData.filter(a => a.customerID === cId);
+          }
+          if (matched.length === 0 && mId) {
+            matched = accData.filter(a => (a as any).memberID === mId || a.customerID === mId);
+          }
+
+          if (matched.length === 1) {
+            // Exactly 1 account: auto-select directly & focus amount input
+            applySelectedAccount(matched[0], typeStr);
+            setCustomerMatchingAccounts(matched);
+            setNoAccountFoundAlert(null);
+          } else if (matched.length > 1) {
+            // Multiple accounts: prompt interactive selection modal
+            setCustomerMatchingAccounts(matched);
+            const primaryName = customerNameStr || matched[0].customerName || 'खातेदार';
+            const primaryCif = cleanCif || matched[0].cifNo || '-';
+            setMultiAccountCustomerInfo({
+              name: primaryName,
+              cifNo: primaryCif,
+              customerId: cId || matched[0].customerID || 0
+            });
+            if (typeStr) {
+              setFormData(prev => ({ ...prev, transactionType: typeStr }));
+            }
+            setShowMultiAccountModal(true);
+            setNoAccountFoundAlert(null);
+          } else {
+            // 0 accounts found
+            setCustomerMatchingAccounts([]);
+            const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
+            setNoAccountFoundAlert(`निवडलेल्या सभासदाचे (${customerNameStr || identifier}) कोणतेही बचत खाते आढळले नाही.`);
           }
         }
       }
     } catch (err) {
       console.error('Error fetching accounts or interest settings', err);
     }
+  };
+
+  const applySelectedAccount = (acc: SavingAccount, overrideType?: string | null) => {
+    if (acc.ledgerID) {
+      setSelectedLedgerID(acc.ledgerID);
+    }
+    setFormData((prev) => ({
+      ...prev,
+      savingAccountID: acc.savingAccountID,
+      transactionType: overrideType || prev.transactionType
+    }));
+    setSelectedAccount(acc);
+    setError('');
+    setTimeout(() => {
+      amountInputRef.current?.focus();
+    }, 150);
+  };
+
+  const handleSelectCustomerAccount = (acc: SavingAccount) => {
+    applySelectedAccount(acc, formData.transactionType);
+    setShowMultiAccountModal(false);
   };
 
   const fetchTransactions = async () => {
@@ -772,6 +835,24 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         </div>
       )}
 
+      {noAccountFoundAlert && (
+        <div className="mb-3 p-3 bg-amber-50 border border-amber-300 text-amber-900 rounded-sm flex items-center justify-between text-xs font-semibold shadow-2xs">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{noAccountFoundAlert}</span>
+          </div>
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={() => onNavigate('saving-account')}
+              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
+            >
+              + नवीन बचत खाते उघडा
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Main Content Layout - Form & Details Card side-by-side */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-3">
         
@@ -840,9 +921,22 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
 
               {/* Account Searchable Select */}
               <div className="md:col-span-2">
-                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                  बचत खाते निवडा (Select Saving Account) *
-                </label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-[11px] font-bold text-gray-700">
+                    बचत खाते निवडा (Select Saving Account) *
+                  </label>
+                  {customerMatchingAccounts.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowMultiAccountModal(true)}
+                      className="text-[10px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                      title="या खातेदाराचे दुसरे बचत खाते निवडा"
+                    >
+                      <RotateCcw size={11} className="text-blue-600" />
+                      <span>🔄 खाते बदला ({customerMatchingAccounts.length} खाती उपलब्ध)</span>
+                    </button>
+                  )}
+                </div>
                 <SearchableSelect
                   options={accountOptions}
                   value={formData.savingAccountID}
@@ -896,6 +990,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-bold text-gray-400">₹</span>
                   <input
+                    ref={amountInputRef}
                     type="number"
                     name="amount"
                     step="0.01"
@@ -1499,6 +1594,138 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                 className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-1.5 rounded-sm font-semibold transition-colors cursor-pointer"
               >
                 पॉपअप बंद करा (Close)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Multi-Account Selection Modal */}
+      {showMultiAccountModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full overflow-hidden border border-blue-200">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 px-4 py-3 text-white flex items-center justify-between shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-white/10 rounded-md">
+                  <CreditCard className="w-5 h-5 text-blue-100" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm leading-tight">
+                    बचत खाते निवडा (Select Saving Account)
+                  </h3>
+                  <p className="text-[11px] text-blue-100 font-medium">
+                    {multiAccountCustomerInfo?.name || 'खातेदार'} {multiAccountCustomerInfo?.cifNo ? `(CIF: ${multiAccountCustomerInfo.cifNo})` : ''} - एकूण {customerMatchingAccounts.length} खाती उपलब्ध
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMultiAccountModal(false)}
+                className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-md cursor-pointer transition-colors"
+                title="बंद करा"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 max-h-[70vh] overflow-y-auto space-y-2.5 bg-slate-50/50">
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-md text-[11px] text-blue-900 font-medium flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>
+                  या खातेदाराचे <b>{customerMatchingAccounts.length} बचत खाती</b> नोंदणीकृत आहेत. कृपया व्यवहारासाठी इच्छित खाते निवडा:
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {customerMatchingAccounts.map((acc, idx) => {
+                  const isCurrent = formData.savingAccountID === acc.savingAccountID;
+                  const displayAccNo = acc.accountNo ? format14DigitDisplay(acc.accountNo) : '-';
+                  const oldAcc = acc.oldAccountNo || acc.legacyAccountNumber;
+                  const schemeName = acc.ledgerName || 'सर्वसाधारण बचत ठेव';
+
+                  return (
+                    <div
+                      key={acc.savingAccountID || idx}
+                      onClick={() => handleSelectCustomerAccount(acc)}
+                      className={`p-3 rounded-lg border transition-all cursor-pointer shadow-2xs hover:shadow-md flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 ${
+                        isCurrent 
+                          ? 'bg-blue-50/90 border-blue-500 ring-2 ring-blue-400/30' 
+                          : 'bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 ${
+                          isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                        }`}>
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-black text-xs text-slate-900 tracking-wide">
+                              {displayAccNo}
+                            </span>
+                            {oldAcc && oldAcc !== acc.accountNo && (
+                              <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                                जुना: {oldAcc}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              {acc.status || 'Active'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-600 font-semibold mt-1">
+                            योजना: <span className="text-slate-800 font-bold">{schemeName}</span>
+                            {acc.openingDate && (
+                              <span className="text-slate-400 font-normal ml-2">
+                                (सुरू: {formatDisplayDate(acc.openingDate)})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 sm:text-right w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+                        <div>
+                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">शिल्लक रक्कम</div>
+                          <div className="text-sm font-black text-emerald-700">
+                            ₹ {(acc.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectCustomerAccount(acc);
+                          }}
+                          className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                            isCurrent
+                              ? 'bg-blue-600 text-white hover:bg-blue-700'
+                              : 'bg-white hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-300'
+                          }`}
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span>{isCurrent ? 'निवडलेले आहे' : 'हे खाते निवडा'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-100 px-4 py-2.5 border-t border-slate-200 flex justify-between items-center text-xs">
+              <span className="text-slate-500 font-medium">
+                खाते निवडल्यावर थेट रक्कम (Amount) रकान्यावर कर्सर जाईल.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowMultiAccountModal(false)}
+                className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold cursor-pointer transition-colors"
+              >
+                बंद करा (Close)
               </button>
             </div>
           </div>

@@ -11,6 +11,8 @@ interface RemittanceItem {
   depositId: number;
   receiptNo: string;
   depositDate: string;
+  collectionDateFrom?: string;
+  collectionDateTo?: string;
   amount: number;
   paymentMode?: string;
   narration: string;
@@ -18,20 +20,43 @@ interface RemittanceItem {
   voucherNo?: string;
 }
 
+interface DayBreakupItem {
+  date: string;
+  count: number;
+  amount: number;
+  remittedAmount?: number;
+  pendingAmount?: number;
+  isRemitted?: boolean;
+}
+
 interface DayBookSummary {
   openingBalance: number;
   todaysCollection: number;
   cashDeposited: number;
   closingBalance: number;
+  collectionDateFrom?: string;
+  collectionDateTo?: string;
+  depositDate?: string;
+  rangeCollectionAmount?: number;
+  rangeCollectionCount?: number;
+  rangeTotalCollected?: number;
+  rangeAlreadyRemitted?: number;
+  isFullyRemitted?: boolean;
+  totalPendingCash?: number;
+  dayBreakup?: DayBreakupItem[];
   recentRemittances: RemittanceItem[];
 }
 
 const AgentDayBookMaster: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('');
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
+  
+  // 3-Date States
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [collectionDateFrom, setCollectionDateFrom] = useState<string>(todayStr);
+  const [collectionDateTo, setCollectionDateTo] = useState<string>(todayStr);
+  const [depositDate, setDepositDate] = useState<string>(todayStr);
+
   const [summary, setSummary] = useState<DayBookSummary | null>(null);
 
   const [depositAmount, setDepositAmount] = useState<number | ''>('');
@@ -77,6 +102,12 @@ const AgentDayBookMaster: React.FC = () => {
     }
   };
 
+  const applyRangeAmountToDeposit = () => {
+    if (summary && summary.rangeCollectionAmount !== undefined && summary.rangeCollectionAmount > 0) {
+      setDepositAmount(summary.rangeCollectionAmount);
+    }
+  };
+
   const resetDenominations = () => {
     setDenominations({
       500: 0,
@@ -103,16 +134,16 @@ const AgentDayBookMaster: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedAgentId && selectedDate) {
+    if (selectedAgentId && collectionDateFrom && collectionDateTo && depositDate) {
       fetchSummary();
     }
-  }, [selectedAgentId, selectedDate]);
+  }, [selectedAgentId, collectionDateFrom, collectionDateTo, depositDate]);
 
   const fetchSummary = async () => {
-    if (!selectedAgentId || !selectedDate) return;
+    if (!selectedAgentId || !collectionDateFrom || !collectionDateTo || !depositDate) return;
     try {
       const res = await fetch(
-        `/api/AgentDayBook/Summary/${selectedAgentId}/${selectedDate}`
+        `/api/AgentDayBook/Summary/${selectedAgentId}?fromDate=${collectionDateFrom}&toDate=${collectionDateTo}&depositDate=${depositDate}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -127,8 +158,23 @@ const AgentDayBookMaster: React.FC = () => {
     }
   };
 
+  const clearForm = () => {
+    setDepositAmount('');
+    setNarration('');
+    setPaymentMode('CASH');
+    resetDenominations();
+    setCollectionDateFrom(todayStr);
+    setCollectionDateTo(todayStr);
+    setDepositDate(todayStr);
+  };
+
   const handleDeposit = async () => {
     if (!selectedAgentId || !depositAmount) return;
+
+    if (new Date(collectionDateFrom) > new Date(collectionDateTo)) {
+      setMessage('त्रुटी: संकलन सुरू दिनांक (From) ही संकलन शेवट दिनांक (To) पेक्षा मोठी असू शकत नाही.');
+      return;
+    }
 
     if (paymentMode === 'CASH' && totalDenominationAmount > 0 && totalDenominationAmount !== Number(depositAmount)) {
       setMessage(`त्रुटी: नोटांची एकूण मोजणी (₹${totalDenominationAmount.toLocaleString('en-IN')}) आणि भरणा रक्कम (₹${Number(depositAmount).toLocaleString('en-IN')}) तंतोतंत जुळली पाहिजे.`);
@@ -138,7 +184,9 @@ const AgentDayBookMaster: React.FC = () => {
     try {
       const payload: any = {
         agentId: Number(selectedAgentId),
-        depositDate: selectedDate,
+        collectionDateFrom: collectionDateFrom,
+        collectionDateTo: collectionDateTo,
+        depositDate: depositDate,
         amount: Number(depositAmount),
         paymentMode: paymentMode,
         narration: narration,
@@ -165,9 +213,7 @@ const AgentDayBookMaster: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setMessage(`यशस्वी! पावती क्र: ${data.receiptNo} | मोड: ${paymentMode} | व्हाउचर क्र: ${data.voucherNo}`);
-        setDepositAmount('');
-        setNarration('');
-        resetDenominations();
+        clearForm(); // Clear the form completely
         fetchSummary(); // Refresh balances and history
       } else {
         const errText = await res.text();
@@ -225,9 +271,9 @@ const AgentDayBookMaster: React.FC = () => {
             </div>
           )}
 
-      {/* Filter Section */}
-      <div className="bg-white p-2 rounded-sm shadow-sm mb-3 flex flex-wrap gap-4 items-end border border-gray-200">
-        <div className="w-64">
+      {/* Filter Section: Agent & 3 Dates */}
+      <div className="bg-white p-2.5 rounded-sm shadow-sm mb-3 flex flex-wrap gap-3 items-end border border-gray-200">
+        <div className="w-56">
           <label className="block text-[11px] font-bold text-gray-700 mb-0.5">एजंट निवडा (Select Agent)</label>
           <select
             className="w-full border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-[11px] bg-white font-medium"
@@ -244,22 +290,128 @@ const AgentDayBookMaster: React.FC = () => {
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-gray-700 mb-0.5">तारीख (Date)</label>
+          <label className="block text-[11px] font-bold text-gray-700 mb-0.5">📅 संकलन सुरू (From Date)</label>
           <input
             type="date"
             className="border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-[11px] bg-white"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            value={collectionDateFrom}
+            onChange={(e) => setCollectionDateFrom(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-bold text-gray-700 mb-0.5">📅 संकलन शेवट (To Date)</label>
+          <input
+            type="date"
+            className="border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-[11px] bg-white"
+            value={collectionDateTo}
+            onChange={(e) => setCollectionDateTo(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-bold text-blue-900 mb-0.5">🏦 शाखेत भरणा दिनांक (Deposit Date)</label>
+          <input
+            type="date"
+            className="border-2 border-primary/60 px-2 py-0.5 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-[11px] bg-blue-50/50 font-bold text-blue-900"
+            value={depositDate}
+            onChange={(e) => setDepositDate(e.target.value)}
           />
         </div>
 
         <button
-          className="bg-primary hover:bg-[#004a75] text-white px-4 py-1 rounded-sm font-bold shadow-sm transition-colors text-[11px]"
+          className="bg-primary hover:bg-[#004a75] text-white px-3.5 py-1 rounded-sm font-bold shadow-sm transition-colors text-[11px]"
           onClick={fetchSummary}
         >
           रिफ्रेश (Refresh)
         </button>
       </div>
+
+      {/* Multi-Day Range Breakdown Card (दिवसनिहाय संकलन ब्रेकअप) */}
+      {summary && (
+        <div className={`border rounded-sm p-2.5 mb-3 shadow-2xs ${
+          summary.isFullyRemitted 
+            ? 'bg-emerald-50/70 border-emerald-300' 
+            : 'bg-gradient-to-r from-blue-50/90 to-indigo-50/90 border-blue-200'
+        }`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1.5 border-b border-gray-200">
+            <div className="flex items-center gap-2">
+              <span className="text-base">{summary.isFullyRemitted ? '✅' : '📊'}</span>
+              <div>
+                <h3 className={`text-xs font-bold ${summary.isFullyRemitted ? 'text-emerald-900' : 'text-blue-900'}`}>
+                  निवडलेल्या कालावधीतील संकलन तपशील ({new Date(collectionDateFrom).toLocaleDateString('en-GB')} ते {new Date(collectionDateTo).toLocaleDateString('en-GB')})
+                </h3>
+                <div className="text-[10px] text-gray-700 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                  <span>एकूण पावत्या: <strong className="font-mono">{summary.rangeCollectionCount || 0}</strong></span>
+                  <span>|</span>
+                  <span>कालावधी संकलन: <strong className="font-mono text-gray-900">₹ {(summary.rangeTotalCollected ?? summary.rangeCollectionAmount ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                  {(summary.rangeAlreadyRemitted || 0) > 0 && (
+                    <>
+                      <span>|</span>
+                      <span>आधीच भरणा (Remitted): <strong className="font-mono text-blue-700">₹ {(summary.rangeAlreadyRemitted || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                    </>
+                  )}
+                  <span>|</span>
+                  <span>उर्वरित बाकी (Pending): <strong className={`font-mono ${(summary.rangeCollectionAmount || 0) > 0 ? 'text-amber-700 font-extrabold' : 'text-emerald-700 font-extrabold'}`}>₹ {(summary.rangeCollectionAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {summary.isFullyRemitted ? (
+              <div className="bg-emerald-600 text-white font-bold px-3 py-1 rounded-sm shadow-xs text-xs flex items-center gap-1 self-start sm:self-auto">
+                <span>✓ सर्व संकलन आधीच शाखेत जमा (Remitted) झाले आहे</span>
+              </div>
+            ) : (summary.rangeCollectionAmount || 0) > 0 ? (
+              <button
+                type="button"
+                onClick={applyRangeAmountToDeposit}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-sm shadow-xs text-xs flex items-center gap-1 transition-colors self-start sm:self-auto cursor-pointer"
+                title="कालावधीतील उर्वरित रक्कम भरणा बॉक्समध्ये भरा"
+              >
+                <span>⚡ उर्वरित रक्कम भरा (₹{(summary.rangeCollectionAmount || 0).toLocaleString('en-IN')})</span>
+              </button>
+            ) : null}
+          </div>
+
+          {/* Day-by-Day Breakup Badges */}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wide mr-1">दिवसनिहाय (Day Breakup):</span>
+            {!summary.dayBreakup || summary.dayBreakup.length === 0 ? (
+              <span className="text-[11px] text-gray-500 italic">या कालावधीत कोणतेही संकलन झालेले नाही.</span>
+            ) : (
+              summary.dayBreakup.map((day) => (
+                <div 
+                  key={day.date} 
+                  className={`px-2 py-0.5 rounded border shadow-2xs text-[11px] flex items-center gap-1.5 ${
+                    day.isRemitted 
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
+                      : (day.remittedAmount || 0) > 0
+                        ? 'bg-amber-50 border-amber-300 text-amber-900'
+                        : 'bg-white border-blue-200 text-gray-800'
+                  }`}
+                >
+                  <span className="font-semibold">{new Date(day.date).toLocaleDateString('en-GB')}:</span>
+                  <span className="text-[10px] opacity-75 font-medium">({day.count} पावत्या)</span>
+                  <span className="font-bold font-mono">₹{day.amount.toLocaleString('en-IN')}</span>
+                  {day.isRemitted ? (
+                    <span className="bg-emerald-200/70 text-emerald-800 text-[9px] font-bold px-1 py-0.2 rounded">
+                      ✓ जमा पूर्ण
+                    </span>
+                  ) : (day.remittedAmount || 0) > 0 ? (
+                    <span className="bg-amber-200/70 text-amber-900 text-[9px] font-bold px-1 py-0.2 rounded">
+                      ⏳ ₹{day.pendingAmount?.toLocaleString('en-IN')} बाकी
+                    </span>
+                  ) : (
+                    <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1 py-0.2 rounded">
+                      ⏳ भरणे बाकी
+                    </span>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Summary Balance Cards */}
       {summary && (
@@ -268,17 +420,20 @@ const AgentDayBookMaster: React.FC = () => {
             <h3 className="text-[10px] text-gray-500 font-bold uppercase">सुरुवातीची बाकी (Opening)</h3>
             <p className="text-sm font-extrabold text-gray-800 mt-0.5">₹ {summary.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
           </div>
-          <div className="bg-white p-2.5 rounded-sm shadow-sm border-l-4 border-green-500 border border-gray-200">
-            <h3 className="text-[10px] text-gray-500 font-bold uppercase">आजची जमा (Today's Coll.)</h3>
-            <p className="text-sm font-extrabold text-green-600 mt-0.5">+ ₹ {summary.todaysCollection.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+          <div className="bg-white p-2.5 rounded-sm shadow-sm border-l-4 border-emerald-500 border border-gray-200">
+            <h3 className="text-[10px] text-emerald-700 font-bold uppercase">कालावधी संकलन बाकी (Pending)</h3>
+            <p className="text-sm font-extrabold text-emerald-700 mt-0.5">+ ₹ {(summary.rangeCollectionAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            {summary.isFullyRemitted && (
+              <span className="text-[9px] text-emerald-600 font-bold block mt-0.5">✓ पूर्ण जमा (₹{(summary.rangeTotalCollected || 0).toLocaleString('en-IN')})</span>
+            )}
           </div>
           <div className="bg-white p-2.5 rounded-sm shadow-sm border-l-4 border-red-500 border border-gray-200">
-            <h3 className="text-[10px] text-gray-500 font-bold uppercase">शाखेत भरलेली रोख (Remitted)</h3>
+            <h3 className="text-[10px] text-gray-500 font-bold uppercase">आज शाखेत भरलेली रोख</h3>
             <p className="text-sm font-extrabold text-red-600 mt-0.5">- ₹ {summary.cashDeposited.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
           </div>
           <div className="bg-white p-2.5 rounded-sm shadow-sm border-l-4 border-blue-600 border border-gray-200">
-            <h3 className="text-[10px] text-gray-500 font-bold uppercase">एजंटकडील अखेर कॅश शिल्लक (Closing)</h3>
-            <p className="text-sm font-extrabold text-blue-700 mt-0.5">₹ {summary.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+            <h3 className="text-[10px] text-gray-500 font-bold uppercase">एजंटकडील एकूण शिल्लक कॅश</h3>
+            <p className="text-sm font-extrabold text-blue-700 mt-0.5">₹ {(summary.totalPendingCash ?? summary.closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
           </div>
         </div>
       )}
@@ -293,12 +448,12 @@ const AgentDayBookMaster: React.FC = () => {
           </div>
 
           <div className="mb-2">
-            <label className="block text-[11px] font-bold text-gray-700 mb-0.5">एजंटकडील शिल्लक रोख</label>
+            <label className="block text-[11px] font-bold text-gray-700 mb-0.5">एजंटकडील एकूण शिल्लक रोख</label>
             <input
               type="text"
               readOnly
               className="w-full border border-gray-300 px-2 py-1 rounded-sm bg-gray-100 font-mono font-bold text-xs text-blue-700"
-              value={summary ? `₹ ${summary.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹ 0.00'}
+              value={summary ? `₹ ${(summary.totalPendingCash ?? summary.closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹ 0.00'}
             />
           </div>
 
@@ -332,7 +487,7 @@ const AgentDayBookMaster: React.FC = () => {
             <input
               type="number"
               className="w-full border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-xs font-bold bg-white"
-              placeholder={`Max: ₹ ${summary?.closingBalance || 0}`}
+              placeholder={summary?.rangeCollectionAmount ? `उदा. ₹ ${summary.rangeCollectionAmount}` : `Max: ₹ ${summary?.totalPendingCash ?? summary?.closingBalance ?? 0}`}
               value={depositAmount}
               onChange={(e) => setDepositAmount(e.target.value ? Number(e.target.value) : '')}
             />
@@ -419,13 +574,31 @@ const AgentDayBookMaster: React.FC = () => {
             />
           </div>
 
-          <button
-            className="w-full bg-primary hover:bg-[#004a75] text-white px-3 py-1.5 rounded-sm font-bold shadow-sm transition-colors text-xs disabled:opacity-50"
-            disabled={!summary || summary.closingBalance <= 0 || !depositAmount}
-            onClick={handleDeposit}
-          >
-            रक्कम जमा करा व व्हाउचर जनरेट करा (Receive & Create Voucher)
-          </button>
+          {summary?.isFullyRemitted && (
+            <div className="mb-2 p-2 bg-emerald-50 border border-emerald-300 rounded text-[11px] text-emerald-800 font-bold flex items-center gap-1.5">
+              <span>✓</span>
+              <span>या निवडलेल्या कालावधीचे सर्व संकलन आधीच पूर्ण जमा (Remitted) झाले आहे.</span>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="flex-1 bg-primary hover:bg-[#004a75] text-white px-3 py-1.5 rounded-sm font-bold shadow-sm transition-colors text-xs disabled:opacity-50 cursor-pointer"
+              disabled={!summary || (summary.totalPendingCash ?? summary.closingBalance) <= 0 || !depositAmount || summary.isFullyRemitted}
+              onClick={handleDeposit}
+            >
+              रक्कम जमा करा व व्हाउचर जनरेट करा (Receive & Create Voucher)
+            </button>
+            <button
+              type="button"
+              className="px-2.5 py-1.5 border border-gray-300 hover:bg-gray-100 text-gray-700 rounded-sm font-semibold text-xs transition-colors cursor-pointer"
+              onClick={clearForm}
+              title="सर्व इनपुट साफ करा"
+            >
+              साफ करा (Clear)
+            </button>
+          </div>
         </div>
 
         {/* Remittance History Sheet */}
@@ -442,11 +615,11 @@ const AgentDayBookMaster: React.FC = () => {
               <thead className="bg-primary text-white">
                 <tr>
                   <th className="px-2 py-1.5 border-r border-blue-400 font-medium">पावती क्र. (Receipt)</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400 font-medium">तारीख (Date)</th>
+                  <th className="px-2 py-1.5 border-r border-blue-400 font-medium">भरणा दिनांक (Deposit)</th>
                   <th className="px-2 py-1.5 border-r border-blue-400 font-medium">भरणा प्रकार (Mode)</th>
                   <th className="px-2 py-1.5 border-r border-blue-400 font-medium">व्हाउचर क्र. (Voucher)</th>
                   <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-right">रक्कम (Amount ₹)</th>
-                  <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">तपशील (Narration)</th>
+                  <th className="px-2 py-1.5 border-r border-blue-400 font-medium text-left">संकलन कालावधी / तपशील (Narration)</th>
                   <th className="px-2 py-1.5 font-medium text-center">कृती (Action)</th>
                 </tr>
               </thead>
@@ -463,7 +636,7 @@ const AgentDayBookMaster: React.FC = () => {
                       <td className="px-2 py-1 border-r border-gray-200 font-mono font-bold text-primary">
                         {item.receiptNo}
                       </td>
-                      <td className="px-2 py-1 border-r border-gray-200 whitespace-nowrap">
+                      <td className="px-2 py-1 border-r border-gray-200 whitespace-nowrap font-medium text-gray-800">
                         {new Date(item.depositDate).toLocaleDateString('en-GB')}
                       </td>
                       <td className="px-2 py-1 border-r border-gray-200 font-semibold text-gray-800">
@@ -477,13 +650,35 @@ const AgentDayBookMaster: React.FC = () => {
                       <td className="px-2 py-1 border-r border-gray-200 text-right font-bold text-green-700">
                         ₹ {item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-600 max-w-xs truncate">
-                        {item.narration || '-'}
+                      <td className="px-2 py-1 border-r border-gray-200 text-left text-gray-700 max-w-xs">
+                        {item.collectionDateFrom && item.collectionDateTo ? (
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-blue-900 text-[10px] bg-blue-50 px-1 py-0.5 rounded w-fit border border-blue-200">
+                              [संकलन: {new Date(item.collectionDateFrom).toLocaleDateString('en-GB')} ते {new Date(item.collectionDateTo).toLocaleDateString('en-GB')}]
+                            </span>
+                            {item.narration && (
+                              <span className="text-[10px] text-gray-600 truncate">
+                                {item.narration.replace(/\[संकलन:[^\]]+\]/g, '').trim()}
+                              </span>
+                            )}
+                          </div>
+                        ) : item.narration?.startsWith('[संकलन:') ? (
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-blue-900 text-[10px] bg-blue-50 px-1 py-0.5 rounded w-fit border border-blue-200">
+                              {item.narration.split(']')[0] + ']'}
+                            </span>
+                            <span className="text-[10px] text-gray-600 truncate">
+                              {item.narration.split(']').slice(1).join(']').trim()}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="truncate block">{item.narration || '-'}</span>
+                        )}
                       </td>
                       <td className="px-2 py-1 text-center">
                         <button
                           onClick={() => setSelectedReceipt(item)}
-                          className="border border-blue-500 text-blue-700 px-2 py-0.5 rounded-sm hover:bg-blue-50 transition-colors font-semibold text-[10px]"
+                          className="border border-blue-500 text-blue-700 px-2 py-0.5 rounded-sm hover:bg-blue-50 transition-colors font-semibold text-[10px] cursor-pointer"
                         >
                           पावती प्रिंट
                         </button>
@@ -524,9 +719,19 @@ const AgentDayBookMaster: React.FC = () => {
                 <span className="font-mono font-bold text-gray-800">{selectedReceipt.voucherNo || '-'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600 font-semibold">भरणा तारीख (Date):</span>
-                <span className="font-semibold">{new Date(selectedReceipt.depositDate).toLocaleDateString('en-GB')}</span>
+                <span className="text-gray-600 font-semibold">भरणा दिनांक (Deposit Date):</span>
+                <span className="font-semibold text-blue-900">{new Date(selectedReceipt.depositDate).toLocaleDateString('en-GB')}</span>
               </div>
+              {(selectedReceipt.collectionDateFrom || selectedReceipt.narration?.includes('[संकलन:')) && (
+                <div className="flex justify-between bg-blue-50/70 p-1 rounded border border-blue-200">
+                  <span className="text-blue-900 font-bold">संकलन कालावधी (Collection Period):</span>
+                  <span className="font-bold text-blue-900">
+                    {selectedReceipt.collectionDateFrom && selectedReceipt.collectionDateTo
+                      ? `${new Date(selectedReceipt.collectionDateFrom).toLocaleDateString('en-GB')} ते ${new Date(selectedReceipt.collectionDateTo).toLocaleDateString('en-GB')}`
+                      : selectedReceipt.narration?.split('[संकलन:')[1]?.split(']')[0]?.trim()}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-gray-600 font-semibold">पिग्मी एजंटचे नाव (Agent Name):</span>
                 <span className="font-bold text-gray-900">{selectedAgentObj?.agentName || `Agent ID: ${selectedAgentId}`}</span>
@@ -535,10 +740,10 @@ const AgentDayBookMaster: React.FC = () => {
                 <span className="font-bold text-green-900">भरणा केलेली रक्कम (Remitted Amount):</span>
                 <span className="font-extrabold text-green-800 text-sm">₹ {selectedReceipt.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
-              {selectedReceipt.narration && (
+              {selectedReceipt.narration && !selectedReceipt.narration.startsWith('[संकलन:') && (
                 <div className="flex justify-between pt-1">
                   <span className="text-gray-600 font-semibold">तपशील (Narration):</span>
-                  <span className="text-gray-800">{selectedReceipt.narration}</span>
+                  <span className="text-gray-800">{selectedReceipt.narration.replace(/\[संकलन:[^\]]+\]/g, '').trim()}</span>
                 </div>
               )}
             </div>

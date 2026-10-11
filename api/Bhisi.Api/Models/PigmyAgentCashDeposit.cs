@@ -18,6 +18,12 @@ namespace Bhisi.Api.Models
         [Required]
         public DateTime DepositDate { get; set; }
 
+        [NotMapped]
+        public DateTime? CollectionDateFrom { get; set; }
+
+        [NotMapped]
+        public DateTime? CollectionDateTo { get; set; }
+
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal Amount { get; set; }

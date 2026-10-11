@@ -3,11 +3,11 @@
   "releaseDate": "2026-10-11",
   "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.39",
   "git": {
-    "commit": "9bce9db",
-    "fullCommit": "9bce9db3e82ceb5f4a5ac4b411192595935cb17f",
+    "commit": "2a96e68",
+    "fullCommit": "2a96e6840d73ebd7b834e29c1421db141d50a76a",
     "branch": "main",
-    "commitDate": "2026-10-11 20:57:20 +0530",
-    "commitMessage": "feat(cbs-bridge): propagate CIF-first customer transfer and multi-account selection modals across all transaction modules",
+    "commitDate": "2026-10-11 21:27:16 +0530",
+    "commitMessage": "chore(release): bump version to v2.5.39 and include Sahyadri sansthas in master patch",
     "author": "tushar990-coder <111702084+tushar990-coder@users.noreply.github.com>",
     "repository": "https://github.com/tushar990-coder/smartBanking.git"
   },

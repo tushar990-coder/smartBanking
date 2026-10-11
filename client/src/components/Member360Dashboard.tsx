@@ -105,10 +105,11 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
     };
 
     const getSavingNavParams = (type?: string) => {
-        const custId = data?.memberInfo?.customerID || (selectedMemberId ? Number(selectedMemberId) : undefined);
-        const cif = data?.memberInfo?.cifNo || '';
-        const memId = data?.memberInfo?.memberID || (selectedMemberId ? Number(selectedMemberId) : undefined);
-        const name = data?.memberInfo ? `${data.memberInfo.firstName} ${data.memberInfo.lastName}`.trim() : '';
+        const info = data?.memberInfo;
+        const custId = Number(info?.customerID ?? (info as any)?.customerId ?? (selectedMemberId ? Number(selectedMemberId) : 0)) || undefined;
+        const cif = String(info?.cifNo ?? (info as any)?.CIFNo ?? '').trim();
+        const memId = Number(info?.memberID ?? (info as any)?.memberId ?? (selectedMemberId ? Number(selectedMemberId) : 0)) || undefined;
+        const name = info ? `${info.firstName || ''} ${info.lastName || ''}`.trim() : '';
         const params: any = {
             customerId: custId,
             cifNo: cif,
@@ -116,6 +117,11 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
             customerName: name
         };
         if (type) params.type = type;
+        try {
+            sessionStorage.setItem('cbs_active_customer_transfer', JSON.stringify(params));
+        } catch (e) {
+            console.error('Session storage error:', e);
+        }
         return params;
     };
 
@@ -377,8 +383,8 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                         </div>
                         <div>
                             <h2 className="text-sm md:text-base font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                                <span>सभासद ३६०° डॅशबोर्ड</span>
-                                <span className="text-xs font-semibold text-slate-400 hidden sm:inline">(Member 360° Comprehensive View)</span>
+                                <span>खातेदार ३६०° डॅशबोर्ड</span>
+                                <span className="text-xs font-semibold text-slate-400 hidden sm:inline">(Khatedar 360° Comprehensive View)</span>
                             </h2>
                             <p className="text-[11px] text-slate-500 hidden sm:block">सर्वसमावेशक खातेदार माहिती, पोर्टफोलिओ शिल्लक व जलद व्यवहार</p>
                         </div>
@@ -392,7 +398,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     members={rawMembers}
                                     value={selectedMemberId ? Number(selectedMemberId) : ''}
                                     onChange={(val) => setSelectedMemberId(val ? String(val) : '')}
-                                    placeholder="-- नाव, CIF किंवा जुना नं शोधा --"
+                                    placeholder="-- खातेदार नाव, CIF किंवा जुना नं शोधा --"
                                     valueType="customerId"
                                 />
                             </div>
@@ -413,7 +419,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                 {loading && (
                     <div className="backdrop-blur-xl bg-white/70 border border-white/80 rounded-xl p-10 shadow-xs flex flex-col items-center justify-center">
                         <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                        <span className="text-xs text-slate-600 font-semibold mt-3">सभासद ३६०° तपशील लोड होत आहे...</span>
+                        <span className="text-xs text-slate-600 font-semibold mt-3">खातेदार ३६०° तपशील लोड होत आहे...</span>
                     </div>
                 )}
 
@@ -437,7 +443,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                 {!loading && !data && !error && (
                     <div className="backdrop-blur-xl bg-white/60 border border-dashed border-slate-300 rounded-xl p-14 text-center flex flex-col items-center justify-center">
                         <Search size={36} className="stroke-[1.5] mb-2.5 text-slate-400" />
-                        <span className="text-xs md:text-sm font-bold text-slate-600">कृपया प्रोफाइल पाहण्यासाठी वरील शोध बारमधून सभासद निवडा.</span>
+                        <span className="text-xs md:text-sm font-bold text-slate-600">कृपया प्रोफाइल पाहण्यासाठी वरील शोध बारमधून खातेदार निवडा.</span>
                     </div>
                 )}
 

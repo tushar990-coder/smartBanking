@@ -311,12 +311,36 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
       setLedgers(ledgerList);
 
       const params = new URLSearchParams(window.location.search);
-      const cifStr = params.get('cifNo') || params.get('cif');
-      const customerIdStr = params.get('customerId') || params.get('customerID');
-      const memberIdStr = params.get('memberId') || params.get('memberID');
-      const accountIdStr = params.get('accountId') || params.get('savingAccountId');
-      const typeStr = params.get('type');
-      const customerNameStr = params.get('customerName');
+      let cifStr = params.get('cifNo') || params.get('cif');
+      let customerIdStr = params.get('customerId') || params.get('customerID');
+      let memberIdStr = params.get('memberId') || params.get('memberID');
+      let accountIdStr = params.get('accountId') || params.get('savingAccountId');
+      let typeStr = params.get('type');
+      let customerNameStr = params.get('customerName');
+
+      // Also read from sessionStorage backup bridge if URL params were not provided
+      if (!cifStr && !customerIdStr && !memberIdStr && !accountIdStr) {
+        try {
+          const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+          if (rawBridge) {
+            const bridgeData = JSON.parse(rawBridge);
+            if (bridgeData) {
+              cifStr = bridgeData.cifNo || bridgeData.cif;
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : undefined;
+              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : undefined;
+              typeStr = bridgeData.type || typeStr;
+              customerNameStr = bridgeData.customerName || customerNameStr;
+            }
+          }
+        } catch (e) {
+          console.error('Failed to read sessionStorage transfer:', e);
+        }
+      }
+
+      // Safe Property Getters handling camelCase, PascalCase and DB column variations
+      const getAccCustomerId = (a: any) => Number(a.customerId ?? a.customerID ?? a.CustomerID ?? 0);
+      const getAccMemberId = (a: any) => Number(a.memberId ?? a.memberID ?? a.MemberID ?? 0);
+      const getAccCif = (a: any) => String(a.cifNo ?? a.CIFNo ?? a.cif ?? '').trim().toUpperCase();
 
       if (!preserveAccountId && !isPassingMode) {
         if (accountIdStr) {
@@ -327,20 +351,33 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             setCustomerMatchingAccounts([matchedAcc]);
           }
         } else if (cifStr || customerIdStr || memberIdStr) {
-          const cId = customerIdStr ? parseInt(customerIdStr, 10) : undefined;
-          const mId = memberIdStr ? parseInt(memberIdStr, 10) : undefined;
-          const cleanCif = cifStr ? cifStr.trim().toUpperCase() : undefined;
+          const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+          const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
+          const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
+          const cleanDigits = cleanCif ? cleanCif.replace(/\D/g, '') : '';
 
           // Tiered CIF-First Matching Architecture
           let matched: SavingAccount[] = [];
+
+          // Tier 1: CIF exact match OR numeric digits equivalence
           if (cleanCif) {
-            matched = accData.filter(a => a.cifNo && a.cifNo.trim().toUpperCase() === cleanCif);
+            matched = accData.filter(a => {
+              const aCif = getAccCif(a);
+              if (!aCif) return false;
+              if (aCif === cleanCif) return true;
+              if (cleanDigits && aCif.replace(/\D/g, '') === cleanDigits) return true;
+              return false;
+            });
           }
-          if (matched.length === 0 && cId) {
-            matched = accData.filter(a => a.customerID === cId);
+
+          // Tier 2: CustomerID match (handles customerId, customerID, CustomerID)
+          if (matched.length === 0 && cId > 0) {
+            matched = accData.filter(a => getAccCustomerId(a) === cId);
           }
-          if (matched.length === 0 && mId) {
-            matched = accData.filter(a => (a as any).memberID === mId || a.customerID === mId);
+
+          // Tier 3: MemberID fallback
+          if (matched.length === 0 && mId > 0) {
+            matched = accData.filter(a => getAccMemberId(a) === mId || getAccCustomerId(a) === mId);
           }
 
           if (matched.length === 1) {
@@ -352,11 +389,11 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             // Multiple accounts: prompt interactive selection modal
             setCustomerMatchingAccounts(matched);
             const primaryName = customerNameStr || matched[0].customerName || 'खातेदार';
-            const primaryCif = cleanCif || matched[0].cifNo || '-';
+            const primaryCif = cleanCif || getAccCif(matched[0]) || '-';
             setMultiAccountCustomerInfo({
               name: primaryName,
               cifNo: primaryCif,
-              customerId: cId || matched[0].customerID || 0
+              customerId: cId || getAccCustomerId(matched[0])
             });
             if (typeStr) {
               setFormData(prev => ({ ...prev, transactionType: typeStr }));
@@ -367,7 +404,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             // 0 accounts found
             setCustomerMatchingAccounts([]);
             const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
-            setNoAccountFoundAlert(`निवडलेल्या सभासदाचे (${customerNameStr || identifier}) कोणतेही बचत खाते आढळले नाही.`);
+            setNoAccountFoundAlert(`निवडलेल्या खातेदाराचे (${customerNameStr || identifier}) कोणतेही बचत खाते आढळले नाही.`);
           }
         }
       }
@@ -377,9 +414,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   };
 
   const applySelectedAccount = (acc: SavingAccount, overrideType?: string | null) => {
-    if (acc.ledgerID) {
-      setSelectedLedgerID(acc.ledgerID);
-    }
+    setSelectedLedgerID(acc.ledgerID || 0);
     setFormData((prev) => ({
       ...prev,
       savingAccountID: acc.savingAccountID,

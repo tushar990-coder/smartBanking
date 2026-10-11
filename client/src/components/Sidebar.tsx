@@ -153,9 +153,9 @@ export default function Sidebar({
         <button 
           onClick={() => handleNavigate('member-360')}
           title="खातेदार ३६०°"
-          className={getItemClass(activeTab === 'member-360')}
+          className={getItemClass(activeTab === 'member-360' || activeTab === 'customer-360' || activeTab === 'khatedar-360')}
         >
-          <UserCheck size={15} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'member-360' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          <UserCheck size={15} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'member-360' || activeTab === 'customer-360' || activeTab === 'khatedar-360' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
           {isSidebarOpen && <span className="truncate">खातेदार ३६०°</span>}
         </button>
 

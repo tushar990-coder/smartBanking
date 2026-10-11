@@ -248,6 +248,8 @@ function App() {
     'dashboard': '/dashboard',
     'todays-tasks': '/todays-tasks',
     'member-360': '/member-360',
+    'customer-360': '/customer-360',
+    'khatedar-360': '/khatedar-360',
     'committee': '/committee',
     'audit-compliance': '/audit-compliance',
 
@@ -613,13 +615,13 @@ function App() {
         </header>
 
         <div className="flex-1 w-full overflow-y-auto">
-          {/* Quick return to Member 360 Sticky Banner */}
-          {activeTab !== 'member-360' && (new URLSearchParams(window.location.search).get('memberId') || lastMemberId) && (
+          {/* Quick return to Khatedar 360 Sticky Banner */}
+          {activeTab !== 'member-360' && activeTab !== 'customer-360' && activeTab !== 'khatedar-360' && (new URLSearchParams(window.location.search).get('memberId') || lastMemberId) && (
             <div className="bg-primary text-white px-3.5 py-1.5 flex items-center justify-between shadow-xs border-b border-white/20 font-sans shrink-0 sticky top-0 z-30 animate-in fade-in duration-200">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
                 <span className="text-xs font-bold tracking-wide">
-                  सभासद ३६०° डॅशबोर्डवरून उघडलेला फॉर्म (Navigated from Member 360°)
+                  खातेदार ३६०° डॅशबोर्डवरून उघडलेला फॉर्म (Navigated from Khatedar 360°)
                 </span>
               </div>
               <button
@@ -630,7 +632,7 @@ function App() {
                 className="px-3 py-1 bg-white text-primary hover:bg-slate-100 font-extrabold text-xs rounded shadow-xs transition-all flex items-center gap-1.5 cursor-pointer border border-white/30"
               >
                 <ArrowLeft size={14} />
-                <span>सभासद ३६०° वर परत जा (Back to Member 360°)</span>
+                <span>खातेदार ३६०° वर परत जा (Back to Khatedar 360°)</span>
               </button>
             </div>
           )}
@@ -644,7 +646,7 @@ function App() {
           )}
           {activeTab === 'dashboard' && <Dashboard onNavigate={handleNavigate} />}
           {activeTab === 'todays-tasks' && <TodaysTasksDashboard onNavigate={handleNavigate} showLoginModal={false} />}
-          {activeTab === 'member-360' && <Member360Dashboard onNavigate={handleNavigate} />}
+          {(activeTab === 'member-360' || activeTab === 'customer-360' || activeTab === 'khatedar-360') && <Member360Dashboard onNavigate={handleNavigate} />}
           {activeTab === 'committee' && <CommitteeMaster />}
           {activeTab === 'audit-compliance' && <CoOpAuditComplianceMaster />}
         

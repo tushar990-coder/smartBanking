@@ -242,9 +242,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     },
     {
       id: 'member-360',
-      title: 'सभासद ३६०° प्रोफाइल',
-      subtitle: 'सभासदाची सर्व खाती, ठेवी, कर्ज व शेअर्स एकाच ठिकाणी',
-      tag: 'CIF प्रोफाइल',
+      title: 'खातेदार ३६०° प्रोफाइल',
+      subtitle: 'खातेदाराची सर्व खाती, ठेवी, कर्ज व शेअर्स एकाच ठिकाणी',
+      tag: 'CIF ३६०°',
       icon: Users,
       tab: 'member-360',
       color: 'text-teal-600',

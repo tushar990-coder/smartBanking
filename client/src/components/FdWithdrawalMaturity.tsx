@@ -19,7 +19,8 @@ import {
   UserCheck,
   Edit3,
   RotateCcw,
-  Lock
+  Lock,
+  X
 } from 'lucide-react';
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import SearchableSelect from './SearchableSelect';
@@ -178,6 +179,16 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [bankLedgers, setBankLedgers] = useState<Ledger[]>([]);
   const [selectedAccId, setSelectedAccId] = useState<number>(0);
   const [selectedAccount, setSelectedAccount] = useState<FdAccount | null>(null);
+
+  // Multi-FD Selection Modal State (CIF-First)
+  const [customerMatchingFds, setCustomerMatchingFds] = useState<FdAccount[]>([]);
+  const [showMultiFdModal, setShowMultiFdModal] = useState<boolean>(false);
+  const [multiFdCustomerInfo, setMultiFdCustomerInfo] = useState<{
+    name: string;
+    cifNo: string;
+    customerId?: number;
+  } | null>(null);
+  const [noFdFoundAlert, setNoFdFoundAlert] = useState<string | null>(null);
 
   const [actionType, setActionType] = useState<string>('MaturityClose'); // MaturityClose, PrematureClose, Renewal
   const [closureDate, setClosureDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -549,35 +560,102 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const fetchAccounts = async () => {
     try {
       const response = await axios.get(`${API_URL}/FdAccounts`);
-      const activeList = response.data.filter((a: any) => a.status !== 'Closed');
+      const activeList: FdAccount[] = response.data.filter((a: any) => a.status !== 'Closed');
       setAccounts(activeList);
 
       const params = new URLSearchParams(window.location.search);
-      const entityIdStr = params.get('entityId');
-      const fdAccountIdStr = params.get('fdAccountId') || params.get('id');
-      const customerIdStr = params.get('customerId') || params.get('cif');
-      const memberIdStr = params.get('memberId');
+      let entityIdStr = params.get('entityId');
+      let fdAccountIdStr = params.get('fdAccountId') || params.get('id');
+      let customerIdStr = params.get('customerId') || params.get('customerID');
+      let cifStr = params.get('cifNo') || params.get('cif');
+      let memberIdStr = params.get('memberId') || params.get('memberID');
+      let customerNameStr = params.get('customerName');
 
-      let matched: FdAccount | undefined = undefined;
-      if (fdAccountIdStr) {
-        const accId = parseInt(fdAccountIdStr);
-        matched = activeList.find((a: any) => a.fdAccountID === accId);
-      } else if (customerIdStr) {
-        const cId = parseInt(customerIdStr);
-        matched = activeList.find((a: any) => a.customerID === cId || a.cifNo === customerIdStr);
-      } else if (entityIdStr) {
-        const eId = parseInt(entityIdStr);
-        matched = activeList.find((a: any) => a.fdAccountID === eId || a.customerID === eId || a.cifNo === entityIdStr || a.memberID === eId);
-      } else if (memberIdStr) {
-        const mId = parseInt(memberIdStr);
-        matched = activeList.find((a: any) => a.customerID === mId || a.memberID === mId);
+      // Also read universal sessionStorage transfer bridge
+      if (!cifStr && !customerIdStr && !memberIdStr && !fdAccountIdStr && !entityIdStr) {
+        try {
+          const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+          if (rawBridge) {
+            const bridgeData = JSON.parse(rawBridge);
+            if (bridgeData) {
+              cifStr = bridgeData.cifNo || bridgeData.cif;
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : undefined;
+              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : undefined;
+              customerNameStr = bridgeData.customerName || customerNameStr;
+            }
+          }
+        } catch (e) {
+          console.error('Failed to read sessionStorage transfer:', e);
+        }
       }
 
-      if (matched) {
-        setSelectedAccId(matched.fdAccountID);
-        setSelectedAccount(matched);
-        fetchCustomerSavingsAccounts(matched.customerID, matched.memberID);
-        fetchActiveLoans(matched.fdAccountID);
+      const getAccCustId = (a: any) => Number(a.customerID ?? a.customerId ?? a.CustomerID ?? 0);
+      const getAccMemId = (a: any) => Number(a.memberID ?? a.memberId ?? a.MemberID ?? 0);
+      const getAccCif = (a: any) => String(a.cifNo ?? a.CIFNo ?? a.cif ?? '').trim().toUpperCase();
+
+      const applySelectedFd = (acc: FdAccount) => {
+        setSelectedAccId(acc.fdAccountID);
+        setSelectedAccount(acc);
+        fetchCustomerSavingsAccounts(acc.customerID, acc.memberID);
+        fetchActiveLoans(acc.fdAccountID);
+      };
+
+      if (fdAccountIdStr) {
+        const accId = parseInt(fdAccountIdStr);
+        const matched = activeList.find((a: any) => a.fdAccountID === accId);
+        if (matched) {
+          applySelectedFd(matched);
+          setCustomerMatchingFds([matched]);
+        }
+      } else if (cifStr || customerIdStr || memberIdStr || entityIdStr) {
+        const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+        const mId = memberIdStr ? parseInt(memberIdStr, 10) : (entityIdStr ? parseInt(entityIdStr, 10) : 0);
+        const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
+        const cleanDigits = cleanCif ? cleanCif.replace(/\D/g, '') : '';
+
+        let matched: FdAccount[] = [];
+
+        // Tier 1: CIF
+        if (cleanCif) {
+          matched = activeList.filter((a: any) => {
+            const aCif = getAccCif(a);
+            if (!aCif) return false;
+            if (aCif === cleanCif) return true;
+            if (cleanDigits && aCif.replace(/\D/g, '') === cleanDigits) return true;
+            return false;
+          });
+        }
+
+        // Tier 2: CustomerID
+        if (matched.length === 0 && cId > 0) {
+          matched = activeList.filter((a: any) => getAccCustId(a) === cId);
+        }
+
+        // Tier 3: MemberID
+        if (matched.length === 0 && mId > 0) {
+          matched = activeList.filter((a: any) => getAccMemId(a) === mId || getAccCustId(a) === mId);
+        }
+
+        if (matched.length === 1) {
+          applySelectedFd(matched[0]);
+          setCustomerMatchingFds(matched);
+          setNoFdFoundAlert(null);
+        } else if (matched.length > 1) {
+          setCustomerMatchingFds(matched);
+          const custName = customerNameStr || matched[0].customerName || matched[0].memberName || 'खातेदार';
+          const primaryCif = cleanCif || getAccCif(matched[0]) || '-';
+          setMultiFdCustomerInfo({
+            name: custName,
+            cifNo: primaryCif,
+            customerId: cId || getAccCustId(matched[0])
+          });
+          setShowMultiFdModal(true);
+          setNoFdFoundAlert(null);
+        } else {
+          setCustomerMatchingFds([]);
+          const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
+          setNoFdFoundAlert(`निवडलेल्या खातेदाराची (${customerNameStr || identifier}) कोणतीही सक्रिय मुदत ठेव (FD) आढळली नाही.`);
+        }
       }
     } catch (err) {
       console.error('Error fetching accounts', err);
@@ -1319,6 +1397,16 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         </div>
       )}
 
+      {noFdFoundAlert && (
+        <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs p-3 rounded-sm font-medium flex items-center justify-between shadow-2xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{noFdFoundAlert}</span>
+          </div>
+          <button type="button" onClick={() => setNoFdFoundAlert(null)} className="font-bold text-amber-700 hover:text-black cursor-pointer">✕</button>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="bg-white p-4 rounded-sm shadow-sm border border-gray-200 space-y-4">
         <fieldset disabled={isPassingMode} className="contents">
         {/* ================= STEP 1: ACCOUNT & TRANSACTION DATE ================= */}
@@ -1337,7 +1425,27 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
             <div className="md:col-span-2">
-              <label className={labelClass}>मुदत ठेव खाते शोधा व निवडा *</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className={`${labelClass} !mb-0`}>मुदत ठेव खाते शोधा व निवडा *</label>
+                {customerMatchingFds.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const first = customerMatchingFds[0];
+                      setMultiFdCustomerInfo({
+                        name: first.customerName || first.memberName || 'खातेदार',
+                        cifNo: first.cifNo || '-',
+                        customerId: first.customerID
+                      });
+                      setShowMultiFdModal(true);
+                    }}
+                    className="text-[10px] text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1 cursor-pointer bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors"
+                  >
+                    <Layers className="w-3 h-3 text-blue-600" />
+                    <span>खातेदाराच्या {customerMatchingFds.length} मुदत ठेवी उपलब्ध (ठेव निवडा ⚡)</span>
+                  </button>
+                )}
+              </div>
               <SearchableSelect
                 options={accountOptions}
                 value={selectedAccId.toString()}
@@ -2680,6 +2788,147 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                 className="px-4 py-1.5 text-xs font-bold rounded bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer disabled:opacity-50"
               >
                 {passingActionLoading ? 'रद्द होत आहे...' : 'होय, व्हाउचर रद्द करा'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Multi-FD Account Selector Modal (CIF-First) */}
+      {showMultiFdModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-md shadow-2xl max-w-2xl w-full overflow-hidden border border-blue-300">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 px-4 py-3 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-white/10 rounded-sm">
+                  <BookOpen className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <div className="font-bold text-sm flex items-center gap-2">
+                    <span>मुदत ठेव पावती निवडा (Select FD Receipt)</span>
+                    <span className="text-[10px] bg-amber-400 text-blue-950 font-black px-2 py-0.5 rounded-full">
+                      एकूण {customerMatchingFds.length} मुदत ठेवी
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-200 mt-0.5">
+                    खातेदार: <strong className="text-white">{multiFdCustomerInfo?.name || 'खातेदार'}</strong>
+                    {multiFdCustomerInfo?.cifNo && multiFdCustomerInfo.cifNo !== '-' && (
+                      <span className="ml-2 font-mono text-amber-200">
+                        [CIF: {multiFdCustomerInfo.cifNo}]
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMultiFdModal(false)}
+                className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded cursor-pointer transition-colors"
+                title="बंद करा"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body: List of FD Accounts */}
+            <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2.5 bg-slate-50">
+              <div className="text-xs text-slate-700 font-semibold mb-2 flex items-center justify-between">
+                <span>कृपया मुदतपूर्ती / मुदतपूर्व बंद / नूतनीकरणासाठी योग्य मुदत ठेव (FD) निवडा:</span>
+                <span className="text-[11px] text-slate-500">क्लिक करून निवडा</span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2.5">
+                {customerMatchingFds.map((acc: FdAccount) => {
+                  const isCurrent = selectedAccId === acc.fdAccountID;
+                  return (
+                    <div
+                      key={acc.fdAccountID}
+                      onClick={() => {
+                        setSelectedAccId(acc.fdAccountID);
+                        setSelectedAccount(acc);
+                        fetchCustomerSavingsAccounts(acc.customerID, acc.memberID);
+                        fetchActiveLoans(acc.fdAccountID);
+                        setShowMultiFdModal(false);
+                      }}
+                      className={`p-3 rounded border text-left cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isCurrent
+                          ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-400 shadow-sm'
+                          : 'bg-white hover:bg-blue-50/40 border-slate-200 hover:border-blue-300 shadow-2xs'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-sm mt-0.5 ${isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                          <BookOpen className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-bold text-xs text-slate-900 tracking-wide">
+                              {acc.accountNo}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              {acc.status || 'Active'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-600 font-semibold mt-1">
+                            योजना: <span className="text-slate-800 font-bold">{acc.schemeName}</span>
+                            <span className="text-slate-500 ml-2 font-medium">({acc.interestRate}% व्याजदर)</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap gap-2">
+                            <span>सुरू: {acc.openingDate ? new Date(acc.openingDate).toLocaleDateString('en-GB') : '-'}</span>
+                            <span>•</span>
+                            <span className="text-amber-800 font-semibold">मुदतपूर्ती: {acc.maturityDate ? new Date(acc.maturityDate).toLocaleDateString('en-GB') : '-'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 sm:text-right w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+                        <div>
+                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">ठेव रक्कम</div>
+                          <div className="text-sm font-black text-primary font-mono">
+                            ₹ {(acc.depositAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[10px] text-emerald-700 font-bold">
+                            मुदतपूर्ती: ₹ {(acc.maturityAmount || 0).toLocaleString('en-IN')}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedAccId(acc.fdAccountID);
+                            setSelectedAccount(acc);
+                            fetchCustomerSavingsAccounts(acc.customerID, acc.memberID);
+                            fetchActiveLoans(acc.fdAccountID);
+                            setShowMultiFdModal(false);
+                          }}
+                          className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                            isCurrent
+                              ? 'bg-blue-600 text-white hover:bg-blue-700'
+                              : 'bg-white hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-300'
+                          }`}
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span>{isCurrent ? 'निवडलेले आहे' : 'ही ठेव निवडा'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-100 px-4 py-2.5 border-t border-slate-200 flex justify-between items-center text-xs">
+              <span className="text-slate-500 font-medium">
+                मुदत ठेव निवडल्यावर त्याचे व्याज व मुदतपूर्ती तपशील आपोआप लोड होतील.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowMultiFdModal(false)}
+                className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold cursor-pointer transition-colors"
+              >
+                बंद करा (Close)
               </button>
             </div>
           </div>

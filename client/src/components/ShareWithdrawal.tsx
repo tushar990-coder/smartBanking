@@ -149,6 +149,53 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
       if (res.ok) {
         const data = await res.json();
         setMembers(data);
+
+        // Check URL params and sessionStorage bridge
+        const params = new URLSearchParams(window.location.search);
+        let cifStr = params.get('cifNo') || params.get('cif');
+        let customerIdStr = params.get('customerId') || params.get('customerID');
+        let memberIdStr = params.get('memberId') || params.get('memberID');
+
+        if (!cifStr && !customerIdStr && !memberIdStr) {
+          try {
+            const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+            if (rawBridge) {
+              const bridgeData = JSON.parse(rawBridge);
+              if (bridgeData) {
+                cifStr = bridgeData.cifNo || bridgeData.cif;
+                customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : undefined;
+                memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : undefined;
+              }
+            }
+          } catch (e) {
+            console.error('Failed to read sessionStorage transfer:', e);
+          }
+        }
+
+        const getMemberCustId = (m: any) => Number(m.customerID ?? m.customerId ?? m.CustomerID ?? 0);
+        const getMemberId = (m: any) => Number(m.memberID ?? m.memberId ?? m.MemberID ?? 0);
+        const getMemberCif = (m: any) => String(m.cifNo ?? m.CIFNo ?? m.cif ?? '').trim().toUpperCase();
+
+        const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+        const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
+        const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
+
+        let matched: any = undefined;
+        if (cleanCif) {
+          matched = data.find((m: any) => getMemberCif(m) === cleanCif);
+        }
+        if (!matched && cId > 0) {
+          matched = data.find((m: any) => getMemberCustId(m) === cId);
+        }
+        if (!matched && mId > 0) {
+          matched = data.find((m: any) => getMemberId(m) === mId);
+        }
+
+        if (matched) {
+          const targetMemId = getMemberId(matched).toString();
+          setSelectedMemberId(targetMemId);
+          loadShareAccount(targetMemId);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch members', error);

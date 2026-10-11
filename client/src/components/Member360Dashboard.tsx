@@ -104,7 +104,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
         }
     };
 
-    const getSavingNavParams = (type?: string) => {
+    const getUniversalNavParams = (extra?: any) => {
         const info = data?.memberInfo;
         const custId = Number(info?.customerID ?? (info as any)?.customerId ?? (selectedMemberId ? Number(selectedMemberId) : 0)) || undefined;
         const cif = String(info?.cifNo ?? (info as any)?.CIFNo ?? '').trim();
@@ -114,9 +114,10 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
             customerId: custId,
             cifNo: cif,
             memberId: memId,
-            customerName: name
+            customerName: name,
+            sourceModule: 'khatedar-360',
+            ...(typeof extra === 'string' ? { type: extra } : (extra || {}))
         };
-        if (type) params.type = type;
         try {
             sessionStorage.setItem('cbs_active_customer_transfer', JSON.stringify(params));
         } catch (e) {
@@ -124,6 +125,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
         }
         return params;
     };
+    const getSavingNavParams = getUniversalNavParams;
 
     const moduleReportsConfig = {
         savings: {
@@ -674,7 +676,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                         <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
                                             <div className="flex flex-col gap-1.5">
                                                 <button 
-                                                    onClick={() => onNavigate('fd-account', { memberId: selectedMemberId })} 
+                                                    onClick={() => onNavigate('fd-account', getUniversalNavParams())} 
                                                     className="w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-teal-50/90 hover:bg-teal-100 text-teal-900 border-teal-200 hover:border-teal-300 group/btn"
                                                 >
                                                     <span className="truncate">{!hasFD ? '+ नवीन FD उघडा' : 'नवे FD उघडा'}</span> 
@@ -683,19 +685,19 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                                                 {hasFD && (
                                                     <>
-                                                        <button onClick={() => onNavigate('fd-scheme')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-teal-50/60 border border-slate-200/90 hover:border-teal-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('fd-scheme', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-teal-50/60 border border-slate-200/90 hover:border-teal-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-teal-900">ठेव योजना (Schemes)</span> 
-                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-teal-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-teal-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('fd-migrate', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-teal-50/60 border border-slate-200/90 hover:border-teal-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('fd-migrate', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-teal-50/60 border border-slate-200/90 hover:border-teal-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-teal-900">ठेव स्थलांतर (Migration)</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-teal-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('fd-accrual')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-teal-50/60 border border-slate-200/90 hover:border-teal-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('fd-accrual', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-teal-50/60 border border-slate-200/90 hover:border-teal-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-teal-900">व्याज तरतूद (Accrual)</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-teal-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('fd-withdrawal', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-teal-50/60 border border-slate-200/90 hover:border-teal-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('fd-withdrawal', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-teal-50/60 border border-slate-200/90 hover:border-teal-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-teal-900">मुदतपूर्ती प्रक्रिया</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-teal-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
@@ -751,7 +753,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                         <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
                                             <div className="flex flex-col gap-1.5">
                                                 <button 
-                                                    onClick={() => onNavigate('rd-account', { memberId: selectedMemberId })} 
+                                                    onClick={() => onNavigate('rd-account', getUniversalNavParams())} 
                                                     className="w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-amber-50/90 hover:bg-amber-100 text-amber-900 border-amber-200 hover:border-amber-300 group/btn"
                                                 >
                                                     <span className="truncate">{!hasRD ? '+ नवीन RD उघडा' : 'नवे RD उघडा'}</span> 
@@ -760,19 +762,19 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                                                 {hasRD && (
                                                     <>
-                                                        <button onClick={() => onNavigate('rd-collect', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-amber-50/60 border border-slate-200/90 hover:border-amber-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('rd-collect', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-amber-50/60 border border-slate-200/90 hover:border-amber-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-amber-900">मासिक हप्ता वसुली</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('rd-scheme')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-amber-50/60 border border-slate-200/90 hover:border-amber-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('rd-scheme', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-amber-50/60 border border-slate-200/90 hover:border-amber-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-amber-900">ठेव योजना (Schemes)</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('rd-migrate', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-amber-50/60 border border-slate-200/90 hover:border-amber-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('rd-migrate', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-amber-50/60 border border-slate-200/90 hover:border-amber-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-amber-900">ठेव स्थलांतर (Migration)</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('rd-withdrawal', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-amber-50/60 border border-slate-200/90 hover:border-amber-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('rd-withdrawal', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-amber-50/60 border border-slate-200/90 hover:border-amber-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-amber-900">मुदतपूर्ती प्रक्रिया</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
@@ -807,7 +809,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                     {/* 4. PIGMY DEPOSIT CARD */}
                                     <div className="backdrop-blur-md bg-white/85 hover:bg-white/95 border border-slate-200/90 hover:border-emerald-300 rounded-xl shadow-[0_2px_14px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] flex flex-col justify-between transition-all duration-200 overflow-hidden group">
                                         <div className="p-2.5 border-b border-slate-100 bg-gradient-to-b from-emerald-50/70 to-white/60 border-t-3 border-t-emerald-500">
-                                            <div className="flex justify-between items-center">
+                                             <div className="flex justify-between items-center">
                                                 <span className="text-xs font-extrabold text-slate-800 truncate" title="४. पिग्मी ठेव (Pigmy)">४. पिग्मी ठेव (Pigmy)</span>
                                                 <span className={`text-[9.5px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${getStatusBadge(data.portfolio.pigmy?.statusColor || 'Gray')}`}>
                                                     {hasPigmy ? 'सुरू' : 'शून्य'}
@@ -828,7 +830,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                         <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
                                             <div className="flex flex-col gap-1.5">
                                                 <button 
-                                                    onClick={() => onNavigate('pigmy-account', { memberId: selectedMemberId })} 
+                                                    onClick={() => onNavigate('pigmy-account', getUniversalNavParams())} 
                                                     className="w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-emerald-50/90 hover:bg-emerald-100 text-emerald-900 border-emerald-200 hover:border-emerald-300 group/btn"
                                                 >
                                                     <span className="truncate">{!hasPigmy ? '+ नवीन पिग्मी खाते' : 'नवे पिग्मी खाते उघडा'}</span> 
@@ -837,15 +839,15 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                                                 {hasPigmy && (
                                                     <>
-                                                        <button onClick={() => onNavigate('pigmy-collect', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-emerald-50/60 border border-slate-200/90 hover:border-emerald-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('pigmy-collect', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-emerald-50/60 border border-slate-200/90 hover:border-emerald-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-emerald-900">पिग्मी जमा वसुली</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-emerald-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('pigmy-scheme')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-emerald-50/60 border border-slate-200/90 hover:border-emerald-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('pigmy-scheme', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-emerald-50/60 border border-slate-200/90 hover:border-emerald-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-emerald-900">ठेव योजना (Schemes)</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-emerald-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('pigmy-closure', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-emerald-50/60 border border-slate-200/90 hover:border-emerald-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('pigmy-closure', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-emerald-50/60 border border-slate-200/90 hover:border-emerald-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-emerald-900">पिग्मी खाते बंद</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-emerald-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
@@ -905,7 +907,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                         <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
                                             <div className="flex flex-col gap-1.5">
                                                 <button 
-                                                    onClick={() => onNavigate('loan-process', { subTab: 1, memberId: selectedMemberId })} 
+                                                    onClick={() => onNavigate('loan-process', getUniversalNavParams({ subTab: 1 }))} 
                                                     className="w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-rose-50/90 hover:bg-rose-100 text-rose-900 border-rose-200 hover:border-rose-300 group/btn"
                                                 >
                                                     <span className="truncate">{!hasLoans ? '+ नवीन कर्ज मागणी' : 'कर्ज मागणी नोंदणी'}</span> 
@@ -914,23 +916,23 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                                                 {hasLoans && (
                                                     <>
-                                                        <button onClick={() => onNavigate('loan-process', { subTab: 2, memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('loan-process', getUniversalNavParams({ subTab: 2 }))} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-rose-900">कर्ज मंजुरी व वितरण</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('loan-collection', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('loan-collection', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-rose-900">कर्ज हप्ता वसुली</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('loan-ledger-report', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('loan-ledger-report', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-rose-900">कर्ज खाते स्टेटमेंट</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('loan-overdue-recovery', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('loan-overdue-recovery', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-rose-900">थकीत वसुली नोंदणी</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('loan-process', { subTab: 4, memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('loan-process', getUniversalNavParams({ subTab: 4 }))} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-rose-50/60 border border-slate-200/90 hover:border-rose-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-rose-900">कर्ज हप्ता तक्ता</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-rose-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
@@ -982,7 +984,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                         <div className="p-2 flex flex-col justify-between flex-1 bg-slate-50/20">
                                             <div className="flex flex-col gap-1.5">
                                                 <button 
-                                                    onClick={() => onNavigate('share-master', { memberId: selectedMemberId })} 
+                                                    onClick={() => onNavigate('share-master', getUniversalNavParams())} 
                                                     className="w-full text-left py-1.5 px-2 rounded-md font-bold text-[11px] flex items-center justify-between transition-all duration-150 shadow-2xs border cursor-pointer bg-purple-50/90 hover:bg-purple-100 text-purple-900 border-purple-200 hover:border-purple-300 group/btn"
                                                 >
                                                     <span className="truncate">{!hasShares ? '+ नवीन शेअर्स खरेदी' : 'शेअर्स खरेदी व वाटप'}</span> 
@@ -991,23 +993,23 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
 
                                                 {hasShares && (
                                                     <>
-                                                        <button onClick={() => onNavigate('share-withdrawal', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('share-withdrawal', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-purple-900">भाग हस्तांतरण व परतावा</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('shares-khatavani-report', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('shares-khatavani-report', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-purple-900">भाग खाते खतावणी</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('sabhasad-labhansh-report', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('sabhasad-labhansh-report', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-purple-900">लाभांश जमा (Dividend)</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('i-namuna-report', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('i-namuna-report', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-purple-900">आय नमुना शेअर नोंदवही</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('j-namuna-report', { memberId: selectedMemberId })} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                        <button onClick={() => onNavigate('j-namuna-report', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-purple-900">जे नमुना सभासद यादी</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>

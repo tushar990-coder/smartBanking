@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
+  X,
   Coins,
   Layers,
   Save,
@@ -29,6 +30,13 @@ interface RdAccount {
   durationMonths: number;
   status: string;
   openingDate: string;
+  customerID?: number;
+  customerId?: number;
+  memberID?: number;
+  memberId?: number;
+  cifNo?: string;
+  customerName?: string;
+  totalDepositedAmount?: number;
 }
 
 export interface RdInstallmentCollectionProps {
@@ -59,6 +67,16 @@ export default function RdInstallmentCollection({
   const [selectedAccId, setSelectedAccId] = useState('');
   const [selectedAcc, setSelectedAcc] = useState<RdAccount | null>(null);
 
+  // Multi-RD Account Selection Modal State (CIF-First)
+  const [customerMatchingRds, setCustomerMatchingRds] = useState<RdAccount[]>([]);
+  const [showMultiRdModal, setShowMultiRdModal] = useState(false);
+  const [multiRdCustomerInfo, setMultiRdCustomerInfo] = useState<{
+    name: string;
+    cifNo: string;
+    customerId?: number;
+  } | null>(null);
+  const [noRdFoundAlert, setNoRdFoundAlert] = useState<string | null>(null);
+
   // Form states
   const [isBulk, setIsBulk] = useState(false);
   const [count, setCount] = useState(1);
@@ -71,6 +89,26 @@ export default function RdInstallmentCollection({
   // Bulk States
   const [bulkRows, setBulkRows] = useState<{ [key: number]: { count: number; penalty: number; selected: boolean } }>({});
 
+  const selectRdAccount = (acc: RdAccount) => {
+    setSelectedAccId(acc.rdAccountID.toString());
+    setSelectedAcc(acc);
+    setCount(1);
+
+    if (acc) {
+      const start = new Date(acc.openingDate);
+      start.setMonth(start.getMonth() + acc.totalPaidInstallments);
+      const today = new Date();
+
+      const diffMonths = (today.getFullYear() - start.getFullYear()) * 12 + today.getMonth() - start.getMonth();
+      if (diffMonths > 0) {
+        const p = Math.round(acc.installmentAmount * 0.02 * diffMonths);
+        setPenaltyAmount(p);
+      } else {
+        setPenaltyAmount(0);
+      }
+    }
+  };
+
   const fetchAccounts = async () => {
     try {
       const res = await axios.get('/api/RdAccounts');
@@ -78,25 +116,91 @@ export default function RdInstallmentCollection({
       setAccounts(active);
 
       const params = new URLSearchParams(window.location.search);
-      const memberIdStr = params.get('memberId');
-      const entityIdStr = params.get('entityId');
-      const rdAccountIdStr = params.get('rdAccountId') || params.get('id');
+      let cifStr = params.get('cifNo') || params.get('cif');
+      let customerIdStr = params.get('customerId') || params.get('customerID');
+      let memberIdStr = params.get('memberId') || params.get('memberID');
+      let entityIdStr = params.get('entityId');
+      let rdAccountIdStr = params.get('rdAccountId') || params.get('id');
+      let customerNameStr = params.get('customerName');
 
-      let matchedAcc: any = undefined;
-      if (rdAccountIdStr) {
-        const accId = parseInt(rdAccountIdStr, 10);
-        matchedAcc = active.find((a: any) => a.rdAccountID === accId);
-      } else if (entityIdStr) {
-        const eId = parseInt(entityIdStr, 10);
-        matchedAcc = active.find((a: any) => a.rdAccountID === eId || a.memberID === eId);
-      } else if (memberIdStr) {
-        const mId = parseInt(memberIdStr, 10);
-        matchedAcc = active.find((a: any) => a.memberID === mId);
+      // Also read from universal sessionStorage bridge
+      if (!cifStr && !customerIdStr && !memberIdStr && !rdAccountIdStr && !entityIdStr) {
+        try {
+          const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+          if (rawBridge) {
+            const bridgeData = JSON.parse(rawBridge);
+            if (bridgeData) {
+              cifStr = bridgeData.cifNo || bridgeData.cif;
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : undefined;
+              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : undefined;
+              customerNameStr = bridgeData.customerName || customerNameStr;
+            }
+          }
+        } catch (e) {
+          console.error('Failed to read sessionStorage transfer:', e);
+        }
       }
 
-      if (matchedAcc) {
-        setSelectedAccId(matchedAcc.rdAccountID.toString());
-        setSelectedAcc(matchedAcc);
+      const getAccCustId = (a: any) => Number(a.customerID ?? a.customerId ?? a.CustomerID ?? 0);
+      const getAccMemId = (a: any) => Number(a.memberID ?? a.memberId ?? a.MemberID ?? 0);
+      const getAccCif = (a: any) => String(a.cifNo ?? a.CIFNo ?? a.cif ?? '').trim().toUpperCase();
+
+      if (rdAccountIdStr || entityIdStr) {
+        const accId = parseInt((rdAccountIdStr || entityIdStr)!, 10);
+        const matched = active.find((a: any) => a.rdAccountID === accId || a.memberID === accId);
+        if (matched) {
+          selectRdAccount(matched);
+          setCustomerMatchingRds([matched]);
+        }
+      } else if (cifStr || customerIdStr || memberIdStr) {
+        const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+        const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
+        const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
+        const cleanDigits = cleanCif ? cleanCif.replace(/\D/g, '') : '';
+
+        let matched: RdAccount[] = [];
+
+        // Tier 1: CIF
+        if (cleanCif) {
+          matched = active.filter((a: any) => {
+            const aCif = getAccCif(a);
+            if (!aCif) return false;
+            if (aCif === cleanCif) return true;
+            if (cleanDigits && aCif.replace(/\D/g, '') === cleanDigits) return true;
+            return false;
+          });
+        }
+
+        // Tier 2: CustomerID
+        if (matched.length === 0 && cId > 0) {
+          matched = active.filter((a: any) => getAccCustId(a) === cId);
+        }
+
+        // Tier 3: MemberID
+        if (matched.length === 0 && mId > 0) {
+          matched = active.filter((a: any) => getAccMemId(a) === mId || getAccCustId(a) === mId);
+        }
+
+        if (matched.length === 1) {
+          selectRdAccount(matched[0]);
+          setCustomerMatchingRds(matched);
+          setNoRdFoundAlert(null);
+        } else if (matched.length > 1) {
+          setCustomerMatchingRds(matched);
+          const custName = customerNameStr || matched[0].customerName || matched[0].memberName || 'खातेदार';
+          const primaryCif = cleanCif || getAccCif(matched[0]) || '-';
+          setMultiRdCustomerInfo({
+            name: custName,
+            cifNo: primaryCif,
+            customerId: cId || getAccCustId(matched[0])
+          });
+          setShowMultiRdModal(true);
+          setNoRdFoundAlert(null);
+        } else {
+          setCustomerMatchingRds([]);
+          const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
+          setNoRdFoundAlert(`निवडलेल्या खातेदाराचे (${customerNameStr || identifier}) कोणतेही सक्रिय आरडी खाते आढळले नाही.`);
+        }
       }
     } catch (err) {
       console.error('Error fetching RD accounts', err);
@@ -395,6 +499,16 @@ export default function RdInstallmentCollection({
       )}
 
       {/* Alert Messages */}
+      {noRdFoundAlert && (
+        <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg flex items-center justify-between text-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="font-medium">{noRdFoundAlert}</span>
+          </div>
+          <button onClick={() => setNoRdFoundAlert(null)} className="font-bold text-amber-700 hover:text-black cursor-pointer">✕</button>
+        </div>
+      )}
+
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg flex items-center gap-2 text-xs">
           <XCircle className="w-4 h-4 text-red-600 shrink-0" />
@@ -425,7 +539,29 @@ export default function RdInstallmentCollection({
           <form onSubmit={handleSingleSubmit} className="space-y-4">
             <fieldset disabled={isPassingMode} className="contents">
             <div>
-              <label className={labelClass}>आरडी खाते क्रमांक निवडा (Select RD Account) <span className="text-red-500">*</span></label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className={`${labelClass} !mb-0`}>
+                  आरडी खाते क्रमांक निवडा (Select RD Account) <span className="text-red-500">*</span>
+                </label>
+                {customerMatchingRds.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const first = customerMatchingRds[0];
+                      setMultiRdCustomerInfo({
+                        name: first.customerName || first.memberName || 'खातेदार',
+                        cifNo: first.cifNo || '-',
+                        customerId: first.customerID
+                      });
+                      setShowMultiRdModal(true);
+                    }}
+                    className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold flex items-center gap-1 cursor-pointer bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded border border-indigo-200 transition-colors"
+                  >
+                    <Layers className="w-3 h-3 text-indigo-600" />
+                    <span>खातेदाराची {customerMatchingRds.length} आरडी खाती उपलब्ध (खाते निवडा ⚡)</span>
+                  </button>
+                )}
+              </div>
               <SearchableSelect
                 options={accounts.map((a) => ({
                   value: a.rdAccountID,
@@ -739,6 +875,140 @@ export default function RdInstallmentCollection({
                 className="px-4 py-1.5 text-xs font-bold rounded bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer disabled:opacity-50"
               >
                 {passingActionLoading ? 'रद्द होत आहे...' : 'होय, व्हाउचर रद्द करा'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Multi-RD Account Selector Modal (CIF-First) */}
+      {showMultiRdModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full overflow-hidden border border-indigo-200">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-indigo-700 via-indigo-800 to-purple-900 px-4 py-3 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-white/10 rounded-lg">
+                  <Coins className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <div className="font-bold text-sm flex items-center gap-2">
+                    <span>आरडी खाते निवडा (Select RD Account)</span>
+                    <span className="text-[10px] bg-amber-400 text-indigo-950 font-black px-2 py-0.5 rounded-full">
+                      एकूण {customerMatchingRds.length} आरडी खाती
+                    </span>
+                  </div>
+                  <p className="text-xs text-indigo-200 mt-0.5">
+                    खातेदार: <strong className="text-white">{multiRdCustomerInfo?.name || 'खातेदार'}</strong>
+                    {multiRdCustomerInfo?.cifNo && multiRdCustomerInfo.cifNo !== '-' && (
+                      <span className="ml-2 font-mono text-amber-200">
+                        [CIF: {multiRdCustomerInfo.cifNo}]
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMultiRdModal(false)}
+                className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded cursor-pointer transition-colors"
+                title="बंद करा"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body: List of RD Accounts */}
+            <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2.5 bg-slate-50">
+              <div className="text-xs text-slate-700 font-semibold mb-2 flex items-center justify-between">
+                <span>कृपया हप्ता जमा करण्यासाठी योग्य आरडी खाते निवडा:</span>
+                <span className="text-[11px] text-slate-500">क्लिक करून निवडा</span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2.5">
+                {customerMatchingRds.map((acc: RdAccount) => {
+                  const isCurrent = selectedAcc?.rdAccountID === acc.rdAccountID;
+                  return (
+                    <div
+                      key={acc.rdAccountID}
+                      onClick={() => {
+                        selectRdAccount(acc);
+                        setShowMultiRdModal(false);
+                      }}
+                      className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isCurrent
+                          ? 'bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-400 shadow-sm'
+                          : 'bg-white hover:bg-indigo-50/40 border-slate-200 hover:border-indigo-300 shadow-2xs'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-lg mt-0.5 ${isCurrent ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                          <CreditCard className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-bold text-xs text-slate-900 tracking-wide">
+                              {acc.accountNo}
+                            </span>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              {acc.status || 'Active'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-600 font-semibold mt-1">
+                            योजना: <span className="text-slate-800 font-bold">{acc.schemeName}</span>
+                            {acc.openingDate && (
+                              <span className="text-slate-400 font-normal ml-2">
+                                (सुरू: {new Date(acc.openingDate).toLocaleDateString('en-GB')})
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            हप्ता भरले: <span className="font-semibold text-slate-700">{acc.totalPaidInstallments || 0} / {acc.durationMonths} महिने</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 sm:text-right w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+                        <div>
+                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">मासिक हप्ता रक्कम</div>
+                          <div className="text-sm font-black text-indigo-700">
+                            ₹ {(acc.installmentAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selectRdAccount(acc);
+                            setShowMultiRdModal(false);
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                            isCurrent
+                              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                              : 'bg-white hover:bg-indigo-600 hover:text-white text-indigo-700 border border-indigo-300'
+                          }`}
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span>{isCurrent ? 'निवडलेले आहे' : 'हे खाते निवडा'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-100 px-4 py-2.5 border-t border-slate-200 flex justify-between items-center text-xs">
+              <span className="text-slate-500 font-medium">
+                आरडी खाते निवडल्यावर दंड व हप्ता तपशील आपोआप लोड होतील.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowMultiRdModal(false)}
+                className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-bold cursor-pointer transition-colors"
+              >
+                बंद करा (Close)
               </button>
             </div>
           </div>

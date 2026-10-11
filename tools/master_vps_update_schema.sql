@@ -5586,6 +5586,123 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- 6. PIGMY AGENT CASH DEPOSITS DATE RANGES & SWANIDHI RULE 35 SCHEMA (v2.5.38)
+-- -----------------------------------------------------------------------------------------
+-- 6.1 PigmyAgentCashDeposits Date Range Columns
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgentCashDeposits')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyAgentCashDeposits]') AND name = 'CollectionDateFrom')
+    BEGIN
+        ALTER TABLE [PigmyAgentCashDeposits] ADD [CollectionDateFrom] datetime2 NULL;
+        PRINT '  -> Added CollectionDateFrom to PigmyAgentCashDeposits';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyAgentCashDeposits]') AND name = 'CollectionDateTo')
+    BEGIN
+        ALTER TABLE [PigmyAgentCashDeposits] ADD [CollectionDateTo] datetime2 NULL;
+        PRINT '  -> Added CollectionDateTo to PigmyAgentCashDeposits';
+    END
+END
+GO
+
+-- 6.2 Ledgers ExcludeFromRule35Swanidhi Column
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Ledgers')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Ledgers]') AND name = 'ExcludeFromRule35Swanidhi')
+    BEGIN
+        ALTER TABLE [Ledgers] ADD [ExcludeFromRule35Swanidhi] bit NOT NULL CONSTRAINT DF_Ledgers_ExcludeFromRule35 DEFAULT 0;
+        PRINT '  -> Added ExcludeFromRule35Swanidhi to Ledgers';
+    END
+END
+GO
+
+-- 6.3 SwanidhiLedgerMappings Table
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SwanidhiLedgerMappings')
+BEGIN
+    CREATE TABLE [SwanidhiLedgerMappings] (
+        [MappingID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [CategoryCode] nvarchar(50) NOT NULL,
+        [CategoryName] nvarchar(150) NOT NULL,
+        [LedgerID] int NOT NULL,
+        [CreatedOn] datetime2 NOT NULL DEFAULT GETDATE(),
+        [UpdatedOn] datetime2 NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT [FK_SwanidhiLedgerMappings_Ledgers_LedgerID] FOREIGN KEY ([LedgerID]) REFERENCES [Ledgers] ([LedgerID])
+    );
+    PRINT '  -> Created SwanidhiLedgerMappings table';
+END
+GO
+
+-- 6.4 SwanidhiSettings Table
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SwanidhiSettings')
+BEGIN
+    CREATE TABLE [SwanidhiSettings] (
+        [SettingID] int IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [BranchID] int NOT NULL DEFAULT 1,
+        [BorrowingLimitMultiplier] decimal(5,2) NOT NULL DEFAULT 10.00,
+        [Year1DividendRate] decimal(5,2) NOT NULL DEFAULT 0.00,
+        [Year2DividendRate] decimal(5,2) NOT NULL DEFAULT 0.00,
+        [Year3DividendRate] decimal(5,2) NOT NULL DEFAULT 0.00,
+        [ManualCertifiedNetProfit] decimal(18,2) NULL,
+        [UpdatedOn] datetime2 NOT NULL DEFAULT GETDATE()
+    );
+
+    INSERT INTO [SwanidhiSettings] ([BranchID], [BorrowingLimitMultiplier], [Year1DividendRate], [Year2DividendRate], [Year3DividendRate], [UpdatedOn])
+    VALUES (1, 10.00, 9.00, 9.00, 9.00, GETDATE());
+    PRINT '  -> Created SwanidhiSettings table and seeded default configuration';
+END
+GO
+
+-- 6.5 Initial auto-seed for Swanidhi mappings if empty
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SwanidhiLedgerMappings') AND (SELECT COUNT(*) FROM [SwanidhiLedgerMappings]) = 0
+BEGIN
+    -- 1. Paid-up Share Capital
+    INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
+    SELECT 'PAID_UP_CAPITAL', N'१. वसूल भाग भांडवल', [LedgerID], GETDATE(), GETDATE()
+    FROM [Ledgers]
+    WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%भाग भांडवल%' OR [LedgerName] LIKE N'%सभासद भाग%' OR [LedgerName] LIKE N'%Share%');
+
+    -- 2. Statutory Reserve Fund
+    INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
+    SELECT 'STATUTORY_RESERVE', N'२. राखीव निधी', [LedgerID], GETDATE(), GETDATE()
+    FROM [Ledgers]
+    WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%राखीव निधी%' OR [LedgerName] LIKE N'%Reserve Fund%');
+
+    -- 3. Building Fund
+    INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
+    SELECT 'BUILDING_FUND', N'३. इमारत निधी', [LedgerID], GETDATE(), GETDATE()
+    FROM [Ledgers]
+    WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%इमारत निधी%' OR [LedgerName] LIKE N'%Building Fund%');
+
+    -- 4. Free and Development Reserves
+    INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
+    SELECT 'FREE_AND_DEVELOPMENT_RESERVE', N'४. मुक्त व विकास निधी (स्पष्टीकरण-१)', [LedgerID], GETDATE(), GETDATE()
+    FROM [Ledgers]
+    WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%लाभांश सम%' OR [LedgerName] LIKE N'%तंत्रज्ञान विकास%' OR [LedgerName] LIKE N'%Dividend Equal%');
+
+    -- 5. Standard Asset Provision
+    INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
+    SELECT 'STANDARD_ASSET_PROVISION', N'५. उत्तम जिंदगी तरतूद', [LedgerID], GETDATE(), GETDATE()
+    FROM [Ledgers]
+    WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%उत्तम जिंदगी%' OR [LedgerName] LIKE N'%Standard Asset%');
+
+    -- 6. Accumulated Loss
+    INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
+    SELECT 'ACCUMULATED_LOSS', N'ब. संचित तोटा', [LedgerID], GETDATE(), GETDATE()
+    FROM [Ledgers]
+    WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%संचित तोटा%' OR [LedgerName] LIKE N'%चालू तोटा%');
+
+    -- 7. Excluded Reserves
+    INSERT INTO [SwanidhiLedgerMappings] ([CategoryCode], [CategoryName], [LedgerID], [CreatedOn], [UpdatedOn])
+    SELECT 'EXCLUDED_RESERVES', N'वगळलेले बाह्य देयता निधी', [LedgerID], GETDATE(), GETDATE()
+    FROM [Ledgers]
+    WHERE [IsActive] = 1 AND ([LedgerName] LIKE N'%कल्याण%' OR [LedgerName] LIKE N'%धर्मादाय%' OR [LedgerName] LIKE N'%घसारा%' OR [LedgerName] LIKE N'%संशयित बुडीत%' OR [ExcludeFromRule35Swanidhi] = 1)
+      AND [LedgerID] NOT IN (SELECT [LedgerID] FROM [SwanidhiLedgerMappings]);
+
+    PRINT '  -> Seeded initial SwanidhiLedgerMappings successfully';
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

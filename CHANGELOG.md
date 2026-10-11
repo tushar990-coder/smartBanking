@@ -2,6 +2,23 @@
 
 ---
 
+## 📅 [2026-10-11] - आवृत्ती v2.5.38 (Swanidhi Rule 35, Voucher Passing Form View Checker, Agent Day Book 3-Date Remittance & VPS Multi-App Master Patch)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **महाराष्ट्र शासन परिपत्रक नियम ३५ स्वनिधी अहवाल (Swanidhi Rule 35 Report Engine & Ledger Mappings):**
+  * वसूल भाग भांडवल (Paid-up Capital), वैधानिक राखीव निधी (Statutory Reserve), इमारत निधी (Building Fund), मुक्त व विकास निधी (Free & Development Reserves), उत्तम जिंदगी तरतूद (Standard Asset Provision) चे अचूक एकत्रीकरण आणि संचित तोटा व बाह्य देयता वजा करून निव्वळ स्वनिधी (Net Swanidhi / Owned Funds) गणन.
+  * स्वनिधीच्या १० पट (किंवा संस्था नियमानुसार) कमाल कर्ज उभारणी मर्यादा (Total Borrowing Capacity) व प्रत्यक्ष घेतलेली कर्जे व ठेवी यांच्याशी तुलना.
+  * गेल्या ३ वर्षांच्या लाभांश दराची सरासरी (3-Year Dividend Average) काढून स्वनिधी गणना.
+  * डायनॅमिक लेजर मॅपिंग मोडल (Dynamic Swanidhi Ledger Mappings) द्वारे संस्था गरजेनुसार कोणतेही लेजर स्वनिधीत जोडणे किंवा वगळणे (`ExcludeFromRule35Swanidhi`).
+* **सर्व २०+ ट्रान्झॅक्शन मॉड्यूल्समध्ये व्हाउचर्स मंजुरी फॉर्म व्ह्यू चेकर (Universal Voucher Passing Form View Checker):**
+  * व्हाउचर्स मंजुरी स्क्रीनवरून (Voucher Passing) प्रत्येक प्रकारच्या व्हाउचरसाठी (बचत, ठेवी, कर्ज वाटप, कर्ज वसुली, पिग्मी, आरडी, लॉकर, मालमत्ता खरेदी, शेअर हस्तांतरण) थेट संबंधित मूळ फॉर्म व्ह्यू उघडून तपशील तपासण्याची व मंजुरी देण्याची सुविधा.
+* **पिग्मी एजंट दैनंदिनी ३-दिनांक ताळमेळ (Pigmy Agent Day Book 3-Date Remittance & Strict Date Reconciliation):**
+  * संकलन दिनांक (`CollectionDateFrom` / `CollectionDateTo`) आणि प्रत्यक्ष बँक जमा दिनांक यांचे स्वतंत्र व्यवस्थापन व डुप्लिकेट रोख जमा प्रतिबंध.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (VPS Multi-App Master Patch v2.5.38):**
+  * सर्व संस्थांसाठी (Testing, Testing1, Template, Bambavade, Padawalwadi, Yadravkar, RITEMP, Sahyadri Bambavade, Sahyadri Karmachari) १-क्लिक सुरक्षित रोलआउट, रिव्हर्स पॅच इंजिन आणि डेटाबेस स्कीमा स्वयं-सक्षमीकरण.
+
+---
+
 ## 📅 [2026-09-15] - आवृत्ती v2.4.9 (Share Opening Balance & Member Code Alignment Master Patch)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

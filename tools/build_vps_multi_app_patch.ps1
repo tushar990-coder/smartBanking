@@ -302,6 +302,90 @@ $memberCodeHealSql = Join-Path $scriptDir "database\heal_nominal_and_duplicate_m
 $backendSource = Join-Path $scriptDir "backend"
 $frontendSource = Join-Path $scriptDir "frontend"
 
+function Get-AllTargetFolders {
+    param([string]$baseFolder, [string]$type, [string]$sansthaKey)
+    $folders = [System.Collections.Generic.List[string]]::new()
+    if ($baseFolder -and (Test-Path $baseFolder)) {
+        $folders.Add($baseFolder)
+    }
+
+    $appcmd = "$env:SystemRoot\system32\inetsrv\appcmd.exe"
+    if (Test-Path $appcmd) {
+        try {
+            $vdirs = & $appcmd list vdirs /text:physicalPath 2>$null
+            foreach ($vd in $vdirs) {
+                if ($vd -and (Test-Path $vd)) {
+                    $vdClean = $vd.Trim()
+                    if ($sansthaKey -and ($vdClean -match $sansthaKey)) {
+                        if ($type -eq "frontend" -and ($vdClean -notmatch "api|backend") -and (-not $folders.Contains($vdClean))) {
+                            $folders.Add($vdClean)
+                        }
+                        if ($type -eq "backend" -and ($vdClean -match "api|backend") -and (-not $folders.Contains($vdClean))) {
+                            $folders.Add($vdClean)
+                        }
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    $candidates = @()
+    if ($sansthaKey -match "bambavade") {
+        if ($type -eq "frontend") {
+            $candidates = @("D:\WebApps\bambavade\bambavade.hellomindspace.in", "D:\WebApps\bambavadeurban\frontend", "D:\WebApps\bambavade\frontend")
+        } else {
+            $candidates = @("D:\WebApps\bambavade\api.bambavade.hellomindspace.in", "D:\WebApps\bambavadeurban\backend", "D:\WebApps\bambavade\backend")
+        }
+    }
+    elseif ($sansthaKey -match "padval|jotirling") {
+        if ($type -eq "frontend") {
+            $candidates = @("D:\WebApps\Jotirlingpdw\jotirlingpdw.hellomindspace.in", "D:\WebApps\padvalwadi\frontend", "D:\WebApps\padvalwadi\padvalwadi.hellomindspace.in")
+        } else {
+            $candidates = @("D:\WebApps\Jotirlingpdw\api.jotirlingpdw.hellomindspace.in", "D:\WebApps\padvalwadi\backend", "D:\WebApps\padvalwadi\api.padvalwadi.hellomindspace.in")
+        }
+    }
+    elseif ($sansthaKey -match "yadrav") {
+        if ($type -eq "frontend") {
+            $candidates = @("D:\WebApps\maharshiyadrav\frontend", "D:\WebApps\maharshiyadravkar\frontend", "D:\WebApps\maharshiyadrav\maharshiyadrav.hellomindspace.in")
+        } else {
+            $candidates = @("D:\WebApps\maharshiyadrav\backend", "D:\WebApps\maharshiyadravkar\backend", "D:\WebApps\maharshiyadrav\api.maharshiyadrav.hellomindspace.in")
+        }
+    }
+    elseif ($sansthaKey -match "ritemp|ritemployee") {
+        if ($type -eq "frontend") {
+            $candidates = @("D:\WebApps\ritemployee\frontend", "D:\WebApps\ritemp\frontend", "D:\WebApps\ritemployee\ritemployee.hellomindspace.in")
+        } else {
+            $candidates = @("D:\WebApps\ritemployee\backend", "D:\WebApps\ritemp\backend", "D:\WebApps\ritemployee\api.ritemployee.hellomindspace.in")
+        }
+    }
+    elseif ($sansthaKey -match "testing1") {
+        if ($type -eq "frontend") {
+            $candidates = @("D:\WebApps\testing1\frontend", "D:\WebApps\testing1\testing1.hellomindspace.in")
+        } else {
+            $candidates = @("D:\WebApps\testing1\backend", "D:\WebApps\testing1\api.testing1.hellomindspace.in")
+        }
+    }
+    elseif ($sansthaKey -match "testing") {
+        if ($type -eq "frontend") {
+            $candidates = @("D:\WebApps\Testing\testing.hellomindspace.in", "D:\WebApps\Testing\frontend")
+        } else {
+            $candidates = @("D:\WebApps\Testing\api.testing.hellomindspace.in", "D:\WebApps\Testing\backend")
+        }
+    }
+
+    foreach ($c in $candidates) {
+        if ((Test-Path $c) -and (-not $folders.Contains($c))) {
+            $folders.Add($c)
+        }
+    }
+
+    if ($folders.Count -eq 0 -and $baseFolder) {
+        $folders.Add($baseFolder)
+    }
+
+    return $folders
+}
+
 # Initialize Session Rollback Snapshot Directory
 $sessionTimestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $rollbackBase = Join-Path $config.BackupFolder "Rollbacks"
@@ -407,15 +491,24 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
         # 1.5 Application Snapshot (Backend & Frontend for Instant Reverse Patch)
         Write-Host " [Step 1.5] Taking Application Snapshot (Backend & Frontend) for Instant Rollback..." -ForegroundColor Yellow
         try {
-            if (Test-Path $target.BackendFolderPath) {
-                $bkDest = Join-Path $targetRollbackDir "backend"
-                New-Item -Path $bkDest -ItemType Directory -Force | Out-Null
-                robocopy $target.BackendFolderPath $bkDest /E /R:1 /W:1 /XD "logs" "uploads" "wwwroot" /XF "appsettings.Development.json" | Out-Null
+            $backendFolders = Get-AllTargetFolders -baseFolder $target.BackendFolderPath -type "backend" -sansthaKey "$($target.TargetDatabase)"
+            $frontendFolders = Get-AllTargetFolders -baseFolder $target.FrontendFolderPath -type "frontend" -sansthaKey "$($target.TargetDatabase)"
+
+            foreach ($bFolder in $backendFolders) {
+                if (Test-Path $bFolder) {
+                    $bkDest = Join-Path $targetRollbackDir "backend"
+                    New-Item -Path $bkDest -ItemType Directory -Force | Out-Null
+                    robocopy $bFolder $bkDest /E /R:1 /W:1 /XD "logs" "uploads" "wwwroot" /XF "appsettings.Development.json" | Out-Null
+                    break
+                }
             }
-            if (Test-Path $target.FrontendFolderPath) {
-                $ftDest = Join-Path $targetRollbackDir "frontend"
-                New-Item -Path $ftDest -ItemType Directory -Force | Out-Null
-                robocopy $target.FrontendFolderPath $ftDest /E /R:1 /W:1 | Out-Null
+            foreach ($fFolder in $frontendFolders) {
+                if (Test-Path $fFolder) {
+                    $ftDest = Join-Path $targetRollbackDir "frontend"
+                    New-Item -Path $ftDest -ItemType Directory -Force | Out-Null
+                    robocopy $fFolder $ftDest /E /R:1 /W:1 | Out-Null
+                    break
+                }
             }
             Write-Host "  -> Application Snapshot Saved Successfully in Rollback Folder!" -ForegroundColor Green
             $statusObj.AppSnapshot = "OK"
@@ -551,19 +644,24 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             try {
                 cmd /c "%windir%\system32\inetsrv\appcmd.exe stop apppool /apppool.name:`"$($target.IISAppPoolName)`"" 2>$null
             } catch {}
-        } else {
-            Write-Host " [Step 3] IIS AppPool not specified. Releasing process locks..." -ForegroundColor Yellow
+        }
+        if ($target.TargetDatabase -match "bambavade") {
+            cmd /c "%windir%\system32\inetsrv\appcmd.exe stop apppool /apppool.name:`"apibambavade`"" 2>$null
+            cmd /c "%windir%\system32\inetsrv\appcmd.exe stop apppool /apppool.name:`"bambavade-backend`"" 2>$null
         }
         Get-Process -Name "w3wp", "dotnet", "Bhisi.Api" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
 
         # 4. Deploy Backend Files
         Write-Host " [Step 4] Deploying Backend API Binaries..." -ForegroundColor Yellow
-        if (-not (Test-Path $target.BackendFolderPath)) {
-            New-Item -Path $target.BackendFolderPath -ItemType Directory -Force | Out-Null
+        $backendFolders = Get-AllTargetFolders -baseFolder $target.BackendFolderPath -type "backend" -sansthaKey "$($target.TargetDatabase)"
+        foreach ($bFolder in $backendFolders) {
+            if (-not (Test-Path $bFolder)) {
+                New-Item -Path $bFolder -ItemType Directory -Force | Out-Null
+            }
+            robocopy $backendSource $bFolder /E /R:2 /W:1 /XF "appsettings.json" "appsettings.Production.json" "license.lic" /XD "logs" "uploads" "wwwroot" | Out-Null
+            Write-Host "  -> Backend Binaries Updated at: $bFolder" -ForegroundColor Green
         }
-        robocopy $backendSource $target.BackendFolderPath /E /R:2 /W:1 /XF "appsettings.json" "appsettings.Production.json" "license.lic" /XD "logs" "uploads" "wwwroot" | Out-Null
-        Write-Host "  -> Backend Binaries Updated Successfully!" -ForegroundColor Green
         $statusObj.Backend = "OK"
 
         # 4.5 Config Files Preserved Intact
@@ -571,11 +669,14 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
 
         # 5. Deploy Frontend Files
         Write-Host " [Step 5] Deploying Frontend Bundle (Cleaning old cached assets)..." -ForegroundColor Yellow
-        if (-not (Test-Path $target.FrontendFolderPath)) {
-            New-Item -Path $target.FrontendFolderPath -ItemType Directory -Force | Out-Null
+        $frontendFolders = Get-AllTargetFolders -baseFolder $target.FrontendFolderPath -type "frontend" -sansthaKey "$($target.TargetDatabase)"
+        foreach ($fFolder in $frontendFolders) {
+            if (-not (Test-Path $fFolder)) {
+                New-Item -Path $fFolder -ItemType Directory -Force | Out-Null
+            }
+            robocopy $frontendSource $fFolder /E /R:2 /W:1 /PURGE | Out-Null
+            Write-Host "  -> Frontend Bundle Updated at: $fFolder" -ForegroundColor Green
         }
-        robocopy $frontendSource $target.FrontendFolderPath /E /R:2 /W:1 /PURGE | Out-Null
-        Write-Host "  -> Frontend Bundle Updated Successfully!" -ForegroundColor Green
         $statusObj.Frontend = "OK"
 
         # 6. Start IIS AppPool & Refresh
@@ -584,6 +685,10 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             try {
                 cmd /c "%windir%\system32\inetsrv\appcmd.exe start apppool /apppool.name:`"$($target.IISAppPoolName)`"" 2>$null
             } catch {}
+        }
+        if ($target.TargetDatabase -match "bambavade") {
+            cmd /c "%windir%\system32\inetsrv\appcmd.exe start apppool /apppool.name:`"apibambavade`"" 2>$null
+            cmd /c "%windir%\system32\inetsrv\appcmd.exe start apppool /apppool.name:`"bambavade-backend`"" 2>$null
         }
         cmd /c "iisreset" 2>$null
 

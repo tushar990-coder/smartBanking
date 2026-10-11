@@ -4316,6 +4316,31 @@ namespace Bhisi.Api.Controllers
                     await RegisterGuarantor(a.Guarantor2Customer, a.Guarantor2CustomerID);
             }
 
+            var allGuarantorCIds = guarantorProfiles.Keys.ToList();
+
+            // Fetch shares & savings of all guarantors in batch
+            var sharesDict = await _context.ShareAccounts
+                .Where(s => s.Status == "Active" && allGuarantorCIds.Contains(s.CustomerID))
+                .GroupBy(s => s.CustomerID)
+                .Select(g => new { CustomerId = g.Key, TotalShares = g.Sum(s => s.TotalShareAmount) })
+                .ToDictionaryAsync(x => x.CustomerId, x => x.TotalShares);
+
+            var savingsDict = await _context.SavingAccountMasters
+                .Where(s => allGuarantorCIds.Contains(s.CustomerID))
+                .GroupBy(s => s.CustomerID)
+                .Select(g => new { CustomerId = g.Key, TotalSavings = g.Sum(s => s.CurrentBalance) })
+                .ToDictionaryAsync(x => x.CustomerId, x => x.TotalSavings);
+
+            // Fetch own active loans for guarantors
+            var ownLoansList = await _context.LoanAccounts
+                .Include(l => l.LoanRate)
+                .Where(l => l.Status == "Active" && l.CustomerID.HasValue && allGuarantorCIds.Contains(l.CustomerID.Value))
+                .ToListAsync();
+
+            var ownLoansByCustomer = ownLoansList
+                .GroupBy(l => l.CustomerID!.Value)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
             var resultList = new List<object>();
 
             foreach (var kvp in guarantorProfiles)
@@ -4340,12 +4365,17 @@ namespace Bhisi.Api.Controllers
                         borrowerName = l.Customer != null 
                             ? $"{l.Customer.FirstName} {l.Customer.MiddleName} {l.Customer.LastName}".Trim() 
                             : (l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Trim() : ""),
-                        borrowerCode = l.Member?.MemberCode ?? l.Customer?.CIFNo,
+                        borrowerCode = l.Member?.MemberCode ?? l.Customer?.CIFNo ?? "",
                         borrowerCIF = l.Customer?.CIFNo ?? l.Member?.Customer?.CIFNo ?? "",
                         loanType = l.LoanRate?.ShortName ?? l.LoanRate?.LoanType ?? "",
+                        disbursementDate = l.LoanDisbursementDate ?? l.OpeningDate,
+                        disbursementDateDisplay = (l.LoanDisbursementDate ?? l.OpeningDate).ToString("dd/MM/yyyy"),
                         sanctionedAmount = l.SanctionedAmount,
+                        principalBalance = l.PrincipalBalance,
+                        interestBalance = l.InterestBalance + l.OverdueInterestBalance,
                         currentBalance = l.PrincipalBalance + l.InterestBalance + l.OverdueInterestBalance,
-                        guarantorType = MatchesG1(l) ? "जामीनदार १ (Guarantor 1)" : "जामीनदार २ (Guarantor 2)",
+                        guarantorType = MatchesG1(l) ? "जामीनदार १" : "जामीनदार २",
+                        isBorrowerOverdue = l.OverdueInterestBalance > 0 || (l.MaturityDate.HasValue && l.MaturityDate < DateTime.Today),
                         status = "Active"
                     }).ToList();
 
@@ -4362,11 +4392,46 @@ namespace Bhisi.Api.Controllers
                         borrowerCIF = a.Customer?.CIFNo ?? "",
                         loanType = a.LoanRate?.ShortName ?? a.LoanRate?.LoanType ?? "",
                         requestedAmount = a.RequestedAmount,
-                        guarantorType = MatchesAppG1(a) ? "जामीनदार १ (Guarantor 1)" : "जामीनदार २ (Guarantor 2)",
+                        guarantorType = MatchesAppG1(a) ? "जामीनदार १" : "जामीनदार २",
                         status = "Pending"
                     }).ToList();
 
                 if (!memberId.HasValue && !customerId.HasValue && gActiveLoans.Count == 0 && gPendingApps.Count == 0) continue;
+
+                // Guarantor's own financial strength in the Sanstha
+                decimal guarantorShares = sharesDict.GetValueOrDefault(gCId, 0m);
+                decimal guarantorSavings = savingsDict.GetValueOrDefault(gCId, 0m);
+
+                // Own loans
+                var ownLoans = ownLoansByCustomer.GetValueOrDefault(gCId, new List<LoanAccount>());
+                int ownLoansCount = ownLoans.Count;
+                decimal ownLoansSanctioned = ownLoans.Sum(l => l.SanctionedAmount);
+                decimal ownLoansPrincipal = ownLoans.Sum(l => l.PrincipalBalance);
+                decimal ownLoansInterest = ownLoans.Sum(l => l.InterestBalance + l.OverdueInterestBalance);
+                decimal ownLoansBalance = ownLoansPrincipal + ownLoansInterest;
+                bool hasOverdueOwnLoan = ownLoans.Any(l => l.OverdueInterestBalance > 0 || (l.MaturityDate.HasValue && l.MaturityDate < DateTime.Today));
+                string ownLoanInfo = ownLoansCount > 0 
+                    ? $"{ownLoans[0].LoanAccountNo} (₹{ownLoansBalance:N0})"
+                    : "-";
+
+                // Audit Status / Compliance Evaluation
+                string auditStatus = "नियमित (योग्य)";
+                string auditAlertCode = "NORMAL";
+                if (gActiveLoans.Count > 2)
+                {
+                    auditStatus = "२+ जामीन (मर्यादा उल्लंघन)";
+                    auditAlertCode = "EXCESS_GUARANTEE";
+                }
+                else if (hasOverdueOwnLoan)
+                {
+                    auditStatus = "स्वतः थकीत कर्जदार जामीनदार";
+                    auditAlertCode = "DEFAULTER_GUARANTOR";
+                }
+                else if (ownLoansBalance > 0)
+                {
+                    auditStatus = "स्वतः कर्जदार (सक्रिय)";
+                    auditAlertCode = "OWN_BORROWER";
+                }
 
                 resultList.Add(new
                 {
@@ -4376,18 +4441,36 @@ namespace Bhisi.Api.Controllers
                     guarantorCode = gCode,
                     cifNo = gCif,
                     mobileNo = string.IsNullOrWhiteSpace(gMobile) || gMobile == "0000000000" ? "-" : gMobile,
+                    guarantorShares,
+                    guarantorSavings,
+                    ownLoansCount,
+                    ownLoansSanctioned,
+                    ownLoansPrincipal,
+                    ownLoansInterest,
+                    ownLoansBalance,
+                    hasOverdueOwnLoan,
+                    ownLoanInfo,
+                    auditStatus,
+                    auditAlertCode,
                     activeGuaranteedLoansCount = gActiveLoans.Count,
                     pendingGuaranteedAppsCount = gPendingApps.Count,
                     totalGuaranteedSanctionedAmount = gActiveLoans.Sum(l => l.sanctionedAmount) + gPendingApps.Sum(a => a.requestedAmount),
+                    totalGuaranteedPrincipalBalance = gActiveLoans.Sum(l => l.principalBalance),
+                    totalGuaranteedInterestBalance = gActiveLoans.Sum(l => l.interestBalance),
                     totalGuaranteedCurrentBalance = gActiveLoans.Sum(l => l.currentBalance),
                     activeLoans = gActiveLoans,
                     pendingApplications = gPendingApps
                 });
             }
 
+            var today = DateTime.Today;
+
             return Ok(new
             {
                 sansthaInfo = sanstha,
+                asOnDate = today.ToString("yyyy-MM-dd"),
+                asOnDateDisplay = today.ToString("dd/MM/yyyy"),
+                totalGuarantorsCount = resultList.Count,
                 guarantors = resultList
             });
         }

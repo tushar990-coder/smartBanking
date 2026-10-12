@@ -202,11 +202,13 @@ import CashDenominationEntry from './components/CashDenominationEntry';
 
 import { useAuth } from './context/AuthContext';
 import LoginForm from './components/LoginForm';
+import ChangePasswordModal from './components/ChangePasswordModal';
 
 function App() {
   const { user, logout, switchBranch } = useAuth();
   const [headerBranches, setHeaderBranches] = useState<any[]>([]);
   const [showLoginNotifications, setShowLoginNotifications] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [systemVersion, setSystemVersion] = useState<string>('2.5.32');
 
   useEffect(() => {
@@ -510,6 +512,17 @@ function App() {
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans">
       <LicenseGuardModal />
       <GlobalContextMenu />
+      {/* Change Password Modals */}
+      <ChangePasswordModal 
+        isOpen={Boolean(user?.requirePasswordChange)} 
+        isMandatory={true} 
+        onClose={() => {}} 
+      />
+      <ChangePasswordModal 
+        isOpen={showChangePasswordModal && !user?.requirePasswordChange} 
+        isMandatory={false} 
+        onClose={() => setShowChangePasswordModal(false)} 
+      />
       {/* Glassmorphic Sidebar */}
       <Sidebar
         isSidebarOpen={isSidebarOpen}
@@ -603,6 +616,14 @@ function App() {
                 <option value="blue">Corporate Blue (निळा)</option>
               </select>
             </div>
+            <button 
+              onClick={() => setShowChangePasswordModal(true)}
+              className="px-2 sm:px-2.5 py-0.5 bg-blue-50 text-primary rounded text-[11px] font-bold hover:bg-blue-100 transition-colors border border-blue-200 h-6 flex items-center justify-center shrink-0 gap-1 shadow-2xs cursor-pointer"
+              title="पासवर्ड बदला (Change Password)"
+            >
+              <KeyRound size={12} className="shrink-0" />
+              <span className="hidden sm:inline">पासवर्ड बदला</span>
+            </button>
             <button 
               onClick={logout}
               className="px-2 sm:px-2.5 py-0.5 bg-red-50 text-red-600 rounded text-[11px] font-bold hover:bg-red-100 hover:text-red-700 transition-colors border border-red-200 h-6 flex items-center justify-center shrink-0 gap-1 shadow-2xs"

@@ -35,7 +35,7 @@ namespace Bhisi.Api.Controllers
                     .FirstOrDefaultAsync(u => u.Username == request.Username);
 
                 // Auto-create initial admin if database has no admin account yet
-                if (user == null && request.Username == "admin" && (request.Password == "Shri@2026" || request.Password == "admin123" || request.Password == "admin"))
+                if (user == null && request.Username == "admin" && request.Password == "Shri@2026")
                 {
                     var adminRole = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Admin")
                                     ?? new Role { RoleName = "Admin", Description = "System Administrator" };
@@ -140,18 +140,8 @@ namespace Bhisi.Api.Controllers
 
             if (user.IsLocked)
             {
-                if (user.Username == "admin" && (request.Password == "Shri@2026" || request.Password == "admin123" || request.Password == "admin"))
-                {
-                    user.IsLocked = false;
-                    user.FailedLoginAttempts = 0;
-                    user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-                    await _context.SaveChangesAsync();
-                }
-                else
-                {
-                    await LogAudit(user.UserID, "Failed - Account Locked");
-                    return Unauthorized("Your account is locked due to multiple failed login attempts. Please contact Administrator.");
-                }
+                await LogAudit(user.UserID, "Failed - Account Locked");
+                return Unauthorized("Your account is locked due to multiple failed login attempts. Please contact Administrator.");
             }
 
             if (!user.IsActive)
@@ -166,27 +156,37 @@ namespace Bhisi.Api.Controllers
                 hashToVerify = "$2a$" + hashToVerify.Substring(4);
             }
 
-            if (!BCrypt.Net.BCrypt.Verify(request.Password, hashToVerify))
+            bool isPasswordValid = false;
+            try
             {
-                if (user.Username == "admin" && (request.Password == "Shri@2026" || request.Password == "admin123" || request.Password == "admin"))
+                if (!string.IsNullOrEmpty(hashToVerify) && (hashToVerify.StartsWith("$2a$") || hashToVerify.StartsWith("$2b$") || hashToVerify.StartsWith("$2y$")))
                 {
+                    isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, hashToVerify);
+                }
+                else if (user.Username == "admin" && request.Password == "Shri@2026")
+                {
+                    // One-time safe migration for legacy seed hashes
                     user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-                    user.IsLocked = false;
-                    user.FailedLoginAttempts = 0;
                     await _context.SaveChangesAsync();
+                    isPasswordValid = true;
                 }
-                else
+            }
+            catch (Exception)
+            {
+                isPasswordValid = false;
+            }
+
+            if (!isPasswordValid)
+            {
+                user.FailedLoginAttempts++;
+                if (user.FailedLoginAttempts >= 3)
                 {
-                    user.FailedLoginAttempts++;
-                    if (user.FailedLoginAttempts >= 3)
-                    {
-                        user.IsLocked = true;
-                    }
-                    await _context.SaveChangesAsync();
-                    
-                    await LogAudit(user.UserID, "Failed - Incorrect Password");
-                    return Unauthorized("Invalid username or password.");
+                    user.IsLocked = true;
                 }
+                await _context.SaveChangesAsync();
+                
+                await LogAudit(user.UserID, "Failed - Incorrect Password");
+                return Unauthorized("Invalid username or password.");
             }
 
             // Reset failed attempts on success
@@ -258,6 +258,112 @@ namespace Bhisi.Api.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, $"लॉगिन करताना त्रुटी आली: {ex.Message}");
+            }
+        }
+
+        [HttpPost("change-password")]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto request)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.Username) || 
+                    string.IsNullOrWhiteSpace(request.CurrentPassword) || 
+                    string.IsNullOrWhiteSpace(request.NewPassword))
+                {
+                    return BadRequest("युझरनेम, चालू पासवर्ड आणि नवीन पासवर्ड आवश्यक आहेत.");
+                }
+
+                if (request.NewPassword != request.ConfirmPassword)
+                {
+                    return BadRequest("नवीन पासवर्ड आणि पुष्टीकरण पासवर्ड जुळत नाहीत.");
+                }
+
+                if (request.CurrentPassword == request.NewPassword)
+                {
+                    return BadRequest("नवीन पासवर्ड चालू पासवर्डपेक्षा वेगळा असावा.");
+                }
+
+                // Password complexity check
+                if (request.NewPassword.Length < 8 ||
+                    !request.NewPassword.Any(char.IsUpper) ||
+                    !request.NewPassword.Any(char.IsLower) ||
+                    !request.NewPassword.Any(char.IsDigit) ||
+                    !request.NewPassword.Any(c => !char.IsLetterOrDigit(c)))
+                {
+                    return BadRequest("पासवर्ड किमान ८ अक्षरांचा असावा आणि त्यात किमान १ मोठा वर्ण (A-Z), १ लहान वर्ण (a-z), १ अंक (0-9) व १ विशेष चिन्ह (@, #, $, इ.) आवश्यक आहे.");
+                }
+
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == request.Username);
+                if (user == null)
+                {
+                    return NotFound("वापरकर्ता आढळला नाही.");
+                }
+
+                if (user.IsLocked)
+                {
+                    return BadRequest("हे खाते लॉक झालेले आहे. कृपया ॲडमिनिस्ट्रेटरशी संपर्क साधा.");
+                }
+
+                if (!user.IsActive)
+                {
+                    return BadRequest("हे खाते निष्क्रिय आहे.");
+                }
+
+                string hashToVerify = user.PasswordHash;
+                if (!string.IsNullOrEmpty(hashToVerify) && hashToVerify.StartsWith("$2y$"))
+                {
+                    hashToVerify = "$2a$" + hashToVerify.Substring(4);
+                }
+
+                bool isCurrentPasswordValid = false;
+                try
+                {
+                    if (!string.IsNullOrEmpty(hashToVerify) && (hashToVerify.StartsWith("$2a$") || hashToVerify.StartsWith("$2b$") || hashToVerify.StartsWith("$2y$")))
+                    {
+                        isCurrentPasswordValid = BCrypt.Net.BCrypt.Verify(request.CurrentPassword, hashToVerify);
+                    }
+                    else if (user.Username == "admin" && request.CurrentPassword == "Shri@2026")
+                    {
+                        isCurrentPasswordValid = true;
+                    }
+                }
+                catch
+                {
+                    isCurrentPasswordValid = false;
+                }
+
+                if (!isCurrentPasswordValid)
+                {
+                    return BadRequest("चालू पासवर्ड चुकीचा आहे.");
+                }
+
+                // Update password
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+                user.RequirePasswordChange = false;
+                user.LastPasswordChangeDate = DateTime.Now;
+                user.FailedLoginAttempts = 0;
+
+                // Log into AuditLog
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    UserID = user.UserID,
+                    Username = user.Username,
+                    Action = "PASSWORD_CHANGE",
+                    EntityName = "User",
+                    EntityID = user.UserID.ToString(),
+                    Timestamp = DateTime.Now,
+                    IPAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown",
+                    Details = $"Password successfully changed by user {user.Username}",
+                    Status = "Success"
+                });
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "पासवर्ड यशस्वीरित्या बदलला आहे!" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"पासवर्ड बदलताना त्रुटी आली: {ex.Message}");
             }
         }
 

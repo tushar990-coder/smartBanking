@@ -19,6 +19,7 @@ interface AuthContextType {
   login: (userData: AuthUser) => void;
   logout: () => void;
   switchBranch: (branchID: number, branchName: string) => void;
+  markPasswordChanged: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -98,6 +99,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  const markPasswordChanged = () => {
+    setUser((prevUser) => {
+      if (!prevUser) return null;
+      const updatedUser = {
+        ...prevUser,
+        requirePasswordChange: false
+      };
+      sessionStorage.setItem('bhisi_user', JSON.stringify(updatedUser));
+      return updatedUser;
+    });
+  };
+
   useEffect(() => {
     let channel: BroadcastChannel | null = null;
     try {
@@ -149,7 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, switchBranch }}>
+    <AuthContext.Provider value={{ user, login, logout, switchBranch, markPasswordChanged }}>
       {children}
     </AuthContext.Provider>
   );

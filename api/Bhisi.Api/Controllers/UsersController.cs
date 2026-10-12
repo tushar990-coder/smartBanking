@@ -8,7 +8,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    // [Authorize(Roles = "Admin")] // Uncomment when auth is strictly enforced across the app
+    [Authorize(Roles = "Admin,HO_Manager,HO Manager")]
     public class UsersController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -75,6 +75,9 @@ namespace Bhisi.Api.Controllers
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
 
+            LogUserAudit("USER_CREATE", user.UserID, user.Username, $"Created user '{user.Username}' (RoleID={user.RoleID}, BranchID={user.DefaultBranchID})");
+            await _context.SaveChangesAsync();
+
             // Load navigation properties for response
             await _context.Entry(user).Reference(u => u.Role).LoadAsync();
             await _context.Entry(user).Reference(u => u.DefaultBranch).LoadAsync();
@@ -121,6 +124,8 @@ namespace Bhisi.Api.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                LogUserAudit("USER_UPDATE", user.UserID, user.Username, $"Updated user '{user.Username}' (RoleID={user.RoleID}, BranchID={user.DefaultBranchID}, Active={user.IsActive})");
+                await _context.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -153,6 +158,8 @@ namespace Bhisi.Api.Controllers
             user.FailedLoginAttempts = 0;
 
             await _context.SaveChangesAsync();
+            LogUserAudit("USER_RESET_PASSWORD", user.UserID, user.Username, $"Password reset to 'Welcome@123' for user '{user.Username}'");
+            await _context.SaveChangesAsync();
 
             return Ok(new { message = "Password has been reset to 'Welcome@123'." });
         }
@@ -176,8 +183,33 @@ namespace Bhisi.Api.Controllers
             }
 
             await _context.SaveChangesAsync();
+            LogUserAudit("USER_TOGGLE_LOCK", user.UserID, user.Username, $"User '{user.Username}' account {(user.IsLocked ? "Locked" : "Unlocked")}");
+            await _context.SaveChangesAsync();
 
             return Ok(new { isLocked = user.IsLocked, message = user.IsLocked ? "Account locked." : "Account unlocked." });
+        }
+
+        private void LogUserAudit(string action, int targetUserId, string targetUsername, string details)
+        {
+            try
+            {
+                var adminUser = User.Identity?.Name 
+                                ?? User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value 
+                                ?? "Admin";
+
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    Username = adminUser,
+                    Action = action,
+                    EntityName = "User",
+                    EntityID = targetUserId.ToString(),
+                    Timestamp = DateTime.Now,
+                    IPAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown",
+                    Details = details,
+                    Status = "Success"
+                });
+            }
+            catch { }
         }
 
         private bool UserExists(int id)

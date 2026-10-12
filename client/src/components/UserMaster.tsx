@@ -58,16 +58,35 @@ export default function UserMaster() {
     fetchBranches();
   }, []);
 
+  const getAuthHeaders = (): HeadersInit => {
+    try {
+      const saved = sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user');
+      if (saved) {
+        const u = JSON.parse(saved);
+        if (u?.token) {
+          return {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${u.token}`
+          };
+        }
+      }
+    } catch {}
+    return { 'Content-Type': 'application/json' };
+  };
+
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/Users');
+      const res = await fetch('/api/Users', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setUsers(Array.isArray(data) ? data : []);
+      } else if (res.status === 401 || res.status === 403) {
+        setError('तुम्हाला युजर व्यवस्थापन पाहण्याचा अधिकार नाही (Unauthorized / Access Denied).');
       }
     } catch (err) {
       console.error("Failed to fetch users", err);
+      setError("सर्व्हरशी संपर्क साधताना त्रुटी आली.");
     } finally {
       setLoading(false);
     }
@@ -75,7 +94,7 @@ export default function UserMaster() {
 
   const fetchRoles = async () => {
     try {
-      const res = await fetch('/api/Users/Roles');
+      const res = await fetch('/api/Users/Roles', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setRoles(Array.isArray(data) ? data : []);
@@ -87,7 +106,7 @@ export default function UserMaster() {
 
   const fetchBranches = async () => {
     try {
-      const res = await fetch('/api/Branches');
+      const res = await fetch('/api/Branches', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setBranches(Array.isArray(data) ? data : []);
@@ -168,7 +187,7 @@ export default function UserMaster() {
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload)
       });
 
@@ -209,10 +228,15 @@ export default function UserMaster() {
     }
     
     try {
-      const res = await fetch(`/api/Users/${id}/reset-password`, { method: 'POST' });
+      const res = await fetch(`/api/Users/${id}/reset-password`, { 
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
       if (res.ok) {
         alert("पासवर्ड रिसेट यशस्वी झाला! नवीन पासवर्ड: Welcome@123");
         fetchUsers();
+      } else if (res.status === 401 || res.status === 403) {
+        alert("तुम्हाला पासवर्ड रिसेट करण्याचा अधिकार नाही (Permission Denied).");
       } else {
         alert("पासवर्ड रिसेट करताना त्रुटी आली.");
       }
@@ -228,10 +252,15 @@ export default function UserMaster() {
     }
 
     try {
-      const res = await fetch(`/api/Users/${id}/toggle-lock`, { method: 'POST' });
+      const res = await fetch(`/api/Users/${id}/toggle-lock`, { 
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
       if (res.ok) {
         alert(`अकाउंट यशस्वीरित्या ${currentStatus ? 'अनलॉक' : 'लॉक'} केले!`);
         fetchUsers();
+      } else if (res.status === 401 || res.status === 403) {
+        alert("तुम्हाला हे ऑपरेशन करण्याचा अधिकार नाही (Permission Denied).");
       } else {
         alert(`अकाउंट ${action} करताना त्रुटी आली.`);
       }

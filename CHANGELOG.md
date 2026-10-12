@@ -2,6 +2,24 @@
 
 ---
 
+## 📅 [2026-10-12] - आवृत्ती v2.5.43 (User Management & Security Master Hardening, Backdoor Elimination, Self-Service & Mandatory First-Login Password Change, Admin Audit Logging & Role Authorization Enforced v2.5.43)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुरक्षा सुधारणा (Key Highlights)
+* **ॲडमिन बॅकडोअर व हार्डकोडेड बायपास पूर्णतः बंद (Admin Backdoor & Hardcoded Bypass Elimination):**
+  * `AuthController.cs` मधील `"admin123"`, `"admin"` सारखे अनधिकृत पासवर्ड्स व आपोआप खाते अनलॉक होणे पूर्णतः काढून टाकले.
+  * केवळ `BCrypt.Net` सुरक्षित हॅश पडताळणी सक्तीची; सलग ३ चुकीच्या प्रयत्नांनंतर खाते कडकपणे लॉक होणे.
+* **UsersController वर रोल-आधारित ऑथोरायझेशन ([Authorize(Roles = 'Admin,HO_Manager,HO Manager')]):**
+  * विना-टोकन किंवा सामान्य कर्मचाऱ्यांद्वारे युजर व्यवस्थापन, पासवर्ड रिसेट व खाते अनलॉकिंगची छेडछाड पूर्णतः ब्लॉक.
+  * क्लायंट `UserMaster.tsx` मधील सर्व विनंत्यांमध्ये Bearer Token पडताळणी व अनधिकृत विनंत्यांवर स्पष्ट मराठी संदेश.
+* **कर्मचाऱ्यांसाठी स्वयं-सेवा व पहिल्या लॉगिनवेळी अनिवार्य पासवर्ड बदल (Self-Service & Mandatory Password Change Modal):**
+  * प्रत्येक कर्मचाऱ्याला टॉप हेडरमधील 'पासवर्ड बदला' बटणावरून स्वतःचा पासवर्ड बदलण्याची सुविधा.
+  * नवीन युजर किंवा पासवर्ड रिसेट झालेल्या खात्यांसाठी पहिल्या लॉगिनला अनिवार्य पासवर्ड बदलल्याशिवाय डॅशबोर्ड ब्लॉक राहण्याची सुरक्षा तरतूद.
+  * पासवर्ड काठिण्य निकष: किमान ८ अक्षरे, किमान १ मोठा वर्ण (A-Z), १ लहान वर्ण (a-z), १ अंक (0-9) व १ विशेष चिन्ह (@, #, $, इ.).
+* **प्रशासकीय कृतींचे ऑडिट लॉगिंग (Admin Action Audit Trail):**
+  * युजर तयार करणे, अद्ययावत करणे, पासवर्ड रिसेट करणे व खाते लॉक/अनलॉक करणे या प्रत्येक हालचालीची `AuditLogs` मध्ये प्रशासकाचे युझरनेम, IP व वेळेसह नोंद.
+
+---
+
 ## 📅 [2026-10-12] - आवृत्ती v2.5.42 (Loan Opening Balance Manual Interest Entry & Edit Fix, Premium Modern Sidebar Scrollbar & Codebase TypeScript Type Strictness v2.5.42)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

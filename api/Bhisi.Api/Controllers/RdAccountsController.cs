@@ -200,7 +200,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/RdAccounts
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetRdAccounts([FromQuery] int? branchId, [FromQuery] int? customerId = null, [FromQuery] int? memberId = null)
+        public async Task<ActionResult<IEnumerable<object>>> GetRdAccounts([FromQuery] int? branchId, [FromQuery] int? customerId = null, [FromQuery] int? memberId = null, [FromQuery] int? schemeId = null)
         {
             var query = _context.RdAccounts
                 .Include(r => r.Customer)
@@ -212,6 +212,10 @@ namespace Bhisi.Api.Controllers
             if (branchId.HasValue)
             {
                 query = query.Where(r => r.BranchID == branchId.Value);
+            }
+            if (schemeId.HasValue && schemeId.Value > 0)
+            {
+                query = query.Where(r => r.RdSchemeID == schemeId.Value);
             }
             if (customerId.HasValue && customerId.Value > 0)
             {

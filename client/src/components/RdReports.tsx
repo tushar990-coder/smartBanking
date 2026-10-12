@@ -65,6 +65,8 @@ export default function RdReports() {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [branches, setBranches] = useState<any[]>([]);
+  const [schemes, setSchemes] = useState<any[]>([]);
+  const [selectedSchemeId, setSelectedSchemeId] = useState<string>('all');
 
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
@@ -80,12 +82,22 @@ export default function RdReports() {
   useEffect(() => {
     fetchSansthaDetail();
     fetchBranches();
-    fetchReportData(initialBranchId);
+    fetchSchemes();
+    fetchReportData(initialBranchId, 'all');
   }, []);
 
   useEffect(() => {
-    fetchReportData(selectedBranchId);
-  }, [reportType, fromDate, toDate, selectedBranchId]);
+    fetchReportData(selectedBranchId, selectedSchemeId);
+  }, [reportType, fromDate, toDate, selectedBranchId, selectedSchemeId]);
+
+  const fetchSchemes = async () => {
+    try {
+      const res = await axios.get('/api/RdSchemes');
+      setSchemes(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Error fetching RD schemes', err);
+    }
+  };
 
   const fetchBranches = async () => {
     try {
@@ -109,16 +121,33 @@ export default function RdReports() {
     }
   };
 
-  const fetchReportData = async (bId?: string) => {
+  const fetchReportData = async (bId?: string, sId?: string) => {
     setLoading(true);
     try {
       const activeBranch = bId !== undefined ? bId : selectedBranchId;
+      const activeScheme = sId !== undefined ? sId : selectedSchemeId;
       let url = '/api/RdAccounts';
+      const queryParams = new URLSearchParams();
       if (activeBranch && activeBranch !== 'all') {
-        url += `?branchId=${activeBranch}`;
+        queryParams.append('branchId', activeBranch);
+      }
+      if (activeScheme && activeScheme !== 'all') {
+        queryParams.append('schemeId', activeScheme);
+      }
+      const qs = queryParams.toString();
+      if (qs) {
+        url += `?${qs}`;
       }
       const res = await axios.get(url);
       let data: ReportRow[] = res.data || [];
+
+      // Filter by scheme in memory for robustness
+      if (activeScheme && activeScheme !== 'all') {
+        data = data.filter((r: any) => {
+          const rScheme = (r.rdSchemeID ?? r.rdSchemeId)?.toString();
+          return rScheme === activeScheme.toString();
+        });
+      }
 
       if (reportType === 'register') {
         data = data.filter((r) => {
@@ -168,16 +197,29 @@ export default function RdReports() {
     return b ? b.branchName : 'मुख्य शाखा';
   };
 
+  const getSelectedSchemeName = () => {
+    if (!selectedSchemeId || selectedSchemeId === 'all') return 'सर्व योजना (All Schemes)';
+    const s = schemes.find((item: any) => item.rdSchemeID?.toString() === selectedSchemeId.toString());
+    return s ? `${s.schemeName} (${s.schemeCode})` : 'विशिष्ट योजना';
+  };
+
   const handlePrint = () => {
     window.print();
   };
 
   const filteredAccounts = accounts.filter((a) => {
+    if (selectedSchemeId && selectedSchemeId !== 'all') {
+      const sId = (a as any).rdSchemeID ?? (a as any).rdSchemeId;
+      if (sId && sId.toString() !== selectedSchemeId.toString()) {
+        return false;
+      }
+    }
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase().trim();
     return (
       (a.accountNo && a.accountNo.toLowerCase().includes(term)) ||
       (a.memberName && a.memberName.toLowerCase().includes(term)) ||
+      (a.schemeName && a.schemeName.toLowerCase().includes(term)) ||
       (a.memberCode && a.memberCode.toLowerCase().includes(term))
     );
   });
@@ -203,6 +245,7 @@ export default function RdReports() {
       'खाते क्र.': a.accountNo,
       'ग्राहक CIF / कोड': (a as any).cifNo || a.memberCode || '-',
       'खातेदाराचे नाव': a.memberName,
+      'योजनेचे नाव': a.schemeName || '-',
       'चालू दिनांक': formatDisplayDate(a.openingDate),
       'मासिक हप्ता (₹)': a.installmentAmount || 0,
       'कालावधी (महिने)': a.durationMonths,
@@ -219,6 +262,7 @@ export default function RdReports() {
       'खाते क्र.': '',
       'ग्राहक CIF / कोड': '',
       'खातेदाराचे नाव': 'एकूण बेरीज (Grand Total):',
+      'योजनेचे नाव': '',
       'चालू दिनांक': '',
       'मासिक हप्ता (₹)': 0,
       'कालावधी (महिने)': 0,
@@ -233,7 +277,8 @@ export default function RdReports() {
     const ws = XLSX.utils.json_to_sheet(excelRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'RD Report');
-    XLSX.writeFile(wb, `RD_Report_${reportType}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    const schemeSuffix = selectedSchemeId !== 'all' ? `_Scheme_${selectedSchemeId}` : '_AllSchemes';
+    XLSX.writeFile(wb, `RD_Report_${reportType}${schemeSuffix}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
@@ -312,7 +357,7 @@ export default function RdReports() {
                 value={selectedBranchId}
                 disabled={hasGlobalBranch}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32"
+                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-26 sm:w-30"
               >
                 <option value="all">सर्व शाखा (All)</option>
                 {branches.map((b: any) => (
@@ -323,8 +368,25 @@ export default function RdReports() {
               </select>
             </div>
 
+            {/* Scheme Filter */}
+            <div className="flex items-center gap-1">
+              <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">योजना:</label>
+              <select
+                value={selectedSchemeId}
+                onChange={(e) => setSelectedSchemeId(e.target.value)}
+                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-36 text-gray-800"
+              >
+                <option value="all">सर्व योजना (All Schemes)</option>
+                {schemes.map((s: any) => (
+                  <option key={s.rdSchemeID} value={s.rdSchemeID.toString()}>
+                    {s.schemeName} ({s.schemeCode})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Report Type */}
-            <div className="w-48 sm:w-56">
+            <div className="w-44 sm:w-50">
               <select
                 value={reportType}
                 onChange={(e) => setReportType(e.target.value)}
@@ -458,11 +520,14 @@ export default function RdReports() {
           </div>
 
           {/* Report Title Banner Section */}
-          <div className="mt-3 mb-2 flex items-center justify-between">
-            <div className="w-28 hidden sm:block"></div>
+          <div className="mt-3 mb-2 flex flex-wrap items-center justify-between gap-1 border-b border-gray-300 pb-2">
+            <div className="text-left text-xs font-bold text-gray-800">
+              <span>योजना : </span>
+              <span className="text-primary font-bold">{getSelectedSchemeName()}</span>
+            </div>
 
             {/* Title Banner Box */}
-            <div className="mx-auto inline-block border border-gray-400 bg-gray-50/80 px-8 py-1 rounded-xs shadow-2xs text-center">
+            <div className="inline-block border border-gray-400 bg-gray-50/80 px-6 py-1 rounded-xs shadow-2xs text-center">
               <h2 className="text-sm sm:text-base font-extrabold text-gray-950 tracking-wider uppercase font-serif">
                 {getReportTitle()}
               </h2>
@@ -510,7 +575,14 @@ export default function RdReports() {
                     <tr key={a.accountNo || idx} className="hover:bg-slate-50 text-gray-900 text-[11px]">
                       <td className="border border-gray-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
                       <td className="border border-gray-900 py-1 px-2 text-center font-mono font-bold text-gray-900">{a.accountNo}</td>
-                      <td className="border border-gray-900 py-1 px-3 font-medium">{a.memberName}</td>
+                      <td className="border border-gray-900 py-1 px-3 font-medium">
+                        <div className="text-gray-900 font-semibold">{a.memberName}</div>
+                        {selectedSchemeId === 'all' && a.schemeName && (
+                          <div className="text-[9.5px] font-sans text-indigo-700 font-medium tracking-tight">
+                            योजना: {a.schemeName}
+                          </div>
+                        )}
+                      </td>
                       <td className="border border-gray-900 py-1 px-2 text-center font-mono">{formatDisplayDate(a.openingDate)}</td>
                       <td className="border border-gray-900 py-1 px-2 text-right font-mono">{fmtCurrency(a.installmentAmount)}</td>
                       <td className="border border-gray-900 py-1 px-1 text-center font-mono">{a.interestRate}%</td>

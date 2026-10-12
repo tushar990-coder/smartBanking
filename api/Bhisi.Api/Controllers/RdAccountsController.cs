@@ -262,10 +262,10 @@ namespace Bhisi.Api.Controllers
                     MemberID = r.Customer != null && r.Customer.MemberProfile != null ? (int?)r.Customer.MemberProfile.MemberID : null,
                     CIFNo = r.Customer != null ? r.Customer.CIFNo : "",
                     CustomerName = r.Customer != null 
-                        ? (r.Customer.FirstName + " " + r.Customer.LastName).Trim() 
+                        ? $"{r.Customer.FirstName} {r.Customer.MiddleName} {r.Customer.LastName}".Replace("  ", " ").Trim() 
                         : "",
                     MemberName = r.Customer != null 
-                        ? (r.Customer.FirstName + " " + r.Customer.LastName).Trim() 
+                        ? $"{r.Customer.FirstName} {r.Customer.MiddleName} {r.Customer.LastName}".Replace("  ", " ").Trim() 
                         : "",
                     MemberCode = r.Customer != null && r.Customer.MemberProfile != null ? r.Customer.MemberProfile.MemberCode : "",
                     r.RdSchemeID,
@@ -341,9 +341,9 @@ namespace Bhisi.Api.Controllers
                     BranchName = r.Branch != null ? r.Branch.BranchName : "",
                     r.CustomerID,
                     CIFNo = r.Customer != null ? r.Customer.CIFNo : "",
-                    CustomerName = r.Customer != null ? (r.Customer.FirstName + " " + r.Customer.LastName).Trim() : "",
+                    CustomerName = r.Customer != null ? $"{r.Customer.FirstName} {r.Customer.MiddleName} {r.Customer.LastName}".Replace("  ", " ").Trim() : "",
                     MemberID = r.Customer != null && r.Customer.MemberProfile != null ? (int?)r.Customer.MemberProfile.MemberID : null,
-                    MemberName = r.Customer != null ? (r.Customer.FirstName + " " + r.Customer.LastName).Trim() : "",
+                    MemberName = r.Customer != null ? $"{r.Customer.FirstName} {r.Customer.MiddleName} {r.Customer.LastName}".Replace("  ", " ").Trim() : "",
                     MemberCode = r.Customer != null && r.Customer.MemberProfile != null ? r.Customer.MemberProfile.MemberCode : "",
                     r.RdSchemeID,
                     SchemeName = r.RdScheme != null ? r.RdScheme.SchemeName : "",
@@ -1957,7 +1957,7 @@ namespace Bhisi.Api.Controllers
                     account.BranchID,
                     BranchName = account.Branch?.BranchName ?? "",
                     account.CustomerID,
-                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CustomerName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.MiddleName} {account.Customer.LastName}".Replace("  ", " ").Trim() : "",
                     CIFNo = account.Customer?.CIFNo ?? "",
                     account.RdSchemeID,
                     SchemeName = account.RdScheme?.SchemeName ?? "",
@@ -2075,7 +2075,7 @@ namespace Bhisi.Api.Controllers
                     account.BranchID,
                     BranchName = account.Branch?.BranchName ?? "",
                     account.CustomerID,
-                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CustomerName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.MiddleName} {account.Customer.LastName}".Replace("  ", " ").Trim() : "",
                     CIFNo = account.Customer?.CIFNo ?? "",
                     account.RdSchemeID,
                     SchemeName = account.RdScheme?.SchemeName ?? "",
@@ -2186,7 +2186,7 @@ namespace Bhisi.Api.Controllers
                     account.BranchID,
                     BranchName = account.Branch?.BranchName ?? "",
                     account.CustomerID,
-                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CustomerName = account.Customer != null ? $"{account.Customer.FirstName} {account.Customer.MiddleName} {account.Customer.LastName}".Replace("  ", " ").Trim() : "",
                     CIFNo = account.Customer?.CIFNo ?? "",
                     account.RdSchemeID,
                     SchemeName = account.RdScheme?.SchemeName ?? "",

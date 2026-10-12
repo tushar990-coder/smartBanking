@@ -529,7 +529,7 @@ export default function RdOpeningBalanceMigration() {
       'खाते क्र.': acc.accountNo,
       'जुना खाते क्र.': acc.legacyAccountNumber || '-',
       'ग्राहक CIF': acc.cifNo || acc.customer?.cifNo || (acc.customerID ? `CUST-${acc.customerID}` : (acc.member?.memberCode || '-')),
-      'खातेदाराचे नाव': acc.customerName || (acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : (acc.member ? `${acc.member.firstName} ${acc.member.lastName}` : '-')),
+      'खातेदाराचे नाव': acc.customerName || (acc.customer ? [acc.customer.firstName, acc.customer.middleName, acc.customer.lastName].filter(Boolean).join(' ') : (acc.member ? [acc.member.firstName, acc.member.middleName, acc.member.lastName].filter(Boolean).join(' ') : '-')),
       'योजनेचे नाव': acc.rdScheme?.schemeName || '-',
       'हप्ता रक्कम (₹)': acc.installmentAmount || 0,
       'जमा हप्ते संख्या': acc.totalPaidInstallments || 0,
@@ -550,7 +550,7 @@ export default function RdOpeningBalanceMigration() {
   const filteredAccounts = migratedAccounts.filter((acc) => {
     if (!searchTerm.trim()) return true;
     const term = searchTerm.toLowerCase();
-    const custName = (acc.customerName || (acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : (acc.member ? `${acc.member.firstName} ${acc.member.lastName}` : ''))).toLowerCase();
+    const custName = (acc.customerName || (acc.customer ? [acc.customer.firstName, acc.customer.middleName, acc.customer.lastName].filter(Boolean).join(' ') : (acc.member ? [acc.member.firstName, acc.member.middleName, acc.member.lastName].filter(Boolean).join(' ') : ''))).toLowerCase();
     const cif = (acc.cifNo || acc.customer?.cifNo || (acc.customerID ? `cust-${acc.customerID}` : '') || (acc.member?.memberCode ? acc.member.memberCode : '')).toLowerCase();
     const accNo = acc.accountNo ? acc.accountNo.toLowerCase() : '';
     const legNo = acc.legacyAccountNumber ? acc.legacyAccountNumber.toLowerCase() : '';
@@ -1205,7 +1205,7 @@ export default function RdOpeningBalanceMigration() {
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left">
                           <div className="font-bold text-gray-900">
-                            {acc.customerName || (acc.customer ? `${acc.customer.firstName} ${acc.customer.lastName}` : (acc.member ? `${acc.member.firstName} ${acc.member.lastName}` : '-'))}
+                            {acc.customerName || (acc.customer ? [acc.customer.firstName, acc.customer.middleName, acc.customer.lastName].filter(Boolean).join(' ') : (acc.member ? [acc.member.firstName, acc.member.middleName, acc.member.lastName].filter(Boolean).join(' ') : '-'))}
                           </div>
                           <div className="text-[10px] text-gray-500 font-mono">
                             CIF: {acc.cifNo || acc.customer?.cifNo || (acc.customerID ? `CUST-${acc.customerID}` : (acc.member?.memberCode || '-'))}

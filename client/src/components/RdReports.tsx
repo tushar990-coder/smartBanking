@@ -135,6 +135,25 @@ export default function RdReports() {
         data = data.filter((r) => r.status === 'Closed');
       }
 
+      // Sort accounts in sequence by Account Number
+      data.sort((a, b) => {
+        const getSeq = (accNo?: string) => {
+          if (!accNo) return 0;
+          const parts = accNo.split('-');
+          if (parts.length >= 3) {
+            const seq = parseInt(parts[2], 10);
+            if (!isNaN(seq)) return seq;
+          }
+          return 0;
+        };
+        const seqA = getSeq(a.accountNo);
+        const seqB = getSeq(b.accountNo);
+        if (seqA > 0 && seqB > 0 && seqA !== seqB) {
+          return seqA - seqB;
+        }
+        return (a.accountNo || '').localeCompare(b.accountNo || '', undefined, { numeric: true });
+      });
+
       setAccounts(data);
     } catch (err) {
       console.error('Failed to fetch RD data', err);
@@ -342,7 +361,7 @@ export default function RdReports() {
 
             {/* View Button */}
             <button
-              onClick={fetchReportData}
+              onClick={() => fetchReportData()}
               disabled={loading}
               className="h-6 bg-primary hover:opacity-90 text-white px-2.5 rounded-sm text-[11px] font-bold shadow-2xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
             >

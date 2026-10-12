@@ -773,7 +773,7 @@ export default function LoanOpeningBalanceMaster() {
     }
   }, [formData.firstInstallmentDate, formData.durationMonths, formData.installmentFrequency, formData.noOfInstallments]);
 
-  const calculateAccurateInterest = (forceRecalc = false) => {
+  const calculateAccurateInterest = (forceRecalc = true) => {
     if (isInterestManuallyEdited && !forceRecalc) {
       return;
     }
@@ -838,9 +838,7 @@ export default function LoanOpeningBalanceMaster() {
 
     const totalInterest = Math.max(0, Math.round(scheduledInterest + postMaturityInterest));
 
-    if (forceRecalc) {
-      setIsInterestManuallyEdited(false);
-    }
+    setIsInterestManuallyEdited(true);
 
     setFormData(prev => {
       const updates: any = { interestBalance: totalInterest.toString() };
@@ -851,19 +849,8 @@ export default function LoanOpeningBalanceMaster() {
     });
   };
 
-  useEffect(() => {
-    calculateAccurateInterest(false);
-  }, [
-    formData.openingDate, 
-    formData.maturityDate, 
-    formData.lastInstallmentPaidDate, 
-    formData.loanDisbursementDate, 
-    formData.principalBalance, 
-    formData.interestRate, 
-    formData.sanctionedAmount, 
-    formData.disbursedAmount,
-    installmentChart
-  ]);
+  // NOTE: Automatic calculateAccurateInterest useEffect is intentionally removed
+  // to allow 100% manual entry without background calculation overwriting saved values.
 
   const calculateEMI = async () => {
     const calcBasePrincipal = (parseFloat(formData.disbursedAmount) > 0 ? parseFloat(formData.disbursedAmount) : parseFloat(formData.sanctionedAmount)) || 0;
@@ -1182,6 +1169,7 @@ export default function LoanOpeningBalanceMaster() {
 
   const handleEdit = async (balance: any) => {
     setIsInstAmountEdited(false);
+    setIsInterestManuallyEdited(true);
     const custId = balance.customerID || balance.customer?.customerID;
     setFormData({
       loanOpeningBalanceID: balance.loanOpeningBalanceID || balance.loanAccountID,
@@ -1193,7 +1181,7 @@ export default function LoanOpeningBalanceMaster() {
       purePrincipalBalance: (balance.purePrincipalBalance ?? balance.principalBalance ?? '').toString(),
       capitalizedInterestAmount: (balance.capitalizedInterestAmount ?? 0).toString(),
       principalBalance: balance.principalBalance.toString(),
-      interestBalance: balance.interestBalance.toString(),
+      interestBalance: (balance.interestBalance ?? 0).toString(),
       overdueInterestBalance: (balance.overdueInterestBalance || 0).toString(),
       interestProvisionBalance: (balance.interestProvisionBalance ?? 0).toString(),
       initialNpaClassification: balance.initialNpaClassification || 'Standard',

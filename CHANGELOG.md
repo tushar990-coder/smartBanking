@@ -2,6 +2,22 @@
 
 ---
 
+## 📅 [2026-10-12] - आवृत्ती v2.5.42 (Loan Opening Balance Manual Interest Entry & Edit Fix, Premium Modern Sidebar Scrollbar & Codebase TypeScript Type Strictness v2.5.42)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **कर्ज आरंभिक शिल्लक - चालू येणे व्याज मॅन्युअल नोंदणी व संपादन (Loan Opening Balance Manual Interest Entry & Edit Fix):**
+  * चालू येणे व्याज बाकी (Interest) चे स्वयंचलित बॅकग्राउंड ओव्हरराईट (`useEffect`) पूर्णपणे काढून १००% मॅन्युअल संपादन सुविधा.
+  * आधी सेव्ह केलेली नोंद एडिट करताना मूळ व्याज सुरक्षित राहणे व इच्छेनुसार बदल करून डेटाबेस व मुख्य खतावणीत (GL) अचूक जतन होणे.
+  * ऑटो-कॅल्क्युलेशन केवळ आणि केवळ '⚡ स्वयं गणना' बटनावर क्लिक केल्यासच ऐच्छिकरीत्या उपलब्ध.
+* **अल्ट्रा-स्लीक मॉडर्न साईडबार स्क्रोलबार (Premium Ultra-Sleek Modern Sidebar Scrollbar & Theme Accents):**
+  * ५px स्लिम गोलाकार पिल डिझाईन, पारदर्शक ट्रॅक आणि हॉव्हरवर एमराल्ड-टील ग्रेडियंट ग्लो इफेक्ट.
+  * क्रॉस-ब्राउझर सुसंगतता (Chrome, Edge, Safari, Firefox).
+* **TypeScript प्रकार शुद्धीकरण व कोडबेस स्थिरीकरण (TypeScript Type Strictness & Zero-Error Codebase):**
+  * `AgentDayBookMaster.tsx`, `PigmyClosureMaster.tsx`, `PigmyCollectionMaster.tsx`, `FdWithdrawalMaturity.tsx`, `RdInstallmentCollection.tsx`, `SavingTransactionEntry.tsx`, `ShareWithdrawal.tsx`, `LoanCollectionMaster.tsx` मधील सर्व प्रकारच्या टाइप मिसमॅच, मिसिंग इंपोर्ट्स व एरर्सचे संपूर्ण निराकरण.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (VPS Multi-App Master Patch v2.5.42).**
+
+---
+
 ## 📅 [2026-10-11] - आवृत्ती v2.5.38 (Swanidhi Rule 35, Voucher Passing Form View Checker, Agent Day Book 3-Date Remittance & VPS Multi-App Master Patch)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

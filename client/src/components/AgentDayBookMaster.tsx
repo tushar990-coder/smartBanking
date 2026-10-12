@@ -96,7 +96,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
           setDepositAmount(data.deposit.amount);
           setPaymentMode(data.deposit.paymentMode || 'CASH');
           if (data.deposit.depositDate) {
-            setSelectedDate(data.deposit.depositDate.split('T')[0]);
+            setDepositDate(data.deposit.depositDate.split('T')[0]);
           }
           setNarration(data.deposit.narration || '');
         }

@@ -75,19 +75,89 @@ input[type=number] {
   appearance: textfield;
 }
 
-/* Custom Scrollbar for Dark Sidebar */
-.custom-scrollbar::-webkit-scrollbar {
+/* ========================================================================= */
+/* PREMIUM ULTRA-SLEEK SCROLLBAR FOR SIDEBAR & NAVIGATION (छान स्क्रोलबार)    */
+/* ========================================================================= */
+
+/* Firefox standard support */
+.custom-scrollbar,
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16, 185, 129, 0.4) transparent;
+  scroll-behavior: smooth;
+}
+
+/* WebKit (Chrome, Edge, Safari, Opera) */
+.custom-scrollbar::-webkit-scrollbar,
+.sidebar-scrollbar::-webkit-scrollbar {
   width: 5px;
+  height: 5px;
 }
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: #0a1120;
+
+.custom-scrollbar::-webkit-scrollbar-track,
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 6px 0;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
 }
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 4px;
+
+.custom-scrollbar:hover::-webkit-scrollbar-track,
+.sidebar-scrollbar:hover::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
 }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #005689;
+
+.custom-scrollbar::-webkit-scrollbar-thumb,
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35); /* Subtle smooth pill by default */
+  border-radius: 9999px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Glowing Emerald & Teal on Sidebar Hover */
+.custom-scrollbar:hover::-webkit-scrollbar-thumb,
+.sidebar-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.75) 0%, rgba(13, 148, 136, 0.85) 100%);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+}
+
+/* Interactive Feedback on Active / Direct Hover */
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #10b981 0%, #0d9488 100%);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.7);
+  cursor: grab;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:active,
+.sidebar-scrollbar::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, #059669 0%, #0f766e 100%);
+  cursor: grabbing;
+}
+
+.custom-scrollbar::-webkit-scrollbar-corner,
+.sidebar-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Modern slim scrollbar for table containers, modals and lists */
+.slim-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+.slim-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.slim-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.slim-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+.slim-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
 }
 
 /* Global Print Unlocking Rules for Multi-Page Pagination */

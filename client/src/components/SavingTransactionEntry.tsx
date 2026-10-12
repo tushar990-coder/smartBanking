@@ -326,8 +326,8 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             const bridgeData = JSON.parse(rawBridge);
             if (bridgeData) {
               cifStr = bridgeData.cifNo || bridgeData.cif;
-              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : undefined;
-              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : undefined;
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
+              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : null;
               typeStr = bridgeData.type || typeStr;
               customerNameStr = bridgeData.customerName || customerNameStr;
             }

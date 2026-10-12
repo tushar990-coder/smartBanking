@@ -121,7 +121,7 @@ export default function Sidebar({
       </div>
 
       {/* Scrollable Navigation Items */}
-      <div className="flex-1 overflow-y-auto py-1 px-1.5 space-y-0.5 custom-scrollbar relative z-10">
+      <div className="flex-1 overflow-y-auto py-1 px-1.5 space-y-0.5 custom-scrollbar sidebar-scrollbar relative z-10">
 
         {/* ========================================================================= */}
         {/* GROUP 1: MAIN DASHBOARD                                                   */}

@@ -579,8 +579,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
             const bridgeData = JSON.parse(rawBridge);
             if (bridgeData) {
               cifStr = bridgeData.cifNo || bridgeData.cif;
-              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : undefined;
-              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : undefined;
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
+              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : null;
               customerNameStr = bridgeData.customerName || customerNameStr;
             }
           }

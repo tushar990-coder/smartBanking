@@ -306,8 +306,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
             const bridgeData = JSON.parse(rawBridge);
             if (bridgeData) {
               cifStr = bridgeData.cifNo || bridgeData.cif;
-              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : undefined;
-              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : undefined;
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
+              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : null;
               customerNameStr = bridgeData.customerName || customerNameStr;
             }
           }
@@ -563,7 +563,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     };
 
     const wb = XLSX.utils.book_new();
-    wb.Workbook = { WBProps: { fullCalcOnLoad: true } };
+    wb.Workbook = { WBProps: { fullCalcOnLoad: true } as any };
     XLSX.utils.book_append_sheet(wb, ws, 'Daily_Collection');
     XLSX.writeFile(wb, `Pigmy_Daily_${agentName.replace(/\s+/g, '_')}_${collectionDate}.xlsx`);
     toast.success('दैनिक कलेक्शन टेम्पलेट यशस्वीरीत्या डाउनलोड झाले!');
@@ -789,7 +789,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     };
 
     const wb = XLSX.utils.book_new();
-    wb.Workbook = { WBProps: { fullCalcOnLoad: true } };
+    wb.Workbook = { WBProps: { fullCalcOnLoad: true } as any };
     XLSX.utils.book_append_sheet(wb, ws, 'मासिक_कलेक्शन_चार्ट');
     XLSX.writeFile(wb, `डेली_पिग्मि_कलेक्शन_चार्ट_${agentName.replace(/\s+/g, '_')}_${selectedMonth}.xlsx`);
     toast.success('मासिक कलेक्शन चार्ट टेम्पलेट यशस्वीरीत्या डाउनलोड झाले!');

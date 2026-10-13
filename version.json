@@ -3,8 +3,8 @@
   "releaseDate": "2026-10-13",
   "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.45",
   "git": {
-    "commit": "HEAD",
-    "fullCommit": "HEAD",
+    "commit": "e187aee",
+    "fullCommit": "e187aee94d6c41b8c8d8b6daaa345479cb976192",
     "branch": "main",
     "commitDate": "2026-10-13 16:35:00 +0530",
     "commitMessage": "fix(fd-reports): restore marathi font in fd member ledger narration and auto-heal corrupted vouchers v2.5.45",

@@ -5703,6 +5703,173 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- 7.0 MULTI-BRANCH ISOLATION, CROSS-BRANCH LOAN RECOVERY & CASH DRAWER ALIGNMENT (v2.5.44)
+-- -----------------------------------------------------------------------------------------
+
+-- 7.1 LoanApplications BranchID
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanApplications')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanApplications]') AND name = 'BranchID')
+    BEGIN
+        ALTER TABLE [LoanApplications] ADD [BranchID] int NOT NULL CONSTRAINT DF_LoanApplications_BranchID DEFAULT 1;
+        PRINT '  -> Added BranchID to LoanApplications';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanApplications_BranchID' AND object_id = OBJECT_ID(N'[LoanApplications]'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_LoanApplications_BranchID] ON [LoanApplications] ([BranchID]);
+        PRINT '  -> Created Index IX_LoanApplications_BranchID';
+    END
+END
+GO
+
+-- 7.2 LoanCollections BranchID, HomeBranchID, IsCrossBranch
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollections')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanCollections]') AND name = 'BranchID')
+    BEGIN
+        ALTER TABLE [LoanCollections] ADD [BranchID] int NOT NULL CONSTRAINT DF_LoanCollections_BranchID DEFAULT 1;
+        PRINT '  -> Added BranchID to LoanCollections';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanCollections]') AND name = 'HomeBranchID')
+    BEGIN
+        ALTER TABLE [LoanCollections] ADD [HomeBranchID] int NULL;
+        PRINT '  -> Added HomeBranchID to LoanCollections';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanCollections]') AND name = 'IsCrossBranch')
+    BEGIN
+        ALTER TABLE [LoanCollections] ADD [IsCrossBranch] bit NOT NULL CONSTRAINT DF_LoanCollections_IsCrossBranch DEFAULT 0;
+        PRINT '  -> Added IsCrossBranch to LoanCollections';
+    END
+
+    -- Backfill BranchID from LoanAccount if default
+    EXEC(N'
+    UPDATE lc
+    SET lc.BranchID = ISNULL(la.BranchID, 1)
+    FROM [LoanCollections] lc
+    INNER JOIN [LoanAccounts] la ON lc.LoanAccountID = la.LoanAccountID
+    WHERE lc.BranchID = 0 OR lc.BranchID IS NULL;
+    ');
+
+    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanCollections_BranchID' AND object_id = OBJECT_ID(N'[LoanCollections]'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_LoanCollections_BranchID] ON [LoanCollections] ([BranchID]);
+        PRINT '  -> Created Index IX_LoanCollections_BranchID';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanCollections_HomeBranchID' AND object_id = OBJECT_ID(N'[LoanCollections]'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_LoanCollections_HomeBranchID] ON [LoanCollections] ([HomeBranchID]);
+        PRINT '  -> Created Index IX_LoanCollections_HomeBranchID';
+    END
+END
+GO
+
+-- 7.3 LoanDisbursements BranchID
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanDisbursements')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanDisbursements]') AND name = 'BranchID')
+    BEGIN
+        ALTER TABLE [LoanDisbursements] ADD [BranchID] int NOT NULL CONSTRAINT DF_LoanDisbursements_BranchID DEFAULT 1;
+        PRINT '  -> Added BranchID to LoanDisbursements';
+    END
+
+    -- Backfill BranchID from LoanAccount if default
+    EXEC(N'
+    UPDATE ld
+    SET ld.BranchID = ISNULL(la.BranchID, 1)
+    FROM [LoanDisbursements] ld
+    INNER JOIN [LoanAccounts] la ON ld.LoanAccountID = la.LoanAccountID
+    WHERE ld.BranchID = 0 OR ld.BranchID IS NULL;
+    ');
+
+    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanDisbursements_BranchID' AND object_id = OBJECT_ID(N'[LoanDisbursements]'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_LoanDisbursements_BranchID] ON [LoanDisbursements] ([BranchID]);
+        PRINT '  -> Created Index IX_LoanDisbursements_BranchID';
+    END
+END
+GO
+
+-- 7.4 Branches DefaultCashLedgerID and Auto-Assignment
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Branches')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[Branches]') AND name = 'DefaultCashLedgerID')
+    BEGIN
+        ALTER TABLE [Branches] ADD [DefaultCashLedgerID] int NULL;
+        PRINT '  -> Added DefaultCashLedgerID to Branches';
+    END
+
+    -- Auto-assign Main / Head Office cash ledger
+    UPDATE b
+    SET b.DefaultCashLedgerID = (
+        SELECT TOP 1 l.LedgerID 
+        FROM Ledgers l
+        WHERE (l.LedgerName LIKE N'%मेन%' OR l.LedgerName LIKE N'%मुख्य%' OR l.LedgerName LIKE N'%Main%' OR l.LedgerName = N'हातावरील रोख शिल्लक' OR l.LedgerName = N'हातातील रोख शिल्लक')
+          AND (l.LedgerName LIKE N'%रोख%' OR l.LedgerName LIKE N'%हात%' OR l.AccountType = 'Cash' OR l.LedgerName LIKE '%Cash%')
+        ORDER BY CASE 
+            WHEN l.LedgerName LIKE N'%मेन शाखा%' THEN 1 
+            WHEN l.LedgerName LIKE N'%मुख्य%' THEN 2 
+            ELSE 3 
+        END, l.LedgerID
+    )
+    FROM Branches b
+    WHERE (b.BranchID = 1 OR b.BranchType = 'HeadOffice' OR b.BranchName LIKE N'%मुख्य%')
+      AND b.DefaultCashLedgerID IS NULL;
+
+    -- Auto-assign other branch cash ledgers
+    UPDATE b
+    SET b.DefaultCashLedgerID = (
+        SELECT TOP 1 l.LedgerID 
+        FROM Ledgers l
+        WHERE (l.LedgerName LIKE N'%' + LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(b.BranchName, N'शाखा', ''), N'ब्रांच', ''), N'कार्यालय', ''))) + N'%')
+          AND (l.LedgerName LIKE N'%रोख%' OR l.LedgerName LIKE N'%हात%' OR l.AccountType = 'Cash' OR l.LedgerName LIKE '%Cash%')
+        ORDER BY l.LedgerID
+    )
+    FROM Branches b
+    WHERE b.DefaultCashLedgerID IS NULL
+      AND b.BranchID <> 1
+      AND LEN(LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(b.BranchName, N'शाखा', ''), N'ब्रांच', ''), N'कार्यालय', '')))) > 1;
+
+    PRINT '  -> Aligned Branches DefaultCashLedgerID';
+END
+GO
+
+-- 7.5 Align Vouchers to LoanCollections.BranchID
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Vouchers') AND EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollections')
+BEGIN
+    UPDATE v
+    SET v.BranchID = lc.BranchID
+    FROM Vouchers v
+    INNER JOIN LoanCollections lc ON v.VoucherID = lc.VoucherID
+    WHERE lc.BranchID IS NOT NULL 
+      AND lc.BranchID > 0 
+      AND v.BranchID <> lc.BranchID;
+
+    PRINT '  -> Aligned Vouchers BranchID with collecting branches';
+END
+GO
+
+-- 7.6 Log v2.5.44 in SystemVersionHistories
+IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
+BEGIN
+    INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+    VALUES (
+        '2.5.44', 
+        GETUTCDATE(), 
+        'SmartBanking VPS Multi-App Master Patch v2.5.44', 
+        'SUCCESS', 
+        'Multi-branch isolation, cross-branch loan recovery, collecting branch cash drawer alignment, FD lien protection and security hardening v2.5.44.', 
+        'VPS Administrator',
+        '2026-10-13'
+    );
+    PRINT '  -> Logged v2.5.44 in SystemVersionHistories';
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

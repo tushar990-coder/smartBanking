@@ -211,6 +211,28 @@ if (Test-Path $univHealSource) {
     Write-Host "  -> heal_all_databases_schema.sql included in database package (UTF-8 BOM)." -ForegroundColor White
 }
 
+# 3.1.7 Multi-Branch Accounting Alignment Scripts (v2.5.44)
+$branchAppSql = Join-Path $workspaceRoot "tools\add_branch_id_to_loan_applications.sql"
+if (Test-Path $branchAppSql) {
+    Copy-Item $branchAppSql (Join-Path $patchFolder "database\add_branch_id_to_loan_applications.sql") -Force
+    Write-Host "  -> add_branch_id_to_loan_applications.sql included in database package." -ForegroundColor White
+}
+$branchColSql = Join-Path $workspaceRoot "tools\add_branch_id_to_loan_collections.sql"
+if (Test-Path $branchColSql) {
+    Copy-Item $branchColSql (Join-Path $patchFolder "database\add_branch_id_to_loan_collections.sql") -Force
+    Write-Host "  -> add_branch_id_to_loan_collections.sql included in database package." -ForegroundColor White
+}
+$branchDisbSql = Join-Path $workspaceRoot "tools\add_branch_id_to_loan_disbursements.sql"
+if (Test-Path $branchDisbSql) {
+    Copy-Item $branchDisbSql (Join-Path $patchFolder "database\add_branch_id_to_loan_disbursements.sql") -Force
+    Write-Host "  -> add_branch_id_to_loan_disbursements.sql included in database package." -ForegroundColor White
+}
+$alignVouchersSql = Join-Path $workspaceRoot "tools\align_daybook_voucher_branches.sql"
+if (Test-Path $alignVouchersSql) {
+    Copy-Item $alignVouchersSql (Join-Path $patchFolder "database\align_daybook_voucher_branches.sql") -Force
+    Write-Host "  -> align_daybook_voucher_branches.sql included in database package." -ForegroundColor White
+}
+
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null

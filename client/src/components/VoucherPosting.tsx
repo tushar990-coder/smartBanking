@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   FileText,
@@ -82,6 +82,34 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [expandedVoucherId, setExpandedVoucherId] = useState<number | null>(null);
 
+  // Date Filtering States
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const yesterdayStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const initialDate = user?.businessDate ? user.businessDate.split('T')[0] : todayStr;
+  const [selectedDate, setSelectedDate] = useState<string>(initialDate);
+  const [isAllDates, setIsAllDates] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setSelectedDate(user.businessDate.split('T')[0]);
+    }
+  }, [user?.businessDate]);
+
   // Deletion Modal States
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [targetVoucherToDelete, setTargetVoucherToDelete] = useState<Voucher | null>(null);
@@ -111,6 +139,11 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
         const targetVId = voucherIdStr ? parseInt(voucherIdStr) : (entityIdStr ? parseInt(entityIdStr) : null);
 
         if (targetVId && data.some((v: any) => v.voucherID === targetVId)) {
+          const targetV = data.find((v: any) => v.voucherID === targetVId);
+          if (targetV?.voucherDate) {
+            setSelectedDate(targetV.voucherDate.split('T')[0]);
+            setIsAllDates(false);
+          }
           setExpandedVoucherId(targetVId);
           setSelectedVouchers(new Set([targetVId]));
         }
@@ -534,30 +567,87 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     }
   };
 
-  // Filter vouchers based on search query and type filter
-  const filteredVouchers = vouchers.filter((v) => {
-    const matchesType = typeFilter === 'ALL' || (v.voucherType || '').toUpperCase() === typeFilter.toUpperCase();
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return matchesType;
+  // Date switching handlers
+  const handleDateChange = (newDate: string) => {
+    setSelectedDate(newDate);
+    setIsAllDates(false);
+    setSelectedVouchers(new Set());
+  };
 
-    const matchesNo = (v.voucherNo || '').toLowerCase().includes(query);
-    const matchesScroll = (v.scrollNo || '').toString().includes(query);
-    const matchesNarration = (v.narration || '').toLowerCase().includes(query);
-    const matchesAmount = (v.totalAmount || 0).toString().includes(query);
-    const matchesLedger = v.voucherDetails?.some((vd) =>
-      (vd.ledger?.ledgerName || '').toLowerCase().includes(query)
-    );
+  const handleSetToday = () => {
+    const today = user?.businessDate ? user.businessDate.split('T')[0] : todayStr;
+    handleDateChange(today);
+  };
 
-    return matchesType && (matchesNo || matchesScroll || matchesNarration || matchesAmount || matchesLedger);
-  });
+  const handleSetYesterday = () => {
+    handleDateChange(yesterdayStr);
+  };
 
-  // Calculate metrics
-  const totalPendingCount = vouchers.length;
-  const receiptsCount = vouchers.filter((v) => v.voucherType === 'Receipt').length;
-  const paymentsCount = vouchers.filter((v) => v.voucherType === 'Payment').length;
-  const totalPendingAmount = vouchers.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
+  const handleToggleAllDates = () => {
+    setIsAllDates((prev) => !prev);
+    setSelectedVouchers(new Set());
+  };
 
-  const selectedVouchersList = vouchers.filter((v) => selectedVouchers.has(v.voucherID));
+  // Group distinct dates having pending vouchers
+  const pendingDateMap = useMemo(() => {
+    const map = new Map<string, number>();
+    vouchers.forEach((v) => {
+      const dStr = v.voucherDate ? v.voucherDate.split('T')[0] : '';
+      if (dStr) {
+        map.set(dStr, (map.get(dStr) || 0) + 1);
+      }
+    });
+    return map;
+  }, [vouchers]);
+
+  // Sorted descending (latest date first)
+  const uniquePendingDates = useMemo(() => {
+    return Array.from(pendingDateMap.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [pendingDateMap]);
+
+  // Vouchers filtered strictly by Date first
+  const dateFilteredVouchers = useMemo(() => {
+    if (isAllDates) return vouchers;
+    return vouchers.filter((v) => {
+      const vDateStr = v.voucherDate ? v.voucherDate.split('T')[0] : '';
+      return vDateStr === selectedDate;
+    });
+  }, [vouchers, selectedDate, isAllDates]);
+
+  // Other dates pending count (for Backlog alert)
+  const otherDatesCount = useMemo(() => {
+    return vouchers.filter((v) => {
+      const vDateStr = v.voucherDate ? v.voucherDate.split('T')[0] : '';
+      return vDateStr !== selectedDate;
+    }).length;
+  }, [vouchers, selectedDate]);
+
+  // Filter vouchers based on search query and type filter applied to dateFilteredVouchers
+  const filteredVouchers = useMemo(() => {
+    return dateFilteredVouchers.filter((v) => {
+      const matchesType = typeFilter === 'ALL' || (v.voucherType || '').toUpperCase() === typeFilter.toUpperCase();
+      const query = searchQuery.trim().toLowerCase();
+      if (!query) return matchesType;
+
+      const matchesNo = (v.voucherNo || '').toLowerCase().includes(query);
+      const matchesScroll = (v.scrollNo || '').toString().includes(query);
+      const matchesNarration = (v.narration || '').toLowerCase().includes(query);
+      const matchesAmount = (v.totalAmount || 0).toString().includes(query);
+      const matchesLedger = v.voucherDetails?.some((vd) =>
+        (vd.ledger?.ledgerName || '').toLowerCase().includes(query)
+      );
+
+      return matchesType && (matchesNo || matchesScroll || matchesNarration || matchesAmount || matchesLedger);
+    });
+  }, [dateFilteredVouchers, typeFilter, searchQuery]);
+
+  // Calculate metrics based on dateFilteredVouchers
+  const totalPendingCount = dateFilteredVouchers.length;
+  const receiptsCount = dateFilteredVouchers.filter((v) => v.voucherType === 'Receipt').length;
+  const paymentsCount = dateFilteredVouchers.filter((v) => v.voucherType === 'Payment').length;
+  const totalPendingAmount = dateFilteredVouchers.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
+
+  const selectedVouchersList = dateFilteredVouchers.filter((v) => selectedVouchers.has(v.voucherID));
   const selectedTotalAmount = selectedVouchersList.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
 
   return (
@@ -638,12 +728,144 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
         </div>
 
         <div className="p-3 space-y-3">
+          {/* CBS Date Selector & Backlog Management Toolbar */}
+          <div className="bg-gradient-to-r from-emerald-50 via-slate-50 to-blue-50 p-2.5 rounded-sm border border-emerald-300 shadow-2xs flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-emerald-800 text-white px-2.5 py-1 rounded-sm shadow-2xs font-bold text-xs">
+                <Calendar className="w-3.5 h-3.5 text-emerald-200" />
+                <span>व्हाउचर तारीख (Voucher Date):</span>
+              </div>
+
+              {/* Date Input */}
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    handleDateChange(e.target.value);
+                  }
+                }}
+                disabled={isAllDates}
+                className={`border px-2.5 py-1 rounded-sm text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-emerald-600 ${
+                  isAllDates
+                    ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
+                    : 'bg-white text-gray-900 border-emerald-500 shadow-2xs'
+                }`}
+                title="ज्या तारखेचे व्हाउचर पास करायचे आहेत ती तारीख प्रविष्ट करा (Select Voucher Date)"
+              />
+
+              {/* Quick Date Buttons */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleSetToday}
+                  className={`px-2.5 py-1 rounded-sm text-[11px] font-bold transition-all cursor-pointer border ${
+                    !isAllDates && selectedDate === (user?.businessDate ? user.businessDate.split('T')[0] : todayStr)
+                      ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
+                      : 'bg-white text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 border-gray-300'
+                  }`}
+                  title="आजच्या तारखेचे व्हाउचर दाखवा"
+                >
+                  आज (Today)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSetYesterday}
+                  className={`px-2.5 py-1 rounded-sm text-[11px] font-bold transition-all cursor-pointer border ${
+                    !isAllDates && selectedDate === yesterdayStr
+                      ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
+                      : 'bg-white text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 border-gray-300'
+                  }`}
+                  title="कालच्या तारखेचे व्हाउचर दाखवा"
+                >
+                  काल (Yesterday)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleToggleAllDates}
+                  className={`px-2.5 py-1 rounded-sm text-[11px] font-bold transition-all cursor-pointer border ${
+                    isAllDates
+                      ? 'bg-blue-700 text-white border-blue-800 shadow-2xs'
+                      : 'bg-white text-gray-700 hover:bg-blue-50 hover:text-blue-800 border-gray-300'
+                  }`}
+                  title="सर्व तारखांचे एकत्रित व्हाउचर पाहण्यासाठी टॉगल करा"
+                >
+                  {isAllDates ? '✓ सर्व तारखा (All Dates Active)' : 'सर्व तारखा (All Dates)'}
+                </button>
+              </div>
+            </div>
+
+            {/* Backlog Date Jump Pills */}
+            {uniquePendingDates.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                <span className="text-gray-600 font-bold flex items-center gap-1">
+                  <span>प्रलंबित तारखा:</span>
+                </span>
+                {uniquePendingDates.map(([dStr, count]) => {
+                  const isCurrent = !isAllDates && selectedDate === dStr;
+                  const displayDate = dStr.split('-').reverse().join('/');
+                  return (
+                    <button
+                      key={dStr}
+                      type="button"
+                      onClick={() => handleDateChange(dStr)}
+                      className={`px-2 py-0.5 rounded text-[10.5px] font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                        isCurrent
+                          ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
+                          : 'bg-amber-100 text-amber-950 border-amber-300 hover:bg-amber-200'
+                      }`}
+                      title={`या तारखेचे ${count} प्रलंबित व्हाउचर पाहण्यासाठी क्लिक करा`}
+                    >
+                      <span>{displayDate}</span>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[9px] ${isCurrent ? 'bg-white/20 text-white' : 'bg-amber-300 text-amber-950 font-black'}`}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Backlog Warning Banner */}
+          {!isAllDates && otherDatesCount > 0 && (
+            <div className="p-2 bg-amber-50 border-l-4 border-amber-500 text-amber-950 rounded-sm text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <div>
+                  <span className="font-bold">बॅकलॉग सूचना (Backlog Alert):</span>{' '}
+                  <span>
+                    निवडलेली तारीख (<strong>{selectedDate.split('-').reverse().join('/')}</strong>) सोडून इतर तारखांचे एकूण <strong>{otherDatesCount}</strong> व्हाउचर मंजुरीसाठी प्रलंबित आहेत.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleAllDates}
+                className="text-[10px] font-bold bg-amber-200 hover:bg-amber-300 text-amber-950 px-2.5 py-0.5 rounded border border-amber-400 cursor-pointer shadow-2xs whitespace-nowrap"
+              >
+                सर्व तारखा पहा (View All)
+              </button>
+            </div>
+          )}
+
           {/* Summary Stat Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div className="bg-white p-2.5 rounded-sm border-l-4 border-slate-700 shadow-2xs flex items-center justify-between border border-gray-200">
               <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">एकूण प्रलंबित व्हाउचर्स</p>
-                <p className="text-base font-black text-slate-800">{totalPendingCount}</p>
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                  {!isAllDates ? 'निवडलेल्या तारखेचे व्हाउचर्स' : 'एकूण प्रलंबित व्हाउचर्स'}
+                </p>
+                <div className="flex items-baseline gap-1.5">
+                  <p className="text-base font-black text-slate-800">{totalPendingCount}</p>
+                  {!isAllDates && vouchers.length > 0 && (
+                    <span className="text-[9.5px] text-gray-500 font-semibold">
+                      (एकूण सर्व: {vouchers.length})
+                    </span>
+                  )}
+                </div>
               </div>
               <span className="text-xl">📚</span>
             </div>
@@ -666,7 +888,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
             <div className="bg-white p-2.5 rounded-sm border-l-4 border-amber-500 shadow-2xs flex items-center justify-between border border-gray-200">
               <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">एकूण प्रलंबित रक्कम</p>
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">प्रलंबित रक्कम (Amount)</p>
                 <p className="text-base font-black text-amber-700">
                   ₹{totalPendingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </p>
@@ -703,7 +925,8 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                     onChange={selectAllFiltered}
                   />
                   <span className="text-xs">
-                    सर्व {filteredVouchers.length} व्हाउचर्स निवडा (Select All)
+                    सर्व {filteredVouchers.length} व्हाउचर्स निवडा (Select All
+                    {!isAllDates ? ` - ${selectedDate.split('-').reverse().join('/')}` : ''})
                   </span>
                 </label>
                 {selectedVouchers.size > 0 && (
@@ -781,6 +1004,18 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                             <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
                             <p className="text-sm font-bold text-gray-800">कोणतेही प्रलंबित व्हाउचर शिल्लक नाही</p>
                             <p className="text-xs text-gray-500 font-normal">सर्व व्हाउचर्स यशस्वीरीत्या मंजूर व पोस्ट झालेले आहेत.</p>
+                          </div>
+                        ) : !isAllDates && dateFilteredVouchers.length === 0 ? (
+                          <div className="space-y-2 max-w-md mx-auto">
+                            <Info className="w-8 h-8 text-amber-500 mx-auto" />
+                            <p className="text-sm font-bold text-gray-800">
+                              निवडलेल्या तारखेचे ({selectedDate.split('-').reverse().join('/')}) कोणतेही प्रलंबित व्हाउचर नाही
+                            </p>
+                            {otherDatesCount > 0 && (
+                              <p className="text-xs text-amber-800 font-normal">
+                                इतर तारखांचे एकूण {otherDatesCount} व्हाउचर प्रलंबित आहेत. ते पाहण्यासाठी वरील इतर तारखेवर क्लिक करा किंवा 'सर्व तारखा' बटण दाबा.
+                              </p>
+                            )}
                           </div>
                         ) : (
                           'शोधलेल्या निकषांशी जुळणारे कोणतेही व्हाउचर सापडले नाही.'

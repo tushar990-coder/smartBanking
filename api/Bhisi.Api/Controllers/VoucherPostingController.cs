@@ -23,7 +23,10 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/VoucherPosting/Unposted
         [HttpGet("Unposted")]
-        public async Task<ActionResult<IEnumerable<Voucher>>> GetUnpostedVouchers([FromQuery] int? branchId = null)
+        public async Task<ActionResult<IEnumerable<Voucher>>> GetUnpostedVouchers(
+            [FromQuery] int? branchId = null,
+            [FromQuery] DateTime? voucherDate = null,
+            [FromQuery] bool allDates = false)
         {
             try
             {
@@ -117,6 +120,12 @@ namespace Bhisi.Api.Controllers
             if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(v => v.BranchID == branchId.Value || v.BranchID == 0);
+            }
+
+            if (!allDates && voucherDate.HasValue)
+            {
+                var targetDate = voucherDate.Value.Date;
+                query = query.Where(v => v.VoucherDate.Date == targetDate);
             }
 
             return await query

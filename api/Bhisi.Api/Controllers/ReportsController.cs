@@ -5229,7 +5229,8 @@ namespace Bhisi.Api.Controllers
                             do
                             {
                                 seq.CurrentValue += 1;
-                                acc.AccountNo = $"{branchPrefix}-{bId:D3}-FD-{seq.CurrentValue:D6}";
+                                string raw14 = Helpers.AccountNumberHelper.Generate14DigitAccountNo(bId, 401, seq.CurrentValue);
+                                acc.AccountNo = Helpers.AccountNumberHelper.Format14Digit(raw14);
                             }
                             while (await _context.FdAccounts.AnyAsync(a => a.BranchID == bId && a.AccountNo == acc.AccountNo));
 
@@ -5268,10 +5269,19 @@ namespace Bhisi.Api.Controllers
                         else
                         {
                             seenNumbers.Add(acc.AccountNo);
-                            var match = System.Text.RegularExpressions.Regex.Match(acc.AccountNo, @"-FD-(\d+)$");
-                            if (match.Success && int.TryParse(match.Groups[1].Value, out int curSeq))
+                            var digitsOnly = new string((acc.AccountNo ?? "").Where(char.IsDigit).ToArray());
+                            if (digitsOnly.Length == 14)
                             {
-                                if (curSeq > seq.CurrentValue) seq.CurrentValue = curSeq;
+                                string seqPart = digitsOnly.Substring(6, 7);
+                                if (int.TryParse(seqPart, out int sVal) && sVal > seq.CurrentValue) seq.CurrentValue = sVal;
+                            }
+                            else
+                            {
+                                var match = System.Text.RegularExpressions.Regex.Match(acc.AccountNo, @"-FD-(\d+)$");
+                                if (match.Success && int.TryParse(match.Groups[1].Value, out int curSeq))
+                                {
+                                    if (curSeq > seq.CurrentValue) seq.CurrentValue = curSeq;
+                                }
                             }
                         }
                     }
@@ -5494,7 +5504,7 @@ namespace Bhisi.Api.Controllers
                         CustomerName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
                         MemberCode = f.Customer != null ? f.Customer.CIFNo : "",
                         MemberName = f.Customer != null ? (f.Customer.FirstName + " " + (string.IsNullOrEmpty(f.Customer.MiddleName) ? "" : f.Customer.MiddleName + " ") + f.Customer.LastName).Trim() : "",
-                        f.AccountNo,
+                        AccountNo = Helpers.AccountNumberHelper.Format14Digit(f.AccountNo),
                         f.LegacyAccountNumber,
                         SchemeName = f.FdScheme != null ? f.FdScheme.SchemeName : "मुदत ठेव योजना",
                         OpeningDate = f.OpeningDate.ToString("yyyy-MM-dd"),

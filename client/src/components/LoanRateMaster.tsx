@@ -305,13 +305,19 @@ export default function LoanRateMaster({ isReportOnly = false }: LoanRateMasterP
       return;
     }
 
-    // Client-side unique check for LoanType
-    const duplicateType = loanRates.find(r => 
+    const trimmedShortName = (formData.shortName || '').trim();
+    if (!trimmedShortName) {
+      alert('कृपया कर्ज योजनेचे संक्षिप्त नाव (Short Name) भरणे अनिवार्य आहे.');
+      return;
+    }
+
+    // Client-side unique check for ShortName (ensures unique scheme title while allowing same LoanType category)
+    const duplicateShortName = loanRates.find(r => 
       r.loanRateID !== (isEditing ? formData.loanRateID : 0) && 
-      (r.loanType || '').trim().toLowerCase() === trimmedType.toLowerCase()
+      (r.shortName || '').trim().toLowerCase() === trimmedShortName.toLowerCase()
     );
-    if (duplicateType) {
-      alert(`कर्ज योजना प्रकार / नाव '${trimmedType}' आधीपासून अस्तित्वात आहे. कृपया वेगळे नाव द्या.`);
+    if (duplicateShortName) {
+      alert(`कर्ज योजना संक्षिप्त नाव '${trimmedShortName}' आधीपासून अस्तित्वात आहे. कृपया वेगळे नाव द्या.`);
       return;
     }
 

@@ -145,12 +145,16 @@ namespace Bhisi.Api.Controllers
 
             loanRate.LoanType = loanRate.LoanType.Trim();
             loanRate.LoanCode = loanRate.LoanCode?.Trim() ?? string.Empty;
+            loanRate.ShortName = loanRate.ShortName?.Trim();
 
-            // 1. Case-insensitive LoanType check
-            bool typeExists = await _context.LoanRates.AnyAsync(r => r.LoanType.ToLower() == loanRate.LoanType.ToLower());
-            if (typeExists)
+            // 1. Case-insensitive ShortName check (ensures unique scheme display title while allowing multiple schemes under same LoanType category)
+            if (!string.IsNullOrWhiteSpace(loanRate.ShortName))
             {
-                return BadRequest(new { message = $"कर्ज योजना प्रकार / नाव '{loanRate.LoanType}' आधीपासून अस्तित्वात आहे. कृपया वेगळे नाव द्या." });
+                bool shortNameExists = await _context.LoanRates.AnyAsync(r => r.ShortName != null && r.ShortName.ToLower() == loanRate.ShortName.ToLower());
+                if (shortNameExists)
+                {
+                    return BadRequest(new { message = $"कर्ज योजना संक्षिप्त नाव '{loanRate.ShortName}' आधीपासून अस्तित्वात आहे. कृपया वेगळे नाव द्या." });
+                }
             }
 
             if (loanRate.InterestRate < 0)
@@ -254,10 +258,6 @@ namespace Bhisi.Api.Controllers
                 {
                     return BadRequest(new { message = $"कर्ज योजना कोड '{loanRate.LoanCode}' आधीपासून अस्तित्वात आहे (Duplicate Key)." });
                 }
-                if (ex.InnerException?.Message?.Contains("IX_LoanRates_LoanType") == true)
-                {
-                    return BadRequest(new { message = $"कर्ज योजना प्रकार / नाव '{loanRate.LoanType}' आधीपासून अस्तित्वात आहे (Duplicate Key)." });
-                }
                 throw;
             }
 
@@ -303,6 +303,16 @@ namespace Bhisi.Api.Controllers
                 if (codeConflict)
                 {
                     return BadRequest(new { message = $"कर्ज योजना कोड '{loanRate.LoanCode}' इतर कर्ज योजनेसाठी आधीपासून वापरला गेला आहे." });
+                }
+            }
+
+            loanRate.ShortName = loanRate.ShortName?.Trim();
+            if (!string.IsNullOrWhiteSpace(loanRate.ShortName))
+            {
+                bool shortConflict = await _context.LoanRates.AnyAsync(r => r.LoanRateID != id && r.ShortName != null && r.ShortName.ToLower() == loanRate.ShortName.ToLower());
+                if (shortConflict)
+                {
+                    return BadRequest(new { message = $"कर्ज योजना संक्षिप्त नाव '{loanRate.ShortName}' इतर कर्ज योजनेसाठी आधीपासून वापरले गेले आहे." });
                 }
             }
 
@@ -443,10 +453,6 @@ namespace Bhisi.Api.Controllers
                 if (ex.InnerException?.Message?.Contains("IX_LoanRates_LoanCode") == true)
                 {
                     return BadRequest(new { message = $"कर्ज योजना कोड '{loanRate.LoanCode}' इतर योजनेशी जुळत आहे (Duplicate Key)." });
-                }
-                if (ex.InnerException?.Message?.Contains("IX_LoanRates_LoanType") == true)
-                {
-                    return BadRequest(new { message = $"कर्ज योजना प्रकार / नाव '{loanRate.LoanType}' इतर योजनेशी जुळत आहे (Duplicate Key)." });
                 }
                 throw;
             }

@@ -194,6 +194,21 @@ using (var scope = app.Services.CreateScope())
     try
     {
         db.Database.ExecuteSqlRaw(@"
+            IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_LoanRates_LoanType' AND object_id = OBJECT_ID('dbo.LoanRates'))
+            BEGIN
+                DROP INDEX [IX_LoanRates_LoanType] ON [dbo].[LoanRates];
+            END
+        ");
+        Log.Information("IX_LoanRates_LoanType drop verified successfully.");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning("Could not drop IX_LoanRates_LoanType: {Message}", ex.Message);
+    }
+
+    try
+    {
+        db.Database.ExecuteSqlRaw(@"
             SET ANSI_NULLS ON;
             SET QUOTED_IDENTIFIER ON;
 
@@ -380,7 +395,7 @@ using (var scope = app.Services.CreateScope())
             IF COL_LENGTH('RdSchemes', 'OverdueInterestRate') IS NULL
                 ALTER TABLE [dbo].[RdSchemes] ADD [OverdueInterestRate] decimal(5,2) NULL;
 
-            // Deposit Collateral & Lien Tracking Migration Checks
+            -- Deposit Collateral & Lien Tracking Migration Checks
             IF COL_LENGTH('LoanRates', 'CollateralCategory') IS NULL
                 ALTER TABLE [dbo].[LoanRates] ADD [CollateralCategory] nvarchar(50) NOT NULL DEFAULT 'None';
             IF COL_LENGTH('LoanRates', 'MaxLtvPercentage') IS NULL
@@ -1397,28 +1412,14 @@ using (var scope = app.Services.CreateScope())
                 SET [LoanType] = LTRIM(RTRIM([LoanType]))
                 WHERE [LoanType] <> LTRIM(RTRIM([LoanType]));
 
-                -- Auto-heal duplicate LoanType before creating UNIQUE INDEX
-                ;WITH DupTypeCTE AS (
-                    SELECT LoanRateID, LoanType,
-                           ROW_NUMBER() OVER(PARTITION BY LOWER(LTRIM(RTRIM(LoanType))) ORDER BY LoanRateID) as rn
-                    FROM [dbo].[LoanRates]
-                )
-                UPDATE lr
-                SET lr.LoanType = lr.LoanType + N' (' + CAST(lr.LoanRateID AS NVARCHAR(10)) + N')'
-                FROM [dbo].[LoanRates] lr
-                INNER JOIN DupTypeCTE cte ON lr.LoanRateID = cte.LoanRateID
-                WHERE cte.rn > 1;
-
-                -- Ensure Unique Index on LoanType
-                IF NOT EXISTS (
+                -- Drop Unique Index on LoanType if it exists so multiple schemes of same LoanType (e.g. multiple vehicle loans) can be created
+                IF EXISTS (
                     SELECT * FROM sys.indexes 
                     WHERE name = 'IX_LoanRates_LoanType' 
                       AND object_id = OBJECT_ID('dbo.LoanRates')
                 )
                 BEGIN
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_LoanRates_LoanType] 
-                    ON [dbo].[LoanRates]([LoanType]) 
-                    WHERE [LoanType] IS NOT NULL AND [LoanType] <> '';
+                    DROP INDEX [IX_LoanRates_LoanType] ON [dbo].[LoanRates];
                 END
             END
 

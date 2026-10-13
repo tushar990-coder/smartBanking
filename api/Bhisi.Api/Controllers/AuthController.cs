@@ -73,17 +73,17 @@ namespace Bhisi.Api.Controllers
 
                     if (agent != null)
                     {
-                        bool isPasswordValid = true;
+                        bool isAgentPasswordValid = true;
                         if (!string.IsNullOrEmpty(agent.PasswordHash))
                         {
-                            isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, agent.PasswordHash);
+                            isAgentPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, agent.PasswordHash);
                         }
                         else if (!string.IsNullOrEmpty(agent.Pin))
                         {
-                            isPasswordValid = request.Password == agent.Pin;
+                            isAgentPasswordValid = request.Password == agent.Pin;
                         }
 
-                        if (!isPasswordValid)
+                        if (!isAgentPasswordValid)
                         {
                             return Unauthorized("Invalid agent mobile number or password.");
                         }

@@ -12,6 +12,40 @@ PRINT '=============================================================';
 PRINT '१. मुदत ठेव स्थलांतरित खाती व अनुक्रमांक तपासणी सुरू...';
 PRINT '=============================================================';
 
+IF OBJECT_ID(N'[dbo].[fn_CalculateLuhnCheckDigit]', N'FN') IS NULL
+BEGIN
+    EXEC('
+    CREATE FUNCTION [dbo].[fn_CalculateLuhnCheckDigit](@InputDigits VARCHAR(50))
+    RETURNS INT
+    AS
+    BEGIN
+        DECLARE @Sum INT = 0;
+        DECLARE @Alternate BIT = 1;
+        DECLARE @Len INT = LEN(@InputDigits);
+        DECLARE @i INT = @Len;
+        DECLARE @Digit INT;
+
+        WHILE @i >= 1
+        BEGIN
+            SET @Digit = CAST(SUBSTRING(@InputDigits, @i, 1) AS INT);
+            IF @Alternate = 1
+            BEGIN
+                SET @Digit = @Digit * 2;
+                IF @Digit > 9
+                BEGIN
+                    SET @Digit = @Digit - 9;
+                END
+            END
+            SET @Sum = @Sum + @Digit;
+            SET @Alternate = 1 - @Alternate;
+            SET @i = @i - 1;
+        END
+
+        DECLARE @Mod INT = @Sum % 10;
+        RETURN CASE WHEN @Mod = 0 THEN 0 ELSE 10 - @Mod END;
+    END');
+END
+
 IF OBJECT_ID('FdAccounts', 'U') IS NOT NULL AND OBJECT_ID('FdAccountSequences', 'U') IS NOT NULL
 BEGIN
     -- १. प्रत्येक शाखेतील स्थलांतरित खात्यांना OpeningDate आणि FdAccountID नुसार योग्य क्रम देणे
@@ -21,25 +55,48 @@ BEGIN
         SELECT 
             fa.FdAccountID,
             fa.BranchID,
-            ISNULL(b.BranchCode, RIGHT('000' + CAST(fa.BranchID AS VARCHAR(3)), 3)) AS BranchCode,
+            fa.FdSchemeID,
             fa.AccountNo AS OldAssignedAccountNo,
             fa.LegacyAccountNumber,
             fa.DepositAmount,
             fa.OpeningDate,
+            COALESCE(
+                CASE 
+                    WHEN ISNUMERIC(s.SchemeCode) = 1 AND CAST(s.SchemeCode AS INT) > 0 
+                        THEN CASE WHEN CAST(s.SchemeCode AS INT) < 100 THEN 400 + CAST(s.SchemeCode AS INT) ELSE CAST(s.SchemeCode AS INT) END
+                    ELSE 400 + fa.FdSchemeID 
+                END, 
+                401
+            ) AS SchemeNumeric,
             ROW_NUMBER() OVER (PARTITION BY fa.BranchID ORDER BY fa.OpeningDate ASC, fa.FdAccountID ASC) AS TargetSeq
         FROM FdAccounts fa
-        LEFT JOIN Branches b ON fa.BranchID = b.BranchID
+        LEFT JOIN FdSchemes s ON fa.FdSchemeID = s.FdSchemeID
         WHERE fa.IsLegacyAccount = 1
+    ),
+    PreparedPlan AS (
+        SELECT 
+            nl.FdAccountID,
+            nl.BranchID,
+            nl.LegacyAccountNumber AS OldReceiptNo,
+            nl.OldAssignedAccountNo AS BeforeFix,
+            nl.TargetSeq,
+            RIGHT('000' + CAST(nl.BranchID AS VARCHAR(3)), 3) +
+            RIGHT('000' + CAST(nl.SchemeNumeric AS VARCHAR(3)), 3) +
+            RIGHT('0000000' + CAST(nl.TargetSeq AS VARCHAR(7)), 7) AS ThirteenDigits
+        FROM NumberedLegacy nl
     )
     SELECT 
-        nl.FdAccountID,
-        nl.BranchID,
-        nl.LegacyAccountNumber AS OldReceiptNo,
-        nl.OldAssignedAccountNo AS BeforeFix,
-        nl.BranchCode + '-' + RIGHT('000' + CAST(nl.BranchID AS VARCHAR(3)), 3) + '-FD-' + RIGHT('000000' + CAST(nl.TargetSeq AS VARCHAR(6)), 6) AS AfterFixSeq,
-        nl.TargetSeq
+        pp.FdAccountID,
+        pp.BranchID,
+        pp.OldReceiptNo,
+        pp.BeforeFix,
+        SUBSTRING(pp.ThirteenDigits, 1, 3) + '-' +
+        SUBSTRING(pp.ThirteenDigits, 4, 3) + '-' +
+        SUBSTRING(pp.ThirteenDigits, 7, 7) + '-' +
+        CAST([dbo].[fn_CalculateLuhnCheckDigit](pp.ThirteenDigits) AS VARCHAR(1)) AS AfterFixSeq,
+        pp.TargetSeq
     INTO #HealPlan
-    FROM NumberedLegacy nl;
+    FROM PreparedPlan pp;
 
     DECLARE @TotalMigratedCount INT = (SELECT COUNT(*) FROM #HealPlan);
     PRINT 'एकूण स्थलांतरित खाती: ' + CAST(@TotalMigratedCount AS VARCHAR(10));

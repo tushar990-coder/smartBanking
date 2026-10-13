@@ -14,6 +14,15 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+export const format14DigitDisplay = (num?: string) => {
+  if (!num) return '-';
+  const clean = num.replace(/\D/g, '');
+  if (clean.length === 14) {
+    return `${clean.slice(0, 3)}-${clean.slice(3, 6)}-${clean.slice(6, 13)}-${clean.slice(13)}`;
+  }
+  return num;
+};
+
 interface FdAccountReportRow {
   fdAccountID: number;
   branchID?: number;
@@ -675,7 +684,8 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
     const excelRows = filteredData.map((row, i) => {
       const item: any = {
         'अ.क्र.': i + 1,
-        'FD पावती / खाते नं.': row.accountNo,
+        'FD पावती / खाते नं.': format14DigitDisplay(row.accountNo),
+        'जुनी पावती क्र.': row.legacyAccountNumber || '-',
         'ग्राहक क्र. (CIF)': row.cifNo || row.memberCode || '-',
         'खातेदाराचे नाव': row.customerName || row.memberName,
         'योजना': row.schemeName,
@@ -699,6 +709,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
     const grandTotalRow: any = {
       'अ.क्र.': '' as any,
       'FD पावती / खाते नं.': '',
+      'जुनी पावती क्र.': '',
       'ग्राहक क्र. (CIF)': '',
       'खातेदाराचे नाव': 'एकूण बेरीज (Grand Total):',
       'योजना': '',
@@ -1775,7 +1786,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                 <tr key={row.fdAccountID || idx} className="hover:bg-slate-50 text-slate-900 text-[11px]">
                   <td className="border border-slate-900 py-1 px-1 text-center font-mono font-medium">{idx + 1}</td>
                   <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-900">
-                    <span className="font-bold text-slate-900">{row.accountNo}</span>
+                    <span className="font-bold text-slate-900">{format14DigitDisplay(row.accountNo)}</span>
                     {row.legacyAccountNumber && (
                       <div className="text-[10px] text-amber-900 font-semibold bg-amber-50 px-1 rounded border border-amber-300 inline-block mt-0.5" title="जुना पावती क्र. (Legacy Receipt No)">
                         जुनी: {row.legacyAccountNumber}

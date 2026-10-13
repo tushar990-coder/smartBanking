@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -23,11 +24,22 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/SavingTransactions
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetSavingTransactions([FromQuery] int? page = null, [FromQuery] int? pageSize = null)
+        public async Task<ActionResult<IEnumerable<object>>> GetSavingTransactions(
+            [FromQuery] int? branchId = null,
+            [FromQuery] int? page = null, 
+            [FromQuery] int? pageSize = null)
         {
             var query = _context.SavingTransactions
                 .Include(t => t.SavingAccount)
                     .ThenInclude(a => a!.Customer)
+                .AsQueryable();
+
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(t => t.SavingAccount != null && t.SavingAccount.BranchID == branchId.Value);
+            }
+
+            var projected = query
                 .OrderByDescending(t => t.TransactionDate)
                 .Select(t => new {
                     t.TransactionID,
@@ -38,6 +50,7 @@ namespace Bhisi.Api.Controllers
                     t.BalanceAfterTxn,
                     t.Narration,
                     t.VoucherNo,
+                    BranchID = t.SavingAccount != null ? t.SavingAccount.BranchID : 1,
                     AccountNo = t.SavingAccount != null ? t.SavingAccount.AccountNo : "",
                     CustomerName = t.SavingAccount != null && t.SavingAccount.Customer != null
                         ? (t.SavingAccount.Customer.FirstName + (string.IsNullOrWhiteSpace(t.SavingAccount.Customer.MiddleName) ? "" : " " + t.SavingAccount.Customer.MiddleName) + " " + t.SavingAccount.Customer.LastName).Trim()
@@ -50,10 +63,10 @@ namespace Bhisi.Api.Controllers
                 int ps = pageSize ?? 50;
                 if (p < 1) p = 1;
                 if (ps < 1 || ps > 500) ps = 50;
-                query = query.Skip((p - 1) * ps).Take(ps);
+                projected = projected.Skip((p - 1) * ps).Take(ps);
             }
 
-            var txns = await query.ToListAsync();
+            var txns = await projected.ToListAsync();
             return Ok(txns);
         }
 
@@ -205,7 +218,23 @@ namespace Bhisi.Api.Controllers
                     })
                     .FirstOrDefaultAsync();
 
-                int targetBranchId = customerInfo?.BranchID ?? 1;
+                var currentUser = HttpContext.User;
+                string? roleClaim = currentUser?.FindFirst(ClaimTypes.Role)?.Value ?? currentUser?.FindFirst("role")?.Value;
+                string? branchClaim = currentUser?.FindFirst("BranchID")?.Value ?? currentUser?.FindFirst("branchId")?.Value ?? currentUser?.FindFirst("branch")?.Value;
+                int.TryParse(branchClaim, out int userBranchId);
+                if (userBranchId <= 0) userBranchId = 1;
+
+                bool isHO = (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            userBranchId == 1;
+
+                // Operating counter branch where cash is deposited or withdrawn
+                int operatingBranchId = (isHO && txn.BranchID.HasValue && txn.BranchID.Value > 0)
+                    ? txn.BranchID.Value
+                    : (userBranchId > 0 ? userBranchId : (customerInfo?.BranchID ?? 1));
+
+                int targetBranchId = operatingBranchId;
                 var branch = await _context.Branches.FindAsync(targetBranchId);
                 string branchCode = branch?.BranchCode ?? "HQ";
 
@@ -255,6 +284,12 @@ namespace Bhisi.Api.Controllers
                 string narration = targetAccount != null
                     ? $"बचत हस्तांतरण - खाते {customerInfo?.AccountNo} ({customerInfo?.CustomerName}) ➔ खाते {targetAccount.AccountNo}"
                     : $"बचत {(txn.TransactionType == "Deposit" ? "जमा" : "नावे")} - {customerInfo?.AccountNo} {customerInfo?.CustomerName}";
+                
+                if (customerInfo?.BranchID != null && customerInfo.BranchID > 0 && customerInfo.BranchID != targetBranchId)
+                {
+                    narration += $" [आंतर-शाखा / Cross-Branch: खाते मूळ शाखा #{customerInfo.BranchID}]";
+                }
+
                 if (!string.IsNullOrEmpty(txn.Narration))
                     narration += $" | {txn.Narration}";
 

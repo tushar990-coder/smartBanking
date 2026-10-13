@@ -63,6 +63,34 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Account is already closed.");
             }
 
+            // Security Audit: Prevent closing accounts with active lien holds (e.g. pledged to a loan)
+            if (account.LienAmount > 0)
+            {
+                return BadRequest($"सदर बचत खात्यावर ₹{account.LienAmount:N2} इतकी रक्कम तारण (Lien/Hold) म्हणून अडकवलेली आहे (कारण: {account.LienReason ?? "कर्ज तारण"}). जोपर्यंत तारण बोजा मोकळा (Lien Released) होत नाही, तोपर्यंत हे खाते बंद करता येणार नाही!");
+            }
+
+            // Multi-branch Security: Only Home Branch or Head Office can close the account
+            int? userBranchId = null;
+            bool isHO = false;
+            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
+            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
+            {
+                userBranchId = parsedBranch;
+                isHO = (userBranchId == 1);
+            }
+            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
+            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                isHO = true;
+            }
+
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0 && account.BranchID != userBranchId.Value)
+            {
+                return BadRequest($"बचत खाते बंद करण्याची प्रक्रिया फक्त खात्याच्या मूळ शाखेत (Home Branch #{account.BranchID}) किंवा मुख्य कार्यालयातूनच (HO) करता येते.");
+            }
+
             if (account.CurrentBalance < request.ClosingCharges)
             {
                 return BadRequest("Account balance is less than the closing charges.");

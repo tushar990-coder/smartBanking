@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +12,7 @@ using Bhisi.Api.Models;
 
 namespace Bhisi.Api.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class LoanCollectionsController : ControllerBase
@@ -21,19 +24,64 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<LoanCollection>>> GetLoanCollections([FromQuery] int? page = null, [FromQuery] int? pageSize = null)
+        private (int? userId, string userRole, int userBranchId, bool isHOUser) GetCurrentUserInfo()
         {
+            var user = HttpContext?.User;
+            string? roleClaim = user?.FindFirst(ClaimTypes.Role)?.Value 
+                ?? user?.FindFirst("role")?.Value;
+            string? branchClaim = user?.FindFirst("BranchID")?.Value 
+                ?? user?.FindFirst("branchId")?.Value 
+                ?? user?.FindFirst("branch")?.Value;
+            string? idClaim = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+                ?? user?.FindFirst("id")?.Value 
+                ?? user?.FindFirst("userId")?.Value;
+
+            int.TryParse(idClaim, out int uid);
+            int.TryParse(branchClaim, out int branchId);
+            if (branchId <= 0) branchId = 1;
+
+            string role = roleClaim ?? "Admin";
+            bool isHO = role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                        role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
+                        role.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ||
+                        branchId == 1;
+
+            return (uid > 0 ? uid : (int?)null, role, branchId, isHO);
+        }
+
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<LoanCollection>>> GetLoanCollections(
+            [FromQuery] int? branchId = null,
+            [FromQuery] int? page = null, 
+            [FromQuery] int? pageSize = null)
+        {
+            var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
+
             var query = _context.LoanCollections
+                .Include(c => c.Branch)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Member)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Customer)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.LoanRate)
+                .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.Branch)
                 .Include(c => c.Fees)
                     .ThenInclude(f => f.Ledger)
-                .OrderByDescending(c => c.CollectionDate);
+                .AsQueryable();
+
+            if (!isHOUser)
+            {
+                // Non-HO users can only view collections where BranchID is their branch
+                query = query.Where(c => c.BranchID == userBranchId);
+            }
+            else if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(c => c.BranchID == branchId.Value);
+            }
+
+            query = query.OrderByDescending(c => c.CollectionDate).ThenByDescending(c => c.LoanCollectionID);
 
             if (page.HasValue || pageSize.HasValue)
             {
@@ -51,12 +99,8 @@ namespace Bhisi.Api.Controllers
         [HttpGet("next-receipt-no")]
         public async Task<ActionResult<object>> GetNextReceiptNo([FromQuery] int? branchId = null, [FromQuery] int? loanAccountId = null)
         {
-            int targetBranchId = branchId ?? 1;
-            if (!branchId.HasValue && loanAccountId.HasValue)
-            {
-                var acc = await _context.LoanAccounts.FindAsync(loanAccountId.Value);
-                if (acc != null) targetBranchId = acc.BranchID;
-            }
+            var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
+            int targetBranchId = (isHOUser && branchId.HasValue && branchId.Value > 0) ? branchId.Value : userBranchId;
 
             string nextNo = await GenerateNextReceiptNoAsync(targetBranchId);
             return Ok(new { receiptNo = nextNo });
@@ -86,13 +130,8 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            var branchAccountIds = await _context.LoanAccounts
-                .Where(a => a.BranchID == targetBranchId)
-                .Select(a => a.LoanAccountID)
-                .ToListAsync();
-
             int collectionCount = await _context.LoanCollections
-                .CountAsync(c => branchAccountIds.Contains(c.LoanAccountID)) + 1;
+                .CountAsync(c => c.BranchID == targetBranchId) + 1;
 
             return $"{branchCode}-REC-{fy}-{collectionCount:D5}";
         }
@@ -100,11 +139,24 @@ namespace Bhisi.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<LoanCollection>> PostLoanCollection(LoanCollection collection)
         {
+            var (userId, userRole, userBranchId, isHOUser) = GetCurrentUserInfo();
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
                 var loanAccount = await _context.LoanAccounts.Include(l => l.LoanRate).FirstOrDefaultAsync(l => l.LoanAccountID == collection.LoanAccountID);
                 if (loanAccount == null) return BadRequest("Loan account not found");
+
+                // Determine collecting branch (where the money is received)
+                int collectingBranchId = isHOUser
+                    ? ((collection.BranchID > 0) ? collection.BranchID : (loanAccount.BranchID > 0 ? loanAccount.BranchID : userBranchId))
+                    : userBranchId;
+
+                collection.BranchID = collectingBranchId;
+                collection.HomeBranchID = loanAccount.BranchID;
+                collection.IsCrossBranch = (collectingBranchId != loanAccount.BranchID);
+                collection.CollectingCashierID = userId;
+                collection.CreatedByUserID = userId;
 
                 if (collection.PrincipalCollected > loanAccount.PrincipalBalance + 0.01m)
                 {
@@ -118,7 +170,7 @@ namespace Bhisi.Api.Controllers
 
                 if (string.IsNullOrWhiteSpace(collection.ReceiptNo) || collection.ReceiptNo.StartsWith("REC-"))
                 {
-                    collection.ReceiptNo = await GenerateNextReceiptNoAsync(loanAccount.BranchID);
+                    collection.ReceiptNo = await GenerateNextReceiptNoAsync(collectingBranchId);
                 }
 
                 // 1. Fetch overdue expenses from OverdueRecoveryLedger
@@ -408,9 +460,9 @@ namespace Bhisi.Api.Controllers
                     ? loanRate!.OverdueInterestLedgerID!.Value 
                     : interestLedgerId;
 
-                int targetBranchId = loanAccFetched?.BranchID ?? 1;
+                int collectingBranch = collection.BranchID > 0 ? collection.BranchID : (loanAccFetched?.BranchID ?? 1);
                 int surchargeLedgerId = loanRate?.SurchargeLedgerID ?? 0;
-                int cashLedgerId = collection.BankAccountLedgerID ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranchId, "LOAN");
+                int cashLedgerId = collection.BankAccountLedgerID ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, collectingBranch, "LOAN");
 
                 if (collection.PaymentMode == "Saving Transfer" || collection.PaymentMode == "Saving") {
                     var savingLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
@@ -454,8 +506,8 @@ namespace Bhisi.Api.Controllers
                 decimal totalReceiptAmount = collection.TotalAmountReceived + totalFees;
                 decimal totalWaiverAmount = collection.InterestWaived + collection.PenaltyWaived;
 
-                // Create Voucher
-                var branch = await _context.Branches.FindAsync(targetBranchId);
+                // Create Voucher under the Collecting Branch (where cash is physically received)
+                var branch = await _context.Branches.FindAsync(collectingBranch);
                 string branchCode = branch?.BranchCode ?? "HQ";
                 string voucherType = collection.PaymentMode == "Cash" ? "Receipt" : "Journal";
                 string typeCode = voucherType == "Receipt" ? "REC" : "JV";
@@ -477,7 +529,7 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                int count = await _context.Vouchers.CountAsync(v => v.BranchID == targetBranchId && v.VoucherType == voucherType) + 1;
+                int count = await _context.Vouchers.CountAsync(v => v.BranchID == collectingBranch && v.VoucherType == voucherType) + 1;
                 string voucherNo = $"{branchCode}-{typeCode}-{fy}-{count:D5}";
 
                 var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
@@ -492,16 +544,20 @@ namespace Bhisi.Api.Controllers
                         ? $"{loanAccFetched.Member.Customer.FirstName} {loanAccFetched.Member.Customer.LastName}".Trim() 
                         : "Borrower");
 
+                string crossBranchNote = collection.IsCrossBranch 
+                    ? $" [Cross-Branch Collection for Home Branch #{collection.HomeBranchID}]" 
+                    : "";
+
                 var voucher = new Voucher
                 {
-                    BranchID = targetBranchId,
+                    BranchID = collectingBranch,
                     VoucherNo = voucherNo,
                     VoucherDate = collection.CollectionDate,
                     VoucherType = voucherType,
-                    Narration = $"Loan Collection (Rect No: {collection.ReceiptNo}) from {borrowerName} (A/C: {loanAccFetched?.LoanAccountNo}){(collection.IsOTS ? " [OTS / One Time Settlement]" : "")}",
+                    Narration = $"Loan Collection (Rect No: {collection.ReceiptNo}) from {borrowerName} (A/C: {loanAccFetched?.LoanAccountNo}){crossBranchNote}{(collection.IsOTS ? " [OTS / One Time Settlement]" : "")}",
                     TotalAmount = totalVoucherAmt,
                     Status = vStatus,
-                    ApprovedBy = vStatus == "Approved" ? (collection.ApprovedByUserID ?? 1) : null,
+                    ApprovedBy = vStatus == "Approved" ? (collection.ApprovedByUserID ?? userId ?? 1) : null,
                     ApprovedOn = vStatus == "Approved" ? DateTime.Now : null
                 };
                 
@@ -650,18 +706,29 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<LoanCollection>> GetLoanCollection(int id)
         {
+            var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
+
             var collection = await _context.LoanCollections
+                .Include(c => c.Branch)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Member)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Customer)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.LoanRate)
+                .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.Branch)
                 .Include(c => c.Fees)
                 .ThenInclude(f => f.Ledger)
                 .FirstOrDefaultAsync(c => c.LoanCollectionID == id);
 
             if (collection == null) return NotFound();
+
+            if (!isHOUser && collection.BranchID != userBranchId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "तुम्हाला फक्त तुमच्या शाखेच्या वसुली पावत्या पाहण्याची परवानगी आहे." });
+            }
+
             return collection;
         }
 
@@ -669,19 +736,30 @@ namespace Bhisi.Api.Controllers
         [HttpGet("by-voucher/{voucherId}")]
         public async Task<ActionResult<LoanCollection>> GetLoanCollectionByVoucher(int voucherId)
         {
+            var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
+
             var collection = await _context.LoanCollections
+                .Include(c => c.Branch)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Member)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Customer)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.LoanRate)
+                .Include(c => c.LoanAccount)
+                    .ThenInclude(l => l!.Branch)
                 .Include(c => c.Fees)
                     .ThenInclude(f => f.Ledger)
                 .Include(c => c.Voucher)
                 .FirstOrDefaultAsync(c => c.VoucherID == voucherId);
 
             if (collection == null) return NotFound("या व्हाउचरशी जोडलेली कोणतीही कर्ज वसुली पावती सापडली नाही.");
+
+            if (!isHOUser && collection.BranchID != userBranchId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "तुम्हाला फक्त तुमच्या शाखेच्या वसुली पावत्या पाहण्याची परवानगी आहे." });
+            }
+
             return collection;
         }
 
@@ -690,8 +768,15 @@ namespace Bhisi.Api.Controllers
         {
             if (id != updatedData.LoanCollectionID) return BadRequest();
 
+            var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
+
             var existingCollection = await _context.LoanCollections.FindAsync(id);
             if (existingCollection == null) return NotFound();
+
+            if (!isHOUser && existingCollection.BranchID != userBranchId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "तुम्हाला इतर शाखेची कर्ज वसुली पावती संपादित करण्याची परवानगी नाही." });
+            }
 
             existingCollection.CollectionDate = updatedData.CollectionDate;
             existingCollection.PaymentMode = updatedData.PaymentMode;
@@ -728,6 +813,8 @@ namespace Bhisi.Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteLoanCollection(int id)
         {
+            var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -736,6 +823,11 @@ namespace Bhisi.Api.Controllers
                     .FirstOrDefaultAsync(c => c.LoanCollectionID == id);
 
                 if (collection == null) return NotFound("Receipt not found.");
+
+                if (!isHOUser && collection.BranchID != userBranchId)
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden, new { message = "तुम्हाला इतर शाखेची कर्ज वसुली पावती डिलीट करण्याची परवानगी नाही." });
+                }
 
                 // Revert LoanAccount PrincipalBalance and LastInstallmentPaidDate
                 var loanAccount = await _context.LoanAccounts.FindAsync(collection.LoanAccountID);

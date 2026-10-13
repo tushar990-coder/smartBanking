@@ -81,6 +81,7 @@ VPS_Testing_Patch*/
 VPS_Bambavade_Patch*/
 VPS_DB_Clean_Patch*/
 *.bat
+*.patch
 
 
 

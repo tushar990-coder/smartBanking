@@ -367,25 +367,8 @@ namespace Bhisi.Api.Controllers
 
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
 
-            // Match all cash ledgers dynamically (e.g. "हातातील रोख शिल्लक", "हातावरील रोख शिल्लक", "रोख शिल्लक", "Cash", etc.)
-            var cashLedgerIds = ledgers
-                .Where(l => 
-                    l.LedgerName.Contains("हातातील रोख शिल्लक") || 
-                    l.LedgerName.Contains("हातावरील रोख शिल्लक") || 
-                    l.LedgerName.Contains("रोख शिल्लक") || 
-                    l.LedgerName.Contains("हातातील") || 
-                    l.LedgerName.Contains("हातावरील") || 
-                    l.LedgerName.Contains("रोख") || 
-                    l.LedgerName.ToLower().Contains("cash") ||
-                    (l.AccountGroup != null && (
-                        l.AccountGroup.GroupName.Contains("Cash") || 
-                        l.AccountGroup.GroupName.Contains("रोख") ||
-                        l.AccountGroup.GroupName.Contains("हातातील") ||
-                        l.AccountGroup.GroupName.Contains("हातावरील")
-                    ))
-                )
-                .Select(l => l.LedgerID)
-                .ToHashSet();
+            // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
+            var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
 
             // Calculate Opening Balance for Cash across matched cash ledgers
             decimal openingBalance = 0;
@@ -415,6 +398,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var vouchersQuery = _context.Vouchers.AsNoTracking()
+                .Include(v => v.Branch)
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails)
@@ -533,13 +517,22 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
+                    int? customerBranch = vd.Customer?.BranchID ?? vd.Member?.Customer?.BranchID ?? vd.Member?.BranchID;
+                    bool isCrossBranch = customerBranch.HasValue && customerBranch.Value > 0 && customerBranch.Value != v.BranchID;
+
                     var entry = new DaybookEntryDto
                     {
-                        Narration = narration,
+                        Narration = isCrossBranch && !narration.Contains("आंतर-शाखा")
+                            ? $"{narration} [आंतर-शाखा: मूळ शाखा #{customerBranch}]"
+                            : narration,
                         VoucherNo = v.VoucherNo ?? "",
                         CashAmount = Math.Round(cashAmt, 2),
                         TransferAmount = Math.Round(transferAmt, 2),
-                        Status = v.Status ?? "Pending"
+                        Status = v.Status ?? "Pending",
+                        BranchId = v.BranchID,
+                        BranchName = v.Branch?.BranchName,
+                        IsCrossBranch = isCrossBranch,
+                        HomeBranchId = customerBranch
                     };
 
                     group.TotalCash += entry.CashAmount;
@@ -562,7 +555,7 @@ namespace Bhisi.Api.Controllers
 
                 if (branchId.HasValue)
                 {
-                    unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => ld.LoanAccount!.BranchID == branchId.Value);
+                    unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => (ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount != null ? ld.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
 
                 var unvoucheredDisb = await unvoucheredDisbQuery
@@ -595,14 +588,23 @@ namespace Bhisi.Api.Controllers
                         ? $"{member.MemberCode}-{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
                         : (member != null ? $"{member.MemberCode}" : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})");
 
+                    int disbBranch = ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount?.BranchID ?? 1);
+                    int? accBranch = ld.LoanAccount?.BranchID;
+                    bool isCrossBranch = accBranch.HasValue && accBranch.Value > 0 && accBranch.Value != disbBranch;
+
                     bool isCash = ld.PaymentMode == "Cash";
                     var entry = new DaybookEntryDto
                     {
-                        Narration = narration,
+                        Narration = isCrossBranch && !narration.Contains("आंतर-शाखा")
+                            ? $"{narration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
+                            : narration,
                         VoucherNo = "DISB-" + ld.LoanDisbursementID,
                         CashAmount = isCash ? ld.DisbursementAmount : 0,
                         TransferAmount = isCash ? 0 : ld.DisbursementAmount,
-                        Status = "Direct"
+                        Status = "Direct",
+                        BranchId = disbBranch,
+                        IsCrossBranch = isCrossBranch,
+                        HomeBranchId = accBranch
                     };
                     group.TotalCash += entry.CashAmount;
                     group.TotalTransfer += entry.TransferAmount;
@@ -616,7 +618,7 @@ namespace Bhisi.Api.Controllers
 
                 if (branchId.HasValue)
                 {
-                    unvoucheredColQuery = unvoucheredColQuery.Where(lc => lc.LoanAccount!.BranchID == branchId.Value);
+                    unvoucheredColQuery = unvoucheredColQuery.Where(lc => (lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount != null ? lc.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
 
                 var unvoucheredCols = await unvoucheredColQuery
@@ -634,6 +636,9 @@ namespace Bhisi.Api.Controllers
                         ? $"{member.MemberCode}-{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
                         : (member != null ? $"{member.MemberCode}" : $"Loan Collection (Rect: {lc.ReceiptNo})");
                     bool isCash = lc.PaymentMode == "Cash";
+                    int colBranch = lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount?.BranchID ?? 1);
+                    int? accBranch = lc.HomeBranchID ?? lc.LoanAccount?.BranchID;
+                    bool isCrossBranch = lc.IsCrossBranch || (accBranch.HasValue && accBranch.Value > 0 && accBranch.Value != colBranch);
 
                     // Principal Collected -> Loan Ledger
                     if (lc.PrincipalCollected > 0)
@@ -654,11 +659,16 @@ namespace Bhisi.Api.Controllers
                             var group = jamaGroups[lId];
                             var entry = new DaybookEntryDto
                             {
-                                Narration = memberNarration,
+                                Narration = isCrossBranch && !memberNarration.Contains("आंतर-शाखा")
+                                    ? $"{memberNarration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
+                                    : memberNarration,
                                 VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
                                 CashAmount = isCash ? lc.PrincipalCollected : 0,
                                 TransferAmount = isCash ? 0 : lc.PrincipalCollected,
-                                Status = "Direct"
+                                Status = "Direct",
+                                BranchId = colBranch,
+                                IsCrossBranch = isCrossBranch,
+                                HomeBranchId = accBranch
                             };
                             group.TotalCash += entry.CashAmount;
                             group.TotalTransfer += entry.TransferAmount;
@@ -686,11 +696,16 @@ namespace Bhisi.Api.Controllers
                             decimal intAmt = lc.InterestCollected + lc.PenaltyInterestCollected;
                             var entry = new DaybookEntryDto
                             {
-                                Narration = memberNarration,
+                                Narration = isCrossBranch && !memberNarration.Contains("आंतर-शाखा")
+                                    ? $"{memberNarration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
+                                    : memberNarration,
                                 VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
                                 CashAmount = isCash ? intAmt : 0,
                                 TransferAmount = isCash ? 0 : intAmt,
-                                Status = "Direct"
+                                Status = "Direct",
+                                BranchId = colBranch,
+                                IsCrossBranch = isCrossBranch,
+                                HomeBranchId = accBranch
                             };
                             group.TotalCash += entry.CashAmount;
                             group.TotalTransfer += entry.TransferAmount;
@@ -730,24 +745,8 @@ namespace Bhisi.Api.Controllers
             // Load ledgers once
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
 
-            var cashLedgerIds = ledgers
-                .Where(l =>
-                    l.LedgerName.Contains("हातातील रोख शिल्लक") ||
-                    l.LedgerName.Contains("हातावरील रोख शिल्लक") ||
-                    l.LedgerName.Contains("रोख शिल्लक") ||
-                    l.LedgerName.Contains("हातातील") ||
-                    l.LedgerName.Contains("हातावरील") ||
-                    l.LedgerName.Contains("रोख") ||
-                    l.LedgerName.ToLower().Contains("cash") ||
-                    (l.AccountGroup != null && (
-                        l.AccountGroup.GroupName.Contains("Cash") ||
-                        l.AccountGroup.GroupName.Contains("रोख") ||
-                        l.AccountGroup.GroupName.Contains("हातातील") ||
-                        l.AccountGroup.GroupName.Contains("हातावरील")
-                    ))
-                )
-                .Select(l => l.LedgerID)
-                .ToHashSet();
+            // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
+            var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
 
             // Opening balance as of rangeStart
             decimal baseOpeningBalance = 0;
@@ -777,6 +776,7 @@ namespace Bhisi.Api.Controllers
 
             // Load ALL vouchers for the entire range in one query
             var vouchersQuery = _context.Vouchers.AsNoTracking()
+                .Include(v => v.Branch)
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Customer)
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member).ThenInclude(m => m!.Customer)
@@ -819,7 +819,7 @@ namespace Bhisi.Api.Controllers
                               && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
                 if (branchId.HasValue)
                 {
-                    unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => ld.LoanAccount!.BranchID == branchId.Value);
+                    unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => (ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount != null ? ld.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
                 allUnvoucheredDisb = await unvoucheredDisbQuery
                     .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
@@ -831,7 +831,7 @@ namespace Bhisi.Api.Controllers
                               && !lc.VoucherID.HasValue);
                 if (branchId.HasValue)
                 {
-                    unvoucheredColQuery = unvoucheredColQuery.Where(lc => lc.LoanAccount!.BranchID == branchId.Value);
+                    unvoucheredColQuery = unvoucheredColQuery.Where(lc => (lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount != null ? lc.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
                 allUnvoucheredCols = await unvoucheredColQuery
                     .Include(lc => lc.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)
@@ -943,13 +943,22 @@ namespace Bhisi.Api.Controllers
                                 }
                             }
 
+                            int? customerBranch = vd.Customer?.BranchID ?? vd.Member?.Customer?.BranchID ?? vd.Member?.BranchID;
+                            bool isCrossBranch = customerBranch.HasValue && customerBranch.Value > 0 && customerBranch.Value != v.BranchID;
+
                             var entry = new DaybookEntryDto
                             {
-                                Narration = narration,
+                                Narration = isCrossBranch && !narration.Contains("आंतर-शाखा")
+                                    ? $"{narration} [आंतर-शाखा: मूळ शाखा #{customerBranch}]"
+                                    : narration,
                                 VoucherNo = v.VoucherNo ?? "",
                                 CashAmount = Math.Round(cashAmt, 2),
                                 TransferAmount = Math.Round(transferAmt, 2),
-                                Status = v.Status ?? "Pending"
+                                Status = v.Status ?? "Pending",
+                                BranchId = v.BranchID,
+                                BranchName = v.Branch?.BranchName,
+                                IsCrossBranch = isCrossBranch,
+                                HomeBranchId = customerBranch
                             };
 
                             group.TotalCash += entry.CashAmount;
@@ -986,14 +995,23 @@ namespace Bhisi.Api.Controllers
                                 ? $"{member.MemberCode}-{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
                                 : (member != null ? $"{member.MemberCode}" : $"Loan Disbursed (A/C: {ld.LoanAccount?.LoanAccountNo})");
 
+                            int disbBranch = ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount?.BranchID ?? 1);
+                            int? accBranch = ld.LoanAccount?.BranchID;
+                            bool isCrossBranch = accBranch.HasValue && accBranch.Value > 0 && accBranch.Value != disbBranch;
+
                             bool isCash = ld.PaymentMode == "Cash";
                             var entry = new DaybookEntryDto
                             {
-                                Narration = narration,
+                                Narration = isCrossBranch && !narration.Contains("आंतर-शाखा")
+                                    ? $"{narration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
+                                    : narration,
                                 VoucherNo = "DISB-" + ld.LoanDisbursementID,
                                 CashAmount = isCash ? ld.DisbursementAmount : 0,
                                 TransferAmount = isCash ? 0 : ld.DisbursementAmount,
-                                Status = "Direct"
+                                Status = "Direct",
+                                BranchId = disbBranch,
+                                IsCrossBranch = isCrossBranch,
+                                HomeBranchId = accBranch
                             };
                             group.TotalCash += entry.CashAmount;
                             group.TotalTransfer += entry.TransferAmount;
@@ -1011,6 +1029,9 @@ namespace Bhisi.Api.Controllers
                                 ? $"{member.MemberCode}-{member.Customer.FirstName} {member.Customer.LastName}".Trim() 
                                 : (member != null ? $"{member.MemberCode}" : $"Loan Collection (Rect: {lc.ReceiptNo})");
                             bool isCash = lc.PaymentMode == "Cash";
+                            int colBranch = lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount?.BranchID ?? 1);
+                            int? accBranch = lc.HomeBranchID ?? lc.LoanAccount?.BranchID;
+                            bool isCrossBranch = lc.IsCrossBranch || (accBranch.HasValue && accBranch.Value > 0 && accBranch.Value != colBranch);
 
                             if (lc.PrincipalCollected > 0)
                             {
@@ -1030,11 +1051,16 @@ namespace Bhisi.Api.Controllers
                                     var group = jamaGroups[lId];
                                     var entry = new DaybookEntryDto
                                     {
-                                        Narration = memberNarration,
+                                        Narration = isCrossBranch && !memberNarration.Contains("आंतर-शाखा")
+                                            ? $"{memberNarration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
+                                            : memberNarration,
                                         VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
                                         CashAmount = isCash ? lc.PrincipalCollected : 0,
                                         TransferAmount = isCash ? 0 : lc.PrincipalCollected,
-                                        Status = "Direct"
+                                        Status = "Direct",
+                                        BranchId = colBranch,
+                                        IsCrossBranch = isCrossBranch,
+                                        HomeBranchId = accBranch
                                     };
                                     group.TotalCash += entry.CashAmount;
                                     group.TotalTransfer += entry.TransferAmount;
@@ -1061,11 +1087,16 @@ namespace Bhisi.Api.Controllers
                                     decimal intAmt = lc.InterestCollected + lc.PenaltyInterestCollected;
                                     var entry = new DaybookEntryDto
                                     {
-                                        Narration = memberNarration,
+                                        Narration = isCrossBranch && !memberNarration.Contains("आंतर-शाखा")
+                                            ? $"{memberNarration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
+                                            : memberNarration,
                                         VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
                                         CashAmount = isCash ? intAmt : 0,
                                         TransferAmount = isCash ? 0 : intAmt,
-                                        Status = "Direct"
+                                        Status = "Direct",
+                                        BranchId = colBranch,
+                                        IsCrossBranch = isCrossBranch,
+                                        HomeBranchId = accBranch
                                     };
                                     group.TotalCash += entry.CashAmount;
                                     group.TotalTransfer += entry.TransferAmount;
@@ -1123,25 +1154,8 @@ namespace Bhisi.Api.Controllers
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
             var groups = await _context.AccountGroups.AsNoTracking().ToListAsync();
             
-            // Match all cash ledgers dynamically
-            var cashLedgerIds = ledgers
-                .Where(l => 
-                    l.LedgerName.Contains("हातातील रोख शिल्लक") || 
-                    l.LedgerName.Contains("हातावरील रोख शिल्लक") || 
-                    l.LedgerName.Contains("रोख शिल्लक") || 
-                    l.LedgerName.Contains("हातातील") || 
-                    l.LedgerName.Contains("हातावरील") || 
-                    l.LedgerName.Contains("रोख") || 
-                    l.LedgerName.ToLower().Contains("cash") ||
-                    (l.AccountGroup != null && (
-                        l.AccountGroup.GroupName.Contains("Cash") || 
-                        l.AccountGroup.GroupName.Contains("रोख") ||
-                        l.AccountGroup.GroupName.Contains("हातातील") ||
-                        l.AccountGroup.GroupName.Contains("हातावरील")
-                    ))
-                )
-                .Select(l => l.LedgerID)
-                .ToHashSet();
+            // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
+            var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
 
             // Calculate Opening Balance for Cash across matched cash ledgers
             decimal openingBalance = 0;
@@ -1171,6 +1185,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var vouchersQuery = _context.Vouchers.AsNoTracking()
+                .Include(v => v.Branch)
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Customer)
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member).ThenInclude(m => m!.Customer)
@@ -1282,7 +1297,7 @@ namespace Bhisi.Api.Controllers
                               && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
                 if (branchId.HasValue)
                 {
-                    unvoucheredDisbQuerySummary = unvoucheredDisbQuerySummary.Where(ld => ld.LoanAccount != null && ld.LoanAccount.BranchID == branchId.Value);
+                    unvoucheredDisbQuerySummary = unvoucheredDisbQuerySummary.Where(ld => (ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount != null ? ld.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
                 var unvoucheredDisbSummary = await unvoucheredDisbQuerySummary.ToListAsync();
                 var defaultLoanLedgerSummary = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज") || l.LedgerName.Contains("Loan") || l.LedgerName.Contains("मुद्दल")) ?? ledgers.FirstOrDefault();
@@ -1323,7 +1338,7 @@ namespace Bhisi.Api.Controllers
                               && !lc.VoucherID.HasValue);
                 if (branchId.HasValue)
                 {
-                    unvoucheredColQuerySummary = unvoucheredColQuerySummary.Where(lc => lc.LoanAccount != null && lc.LoanAccount.BranchID == branchId.Value);
+                    unvoucheredColQuerySummary = unvoucheredColQuerySummary.Where(lc => (lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount != null ? lc.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
                 var unvoucheredColSummary = await unvoucheredColQuerySummary.ToListAsync();
                 var defaultInterestLedgerSummary = ledgers.FirstOrDefault(l => l.LedgerName.Contains("कर्ज व्याज") || l.LedgerName.Contains("व्याज जमा") || l.LedgerName.Contains("Interest")) ?? defaultLoanLedgerSummary;
@@ -1443,25 +1458,8 @@ namespace Bhisi.Api.Controllers
             var ledgers = await _context.Ledgers.AsNoTracking().Include(l => l.AccountGroup).ToListAsync();
             var groups = await _context.AccountGroups.AsNoTracking().ToListAsync();
 
-            // Match all cash ledgers dynamically
-            var cashLedgerIds = ledgers
-                .Where(l =>
-                    l.LedgerName.Contains("हातातील रोख शिल्लक") ||
-                    l.LedgerName.Contains("हातावरील रोख शिल्लक") ||
-                    l.LedgerName.Contains("रोख शिल्लक") ||
-                    l.LedgerName.Contains("हातातील") ||
-                    l.LedgerName.Contains("हातावरील") ||
-                    l.LedgerName.Contains("रोख") ||
-                    l.LedgerName.ToLower().Contains("cash") ||
-                    (l.AccountGroup != null && (
-                        l.AccountGroup.GroupName.Contains("Cash") ||
-                        l.AccountGroup.GroupName.Contains("रोख") ||
-                        l.AccountGroup.GroupName.Contains("हातातील") ||
-                        l.AccountGroup.GroupName.Contains("हातावरील")
-                    ))
-                )
-                .Select(l => l.LedgerID)
-                .ToHashSet();
+            // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
+            var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
 
             // Calculate Opening Balance for Cash as of rangeStart
             decimal baseOpeningBalance = 0;
@@ -1492,6 +1490,7 @@ namespace Bhisi.Api.Controllers
 
             // Load ALL vouchers for the entire range in one query
             var vouchersQuery = _context.Vouchers.AsNoTracking()
+                .Include(v => v.Branch)
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Ledger)
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Customer)
                 .Include(v => v.VoucherDetails).ThenInclude(vd => vd.Member).ThenInclude(m => m!.Customer)
@@ -1535,7 +1534,7 @@ namespace Bhisi.Api.Controllers
                               && (ld.Remarks == null || (!ld.Remarks.Contains("Opening Balance") && !ld.Remarks.Contains("मागील येणे"))));
                 if (branchId.HasValue)
                 {
-                    unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => ld.LoanAccount != null && ld.LoanAccount.BranchID == branchId.Value);
+                    unvoucheredDisbQuery = unvoucheredDisbQuery.Where(ld => (ld.BranchID != 0 ? ld.BranchID : (ld.LoanAccount != null ? ld.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
                 allUnvoucheredDisb = await unvoucheredDisbQuery.ToListAsync();
 
@@ -1546,7 +1545,7 @@ namespace Bhisi.Api.Controllers
                               && !lc.VoucherID.HasValue);
                 if (branchId.HasValue)
                 {
-                    unvoucheredColQuery = unvoucheredColQuery.Where(lc => lc.LoanAccount != null && lc.LoanAccount.BranchID == branchId.Value);
+                    unvoucheredColQuery = unvoucheredColQuery.Where(lc => (lc.BranchID != 0 ? lc.BranchID : (lc.LoanAccount != null ? lc.LoanAccount.BranchID : 1)) == branchId.Value);
                 }
                 allUnvoucheredCols = await unvoucheredColQuery.ToListAsync();
             }
@@ -2742,6 +2741,9 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<LoanCollectionRegisterDto>>> GetLoanCollectionRegister([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
         {
             var query = _context.LoanCollections
+                .Include(c => c.Branch)
+                .Include(c => c.LoanAccount!)
+                    .ThenInclude(a => a!.Branch)
                 .Include(c => c.LoanAccount!)
                     .ThenInclude(a => a!.Customer)
                 .Include(c => c.LoanAccount!)
@@ -2759,9 +2761,10 @@ namespace Bhisi.Api.Controllers
                 var toDateEnd = toDate.Value.Date.AddDays(1).AddTicks(-1);
                 query = query.Where(c => c.CollectionDate <= toDateEnd);
             }
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
-                query = query.Where(c => c.LoanAccount != null && c.LoanAccount.BranchID == branchId.Value);
+                // Filter by collecting branch (where cash entered the counter and physical drawer)
+                query = query.Where(c => c.BranchID == branchId.Value);
             }
 
             var collections = await query.OrderBy(c => c.CollectionDate).ThenBy(c => c.LoanCollectionID).ToListAsync();
@@ -2793,7 +2796,12 @@ namespace Bhisi.Api.Controllers
                     PenaltyInterestCollected = c.PenaltyInterestCollected,
                     SurchargeCollected = c.SurchargeCollected,
                     TotalAmountReceived = c.TotalAmountReceived,
-                    PaymentMode = c.PaymentMode
+                    PaymentMode = c.PaymentMode,
+                    BranchID = c.BranchID,
+                    BranchName = c.Branch?.BranchName ?? $"शाखा #{c.BranchID}",
+                    HomeBranchID = c.HomeBranchID ?? acc?.BranchID,
+                    HomeBranchName = acc?.Branch?.BranchName ?? (c.HomeBranchID.HasValue ? $"शाखा #{c.HomeBranchID}" : ""),
+                    IsCrossBranch = c.IsCrossBranch || (c.HomeBranchID.HasValue && c.HomeBranchID != c.BranchID) || (acc != null && acc.BranchID != c.BranchID)
                 };
             });
 
@@ -3093,7 +3101,7 @@ namespace Bhisi.Api.Controllers
                 var totalLoanOverdueBalance = await loanAccountsQuery.Where(l => l.Status == "Active").SumAsync(l => (decimal?)l.OverdueInterestBalance) ?? 0m;
                 
                 var loanCollectionsQuery = _context.LoanCollections.AsNoTracking();
-                if (branchId.HasValue) loanCollectionsQuery = loanCollectionsQuery.Where(c => c.LoanAccount != null && c.LoanAccount.BranchID == branchId.Value);
+                if (branchId.HasValue) loanCollectionsQuery = loanCollectionsQuery.Where(c => (c.BranchID != 0 ? c.BranchID : (c.LoanAccount != null ? c.LoanAccount.BranchID : 1)) == branchId.Value);
                 var totalLoanCollected = await loanCollectionsQuery.SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
                 
                 // Saving Module

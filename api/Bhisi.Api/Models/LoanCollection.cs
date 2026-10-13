@@ -16,6 +16,20 @@ namespace Bhisi.Api.Models
         public LoanAccount? LoanAccount { get; set; }
 
         [Required]
+        public int BranchID { get; set; } = 1;
+
+        [ForeignKey("BranchID")]
+        public Branch? Branch { get; set; }
+
+        public int? CollectingCashierID { get; set; }
+
+        public int? CreatedByUserID { get; set; }
+
+        public bool IsCrossBranch { get; set; } = false;
+
+        public int? HomeBranchID { get; set; }
+
+        [Required]
         public DateTime CollectionDate { get; set; } = DateTime.Today;
 
         [StringLength(50)]

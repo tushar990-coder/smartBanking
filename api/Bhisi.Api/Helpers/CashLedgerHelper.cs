@@ -41,16 +41,40 @@ namespace Bhisi.Api.Helpers
 
                     if (isHeadOffice)
                     {
+                        // 1. Explicitly named Main / Head Office cash ledger (e.g., "हाता. रोख शिल्लक मेन शाखा", "मुख्य", "Main")
+                        var mainNamedCash = await context.Ledgers
+                            .AsNoTracking()
+                            .Where(l => 
+                                (l.LedgerName.Contains("मेन") || 
+                                 l.LedgerName.Contains("मुख्य") || 
+                                 l.LedgerName.ToLower().Contains("main") || 
+                                 l.LedgerName.ToLower().Contains("head office") || 
+                                 l.LedgerName.ToLower().Contains("h.o")) &&
+                                (l.LedgerName.Contains("रोख") || 
+                                 l.LedgerName.Contains("हात") || 
+                                 l.LedgerName.ToLower().Contains("cash") || 
+                                 l.AccountType == "Cash" || 
+                                 l.AccountType == "Cash In Hand" || 
+                                 (l.AccountType != null && l.AccountType.Contains("Cash"))))
+                            .OrderBy(l => l.LedgerID)
+                            .FirstOrDefaultAsync();
+
+                        if (mainNamedCash != null)
+                        {
+                            return mainNamedCash.LedgerID;
+                        }
+
+                        // 2. Non-branch-specific head office cash ledger
                         var mainCash = await context.Ledgers
                             .AsNoTracking()
                             .Where(l => 
                                 (l.LedgerName.Contains("हातातील रोख शिल्लक") || 
-                                 l.LedgerName.Contains("हातावरील रोख शिल्लक (मुख्य") || 
-                                 l.LedgerName == "हातावरील रोख शिल्लक" || 
+                                 l.LedgerName.Contains("हातावरील रोख शिल्लक") || 
                                  l.LedgerName == "रोख खाते" || 
                                  l.LedgerName.ToLower() == "cash" ||
                                  l.LedgerName.ToLower() == "cash in hand") &&
-                                !l.LedgerName.Contains("शाखा"))
+                                !l.LedgerName.Contains("शाखा") &&
+                                !l.LedgerName.Contains("ब्रांच"))
                             .OrderBy(l => l.LedgerID)
                             .FirstOrDefaultAsync();
 
@@ -63,14 +87,14 @@ namespace Bhisi.Api.Helpers
                     // 3. Branch-specific cash ledger by name matching
                     if (!string.IsNullOrWhiteSpace(branch.BranchName))
                     {
-                        var cleanBranchName = branch.BranchName.Replace("शाखा", "").Trim();
+                        var cleanBranchName = branch.BranchName.Replace("शाखा", "").Replace("ब्रांच", "").Replace("कार्यालय", "").Trim();
                         if (!string.IsNullOrEmpty(cleanBranchName))
                         {
                             var branchCashLedger = await context.Ledgers
                                 .AsNoTracking()
                                 .FirstOrDefaultAsync(l => 
-                                    (l.LedgerName.Contains(cleanBranchName) || l.LedgerName.Contains(branch.BranchCode)) &&
-                                    (l.LedgerName.Contains("रोख") || l.LedgerName.ToLower().Contains("cash") || l.AccountType == "Cash" || l.AccountType == "Cash In Hand" || (l.AccountType != null && l.AccountType.Contains("Cash"))));
+                                    (l.LedgerName.Contains(cleanBranchName) || (!string.IsNullOrEmpty(branch.BranchCode) && l.LedgerName.Contains(branch.BranchCode))) &&
+                                    (l.LedgerName.Contains("रोख") || l.LedgerName.Contains("हात") || l.LedgerName.ToLower().Contains("cash") || l.AccountType == "Cash" || l.AccountType == "Cash In Hand" || (l.AccountType != null && l.AccountType.Contains("Cash"))));
 
                             if (branchCashLedger != null)
                             {
@@ -96,7 +120,8 @@ namespace Bhisi.Api.Helpers
                     (l.AccountGroup != null && (l.AccountGroup.GroupName.Contains("रोख") || l.AccountGroup.GroupName.Contains("Cash"))) ||
                     l.LedgerName.Contains("Cash") ||
                     l.LedgerName.Contains("रोख")) &&
-                    !l.LedgerName.Contains("शाखा"))
+                    !l.LedgerName.Contains("शाखा") &&
+                    !l.LedgerName.Contains("ब्रांच"))
                 .OrderBy(l => l.LedgerID)
                 .FirstOrDefaultAsync();
 
@@ -108,7 +133,7 @@ namespace Bhisi.Api.Helpers
             // 5. Ultimate fallback: Any cash ledger
             var anyCash = await context.Ledgers
                 .AsNoTracking()
-                .Where(l => l.LedgerName.Contains("रोख") || l.LedgerName.Contains("Cash") || l.AccountType == "Cash")
+                .Where(l => l.LedgerName.Contains("रोख") || l.LedgerName.Contains("हात") || l.LedgerName.Contains("Cash") || l.AccountType == "Cash")
                 .OrderBy(l => l.LedgerID)
                 .FirstOrDefaultAsync();
 
@@ -131,18 +156,42 @@ namespace Bhisi.Api.Helpers
                 }
 
                 // If branch is Head Office, filter out other branch cash ledgers
-                bool isHeadOffice = branch != null && (string.Equals(branch.BranchType, "HeadOffice", StringComparison.OrdinalIgnoreCase) || branch.BranchID == 1 || (!string.IsNullOrEmpty(branch.BranchName) && branch.BranchName.Contains("मुख्य")));
+                bool isHeadOffice = branch != null && (string.Equals(branch.BranchType, "HeadOffice", StringComparison.OrdinalIgnoreCase) || branch.BranchID == 1 || (!string.IsNullOrEmpty(branch.BranchName) && (branch.BranchName.Contains("मुख्य") || branch.BranchName.Contains("Main"))));
                 if (isHeadOffice)
                 {
+                    // 1. Explicitly named Main / Head Office cash ledger (e.g., "हाता. रोख शिल्लक मेन शाखा", "मुख्य")
+                    var hoNamedCashIds = ledgers
+                        .Where(l => 
+                            (l.LedgerName.Contains("मेन") || 
+                             l.LedgerName.Contains("मुख्य") || 
+                             l.LedgerName.ToLower().Contains("main") || 
+                             l.LedgerName.ToLower().Contains("head office") || 
+                             l.LedgerName.ToLower().Contains("h.o")) &&
+                            (l.LedgerName.Contains("रोख") || 
+                             l.LedgerName.Contains("हात") || 
+                             l.LedgerName.ToLower().Contains("cash") || 
+                             l.AccountType == "Cash" || 
+                             l.AccountType == "Cash In Hand" || 
+                             (l.AccountType != null && l.AccountType.Contains("Cash"))))
+                        .Select(l => l.LedgerID)
+                        .ToHashSet();
+
+                    if (hoNamedCashIds.Any())
+                    {
+                        return hoNamedCashIds;
+                    }
+
+                    // 2. Non-branch specific cash ledgers
                     var hoCashIds = ledgers
                         .Where(l => 
                             (l.LedgerName.Contains("हातातील रोख शिल्लक") || 
-                             l.LedgerName.Contains("हातावरील रोख शिल्लक (मुख्य") || 
-                             l.LedgerName == "हातावरील रोख शिल्लक" || 
+                             l.LedgerName.Contains("हातावरील रोख शिल्लक") || 
                              l.LedgerName == "रोख खाते" || 
                              l.LedgerName.ToLower() == "cash" ||
-                             l.LedgerName.ToLower() == "cash in hand") &&
-                            !l.LedgerName.Contains("शाखा"))
+                             l.LedgerName.ToLower() == "cash in hand" ||
+                             l.AccountType == "Cash") &&
+                            !l.LedgerName.Contains("शाखा") &&
+                            !l.LedgerName.Contains("ब्रांच"))
                         .Select(l => l.LedgerID)
                         .ToHashSet();
 
@@ -155,11 +204,11 @@ namespace Bhisi.Api.Helpers
                 // If branch has a specific name, find matching cash ledgers
                 if (branch != null && !string.IsNullOrWhiteSpace(branch.BranchName))
                 {
-                    var cleanName = branch.BranchName.Replace("शाखा", "").Trim();
+                    var cleanName = branch.BranchName.Replace("शाखा", "").Replace("ब्रांच", "").Replace("कार्यालय", "").Trim();
                     var branchSpecificIds = ledgers
                         .Where(l => 
-                            (l.LedgerName.Contains(cleanName) || l.LedgerName.Contains(branch.BranchCode)) &&
-                            (l.LedgerName.Contains("रोख") || l.LedgerName.ToLower().Contains("cash") || l.AccountType == "Cash" || l.AccountType == "Cash In Hand" || (l.AccountType != null && l.AccountType.Contains("Cash"))))
+                            (!string.IsNullOrEmpty(cleanName) && l.LedgerName.Contains(cleanName) || (!string.IsNullOrEmpty(branch.BranchCode) && l.LedgerName.Contains(branch.BranchCode))) &&
+                            (l.LedgerName.Contains("रोख") || l.LedgerName.Contains("हात") || l.LedgerName.ToLower().Contains("cash") || l.AccountType == "Cash" || l.AccountType == "Cash In Hand" || (l.AccountType != null && l.AccountType.Contains("Cash"))))
                         .Select(l => l.LedgerID)
                         .ToHashSet();
 

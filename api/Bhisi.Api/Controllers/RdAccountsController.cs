@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
@@ -933,7 +934,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/RdAccounts/5/CollectInstallment
         [HttpPost("{id}/CollectInstallment")]
-        public async Task<IActionResult> CollectInstallment(int id, [FromQuery] int count, [FromQuery] decimal penaltyAmount, [FromQuery] string payMode = "Cash")
+        public async Task<IActionResult> CollectInstallment(int id, [FromQuery] int count, [FromQuery] decimal penaltyAmount, [FromQuery] string payMode = "Cash", [FromQuery] int? branchId = null)
         {
             var account = await _context.RdAccounts
                 .Include(a => a.RdScheme)
@@ -968,16 +969,37 @@ namespace Bhisi.Api.Controllers
                     }
                     await _context.SaveChangesAsync();
 
+                    var currentUser = HttpContext.User;
+                    string? roleClaim = currentUser?.FindFirst(ClaimTypes.Role)?.Value ?? currentUser?.FindFirst("role")?.Value;
+                    string? branchClaim = currentUser?.FindFirst("BranchID")?.Value ?? currentUser?.FindFirst("branchId")?.Value ?? currentUser?.FindFirst("branch")?.Value;
+                    int.TryParse(branchClaim, out int userBranchId);
+                    if (userBranchId <= 0) userBranchId = 1;
+
+                    bool isHO = (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                                (roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                                (roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                                userBranchId == 1;
+
+                    int collectingBranchId = (isHO && branchId.HasValue && branchId.Value > 0)
+                        ? branchId.Value
+                        : (userBranchId > 0 ? userBranchId : (account.BranchID > 0 ? account.BranchID : 1));
+
                     // Accounting Vouchers
                     var rdLiabilityLedger = await GetLiabilityLedgerAsync(account.RdScheme);
-                    int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "RD");
+                    int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, collectingBranchId, "RD");
                     var cashLedger = await _context.Ledgers.FindAsync(branchCashId);
                     var penaltyLedger = await GetPenaltyLedgerAsync(account.RdScheme);
+
+                    string narration = $"आरडी हप्ता भरणा (RD Collection) - हप्ता क्र. {currentPaid + 1} ते {currentPaid + count}, दंड: ₹{penaltyAmount}";
+                    if (account.BranchID > 0 && account.BranchID != collectingBranchId)
+                    {
+                        narration += $" [आंतर-शाखा / Cross-Branch: खाते मूळ शाखा #{account.BranchID}]";
+                    }
 
                     var (vStatusColl, appByColl, appOnColl) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, totalReceived, 1);
                     var voucher = new Voucher
                     {
-                        BranchID = account.BranchID,
+                        BranchID = collectingBranchId,
                         VoucherNo = $"JV-RD-COLL-{account.AccountNo}-{currentPaid + 1}",
                         VoucherDate = DateTime.Today,
                         VoucherType = "Receipt",
@@ -985,7 +1007,7 @@ namespace Bhisi.Api.Controllers
                         ApprovedBy = appByColl,
                         ApprovedOn = appOnColl,
                         TotalAmount = totalReceived,
-                        Narration = $"आरडी हप्ता भरणा (RD Collection) - हप्ता क्र. {currentPaid + 1} ते {currentPaid + count}, दंड: ₹{penaltyAmount}",
+                        Narration = narration,
                         CreatedBy = 1,
                         CreatedOn = DateTime.Now
                     };

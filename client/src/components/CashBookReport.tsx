@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
 
 interface CashBookEntry {
   voucherNo: string;
@@ -41,6 +42,8 @@ interface SansthaDetails {
 }
 
 export default function CashBookReport() {
+  const { user } = useAuth();
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.branchID === 1;
   const [fromDate, setFromDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [toDate, setToDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [pages, setPages] = useState<{ date: string; data: CashBookResponse }[]>([]);
@@ -51,7 +54,11 @@ export default function CashBookReport() {
 
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? (globalBranchStr as string) : 'all';
+  const initialBranchId = hasGlobalBranch
+    ? (globalBranchStr as string)
+    : !isHOUser && user?.branchID
+    ? user.branchID.toString()
+    : 'all';
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
 
   useEffect(() => {
@@ -59,6 +66,12 @@ export default function CashBookReport() {
     fetchBranches();
     fetchReport();
   }, []);
+
+  useEffect(() => {
+    if (!isHOUser && user?.branchID) {
+      setSelectedBranchId(user.branchID.toString());
+    }
+  }, [user?.branchID, isHOUser]);
 
   const fetchBranches = async () => {
     try {
@@ -256,9 +269,10 @@ export default function CashBookReport() {
               <select
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32"
+                disabled={hasGlobalBranch || !isHOUser}
+                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32 disabled:bg-gray-100 disabled:text-gray-500 cursor-pointer disabled:cursor-not-allowed"
               >
-                <option value="all">सर्व शाखा (All)</option>
+                {isHOUser && <option value="all">सर्व शाखा (All)</option>}
                 {branches.map((b) => (
                   <option key={b.branchID} value={b.branchID}>
                     {b.branchName}

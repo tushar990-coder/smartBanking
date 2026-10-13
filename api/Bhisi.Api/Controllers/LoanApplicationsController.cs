@@ -23,11 +23,12 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
-        private (int userId, string username, int branchId) GetCurrentUserContext()
+        private (int userId, string username, int branchId, string role) GetCurrentUserContext()
         {
             int userId = 1;
             string username = "System";
             int branchId = 1;
+            string role = "User";
 
             var userClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("UserID") ?? User.FindFirst("sub");
             if (userClaim != null && int.TryParse(userClaim.Value, out int uid)) userId = uid;
@@ -38,43 +39,77 @@ namespace Bhisi.Api.Controllers
             var branchClaim = User.FindFirst("BranchID") ?? User.FindFirst("branchID");
             if (branchClaim != null && int.TryParse(branchClaim.Value, out int bid)) branchId = bid;
 
-            return (userId, username, branchId);
+            var roleClaim = User.FindFirst(ClaimTypes.Role) ?? User.FindFirst("role") ?? User.FindFirst("Role");
+            if (roleClaim != null && !string.IsNullOrWhiteSpace(roleClaim.Value)) role = roleClaim.Value;
+
+            return (userId, username, branchId, role);
         }
 
-        // GET: api/LoanApplications/next-number
+        // GET: api/LoanApplications/next-number?branchId=1
         [HttpGet("next-number")]
-        public async Task<ActionResult<string>> GetNextApplicationNo()
+        public async Task<ActionResult<string>> GetNextApplicationNo([FromQuery] int? branchId = null)
         {
+            var userContext = GetCurrentUserContext();
+            int targetBranchId = branchId.HasValue && branchId.Value > 0 ? branchId.Value : userContext.branchId;
+
+            var branch = await _context.Branches.FindAsync(targetBranchId);
+            string branchCode = !string.IsNullOrWhiteSpace(branch?.BranchCode) ? branch.BranchCode.Trim().ToUpper() : "HQ";
+
             var today = DateTime.Today;
             var year = today.Year.ToString().Substring(2, 2);
             var month = today.Month.ToString("D2");
-            var prefix = $"APP-{year}{month}-";
+            var branchPrefix = $"APP-{branchCode}-{year}{month}-";
+            var legacyPrefix = $"APP-{year}{month}-";
             
-            var lastApp = await _context.LoanApplications
-                .Where(a => a.ApplicationNo != null && a.ApplicationNo.StartsWith(prefix))
+            var lastBranchApp = await _context.LoanApplications
+                .Where(a => a.BranchID == targetBranchId && a.ApplicationNo != null && a.ApplicationNo.StartsWith(branchPrefix))
                 .OrderByDescending(a => a.ApplicationNo)
                 .FirstOrDefaultAsync();
 
             int nextNo = 1;
-            if (lastApp?.ApplicationNo != null)
+            if (lastBranchApp?.ApplicationNo != null)
             {
-                var parts = lastApp.ApplicationNo.Split('-');
-                if (parts.Length == 3 && int.TryParse(parts[2], out int lastNo))
+                var parts = lastBranchApp.ApplicationNo.Split('-');
+                if (parts.Length >= 4 && int.TryParse(parts[3], out int lastNo))
                 {
                     nextNo = lastNo + 1;
                 }
             }
+            else if (targetBranchId == 1)
+            {
+                // Fallback for Main / HQ branch if legacy un-prefixed applications exist
+                var lastLegacyApp = await _context.LoanApplications
+                    .Where(a => a.ApplicationNo != null && a.ApplicationNo.StartsWith(legacyPrefix))
+                    .OrderByDescending(a => a.ApplicationNo)
+                    .FirstOrDefaultAsync();
 
-            return Content($"{prefix}{nextNo:D3}", "text/plain");
+                if (lastLegacyApp?.ApplicationNo != null)
+                {
+                    var parts = lastLegacyApp.ApplicationNo.Split('-');
+                    if (parts.Length == 3 && int.TryParse(parts[2], out int lastNo))
+                    {
+                        nextNo = lastNo + 1;
+                    }
+                }
+            }
+
+            return Content($"{branchPrefix}{nextNo:D3}", "text/plain");
         }
 
-        // GET: api/LoanApplications
+        // GET: api/LoanApplications?branchId=1
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<LoanApplication>>> GetLoanApplications()
+        public async Task<ActionResult<IEnumerable<LoanApplication>>> GetLoanApplications([FromQuery] int? branchId = null)
         {
             try
             {
-                var list = await _context.LoanApplications
+                var userContext = GetCurrentUserContext();
+                bool isHoOrAdmin = userContext.role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
+
+                var query = _context.LoanApplications
+                    .Include(a => a.Branch)
                     .Include(a => a.Customer)
                     .Include(a => a.CoCustomer)
                     .Include(a => a.CoCustomer2)
@@ -82,7 +117,21 @@ namespace Bhisi.Api.Controllers
                     .Include(a => a.Guarantor1Customer)
                     .Include(a => a.Guarantor2Customer)
                     .Include(a => a.RecommendedByDirector)
+                    .AsQueryable();
+
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    query = query.Where(a => a.BranchID == branchId.Value);
+                }
+                else if (!isHoOrAdmin)
+                {
+                    // Branch users are strictly restricted to their own branch applications
+                    query = query.Where(a => a.BranchID == userContext.branchId);
+                }
+
+                var list = await query
                     .OrderByDescending(a => a.ApplicationDate)
+                    .ThenByDescending(a => a.LoanApplicationID)
                     .ToListAsync();
 
                 await EnrichApplicationDisbursementStatus(list);
@@ -95,13 +144,20 @@ namespace Bhisi.Api.Controllers
             }
         }
 
-        // GET: api/LoanApplications/pending-disbursements
+        // GET: api/LoanApplications/pending-disbursements?branchId=1
         [HttpGet("pending-disbursements")]
-        public async Task<ActionResult<IEnumerable<LoanApplication>>> GetPendingDisbursements()
+        public async Task<ActionResult<IEnumerable<LoanApplication>>> GetPendingDisbursements([FromQuery] int? branchId = null)
         {
             try
             {
-                var list = await _context.LoanApplications
+                var userContext = GetCurrentUserContext();
+                bool isHoOrAdmin = userContext.role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
+
+                var query = _context.LoanApplications
+                    .Include(a => a.Branch)
                     .Include(a => a.Customer)
                     .Include(a => a.CoCustomer)
                     .Include(a => a.CoCustomer2)
@@ -109,7 +165,20 @@ namespace Bhisi.Api.Controllers
                     .Include(a => a.Guarantor1Customer)
                     .Include(a => a.Guarantor2Customer)
                     .Include(a => a.RecommendedByDirector)
+                    .AsQueryable();
+
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    query = query.Where(a => a.BranchID == branchId.Value);
+                }
+                else if (!isHoOrAdmin)
+                {
+                    query = query.Where(a => a.BranchID == userContext.branchId);
+                }
+
+                var list = await query
                     .OrderByDescending(a => a.ApplicationDate)
+                    .ThenByDescending(a => a.LoanApplicationID)
                     .ToListAsync();
 
                 await EnrichApplicationDisbursementStatus(list);
@@ -128,6 +197,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<LoanApplication>> GetLoanApplication(int id)
         {
             var loanApplication = await _context.LoanApplications
+                .Include(a => a.Branch)
                 .Include(a => a.Customer)
                 .Include(a => a.CoCustomer)
                 .Include(a => a.CoCustomer2)
@@ -310,31 +380,71 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
+                // Branch resolution and branch code with multi-branch security check
+                var userContext = GetCurrentUserContext();
+                bool isHoOrAdmin = userContext.role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
+
+                if (!isHoOrAdmin)
+                {
+                    // Non-HO branch operators are strictly locked to their own branch
+                    loanApplication.BranchID = userContext.branchId;
+                }
+                else if (loanApplication.BranchID <= 0)
+                {
+                    loanApplication.BranchID = userContext.branchId;
+                }
+
+                var branch = await _context.Branches.FindAsync(loanApplication.BranchID);
+                string branchCode = !string.IsNullOrWhiteSpace(branch?.BranchCode) ? branch.BranchCode.Trim().ToUpper() : "HQ";
+
                 // Auto-generate ApplicationNo
                 var today = DateTime.Today;
                 var year = today.Year.ToString().Substring(2, 2);
                 var month = today.Month.ToString("D2");
-                var prefix = $"APP-{year}{month}-";
+                var branchPrefix = $"APP-{branchCode}-{year}{month}-";
+                var legacyPrefix = $"APP-{year}{month}-";
                 
-                var lastApp = await _context.LoanApplications
-                    .Where(a => a.ApplicationNo != null && a.ApplicationNo.StartsWith(prefix))
+                var lastBranchApp = await _context.LoanApplications
+                    .Where(a => a.BranchID == loanApplication.BranchID && a.ApplicationNo != null && a.ApplicationNo.StartsWith(branchPrefix))
                     .OrderByDescending(a => a.ApplicationNo)
                     .FirstOrDefaultAsync();
 
                 int nextNo = 1;
-                if (lastApp != null && !string.IsNullOrEmpty(lastApp.ApplicationNo))
+                if (lastBranchApp?.ApplicationNo != null)
                 {
-                    var parts = lastApp.ApplicationNo.Split('-');
-                    if (parts.Length == 3 && int.TryParse(parts[2], out int lastNo))
+                    var parts = lastBranchApp.ApplicationNo.Split('-');
+                    if (parts.Length >= 4 && int.TryParse(parts[3], out int lastNo))
                     {
                         nextNo = lastNo + 1;
                     }
                 }
+                else if (loanApplication.BranchID == 1)
+                {
+                    var lastLegacyApp = await _context.LoanApplications
+                        .Where(a => a.ApplicationNo != null && a.ApplicationNo.StartsWith(legacyPrefix))
+                        .OrderByDescending(a => a.ApplicationNo)
+                        .FirstOrDefaultAsync();
 
-                loanApplication.ApplicationNo = $"{prefix}{nextNo:D3}";
+                    if (lastLegacyApp?.ApplicationNo != null)
+                    {
+                        var parts = lastLegacyApp.ApplicationNo.Split('-');
+                        if (parts.Length == 3 && int.TryParse(parts[2], out int lastNo))
+                        {
+                            nextNo = lastNo + 1;
+                        }
+                    }
+                }
+
+                loanApplication.ApplicationNo = $"{branchPrefix}{nextNo:D3}";
 
                 _context.LoanApplications.Add(loanApplication);
                 await _context.SaveChangesAsync();
+
+                // Reload branch navigation for return
+                await _context.Entry(loanApplication).Reference(a => a.Branch).LoadAsync();
 
                 return Ok(loanApplication);
             }
@@ -356,6 +466,26 @@ namespace Bhisi.Api.Controllers
 
             try
             {
+                var userContext = GetCurrentUserContext();
+                bool isHoOrAdmin = userContext.role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
+                                   userContext.role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
+
+                var existing = await _context.LoanApplications.AsNoTracking().FirstOrDefaultAsync(a => a.LoanApplicationID == id);
+                if (existing != null)
+                {
+                    if (!isHoOrAdmin && existing.BranchID != userContext.branchId)
+                    {
+                        return BadRequest(new { message = $"सुरक्षा उल्लंघन: तुम्ही शाखा क्र. {userContext.branchId} चे ऑपरेटर आहात. तुम्हाला शाखा क्र. {existing.BranchID} च्या अर्जात बदल करण्याचा अधिकार नाही." });
+                    }
+
+                    if (loanApplication.BranchID <= 0 || !isHoOrAdmin)
+                    {
+                        loanApplication.BranchID = existing.BranchID;
+                    }
+                }
+
                 // Sanitize 0 values to null for nullable foreign keys
                 if (loanApplication.CoCustomerID.HasValue && loanApplication.CoCustomerID.Value <= 0) loanApplication.CoCustomerID = null;
                 if (loanApplication.CoCustomer2ID.HasValue && loanApplication.CoCustomer2ID.Value <= 0) loanApplication.CoCustomer2ID = null;

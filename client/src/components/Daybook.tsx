@@ -12,6 +12,10 @@ interface DaybookEntry {
   cashAmount: number;
   transferAmount: number;
   status?: string;
+  branchId?: number;
+  branchName?: string;
+  isCrossBranch?: boolean;
+  homeBranchId?: number;
 }
 
 interface DaybookGroup {
@@ -45,6 +49,7 @@ const getTodayDate = () => {
 
 export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
   const { user } = useAuth();
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.branchID === 1;
   const pagesAreaRef = useRef<HTMLDivElement>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [reportViewType, setReportViewType] = useState<'detailed' | 'ledger-wise'>('detailed');
@@ -70,7 +75,11 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
   const [branches, setBranches] = useState<any[]>([]);
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? (globalBranchStr as string) : 'all';
+  const initialBranchId = hasGlobalBranch
+    ? (globalBranchStr as string)
+    : !isHOUser && user?.branchID
+    ? user.branchID.toString()
+    : 'all';
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
 
   useEffect(() => {
@@ -87,10 +96,10 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
   }, [initialVoucherStatus]);
 
   useEffect(() => {
-    if (user?.branchID) {
+    if (!isHOUser && user?.branchID) {
       setSelectedBranchId(user.branchID.toString());
     }
-  }, [user?.branchID]);
+  }, [user?.branchID, isHOUser]);
 
   const fetchBranches = async () => {
     try {
@@ -384,9 +393,10 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
               <select
                 value={selectedBranchId}
                 onChange={e => setSelectedBranchId(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32"
+                disabled={hasGlobalBranch || !isHOUser}
+                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32 disabled:bg-gray-100 disabled:text-gray-500 cursor-pointer disabled:cursor-not-allowed"
               >
-                <option value="all">सर्व शाखा (All)</option>
+                {isHOUser && <option value="all">सर्व शाखा (All)</option>}
                 {branches.map(b => (
                   <option key={b.branchID} value={b.branchID}>
                     {b.branchName}
@@ -594,6 +604,11 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
                                 {entry.voucherNo && (
                                   <span className="font-semibold text-primary print:text-black mr-1.5 font-mono">
                                     [{entry.voucherNo}]
+                                    {entry.isCrossBranch && (
+                                      <span className="ml-1 text-[8px] px-1 py-0.2 rounded font-sans font-bold bg-purple-100 text-purple-900 border border-purple-300" title={`मूळ खाते शाखा #${entry.homeBranchId}`}>
+                                        आंतर-शाखा
+                                      </span>
+                                    )}
                                     {voucherStatus !== 'approved' && entry.status && (
                                       <span className={`ml-1 text-[8.5px] px-1 py-0.2 rounded font-sans font-medium ${
                                         entry.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900 border border-amber-300'
@@ -673,6 +688,11 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
                                 {entry.voucherNo && (
                                   <span className="font-semibold text-rose-700 print:text-black mr-1.5 font-mono">
                                     [{entry.voucherNo}]
+                                    {entry.isCrossBranch && (
+                                      <span className="ml-1 text-[8px] px-1 py-0.2 rounded font-sans font-bold bg-purple-100 text-purple-900 border border-purple-300" title={`मूळ खाते शाखा #${entry.homeBranchId}`}>
+                                        आंतर-शाखा
+                                      </span>
+                                    )}
                                     {voucherStatus !== 'approved' && entry.status && (
                                       <span className={`ml-1 text-[8.5px] px-1 py-0.2 rounded font-sans font-medium ${
                                         entry.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900 border border-amber-300'

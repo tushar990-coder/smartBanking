@@ -10,7 +10,13 @@ namespace Bhisi.Api.Models
         public int LoanApplicationID { get; set; }
 
         [StringLength(50)]
-        public string? ApplicationNo { get; set; } = string.Empty; // Auto-generated e.g. APP-2425-001
+        public string? ApplicationNo { get; set; } = string.Empty; // Auto-generated e.g. APP-HQ-2425-001
+
+        [Required]
+        public int BranchID { get; set; } = 1;
+
+        [ForeignKey("BranchID")]
+        public Branch? Branch { get; set; }
 
         [Required]
         public DateTime ApplicationDate { get; set; } = DateTime.Today;

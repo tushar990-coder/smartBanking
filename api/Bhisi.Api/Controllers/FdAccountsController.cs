@@ -53,6 +53,19 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
+        private (bool isHO, int? userBranchId) GetUserBranchInfo()
+        {
+            int? userBranchId = null;
+            bool isHO = User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+            var branchClaim = User.FindFirst("BranchID")?.Value ?? User.FindFirst("branchId")?.Value;
+            if (int.TryParse(branchClaim, out int parsedBranch))
+            {
+                userBranchId = parsedBranch;
+                isHO = isHO || (userBranchId == 1);
+            }
+            return (isHO, userBranchId);
+        }
+
         private async Task<(string AccountNo, string FormattedAccountNo, int NextSeq)> GenerateNextFdAccountNoAsync(int branchId, int? schemeId = null, bool incrementSequence = false)
         {
             var branch = await _context.Branches.FindAsync(branchId);
@@ -230,7 +243,12 @@ namespace Bhisi.Api.Controllers
                 .Include(f => f.Branch)
                 .AsQueryable();
 
-            if (branchId.HasValue)
+            var (isHO, userBranchId) = GetUserBranchInfo();
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+            {
+                query = query.Where(f => f.BranchID == userBranchId.Value);
+            }
+            else if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(f => f.BranchID == branchId.Value);
             }
@@ -348,6 +366,28 @@ namespace Bhisi.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<FdAccount>> PostFdAccount(FdAccount account)
         {
+            // Multi-branch Security: Enforce branch lock for non-HO users
+            int? userBranchId = null;
+            bool isHO = false;
+            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
+            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
+            {
+                userBranchId = parsedBranch;
+                isHO = (userBranchId == 1);
+            }
+            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
+            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                isHO = true;
+            }
+
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+            {
+                account.BranchID = userBranchId.Value;
+            }
+
             // 1. Load Scheme
             var scheme = await _context.FdSchemes
                 .Include(s => s.Slabs)
@@ -930,6 +970,28 @@ namespace Bhisi.Api.Controllers
         [Authorize(Roles = "Admin,SuperAdmin,Manager,Officer,Cashier")]
         public async Task<IActionResult> BulkCreateFdAccounts([FromBody] BulkFdAccountRequest req)
         {
+            // Multi-branch Security: Enforce branch lock for non-HO users
+            int? userBranchId = null;
+            bool isHO = false;
+            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
+            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
+            {
+                userBranchId = parsedBranch;
+                isHO = (userBranchId == 1);
+            }
+            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
+            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                isHO = true;
+            }
+
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+            {
+                req.BranchID = userBranchId.Value;
+            }
+
             // Resolve Customer & Member
             Customer? customer = null;
             Member? member = null;
@@ -1538,7 +1600,7 @@ namespace Bhisi.Api.Controllers
                     var voucher = new Voucher
                     {
                         BranchID = branchId,
-                        VoucherNo = $"JV-FD-PROV-{accrualDate:yyyyMMdd}",
+                        VoucherNo = $"JV-FD-PROV-BR{branchId}-{accrualDate:yyyyMMdd}",
                         VoucherDate = accrualDate,
                         VoucherType = "Journal",
                         TotalAmount = 0,
@@ -1973,6 +2035,28 @@ namespace Bhisi.Api.Controllers
             if (account.IsLienMarked)
             {
                 return BadRequest($"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{account.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज पूर्ण फेडल्याशिवाय ही ठेव बंद करता येत नाही.");
+            }
+
+            // Multi-branch Security: Restrict closure to Account's Home Branch or Head Office
+            int? userBranchId = null;
+            bool isHO = false;
+            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
+            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
+            {
+                userBranchId = parsedBranch;
+                isHO = (userBranchId == 1);
+            }
+            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
+            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                isHO = true;
+            }
+
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0 && account.BranchID != userBranchId.Value)
+            {
+                return BadRequest($"मुदत ठेव खाते बंद करण्याची प्रक्रिया फक्त खात्याच्या मूळ शाखेत (Home Branch #{account.BranchID}) किंवा मुख्य कार्यालयातूनच (HO) करता येते.");
             }
 
             // Fetch accrued interest
@@ -2724,6 +2808,28 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{account.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज पूर्ण फेडल्याशिवाय ही ठेव बंद करता येत नाही.");
             }
 
+            // Multi-branch Security: Restrict premature closure to Account's Home Branch or Head Office
+            int? userBranchId = null;
+            bool isHO = false;
+            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
+            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
+            {
+                userBranchId = parsedBranch;
+                isHO = (userBranchId == 1);
+            }
+            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
+            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                isHO = true;
+            }
+
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0 && account.BranchID != userBranchId.Value)
+            {
+                return BadRequest($"मुदत ठेव खाते बंद करण्याची प्रक्रिया फक्त खात्याच्या मूळ शाखेत (Home Branch #{account.BranchID}) किंवा मुख्य कार्यालयातूनच (HO) करता येते.");
+            }
+
             DateTime effectiveClosureDate = req?.ClosureDate ?? closureDate ?? DateTime.Today;
             if (effectiveClosureDate.Date < account.OpeningDate.Date)
             {
@@ -3284,6 +3390,33 @@ namespace Bhisi.Api.Controllers
             if (oldAccount == null || (oldAccount.Status != "Active" && oldAccount.Status != "Matured"))
             {
                 return BadRequest("जुने मुदत ठेव खाते सक्रिय (Active) किंवा मुदतपूर्ण (Matured) नाही किंवा यापूर्वीच बंद/नूतनीकरण करण्यात आलेले आहे.");
+            }
+
+            if (oldAccount.IsLienMarked)
+            {
+                return BadRequest($"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{oldAccount.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{oldAccount.LienAmount ?? oldAccount.DepositAmount:N2}) नोंदवला आहे. कर्ज पूर्ण फेडल्याशिवाय किंवा तारण बदलल्याशिवाय ठेव नूतनीकरण करता येत नाही.");
+            }
+
+            // Multi-branch Security: Restrict renewal to Account's Home Branch or Head Office
+            int? userBranchId = null;
+            bool isHO = false;
+            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
+            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
+            {
+                userBranchId = parsedBranch;
+                isHO = (userBranchId == 1);
+            }
+            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
+            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                isHO = true;
+            }
+
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0 && oldAccount.BranchID != userBranchId.Value)
+            {
+                return BadRequest($"मुदत ठेव खाते नूतनीकरण करण्याची प्रक्रिया फक्त खात्याच्या मूळ शाखेत (Home Branch #{oldAccount.BranchID}) किंवा मुख्य कार्यालयातूनच (HO) करता येते.");
             }
 
             var scheme = await _context.FdSchemes
@@ -3905,6 +4038,12 @@ namespace Bhisi.Api.Controllers
         [Authorize]
         public async Task<IActionResult> CalculateInterestPreview([FromBody] FdInterestPreviewRequestDto req)
         {
+            var (isHO, userBranchId) = GetUserBranchInfo();
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+            {
+                req.BranchID = userBranchId.Value;
+            }
+
             var activeAccounts = await _context.FdAccounts
                 .Include(a => a.Customer)
                 .Include(a => a.FdScheme)
@@ -4021,6 +4160,12 @@ namespace Bhisi.Api.Controllers
         [Authorize(Roles = "Admin,SuperAdmin,Manager")]
         public async Task<IActionResult> PostSelectedInterest([FromBody] FdInterestPostRequestDto req)
         {
+            var (isHO, userBranchId) = GetUserBranchInfo();
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+            {
+                req.BranchID = userBranchId.Value;
+            }
+
             if (req.SelectedItems == null || !req.SelectedItems.Any())
             {
                 return BadRequest("कृपया व्याज पोस्ट करण्यासाठी किमान एक खाते निवडा (Select at least one account).");
@@ -4055,6 +4200,11 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(s => s!.InterestPayableLedger)
                 .Where(a => selectedAccountIds.Contains(a.FdAccountID))
                 .ToDictionaryAsync(a => a.FdAccountID);
+
+            if (accounts.Values.Any(a => a.BranchID != req.BranchID))
+            {
+                return BadRequest("केवळ निवडलेल्या शाखेतील खात्यांचीच व्याज तरतूद पोस्ट करता येईल.");
+            }
 
             // Pre-resolve and validate ledgers for all selected accounts
             var accountLedgerPairs = new Dictionary<int, (Ledger ExpenseLedger, Ledger PayableLedger)>();
@@ -4101,7 +4251,7 @@ namespace Bhisi.Api.Controllers
                     var voucher = new Voucher
                     {
                         BranchID = req.BranchID,
-                        VoucherNo = $"JV-FD-PROV-{req.AccrualDate:yyyyMMdd}-{DateTime.Now:HHmmss}",
+                        VoucherNo = $"JV-FD-PROV-BR{req.BranchID}-{req.AccrualDate:yyyyMMdd}-{DateTime.Now:HHmmss}",
                         VoucherDate = req.AccrualDate,
                         VoucherType = "Journal",
                         TotalAmount = totalProvisionAmount,
@@ -4768,10 +4918,18 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.SavingAccount)
                 .Where(a => a.Status == "Active" && a.IsAutoRenewable && a.MaturityDate.Date <= targetDate && a.AutoRenewalCount < a.MaxAutoRenewalCycles);
 
-            if (branchId.HasValue && branchId.Value > 0)
+            var (isHO, userBranchId) = GetUserBranchInfo();
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+            {
+                query = query.Where(a => a.BranchID == userBranchId.Value);
+            }
+            else if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(a => a.BranchID == branchId.Value);
             }
+
+            // 🛡️ Security: Exclude lien-marked accounts from auto-renewal
+            query = query.Where(a => !a.IsLienMarked);
 
             var accounts = await query.OrderBy(a => a.MaturityDate).ToListAsync();
             var candidateDtos = new List<AutoRenewalCandidateDto>();
@@ -4881,7 +5039,12 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.SavingAccount)
                 .Where(a => a.Status == "Active" && a.IsAutoRenewable && a.MaturityDate.Date <= processDate && a.AutoRenewalCount < a.MaxAutoRenewalCycles);
 
-            if (request?.BranchID.HasValue == true && request.BranchID.Value > 0)
+            var (isHO, userBranchId) = GetUserBranchInfo();
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+            {
+                query = query.Where(a => a.BranchID == userBranchId.Value);
+            }
+            else if (request?.BranchID.HasValue == true && request.BranchID.Value > 0)
             {
                 query = query.Where(a => a.BranchID == request.BranchID.Value);
             }
@@ -4908,6 +5071,11 @@ namespace Bhisi.Api.Controllers
                 using var itemTx = await _context.Database.BeginTransactionAsync();
                 try
                 {
+                    if (oldAccount.IsLienMarked)
+                    {
+                        throw new InvalidOperationException($"सदर खाते तारण (Lien Marked) असल्याने स्वयंचलित नूतनीकरण प्रतिबंधित आहे. कृपया कर्ज खाते व तारण बोजा तपासा.");
+                    }
+
                     var scheme = oldAccount.FdScheme;
                     if (scheme == null)
                     {

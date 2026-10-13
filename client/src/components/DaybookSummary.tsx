@@ -53,11 +53,12 @@ export default function DaybookSummary() {
   const [registrationNo, setRegistrationNo] = useState<string>('');
   const [branches, setBranches] = useState<any[]>([]);
 
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.branchID === 1;
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
   const initialBranchId = hasGlobalBranch
     ? (globalBranchStr as string)
-    : user?.branchID
+    : !isHOUser && user?.branchID
     ? user.branchID.toString()
     : 'all';
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
@@ -69,10 +70,10 @@ export default function DaybookSummary() {
   }, []);
 
   useEffect(() => {
-    if (user?.branchID) {
+    if (!isHOUser && user?.branchID) {
       setSelectedBranchId(user.branchID.toString());
     }
-  }, [user?.branchID]);
+  }, [user?.branchID, isHOUser]);
 
   const fetchBranches = async () => {
     try {
@@ -342,9 +343,10 @@ export default function DaybookSummary() {
               <select
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32"
+                disabled={hasGlobalBranch || !isHOUser}
+                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32 disabled:bg-gray-100 disabled:text-gray-500 cursor-pointer disabled:cursor-not-allowed"
               >
-                <option value="all">सर्व शाखा (All)</option>
+                {isHOUser && <option value="all">सर्व शाखा (All)</option>}
                 {branches.map((b) => (
                   <option key={b.branchID} value={b.branchID}>
                     {b.branchName}

@@ -10,6 +10,12 @@ namespace Bhisi.Api.Models
         public int LoanDisbursementID { get; set; }
 
         [Required]
+        public int BranchID { get; set; } = 1;
+
+        [ForeignKey("BranchID")]
+        public Branch? Branch { get; set; }
+
+        [Required]
         public int LoanAccountID { get; set; }
 
         [ForeignKey("LoanAccountID")]

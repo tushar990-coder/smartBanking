@@ -42,9 +42,25 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<LoanDisbursement>>> GetLoanDisbursements()
+        public async Task<ActionResult<IEnumerable<LoanDisbursement>>> GetLoanDisbursements([FromQuery] int? branchId = null)
         {
-            return await _context.LoanDisbursements
+            var (userId, username, userBranchId) = GetCurrentUserContext();
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+            bool isHO = userRole == "Admin" || userRole == "HO_Manager" || userBranchId == 1;
+
+            int? effectiveBranchId = null;
+            if (!isHO)
+            {
+                effectiveBranchId = userBranchId;
+            }
+            else if (branchId.HasValue && branchId.Value > 0)
+            {
+                effectiveBranchId = branchId.Value;
+            }
+
+            var query = _context.LoanDisbursements
+                .Include(d => d.Branch)
+                .Include(d => d.LoanAccount!).ThenInclude(l => l.Branch)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.Member!).ThenInclude(m => m.Customer)
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.CoCustomer)
@@ -59,6 +75,15 @@ namespace Bhisi.Api.Controllers
                 .Include(d => d.LoanAccount!).ThenInclude(l => l.LoanApplication!).ThenInclude(a => a.Guarantor2Customer)
                 .Include(d => d.Deductions).ThenInclude(d => d.Ledger)
                 .Include(d => d.BankAccountLedger)
+                .AsQueryable();
+
+            if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
+            {
+                query = query.Where(d => d.BranchID == effectiveBranchId.Value || 
+                                        (d.BranchID == 0 && d.LoanAccount != null && d.LoanAccount.BranchID == effectiveBranchId.Value));
+            }
+
+            return await query
                 .OrderByDescending(d => d.DisbursementDate)
                 .ThenByDescending(d => d.LoanDisbursementID)
                 .ToListAsync();
@@ -120,6 +145,38 @@ namespace Bhisi.Api.Controllers
                 {
                     existingLoanAcc = await _context.LoanAccounts.FirstOrDefaultAsync(l => l.LoanApplicationID == appId);
                 }
+
+                // Resolve Target Branch for disbursement
+                int targetBranchId = 1;
+                if (existingLoanAcc != null && existingLoanAcc.BranchID > 0)
+                {
+                    targetBranchId = existingLoanAcc.BranchID;
+                }
+                else if (app != null && app.BranchID > 0)
+                {
+                    targetBranchId = app.BranchID;
+                }
+                else if (disbursement.LoanAccount != null && disbursement.LoanAccount.BranchID > 0)
+                {
+                    targetBranchId = disbursement.LoanAccount.BranchID;
+                }
+                else if (disbursement.BranchID > 0)
+                {
+                    targetBranchId = disbursement.BranchID;
+                }
+
+                // Multi-Branch Cross-Branch Security Guard
+                var (postUserId, postUsername, userBranchId) = GetCurrentUserContext();
+                var postUserRole = User.FindFirst(ClaimTypes.Role)?.Value;
+                bool isHOUser = postUserRole == "Admin" || postUserRole == "HO_Manager" || userBranchId == 1;
+
+                if (!isHOUser && targetBranchId != userBranchId)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { message = $"सुरक्षा उल्लंघन: तुम्ही शाखा क्र. {userBranchId} चे ऑपरेटर आहात. तुम्हाला शाखा क्र. {targetBranchId} च्या खात्यावर/अर्जावर कर्ज वाटप करण्याचा अधिकार नाही." });
+                }
+
+                disbursement.BranchID = targetBranchId;
 
                 decimal sanctionedLimit = 0;
                 if (existingLoanAcc != null && existingLoanAcc.SanctionedAmount > 0)
@@ -210,6 +267,8 @@ namespace Bhisi.Api.Controllers
                 else if (disbursement.LoanAccountID == 0 && disbursement.LoanAccount != null)
                 {
                     // First Tranche: Create new LoanAccount
+                    disbursement.LoanAccount.BranchID = targetBranchId;
+
                     var branch = await _context.Branches.FindAsync(disbursement.LoanAccount.BranchID);
                     if (branch == null)
                     {
@@ -400,6 +459,7 @@ namespace Bhisi.Api.Controllers
                 var rateForDisb = loanAccountForRate != null ? await _context.LoanRates.FindAsync(loanAccountForRate.LoanRateID) : null;
                 disbursement.LoanInstallmentType = rateForDisb?.LoanInstallmentType;
 
+                disbursement.BranchID = targetBranchId;
                 disbursement.BankAccountLedger = null; // Prevent EF tracking issues
                 _context.LoanDisbursements.Add(disbursement);
                 await _context.SaveChangesAsync();
@@ -410,7 +470,10 @@ namespace Bhisi.Api.Controllers
                     .Include(l => l.Member)
                     .FirstOrDefaultAsync(l => l.LoanAccountID == disbursement.LoanAccountID);
                 var loanRate = await _context.LoanRates.FindAsync(loanAccFetched?.LoanRateID ?? 0);
-                int targetBranchId = loanAccFetched?.BranchID ?? 1;
+                if (loanAccFetched != null && loanAccFetched.BranchID > 0)
+                {
+                    targetBranchId = loanAccFetched.BranchID;
+                }
 
                 int loanLedgerId = loanRate?.LoanLedgerID ?? 0;
                 if (loanLedgerId == 0 || !validLedgerDict.ContainsKey(loanLedgerId))
@@ -762,9 +825,24 @@ namespace Bhisi.Api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<LoanDisbursement>> GetLoanDisbursement(int id)
         {
-            var disbursement = await _context.LoanDisbursements.Include(d => d.LoanAccount).Include(d => d.Deductions).ThenInclude(d => d.Ledger).FirstOrDefaultAsync(d => d.LoanDisbursementID == id);
+            var disbursement = await _context.LoanDisbursements
+                .Include(d => d.Branch)
+                .Include(d => d.LoanAccount)
+                .Include(d => d.Deductions).ThenInclude(d => d.Ledger)
+                .FirstOrDefaultAsync(d => d.LoanDisbursementID == id);
 
             if (disbursement == null) return NotFound();
+
+            var (userId, username, userBranchId) = GetCurrentUserContext();
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+            bool isHO = userRole == "Admin" || userRole == "HO_Manager" || userBranchId == 1;
+
+            int disbBranchId = disbursement.BranchID > 0 ? disbursement.BranchID : (disbursement.LoanAccount?.BranchID ?? 1);
+            if (!isHO && disbBranchId != userBranchId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "सुरक्षा मर्यादा: तुम्हाला इतर शाखेचे कर्ज वितरण पाहण्याचा अधिकार नाही." });
+            }
+
             return disbursement;
         }
 
@@ -773,6 +851,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<LoanDisbursement>> GetLoanDisbursementByVoucher(int voucherId)
         {
             var disbursement = await _context.LoanDisbursements
+                .Include(d => d.Branch)
                 .Include(d => d.LoanAccount)
                     .ThenInclude(l => l!.Customer)
                 .Include(d => d.LoanAccount)
@@ -789,6 +868,16 @@ namespace Bhisi.Api.Controllers
             if (disbursement == null)
             {
                 return NotFound("या व्हाउचरशी जोडलेली कोणतीही कर्ज वितरण नोंद सापडली नाही.");
+            }
+
+            var (vUserId, vUsername, userBranchId) = GetCurrentUserContext();
+            var vUserRole = User.FindFirst(ClaimTypes.Role)?.Value;
+            bool isHO = vUserRole == "Admin" || vUserRole == "HO_Manager" || userBranchId == 1;
+
+            int disbBranchId = disbursement.BranchID > 0 ? disbursement.BranchID : (disbursement.LoanAccount?.BranchID ?? 1);
+            if (!isHO && disbBranchId != userBranchId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "सुरक्षा मर्यादा: तुम्हाला इतर शाखेचे कर्ज वितरण पाहण्याचा अधिकार नाही." });
             }
 
             return disbursement;
@@ -814,6 +903,22 @@ namespace Bhisi.Api.Controllers
                 if (existingDisbursement == null)
                 {
                     return NotFound();
+                }
+
+                var (putUserId, putUsername, userBranchId) = GetCurrentUserContext();
+                var putUserRole = User.FindFirst(ClaimTypes.Role)?.Value;
+                bool isHOUser = putUserRole == "Admin" || putUserRole == "HO_Manager" || userBranchId == 1;
+
+                int currentDisbBranchId = existingDisbursement.BranchID > 0 ? existingDisbursement.BranchID : 1;
+                if (!isHOUser && currentDisbBranchId != userBranchId)
+                {
+                    await transaction.RollbackAsync();
+                    return StatusCode(StatusCodes.Status403Forbidden, new { message = "सुरक्षा मर्यादा: तुम्हाला इतर शाखेचे कर्ज वितरण सुधारित करण्याचा अधिकार नाही." });
+                }
+
+                if (existingDisbursement.BranchID <= 0)
+                {
+                    existingDisbursement.BranchID = currentDisbBranchId;
                 }
 
                 // Ensure Date uses Unspecified Kind so SQLite saves it exactly as YYYY-MM-DD 00:00:00
@@ -1017,6 +1122,17 @@ namespace Bhisi.Api.Controllers
                 if (disbursement == null)
                 {
                     return NotFound(new { message = "कर्ज वाटप नोंद सापडली नाही." });
+                }
+
+                var (delUserId, delUsername, userBranchId) = GetCurrentUserContext();
+                var delUserRole = User.FindFirst(ClaimTypes.Role)?.Value;
+                bool isHOUser = delUserRole == "Admin" || delUserRole == "HO_Manager" || userBranchId == 1;
+
+                int currentDisbBranchId = disbursement.BranchID > 0 ? disbursement.BranchID : 1;
+                if (!isHOUser && currentDisbBranchId != userBranchId)
+                {
+                    await transaction.RollbackAsync();
+                    return StatusCode(StatusCodes.Status403Forbidden, new { message = "सुरक्षा उल्लंघन: तुम्हाला इतर शाखेचे कर्ज वितरण डिलीट करण्याचा अधिकार नाही." });
                 }
 
                 // 1. Remove linked Deductions

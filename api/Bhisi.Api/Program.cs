@@ -405,6 +405,72 @@ using (var scope = app.Services.CreateScope())
             IF COL_LENGTH('LoanRates', 'IsCollateralMandatoryForOpeningBalance') IS NULL
                 ALTER TABLE [dbo].[LoanRates] ADD [IsCollateralMandatoryForOpeningBalance] bit NOT NULL DEFAULT 0;
 
+            -- Multi-Branch Migration: Add BranchID to LoanApplications
+            IF COL_LENGTH('LoanApplications', 'BranchID') IS NULL
+            BEGIN
+                ALTER TABLE [dbo].[LoanApplications] ADD [BranchID] int NOT NULL CONSTRAINT [DF_LoanApplications_BranchID] DEFAULT 1;
+                IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_LoanApplications_Branches_BranchID')
+                BEGIN
+                    ALTER TABLE [dbo].[LoanApplications] ADD CONSTRAINT [FK_LoanApplications_Branches_BranchID] FOREIGN KEY ([BranchID]) REFERENCES [dbo].[Branches] ([BranchID]);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanApplications_BranchID' AND object_id = OBJECT_ID('LoanApplications'))
+                BEGIN
+                    CREATE INDEX [IX_LoanApplications_BranchID] ON [dbo].[LoanApplications] ([BranchID]);
+                END
+            END
+
+            -- Multi-Branch Migration: Add BranchID to LoanDisbursements
+            IF COL_LENGTH('LoanDisbursements', 'BranchID') IS NULL
+            BEGIN
+                ALTER TABLE [dbo].[LoanDisbursements] ADD [BranchID] int NOT NULL CONSTRAINT [DF_LoanDisbursements_BranchID] DEFAULT 1;
+                IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_LoanDisbursements_Branches_BranchID')
+                BEGIN
+                    ALTER TABLE [dbo].[LoanDisbursements] ADD CONSTRAINT [FK_LoanDisbursements_Branches_BranchID] FOREIGN KEY ([BranchID]) REFERENCES [dbo].[Branches] ([BranchID]);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanDisbursements_BranchID' AND object_id = OBJECT_ID('LoanDisbursements'))
+                BEGIN
+                    CREATE INDEX [IX_LoanDisbursements_BranchID] ON [dbo].[LoanDisbursements] ([BranchID]);
+                END
+            END
+
+            -- Backfill existing disbursements with their LoanAccount BranchID
+            IF COL_LENGTH('LoanDisbursements', 'BranchID') IS NOT NULL
+            BEGIN
+                EXEC(N'UPDATE ld SET ld.BranchID = ISNULL(la.BranchID, 1) FROM [dbo].[LoanDisbursements] ld INNER JOIN [dbo].[LoanAccounts] la ON ld.LoanAccountID = la.LoanAccountID WHERE ld.BranchID = 1 AND la.BranchID IS NOT NULL AND la.BranchID <> 1;');
+            END
+
+            -- Multi-Branch Migration: Add BranchID & Multi-Branch Tracking to LoanCollections
+            IF COL_LENGTH('LoanCollections', 'BranchID') IS NULL
+            BEGIN
+                ALTER TABLE [dbo].[LoanCollections] ADD [BranchID] int NOT NULL CONSTRAINT [DF_LoanCollections_BranchID] DEFAULT 1;
+                IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_LoanCollections_Branches_BranchID')
+                BEGIN
+                    ALTER TABLE [dbo].[LoanCollections] ADD CONSTRAINT [FK_LoanCollections_Branches_BranchID] FOREIGN KEY ([BranchID]) REFERENCES [dbo].[Branches] ([BranchID]);
+                END
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanCollections_BranchID' AND object_id = OBJECT_ID('LoanCollections'))
+                BEGIN
+                    CREATE INDEX [IX_LoanCollections_BranchID] ON [dbo].[LoanCollections] ([BranchID]);
+                END
+            END
+
+            IF COL_LENGTH('LoanCollections', 'CollectingCashierID') IS NULL
+                ALTER TABLE [dbo].[LoanCollections] ADD [CollectingCashierID] int NULL;
+
+            IF COL_LENGTH('LoanCollections', 'CreatedByUserID') IS NULL
+                ALTER TABLE [dbo].[LoanCollections] ADD [CreatedByUserID] int NULL;
+
+            IF COL_LENGTH('LoanCollections', 'IsCrossBranch') IS NULL
+                ALTER TABLE [dbo].[LoanCollections] ADD [IsCrossBranch] bit NOT NULL CONSTRAINT [DF_LoanCollections_IsCrossBranch] DEFAULT 0;
+
+            IF COL_LENGTH('LoanCollections', 'HomeBranchID') IS NULL
+                ALTER TABLE [dbo].[LoanCollections] ADD [HomeBranchID] int NULL;
+
+            -- Backfill existing collections with their LoanAccount BranchID
+            IF COL_LENGTH('LoanCollections', 'BranchID') IS NOT NULL
+            BEGIN
+                EXEC(N'UPDATE lc SET lc.BranchID = ISNULL(la.BranchID, 1), lc.HomeBranchID = ISNULL(la.BranchID, 1) FROM [dbo].[LoanCollections] lc INNER JOIN [dbo].[LoanAccounts] la ON lc.LoanAccountID = la.LoanAccountID WHERE lc.BranchID = 1 AND la.BranchID IS NOT NULL AND la.BranchID <> 1;');
+            END
+
             IF COL_LENGTH('FdAccounts', 'IsLienMarked') IS NULL
                 ALTER TABLE [dbo].[FdAccounts] ADD [IsLienMarked] bit NOT NULL DEFAULT 0;
             IF COL_LENGTH('FdAccounts', 'LienLoanAccountNo') IS NULL

@@ -24,18 +24,25 @@ export default function LoanCollectionReceiptPrint({ collectionId, onBack }: Loa
       if (sansthaRes.data && sansthaRes.data.length > 0) setSanstha(sansthaRes.data[0]);
 
       // Fetch Collection
-      const collRes = await axios.get(`/api/LoanCollections`);
-      if (collRes.data) {
-        const found = collRes.data.find((c: any) => c.loanCollectionID === collectionId);
-        if (found) {
-            setCollection(found);
-            try {
-                const detailRes = await axios.get(`/api/LoanAccounts/${found.loanAccountID}/AccountDetailsAndSchedule`);
-                if (detailRes.data) {
-                    setAccountDetails(detailRes.data);
-                }
-            } catch (err) { console.error(err); }
+      let found: any = null;
+      try {
+        const singleRes = await axios.get(`/api/LoanCollections/${collectionId}`);
+        if (singleRes.data) found = singleRes.data;
+      } catch {
+        const collRes = await axios.get(`/api/LoanCollections`);
+        if (collRes.data) {
+          found = collRes.data.find((c: any) => c.loanCollectionID === collectionId);
         }
+      }
+
+      if (found) {
+        setCollection(found);
+        try {
+            const detailRes = await axios.get(`/api/LoanAccounts/${found.loanAccountID}/AccountDetailsAndSchedule`);
+            if (detailRes.data) {
+                setAccountDetails(detailRes.data);
+            }
+        } catch (err) { console.error(err); }
       }
     } catch (err) {
       console.error(err);
@@ -56,6 +63,8 @@ export default function LoanCollectionReceiptPrint({ collectionId, onBack }: Loa
     const mobileNo = borrower?.mobileNo || '';
 
     const totalCollected = (collection.totalAmountReceived || 0) + (collection.fees?.reduce((acc: number, f: any) => acc + f.amount, 0) || 0);
+    const collectingBranchName = collection.branch?.branchName || '';
+    const homeBranchName = collection.loanAccount?.branch?.branchName || '';
 
     const message = 
 `🏦 *${sansthaName}*
@@ -67,7 +76,8 @@ export default function LoanCollectionReceiptPrint({ collectionId, onBack }: Loa
 
 📄 *पावती क्रमांक:* ${collection.receiptNo}
 🗓️ *जमा दिनांक:* ${new Date(collection.collectionDate).toLocaleDateString('en-GB')}
-👤 *कर्ज खाते क्र.:* ${collection.loanAccount?.loanAccountNo}
+🏛️ *वसुल शाखा:* ${collectingBranchName || 'मुख्य शाखा'}
+${collection.isCrossBranch && homeBranchName ? `📌 *कर्ज मूळ शाखा:* ${homeBranchName}\n` : ''}👤 *कर्ज खाते क्र.:* ${collection.loanAccount?.loanAccountNo}
 📊 *कर्ज प्रकार:* ${collection.loanAccount?.loanRate?.shortName || collection.loanAccount?.loanRate?.loanType || '-'}
 
 💵 *जमा रक्कम तपशील:*
@@ -174,6 +184,16 @@ ${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: �
               <span className="text-gray-600">दिनांक (Date):</span>
               <span className="font-bold text-slate-900 font-mono">{new Date(collection.collectionDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
             </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">वसुल शाखा (Collecting Branch):</span>
+              <span className="font-bold text-slate-900">{collection.branch?.branchName || 'मुख्य शाखा'}</span>
+            </div>
+            {(collection.isCrossBranch || (collection.homeBranchID && collection.homeBranchID !== collection.branchID)) && (
+              <div className="flex justify-between text-amber-900">
+                <span className="text-gray-600">कर्ज मूळ शाखा (Home Branch):</span>
+                <span className="font-bold">{collection.loanAccount?.branch?.branchName || `शाखा #${collection.homeBranchID}`}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-gray-600">पेमेंट प्रकार (Payment Mode):</span>
               <span className="font-bold text-slate-900">{collection.paymentMode}</span>

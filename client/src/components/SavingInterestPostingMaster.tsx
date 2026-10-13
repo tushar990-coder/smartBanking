@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 
 interface CalculatedInterest {
   savingAccountID: number;
@@ -21,6 +22,7 @@ interface InterestPostingHistory {
 }
 
 const SavingInterestPostingMaster: React.FC = () => {
+  const { user } = useAuth();
   const [history, setHistory] = useState<InterestPostingHistory[]>([]);
   const [calculationResults, setCalculationResults] = useState<CalculatedInterest[]>([]);
   const [loading, setLoading] = useState(false);
@@ -83,7 +85,7 @@ const SavingInterestPostingMaster: React.FC = () => {
     try {
       const response = await axios.post(`${API_URL}/post`, {
         ...dateRange,
-        postedBy: 1
+        postedBy: user?.userID || 1
       });
       setSuccess(response.data.message);
       setCalculationResults([]);

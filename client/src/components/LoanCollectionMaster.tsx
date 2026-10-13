@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight } from 'lucide-react';
+import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import LoanCollectionReceiptPrint from './LoanCollectionReceiptPrint';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,12 @@ export const format14DigitDisplay = (num?: string) => {
 interface LoanAccount {
     loanAccountID: number;
     loanAccountNo: string;
+    branchID?: number;
+    branch?: {
+        branchID: number;
+        branchName: string;
+        branchCode: string;
+    };
     memberID: number;
     customerID?: number;
     sanctionedAmount: number;
@@ -122,6 +128,12 @@ interface LoanCollectionFee {
 interface LoanCollection {
     loanCollectionID: number;
     loanAccountID: number;
+    branchID?: number;
+    collectingCashierID?: number;
+    createdByUserID?: number;
+    isCrossBranch?: boolean;
+    homeBranchID?: number;
+    branch?: any;
     collectionDate: string;
     receiptNo: string;
     totalAmountReceived: number;
@@ -208,6 +220,11 @@ interface LienReleasePrompt {
 
 const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate }) => {
     const { user } = useAuth();
+    const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.branchID === 1;
+
+    const [branches, setBranches] = useState<any[]>([]);
+    const [selectedBranchId, setSelectedBranchId] = useState<number>(user?.branchID || 1);
+
     const [collections, setCollections] = useState<LoanCollection[]>([]);
     const [accounts, setAccounts] = useState<LoanAccount[]>([]);
     const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -344,11 +361,21 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         );
     });
 
-    const fetchNextReceiptNo = async (targetAccountId?: number) => {
+    const fetchBranches = async () => {
         try {
+            const res = await axios.get('/api/Branches');
+            setBranches(res.data || []);
+        } catch (err) {
+            console.error("Failed to load branches", err);
+        }
+    };
+
+    const fetchNextReceiptNo = async (targetBranchId?: number, targetAccountId?: number) => {
+        try {
+            const bId = targetBranchId || selectedBranchId || user?.branchID || 1;
             const url = targetAccountId 
-                ? `/api/LoanCollections/next-receipt-no?loanAccountId=${targetAccountId}`
-                : '/api/LoanCollections/next-receipt-no';
+                ? `/api/LoanCollections/next-receipt-no?branchId=${bId}&loanAccountId=${targetAccountId}`
+                : `/api/LoanCollections/next-receipt-no?branchId=${bId}`;
             const res = await axios.get(url);
             if (res.data && res.data.receiptNo) {
                 setFormData(prev => ({ ...prev, receiptNo: res.data.receiptNo }));
@@ -495,6 +522,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
     useEffect(() => {
         fetchSanstha();
+        fetchBranches();
         fetchData();
         fetchAccounts();
         fetchLedgers();
@@ -507,7 +535,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             setPassingVoucherId(Number(vId));
             loadCollectionForPassing(Number(vId));
         } else {
-            fetchNextReceiptNo();
+            fetchNextReceiptNo(selectedBranchId);
         }
 
         return () => {
@@ -517,10 +545,11 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         };
     }, []);
 
-    const fetchData = async () => {
+    const fetchData = async (overrideBranchId?: number) => {
         setLoading(true);
         try {
-            const res = await axios.get('/api/LoanCollections');
+            const bId = overrideBranchId !== undefined ? overrideBranchId : selectedBranchId;
+            const res = await axios.get(`/api/LoanCollections${bId ? `?branchId=${bId}` : ''}`);
             setCollections(res.data);
             
             // Calculate today's totals
@@ -528,7 +557,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             let cash = 0;
             let bank = 0;
             res.data.forEach((c: any) => {
-                if (c.collectionDate.split('T')[0] === todayStr) {
+                if (c.collectionDate && c.collectionDate.split('T')[0] === todayStr) {
                     if (c.paymentMode === 'Cash') cash += c.totalAmountReceived;
                     else bank += c.totalAmountReceived;
                 }
@@ -716,7 +745,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         setAccountDetails(null);
         setNpaStatus(null);
 
-        fetchNextReceiptNo(acc.loanAccountID);
+        fetchNextReceiptNo(selectedBranchId, acc.loanAccountID);
         if (acc.loanRate) {
             calculateInterest(acc, formData.collectionDate || new Date().toISOString().split('T')[0]);
         }
@@ -1121,7 +1150,11 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         }
 
         try {
-            const res = await axios.post('/api/LoanCollections', formData);
+            const payload = {
+                ...formData,
+                branchID: selectedBranchId
+            };
+            const res = await axios.post('/api/LoanCollections', payload);
             const savedCollectionId = res.data?.loanCollectionID || res.data?.LoanCollectionID;
 
             // Save the ID for printing
@@ -1162,7 +1195,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             (window as any).selectedLoanMemberId = undefined;
             fetchData();
             fetchAccounts();
-            fetchNextReceiptNo();
+            fetchNextReceiptNo(selectedBranchId);
         } catch (err: any) {
             alert('माहिती जतन करण्यास अडचण आली: ' + (err.response?.data || err.message));
             console.error(err);
@@ -1347,6 +1380,35 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                     </div>
 
                     <div className="p-2 flex flex-col gap-2">
+                        {/* Collecting Branch Selector */}
+                        <div className="bg-primary/5 p-1.5 rounded-sm border border-primary/20 flex flex-col gap-1 text-[11px]">
+                            <div className="flex justify-between items-center">
+                                <span className="font-bold text-gray-700 flex items-center gap-1">
+                                    <Building2 className="w-3.5 h-3.5 text-primary" /> वसुल शाखा (Collecting Branch):
+                                </span>
+                                {!isHOUser && (
+                                    <span className="text-[10px] text-gray-500 font-semibold bg-gray-200 px-1 rounded">(शाखा लॉक)</span>
+                                )}
+                            </div>
+                            <select
+                                value={selectedBranchId}
+                                onChange={(e) => {
+                                    const bId = parseInt(e.target.value, 10);
+                                    setSelectedBranchId(bId);
+                                    fetchData(bId);
+                                    fetchNextReceiptNo(bId, selectedAccount?.loanAccountID);
+                                }}
+                                disabled={isPassingMode || !isHOUser}
+                                className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs font-bold bg-white text-gray-800 disabled:bg-slate-100 disabled:text-gray-600 focus:outline-none focus:border-primary cursor-pointer"
+                            >
+                                {branches.map(b => (
+                                    <option key={b.branchID} value={b.branchID}>
+                                        {b.branchName} ({b.branchCode})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
                         <div className="bg-primary/5 p-1.5 rounded-sm border border-primary/20 flex justify-between items-center text-[11px]">
                             <span className="font-bold text-gray-700">पावती क्र. (Receipt No):</span>
                             <span className="font-mono font-bold text-primary text-xs bg-white px-2 py-0.5 rounded-sm border border-primary/30 shadow-2xs">
@@ -1536,6 +1598,26 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                                 : (selectedAccount.installmentAmount || 0).toLocaleString('en-IN')}
                                                         </strong>
                                                     </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {selectedAccount && (
+                                            <div className="mt-1 flex items-center justify-between text-[11px] px-1">
+                                                <span className="text-gray-600">
+                                                    कर्ज मूळ शाखा (Home Branch): <strong className="text-gray-800 font-semibold">{selectedAccount.branch?.branchName || `शाखा #${selectedAccount.branchID || '-'}`}</strong>
+                                                </span>
+                                                {selectedAccount.branchID && selectedAccount.branchID !== selectedBranchId && (
+                                                    <span className="bg-amber-100 text-amber-800 border border-amber-300 font-bold px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1">
+                                                        <AlertCircle className="w-3 h-3 text-amber-600" /> आंतर-शाखा वसुली (Cross-Branch)
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                        {selectedAccount && selectedAccount.branchID && selectedAccount.branchID !== selectedBranchId && (
+                                            <div className="mt-1.5 p-2 bg-amber-50 border border-amber-300 rounded text-amber-900 text-xs flex items-center gap-2">
+                                                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                                <div>
+                                                    <strong className="font-bold">आंतर-शाखा वसुली (Cross-Branch Collection):</strong> हे कर्ज <strong>{selectedAccount.branch?.branchName || `शाखा #${selectedAccount.branchID}`}</strong> चे आहे. जमा होणारी रोकड <strong>{branches.find(b => b.branchID === selectedBranchId)?.branchName || `शाखा #${selectedBranchId}`}</strong> च्या कॅशियर गल्ल्यात नोंदवली जाईल.
                                                 </div>
                                             </div>
                                         )}
@@ -1985,7 +2067,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     (window as any).selectedLoanAccountId = undefined;
                                     (window as any).selectedLoanMemberId = undefined;
                                     setLastSavedCollectionId(null);
-                                    fetchNextReceiptNo();
+                                    fetchNextReceiptNo(selectedBranchId);
                                 }} className="bg-slate-700 hover:bg-slate-800 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
                                     <PlusCircle size={14} /> नवीन पावती (New)
                                 </button>

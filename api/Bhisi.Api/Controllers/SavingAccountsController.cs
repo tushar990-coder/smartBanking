@@ -387,6 +387,28 @@ namespace Bhisi.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<object>> PostSavingAccountMaster([FromBody] CreateSavingAccountDto dto)
         {
+            // Multi-branch Security: Enforce branch lock for non-HO users
+            int? userBranchId = null;
+            bool isHO = false;
+            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
+            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
+            {
+                userBranchId = parsedBranch;
+                isHO = (userBranchId == 1);
+            }
+            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
+            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                isHO = true;
+            }
+
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+            {
+                dto.BranchID = userBranchId.Value;
+            }
+
             var branch = await _context.Branches.FindAsync(dto.BranchID);
             if (branch == null) return BadRequest("निवडलेली शाखा सापडली नाही.");
 
@@ -496,11 +518,8 @@ namespace Bhisi.Api.Controllers
             // Generate Cash Receipt Voucher and Transaction for standard new Account opening
             if (savingAccount.OpeningBalance > 0 && !savingAccount.IsLegacyAccount)
             {
-                // 1. Resolve Cash Ledger
-                var cashLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash" || l.LedgerName.Contains("रोख") || l.LedgerName.Contains("Cash in Hand"))
-                    ?? await _context.Ledgers.FindAsync(1);
-
-                int cashLedgerId = cashLedger?.LedgerID ?? 1;
+                // 1. Resolve Branch-Specific Cash Ledger
+                int cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, savingAccount.BranchID, "SAVINGS");
 
                 // 2. Generate Receipt Voucher
                 var todayStr = DateTime.Now.ToString("yyyyMMdd");
@@ -756,6 +775,28 @@ namespace Bhisi.Api.Controllers
             if (existing == null)
             {
                 return NotFound(new { message = "बचत खाते सापडले नाही." });
+            }
+
+            // Multi-branch Security: Non-HO users can only update accounts belonging to their branch
+            int? userBranchId = null;
+            bool isHO = false;
+            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
+            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
+            {
+                userBranchId = parsedBranch;
+                isHO = (userBranchId == 1);
+            }
+            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
+            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
+                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                isHO = true;
+            }
+
+            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0 && existing.BranchID != userBranchId.Value)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "तुम्हाला फक्त तुमच्या स्वतःच्या शाखेच्या खात्यात बदल करण्याची परवानगी आहे." });
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();

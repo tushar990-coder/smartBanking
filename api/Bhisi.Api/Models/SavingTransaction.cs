@@ -29,6 +29,9 @@ namespace Bhisi.Api.Models
         [NotMapped]
         public int? BankLedgerID { get; set; }
 
+        [NotMapped]
+        public int? BranchID { get; set; }
+
         public DateTime TransactionDate { get; set; } = DateTime.Now;
 
         [Required]

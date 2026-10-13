@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 import { Calculator, Search, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface PreviewItem {
@@ -26,11 +27,18 @@ interface PreviewItem {
 }
 
 const FdAccrualPosting: React.FC = () => {
+  const { user } = useAuth();
   const [branches, setBranches] = useState<any[]>([]);
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string) : 1;
+  const initialBranchId = user?.branchID ? user.branchID : (hasGlobalBranch ? parseInt(globalBranchStr as string) : 1);
   const [branchID, setBranchID] = useState<number>(initialBranchId);
+
+  useEffect(() => {
+    if (user?.branchID && user.role !== 'Admin') {
+      setBranchID(user.branchID);
+    }
+  }, [user]);
 
   const [accrualDate, setAccrualDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [calculationMethod, setCalculationMethod] = useState<'OnPrincipal' | 'OnInterest'>('OnPrincipal');
@@ -210,17 +218,24 @@ const FdAccrualPosting: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end mb-2">
           <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शाखा (Branch) *</label>
-            <select
-              value={branchID}
-              onChange={(e) => setBranchID(parseInt(e.target.value, 10))}
-              className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
-            >
-              {branches.map((b) => (
-                <option key={b.branchID} value={b.branchID}>
-                  {b.branchName} ({b.branchCode})
-                </option>
-              ))}
-            </select>
+            {user?.role === 'Admin' ? (
+              <select
+                value={branchID}
+                onChange={(e) => setBranchID(parseInt(e.target.value, 10))}
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+              >
+                {branches.map((b) => (
+                  <option key={b.branchID} value={b.branchID}>
+                    {b.branchName} ({b.branchCode})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-gray-100 font-bold text-gray-800 flex items-center gap-1">
+                <span>🔒</span>
+                <span>{branches.find(b => b.branchID === branchID)?.branchName || user?.branchName || 'Bambavade Branch'}</span>
+              </div>
+            )}
           </div>
 
           <div>

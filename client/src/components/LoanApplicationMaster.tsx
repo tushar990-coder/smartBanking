@@ -63,6 +63,12 @@ export interface LoanRate {
 export interface LoanApplication {
   loanApplicationID: number;
   applicationNo: string;
+  branchID?: number;
+  branch?: {
+    branchID: number;
+    branchName: string;
+    branchCode?: string;
+  };
   applicationDate: string;
   customerID?: number;
   coCustomerID?: number;
@@ -210,6 +216,12 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
   const [members, setMembers] = useState<Member[]>([]);
   const [loanRates, setLoanRates] = useState<LoanRate[]>([]);
   const [securityTypes, setSecurityTypes] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
+  const globalBranchStr = localStorage.getItem('globalBranchId');
+  const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
+  const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string, 10) : 1;
+  const [selectedBranchId, setSelectedBranchId] = useState<number>(initialBranchId);
+  const [filterBranchId, setFilterBranchId] = useState<string>(hasGlobalBranch ? (globalBranchStr as string) : 'all');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -258,6 +270,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
   });
 
   const initialFormState: Partial<LoanApplication> = {
+    branchID: initialBranchId,
     applicationNo: "AUTO",
     applicationDate: new Date().toISOString().split('T')[0],
     customerID: 0,
@@ -283,13 +296,15 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
   const [formData, setFormData] = useState<Partial<LoanApplication>>(initialFormState);
   const [showCoBorrowers, setShowCoBorrowers] = useState<boolean>(false);
 
-  const fetchNextAppNo = async () => {
+  const fetchNextAppNo = async (targetBranchId?: number) => {
     if (isPassingMode || editingApplicationId || voucherIdFromUrl) return;
     try {
-      const res = await axios.get('/api/LoanApplications/next-number');
+      const bId = targetBranchId ?? selectedBranchId ?? 1;
+      const res = await axios.get(`/api/LoanApplications/next-number?branchId=${bId}`);
       if (res.data) {
         setFormData(prev => ({
           ...prev,
+          branchID: bId,
           applicationNo: typeof res.data === 'string' ? res.data : (res.data.applicationNo || "AUTO")
         }));
       }
@@ -302,7 +317,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     fetchData();
     fetchDropdowns();
     if (!isPassingMode && !editingApplicationId && !voucherIdFromUrl) {
-      fetchNextAppNo();
+      fetchNextAppNo(initialBranchId);
     }
   }, []);
 
@@ -529,10 +544,12 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     }
   }, [formData.applicationDate, formData.installmentFrequency, formData.noOfInstallments]);
 
-  const fetchData = async () => {
+  const fetchData = async (targetBranchId?: string) => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/LoanApplications');
+      const bFilter = targetBranchId !== undefined ? targetBranchId : filterBranchId;
+      const url = bFilter && bFilter !== 'all' ? `/api/LoanApplications?branchId=${bFilter}` : '/api/LoanApplications';
+      const res = await axios.get(url);
       setApplications(res.data);
     } catch (err) {
       console.error(err);
@@ -544,14 +561,16 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
 
   const fetchDropdowns = async () => {
     try {
-      const memRes = await axios.get('/api/Customers');
+      const [memRes, ratesRes, secRes, branchRes] = await Promise.all([
+        axios.get('/api/Customers'),
+        axios.get('/api/LoanRates'),
+        axios.get('/api/SecurityTypes'),
+        axios.get('/api/Branches')
+      ]);
       setMembers(memRes.data.filter((m: any) => m.status === 'Active'));
-
-      const ratesRes = await axios.get('/api/LoanRates');
       setLoanRates(ratesRes.data);
-
-      const secRes = await axios.get('/api/SecurityTypes');
       setSecurityTypes(secRes.data.filter((s: any) => s.isActive));
+      setBranches(branchRes.data || []);
     } catch (err) {
       console.error(err);
     }
@@ -620,9 +639,10 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     setShowDepositModal(false);
     setFormData({
       ...initialFormState,
+      branchID: selectedBranchId,
       applicationDate: new Date().toISOString().split('T')[0]
     });
-    fetchNextAppNo();
+    fetchNextAppNo(selectedBranchId);
     if (formContainerRef.current) {
       formContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -658,6 +678,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
 
       const payload: any = {
         ...formData,
+        branchID: Number(formData.branchID || selectedBranchId || 1),
         customerID: Number(formData.customerID),
         coCustomerID: formData.coCustomerID && Number(formData.coCustomerID) > 0 ? Number(formData.coCustomerID) : null,
         coCustomer2ID: formData.coCustomer2ID && Number(formData.coCustomer2ID) > 0 ? Number(formData.coCustomer2ID) : null,
@@ -674,6 +695,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
         firstInstallmentDate: formData.firstInstallmentDate ? formData.firstInstallmentDate : null,
         maturityDate: formData.maturityDate ? formData.maturityDate : null,
       };
+      delete payload.branch;
       delete payload.customer;
       delete payload.coCustomer;
       delete payload.coCustomer2;
@@ -739,11 +761,14 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     const resolvedDirectorId = rawApp.recommendedByDirectorID || rawApp.recommendedByDirectorId || rawApp.RecommendedByDirectorID || 0;
     const resolvedRateId = rawApp.loanRateID || rawApp.loanRateId || rawApp.LoanRateID || 0;
     const resolvedAppId = rawApp.loanApplicationID || rawApp.loanApplicationId || rawApp.LoanApplicationID || 0;
+    const resolvedBranchId = rawApp.branchID || rawApp.branchId || rawApp.BranchID || initialBranchId;
+    setSelectedBranchId(resolvedBranchId);
 
     setShowCoBorrowers(Boolean(resolvedCoCustId || resolvedCoCust2Id || rawApp.coMemberID || rawApp.coMember2ID));
 
     setFormData({
       ...rawApp,
+      branchID: resolvedBranchId,
       loanApplicationID: resolvedAppId,
       customerID: resolvedCustId,
       coCustomerID: resolvedCoCustId,
@@ -1141,6 +1166,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     if (filteredApps.length === 0) return;
     const rows = filteredApps.map((a, i) => ({
       'अ.क्र.': i + 1,
+      'शाखा': a.branch?.branchName || (branches.find(b => b.branchID === a.branchID)?.branchName) || 'मुख्य शाखा',
       'अर्ज क्र.': a.applicationNo,
       'दिनांक': a.applicationDate ? new Date(a.applicationDate).toLocaleDateString('en-GB') : '-',
       'CIF क्र.': a.customer?.cifNo || '-',
@@ -1173,6 +1199,9 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
   );
 
   const filteredApps = applications.filter(a => {
+    if (filterBranchId !== 'all' && Number(filterBranchId) > 0 && a.branchID !== Number(filterBranchId)) {
+      return false;
+    }
     const q = searchTerm.toLowerCase();
     const custName = a.customer ? `${a.customer.firstName || ''} ${a.customer.lastName || ''}`.toLowerCase() : '';
     const custCif = a.customer?.cifNo ? a.customer.cifNo.toLowerCase() : '';
@@ -1402,8 +1431,33 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                   )}
                 </div>
 
-                {/* Row 1: App No & App Date */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* Row 1: Branch, App No & App Date */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className={labelClass}>
+                      शाखा (Branch) <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      name="branchID"
+                      value={selectedBranchId}
+                      onChange={(e) => {
+                        const newBranchId = parseInt(e.target.value, 10);
+                        setSelectedBranchId(newBranchId);
+                        setFormData(prev => ({ ...prev, branchID: newBranchId }));
+                        fetchNextAppNo(newBranchId);
+                      }}
+                      disabled={isPassingMode || isEditing || hasGlobalBranch}
+                      className={`${inputClass} font-semibold ${hasGlobalBranch ? 'bg-slate-100 cursor-not-allowed' : ''}`}
+                      required
+                    >
+                      {branches.map(b => (
+                        <option key={b.branchID} value={b.branchID}>
+                          {b.branchName} ({b.branchCode || 'HQ'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div>
                     <label className={labelClass}>
                       अर्ज क्र. (App No) <span className="text-red-500">*</span>
@@ -2281,23 +2335,43 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
 
             {/* Modal Filter Toolbar */}
             <div className="p-2.5 bg-slate-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 shrink-0">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
-                <input 
-                  type="text" 
-                  placeholder="अर्ज क्र., खातेदार नाव किंवा CIF शोधा..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8 pr-6 py-1 border border-gray-300 rounded-sm text-xs h-[30px] w-64 lg:w-80 focus:outline-none focus:border-primary bg-white shadow-2xs"
-                />
-                {searchTerm && (
-                  <button 
-                    onClick={() => setSearchTerm('')} 
-                    className="absolute right-2.5 top-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
+                  <input 
+                    type="text" 
+                    placeholder="अर्ज क्र., खातेदार नाव किंवा CIF शोधा..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8 pr-6 py-1 border border-gray-300 rounded-sm text-xs h-[30px] w-64 lg:w-80 focus:outline-none focus:border-primary bg-white shadow-2xs"
+                  />
+                  {searchTerm && (
+                    <button 
+                      onClick={() => setSearchTerm('')} 
+                      className="absolute right-2.5 top-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                <select
+                  value={filterBranchId}
+                  onChange={(e) => {
+                    const newFilter = e.target.value;
+                    setFilterBranchId(newFilter);
+                    fetchData(newFilter);
+                  }}
+                  disabled={hasGlobalBranch}
+                  className={`px-2 py-1 border border-gray-300 rounded-sm text-xs h-[30px] bg-white focus:outline-none focus:border-primary shadow-2xs font-semibold ${hasGlobalBranch ? 'bg-slate-100 cursor-not-allowed' : ''}`}
+                >
+                  <option value="all">सर्व शाखा (All Branches)</option>
+                  {branches.map(b => (
+                    <option key={b.branchID} value={b.branchID}>
+                      {b.branchName} ({b.branchCode || 'HQ'})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <button
@@ -2319,6 +2393,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                   <thead className="bg-slate-100 sticky top-0 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
                     <tr>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">शाखा</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">अर्ज क्र.</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">अर्जदार खातेदार नाव व CIF</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज योजना</th>
@@ -2365,6 +2440,11 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                             </button>
                           </div>
                         </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center whitespace-nowrap">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {app.branch?.branchName || (branches.find(b => b.branchID === app.branchID)?.branchName) || 'मुख्य शाखा'}
+                          </span>
+                        </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono font-bold text-primary">
                           {app.applicationNo}
                         </td>
@@ -2397,7 +2477,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                     ))}
                     {filteredApps.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-10 text-center text-gray-400 font-bold">
+                        <td colSpan={9} className="px-6 py-10 text-center text-gray-400 font-bold">
                           कोणताही कर्ज अर्ज सापडला नाही.
                         </td>
                       </tr>

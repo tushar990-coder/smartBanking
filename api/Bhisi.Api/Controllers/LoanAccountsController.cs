@@ -105,9 +105,19 @@ namespace Bhisi.Api.Controllers
                 .Include(l => l.LoanDisbursements)
                 .AsQueryable();
 
+            string? roleClaim = User.FindFirst(ClaimTypes.Role)?.Value ?? User.FindFirst("role")?.Value;
+            string? branchClaim = User.FindFirst("BranchID")?.Value ?? User.FindFirst("branchId")?.Value;
+            int.TryParse(branchClaim, out int userBranchId);
+            bool isHO = roleClaim == "Admin" || roleClaim == "SuperAdmin" || roleClaim == "HO_Manager" || roleClaim == "HeadOffice" || userBranchId == 1;
+
             if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(l => l.BranchID == branchId.Value);
+            }
+            else if (!isHO && userBranchId > 0 && !customerId.HasValue && !memberId.HasValue)
+            {
+                // Default to operating branch for branch users unless searching specific customer/member
+                query = query.Where(l => l.BranchID == userBranchId);
             }
             if (customerId.HasValue && customerId.Value > 0)
             {

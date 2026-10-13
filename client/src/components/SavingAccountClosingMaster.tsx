@@ -184,7 +184,7 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
         closureDate: formData.closureDate,
         closingCharges: charges,
         paymentMode: formData.paymentMode,
-        createdBy: 1
+        createdBy: user?.userID || 1
       });
 
       setSuccess('खाते यशस्वीरित्या बंद करण्यात आले आहे व अंतिम सेटलमेंट पूर्ण झाली आहे!');

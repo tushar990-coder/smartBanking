@@ -30,6 +30,8 @@ interface Member {
 interface LoanApplication {
     loanApplicationID: number;
     applicationNo: string;
+    branchID?: number;
+    branch?: any;
     applicationDate: string;
     memberID?: number;
     customerID?: number;
@@ -262,8 +264,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
 
     useEffect(() => {
         fetchNextShareConfig();
-        fetchData();
-        fetchDropdowns().then(() => {
+        fetchData(initialBranchId);
+        fetchDropdowns(initialBranchId).then(() => {
             if (draftApplication && !editingId && !editingDisbursement) {
                 setSourceType('Draft');
                 setSelectedSourceId('');
@@ -514,10 +516,12 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         }
     };
 
-    const fetchData = async () => {
+    const fetchData = async (targetBranchId?: number) => {
         setLoading(true);
         try {
-            const res = await axios.get('/api/LoanDisbursements');
+            const bId = targetBranchId ?? selectedBranchId;
+            const url = bId ? `/api/LoanDisbursements?branchId=${bId}` : '/api/LoanDisbursements';
+            const res = await axios.get(url);
             setDisbursements(res.data || []);
         } catch (err) {
             console.error(err);
@@ -526,15 +530,16 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         }
     };
 
-    const fetchDropdowns = async () => {
+    const fetchDropdowns = async (targetBranchId?: number) => {
         try {
+            const bId = targetBranchId ?? selectedBranchId;
             const [appRes, accRes, ledgersRes, branchesRes, savingAccsRes, disbRes] = await Promise.all([
-                axios.get('/api/LoanApplications'),
+                axios.get(bId ? `/api/LoanApplications?branchId=${bId}` : '/api/LoanApplications'),
                 axios.get('/api/LoanAccounts'),
                 axios.get('/api/Ledgers'),
                 axios.get('/api/Branches'),
                 axios.get('/api/SavingAccounts'),
-                axios.get('/api/LoanDisbursements')
+                axios.get(bId ? `/api/LoanDisbursements?branchId=${bId}` : '/api/LoanDisbursements')
             ]);
             
             const allDisbursements: LoanDisbursement[] = disbRes.data || [];
@@ -565,7 +570,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             // Filter applications that have pending sanctioned limit > 0
             const availableApps = appsWithStatus.filter((a: any) => (a.pendingSanctionedAmount || 0) > 0);
             setApplications(availableApps);
-            setAccounts((accRes.data || []).filter((a: any) => !a.isOpeningBalance));
+            const filteredAccs = (accRes.data || []).filter((a: any) => !a.isOpeningBalance && (!bId || a.branchID === bId));
+            setAccounts(filteredAccs);
             const filteredBankLedgers = (ledgersRes.data || []).filter((l: any) => {
                 if (!l) return false;
                 const gId = l.groupID || l.accountGroupID || 0;
@@ -703,6 +709,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         if (sourceType === 'Application') {
             const app = applications.find(a => a.loanApplicationID === id);
             if (app) {
+                if (app.branchID && app.branchID > 0) {
+                    setSelectedBranchId(app.branchID);
+                }
                 const autoDisbDate = app.applicationDate 
                     ? app.applicationDate.split('T')[0] 
                     : new Date().toISOString().split('T')[0];
@@ -1109,6 +1118,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         try {
             const payload: any = { 
                 ...formData, 
+                branchID: selectedBranchId,
                 deductions: deductions.filter(d => d.ledgerID && d.amount > 0)
             };
 
@@ -1454,8 +1464,13 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                         <label className={labelClass}>शाखा (Branch) <span className="text-red-500">*</span></label>
                                         <select 
                                             value={selectedBranchId} 
-                                            onChange={(e) => setSelectedBranchId(parseInt(e.target.value, 10))}
-                                            disabled={sourceType === 'ExistingAccount' || hasGlobalBranch}
+                                            onChange={(e) => {
+                                                const newBid = parseInt(e.target.value, 10);
+                                                setSelectedBranchId(newBid);
+                                                fetchData(newBid);
+                                                fetchDropdowns(newBid);
+                                            }}
+                                            disabled={sourceType === 'ExistingAccount' || hasGlobalBranch || (user?.role !== 'Admin' && user?.role !== 'HO_Manager')}
                                             className={inputClass}
                                         >
                                             {branches.map(b => (
@@ -2362,7 +2377,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 <LoanDistributionListModal 
                     onClose={() => setShowListModal(false)} 
                     onEdit={handleEdit} 
-                    onDelete={() => { fetchData(); fetchDropdowns(); }} 
+                    onDelete={() => { fetchData(selectedBranchId); fetchDropdowns(selectedBranchId); }} 
                 />
             )}
 

@@ -2,6 +2,28 @@
 
 ---
 
+## 📅 [2026-10-13] - आवृत्ती v2.5.44 (Multi-Branch Isolation, Cross-Branch Loan Collection & Cash Drawer Alignment, FD Lien Protection & Security Hardening v2.5.44)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **बहु-शाखा स्वायत्तता व सुरक्षा अलगीकरण (Multi-Branch Isolation & Security Scoping):**
+  * कर्ज मागणी अर्ज (`LoanApplications`), कर्ज वाटप (`LoanDisbursements`) आणि कर्ज वसुली (`LoanCollections`) या सर्व मॉड्यूल्समध्ये `BranchID` सक्तीचे करून शाखास्तरीय अलगीकरण लागू.
+  * शाखा कर्मचाऱ्यांना केवळ त्यांच्या स्वतःच्या शाखेचे कर्ज अर्ज, वाटप व वसुली पाहण्याची, संपादन व डिलीट करण्याची परवानगी; मुख्यालयातील (Head Office / Admin) वापरकर्त्यांनाच संपूर्ण संस्थेचे अधिकार.
+* **काऊंटर रोख ताळमेळ व क्रॉस-शाखा कर्ज वसुली (Collecting Branch Cash Drawer Alignment & Cross-Branch Recovery):**
+  * कर्ज वसुली पावती ज्या शाखेच्या काऊंटरवर जमा होते, त्याच शाखेच्या `BranchID` नुसार आर्थिक व्हाउचर (`Vouchers`) तयार होणे; ज्यामुळे त्या शाखेच्या दैनंदिनी (Daybook) व रोख नोंदवहीत प्रत्यक्ष जमा झालेली रोख शिल्लक अचूक दर्शवली जाते.
+  * पर-शाखेच्या कर्जदारासाठी क्रॉस-शाखा वसुली (`IsCrossBranch`, `HomeBranchID`, `HomeBranchName`) सुविधा; पावती व अहवालात मूळ शाखा व जमा शाखा स्पष्ट दर्शवणे.
+* **शाखा रोख खाते व दैनंदिनी ताळमेळ अचूकता (Branch-Specific Cash Ledger & Daybook Alignment):**
+  * `CashLedgerHelper` द्वारे मुख्य शाखा (मेन, H.O.) व इतर शाखांची रोख खाती अचूक शोधून दैनंदिनी (Daybook), Daybook Summary व कॅश बुक अहवालांमध्ये शाखा रोख शिल्लक ताळमेळ सुनिश्चित.
+  * व्हाउचर्स नसलेली थेट कर्ज वाटप व वसुली ट्रान्झॅक्शन्स प्रत्यक्ष ऑपरेटिंग शाखेनुसार अचूक फिल्टर होणे.
+* **मुदत ठेव तारण संरक्षण व नूतनीकरण निर्बंध (FD Lien Protection & Renewal Guard):**
+  * कर्ज खात्यावर तारण बोजा (`IsLienMarked = true`) असलेल्या मुदत ठेव पावत्यांचे मॅन्युअल अथवा स्वयंचलित नूतनीकरण (Auto-Renewal) पूर्णतः प्रतिबंधित.
+  * मुदत ठेव नूतनीकरण केवळ खात्याच्या मूळ शाखेतून (Home Branch) अथवा मुख्य कार्यालयातूनच करण्याची सुरक्षा मर्यादा.
+  * मुदत ठेव त्रैमासिक व्याज तरतूद (FD Accrual Posting) केवळ निवडलेल्या शाखेपुरती मर्यादित करून पर-शाखा खाती पोस्ट होण्यावर कडक निर्बंध.
+* **डेटाबेस स्कीमा स्वयं-अद्ययावतीकरण व मायग्रेशन स्क्रिप्ट्स (Startup Auto-Migration & SQL Tools):**
+  * `Program.cs` मध्ये `LoanApplications`, `LoanCollections`, `LoanDisbursements` वर `BranchID`, `HomeBranchID`, `IsCrossBranch` कॉलम तपासणी व इंडेक्स निर्मितीची स्वयंचलित सुविधा.
+  * `tools/add_branch_id_to_loan_applications.sql`, `tools/add_branch_id_to_loan_collections.sql`, `tools/add_branch_id_to_loan_disbursements.sql`, `tools/align_daybook_voucher_branches.sql` स्क्रिप्ट्स समाविष्ट.
+
+---
+
 ## 📅 [2026-10-12] - आवृत्ती v2.5.43 (User Management & Security Master Hardening, Backdoor Elimination, Self-Service & Mandatory First-Login Password Change, Admin Audit Logging & Role Authorization Enforced v2.5.43)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुरक्षा सुधारणा (Key Highlights)

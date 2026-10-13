@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ShareCertificatePreview from './ShareCertificatePreview';
+import { useAuth } from '../context/AuthContext';
 
 interface Props {
     onClose: () => void;
@@ -51,6 +52,17 @@ const format14DigitDisplay = (num?: string) => {
 };
 
 const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete }) => {
+    const { user } = useAuth();
+    const globalBranchStr = localStorage.getItem('globalBranchId');
+    const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
+    const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string, 10) : (user?.branchID || 1);
+
+    const isHOUser = user?.role === 'Admin' || user?.role === 'HO_Manager' || (user?.branchID === 1 && !hasGlobalBranch);
+
+    const [selectedBranchId, setSelectedBranchId] = useState<string>(
+        isHOUser ? (hasGlobalBranch ? String(initialBranchId) : 'all') : String(user?.branchID || initialBranchId)
+    );
+    const [branches, setBranches] = useState<any[]>([]);
     const [disbursements, setDisbursements] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -60,13 +72,19 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
     const [fetchingCertId, setFetchingCertId] = useState<number | null>(null);
 
     useEffect(() => {
-        fetchData();
+        axios.get('/api/Branches').then(res => setBranches(res.data || [])).catch(console.error);
     }, []);
 
-    const fetchData = async () => {
+    useEffect(() => {
+        fetchData(selectedBranchId);
+    }, [selectedBranchId]);
+
+    const fetchData = async (targetBranch?: string) => {
         try {
             setLoading(true);
-            const res = await axios.get('/api/LoanDisbursements');
+            const b = targetBranch !== undefined ? targetBranch : selectedBranchId;
+            const url = b && b !== 'all' ? `/api/LoanDisbursements?branchId=${b}` : '/api/LoanDisbursements';
+            const res = await axios.get(url);
             const sortedData = (res.data || []).sort((a: any, b: any) => {
                 const dateA = new Date(a.disbursementDate).getTime() || 0;
                 const dateB = new Date(b.disbursementDate).getTime() || 0;
@@ -134,6 +152,16 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
         return '-';
     };
 
+    const getBranchName = (d: any) => {
+        const bId = d.branchID || d.loanAccount?.branchID || 1;
+        return d.branch?.branchName || d.loanAccount?.branch?.branchName || branches.find(b => b.branchID === bId)?.branchName || `शाखा क्र. ${bId}`;
+    };
+
+    const getBranchCode = (d: any) => {
+        const bId = d.branchID || d.loanAccount?.branchID || 1;
+        return d.branch?.branchCode || d.loanAccount?.branch?.branchCode || branches.find(b => b.branchID === bId)?.branchCode || 'HO';
+    };
+
     const filteredData = disbursements.filter(d => {
         const term = searchTerm.toLowerCase().trim();
         const bName = getBorrowerName(d).toLowerCase();
@@ -189,6 +217,8 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
             const totalDeds = (d.deductions || []).reduce((s: number, item: any) => s + (item.amount || 0), 0);
             return {
                 "अ.क्र.": index + 1,
+                "शाखा": getBranchName(d),
+                "शाखा कोड": getBranchCode(d),
                 "वितरण क्र.": d.loanDisbursementID,
                 "कर्ज खाते क्र.": acc.loanAccountNo || `L-${d.loanAccountID}`,
                 "सभासद कोड": getBorrowerCode(d) || '-',
@@ -278,6 +308,23 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                         </div>
 
                         <div className="flex items-center gap-1">
+                            <label className="text-gray-600 font-bold text-[11px] shrink-0">शाखा:</label>
+                            <select 
+                                className="border border-gray-300 px-2 py-1 rounded-sm text-xs h-[30px] bg-white focus:outline-none focus:border-primary shadow-2xs font-medium"
+                                value={selectedBranchId}
+                                onChange={(e) => setSelectedBranchId(e.target.value)}
+                                disabled={!isHOUser}
+                            >
+                                {isHOUser && <option value="all">सर्व शाखा (All Branches)</option>}
+                                {branches.map((b: any) => (
+                                    <option key={b.branchID} value={b.branchID}>
+                                        {b.branchName} ({b.branchCode})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="flex items-center gap-1">
                             <label className="text-gray-600 font-bold text-[11px] shrink-0">कर्ज प्रकार:</label>
                             <select 
                                 className="border border-gray-300 px-2 py-1 rounded-sm text-xs h-[30px] bg-white focus:outline-none focus:border-primary shadow-2xs font-medium"
@@ -308,9 +355,9 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                             </select>
                         </div>
 
-                        {(searchTerm || selectedLoanType || selectedPaymentMode) && (
+                        {(searchTerm || selectedLoanType || selectedPaymentMode || (isHOUser && selectedBranchId !== 'all')) && (
                             <button 
-                                onClick={() => { setSearchTerm(''); setSelectedLoanType(''); setSelectedPaymentMode(''); }} 
+                                onClick={() => { setSearchTerm(''); setSelectedLoanType(''); setSelectedPaymentMode(''); if (isHOUser) setSelectedBranchId('all'); }} 
                                 className="text-gray-500 hover:text-gray-800 text-xs font-semibold px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded-sm transition cursor-pointer"
                             >
                                 ✕ फिल्टर काढा
@@ -341,11 +388,12 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                 {/* Modal Table Content */}
                 <div className="flex-1 overflow-hidden flex flex-col p-2 bg-slate-100 min-h-0">
                     <div className="flex-1 overflow-x-auto overflow-y-auto bg-white rounded-sm shadow-xs border border-gray-200">
-                        <table className="w-full text-left border-collapse min-w-[1750px] text-xs">
+                        <table className="w-full text-left border-collapse min-w-[1850px] text-xs">
                             <thead className="bg-slate-100 sticky top-0 z-10 shadow-2xs text-gray-700 font-bold border-b border-gray-300">
                                 <tr>
                                     <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
                                     <th className="px-2 py-1.5 border-r border-gray-200 text-center w-10">अ.क्र.</th>
+                                    <th className="px-2 py-1.5 border-r border-gray-200 text-left">शाखा</th>
                                     <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र. व टप्पा</th>
                                     <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्जदार सभासद नाव</th>
                                     <th className="px-2 py-1.5 border-r border-gray-200 text-left bg-amber-50/70 text-amber-950">जामीनदार १</th>
@@ -365,14 +413,14 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                             <tbody className="divide-y divide-gray-200 text-[11px] bg-white">
                                 {loading ? (
                                     <tr>
-                                        <td colSpan={16} className="text-center py-12 text-gray-500">
+                                        <td colSpan={17} className="text-center py-12 text-gray-500">
                                             <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary mb-2" />
                                             <span>माहिती लोड होत आहे...</span>
                                         </td>
                                     </tr>
                                 ) : filteredData.length === 0 ? (
                                     <tr>
-                                        <td colSpan={16} className="text-center py-12 text-gray-400">
+                                        <td colSpan={17} className="text-center py-12 text-gray-400">
                                             <FileText className="w-8 h-8 mx-auto mb-1.5 opacity-40" />
                                             <span>कोणतीही कर्ज वितरण नोंद सापडली नाही.</span>
                                         </td>
@@ -431,6 +479,11 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
                                                 </td>
                                                 <td className="px-2 py-1.5 text-center text-gray-500 font-mono text-[11px] border-r border-gray-200">
                                                     {index + 1}
+                                                </td>
+                                                <td className="px-2 py-1.5 border-r border-gray-200 whitespace-nowrap">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                                                        {getBranchName(d)}
+                                                    </span>
                                                 </td>
                                                 <td className="px-2 py-1.5 border-r border-gray-200 font-mono">
                                                     <div className="font-bold text-gray-900 tracking-tight">{format14DigitDisplay(acc.loanAccountNo) || `L-${d.loanAccountID}`}</div>

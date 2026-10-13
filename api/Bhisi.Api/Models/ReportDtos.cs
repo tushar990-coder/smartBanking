@@ -132,6 +132,10 @@ namespace Bhisi.Api.Models
         public decimal CashAmount { get; set; }
         public decimal TransferAmount { get; set; }
         public string Status { get; set; } = string.Empty;
+        public int? BranchId { get; set; }
+        public string? BranchName { get; set; }
+        public bool IsCrossBranch { get; set; }
+        public int? HomeBranchId { get; set; }
     }
 
     public class DaybookBatchResponseDto
@@ -217,6 +221,11 @@ namespace Bhisi.Api.Models
         public decimal SurchargeCollected { get; set; }
         public decimal TotalAmountReceived { get; set; }
         public string PaymentMode { get; set; } = string.Empty;
+        public int BranchID { get; set; }
+        public string BranchName { get; set; } = string.Empty;
+        public int? HomeBranchID { get; set; }
+        public string HomeBranchName { get; set; } = string.Empty;
+        public bool IsCrossBranch { get; set; }
     }
 
     public class LoanTrancheDetailDto

@@ -11,6 +11,7 @@ import {
   Layers
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
 
 interface LoanCollectionRegisterDto {
   loanCollectionID: number;
@@ -27,6 +28,11 @@ interface LoanCollectionRegisterDto {
   surchargeCollected: number;
   totalAmountReceived: number;
   paymentMode: string;
+  branchID?: number;
+  branchName?: string;
+  homeBranchID?: number;
+  homeBranchName?: string;
+  isCrossBranch?: boolean;
 }
 
 const fmtCurrency = (n: number | null | undefined) => {
@@ -54,6 +60,9 @@ const formatDisplayDate = (dStr?: string | null) => {
 };
 
 export default function LoanCollectionRegister() {
+  const { user } = useAuth();
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.branchID === 1;
+
   const [fromDate, setFromDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [paymentFilter, setPaymentFilter] = useState<string>('Ekatrit');
@@ -67,7 +76,9 @@ export default function LoanCollectionRegister() {
 
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
-  const initialBranchId = hasGlobalBranch ? (globalBranchStr as string) : 'all';
+  const initialBranchId = !isHOUser && user?.branchID
+    ? String(user.branchID)
+    : (hasGlobalBranch ? (globalBranchStr as string) : 'all');
   const [selectedBranchId, setSelectedBranchId] = useState<string>(initialBranchId);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -195,6 +206,9 @@ export default function LoanCollectionRegister() {
         'पावती नं.': r.receiptNo,
         'कर्ज खाते नं': r.loanAccountNo,
         'कर्जदाराचे नाव': r.memberName,
+        'वसुल शाखा': r.branchName || '',
+        'कर्ज शाखा': r.homeBranchName || '',
+        'आंतर-शाखा': r.isCrossBranch ? 'होय' : 'नाही',
         'कर्ज प्रकार': r.loanType,
         'मुद्दल (₹)': r.principalCollected || 0,
         'व्याज (₹)': r.interestCollected || 0,
@@ -212,6 +226,9 @@ export default function LoanCollectionRegister() {
       'पावती नं.': '',
       'कर्ज खाते नं': '',
       'कर्जदाराचे नाव': 'एकूण बेरीज (Grand Total):',
+      'वसुल शाखा': '',
+      'कर्ज शाखा': '',
+      'आंतर-शाखा': '',
       'कर्ज प्रकार': `एकूण नोंदी: ${filteredData.length}`,
       'मुद्दल (₹)': totalPrincipalSum,
       'व्याज (₹)': totalInterestSum,
@@ -303,9 +320,9 @@ export default function LoanCollectionRegister() {
               <label className="text-[11px] font-semibold text-gray-600 whitespace-nowrap">शाखा:</label>
               <select
                 value={selectedBranchId}
-                disabled={hasGlobalBranch}
+                disabled={hasGlobalBranch || !isHOUser}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32"
+                className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-medium bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-28 sm:w-32 disabled:bg-slate-100 disabled:text-gray-500"
               >
                 <option value="all">सर्व शाखा (All)</option>
                 {branches.map((b: any) => (
@@ -504,28 +521,29 @@ export default function LoanCollectionRegister() {
             <table className="w-full border-collapse border border-gray-900 text-xs">
               <thead>
                 <tr className="bg-gray-100/90 text-gray-900 border-b border-gray-900 text-center font-bold">
-                  <th className="border border-gray-900 py-1.5 px-1 w-[5%] text-center">अ.क्र.</th>
-                  <th className="border border-gray-900 py-1.5 px-1.5 w-[9%] text-center">दिनांक</th>
-                  <th className="border border-gray-900 py-1.5 px-1.5 w-[9%] text-center">पावती नं.</th>
-                  <th className="border border-gray-900 py-1.5 px-1.5 w-[10%] text-center">खाते नं.</th>
-                  <th className="border border-gray-900 py-1.5 px-2 w-[22%] text-left">कर्जदाराचे नाव</th>
-                  <th className="border border-gray-900 py-1.5 px-1.5 w-[11%] text-left">कर्ज प्रकार</th>
-                  <th className="border border-gray-900 py-1.5 px-2 w-[11%] text-right">मुद्दल जमा</th>
-                  <th className="border border-gray-900 py-1.5 px-1.5 w-[10%] text-right">व्याज जमा</th>
-                  <th className="border border-gray-900 py-1.5 px-2 w-[12%] text-right font-extrabold">एकूण जमा रक्कम</th>
-                  <th className="border border-gray-900 py-1.5 px-1.5 w-[8%] text-center">Payment Mode</th>
+                  <th className="border border-gray-900 py-1.5 px-1 w-[4%] text-center">अ.क्र.</th>
+                  <th className="border border-gray-900 py-1.5 px-1 w-[8%] text-center">दिनांक</th>
+                  <th className="border border-gray-900 py-1.5 px-1 w-[8%] text-center">पावती नं.</th>
+                  <th className="border border-gray-900 py-1.5 px-1 w-[9%] text-center">खाते नं.</th>
+                  <th className="border border-gray-900 py-1.5 px-1.5 w-[19%] text-left">कर्जदाराचे नाव</th>
+                  <th className="border border-gray-900 py-1.5 px-1 w-[10%] text-center">वसुल / कर्ज शाखा</th>
+                  <th className="border border-gray-900 py-1.5 px-1 w-[9%] text-left">कर्ज प्रकार</th>
+                  <th className="border border-gray-900 py-1.5 px-1.5 w-[10%] text-right">मुद्दल जमा</th>
+                  <th className="border border-gray-900 py-1.5 px-1.5 w-[9%] text-right">व्याज जमा</th>
+                  <th className="border border-gray-900 py-1.5 px-1.5 w-[11%] text-right font-extrabold">एकूण जमा रक्कम</th>
+                  <th className="border border-gray-900 py-1.5 px-1 w-[6%] text-center">मोड</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={10} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
+                    <td colSpan={11} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
                       माहिती लोड होत आहे, कृपया प्रतीक्षा करा...
                     </td>
                   </tr>
                 ) : filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
+                    <td colSpan={11} className="text-center py-8 text-gray-500 font-semibold border border-gray-900">
                       निवडलेल्या कालावधीत कोणतीही कर्ज वसुली नोंद आढळली नाही.
                     </td>
                   </tr>
@@ -541,7 +559,7 @@ export default function LoanCollectionRegister() {
                         {/* Section Sub-heading if All mode or multiple types */}
                         {Object.keys(groupedData).length > 1 && (
                           <tr className="bg-gray-50 font-bold text-gray-950 border-t border-b border-gray-900">
-                            <td colSpan={10} className="py-1 px-2 text-left text-primary font-bold">
+                            <td colSpan={11} className="py-1 px-2 text-left text-primary font-bold">
                               › कर्ज प्रकार: {typeStr} ({rows.length} पावत्या)
                             </td>
                           </tr>
@@ -563,6 +581,14 @@ export default function LoanCollectionRegister() {
                             </td>
                             <td className="border border-gray-900 py-1 px-2 font-medium">
                               {row.memberName}
+                            </td>
+                            <td className="border border-gray-900 py-1 px-1 text-center font-mono text-[10px]">
+                              <div className="font-semibold text-gray-900">{row.branchName || '-'}</div>
+                              {row.isCrossBranch && (
+                                <div className="text-[9px] text-amber-800 font-bold bg-amber-50 px-1 py-0.5 rounded border border-amber-200 mt-0.5" title={`मूळ कर्ज शाखा: ${row.homeBranchName}`}>
+                                  [कर्ज: {row.homeBranchName}]
+                                </div>
+                              )}
                             </td>
                             <td className="border border-gray-900 py-1 px-1.5 text-gray-700">
                               {row.loanType}
@@ -587,7 +613,7 @@ export default function LoanCollectionRegister() {
                         {/* Subtotal row if multiple types */}
                         {Object.keys(groupedData).length > 1 && (
                           <tr className="bg-gray-50/80 font-bold text-gray-900 border-t border-b border-gray-800 text-[11px]">
-                            <td colSpan={6} className="border border-gray-900 py-1 px-2 text-right italic">
+                            <td colSpan={7} className="border border-gray-900 py-1 px-2 text-right italic">
                               उप-एकूण ({typeStr}):
                             </td>
                             <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold">
@@ -612,7 +638,7 @@ export default function LoanCollectionRegister() {
               {filteredData.length > 0 && (
                 <tfoot>
                   <tr className="bg-gray-100 font-bold text-gray-950 border-t-2 border-gray-900 text-xs">
-                    <td colSpan={6} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                    <td colSpan={7} className="border border-gray-900 py-1.5 px-3 text-right uppercase tracking-wider">
                       एकूण (Grand Total):
                     </td>
                     <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-extrabold text-gray-950">

@@ -1,6 +1,7 @@
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import { MemberOption } from './common/MemberSearchSelect';
@@ -55,6 +56,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   isPassingMode: propIsPassingMode,
   onNavigate
 }) => {
+  const { user } = useAuth();
   const urlParams = new URLSearchParams(window.location.search);
   const voucherIdFromUrl = urlParams.get('voucherId') ? parseInt(urlParams.get('voucherId')!) : undefined;
   const isPassingModeFromUrl = urlParams.get('passingMode') === 'true';
@@ -111,7 +113,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   const API_URL = '/api';
 
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: user?.branchID || 1,
     customerID: 0,
     memberID: 0,
     fdSchemeID: 0,
@@ -127,6 +129,12 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     autoRenewalOption: 'PrincipalPlusInterest',
     maxAutoRenewalCycles: 3,
   });
+
+  useEffect(() => {
+    if (user?.branchID && user.role !== 'Admin') {
+      setFormData(prev => ({ ...prev, branchID: user.branchID }));
+    }
+  }, [user]);
 
   const [calcData, setCalcData] = useState({
     interestRate: 0,
@@ -964,12 +972,19 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
                   <div>
                     <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शाखा (Branch) *</label>
-                    <select name="branchID" value={formData.branchID} onChange={handleChange} required
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
-                      {branches.map((b) => (
-                        <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
-                      ))}
-                    </select>
+                    {user?.role === 'Admin' ? (
+                      <select name="branchID" value={formData.branchID} onChange={handleChange} required
+                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                        {branches.map((b) => (
+                          <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-gray-100 font-bold text-gray-800 flex items-center gap-1">
+                        <span>🔒</span>
+                        <span>{branches.find(b => b.branchID === formData.branchID)?.branchName || user?.branchName || 'Bambavade Branch'}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="md:col-span-2">

@@ -142,6 +142,40 @@ namespace Bhisi.Api.Controllers
                 .ToListAsync();
         }
 
+        // GET: api/VoucherPosting/Approved
+        [HttpGet("Approved")]
+        public async Task<ActionResult<IEnumerable<Voucher>>> GetApprovedVouchers(
+            [FromQuery] int? branchId = null,
+            [FromQuery] DateTime? voucherDate = null,
+            [FromQuery] bool allDates = false)
+        {
+            var query = _context.Vouchers.AsQueryable();
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(v => v.BranchID == branchId.Value || v.BranchID == 0);
+            }
+
+            if (!allDates && voucherDate.HasValue)
+            {
+                var targetDate = voucherDate.Value.Date;
+                query = query.Where(v => v.VoucherDate.Date == targetDate);
+            }
+
+            return await query
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Customer)
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Member)
+                        .ThenInclude(m => m!.Customer)
+                .Where(v => v.Status == "Approved" && !v.VoucherNo.StartsWith("JV-FD-OP-"))
+                .OrderBy(v => v.VoucherDate)
+                .ThenBy(v => v.ScrollNo ?? 0)
+                .ThenBy(v => v.VoucherID)
+                .ToListAsync();
+        }
+
         public class PostVouchersRequest
         {
             public List<int> VoucherIds { get; set; } = new List<int>();
@@ -247,6 +281,101 @@ namespace Bhisi.Api.Controllers
             {
                 await dbTransaction.RollbackAsync();
                 return StatusCode(500, $"व्हाउचर पासिंग करताना सिस्टीम त्रुटी झाली: {ex.Message}");
+            }
+        }
+
+        public class UnpassVouchersRequest
+        {
+            public List<int> VoucherIds { get; set; } = new List<int>();
+            public string Reason { get; set; } = string.Empty;
+            public int UnpassedBy { get; set; } = 1;
+            public string Username { get; set; } = "Admin";
+            public string UserRole { get; set; } = "Admin";
+        }
+
+        // POST: api/VoucherPosting/Unpass
+        [HttpPost("Unpass")]
+        public async Task<IActionResult> UnpassVouchers([FromBody] UnpassVouchersRequest request)
+        {
+            if (request == null || request.VoucherIds == null || !request.VoucherIds.Any())
+            {
+                return BadRequest("अन-पास करण्यासाठी कोणतेही व्हाउचर निवडलेले नाही. (No vouchers selected for unpass.)");
+            }
+
+            int userId = request.UnpassedBy > 0 ? request.UnpassedBy : 1;
+            string username = !string.IsNullOrWhiteSpace(request.Username) ? request.Username : "User-" + userId;
+            string userRole = !string.IsNullOrWhiteSpace(request.UserRole) ? request.UserRole : "Admin";
+            string reason = !string.IsNullOrWhiteSpace(request.Reason) ? request.Reason.Trim() : "मंजुरी रद्द व प्रलंबित केले (Reverted to Pending)";
+
+            bool isHOUser = userRole == "Admin" || userRole == "HO_Manager" || userRole == "HO Manager" || userRole == "Manager";
+
+            using var dbTransaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var vouchers = await _context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                    .Where(v => request.VoucherIds.Contains(v.VoucherID) && v.Status == "Approved")
+                    .ToListAsync();
+
+                if (!vouchers.Any())
+                {
+                    return NotFound("निवडलेले कोणतेही मंजूर व्हाउचर्स सापडले नाहीत किंवा आधीच प्रलंबित आहेत. (No valid approved vouchers found to unpass.)");
+                }
+
+                int unpassedCount = 0;
+                var unpassedVoucherNumbers = new List<string>();
+
+                foreach (var voucher in vouchers)
+                {
+                    // 1. Closed Business Date Lock Check (EOD)
+                    var dayStatus = await _context.BranchDayEndStatuses
+                        .Where(b => b.BranchID == voucher.BranchID && b.BusinessDate.Date == voucher.VoucherDate.Date)
+                        .FirstOrDefaultAsync();
+
+                    if (dayStatus != null && dayStatus.IsDayClosed && !isHOUser)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest($"व्हाउचर क्र. {voucher.VoucherNo} च्या तारखेची ({voucher.VoucherDate:dd/MM/yyyy}) दिवसअखेर (EOD) पूर्ण झाली आहे. बंद झालेल्या तारखेचा व्हाउचर अन-पास करता येणार नाही.");
+                    }
+
+                    int? oldScrollNo = voucher.ScrollNo;
+
+                    // 2. Revert Status to Pending, reset ScrollNo and Approval fields
+                    voucher.Status = "Pending";
+                    voucher.ScrollNo = null;
+                    voucher.ApprovedBy = null;
+                    voucher.ApprovedOn = null;
+
+                    // 3. Record in AuditLogs
+                    _context.AuditLogs.Add(new AuditLog
+                    {
+                        UserID = userId > 0 ? userId : null,
+                        Username = username,
+                        Action = "VOUCHER_UNPASSED_REVERT_APPROVAL",
+                        EntityName = "Voucher",
+                        EntityID = voucher.VoucherNo,
+                        Details = $"Voucher {voucher.VoucherNo} (Old Scroll #{oldScrollNo}, Amount: ₹{voucher.TotalAmount:N2}) Unpassed by {username} ({userRole}) | Reason: {reason} | Date: {voucher.VoucherDate:yyyy-MM-dd}",
+                        Timestamp = DateTime.Now
+                    });
+
+                    unpassedCount++;
+                    unpassedVoucherNumbers.Add(voucher.VoucherNo);
+                }
+
+                await _context.SaveChangesAsync();
+                await dbTransaction.CommitAsync();
+
+                return Ok(new
+                {
+                    message = $"{unpassedCount} व्हाउचर्स यशस्वीरीत्या अन-पास (Unpassed) करून प्रलंबित यादीत परत पाठवण्यात आले.",
+                    unpassedCount,
+                    voucherNumbers = unpassedVoucherNumbers
+                });
+            }
+            catch (Exception ex)
+            {
+                await dbTransaction.RollbackAsync();
+                return StatusCode(500, $"व्हाउचर अन-पास करताना सिस्टीम त्रुटी झाली: {ex.Message}");
             }
         }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
 import { 
@@ -522,7 +522,38 @@ export default function LoanOpeningBalanceMaster() {
     const loanAccountNo = (balance.loanAccountNo || '').toLowerCase();
     const oldAccountNo = (balance.legacyAccountNumber || '').toLowerCase();
     return customerName.includes(term) || cifNo.includes(term) || loanAccountNo.includes(term) || oldAccountNo.includes(term);
+  }).sort((a, b) => {
+    const aVal = (a.legacyAccountNumber || '').trim();
+    const bVal = (b.legacyAccountNumber || '').trim();
+
+    // 1. Both have legacy account numbers -> Natural numeric sort (1, 2, 10, 269, 402)
+    if (aVal && bVal) {
+      return aVal.localeCompare(bVal, undefined, { numeric: true, sensitivity: 'base' });
+    }
+    // 2. Accounts with legacy account numbers come first
+    if (aVal && !bVal) return -1;
+    if (!aVal && bVal) return 1;
+
+    // 3. Fallback: Sort by CBS loanAccountNo
+    return (a.loanAccountNo || '').localeCompare(b.loanAccountNo || '', undefined, { numeric: true });
   });
+
+  // [RULE-LOAN-LEGACY-DUP] Real-time detection of duplicate Old Loan Account No under the selected Loan Scheme
+  const duplicateLegacyAccount = useMemo(() => {
+    if (!formData.legacyAccountNumber || !formData.legacyAccountNumber.trim() || !formData.loanRateID) {
+      return null;
+    }
+    const cleanLegacy = formData.legacyAccountNumber.trim().toLowerCase();
+    const currentRateId = Number(formData.loanRateID);
+    return (
+      allAccounts.find(
+        (acc) =>
+          Number(acc.loanRateID) === currentRateId &&
+          (acc.legacyAccountNumber || '').trim().toLowerCase() === cleanLegacy &&
+          (!isEditing || acc.loanAccountID !== formData.loanOpeningBalanceID)
+      ) || null
+    );
+  }, [formData.legacyAccountNumber, formData.loanRateID, formData.loanOpeningBalanceID, isEditing, allAccounts]);
 
   const fetchBalances = async () => {
     try {
@@ -991,6 +1022,27 @@ export default function LoanOpeningBalanceMaster() {
     if (!formData.customerID || !formData.loanRateID || !formData.loanAccountNo) {
         alert("कृपया कर्जदार खातेदार व आवश्यक माहिती भरा!");
         return;
+    }
+
+    // [RULE-LOAN-LEGACY-DUP] Validation: Prevent duplicate Old Loan Account No under the same loan scheme
+    if (formData.legacyAccountNumber && formData.legacyAccountNumber.trim()) {
+      const cleanLegacy = formData.legacyAccountNumber.trim().toLowerCase();
+      const currentRateId = Number(formData.loanRateID);
+      const duplicateAcc = allAccounts.find(
+        (acc) =>
+          Number(acc.loanRateID) === currentRateId &&
+          (acc.legacyAccountNumber || '').trim().toLowerCase() === cleanLegacy &&
+          (!isEditing || acc.loanAccountID !== formData.loanOpeningBalanceID)
+      );
+      if (duplicateAcc) {
+        const selectedRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
+        const schemeName = selectedRate ? `${selectedRate.loanCode} - ${selectedRate.shortName || selectedRate.loanType}` : 'सदर कर्ज योजना';
+        const custName = duplicateAcc.customer 
+          ? `${duplicateAcc.customer.firstName || ''} ${duplicateAcc.customer.lastName || ''}`.trim()
+          : '';
+        alert(`जुना कर्ज खाते क्र. '${formData.legacyAccountNumber.trim()}' हा '${schemeName}' या कर्ज योजनेमध्ये आधीच खाते क्र. ${format14DigitDisplay(duplicateAcc.loanAccountNo)} ${custName ? `(${custName})` : ''} साठी नोंदवलेला आहे!\n\nएकाच कर्ज योजनेमध्ये जुना कर्ज खाते क्र. डबल (डुप्लिकेट) घेता येत नाही.`);
+        return;
+      }
     }
 
     const selectedRate = loanRates.find(r => r.loanRateID.toString() === formData.loanRateID);
@@ -1777,7 +1829,26 @@ export default function LoanOpeningBalanceMaster() {
               </div>
               <div className="lg:col-span-1 sm:col-span-1">
                 <label className={labelClass}>जुना कर्ज खाते क्र. (Old A/C)</label>
-                <input type="text" name="legacyAccountNumber" value={formData.legacyAccountNumber} onChange={handleChange} className={inputClass} placeholder="उदा. OLD-101" />
+                <input 
+                  type="text" 
+                  name="legacyAccountNumber" 
+                  value={formData.legacyAccountNumber} 
+                  onChange={handleChange} 
+                  className={`${inputClass} font-mono font-bold ${
+                    duplicateLegacyAccount
+                      ? 'border-red-500 bg-red-50 text-red-950 ring-1 ring-red-500 focus:border-red-600 focus:ring-red-500'
+                      : 'text-slate-950 font-extrabold focus:border-primary'
+                  }`} 
+                  placeholder="उदा. 402" 
+                />
+                {duplicateLegacyAccount && (
+                  <p className="text-[10px] text-red-600 font-bold mt-1 leading-tight flex items-start gap-1">
+                    <span>⚠️</span>
+                    <span>
+                      हा क्र. आधीच खाते <strong>{format14DigitDisplay(duplicateLegacyAccount.loanAccountNo)}</strong> {duplicateLegacyAccount.customer ? `(${duplicateLegacyAccount.customer.firstName || ''} ${duplicateLegacyAccount.customer.lastName || ''})` : ''} साठी नोंदवला आहे!
+                    </span>
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -2827,7 +2898,9 @@ export default function LoanOpeningBalanceMaster() {
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">खातेदार नाव</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">कर्ज प्रकार</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">खाते क्र.</th>
-                      <th className="px-2 py-1.5 border-r border-gray-200 text-left">जुना खाते क्र.</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-left bg-slate-200/80 font-black text-slate-900" title="यादी जुना खाते क्र. च्या चढत्या क्रमाने (1, 2, 3...) लावली आहे">
+                        जुना खाते क्र. ⇅
+                      </th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">मंजूर रक्कम (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-right">वाटप रक्कम (₹)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">वाटप दिनांक</th>
@@ -2876,7 +2949,7 @@ export default function LoanOpeningBalanceMaster() {
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-left font-bold text-gray-900 font-mono">
                           <div className="flex items-center gap-1">
-                            <span>{balance.loanAccountNo}</span>
+                            <span>{format14DigitDisplay(balance.loanAccountNo)}</span>
                             {balance.isOpeningBalance ? (
                               <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1 py-0.2 rounded border border-emerald-300">OB</span>
                             ) : (
@@ -2884,8 +2957,14 @@ export default function LoanOpeningBalanceMaster() {
                             )}
                           </div>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 text-left text-gray-600 font-mono">
-                          {balance.legacyAccountNumber || '-'}
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-left font-mono">
+                          {balance.legacyAccountNumber ? (
+                            <span className="font-extrabold text-slate-950 bg-slate-100 px-2 py-0.5 rounded border border-slate-300 shadow-2xs inline-block">
+                              {balance.legacyAccountNumber}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 font-normal">-</span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-right font-mono font-bold text-gray-800">
                           {(balance.sanctionedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}

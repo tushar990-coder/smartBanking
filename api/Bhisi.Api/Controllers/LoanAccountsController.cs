@@ -488,6 +488,21 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            if (!string.IsNullOrWhiteSpace(loanAccount.LegacyAccountNumber))
+            {
+                string cleanLegacy = loanAccount.LegacyAccountNumber.Trim();
+                var dup = await _context.LoanAccounts.AsNoTracking().FirstOrDefaultAsync(l => 
+                    l.LoanRateID == loanAccount.LoanRateID && 
+                    l.LegacyAccountNumber != null && 
+                    l.LegacyAccountNumber.Trim() == cleanLegacy);
+                if (dup != null)
+                {
+                    var scheme = await _context.LoanRates.FindAsync(loanAccount.LoanRateID);
+                    string schemeName = scheme != null ? $"{scheme.LoanType} ({scheme.ShortName ?? scheme.LoanCode})" : $"योजना क्र. {loanAccount.LoanRateID}";
+                    return BadRequest(new { message = $"जुना कर्ज खाते क्र. '{cleanLegacy}' हा '{schemeName}' या कर्ज योजनेमध्ये आधीच खाते क्र. {dup.LoanAccountNo} साठी नोंदवलेला आहे! एकाच कर्ज योजनेमध्ये जुना खाते क्र. डबल घेता येत नाही." });
+                }
+            }
+
             try
             {
                 _context.LoanAccounts.Add(loanAccount);
@@ -1607,6 +1622,38 @@ namespace Bhisi.Api.Controllers
                 if (await IsLoanAccountNoDuplicateAsync(dto.BranchID, cleanAccountNo, excludeId))
                 {
                     return $"कर्ज खाते क्रमांक '{cleanAccountNo}' आधीपासून शाखा क्र. {dto.BranchID} मध्ये अस्तित्वात आहे. कृपया वेगळा खाते क्रमांक प्रविष्ट करा.";
+                }
+            }
+
+            // 4.1 LegacyAccountNumber uniqueness per loan scheme enforcement
+            string cleanLegacyAccountNo = (dto.LegacyAccountNumber ?? "").Trim();
+            if (!string.IsNullOrWhiteSpace(cleanLegacyAccountNo))
+            {
+                int? excludeId = dto.LoanOpeningBalanceID > 0 ? dto.LoanOpeningBalanceID : null;
+                var duplicateLegacyQuery = _context.LoanAccounts.AsNoTracking().Where(l => 
+                    l.LoanRateID == dto.LoanRateID && 
+                    l.LegacyAccountNumber != null && 
+                    l.LegacyAccountNumber.Trim() == cleanLegacyAccountNo);
+
+                if (excludeId.HasValue && excludeId.Value > 0)
+                {
+                    duplicateLegacyQuery = duplicateLegacyQuery.Where(l => l.LoanAccountID != excludeId.Value);
+                }
+
+                var dupLoan = await duplicateLegacyQuery
+                    .Select(l => new { 
+                        l.LoanAccountNo, 
+                        l.LegacyAccountNumber, 
+                        CustomerName = l.Customer != null ? (l.Customer.FirstName + " " + (l.Customer.LastName ?? "")) : "" 
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (dupLoan != null)
+                {
+                    var scheme = await _context.LoanRates.FindAsync(dto.LoanRateID);
+                    string schemeName = scheme != null ? $"{scheme.LoanType} ({scheme.ShortName ?? scheme.LoanCode})" : $"योजना क्र. {dto.LoanRateID}";
+                    string custInfo = !string.IsNullOrWhiteSpace(dupLoan.CustomerName) ? $"({dupLoan.CustomerName.Trim()})" : "";
+                    return $"जुना कर्ज खाते क्र. '{cleanLegacyAccountNo}' हा '{schemeName}' या कर्ज योजनेमध्ये आधीच खाते क्र. {dupLoan.LoanAccountNo} {custInfo} साठी नोंदवलेला आहे! एकाच कर्ज योजनेमध्ये जुना खाते क्र. डबल घेता येत नाही.";
                 }
             }
 

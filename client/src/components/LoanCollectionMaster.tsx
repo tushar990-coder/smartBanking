@@ -1566,7 +1566,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             <option value="">{selectedBorrowerKey || selectedCustomerId ? (borrowerLoans.length === 0 ? "कर्ज उपलब्ध नाही" : "-- कर्ज प्रकार व खाते निवडा --") : "आधी कर्जदार निवडा..."}</option>
                                             {borrowerLoans.map((a: any) => (
                                                 <option key={a.loanAccountID} value={a.loanAccountID}>
-                                                    {format14DigitDisplay(a.loanAccountNo)} - {a.loanRate?.shortName || a.loanRate?.loanType || 'कर्ज'} (मंजूर: ₹{a.sanctionedAmount?.toLocaleString('en-IN') || 0} | शिल्लक: ₹{a.principalBalance?.toLocaleString('en-IN') || 0})
+                                                    {format14DigitDisplay(a.loanAccountNo)}{a.legacyAccountNumber ? ` [जुने: ${a.legacyAccountNumber}]` : ''} - {a.loanRate?.shortName || a.loanRate?.loanType || 'कर्ज'} (मंजूर: ₹{a.sanctionedAmount?.toLocaleString('en-IN') || 0} | शिल्लक: ₹{a.principalBalance?.toLocaleString('en-IN') || 0})
                                                 </option>
                                             ))}
                                         </select>

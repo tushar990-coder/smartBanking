@@ -3,8 +3,8 @@
   "releaseDate": "2026-10-13",
   "patchName": "SmartBanking_VPS_Multi_App_Master_Patch_v2.5.46",
   "git": {
-    "commit": "HEAD",
-    "fullCommit": "HEAD",
+    "commit": "6421274",
+    "fullCommit": "642127429aa1cce3b98f23f2f815bf5f7fcf1e50",
     "branch": "main",
     "commitDate": "2026-10-13 17:50:00 +0530",
     "commitMessage": "fix(fd-interest): prevent double-counting of legacy accrued interest in fd outstanding report and accrual engine v2.5.46",

@@ -147,6 +147,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
   const [showMigratedModal, setShowMigratedModal] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [modalSchemeId, setModalSchemeId] = useState<number | 'ALL'>('ALL');
   const [isManualMaturityEdited, setIsManualMaturityEdited] = useState(false);
   const [isManualMaturityDateEdited, setIsManualMaturityDateEdited] = useState(false);
   const [matchedSlab, setMatchedSlab] = useState<FdSchemeInterestSlab | null>(null);
@@ -1200,7 +1201,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     if (filteredAccounts.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा उपलब्ध नाही.');
     const rows = filteredAccounts.map((acc, i) => ({
       'अ.क्र.': i + 1,
-      'नवीन पावती क्र.': acc.accountNo,
+      'नवीन पावती क्र.': formatAccountNo(acc.accountNo),
       'जुना पावती क्र.': acc.legacyAccountNumber || '-',
       'सीआयएफ क्र.': acc.cifNo || '-',
       'मेंबर कोड': acc.memberCode || '-',
@@ -1223,7 +1224,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'FD_Migrated_List');
-    XLSX.writeFile(wb, `FD_Migrated_Accounts_${new Date().toISOString().split('T')[0]}.xlsx`);
+    const activeScheme = modalSchemeId !== 'ALL' ? schemes.find(s => getSchemeId(s) === modalSchemeId) : null;
+    const cleanSchemeName = activeScheme ? `_${activeScheme.schemeName.replace(/[^a-zA-Z0-9_\u0900-\u097F]/g, '_')}` : '';
+    XLSX.writeFile(wb, `FD_Migrated_Accounts${cleanSchemeName}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const handlePrintModal = () => {
@@ -1243,6 +1246,9 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
   const filteredAccounts = migratedAccounts
     .filter((acc) => {
+      if (modalSchemeId !== 'ALL' && getSchemeId(acc) !== modalSchemeId) {
+        return false;
+      }
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
@@ -2075,23 +2081,47 @@ const FdOpeningBalanceMigration: React.FC = () => {
 
             {/* Modal Filter Toolbar */}
             <div className="p-2.5 bg-slate-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 shrink-0">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
-                <input 
-                  type="text" 
-                  placeholder="पावती क्र, नाव, कोड, वारसदार किंवा योजना शोधा..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8 pr-6 py-1 border border-gray-300 rounded-sm text-xs h-[30px] w-64 lg:w-80 focus:outline-none focus:border-primary bg-white shadow-2xs"
-                />
-                {searchTerm && (
-                  <button 
-                    onClick={() => setSearchTerm('')} 
-                    className="absolute right-2.5 top-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" />
+                  <input 
+                    type="text" 
+                    placeholder="पावती क्र, नाव, कोड, वारसदार किंवा योजना शोधा..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-8 pr-6 py-1 border border-gray-300 rounded-sm text-xs h-[30px] w-56 lg:w-72 focus:outline-none focus:border-primary bg-white shadow-2xs"
+                  />
+                  {searchTerm && (
+                    <button 
+                      onClick={() => setSearchTerm('')} 
+                      className="absolute right-2.5 top-1.5 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Scheme Filter Dropdown */}
+                <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 border border-gray-300 rounded-sm shadow-2xs">
+                  <label className="text-[11px] font-bold text-gray-700 whitespace-nowrap">योजना:</label>
+                  <select
+                    value={modalSchemeId}
+                    onChange={(e) => setModalSchemeId(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value))}
+                    className="text-xs h-[26px] bg-transparent font-medium text-slate-800 focus:outline-none cursor-pointer max-w-[200px] sm:max-w-[260px]"
+                    title="योजना निवडून खाती फिल्टर करा"
                   >
-                    ✕
-                  </button>
-                )}
+                    <option value="ALL">सर्व योजना (All Schemes - {migratedAccounts.length})</option>
+                    {schemes.map((s: any) => {
+                      const sid = getSchemeId(s);
+                      const countInScheme = migratedAccounts.filter((a: any) => getSchemeId(a) === sid).length;
+                      return (
+                        <option key={sid} value={sid}>
+                          {s.schemeName || `योजना #${sid}`} {countInScheme > 0 ? `(${countInScheme} खाती)` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">

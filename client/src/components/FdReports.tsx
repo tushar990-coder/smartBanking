@@ -500,6 +500,27 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
     }
   };
 
+  const formatSafeFdNarration = (narration?: string, txType?: string, voucherNo?: string, accNo?: string, legacyNo?: string) => {
+    let text = narration || txType || '';
+    if (!text || text.includes('????') || text.includes('???')) {
+      const legText = legacyNo ? ` (जुना पावती क्र. ${legacyNo})` : '';
+      if (txType === 'Opening' || (voucherNo && voucherNo.includes('FD-OP'))) {
+        return `मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): ${accNo || ''}${legText}`;
+      }
+      if (txType === 'Accrual' || (voucherNo && voucherNo.includes('PROV'))) {
+        return `मुदत ठेव साचलेले व्याज तरतूद (FD Accrued Interest): ${accNo || ''}${legText}`;
+      }
+      if (txType === 'Renewal' || (voucherNo && voucherNo.includes('REN'))) {
+        return `मुदत ठेव नूतनीकरण (FD Renewal): ${accNo || ''}${legText}`;
+      }
+      if (txType === 'Maturity' || txType === 'PrematureClose' || (voucherNo && voucherNo.includes('MAT'))) {
+        return `मुदत ठेव परतावा / मुदत समाप्ती (FD Maturity / Closure): ${accNo || ''}${legText}`;
+      }
+      return `मुदत ठेव व्यवहार: ${accNo || ''}${legText}`;
+    }
+    return text;
+  };
+
   const selectedBranchObj = branches.find(b => b.branchID === branchID);
   const activeBranchName = branchID > 0
     ? (selectedBranchObj ? selectedBranchObj.branchName : 'शाखा')
@@ -557,7 +578,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
             'मुदत दिनांक': formatDisplayDate(acc.maturityDate),
             'व्यवहार तारीख': formatDisplayDate(tx.transactionDate),
             'व्हाउचर क्र.': tx.voucherNo || '-',
-            'तपशील': tx.narration || tx.transactionType,
+            'तपशील': formatSafeFdNarration(tx.narration, tx.transactionType, tx.voucherNo, acc.accountNo, acc.legacyAccountNumber),
             'रक्कम (₹)': tx.amount
           });
         });
@@ -581,7 +602,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
         'रक्कम (₹)': v.totalAmount || 0,
         'स्क्रॉल क्र.': v.scrollNo || '-',
         'स्थिती': v.status === 'Approved' ? 'मंजूर' : (v.status === 'Pending' ? 'प्रलंबित' : v.status),
-        'तपशील': v.narration || '-'
+        'तपशील': formatSafeFdNarration(v.narration, v.transactionType, v.voucherNo, v.accountNo)
       }));
       rows.push({
         'अ.क्र.': '' as any,
@@ -1517,7 +1538,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                     <tr key={tIdx} className="text-[11px]">
                       <td className="border border-slate-900 p-1 text-center font-mono">{formatDisplayDate(tx.transactionDate)}</td>
                       <td className="border border-slate-900 p-1 text-center font-mono">{tx.voucherNo || '-'}</td>
-                      <td className="border border-slate-900 p-1">{tx.narration || tx.transactionType}</td>
+                      <td className="border border-slate-900 p-1">{formatSafeFdNarration(tx.narration, tx.transactionType, tx.voucherNo, acc.accountNo, acc.legacyAccountNumber)}</td>
                       <td className="border border-slate-900 p-1 text-right font-mono font-bold">{fmtCurrency(tx.amount)}</td>
                     </tr>
                   ))}
@@ -1555,7 +1576,11 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
                   <td className="border border-slate-900 py-1 px-2 text-center font-mono">{formatDisplayDate(v.voucherDate)}</td>
                   <td className="border border-slate-900 py-1 px-2">
                     <span className="font-semibold">{v.transactionType}</span>
-                    {v.narration && <span className="block text-[10px] text-slate-500 truncate max-w-[200px]" title={v.narration}>{v.narration}</span>}
+                    {v.narration && (
+                      <span className="block text-[10px] text-slate-500 truncate max-w-[200px]" title={formatSafeFdNarration(v.narration, v.transactionType, v.voucherNo, v.accountNo)}>
+                        {formatSafeFdNarration(v.narration, v.transactionType, v.voucherNo, v.accountNo)}
+                      </span>
+                    )}
                   </td>
                   <td className="border border-slate-900 py-1 px-2 text-center font-mono font-bold text-slate-800">{v.accountNo || '-'}</td>
                   <td className="border border-slate-900 py-1 px-2 font-medium">{v.customerName || '-'}</td>

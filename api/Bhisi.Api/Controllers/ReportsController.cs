@@ -5757,7 +5757,7 @@ namespace Bhisi.Api.Controllers
 
                 foreach (var acc in accounts)
                 {
-                    var transactions = await _context.FdTransactions
+                    var rawTransactions = await _context.FdTransactions
                         .Include(t => t.Voucher)
                         .Where(t => t.FdAccountID == acc.FdAccountID)
                         .OrderBy(t => t.TransactionDate)
@@ -5770,9 +5770,50 @@ namespace Bhisi.Api.Controllers
                             t.DebitCredit,
                             t.Amount,
                             VoucherNo = t.Voucher != null ? t.Voucher.VoucherNo : "",
-                            Narration = t.Voucher != null ? t.Voucher.Narration : (t.TransactionType == "Opening" ? "आरंभिक ठेव मुद्दल" : (t.TransactionType == "Accrual" ? "साचलेले जुने व्याज" : ""))
+                            RawNarration = t.Voucher != null ? t.Voucher.Narration : ""
                         })
                         .ToListAsync();
+
+                    var transactions = rawTransactions.Select(t =>
+                    {
+                        string narration = t.RawNarration ?? "";
+                        string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुना पावती क्र. {acc.LegacyAccountNumber.Trim()})" : "";
+
+                        if (string.IsNullOrWhiteSpace(narration) || narration.Contains("???") || narration.Contains("????"))
+                        {
+                            if (t.TransactionType == "Opening" || (!string.IsNullOrEmpty(t.VoucherNo) && t.VoucherNo.Contains("FD-OP")))
+                            {
+                                narration = $"मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): {acc.AccountNo}{legPart}";
+                            }
+                            else if (t.TransactionType == "Accrual" || (!string.IsNullOrEmpty(t.VoucherNo) && t.VoucherNo.Contains("PROV")))
+                            {
+                                narration = $"मुदत ठेव साचलेले व्याज तरतूद (FD Accrued Interest): {acc.AccountNo}{legPart}";
+                            }
+                            else if (t.TransactionType == "Renewal" || (!string.IsNullOrEmpty(t.VoucherNo) && t.VoucherNo.Contains("REN")))
+                            {
+                                narration = $"मुदत ठेव नूतनीकरण (FD Renewal): {acc.AccountNo}{legPart}";
+                            }
+                            else if (t.TransactionType == "Maturity" || t.TransactionType == "PrematureClose" || (!string.IsNullOrEmpty(t.VoucherNo) && t.VoucherNo.Contains("MAT")))
+                            {
+                                narration = $"मुदत ठेव परतावा / मुदत समाप्ती (FD Maturity / Closure): {acc.AccountNo}{legPart}";
+                            }
+                            else
+                            {
+                                narration = $"मुदत ठेव व्यवहार: {acc.AccountNo}{legPart}";
+                            }
+                        }
+
+                        return new
+                        {
+                            t.FdTransactionID,
+                            t.TransactionDate,
+                            t.TransactionType,
+                            t.DebitCredit,
+                            t.Amount,
+                            t.VoucherNo,
+                            Narration = narration
+                        };
+                    }).ToList();
 
                     decimal totalAccruedInt = await _context.FdTransactions
                         .Where(t => t.FdAccountID == acc.FdAccountID && t.TransactionType == "Accrual")

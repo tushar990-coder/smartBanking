@@ -2,6 +2,25 @@
 
 ---
 
+## 📅 [2026-10-13] - आवृत्ती v2.5.45 (FD Member Ledger Report Narration Marathi Font Restoration, Full Unicode N'' Healing Across All Sanstha Databases, Backend In-Memory Fallback & UI Sanitizer v2.5.45)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **मुदत ठेव खातावणी विवरणपत्र तपशील (Narration) मधील मराठी फॉन्ट त्रुटीचे संपूर्ण निराकरण:**
+  * मुदत ठेव अहवाल (FD Reports -> MemberLedger / मुदत ठेव खातावणी विवरणपत्र) मध्ये तपशील (Narration) कॉलममध्ये `???? ??? ?????? ?????? ???????? (FD Opening Balance Migration)...` असा प्रश्नचिन्हांचा मजकूर दिसण्याचा दोष १००% दूर करण्यात आला.
+* **मूळ कारण व कायमस्वरूपी युनिकोड (N'') दुरुस्ती (Root Cause Fix):**
+  * जुन्या स्थलांतर स्क्रिप्ट्स (`tools/heal_migrated_fd_account_numbers.sql`, `tools/FD_14Digit_CBS_Account_Standardization.sql`) मध्ये मराठी टेक्स्ट स्ट्रिंगच्या आधी `N` युनिकोड प्रीफिक्स नसल्यामुळे डेटाबेसमध्ये प्रश्नचिन्ह (`?`) सेव्ह झाले होते. सर्व संबंधित SQL स्क्रिप्ट्समध्ये `N'मुदत ठेव...'` युनिकोड प्रीफिक्स लावून कायमचे सुरक्षित केले.
+* **सर्व १३ संस्था डेटाबेसमध्ये १-क्लिक थेट स्वयं-दुरुस्ती (Direct Database Unicode Healing):**
+  * `tools/heal_corrupted_fd_voucher_narrations.sql` आणि `tools/apply_fd_narration_heal_all_sansthas.ps1` तयार करून सर्व १३ संस्था डेटाबेसवर रन करण्यात आले.
+  * **१,४३७ हून अधिक व्हाउचर्सचे तपशील** एका क्लिकवर शुद्ध मराठीत (`मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): 001-xxx... (जुना पावती क्र. ...)`) पूर्ववत पुनर्स्थापित केले गेले.
+* **बॅकएंड सी-शार्प इन-मेमरी ऑटो-हील फॉलबॅक (Backend C# Auto-Heal):**
+  * `ReportsController.cs` (`GetFdMemberLedgerReport`) आणि `FdAccountsController.cs` (`GetMemberFdLedger`) मध्ये इन-मेमरी सेफगार्ड लागू; भविष्यात कोणत्याही कारणाने डेटामध्ये `????` आढळल्यास API लेव्हलवरच तो स्वच्छ मराठी मजकुरात रूपांतरित होऊन फ्रंटएंडला पाठवला जातो.
+* **फ्रंटएंड अहवाल व एक्सेल एक्सपोर्ट सॅनिटायझर (Frontend UI & Excel Sanitizer):**
+  * `client/src/components/FdReports.tsx` मध्ये `formatSafeFdNarration` फलन समाविष्ट करून स्क्रीनवरील खातावणी तक्ता आणि डाऊनलोड होणाऱ्या एक्सेल (.xlsx) फाईलमध्ये सर्व व्हाउचर्सचा तपशील नेहमी सुवाच्य मराठीत दिसण्याची हमी.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (VPS Multi-App Master Patch v2.5.45):**
+  * सर्व ९+ संस्थांसाठी एकत्रित मास्टर अपडेट पॅकेज उपलब्ध.
+
+---
+
 ## 📅 [2026-10-13] - आवृत्ती v2.5.44 (Multi-Branch Isolation, Cross-Branch Loan Collection & Cash Drawer Alignment, FD Lien Protection & Security Hardening v2.5.44)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

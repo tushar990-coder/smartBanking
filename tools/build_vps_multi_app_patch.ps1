@@ -232,6 +232,11 @@ if (Test-Path $alignVouchersSql) {
     Copy-Item $alignVouchersSql (Join-Path $patchFolder "database\align_daybook_voucher_branches.sql") -Force
     Write-Host "  -> align_daybook_voucher_branches.sql included in database package." -ForegroundColor White
 }
+$healFdNarrationSql = Join-Path $workspaceRoot "tools\heal_corrupted_fd_voucher_narrations.sql"
+if (Test-Path $healFdNarrationSql) {
+    Copy-Item $healFdNarrationSql (Join-Path $patchFolder "database\heal_corrupted_fd_voucher_narrations.sql") -Force
+    Write-Host "  -> heal_corrupted_fd_voucher_narrations.sql included in database package." -ForegroundColor White
+}
 
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"

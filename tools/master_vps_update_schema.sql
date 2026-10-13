@@ -5870,6 +5870,41 @@ BEGIN
 END
 GO
 
+-- 7.7 Auto-Heal Corrupted FD Opening Balance Voucher Narrations (Unicode Restoration)
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Vouchers') AND EXISTS (SELECT * FROM sys.tables WHERE name = 'FdAccounts')
+BEGIN
+    -- 1. Via FdTransactions link
+    UPDATE v
+    SET v.Narration = N'मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): ' 
+                      + f.AccountNo 
+                      + CASE 
+                            WHEN f.LegacyAccountNumber IS NOT NULL AND LTRIM(RTRIM(f.LegacyAccountNumber)) <> '' 
+                            THEN N' (जुना पावती क्र. ' + LTRIM(RTRIM(f.LegacyAccountNumber)) + N')' 
+                            ELSE N'' 
+                        END
+    FROM Vouchers v
+    INNER JOIN FdTransactions t ON t.VoucherID = v.VoucherID
+    INNER JOIN FdAccounts f ON f.FdAccountID = t.FdAccountID
+    WHERE (v.VoucherNo LIKE 'JV-FD-OP-%' OR t.TransactionType = 'Opening' OR v.Narration LIKE '%FD Opening Balance Migration%')
+      AND (v.Narration LIKE '%?%' OR v.Narration IS NULL OR v.Narration = '');
+
+    -- 2. Via VoucherNo match (e.g. JV-FD-OP-001-405-0000002-5)
+    UPDATE v
+    SET v.Narration = N'मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): ' 
+                      + f.AccountNo 
+                      + CASE 
+                            WHEN f.LegacyAccountNumber IS NOT NULL AND LTRIM(RTRIM(f.LegacyAccountNumber)) <> '' 
+                            THEN N' (जुना पावती क्र. ' + LTRIM(RTRIM(f.LegacyAccountNumber)) + N')' 
+                            ELSE N'' 
+                        END
+    FROM Vouchers v
+    INNER JOIN FdAccounts f ON v.VoucherNo = ('JV-FD-OP-' + f.AccountNo)
+    WHERE (v.Narration LIKE N'%????%' OR v.Narration IS NULL OR v.Narration = '');
+
+    PRINT '  -> Auto-healed corrupted FD voucher narrations to clean Unicode Marathi';
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

@@ -135,7 +135,7 @@ BEGIN
             BEGIN
                 UPDATE Vouchers 
                 SET VoucherNo = @newVchNo,
-                    Narration = 'मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): ' + @newAccNo + ' (जुना क्र. ' + @legNo + ')'
+                    Narration = N'मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): ' + @newAccNo + N' (जुना पावती क्र. ' + @legNo + N')'
                 WHERE VoucherNo = @oldVchNo;
             END
 
@@ -149,7 +149,7 @@ BEGIN
                 )
                 VALUES (
                     @branchId, @newVchNo, @opDate, 'Journal', @depAmt,
-                    'मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): ' + @newAccNo + ' (जुना क्र. ' + @legNo + ')',
+                    N'मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): ' + @newAccNo + N' (जुना पावती क्र. ' + @legNo + N')',
                     'Approved', 1, GETDATE(), 1, GETDATE()
                 );
                 SET @vchId = SCOPE_IDENTITY();

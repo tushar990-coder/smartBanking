@@ -152,7 +152,7 @@ BEGIN
                 -- जर जुने व्हाउचर अस्तित्वात असेल तर नवीन १४-अंकी क्रमांकाने अपडेट करा
                 UPDATE Vouchers
                 SET VoucherNo = @newVch,
-                    Narration = 'मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): ' + @newAccNo + ' (जुना क्र. ' + @legNo + ')'
+                    Narration = N'मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): ' + @newAccNo + N' (जुना पावती क्र. ' + @legNo + N')'
                 WHERE (VoucherNo = @oldVch1 OR VoucherNo = @oldVch2)
                   AND NOT EXISTS (SELECT 1 FROM Vouchers WHERE VoucherNo = @newVch);
 

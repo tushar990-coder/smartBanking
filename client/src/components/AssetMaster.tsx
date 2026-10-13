@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 
 interface Asset {
   assetID: number;
@@ -25,6 +26,10 @@ interface Ledger {
 }
 
 const AssetMaster: React.FC = () => {
+  const { user, globalBranchId } = useAuth();
+  const effectiveBranchId = globalBranchId ? Number(globalBranchId) : (user?.branchID ? Number(user.branchID) : 1);
+  const isHeadOfficeOrAdmin = user?.role === 'Admin' || user?.branchType === 'HeadOffice';
+
   const [assets, setAssets] = useState<Asset[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
@@ -39,7 +44,7 @@ const AssetMaster: React.FC = () => {
   const [assetHistory, setAssetHistory] = useState<any[]>([]);
   
   // Filters
-  const [branchFilter, setBranchFilter] = useState('all');
+  const [branchFilter, setBranchFilter] = useState(isHeadOfficeOrAdmin ? 'all' : String(effectiveBranchId));
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -52,7 +57,7 @@ const AssetMaster: React.FC = () => {
 
   // Opening Balance Form
   const [openingData, setOpeningData] = useState({
-    branchID: 1,
+    branchID: effectiveBranchId,
     categoryID: 0,
     assetCode: '',
     assetName: '',
@@ -66,7 +71,7 @@ const AssetMaster: React.FC = () => {
 
   // Action Forms
   const [allocateData, setAllocateData] = useState({
-    allocatedBranchID: 1,
+    allocatedBranchID: effectiveBranchId,
     department: '',
     custodianName: '',
     remarks: '',
@@ -74,11 +79,19 @@ const AssetMaster: React.FC = () => {
   });
 
   const [transferData, setTransferData] = useState({
-    toBranchID: 1,
+    toBranchID: effectiveBranchId === 1 ? 2 : 1,
     toCustodian: '',
     remarks: '',
     transferDate: new Date().toISOString().split('T')[0]
   });
+
+  useEffect(() => {
+    if (!isHeadOfficeOrAdmin && effectiveBranchId) {
+      setBranchFilter(String(effectiveBranchId));
+      setOpeningData(prev => ({ ...prev, branchID: effectiveBranchId }));
+      setAllocateData(prev => ({ ...prev, allocatedBranchID: effectiveBranchId }));
+    }
+  }, [effectiveBranchId, isHeadOfficeOrAdmin]);
 
   const [verifyData, setVerifyData] = useState({
     auditorName: '',
@@ -187,7 +200,8 @@ const AssetMaster: React.FC = () => {
     setActiveActionTab('details');
     // Set defaults for action forms
     setAllocateData(prev => ({ ...prev, allocatedBranchID: asset.branchID }));
-    setTransferData(prev => ({ ...prev, toBranchID: asset.branchID }));
+    const otherBranch = branches.find(b => b.branchID !== asset.branchID);
+    setTransferData(prev => ({ ...prev, toBranchID: otherBranch ? otherBranch.branchID : (asset.branchID === 1 ? 2 : 1) }));
     
     // Set single depr form default values
     const defaultDepAmount = calculateDefaultDepreciation(asset);
@@ -226,7 +240,7 @@ const AssetMaster: React.FC = () => {
       fetchAssets();
       // Reset form
       setOpeningData({
-        branchID: 1,
+        branchID: effectiveBranchId,
         categoryID: 0,
         assetCode: '',
         assetName: '',
@@ -562,6 +576,7 @@ const AssetMaster: React.FC = () => {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-semibold text-left">
                   <th className="px-2.5 py-2">#</th>
+                  <th className="px-2.5 py-2">शाखा (Branch)</th>
                   <th className="px-2.5 py-2">कोड (Code)</th>
                   <th className="px-2.5 py-2">नाव (Name)</th>
                   <th className="px-2.5 py-2">वर्ग (Category)</th>
@@ -573,9 +588,9 @@ const AssetMaster: React.FC = () => {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} className="text-center py-4 text-gray-400">लोड होत आहे...</td></tr>
+                  <tr><td colSpan={9} className="text-center py-4 text-gray-400">लोड होत आहे...</td></tr>
                 ) : assets.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-4 text-gray-400">कोणतीही मालमत्ता सापडली नाही.</td></tr>
+                  <tr><td colSpan={9} className="text-center py-4 text-gray-400">कोणतीही मालमत्ता सापडली नाही.</td></tr>
                 ) : assets.map((a, idx) => (
                   <tr 
                     key={a.assetID} 
@@ -583,6 +598,11 @@ const AssetMaster: React.FC = () => {
                     className={`hover:bg-blue-50 border-b border-gray-100 transition-colors cursor-pointer ${selectedAsset?.assetID === a.assetID ? 'bg-blue-50/85 font-medium' : ''}`}
                   >
                     <td className="px-2.5 py-2">{idx + 1}</td>
+                    <td className="px-2.5 py-2">
+                      <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                        {a.branch?.branchName || `शाखा ${a.branchID}`}
+                      </span>
+                    </td>
                     <td className="px-2.5 py-2 font-mono font-medium text-blue-700">{a.assetCode}</td>
                     <td className="px-2.5 py-2">{a.assetName}</td>
                     <td className="px-2.5 py-2">{a.category?.categoryName}</td>

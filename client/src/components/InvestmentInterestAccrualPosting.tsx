@@ -19,8 +19,13 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
+import { useAuth } from '../context/AuthContext';
 
 const InvestmentInterestAccrualPosting: React.FC = () => {
+  const { user } = useAuth();
+  const globalBranchStr = localStorage.getItem('globalBranchId');
+  const initialBranchId = globalBranchStr && globalBranchStr !== 'all' ? parseInt(globalBranchStr, 10) : (user?.branchID || 1);
+
   const [branches, setBranches] = useState<any[]>([]);
   const [accruals, setAccruals] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -36,7 +41,7 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
   const API_URL = '/api';
 
   const [accrualForm, setAccrualForm] = useState({
-    branchID: 1,
+    branchID: initialBranchId,
     accrualDate: new Date().toISOString().split('T')[0],
   });
 
@@ -92,7 +97,12 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
     setSuccess('');
     setSaving(true);
     try {
-      const response = await axios.post(`${API_URL}/InvestmentAccounts/AccrualPosting`, accrualForm);
+      const payload = {
+        branchID: accrualForm.branchID,
+        accrualDate: accrualForm.accrualDate,
+        allBranches: accrualForm.branchID === 0
+      };
+      const response = await axios.post(`${API_URL}/InvestmentAccounts/AccrualPosting`, payload);
       setSuccess(`${response.data.message} (एकूण प्रक्रिया खाती: ${response.data.accountsProcessed}, एकूण संचित व्याज: ₹${response.data.totalInterest?.toLocaleString('en-IN')})`);
       fetchAccruals();
     } catch (err: any) {
@@ -327,6 +337,7 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
                       onChange={(e) => setAccrualForm(prev => ({ ...prev, branchID: parseInt(e.target.value, 10) }))}
                       className={inputClass}
                     >
+                      <option value={0}>🌟 सर्व शाखा एकत्रित (All Branches - Consolidated)</option>
                       {branches.map((b: any) => (
                         <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
                       ))}

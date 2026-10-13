@@ -24,6 +24,7 @@ import {
   Clock
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../context/AuthContext';
 
 interface Institution {
   institutionID: number;
@@ -44,6 +45,10 @@ interface Scheme {
 }
 
 const InvestmentOpeningBalance: React.FC = () => {
+  const { user } = useAuth();
+  const globalBranchStr = localStorage.getItem('globalBranchId');
+  const initialBranchId = globalBranchStr && globalBranchStr !== 'all' ? parseInt(globalBranchStr, 10) : (user?.branchID || 1);
+
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [schemes, setSchemes] = useState<Scheme[]>([]);
   const [filteredSchemes, setFilteredSchemes] = useState<Scheme[]>([]);
@@ -64,7 +69,7 @@ const InvestmentOpeningBalance: React.FC = () => {
   const API_URL = '/api';
 
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: initialBranchId,
     investmentInstitutionID: 0,
     schemeID: 0,
     depositReceiptNo: '',
@@ -283,7 +288,7 @@ const InvestmentOpeningBalance: React.FC = () => {
   const resetForm = () => {
     setEditingAccountId(null);
     setFormData({
-      branchID: 1,
+      branchID: initialBranchId,
       investmentInstitutionID: 0,
       schemeID: 0,
       depositReceiptNo: '',

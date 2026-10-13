@@ -29,7 +29,9 @@ namespace Bhisi.Api.Controllers
 
             if (branchId.HasValue && branchId.Value > 0)
             {
-                query = query.Where(i => i.BranchID == branchId.Value);
+                // In Core Banking, Financial Institutions (SBI, DCC Bank, etc.) are Sanstha-wide treasury entities.
+                // We show institutions created for this branch or shared/Head Office institutions (BranchID == 1 or 0)
+                query = query.Where(i => i.BranchID == branchId.Value || i.BranchID == 1 || i.BranchID == 0);
             }
 
             var list = await query.ToListAsync();

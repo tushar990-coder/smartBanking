@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface Category {
   categoryID: number;
@@ -20,6 +21,9 @@ export interface AssetPurchaseFormProps {
 }
 
 const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, voucherId, isPassingMode }) => {
+  const { user, globalBranchId } = useAuth();
+  const effectiveBranchId = globalBranchId ? Number(globalBranchId) : (user?.branchID ? Number(user.branchID) : 1);
+
   const queryParams = new URLSearchParams(window.location.search);
   const effectiveVoucherId = voucherId || queryParams.get('voucherId');
   const isPassing = isPassingMode || queryParams.get('passingMode') === 'true';
@@ -41,7 +45,7 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
   const [formData, setFormData] = useState({
     purchase: {
       institutionID: 1,
-      branchID: 1,
+      branchID: effectiveBranchId,
       financialYearID: 1,
       supplierName: '',
       invoiceNo: '',
@@ -60,6 +64,18 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
     debitLedgerID: 0,
     creditLedgerID: 0,
   });
+
+  useEffect(() => {
+    if (!isPassing && effectiveBranchId) {
+      setFormData(prev => ({
+        ...prev,
+        purchase: {
+          ...prev.purchase,
+          branchID: effectiveBranchId
+        }
+      }));
+    }
+  }, [effectiveBranchId, isPassing]);
 
   useEffect(() => {
     if (isPassing && effectiveVoucherId) {
@@ -277,7 +293,7 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
       setFormData({
         purchase: {
           institutionID: 1,
-          branchID: 1,
+          branchID: effectiveBranchId,
           financialYearID: 1,
           supplierName: '',
           invoiceNo: '',

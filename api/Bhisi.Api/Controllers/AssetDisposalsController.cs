@@ -31,7 +31,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/AssetDisposals
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<AssetDisposal>>> GetAssetDisposals([FromQuery] int? assetId)
+        public async Task<ActionResult<IEnumerable<AssetDisposal>>> GetAssetDisposals([FromQuery] int? assetId, [FromQuery] int? branchId)
         {
             var query = _context.AssetDisposals
                                 .Include(d => d.Asset)
@@ -40,6 +40,10 @@ namespace Bhisi.Api.Controllers
             if (assetId.HasValue)
             {
                 query = query.Where(d => d.AssetID == assetId.Value);
+            }
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(d => d.BranchID == branchId.Value);
             }
             return await query.OrderByDescending(d => d.DisposalDate).ToListAsync();
         }
@@ -62,6 +66,19 @@ namespace Bhisi.Api.Controllers
             if (asset.Status == "Disposed")
             {
                 return BadRequest("ही मालमत्ता आधीच विल्हेवाट लावलेली आहे. (Asset is already disposed.)");
+            }
+
+            // Ensure branch context
+            if (request.Disposal.BranchID <= 0)
+            {
+                request.Disposal.BranchID = asset.BranchID;
+            }
+
+            // Auto-resolve branch cash ledger if sale amount > 0 and no debit ledger provided
+            if (request.PostVoucher && request.Disposal.SaleAmount > 0 && (!request.DebitLedgerID.HasValue || request.DebitLedgerID.Value <= 0))
+            {
+                int cashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.Disposal.BranchID, "ASSET");
+                if (cashId > 0) request.DebitLedgerID = cashId;
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();

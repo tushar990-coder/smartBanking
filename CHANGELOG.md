@@ -2,6 +2,27 @@
 
 ---
 
+## 📅 [2026-10-13] - आवृत्ती v2.5.49 (Investment & Asset Management Multi-Branch Isolation, Branch Cash Drawer Alignment, Consolidated Batch Depreciation & Passing Revert v2.5.49)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **मालमत्ता व्यवस्थापन बहु-शाखा सक्षमीकरण (Fixed Asset Multi-Branch Readiness):**
+  * **रोख खरेदी लेजर (Branch Cash Drawer Alignment):** मालमत्ता खरेदी करताना `CashLedgerHelper.GetCashLedgerIdAsync` लागू केले. शाखा क्र. २ ची रोख खरेदी शाखा १ च्या कॅश लेजरला जमा होणे १००% बंद होऊन संबंधित शाखेचा अधिकृत रोख लेजर आपोआप क्रेडिट होतो.
+  * **संस्था-स्तरीय मालमत्ता वर्ग (Asset Categories):** मुख्य शाखा/संस्था स्तरावरील वर्ग सर्व शाखांसाठी खुले (`BranchID == branchId || BranchID == 1 || BranchID == 0`).
+  * **शाखा हस्तांतरण (Asset Branch Transfer):** हस्तांतरण सूचीमध्ये `branchId` फिल्टर आणि UI मध्ये चालू शाखा वगळून थेट इतर शाखांची स्वयंचलित निवड.
+  * **एकत्रित वार्षिक घसारा आकारणी (Consolidated Batch Depreciation Engine):** अहवाल व Depreciations Controller मध्ये `🌟 सर्व शाखा एकत्रित (All Branches - Consolidated)` पर्याय जोडला. सर्व शाखांचा घसारा एका क्लिकवर मोजता येतो व प्रत्येक शाखेच्या खात्यात स्वतंत्र संतुलित जर्नल व्हाउचर (Branch-wise JV) पोस्ट होऊन शाखा नफा-तोटा व तेरीज अचूक जुळते.
+  * **देखभाल, विल्हेवाट व पडताळणी:** सर्व उप-मॉड्यूल्समध्ये शाखा-स्तरीय फिल्टर व रोख लेजर मॅपिंग लागू केले.
+  * **UI/UX डायनॅमिक शाखा संदर्भ:** `useAuth()` (`user.branchID` / `globalBranchId`) द्वारे ओपनिंग बॅलन्स, खरेदी आणि अहवाल वापरकर्त्याच्या सक्रिय शाखेशी सिंक केले; मालमत्ता यादीत 'शाखा' स्तंभ समाविष्ट.
+* **गुंतवणूक व्यवस्थापन बहु-शाखा स्वायत्तता (Investment Module Multi-Branch Capability):**
+  * गुंतवणूक खात्यांची आरंभिक शिल्लक, नवीन खाते उघडणे व मासिक व्याज आकारणी (Monthly Accrual) मध्ये शाखा-स्तरीय रोख/बँक लेजर मॅपिंग.
+  * संस्था-स्तरीय बँका/संस्था सर्व शाखांमध्ये उपलब्ध.
+  * सर्व शाखा एकत्रित मासिक व्याज आकारणी (`AllBranches: true`) व व्हाउचर मॅपिंग फॉलबॅक.
+* **व्हाउचर पासिंग व अन-पास सुधारणा (Voucher Passing & Unpass Fix):**
+  * मंजूर व्हाउचर्स स्क्रीनवर अन-पास प्रक्रिया व त्रुटी हाताळणी सुधारणा.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (VPS Multi-App Master Patch v2.5.49):**
+  * सर्व ९+ संस्थांसाठी एकत्रित मास्टर अपडेट पॅकेज उपलब्ध.
+
+---
+
 ## 📅 [2026-10-13] - आवृत्ती v2.5.48 (Voucher Passing & Management Unpass Feature, Dual-Tab Pending/Approved Workspace, Atomic Scroll Revert, EOD Day-End Protection & VPS Master Patch v2.5.48)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 
 interface Ledger {
   ledgerID: number;
@@ -7,6 +8,10 @@ interface Ledger {
 }
 
 const AssetReports: React.FC = () => {
+  const { user, globalBranchId } = useAuth();
+  const effectiveBranchId = globalBranchId ? Number(globalBranchId) : (user?.branchID ? Number(user.branchID) : 1);
+  const isHeadOfficeOrAdmin = user?.role === 'Admin' || user?.branchType === 'HeadOffice';
+
   const [activeTab, setActiveTab] = useState<'register' | 'depreciation' | 'maintenance'>('register');
   const [assets, setAssets] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -19,19 +24,26 @@ const AssetReports: React.FC = () => {
   const [success, setSuccess] = useState('');
 
   // Register Filters
-  const [regBranch, setRegBranch] = useState('all');
+  const [regBranch, setRegBranch] = useState(isHeadOfficeOrAdmin ? 'all' : String(effectiveBranchId));
   const [regCategory, setRegCategory] = useState('all');
   const [regStatus, setRegStatus] = useState('all');
 
   // Batch Depreciation States
   const [depPreview, setDepPreview] = useState<any[]>([]);
   const [depLoading, setDepLoading] = useState(false);
-  const [depBranch, setDepBranch] = useState(1);
+  const [depBranch, setDepBranch] = useState<number>(isHeadOfficeOrAdmin ? 0 : effectiveBranchId);
   const [depCategory, setDepCategory] = useState('all');
   const [depDate, setDepDate] = useState(new Date().toISOString().split('T')[0]);
   const [depPostVoucher, setDepPostVoucher] = useState(true);
   const [depDebitLedger, setDepDebitLedger] = useState(0);
   const [depCreditLedger, setDepCreditLedger] = useState(0);
+
+  useEffect(() => {
+    if (!isHeadOfficeOrAdmin && effectiveBranchId) {
+      setRegBranch(String(effectiveBranchId));
+      setDepBranch(effectiveBranchId);
+    }
+  }, [effectiveBranchId, isHeadOfficeOrAdmin]);
 
   const API_URL = '/api';
 
@@ -110,7 +122,7 @@ const AssetReports: React.FC = () => {
     setDepLoading(true);
     try {
       const res = await axios.post(`${API_URL}/AssetDepreciations/preview`, {
-        branchID: depBranch,
+        branchID: depBranch > 0 ? depBranch : null,
         categoryID: depCategory === 'all' ? null : parseInt(depCategory),
         calculationDate: depDate
       });
@@ -333,6 +345,7 @@ const AssetReports: React.FC = () => {
                 <div>
                   <label className="block text-[10px] font-bold text-gray-600">शाखा (Branch) *</label>
                   <select value={depBranch} onChange={e => setDepBranch(parseInt(e.target.value))} className="w-full border rounded px-2 py-1 bg-white mt-0.5">
+                    <option value={0}>🌟 सर्व शाखा एकत्रित (All Branches - Consolidated)</option>
                     {branches.map(b => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
                   </select>
                 </div>
@@ -362,6 +375,7 @@ const AssetReports: React.FC = () => {
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-semibold text-left">
                           <th className="px-2.5 py-1.5">#</th>
+                          <th className="px-2.5 py-1.5">शाखा</th>
                           <th className="px-2.5 py-1.5">मालमत्ता कोड</th>
                           <th className="px-2.5 py-1.5">नाव</th>
                           <th className="px-2.5 py-1.5 text-right">पूर्वीचे मूल्य (WDV)</th>
@@ -375,6 +389,11 @@ const AssetReports: React.FC = () => {
                         {depPreview.map((item, idx) => (
                           <tr key={item.assetID} className="hover:bg-blue-50 border-b border-gray-100 transition-colors">
                             <td className="px-2.5 py-1">{idx + 1}</td>
+                            <td className="px-2.5 py-1 text-gray-600 font-medium">
+                              <span className="bg-slate-100 text-slate-700 px-1 py-0.5 rounded text-[10px]">
+                                {item.branchName || `शाखा ${item.branchID}`}
+                              </span>
+                            </td>
                             <td className="px-2.5 py-1 font-mono font-medium text-blue-700">{item.assetCode}</td>
                             <td className="px-2.5 py-1">{item.assetName}</td>
                             <td className="px-2.5 py-1 text-right">₹{fmt(item.bookValueBefore)}</td>
@@ -385,7 +404,7 @@ const AssetReports: React.FC = () => {
                           </tr>
                         ))}
                         <tr className="bg-gray-100 font-bold">
-                          <td colSpan={6} className="px-2.5 py-1.5 text-right">एकूण घसारा (Total Depreciation):</td>
+                          <td colSpan={7} className="px-2.5 py-1.5 text-right">एकूण घसारा (Total Depreciation):</td>
                           <td className="px-2.5 py-1.5 text-right text-red-600">₹{fmt(depPreview.reduce((s, i) => s + i.depreciationAmount, 0))}</td>
                           <td className="px-2.5 py-1.5 text-right text-green-700">₹{fmt(depPreview.reduce((s, i) => s + i.bookValueAfter, 0))}</td>
                         </tr>

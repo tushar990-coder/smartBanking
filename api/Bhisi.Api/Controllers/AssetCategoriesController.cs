@@ -25,9 +25,10 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<AssetCategory>>> GetAssetCategories([FromQuery] int? branchId)
         {
             var query = _context.AssetCategories.AsQueryable();
-            if (branchId.HasValue)
+            if (branchId.HasValue && branchId.Value > 0)
             {
-                query = query.Where(c => c.BranchID == branchId.Value);
+                // Return institutional categories (BranchID == 1 or 0) along with branch-specific categories
+                query = query.Where(c => c.BranchID == branchId.Value || c.BranchID == 1 || c.BranchID == 0);
             }
             return await query.OrderBy(c => c.CategoryName).ToListAsync();
         }

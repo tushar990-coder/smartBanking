@@ -62,7 +62,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 // 1. Create individual Asset entries
-                int existingCount = await _context.Assets.CountAsync(a => a.CategoryID == request.CategoryID);
+                int existingCount = await _context.Assets.CountAsync(a => a.AssetCode.StartsWith(request.AssetCodePrefix));
                 var assetIds = new List<int>();
 
                 // Cost per asset (split taxable cost)
@@ -107,13 +107,13 @@ namespace Bhisi.Api.Controllers
                     }
                     else if (request.Purchase.PaymentMode == "Cash")
                     {
-                        // Find cash ledger
-                        var cashLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("रोख शिल्लक") || l.LedgerName.ToLower().Contains("cash"));
-                        if (cashLedger == null)
+                        // Resolve branch-specific cash ledger via CashLedgerHelper
+                        int cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.Purchase.BranchID, "ASSET");
+                        if (cashLedgerId <= 0)
                         {
-                            return BadRequest("रोख शिल्लक खाते सापडले नाही. (Cash ledger not found.)");
+                            return BadRequest("या शाखेसाठी रोख शिल्लक खाते सापडले नाही. कृपया शाखा मास्टरमध्ये रोख लेजर तपासा. (Cash ledger not found for this branch.)");
                         }
-                        creditLedgerId = cashLedger.LedgerID;
+                        creditLedgerId = cashLedgerId;
                     }
                     else if (request.Purchase.PaymentMode == "Credit" && request.CreditLedgerID.HasValue)
                     {

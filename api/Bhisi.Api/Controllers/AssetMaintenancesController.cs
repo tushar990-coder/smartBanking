@@ -30,7 +30,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/AssetMaintenances
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<AssetMaintenance>>> GetAssetMaintenances([FromQuery] int? assetId)
+        public async Task<ActionResult<IEnumerable<AssetMaintenance>>> GetAssetMaintenances([FromQuery] int? assetId, [FromQuery] int? branchId)
         {
             var query = _context.AssetMaintenances
                                 .Include(m => m.Asset)
@@ -39,6 +39,10 @@ namespace Bhisi.Api.Controllers
             if (assetId.HasValue)
             {
                 query = query.Where(m => m.AssetID == assetId.Value);
+            }
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(m => m.BranchID == branchId.Value);
             }
             return await query.OrderByDescending(m => m.MaintenanceDate).ToListAsync();
         }
@@ -56,6 +60,19 @@ namespace Bhisi.Api.Controllers
             if (asset == null)
             {
                 return BadRequest("मालमत्ता सापडली नाही. (Asset not found.)");
+            }
+
+            // Ensure branch context
+            if (request.Maintenance.BranchID <= 0)
+            {
+                request.Maintenance.BranchID = asset.BranchID;
+            }
+
+            // Auto-resolve branch cash ledger if no credit ledger provided
+            if (request.PostVoucher && (!request.CreditLedgerID.HasValue || request.CreditLedgerID.Value <= 0))
+            {
+                int cashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.Maintenance.BranchID, "ASSET");
+                if (cashId > 0) request.CreditLedgerID = cashId;
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();

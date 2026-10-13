@@ -146,9 +146,11 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       if (res.ok) {
         const data = await res.json();
         setApprovedVouchers(data);
+      } else {
+        console.error('Failed to fetch approved vouchers:', res.status, res.statusText);
       }
-    } catch {
-      // silent
+    } catch (err) {
+      console.error('Network error fetching approved vouchers:', err);
     } finally {
       setLoadingApproved(false);
     }

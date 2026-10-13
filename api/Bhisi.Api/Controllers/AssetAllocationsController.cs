@@ -22,7 +22,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/AssetAllocations
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<AssetAllocation>>> GetAssetAllocations([FromQuery] int? assetId)
+        public async Task<ActionResult<IEnumerable<AssetAllocation>>> GetAssetAllocations([FromQuery] int? assetId, [FromQuery] int? branchId)
         {
             var query = _context.AssetAllocations
                                 .Include(a => a.Asset)
@@ -31,6 +31,10 @@ namespace Bhisi.Api.Controllers
             if (assetId.HasValue)
             {
                 query = query.Where(a => a.AssetID == assetId.Value);
+            }
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(a => a.AllocatedBranchID == branchId.Value || a.BranchID == branchId.Value);
             }
             return await query.OrderByDescending(a => a.AllocationDate).ToListAsync();
         }
@@ -56,6 +60,12 @@ namespace Bhisi.Api.Controllers
                 asset.UpdatedOn = DateTime.Now;
 
                 _context.Entry(asset).State = EntityState.Modified;
+
+                // Ensure BranchID is set
+                if (allocation.BranchID <= 0)
+                {
+                    allocation.BranchID = allocation.AllocatedBranchID > 0 ? allocation.AllocatedBranchID : asset.BranchID;
+                }
 
                 // Add Allocation record
                 allocation.CreatedOn = DateTime.Now;

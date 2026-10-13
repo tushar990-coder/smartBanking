@@ -21,19 +21,123 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
-        private async Task<int> GetDefaultCashBankLedgerId()
+        private async Task<int> GetDefaultCashBankLedgerId(int branchId = 1)
         {
-            var bankLedger = await _context.Ledgers
+            // 1. Try branch default cash ledger
+            var branch = await _context.Branches.FindAsync(branchId);
+            if (branch?.DefaultCashLedgerID != null && branch.DefaultCashLedgerID > 0)
+            {
+                return branch.DefaultCashLedgerID.Value;
+            }
+
+            // 2. Try bank or cash ledger matching branch name
+            if (branch != null && !string.IsNullOrWhiteSpace(branch.BranchName))
+            {
+                var branchSpecificBank = await _context.Ledgers
+                    .FirstOrDefaultAsync(l => l.IsActive && 
+                        (l.AccountType == "Bank" || l.AccountType == "Cash") &&
+                        l.LedgerName.Contains(branch.BranchName));
+                if (branchSpecificBank != null) return branchSpecificBank.LedgerID;
+            }
+
+            // 3. Fallback to any active Bank or Cash ledger
+            var fallbackBank = await _context.Ledgers
                 .Include(l => l.AccountGroup)
-                .FirstOrDefaultAsync(l => 
+                .FirstOrDefaultAsync(l => l.IsActive && (
                     l.AccountType == "Bank" || 
                     l.AccountType == "Cash" || 
                     l.LedgerName.Contains("Bank") || 
                     l.LedgerName.Contains("बँक") || 
                     l.LedgerName.Contains("Cash") || 
                     l.LedgerName.Contains("रोख") ||
-                    (l.AccountGroup != null && (l.AccountGroup.GroupName.Contains("Bank") || l.AccountGroup.GroupName.Contains("बँक"))));
-            return bankLedger?.LedgerID ?? 1;
+                    (l.AccountGroup != null && (l.AccountGroup.GroupName.Contains("Bank") || l.AccountGroup.GroupName.Contains("बँक")))));
+
+            return fallbackBank?.LedgerID ?? 1;
+        }
+
+        private async Task<InvestmentVoucherMapping> GetVoucherMappingForBranch(int branchId, string investmentType = "", int? schemeId = null)
+        {
+            // 1. Check branch-specific mapping
+            var mapping = await _context.InvestmentVoucherMappings
+                .FirstOrDefaultAsync(m => m.BranchID == branchId && (string.IsNullOrEmpty(investmentType) || m.InvestmentType == investmentType));
+
+            if (mapping == null)
+            {
+                mapping = await _context.InvestmentVoucherMappings
+                    .FirstOrDefaultAsync(m => m.BranchID == branchId);
+            }
+
+            // 2. Fallback to Head Office (Branch 1) mapping
+            if (mapping == null)
+            {
+                mapping = await _context.InvestmentVoucherMappings
+                    .FirstOrDefaultAsync(m => m.BranchID == 1 && (string.IsNullOrEmpty(investmentType) || m.InvestmentType == investmentType));
+                if (mapping == null)
+                {
+                    mapping = await _context.InvestmentVoucherMappings
+                        .FirstOrDefaultAsync(m => m.BranchID == 1);
+                }
+            }
+
+            // 3. Fallback to any existing mapping in the system
+            if (mapping == null)
+            {
+                mapping = await _context.InvestmentVoucherMappings.FirstOrDefaultAsync();
+            }
+
+            // 4. If scheme has direct GL configuration, synthesize or override mapping
+            if (schemeId.HasValue && schemeId.Value > 0)
+            {
+                var scheme = await _context.InvestmentSchemes.FindAsync(schemeId.Value);
+                if (scheme != null)
+                {
+                    if (mapping == null && (scheme.InvestmentAssetLedgerID.HasValue || scheme.InterestIncomeLedgerID.HasValue))
+                    {
+                        mapping = new InvestmentVoucherMapping
+                        {
+                            BranchID = branchId,
+                            InvestmentType = scheme.InvestmentType,
+                            InvestmentLedgerID = scheme.InvestmentAssetLedgerID ?? 1,
+                            InterestIncomeLedgerID = scheme.InterestIncomeLedgerID ?? 1,
+                            InterestReceivableLedgerID = scheme.InterestReceivableLedgerID ?? 1
+                        };
+                    }
+                    else if (mapping != null)
+                    {
+                        if (scheme.InvestmentAssetLedgerID.HasValue && scheme.InvestmentAssetLedgerID.Value > 0)
+                        {
+                            mapping.InvestmentLedgerID = scheme.InvestmentAssetLedgerID.Value;
+                        }
+                        if (scheme.InterestIncomeLedgerID.HasValue && scheme.InterestIncomeLedgerID.Value > 0)
+                        {
+                            mapping.InterestIncomeLedgerID = scheme.InterestIncomeLedgerID.Value;
+                        }
+                        if (scheme.InterestReceivableLedgerID.HasValue && scheme.InterestReceivableLedgerID.Value > 0)
+                        {
+                            mapping.InterestReceivableLedgerID = scheme.InterestReceivableLedgerID.Value;
+                        }
+                    }
+                }
+            }
+
+            // 5. If STILL null (fresh system), synthesize auto-discovered ledgers so voucher is NEVER dropped!
+            if (mapping == null)
+            {
+                var invLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("गुंतवणूक") || l.LedgerName.Contains("Investment"));
+                var intIncLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("गुंतवणूक व्याज") || (l.LedgerName.Contains("व्याज") && l.AccountType == "Income"));
+                var intRecLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("येणे व्याज") || l.LedgerName.Contains("Receivable"));
+
+                mapping = new InvestmentVoucherMapping
+                {
+                    BranchID = branchId,
+                    InvestmentType = "Deposit",
+                    InvestmentLedgerID = invLedger?.LedgerID ?? 1,
+                    InterestIncomeLedgerID = intIncLedger?.LedgerID ?? 1,
+                    InterestReceivableLedgerID = intRecLedger?.LedgerID ?? 1
+                };
+            }
+
+            return mapping;
         }
 
         // GET: api/InvestmentAccounts
@@ -205,8 +309,7 @@ namespace Bhisi.Api.Controllers
                 // Create voucher entry if not legacy
                 if (!account.IsLegacyAccount)
                 {
-                    var mapping = await _context.InvestmentVoucherMappings
-                        .FirstOrDefaultAsync(m => m.BranchID == account.BranchID);
+                    var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
 
                     if (mapping != null)
                     {
@@ -236,7 +339,7 @@ namespace Bhisi.Api.Controllers
                         var credDetail = new VoucherDetail
                         {
                             VoucherID = voucher.VoucherID,
-                            LedgerID = await GetDefaultCashBankLedgerId(), // Cash/Bank
+                            LedgerID = await GetDefaultCashBankLedgerId(account.BranchID), // Branch-specific Cash/Bank
                             DrCr = "Cr",
                             Amount = account.PrincipalAmount
                         };
@@ -387,8 +490,7 @@ namespace Bhisi.Api.Controllers
                 maturity.BranchID = account.BranchID;
 
                 // Create voucher
-                var mapping = await _context.InvestmentVoucherMappings
-                    .FirstOrDefaultAsync(m => m.BranchID == account.BranchID);
+                var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
 
                 if (mapping != null)
                 {
@@ -410,7 +512,7 @@ namespace Bhisi.Api.Controllers
                     var d1 = new VoucherDetail
                     {
                         VoucherID = voucher.VoucherID,
-                        LedgerID = await GetDefaultCashBankLedgerId(), // Bank
+                        LedgerID = await GetDefaultCashBankLedgerId(account.BranchID), // Branch-specific Bank/Cash
                         DrCr = "Dr",
                         Amount = maturity.TotalReceived
                     };
@@ -469,8 +571,7 @@ namespace Bhisi.Api.Controllers
                 if (fy != null) withdrawal.FinancialYearID = fy.FinancialYearID;
                 withdrawal.BranchID = account.BranchID;
 
-                var mapping = await _context.InvestmentVoucherMappings
-                    .FirstOrDefaultAsync(m => m.BranchID == account.BranchID);
+                var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
 
                 if (mapping != null)
                 {
@@ -492,7 +593,7 @@ namespace Bhisi.Api.Controllers
                     var d1 = new VoucherDetail
                     {
                         VoucherID = voucher.VoucherID,
-                        LedgerID = await GetDefaultCashBankLedgerId(), // Bank
+                        LedgerID = await GetDefaultCashBankLedgerId(account.BranchID), // Branch-specific Bank/Cash
                         DrCr = "Dr",
                         Amount = withdrawal.NetPayout
                     };
@@ -638,96 +739,131 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var activeAccounts = await _context.InvestmentAccounts
-                    .Where(a => a.Status == "Active" && a.BranchID == request.BranchID)
-                    .ToListAsync();
+                var query = _context.InvestmentAccounts.Where(a => a.Status == "Active");
+                if (!request.AllBranches && request.BranchID > 0)
+                {
+                    query = query.Where(a => a.BranchID == request.BranchID);
+                }
 
-                if (!activeAccounts.Any()) return BadRequest("या शाखेत Active गुंतवणूक खाती नाहीत.");
+                var activeAccounts = await query.ToListAsync();
+                if (!activeAccounts.Any())
+                {
+                    return BadRequest(request.AllBranches || request.BranchID <= 0 
+                        ? "संस्थेत कोणतीही Active गुंतवणूक खाती नाहीत." 
+                        : "या शाखेत Active गुंतवणूक खाती नाहीत.");
+                }
 
                 var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
                 int fyId = fy?.FinancialYearID ?? 1;
 
-                // Check duplicate
-                var existingAccrual = await _context.InvestmentInterestAccruals
-                    .AnyAsync(a => a.BranchID == request.BranchID && a.AccrualDate.Month == request.AccrualDate.Month && a.AccrualDate.Year == request.AccrualDate.Year);
+                var accountsByBranch = activeAccounts.GroupBy(a => a.BranchID).ToList();
+                int totalProcessed = 0;
+                decimal grandTotalInterest = 0;
+                var skippedBranches = new List<string>();
 
-                if (existingAccrual) return BadRequest("या महिन्यासाठी व्याज तरतूद आधीच केली आहे.");
-
-                var mapping = await _context.InvestmentVoucherMappings
-                    .FirstOrDefaultAsync(m => m.BranchID == request.BranchID);
-
-                decimal totalInterest = 0;
-                var accruals = new List<InvestmentInterestAccrual>();
-
-                foreach (var account in activeAccounts)
+                foreach (var branchGroup in accountsByBranch)
                 {
-                    // Calculate monthly interest (Simple: P * R / 1200)
-                    decimal monthlyInterest = Math.Round(account.PrincipalAmount * account.InterestRate / 1200, 2);
-                    totalInterest += monthlyInterest;
+                    int bId = branchGroup.Key;
+                    var branchEntity = await _context.Branches.FindAsync(bId);
+                    string bName = branchEntity?.BranchName ?? $"शाखा {bId}";
 
-                    accruals.Add(new InvestmentInterestAccrual
+                    // Check duplicate for this branch
+                    var existingAccrual = await _context.InvestmentInterestAccruals
+                        .AnyAsync(a => a.BranchID == bId && a.AccrualDate.Month == request.AccrualDate.Month && a.AccrualDate.Year == request.AccrualDate.Year);
+
+                    if (existingAccrual)
                     {
-                        InstitutionID = account.InstitutionID,
-                        BranchID = request.BranchID,
-                        FinancialYearID = fyId,
-                        InvestmentAccountID = account.InvestmentAccountID,
-                        AccrualDate = request.AccrualDate,
-                        InterestAmount = monthlyInterest,
-                        IsPosted = true
-                    });
-                }
-
-                // Create consolidated voucher
-                if (mapping != null && totalInterest > 0)
-                {
-                    var voucher = new Voucher
-                    {
-                        BranchID = request.BranchID,
-                        VoucherNo = $"JV-INV-ACC-{request.AccrualDate:yyyyMMdd}",
-                        VoucherDate = request.AccrualDate,
-                        VoucherType = "Journal",
-                        Narration = $"गुंतवणूक व्याज तरतूद - {request.AccrualDate:MMM yyyy}",
-                        TotalAmount = totalInterest,
-                        CreatedOn = DateTime.Now
-                    };
-
-                    _context.Vouchers.Add(voucher);
-                    await _context.SaveChangesAsync();
-
-                    var d1 = new VoucherDetail
-                    {
-                        VoucherID = voucher.VoucherID,
-                        LedgerID = mapping.InterestReceivableLedgerID,
-                        DrCr = "Dr",
-                        Amount = totalInterest
-                    };
-
-                    var d2 = new VoucherDetail
-                    {
-                        VoucherID = voucher.VoucherID,
-                        LedgerID = mapping.InterestIncomeLedgerID,
-                        DrCr = "Cr",
-                        Amount = totalInterest
-                    };
-
-                    _context.VoucherDetails.Add(d1);
-                    _context.VoucherDetails.Add(d2);
-                    await _context.SaveChangesAsync();
-
-                    foreach (var accrual in accruals)
-                    {
-                        accrual.VoucherID = voucher.VoucherID;
+                        if (!request.AllBranches && request.BranchID > 0)
+                        {
+                            return BadRequest($"या शाखेसाठी ({bName}) या महिन्याची व्याज तरतूद आधीच केली आहे.");
+                        }
+                        skippedBranches.Add(bName);
+                        continue;
                     }
+
+                    var mapping = await GetVoucherMappingForBranch(bId);
+                    decimal branchTotalInterest = 0;
+                    var branchAccruals = new List<InvestmentInterestAccrual>();
+
+                    foreach (var account in branchGroup)
+                    {
+                        decimal monthlyInterest = Math.Round(account.PrincipalAmount * account.InterestRate / 1200, 2);
+                        branchTotalInterest += monthlyInterest;
+
+                        branchAccruals.Add(new InvestmentInterestAccrual
+                        {
+                            InstitutionID = account.InstitutionID,
+                            BranchID = bId,
+                            FinancialYearID = fyId,
+                            InvestmentAccountID = account.InvestmentAccountID,
+                            AccrualDate = request.AccrualDate,
+                            InterestAmount = monthlyInterest,
+                            IsPosted = true
+                        });
+                    }
+
+                    // Create consolidated voucher for this branch
+                    if (mapping != null && branchTotalInterest > 0)
+                    {
+                        var branchCode = branchEntity?.BranchCode ?? $"{bId:D3}";
+                        var voucher = new Voucher
+                        {
+                            BranchID = bId,
+                            VoucherNo = $"JV-INV-ACC-{branchCode}-{request.AccrualDate:yyyyMMdd}",
+                            VoucherDate = request.AccrualDate,
+                            VoucherType = "Journal",
+                            Narration = $"गुंतवणूक व्याज तरतूद ({bName}) - {request.AccrualDate:MMM yyyy}",
+                            TotalAmount = branchTotalInterest,
+                            CreatedOn = DateTime.Now
+                        };
+
+                        _context.Vouchers.Add(voucher);
+                        await _context.SaveChangesAsync();
+
+                        var d1 = new VoucherDetail
+                        {
+                            VoucherID = voucher.VoucherID,
+                            LedgerID = mapping.InterestReceivableLedgerID,
+                            DrCr = "Dr",
+                            Amount = branchTotalInterest
+                        };
+
+                        var d2 = new VoucherDetail
+                        {
+                            VoucherID = voucher.VoucherID,
+                            LedgerID = mapping.InterestIncomeLedgerID,
+                            DrCr = "Cr",
+                            Amount = branchTotalInterest
+                        };
+
+                        _context.VoucherDetails.Add(d1);
+                        _context.VoucherDetails.Add(d2);
+                        await _context.SaveChangesAsync();
+
+                        foreach (var accrual in branchAccruals)
+                        {
+                            accrual.VoucherID = voucher.VoucherID;
+                        }
+                    }
+
+                    _context.InvestmentInterestAccruals.AddRange(branchAccruals);
+                    await _context.SaveChangesAsync();
+
+                    totalProcessed += branchGroup.Count();
+                    grandTotalInterest += branchTotalInterest;
                 }
 
-                _context.InvestmentInterestAccruals.AddRange(accruals);
-                await _context.SaveChangesAsync();
+                if (totalProcessed == 0 && skippedBranches.Any())
+                {
+                    return BadRequest($"निवडलेल्या शाखांसाठी ({string.Join(", ", skippedBranches)}) या महिन्याची व्याज तरतूद आधीच झालेली आहे.");
+                }
 
                 await transaction.CommitAsync();
+                string skippedMsg = skippedBranches.Any() ? $" (आधीच नोंद झालेली शाखा वगळली: {string.Join(", ", skippedBranches)})" : "";
                 return Ok(new { 
-                    message = "व्याज तरतूद यशस्वी!",
-                    accountsProcessed = activeAccounts.Count,
-                    totalInterest 
+                    message = $"व्याज तरतूद यशस्वी!{skippedMsg}",
+                    accountsProcessed = totalProcessed,
+                    totalInterest = grandTotalInterest 
                 });
             }
             catch (Exception ex)
@@ -751,8 +887,7 @@ namespace Bhisi.Api.Controllers
                 if (fy != null) receipt.FinancialYearID = fy.FinancialYearID;
                 receipt.BranchID = account.BranchID;
 
-                var mapping = await _context.InvestmentVoucherMappings
-                    .FirstOrDefaultAsync(m => m.BranchID == account.BranchID);
+                var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
 
                 if (mapping != null)
                 {
@@ -774,7 +909,7 @@ namespace Bhisi.Api.Controllers
                     var d1 = new VoucherDetail
                     {
                         VoucherID = voucher.VoucherID,
-                        LedgerID = await GetDefaultCashBankLedgerId(), // Bank
+                        LedgerID = await GetDefaultCashBankLedgerId(account.BranchID), // Branch-specific Bank/Cash
                         DrCr = "Dr",
                         Amount = receipt.ReceivedAmount
                     };
@@ -940,5 +1075,6 @@ namespace Bhisi.Api.Controllers
     {
         public int BranchID { get; set; }
         public DateTime AccrualDate { get; set; }
+        public bool AllBranches { get; set; } = false;
     }
 }

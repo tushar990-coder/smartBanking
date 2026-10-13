@@ -22,7 +22,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/AssetTransfers
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<AssetTransfer>>> GetAssetTransfers([FromQuery] int? assetId)
+        public async Task<ActionResult<IEnumerable<AssetTransfer>>> GetAssetTransfers([FromQuery] int? assetId, [FromQuery] int? branchId)
         {
             var query = _context.AssetTransfers
                                 .Include(t => t.Asset)
@@ -32,6 +32,10 @@ namespace Bhisi.Api.Controllers
             if (assetId.HasValue)
             {
                 query = query.Where(t => t.AssetID == assetId.Value);
+            }
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(t => t.FromBranchID == branchId.Value || t.ToBranchID == branchId.Value || t.BranchID == branchId.Value);
             }
             return await query.OrderByDescending(t => t.TransferDate).ToListAsync();
         }
@@ -57,6 +61,12 @@ namespace Bhisi.Api.Controllers
                 asset.UpdatedOn = DateTime.Now;
 
                 _context.Entry(asset).State = EntityState.Modified;
+
+                // Ensure BranchID is populated
+                if (transfer.BranchID <= 0)
+                {
+                    transfer.BranchID = transfer.FromBranchID > 0 ? transfer.FromBranchID : asset.BranchID;
+                }
 
                 // Add Transfer record
                 transfer.CreatedOn = DateTime.Now;

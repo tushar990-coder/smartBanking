@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
+import { useAuth } from '../context/AuthContext';
 
 interface Institution {
   institutionID: number;
@@ -46,6 +47,10 @@ interface Scheme {
 }
 
 const InvestmentAccountOpening: React.FC = () => {
+  const { user } = useAuth();
+  const globalBranchStr = localStorage.getItem('globalBranchId');
+  const initialBranchId = globalBranchStr && globalBranchStr !== 'all' ? parseInt(globalBranchStr, 10) : (user?.branchID || 1);
+
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [schemes, setSchemes] = useState<Scheme[]>([]);
   const [filteredSchemes, setFilteredSchemes] = useState<Scheme[]>([]);
@@ -65,7 +70,7 @@ const InvestmentAccountOpening: React.FC = () => {
   const API_URL = '/api';
 
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: initialBranchId,
     investmentInstitutionID: 0,
     schemeID: 0,
     depositReceiptNo: '', // FDR No OR Share Certificate / Folio No
@@ -246,7 +251,7 @@ const InvestmentAccountOpening: React.FC = () => {
 
   const resetForm = () => {
     setFormData({
-      branchID: 1,
+      branchID: initialBranchId,
       investmentInstitutionID: 0,
       schemeID: 0,
       depositReceiptNo: '',

@@ -22,7 +22,7 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/AssetVerifications
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<AssetVerification>>> GetAssetVerifications([FromQuery] int? assetId)
+        public async Task<ActionResult<IEnumerable<AssetVerification>>> GetAssetVerifications([FromQuery] int? assetId, [FromQuery] int? branchId)
         {
             var query = _context.AssetVerifications
                                 .Include(v => v.Asset)
@@ -30,6 +30,10 @@ namespace Bhisi.Api.Controllers
             if (assetId.HasValue)
             {
                 query = query.Where(v => v.AssetID == assetId.Value);
+            }
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(v => v.BranchID == branchId.Value || (v.Asset != null && v.Asset.BranchID == branchId.Value));
             }
             return await query.OrderByDescending(v => v.VerificationDate).ToListAsync();
         }
@@ -42,6 +46,12 @@ namespace Bhisi.Api.Controllers
             if (asset == null)
             {
                 return BadRequest("मालमत्ता सापडली नाही. (Asset not found.)");
+            }
+
+            // Ensure branch context
+            if (verification.BranchID <= 0)
+            {
+                verification.BranchID = asset.BranchID;
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();

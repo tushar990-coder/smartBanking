@@ -1689,9 +1689,9 @@ namespace Bhisi.Api.Controllers
                                     .Where(t => t.FdAccountID == acc.FdAccountID 
                                              && t.TransactionType == "Accrual" 
                                              && t.TransactionDate <= lastCompoundingDate)
-                                    .SumAsync(t => t.Amount);
+                                    .SumAsync(t => (decimal?)t.Amount) ?? 0m;
                                     
-                                effectivePrincipal += (capitalizedInterest + acc.LegacyAccruedInt);
+                                effectivePrincipal += Math.Max(capitalizedInterest, acc.LegacyAccruedInt);
                             }
                         }
 
@@ -4107,9 +4107,10 @@ namespace Bhisi.Api.Controllers
                 }
                 if (days <= 0) days = 0;
 
-                decimal alreadyAccrued = await _context.FdTransactions
+                decimal txAccrualSum = await _context.FdTransactions
                     .Where(t => t.FdAccountID == acc.FdAccountID && t.TransactionType == "Accrual")
-                    .SumAsync(t => t.Amount) + acc.LegacyAccruedInt;
+                    .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+                decimal alreadyAccrued = Math.Max(txAccrualSum, acc.LegacyAccruedInt);
 
                 decimal effectivePrincipal = acc.DepositAmount;
                 if (req.CalculationMethod == "OnInterest")
@@ -4445,9 +4446,10 @@ namespace Bhisi.Api.Controllers
                     };
                 }).ToList();
 
-                decimal totalAccruedInt = await _context.FdTransactions
+                decimal txAccrualSum = await _context.FdTransactions
                     .Where(t => t.FdAccountID == acc.FdAccountID && t.TransactionType == "Accrual")
-                    .SumAsync(t => t.Amount) + acc.LegacyAccruedInt;
+                    .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+                decimal totalAccruedInt = Math.Max(txAccrualSum, acc.LegacyAccruedInt);
 
                 accountLedgerList.Add(new {
                     acc.FdAccountID,

@@ -5476,8 +5476,9 @@ namespace Bhisi.Api.Controllers
                 {
                     decimal txSum = txAccruals.TryGetValue(f.FdAccountID, out var tv) ? tv : 0;
                     decimal logSum = logAccruals.TryGetValue(f.FdAccountID, out var lv) ? lv : 0;
-                    decimal systemAccrued = Math.Max(txSum, logSum);
-                    decimal totalPostedInterest = systemAccrued + f.LegacyAccruedInt;
+                    // txSum from FdTransactions already includes legacy accrued interest from migration.
+                    // Prevent double-counting by using Math.Max with (logSum + LegacyAccruedInt).
+                    decimal totalPostedInterest = Math.Max(txSum, logSum + f.LegacyAccruedInt);
 
                     bool isCapitalized = false;
                     if (f.FdScheme != null)
@@ -5815,9 +5816,10 @@ namespace Bhisi.Api.Controllers
                         };
                     }).ToList();
 
-                    decimal totalAccruedInt = await _context.FdTransactions
+                    decimal txAccrualSum = await _context.FdTransactions
                         .Where(t => t.FdAccountID == acc.FdAccountID && t.TransactionType == "Accrual")
-                        .SumAsync(t => t.Amount) + acc.LegacyAccruedInt;
+                        .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+                    decimal totalAccruedInt = Math.Max(txAccrualSum, acc.LegacyAccruedInt);
 
                     accountLedgerList.Add(new
                     {

@@ -2,6 +2,22 @@
 
 ---
 
+## 📅 [2026-10-13] - आवृत्ती v2.5.46 (FD Outstanding Report Legacy Accrued Interest Double-Counting Fix, Capitalization Math Alignment & VPS Multi-App Master Patch v2.5.46)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **मुदत ठेव बाकी अहवाल मुद्दल + पोस्ट व्याज दुप्पट मोजणी दोष निराकरण (Double-Counting Fix):**
+  * मुदत ठेव बाकी अहवाल (FD Reports -> Outstanding / मुदत ठेव बाकी अहवाल) मध्ये 'मुद्दल + पोस्ट व्याज (₹)' कॉलममध्ये जुने साचलेले व्याज (उदा. ₹ २७,७७३/-) दोनदा जुळून चुकीची फुगलेली शिल्लक (उदा. ₹ १,०५,५४६/-) दिसत होती.
+* **मूळ कारण व गणितीय ताळमेळ (Root Cause & Math Alignment):**
+  * मायग्रेशनच्या वेळी `FdTransactions` मध्ये `TransactionType = 'Accrual'` ने `LegacyAccruedInt` आधीच सेव्ह असताना `ReportsController.cs` (Line 5480) मधील `GetFdOutstandingReport` मध्ये पुन्हा `systemAccrued + f.LegacyAccruedInt` जोडल्याने जुने व्याज दोनदा (२७,७७३ + २७,७७३ = ५५,५४६) मोजले जात होते.
+  * येथे सुरक्षित `Math.Max(txSum, logSum + f.LegacyAccruedInt)` पद्धत लागू करून ५०,००० मुद्दलावर अचूक **२७,७७३** व्याज व **७७,७७३** मुद्दल + पोस्ट व्याज बाकी प्रदर्शित केली.
+* **खातावणी व तिमाही चक्रवाढ व्याज गणना सुरक्षितता (Member Ledger & Accrual Engine):**
+  * `ReportsController.cs` (`GetFdMemberLedgerReport`) आणि `FdAccountsController.cs` (`GetMemberFdLedger`, `CalculateInterest`, `PostQuarterlyAccrual`) या सर्व ठिकाणी सुरक्षित `Math.Max(txAccrualSum, acc.LegacyAccruedInt)` पद्धत लागू केली.
+  * यामुळे भविष्यातील तिमाही चक्रवाढ भांडवलीकरणात (Quarterly Compounding Capitalization) अथवा खातावणी अहवालातही जुने व्याज दुप्पट मोजले जाण्याचा धोका १००% नाहीसा झाला.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (VPS Multi-App Master Patch v2.5.46):**
+  * सर्व ९+ संस्थांसाठी एकत्रित मास्टर अपडेट पॅकेज उपलब्ध.
+
+---
+
 ## 📅 [2026-10-13] - आवृत्ती v2.5.45 (FD Member Ledger Report Narration Marathi Font Restoration, Full Unicode N'' Healing Across All Sanstha Databases, Backend In-Memory Fallback & UI Sanitizer v2.5.45)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)

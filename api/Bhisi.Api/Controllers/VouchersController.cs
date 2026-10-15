@@ -221,8 +221,13 @@ namespace Bhisi.Api.Controllers
                 if (cashOutflow > 0)
                 {
                     decimal currentCash = 0;
+                    int activeFyId = await _context.FinancialYears
+                        .Where(fy => fy.IsActive)
+                        .Select(fy => fy.FinancialYearID)
+                        .FirstOrDefaultAsync();
+
                     var branchOb = await _context.BranchLedgerOpeningBalances
-                        .FirstOrDefaultAsync(b => b.BranchID == voucher.BranchID && b.LedgerID == branchCashLedgerId);
+                        .FirstOrDefaultAsync(b => b.BranchID == voucher.BranchID && b.LedgerID == branchCashLedgerId && (activeFyId == 0 || b.FinancialYearID == activeFyId));
                     if (branchOb != null)
                     {
                         currentCash = branchOb.OpeningBalanceType == "Dr" ? branchOb.OpeningBalance : -branchOb.OpeningBalance;

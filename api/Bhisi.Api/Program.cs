@@ -2897,6 +2897,67 @@ using (var scope = app.Services.CreateScope())
 
     try
     {
+        // Core Banking Multi-Branch & IBT Schema DDL Verification (Vouchers, LoanCollections, BranchLedgerOpeningBalances)
+        db.Database.ExecuteSqlRaw(@"
+            IF OBJECT_ID(N'[Vouchers]', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH('Vouchers', 'IsIbtVoucher') IS NULL
+                    ALTER TABLE [dbo].[Vouchers] ADD [IsIbtVoucher] bit NOT NULL CONSTRAINT [DF_Vouchers_IsIbtVoucher] DEFAULT 0;
+                IF COL_LENGTH('Vouchers', 'RelatedVoucherID') IS NULL
+                    ALTER TABLE [dbo].[Vouchers] ADD [RelatedVoucherID] int NULL;
+                IF COL_LENGTH('Vouchers', 'TargetBranchID') IS NULL
+                    ALTER TABLE [dbo].[Vouchers] ADD [TargetBranchID] int NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Vouchers_IsIbtVoucher' AND object_id = OBJECT_ID('Vouchers'))
+                    CREATE NONCLUSTERED INDEX [IX_Vouchers_IsIbtVoucher] ON [dbo].[Vouchers] ([IsIbtVoucher], [BranchID]);
+            END
+
+            IF OBJECT_ID(N'[LoanCollections]', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH('LoanCollections', 'HomeBranchVoucherID') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [HomeBranchVoucherID] int NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_LoanCollections_HomeBranchVoucherID' AND object_id = OBJECT_ID('LoanCollections'))
+                    CREATE NONCLUSTERED INDEX [IX_LoanCollections_HomeBranchVoucherID] ON [dbo].[LoanCollections] ([HomeBranchVoucherID]);
+            END
+
+            IF OBJECT_ID(N'[Branches]', N'U') IS NOT NULL
+            BEGIN
+                IF COL_LENGTH('Branches', 'DefaultIbtLedgerID') IS NULL
+                    ALTER TABLE [dbo].[Branches] ADD [DefaultIbtLedgerID] int NULL;
+                IF COL_LENGTH('Branches', 'DefaultCashLedgerID') IS NULL
+                    ALTER TABLE [dbo].[Branches] ADD [DefaultCashLedgerID] int NULL;
+            END
+
+            IF OBJECT_ID(N'[dbo].[BranchLedgerOpeningBalances]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dbo].[BranchLedgerOpeningBalances] (
+                    [OpeningBalanceID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [BranchID] INT NOT NULL,
+                    [LedgerID] INT NOT NULL,
+                    [FinancialYearID] INT NOT NULL,
+                    [OpeningBalance] DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    [OpeningBalanceType] NVARCHAR(2) NOT NULL DEFAULT 'Dr',
+                    [Remarks] NVARCHAR(500) NULL,
+                    [CreatedOn] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+                    [CreatedBy] INT NOT NULL DEFAULT 1,
+                    [UpdatedOn] DATETIME2 NULL,
+                    [UpdatedBy] INT NULL,
+                    CONSTRAINT [FK_BranchLedgerOpeningBalances_Branches] FOREIGN KEY ([BranchID]) REFERENCES [dbo].[Branches]([BranchID]),
+                    CONSTRAINT [FK_BranchLedgerOpeningBalances_Ledgers] FOREIGN KEY ([LedgerID]) REFERENCES [dbo].[Ledgers]([LedgerID]),
+                    CONSTRAINT [FK_BranchLedgerOpeningBalances_FinancialYears] FOREIGN KEY ([FinancialYearID]) REFERENCES [dbo].[FinancialYears]([FinancialYearID])
+                );
+                CREATE UNIQUE NONCLUSTERED INDEX [UQ_BranchLedgerOpeningBalances_Ledger_Branch_FY]
+                ON [dbo].[BranchLedgerOpeningBalances] ([LedgerID] ASC, [BranchID] ASC, [FinancialYearID] ASC);
+            END
+        ");
+        Log.Information("Core Banking Multi-Branch & IBT Schema DDL verified successfully.");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Failed to verify or apply Multi-Branch & IBT schema DDL");
+    }
+
+    try
+    {
         // Core Banking Inter-Branch Transfer (IBT) Startup Auto-Sync & Historical Self-Healing
         Bhisi.Api.Helpers.IbtLedgerHelper.EnsureIbtLedgerProvisionedAsync(db).GetAwaiter().GetResult();
         int repaired = Bhisi.Api.Helpers.IbtLedgerHelper.RepairHistoricalCrossBranchCollectionsAsync(db).GetAwaiter().GetResult();

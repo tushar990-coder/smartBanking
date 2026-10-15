@@ -982,29 +982,27 @@ namespace Bhisi.Api.Controllers
                 collection.HomeBranchVoucherID = null;
                 await _context.SaveChangesAsync();
 
+                var vouchersToDelete = new List<Voucher>();
                 foreach (var vId in voucherIdsToDelete.Distinct())
                 {
-                    var voucher = await _context.Vouchers
-                        .Include(v => v.VoucherDetails)
-                        .FirstOrDefaultAsync(v => v.VoucherID == vId);
-                    if (voucher != null)
+                    var v = await _context.Vouchers
+                        .Include(x => x.VoucherDetails)
+                        .FirstOrDefaultAsync(x => x.VoucherID == vId);
+                    if (v != null)
                     {
-                        if (voucher.RelatedVoucherID.HasValue && !voucherIdsToDelete.Contains(voucher.RelatedVoucherID.Value))
-                        {
-                            var rel = await _context.Vouchers.Include(x => x.VoucherDetails).FirstOrDefaultAsync(x => x.VoucherID == voucher.RelatedVoucherID.Value);
-                            if (rel != null)
-                            {
-                                if (rel.VoucherDetails != null && rel.VoucherDetails.Any())
-                                    _context.VoucherDetails.RemoveRange(rel.VoucherDetails);
-                                _context.Vouchers.Remove(rel);
-                            }
-                        }
-                        if (voucher.VoucherDetails != null && voucher.VoucherDetails.Any())
-                        {
-                            _context.VoucherDetails.RemoveRange(voucher.VoucherDetails);
-                        }
-                        _context.Vouchers.Remove(voucher);
+                        v.RelatedVoucherID = null; // Break circular foreign key cycle before deletion
+                        vouchersToDelete.Add(v);
                     }
+                }
+                await _context.SaveChangesAsync();
+
+                foreach (var v in vouchersToDelete)
+                {
+                    if (v.VoucherDetails != null && v.VoucherDetails.Any())
+                    {
+                        _context.VoucherDetails.RemoveRange(v.VoucherDetails);
+                    }
+                    _context.Vouchers.Remove(v);
                 }
 
                 // Remove collection record

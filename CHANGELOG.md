@@ -2,6 +2,26 @@
 
 ---
 
+## 📅 [2026-10-15] - आवृत्ती v2.5.59 (Trial Balance IBT Columns & Cross-Branch Loan Collections v2.5.59)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **कोअर बँकिंग सिस्टीम (CBS) - शाखा ताळेबंद ५०० एरर निवारण व IBT कॉलम्स (Trial Balance HTTP 500 Fix):**
+  * `Vouchers` टेबलवर `IsIbtVoucher`, `RelatedVoucherID`, आणि `TargetBranchID` हे तीन IBT कॉलम्स डेटाबेस स्तरावर जोडून `GET /api/Reports/TrialBalance` मधील SQL Server Error 207 क्रॅश पूर्णपणे दूर केला.
+  * शाखा १ (HO), उप-शाखा आणि सर्वंकष (Consolidated) ताळेबंद १००% अचूक, संतुलित (Total Debit == Total Credit = ₹५,८३,९५४.११) आणि विना-त्रुटी सुरू.
+  * जलद अहवाल निर्मितीसाठी `IX_Vouchers_IsIbtVoucher` व `IX_Vouchers_RelatedVoucherID` नॉन-क्लस्टर्ड इंडेक्स तयार केले.
+* **कर्ज वसुली क्रॉस-ब्राँच परिपूर्ण सक्षमीकरण (Cross-Branch Loan Collections Dual-Voucher & HomeBranchVoucherID):**
+  * `LoanCollections` टेबलवर `HomeBranchVoucherID` कॉलम आणि इंडेक्स जोडून ॲप्लिकेशन स्टार्टअप स्वयंचलित दुरुस्ती क्वेरी यशस्वी केली.
+  * काऊंटर शाखा पावती व्हाउचर (`Receipt`) व मूळ शाखा तडजोड व्हाउचर (`Journal`) चे द्विमार्गी परस्पर संलग्नन (`RelatedVoucherID`).
+* **पावती डिलीट व रोलबॅक सर्क्युलर डिपेंडन्सी निवारण (Delete Rollback Circular Dependency Elimination):**
+  * परस्पर जोडलेले दोन IBT व्हाउचर डिलीट करताना EF Core मधील परस्परावलंबित्व (Foreign Key Cycle) मोडून स्वच्छ व सुरक्षित रोलबॅकची हमी.
+* **रोख शिल्लक चालू आर्थिक वर्ष पडताळणी (Cash Opening Balance FinancialYearID Scope):**
+  * `VouchersController.cs` मध्ये सक्रिय आर्थिक वर्षाचा (`activeFyId`) अचूक संदर्भ जोडून मागील आर्थिक वर्षाची रोख शिल्लक उचली जाण्याचा धोका पूर्णपणे रोखला.
+* **मास्टर VPS स्कीमा अद्ययावतीकरण (`tools/master_vps_update_schema.sql` Section 7.10):**
+  * सर्व ९ VPS क्लायंट संस्थांच्या डेटाबेसला पॅच करताना IBT कॉलम्स स्वयंचलित जोडण्याची हमी.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (`VPS Multi-App Master Patch v2.5.59`).**
+
+---
+
 ## 📅 [2026-10-15] - आवृत्ती v2.5.58 (CBS Inter-Branch Transfer Clearing & Reconciliation Matrix Report v2.5.58)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)

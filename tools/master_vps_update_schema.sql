@@ -6015,6 +6015,94 @@ BEGIN
     );
     PRINT '  -> Logged v2.5.51 in SystemVersionHistories';
 END
+-- 7.10 Vouchers & LoanCollections IBT Columns Fix for Multi-Branch Trial Balance
+IF OBJECT_ID(N'[Vouchers]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('Vouchers', 'IsIbtVoucher') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[Vouchers] ADD [IsIbtVoucher] BIT NOT NULL CONSTRAINT [DF_Vouchers_IsIbtVoucher] DEFAULT 0;
+        PRINT '  -> Added [IsIbtVoucher] to Vouchers';
+    END
+
+    IF COL_LENGTH('Vouchers', 'RelatedVoucherID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[Vouchers] ADD [RelatedVoucherID] INT NULL;
+        PRINT '  -> Added [RelatedVoucherID] to Vouchers';
+    END
+
+    IF COL_LENGTH('Vouchers', 'TargetBranchID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[Vouchers] ADD [TargetBranchID] INT NULL;
+        PRINT '  -> Added [TargetBranchID] to Vouchers';
+    END
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Vouchers_IsIbtVoucher' AND object_id = OBJECT_ID('Vouchers'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_Vouchers_IsIbtVoucher] 
+        ON [dbo].[Vouchers] ([IsIbtVoucher], [BranchID]) 
+        INCLUDE ([VoucherDate], [Status]);
+        PRINT '  -> Created Index IX_Vouchers_IsIbtVoucher';
+    END
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Vouchers_RelatedVoucherID' AND object_id = OBJECT_ID('Vouchers'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_Vouchers_RelatedVoucherID] 
+        ON [dbo].[Vouchers] ([RelatedVoucherID]);
+        PRINT '  -> Created Index IX_Vouchers_RelatedVoucherID';
+    END
+END
+GO
+
+IF OBJECT_ID(N'[LoanCollections]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('LoanCollections', 'HomeBranchVoucherID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[LoanCollections] ADD [HomeBranchVoucherID] INT NULL;
+        PRINT '  -> Added [HomeBranchVoucherID] to LoanCollections';
+    END
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_LoanCollections_HomeBranchVoucherID' AND object_id = OBJECT_ID('LoanCollections'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_LoanCollections_HomeBranchVoucherID] 
+        ON [dbo].[LoanCollections] ([HomeBranchVoucherID]);
+        PRINT '  -> Created Index IX_LoanCollections_HomeBranchVoucherID';
+    END
+END
+GO
+
+IF OBJECT_ID(N'[Branches]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('Branches', 'DefaultIbtLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[Branches] ADD [DefaultIbtLedgerID] INT NULL;
+        PRINT '  -> Added [DefaultIbtLedgerID] to Branches';
+    END
+    IF COL_LENGTH('Branches', 'DefaultCashLedgerID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[Branches] ADD [DefaultCashLedgerID] INT NULL;
+        PRINT '  -> Added [DefaultCashLedgerID] to Branches';
+    END
+END
+GO
+
+-- 7.11 Log v2.5.59 in SystemVersionHistories
+IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM [SystemVersionHistories] WHERE [VersionNumber] = '2.5.59')
+    BEGIN
+        INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+        VALUES (
+            '2.5.59', 
+            GETUTCDATE(), 
+            'SmartBanking VPS Multi-App Master Patch v2.5.59', 
+            'SUCCESS', 
+            'Multi-branch trial balance IBT columns fix (HTTP 500 elimination), cross-branch loan collections dual-voucher parity, delete rollback circular dependency fix and active FY scope cash balance v2.5.59.', 
+            'VPS Administrator',
+            '2026-10-15'
+        );
+        PRINT '  -> Logged v2.5.59 in SystemVersionHistories';
+    END
+END
 GO
 
 PRINT '========================================================================';

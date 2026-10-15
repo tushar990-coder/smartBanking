@@ -5906,8 +5906,22 @@ END
 GO
 
 -- -----------------------------------------------------------------------------------------
--- 7.8 BRANCH LEDGER OPENING BALANCES & IBT MAPPING (v2.5.51)
+-- 7.8 BRANCH LEDGER OPENING BALANCES & IBT MAPPING (v2.5.51 / v2.5.53)
 -- -----------------------------------------------------------------------------------------
+IF COL_LENGTH('Branches', 'DefaultIbtLedgerID') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[Branches] ADD [DefaultIbtLedgerID] INT NULL;
+    PRINT '  -> Added DefaultIbtLedgerID column to Branches';
+END
+GO
+
+IF COL_LENGTH('Branches', 'DefaultCashLedgerID') IS NULL
+BEGIN
+    ALTER TABLE [dbo].[Branches] ADD [DefaultCashLedgerID] INT NULL;
+    PRINT '  -> Added DefaultCashLedgerID column to Branches';
+END
+GO
+
 IF OBJECT_ID(N'[BranchLedgerOpeningBalances]', N'U') IS NULL
 BEGIN
     CREATE TABLE [dbo].[BranchLedgerOpeningBalances] (
@@ -5918,27 +5932,41 @@ BEGIN
         [OpeningBalance] DECIMAL(18,2) NOT NULL DEFAULT (0),
         [OpeningBalanceType] NVARCHAR(10) NOT NULL DEFAULT 'Dr',
         [Remarks] NVARCHAR(250) NULL,
-        [CreatedAt] DATETIME2 NOT NULL DEFAULT (SYSUTCDATETIME()),
-        [UpdatedAt] DATETIME2 NULL,
-        [CreatedBy] NVARCHAR(100) NULL,
-        [UpdatedBy] NVARCHAR(100) NULL,
+        [CreatedBy] INT NOT NULL DEFAULT 1,
+        [CreatedOn] DATETIME2 NOT NULL DEFAULT (SYSUTCDATETIME()),
+        [UpdatedBy] INT NULL,
+        [UpdatedOn] DATETIME2 NULL,
         CONSTRAINT [PK_BranchLedgerOpeningBalances] PRIMARY KEY CLUSTERED ([BranchLedgerOpeningBalanceID] ASC),
-        CONSTRAINT [FK_BranchLedgerOpeningBalances_Ledgers] FOREIGN KEY ([LedgerID]) REFERENCES [dbo].[Ledgers] ([LedgerID]) ON DELETE CASCADE,
-        CONSTRAINT [FK_BranchLedgerOpeningBalances_Branches] FOREIGN KEY ([BranchID]) REFERENCES [dbo].[Branches] ([BranchID]) ON DELETE CASCADE,
-        CONSTRAINT [FK_BranchLedgerOpeningBalances_FinancialYears] FOREIGN KEY ([FinancialYearID]) REFERENCES [dbo].[FinancialYears] ([FinancialYearID]) ON DELETE CASCADE
+        CONSTRAINT [FK_BranchLedgerOpeningBalances_Ledgers] FOREIGN KEY ([LedgerID]) REFERENCES [dbo].[Ledgers] ([LedgerID]),
+        CONSTRAINT [FK_BranchLedgerOpeningBalances_Branches] FOREIGN KEY ([BranchID]) REFERENCES [dbo].[Branches] ([BranchID]),
+        CONSTRAINT [FK_BranchLedgerOpeningBalances_FinancialYears] FOREIGN KEY ([FinancialYearID]) REFERENCES [dbo].[FinancialYears] ([FinancialYearID])
     );
 
-    CREATE UNIQUE NONCLUSTERED INDEX [UQ_BranchLedgerOpeningBalances_Ledger_Branch_FY]
-    ON [dbo].[BranchLedgerOpeningBalances] ([LedgerID] ASC, [BranchID] ASC, [FinancialYearID] ASC);
-
-    PRINT '  -> Created BranchLedgerOpeningBalances table with composite unique index';
+    PRINT '  -> Created BranchLedgerOpeningBalances table';
+END
+ELSE
+BEGIN
+    IF COL_LENGTH('BranchLedgerOpeningBalances', 'CreatedOn') IS NULL
+        ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [CreatedOn] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME();
+    IF COL_LENGTH('BranchLedgerOpeningBalances', 'CreatedBy') IS NULL
+        ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [CreatedBy] INT NOT NULL DEFAULT 1;
+    IF COL_LENGTH('BranchLedgerOpeningBalances', 'UpdatedOn') IS NULL
+        ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [UpdatedOn] DATETIME2 NULL;
+    IF COL_LENGTH('BranchLedgerOpeningBalances', 'UpdatedBy') IS NULL
+        ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [UpdatedBy] INT NULL;
 END
 GO
 
-IF COL_LENGTH('Branches', 'DefaultIbtLedgerID') IS NULL
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes 
+    WHERE name = 'UQ_BranchLedgerOpeningBalances_Ledger_Branch_FY' 
+      AND object_id = OBJECT_ID('dbo.BranchLedgerOpeningBalances')
+)
 BEGIN
-    ALTER TABLE [Branches] ADD [DefaultIbtLedgerID] INT NULL;
-    PRINT '  -> Added DefaultIbtLedgerID column to Branches';
+    CREATE UNIQUE NONCLUSTERED INDEX [UQ_BranchLedgerOpeningBalances_Ledger_Branch_FY]
+    ON [dbo].[BranchLedgerOpeningBalances] ([LedgerID] ASC, [BranchID] ASC, [FinancialYearID] ASC);
+
+    PRINT '  -> Created unique index UQ_BranchLedgerOpeningBalances_Ledger_Branch_FY';
 END
 GO
 
@@ -5950,16 +5978,16 @@ BEGIN
 
     IF @ActiveFY IS NOT NULL
     BEGIN
-        INSERT INTO BranchLedgerOpeningBalances (LedgerID, BranchID, FinancialYearID, OpeningBalance, OpeningBalanceType, Remarks, CreatedAt, CreatedBy)
+        INSERT INTO BranchLedgerOpeningBalances (LedgerID, BranchID, FinancialYearID, OpeningBalance, OpeningBalanceType, Remarks, CreatedOn, CreatedBy)
         SELECT 
             l.LedgerID,
             1 AS BranchID,
             @ActiveFY AS FinancialYearID,
             ISNULL(l.OpeningBalance, 0),
-            ISNULL(l.OpeningBalanceType, 'Dr'),
+            ISNULL(NULLIF(l.OpeningBalanceType, ''), 'Dr'),
             N'स्वयंचलित स्थलांतर (Auto-migrated from legacy ledger opening balance for Head Office)',
             SYSUTCDATETIME(),
-            N'System-Migration'
+            1
         FROM Ledgers l
         WHERE ISNULL(l.OpeningBalance, 0) > 0
           AND NOT EXISTS (

@@ -2,6 +2,24 @@
 
 ---
 
+## 📅 [2026-10-15] - आवृत्ती v2.5.53 (Authentication & Core Schema Self-Healing, DefaultIbtLedgerID & BranchLedgerOpeningBalances Automated Migration v2.5.53)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **लॉगिन क्रॅशचे संपूर्ण कायमस्वरूपी निवारण (`Invalid column name 'DefaultIbtLedgerID'` Fix):**
+  * संस्थांच्या डेटाबेसवर (उदा. `SmartBanking_maharshiyadrav`) ॲडमिन लॉगिन करताना `Invalid column name 'DefaultIbtLedgerID'` असा एरर येत होता.
+  * `Program.cs` मध्ये सिस्टीम सुरू होताच आणि कोणत्याही लॉगिन किंवा API विनंतीपूर्वी स्वतंत्र `Isolated Early Schema Self-Heal` ब्लॉक समाविष्ट केला. हा ब्लॉक `Branches` टेबलमध्ये `DefaultIbtLedgerID` आणि `DefaultCashLedgerID` हे आवश्यक कॉलम्स १००% हमीने लगेच निर्माण करतो.
+* **`BranchLedgerOpeningBalances` टेबल व कन्सॉलिडेटेड इंडेक्स स्वयं-सक्षमीकरण:**
+  * सर्व संस्था डेटाबेसेसमध्ये `BranchLedgerOpeningBalances` टेबल, योग्य विदेशी की (Foreign Keys) व कंपोझिट युनिक इंडेक्स सुरक्षितपणे तयार होतात.
+  * आधीच्या मोठ्या ३,००० ओळींच्या स्क्रिप्टमधील कोणत्याही एका एररमुळे संपूर्ण मायग्रेशन अडकून पडणे कायमचे थांबवले.
+* **व्हीपीएस मल्टी-ॲप पॅच इन्स्टॉलर सुधारणा (`apply_patch.ps1` Step 2.0 & Step 2.5):**
+  * पॅच रन होताना मुख्य स्कीमा चालण्याच्या आधीच **Step 2.0** मध्ये सर्व संस्थांच्या डेटाबेसेसवर थेट कोअर कॉलम्स सुनिश्चित केले जातात (`instant_fix_default_ibt_ledger_id.sql`).
+  * **Step 2.5** मध्ये शाखानिहाय लेजर सुरुवातीची शिल्लक स्थलांतर (`create_branch_ledger_opening_balance_table.sql`) स्वयंचलित चालवले जाते.
+* **आपत्कालीन स्वतंत्र SQL स्क्रिप्ट (`tools/instant_fix_default_ibt_ledger_id.sql`):**
+  * सर्व्हरवर कोणत्याही डेटाबेसमध्ये त्वरित चालवून एका सेकंदात समस्या सोडवण्यासाठी स्वतंत्र आयडेम्पोटंट स्क्रिप्ट उपलब्ध.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (`VPS Multi-App Master Patch v2.5.53`).**
+
+---
+
 ## 📅 [2026-10-15] - आवृत्ती v2.5.52 (Investment Opening Balance & New Account Date Validation, 4-Digit Year Enforcement, Safe Range Bounds & HttpPut Endpoint v2.5.52)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)

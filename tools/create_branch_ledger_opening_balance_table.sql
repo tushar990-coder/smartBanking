@@ -4,7 +4,7 @@
 --          and safely auto-migrate existing Ledgers.OpeningBalance into Head Office.
 -- ====================================================================================
 
--- 1. Ensure DefaultIbtLedgerID column exists on Branches table
+-- 1. Ensure DefaultIbtLedgerID & DefaultCashLedgerID columns exist on Branches table
 IF NOT EXISTS (
     SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
     WHERE TABLE_NAME = 'Branches' AND COLUMN_NAME = 'DefaultIbtLedgerID'
@@ -12,6 +12,16 @@ IF NOT EXISTS (
 BEGIN
     ALTER TABLE [dbo].[Branches] ADD [DefaultIbtLedgerID] INT NULL;
     PRINT 'Added DefaultIbtLedgerID column to Branches table.';
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+    WHERE TABLE_NAME = 'Branches' AND COLUMN_NAME = 'DefaultCashLedgerID'
+)
+BEGIN
+    ALTER TABLE [dbo].[Branches] ADD [DefaultCashLedgerID] INT NULL;
+    PRINT 'Added DefaultCashLedgerID column to Branches table.';
 END
 GO
 
@@ -39,6 +49,18 @@ BEGIN
         CONSTRAINT [FK_BranchLedgerOpeningBalances_FinancialYears_FinancialYearID] FOREIGN KEY ([FinancialYearID]) REFERENCES [dbo].[FinancialYears] ([FinancialYearID])
     );
     PRINT 'Created BranchLedgerOpeningBalances table.';
+END
+ELSE
+BEGIN
+    IF COL_LENGTH('BranchLedgerOpeningBalances', 'CreatedOn') IS NULL
+        ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [CreatedOn] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME();
+    IF COL_LENGTH('BranchLedgerOpeningBalances', 'CreatedBy') IS NULL
+        ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [CreatedBy] INT NOT NULL DEFAULT 1;
+    IF COL_LENGTH('BranchLedgerOpeningBalances', 'UpdatedOn') IS NULL
+        ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [UpdatedOn] DATETIME2 NULL;
+    IF COL_LENGTH('BranchLedgerOpeningBalances', 'UpdatedBy') IS NULL
+        ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [UpdatedBy] INT NULL;
+    PRINT 'Verified BranchLedgerOpeningBalances columns.';
 END
 GO
 

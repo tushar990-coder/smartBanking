@@ -242,6 +242,11 @@ if (Test-Path $branchLedgerOpeningSql) {
     Copy-Item $branchLedgerOpeningSql (Join-Path $patchFolder "database\create_branch_ledger_opening_balance_table.sql") -Force
     Write-Host "  -> create_branch_ledger_opening_balance_table.sql included in database package." -ForegroundColor White
 }
+$instantFixSql = Join-Path $workspaceRoot "tools\instant_fix_default_ibt_ledger_id.sql"
+if (Test-Path $instantFixSql) {
+    Copy-Item $instantFixSql (Join-Path $patchFolder "database\instant_fix_default_ibt_ledger_id.sql") -Force
+    Write-Host "  -> instant_fix_default_ibt_ledger_id.sql included in database package." -ForegroundColor White
+}
 
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
@@ -337,6 +342,8 @@ $saving14Sql = Join-Path $scriptDir "database\patch_migrate_saving_accounts_14di
 $autoHealSql = Join-Path $scriptDir "database\auto_heal_nominal_shareholders.sql"
 $fdHealSql = Join-Path $scriptDir "database\heal_migrated_fd_account_numbers.sql"
 $memberCodeHealSql = Join-Path $scriptDir "database\heal_nominal_and_duplicate_member_codes.sql"
+$instantFixSql = Join-Path $scriptDir "database\instant_fix_default_ibt_ledger_id.sql"
+$branchLedgerOpeningSql = Join-Path $scriptDir "database\create_branch_ledger_opening_balance_table.sql"
 $backendSource = Join-Path $scriptDir "backend"
 $frontendSource = Join-Path $scriptDir "frontend"
 
@@ -555,6 +562,29 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             $statusObj.AppSnapshot = "Warning"
         }
 
+        # 2.0 Instant Core Branch Schema Fix (DefaultIbtLedgerID & DefaultCashLedgerID)
+        if (Test-Path $instantFixSql) {
+            Write-Host " [Step 2.0] Ensuring DefaultIbtLedgerID & Core Branch Columns on $($target.TargetDatabase)..." -ForegroundColor Yellow
+            try {
+                $cOk = $false
+                if ($config.SqlUser -and $config.SqlPassword) {
+                    try {
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$instantFixSql`"" -f 65001 -b
+                        if ($LASTEXITCODE -eq 0) { $cOk = $true }
+                    } catch {}
+                }
+                if (-not $cOk) {
+                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$instantFixSql`"" -f 65001 -b
+                    if ($LASTEXITCODE -eq 0) { $cOk = $true }
+                }
+                if ($cOk) {
+                    Write-Host "  -> Core Branch Columns & DefaultIbtLedgerID verified 100% OK!" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "  -> Branch Columns Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
+            }
+        }
+
         # 2. Database Schema Sync via Native sqlcmd Engine
         Write-Host " [Step 2] Applying Database Update Schema via Native sqlcmd Engine..." -ForegroundColor Yellow
         if (Test-Path $sqlFile) {
@@ -673,6 +703,29 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
                 }
             } catch {
                 Write-Host "  -> Member Code Auto-Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
+            }
+        }
+
+        # 2.5 Auto-Heal Branch-wise Ledger Opening Balances & Branch Columns
+        if (Test-Path $branchLedgerOpeningSql) {
+            Write-Host " [Step 2.5] Auto-Healing Branch-wise Ledger Opening Balances & DefaultIbtLedgerID on $($target.TargetDatabase)..." -ForegroundColor Yellow
+            try {
+                $bloOk = $false
+                if ($config.SqlUser -and $config.SqlPassword) {
+                    try {
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$branchLedgerOpeningSql`"" -f 65001 -b
+                        if ($LASTEXITCODE -eq 0) { $bloOk = $true }
+                    } catch {}
+                }
+                if (-not $bloOk) {
+                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$branchLedgerOpeningSql`"" -f 65001 -b
+                    if ($LASTEXITCODE -eq 0) { $bloOk = $true }
+                }
+                if ($bloOk) {
+                    Write-Host "  -> Branch-wise Ledger Opening Balances & DefaultIbtLedgerID applied successfully!" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "  -> Branch Ledger Opening Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
             }
         }
 

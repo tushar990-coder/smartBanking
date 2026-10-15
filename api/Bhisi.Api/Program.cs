@@ -206,6 +206,67 @@ using (var scope = app.Services.CreateScope())
         Log.Warning("Could not drop IX_LoanRates_LoanType: {Message}", ex.Message);
     }
 
+    // CRITICAL CORE SCHEMA SELF-HEAL: Ensure Branches and BranchLedgerOpeningBalances exist BEFORE any controllers or queries
+    try
+    {
+        db.Database.ExecuteSqlRaw(@"
+            IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'Branches')
+            BEGIN
+                IF COL_LENGTH('Branches', 'DefaultIbtLedgerID') IS NULL
+                BEGIN
+                    ALTER TABLE [dbo].[Branches] ADD [DefaultIbtLedgerID] int NULL;
+                END
+                IF COL_LENGTH('Branches', 'DefaultCashLedgerID') IS NULL
+                BEGIN
+                    ALTER TABLE [dbo].[Branches] ADD [DefaultCashLedgerID] int NULL;
+                END
+            END
+
+            IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'BranchLedgerOpeningBalances')
+            BEGIN
+                CREATE TABLE [dbo].[BranchLedgerOpeningBalances] (
+                    [BranchLedgerOpeningBalanceID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    [LedgerID] INT NOT NULL,
+                    [BranchID] INT NOT NULL,
+                    [FinancialYearID] INT NOT NULL,
+                    [OpeningBalance] DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    [OpeningBalanceType] NVARCHAR(2) NOT NULL DEFAULT 'Dr',
+                    [Remarks] NVARCHAR(250) NULL,
+                    [CreatedBy] INT NOT NULL DEFAULT 1,
+                    [CreatedOn] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+                    [UpdatedBy] INT NULL,
+                    [UpdatedOn] DATETIME2 NULL
+                );
+            END
+            ELSE
+            BEGIN
+                IF COL_LENGTH('BranchLedgerOpeningBalances', 'CreatedOn') IS NULL
+                    ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [CreatedOn] DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME();
+                IF COL_LENGTH('BranchLedgerOpeningBalances', 'CreatedBy') IS NULL
+                    ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [CreatedBy] INT NOT NULL DEFAULT 1;
+                IF COL_LENGTH('BranchLedgerOpeningBalances', 'UpdatedOn') IS NULL
+                    ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [UpdatedOn] DATETIME2 NULL;
+                IF COL_LENGTH('BranchLedgerOpeningBalances', 'UpdatedBy') IS NULL
+                    ALTER TABLE [dbo].[BranchLedgerOpeningBalances] ADD [UpdatedBy] INT NULL;
+            END
+
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.indexes 
+                WHERE name = 'UQ_BranchLedgerOpeningBalances_Ledger_Branch_FY' 
+                  AND object_id = OBJECT_ID('dbo.BranchLedgerOpeningBalances')
+            )
+            BEGIN
+                CREATE UNIQUE NONCLUSTERED INDEX [UQ_BranchLedgerOpeningBalances_Ledger_Branch_FY]
+                ON [dbo].[BranchLedgerOpeningBalances] ([LedgerID], [BranchID], [FinancialYearID]);
+            END
+        ");
+        Log.Information("Branches core columns & BranchLedgerOpeningBalances self-heal verified successfully.");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning("Branches core columns self-heal warning: {Message}", ex.Message);
+    }
+
     try
     {
         db.Database.ExecuteSqlRaw(@"

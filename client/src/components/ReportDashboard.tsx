@@ -24,6 +24,7 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
         { id: 'profit-loss', name: 'नफा-तोटा पत्रक (P&L A/c)' },
         { id: 'balance-sheet', name: 'ताळेबंद (Balance Sheet)' },
         { id: 'balance-sheet-form-n', name: 'ताळेबंद (नमुना न)' },
+        { id: 'ibt-reconciliation-report', name: '🔄 आंतर-शाखा ताळमेळ व क्लिअरिंग अहवाल (IBT Clearing & Reconciliation Matrix)' },
         { id: 'swanidhi-report', name: '🏛️ स्वनिधी व कमाल उचल अहवाल (Rule 35 Swanidhi)' },
         { id: 'voucher-batch-print', name: 'व्हाउचर प्रिंटिंग (Voucher Print)' },
       ]

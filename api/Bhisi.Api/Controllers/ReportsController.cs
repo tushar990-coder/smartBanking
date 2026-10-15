@@ -6281,7 +6281,609 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, new { message = "Error generating Loan Outstanding Report", error = ex.Message });
             }
         }
+
+        // =================================================================================================
+        // CBS COMPONENT 9: INTER-BRANCH TRANSFER (IBT) CLEARING & RECONCILIATION MATRIX ENGINE
+        // =================================================================================================
+
+        // GET: api/Reports/IbtReconciliationMatrix
+        [HttpGet("IbtReconciliationMatrix")]
+        public async Task<ActionResult<IbtMatrixResponseDto>> GetIbtReconciliationMatrix(
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate,
+            [FromQuery] int? financialYearId,
+            [FromQuery] int? branchId)
+        {
+            try
+            {
+                var activeFy = financialYearId.HasValue && financialYearId.Value > 0
+                    ? await _context.FinancialYears.FindAsync(financialYearId.Value)
+                    : await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive) 
+                      ?? await _context.FinancialYears.OrderByDescending(fy => fy.FinancialYearID).FirstOrDefaultAsync();
+
+                DateTime startDate = fromDate ?? activeFy?.StartDate ?? new DateTime(DateTime.Today.Year, 4, 1);
+                DateTime endDate = toDate ?? activeFy?.EndDate ?? DateTime.Today;
+
+                var allBranches = await _context.Branches
+                    .Where(b => b.IsActive)
+                    .OrderBy(b => b.BranchID)
+                    .ToListAsync();
+
+                // Build branch items
+                var branchItems = new List<IbtBranchItemDto>();
+                foreach (var b in allBranches)
+                {
+                    var cashLedger = b.DefaultCashLedgerID.HasValue ? await _context.Ledgers.FindAsync(b.DefaultCashLedgerID.Value) : null;
+                    var ibtLedger = b.DefaultIbtLedgerID.HasValue ? await _context.Ledgers.FindAsync(b.DefaultIbtLedgerID.Value) : null;
+
+                    branchItems.Add(new IbtBranchItemDto
+                    {
+                        BranchID = b.BranchID,
+                        BranchCode = b.BranchCode,
+                        BranchName = b.BranchName,
+                        BranchType = b.BranchType ?? "Branch",
+                        DefaultCashLedgerID = b.DefaultCashLedgerID,
+                        DefaultCashLedgerName = cashLedger?.LedgerName,
+                        DefaultIbtLedgerID = b.DefaultIbtLedgerID,
+                        DefaultIbtLedgerName = ibtLedger?.LedgerName
+                    });
+                }
+
+                // Gather all IBT Ledgers in the system
+                var ibtLedgers = await _context.Ledgers
+                    .Where(l => l.IsActive && 
+                               (l.LedgerName.Contains("आंतर-शाखा") || 
+                                l.LedgerName.Contains("IBT") || 
+                                l.LedgerName.Contains("Inter-Branch") || 
+                                l.LedgerCode == Helpers.IbtLedgerHelper.StandardIbtLedgerCode))
+                    .ToListAsync();
+
+                var ibtLedgerIds = ibtLedgers.Select(l => l.LedgerID).ToHashSet();
+                foreach (var b in allBranches)
+                {
+                    if (b.DefaultIbtLedgerID.HasValue && b.DefaultIbtLedgerID.Value > 0)
+                        ibtLedgerIds.Add(b.DefaultIbtLedgerID.Value);
+                }
+
+                // Preload Branch Opening Balances for IBT Ledgers
+                var ibtOpeningBalances = await _context.BranchLedgerOpeningBalances
+                    .Where(ob => ibtLedgerIds.Contains(ob.LedgerID) && 
+                                (activeFy == null || ob.FinancialYearID == activeFy.FinancialYearID))
+                    .ToListAsync();
+
+                // Fetch all approved IBT vouchers within the requested date range
+                var ibtVouchers = await _context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                    .Where(v => v.IsIbtVoucher && 
+                                v.Status == "Approved" && 
+                                v.VoucherDate.Date >= startDate.Date && 
+                                v.VoucherDate.Date <= endDate.Date)
+                    .ToListAsync();
+
+                var matrixCells = new List<IbtMatrixCellDto>();
+                var pairSummaries = new List<IbtPairSummaryDto>();
+                decimal totalTurnover = 0;
+                int totalVoucherCount = 0;
+                decimal totalDiscrepancy = 0;
+
+                // 1. Compute cell metrics for every directed branch pair (i -> j)
+                var directedBalances = new Dictionary<(int Source, int Target), decimal>();
+
+                foreach (var source in allBranches)
+                {
+                    foreach (var target in allBranches)
+                    {
+                        if (source.BranchID == target.BranchID) continue;
+
+                        int srcId = source.BranchID;
+                        int tgtId = target.BranchID;
+
+                        // Identify target-specific or general IBT ledger for this source branch
+                        int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, srcId, tgtId);
+
+                        // Calculate opening balance
+                        decimal obAmount = 0;
+                        var branchOb = ibtOpeningBalances.FirstOrDefault(b => b.BranchID == srcId && b.LedgerID == ibtLedgerId);
+                        if (branchOb != null)
+                        {
+                            obAmount = branchOb.OpeningBalanceType == "Dr" ? branchOb.OpeningBalance : -branchOb.OpeningBalance;
+                        }
+
+                        // Filter vouchers generated in source branch targeting target branch
+                        var relevantVouchers = ibtVouchers
+                            .Where(v => v.BranchID == srcId && 
+                                       (v.TargetBranchID == tgtId || (v.TargetBranchID == null && v.Narration.Contains(target.BranchName))))
+                            .ToList();
+
+                        decimal drSum = 0;
+                        decimal crSum = 0;
+
+                        foreach (var v in relevantVouchers)
+                        {
+                            var ibtDetails = v.VoucherDetails.Where(d => ibtLedgerIds.Contains(d.LedgerID));
+                            foreach (var d in ibtDetails)
+                            {
+                                if (d.DrCr == "Dr") drSum += d.Amount;
+                                else if (d.DrCr == "Cr") crSum += d.Amount;
+                            }
+                        }
+
+                        decimal netMovement = drSum - crSum;
+                        decimal closingBal = obAmount + netMovement;
+                        directedBalances[(srcId, tgtId)] = closingBal;
+
+                        matrixCells.Add(new IbtMatrixCellDto
+                        {
+                            SourceBranchID = srcId,
+                            SourceBranchName = source.BranchName,
+                            TargetBranchID = tgtId,
+                            TargetBranchName = target.BranchName,
+                            OpeningBalance = obAmount,
+                            DebitAmount = drSum,
+                            CreditAmount = crSum,
+                            TotalVouchersCount = relevantVouchers.Count
+                        });
+
+                        totalTurnover += (drSum + crSum);
+                        totalVoucherCount += relevantVouchers.Count;
+                    }
+                }
+
+                // 2. Pair-wise contra reconciliation (A < B)
+                for (int a = 0; a < allBranches.Count; a++)
+                {
+                    for (int b = a + 1; b < allBranches.Count; b++)
+                    {
+                        var branchA = allBranches[a];
+                        var branchB = allBranches[b];
+
+                        decimal posA = directedBalances.GetValueOrDefault((branchA.BranchID, branchB.BranchID), 0);
+                        decimal posB = directedBalances.GetValueOrDefault((branchB.BranchID, branchA.BranchID), 0);
+
+                        decimal diff = posA + posB;
+                        totalDiscrepancy += Math.Abs(diff);
+
+                        // Update contra balance in cells
+                        var cellAB = matrixCells.FirstOrDefault(c => c.SourceBranchID == branchA.BranchID && c.TargetBranchID == branchB.BranchID);
+                        if (cellAB != null) cellAB.ContraClosingBalance = posB;
+
+                        var cellBA = matrixCells.FirstOrDefault(c => c.SourceBranchID == branchB.BranchID && c.TargetBranchID == branchA.BranchID);
+                        if (cellBA != null) cellBA.ContraClosingBalance = posA;
+
+                        var pairVouchers = ibtVouchers.Count(v => 
+                            (v.BranchID == branchA.BranchID && v.TargetBranchID == branchB.BranchID) ||
+                            (v.BranchID == branchB.BranchID && v.TargetBranchID == branchA.BranchID));
+
+                        var cellABMovement = cellAB != null ? cellAB.DebitAmount + cellAB.CreditAmount : 0;
+                        var cellBAMovement = cellBA != null ? cellBA.DebitAmount + cellBA.CreditAmount : 0;
+
+                        pairSummaries.Add(new IbtPairSummaryDto
+                        {
+                            BranchAId = branchA.BranchID,
+                            BranchAName = branchA.BranchName,
+                            BranchACode = branchA.BranchCode,
+                            BranchBId = branchB.BranchID,
+                            BranchBName = branchB.BranchName,
+                            BranchBCode = branchB.BranchCode,
+                            BranchAPosition = posA,
+                            BranchBPosition = posB,
+                            TotalTurnover = cellABMovement + cellBAMovement,
+                            VoucherCount = pairVouchers
+                        });
+                    }
+                }
+
+                var response = new IbtMatrixResponseDto
+                {
+                    FinancialYearID = activeFy?.FinancialYearID ?? 1,
+                    FinancialYearCode = activeFy?.YearCode ?? "2026-2027",
+                    FromDate = startDate,
+                    ToDate = endDate,
+                    Branches = branchItems,
+                    Pairs = pairSummaries,
+                    MatrixCells = matrixCells,
+                    TotalInterBranchTurnover = totalTurnover,
+                    TotalVouchersCount = totalVoucherCount,
+                    TotalDiscrepancy = totalDiscrepancy,
+                    OverallStatus = totalDiscrepancy < 0.01m ? "ALL_TALLIED" : "DISCREPANCY_DETECTED"
+                };
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error calculating IBT Reconciliation Matrix", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/IbtPairStatement
+        [HttpGet("IbtPairStatement")]
+        public async Task<ActionResult<IbtPairStatementResponseDto>> GetIbtPairStatement(
+            [FromQuery] int branchAId,
+            [FromQuery] int branchBId,
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate)
+        {
+            try
+            {
+                var branchA = await _context.Branches.FindAsync(branchAId);
+                var branchB = await _context.Branches.FindAsync(branchBId);
+
+                if (branchA == null || branchB == null)
+                {
+                    return BadRequest("Invalid branch IDs specified.");
+                }
+
+                var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive)
+                               ?? await _context.FinancialYears.OrderByDescending(fy => fy.FinancialYearID).FirstOrDefaultAsync();
+
+                DateTime startDate = fromDate ?? activeFy?.StartDate ?? new DateTime(DateTime.Today.Year, 4, 1);
+                DateTime endDate = toDate ?? activeFy?.EndDate ?? DateTime.Today;
+
+                // Identify IBT ledgers
+                int ibtLedgerInA = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, branchAId, branchBId);
+                int ibtLedgerInB = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, branchBId, branchAId);
+
+                // Opening balances
+                decimal obInA = 0;
+                var obA = await _context.BranchLedgerOpeningBalances
+                    .FirstOrDefaultAsync(ob => ob.BranchID == branchAId && ob.LedgerID == ibtLedgerInA && (activeFy == null || ob.FinancialYearID == activeFy.FinancialYearID));
+                if (obA != null) obInA = obA.OpeningBalanceType == "Dr" ? obA.OpeningBalance : -obA.OpeningBalance;
+
+                decimal obInB = 0;
+                var obB = await _context.BranchLedgerOpeningBalances
+                    .FirstOrDefaultAsync(ob => ob.BranchID == branchBId && ob.LedgerID == ibtLedgerInB && (activeFy == null || ob.FinancialYearID == activeFy.FinancialYearID));
+                if (obB != null) obInB = obB.OpeningBalanceType == "Dr" ? obB.OpeningBalance : -obB.OpeningBalance;
+
+                // Fetch paired vouchers
+                var vouchers = await _context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                        .ThenInclude(vd => vd.Customer)
+                    .Include(v => v.VoucherDetails)
+                        .ThenInclude(vd => vd.Member)
+                    .Where(v => v.IsIbtVoucher &&
+                                ((v.BranchID == branchAId && v.TargetBranchID == branchBId) ||
+                                 (v.BranchID == branchBId && v.TargetBranchID == branchAId)) &&
+                                v.VoucherDate.Date >= startDate.Date && 
+                                v.VoucherDate.Date <= endDate.Date)
+                    .OrderBy(v => v.VoucherDate)
+                    .ThenBy(v => v.VoucherID)
+                    .ToListAsync();
+
+                var rows = new List<IbtVoucherRowDto>();
+                decimal drInA = 0, crInA = 0, drInB = 0, crInB = 0;
+
+                var relatedVoucherIds = vouchers.Where(v => v.RelatedVoucherID.HasValue).Select(v => v.RelatedVoucherID!.Value).Distinct().ToList();
+                var relatedVouchers = await _context.Vouchers
+                    .Where(v => relatedVoucherIds.Contains(v.VoucherID))
+                    .ToDictionaryAsync(v => v.VoucherID, v => v.VoucherNo);
+
+                foreach (var v in vouchers)
+                {
+                    string targetBranchName = v.TargetBranchID == branchAId ? branchA.BranchName : branchB.BranchName;
+                    string branchName = v.BranchID == branchAId ? branchA.BranchName : branchB.BranchName;
+
+                    string module = "GENERAL";
+                    var narr = (v.Narration ?? "").ToUpper();
+                    if (narr.Contains("LOAN") || narr.Contains("कर्ज")) module = "LOAN";
+                    else if (narr.Contains("SAVING") || narr.Contains("बचत")) module = "SAVING";
+                    else if (narr.Contains("PIGMY") || narr.Contains("पिग्मी")) module = "PIGMY";
+                    else if (narr.Contains("RD") || narr.Contains("आवर्ती")) module = "RD";
+                    else if (narr.Contains("FD") || narr.Contains("मुदत")) module = "FD";
+                    else if (narr.Contains("SETTLEMENT") || narr.Contains("तडजोड")) module = "SETTLEMENT";
+
+                    var primaryDetail = v.VoucherDetails.FirstOrDefault(d => d.Customer != null || d.Member != null) 
+                                        ?? v.VoucherDetails.FirstOrDefault();
+
+                    string drCr = "Dr";
+                    var ibtLine = v.VoucherDetails.FirstOrDefault(d => d.LedgerID == ibtLedgerInA || d.LedgerID == ibtLedgerInB);
+                    if (ibtLine != null)
+                    {
+                        drCr = ibtLine.DrCr;
+                        if (v.BranchID == branchAId)
+                        {
+                            if (drCr == "Dr") drInA += ibtLine.Amount;
+                            else crInA += ibtLine.Amount;
+                        }
+                        else
+                        {
+                            if (drCr == "Dr") drInB += ibtLine.Amount;
+                            else crInB += ibtLine.Amount;
+                        }
+                    }
+
+                    string? relatedNo = null;
+                    if (v.RelatedVoucherID.HasValue && relatedVouchers.TryGetValue(v.RelatedVoucherID.Value, out var rNo))
+                    {
+                        relatedNo = rNo;
+                    }
+
+                    rows.Add(new IbtVoucherRowDto
+                    {
+                        VoucherID = v.VoucherID,
+                        VoucherNo = v.VoucherNo,
+                        VoucherDate = v.VoucherDate,
+                        VoucherType = v.VoucherType,
+                        BranchID = v.BranchID,
+                        BranchName = branchName,
+                        TargetBranchID = v.TargetBranchID,
+                        TargetBranchName = targetBranchName,
+                        RelatedVoucherID = v.RelatedVoucherID,
+                        RelatedVoucherNo = relatedNo,
+                        Amount = v.TotalAmount,
+                        IbtDrCr = drCr,
+                        Narration = v.Narration,
+                        CustomerName = primaryDetail?.Customer?.FullName,
+                        MemberNo = primaryDetail?.Member?.MemberCode,
+                        Module = module,
+                        Status = v.Status,
+                        IsContraMatched = v.RelatedVoucherID.HasValue
+                    });
+                }
+
+                decimal closingInA = obInA + (drInA - crInA);
+                decimal closingInB = obInB + (drInB - crInB);
+
+                var response = new IbtPairStatementResponseDto
+                {
+                    BranchA = new IbtBranchItemDto { BranchID = branchA.BranchID, BranchName = branchA.BranchName, BranchCode = branchA.BranchCode },
+                    BranchB = new IbtBranchItemDto { BranchID = branchB.BranchID, BranchName = branchB.BranchName, BranchCode = branchB.BranchCode },
+                    FromDate = startDate,
+                    ToDate = endDate,
+                    OpeningBalanceInA = obInA,
+                    OpeningBalanceInB = obInB,
+                    TotalDebitInA = drInA,
+                    TotalCreditInA = crInA,
+                    TotalDebitInB = drInB,
+                    TotalCreditInB = crInB,
+                    ClosingBalanceInA = closingInA,
+                    ClosingBalanceInB = closingInB,
+                    Vouchers = rows
+                };
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error generating IBT Pair Statement", error = ex.Message });
+            }
+        }
+
+        // GET: api/Reports/IbtUnreconciledVouchers
+        [HttpGet("IbtUnreconciledVouchers")]
+        public async Task<ActionResult<IbtUnreconciledResponseDto>> GetIbtUnreconciledVouchers(
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate,
+            [FromQuery] int? branchId)
+        {
+            try
+            {
+                var query = _context.Vouchers
+                    .Include(v => v.Branch)
+                    .Include(v => v.TargetBranch)
+                    .Include(v => v.VoucherDetails)
+                    .Where(v => v.IsIbtVoucher);
+
+                if (fromDate.HasValue) query = query.Where(v => v.VoucherDate.Date >= fromDate.Value.Date);
+                if (toDate.HasValue) query = query.Where(v => v.VoucherDate.Date <= toDate.Value.Date);
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    query = query.Where(v => v.BranchID == branchId.Value || v.TargetBranchID == branchId.Value);
+                }
+
+                var ibtVouchers = await query.ToListAsync();
+                var relatedIds = ibtVouchers.Where(v => v.RelatedVoucherID.HasValue).Select(v => v.RelatedVoucherID!.Value).Distinct().ToList();
+                var relatedMap = await _context.Vouchers.Where(v => relatedIds.Contains(v.VoucherID)).ToDictionaryAsync(v => v.VoucherID);
+
+                var unreconciled = new List<IbtUnreconciledVoucherItemDto>();
+                decimal totalDiscrepancyAmount = 0;
+
+                foreach (var v in ibtVouchers)
+                {
+                    bool isDiscrepancy = false;
+                    string reason = "";
+
+                    if (!v.RelatedVoucherID.HasValue)
+                    {
+                        isDiscrepancy = true;
+                        reason = "संलग्न व्हाउचर अस्तित्वात नाही (One-sided Voucher - Missing Related Voucher ID)";
+                    }
+                    else if (!relatedMap.TryGetValue(v.RelatedVoucherID.Value, out var relVoucher))
+                    {
+                        isDiscrepancy = true;
+                        reason = "संलग्न व्हाउचर डेटाबेसमध्ये सापडला नाही (Orphaned Related Voucher ID)";
+                    }
+                    else if (relVoucher.Status != v.Status)
+                    {
+                        isDiscrepancy = true;
+                        reason = $"स्थिती विसंगती (Status Mismatch: हा व्हाउचर '{v.Status}' व संलग्न '{relVoucher.Status}')";
+                    }
+                    else if (Math.Abs(v.TotalAmount - relVoucher.TotalAmount) > 0.01m)
+                    {
+                        isDiscrepancy = true;
+                        reason = $"रक्कम विसंगती (Amount Mismatch: ₹{v.TotalAmount:N2} vs ₹{relVoucher.TotalAmount:N2})";
+                    }
+
+                    if (isDiscrepancy)
+                    {
+                        totalDiscrepancyAmount += v.TotalAmount;
+                        unreconciled.Add(new IbtUnreconciledVoucherItemDto
+                        {
+                            VoucherID = v.VoucherID,
+                            VoucherNo = v.VoucherNo,
+                            VoucherDate = v.VoucherDate,
+                            BranchID = v.BranchID,
+                            BranchName = v.Branch?.BranchName ?? $"Branch_{v.BranchID}",
+                            TargetBranchID = v.TargetBranchID,
+                            TargetBranchName = v.TargetBranch?.BranchName ?? (v.TargetBranchID.HasValue ? $"Branch_{v.TargetBranchID}" : "Not Set"),
+                            Amount = v.TotalAmount,
+                            DrCr = v.VoucherDetails.FirstOrDefault()?.DrCr ?? "Dr",
+                            Status = v.Status,
+                            Reason = reason,
+                            RelatedVoucherID = v.RelatedVoucherID,
+                            RelatedVoucherStatus = v.RelatedVoucherID.HasValue && relatedMap.TryGetValue(v.RelatedVoucherID.Value, out var rv) ? rv.Status : null,
+                            Narration = v.Narration
+                        });
+                    }
+                }
+
+                return Ok(new IbtUnreconciledResponseDto
+                {
+                    TotalUnreconciled = unreconciled.Count,
+                    TotalDiscrepancyAmount = totalDiscrepancyAmount,
+                    Vouchers = unreconciled
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error finding unreconciled IBT vouchers", error = ex.Message });
+            }
+        }
+
+        // POST: api/Reports/CreateIbtSettlement
+        [HttpPost("CreateIbtSettlement")]
+        public async Task<IActionResult> CreateIbtSettlement([FromBody] IbtSettlementRequestDto request)
+        {
+            try
+            {
+                if (request.FromBranchID <= 0 || request.ToBranchID <= 0 || request.FromBranchID == request.ToBranchID)
+                {
+                    return BadRequest("वैध देणारी व घेणारी शाखा निवडणे आवश्यक आहे.");
+                }
+
+                if (request.SettlementAmount <= 0)
+                {
+                    return BadRequest("सेटलमेंट रक्कम शून्यापेक्षा जास्त असणे आवश्यक आहे.");
+                }
+
+                var fromBranch = await _context.Branches.FindAsync(request.FromBranchID);
+                var toBranch = await _context.Branches.FindAsync(request.ToBranchID);
+
+                if (fromBranch == null || toBranch == null)
+                {
+                    return BadRequest("निवडलेली शाखा अस्तित्वात नाही.");
+                }
+
+                var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive)
+                               ?? await _context.FinancialYears.OrderByDescending(fy => fy.FinancialYearID).FirstOrDefaultAsync();
+                string fyCode = activeFy?.YearCode?.Replace(" ", "") ?? "26-27";
+
+                // Identify IBT Ledgers
+                int ibtInFrom = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, request.FromBranchID, request.ToBranchID);
+                int ibtInTo = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, request.ToBranchID, request.FromBranchID);
+
+                // Identify Settlement Source/Destination Ledgers (Bank or Cash)
+                int fromFundLedgerId = request.PaymentMode.Equals("Cash", StringComparison.OrdinalIgnoreCase)
+                    ? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.FromBranchID)
+                    : (request.BankLedgerID ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.FromBranchID));
+
+                int toFundLedgerId = request.PaymentMode.Equals("Cash", StringComparison.OrdinalIgnoreCase)
+                    ? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.ToBranchID)
+                    : (request.BankLedgerID ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.ToBranchID));
+
+                // 1. Voucher in FromBranch (Payment: Dr IBT, Cr Fund)
+                int countFrom = await _context.Vouchers.CountAsync(v => v.BranchID == request.FromBranchID && v.VoucherType == "Payment") + 1;
+                string vNoFrom = $"{fromBranch.BranchCode}-BP-{fyCode}-{countFrom:D5}";
+
+                string narrFrom = string.IsNullOrWhiteSpace(request.Narration)
+                    ? $"[आंतर-शाखा सेटलमेंट] {toBranch.BranchName} कडील IBT शिल्लक सेटलमेंट अदा ({request.PaymentMode})"
+                    : $"[आंतर-शाखा सेटलमेंट] {request.Narration}";
+
+                var vFrom = new Voucher
+                {
+                    BranchID = request.FromBranchID,
+                    VoucherNo = vNoFrom,
+                    VoucherDate = request.SettlementDate,
+                    VoucherType = "Payment",
+                    Narration = narrFrom,
+                    TotalAmount = request.SettlementAmount,
+                    Status = "Approved",
+                    IsIbtVoucher = true,
+                    TargetBranchID = request.ToBranchID,
+                    CreatedBy = request.CreatedBy ?? 1,
+                    ApprovedBy = request.CreatedBy ?? 1,
+                    ApprovedOn = DateTime.Now
+                };
+                _context.Vouchers.Add(vFrom);
+                await _context.SaveChangesAsync();
+
+                _context.VoucherDetails.Add(new VoucherDetail
+                {
+                    VoucherID = vFrom.VoucherID,
+                    LedgerID = ibtInFrom,
+                    DrCr = "Dr",
+                    Amount = request.SettlementAmount
+                });
+
+                _context.VoucherDetails.Add(new VoucherDetail
+                {
+                    VoucherID = vFrom.VoucherID,
+                    LedgerID = fromFundLedgerId,
+                    DrCr = "Cr",
+                    Amount = request.SettlementAmount
+                });
+
+                // 2. Voucher in ToBranch (Receipt: Dr Fund, Cr IBT)
+                int countTo = await _context.Vouchers.CountAsync(v => v.BranchID == request.ToBranchID && v.VoucherType == "Receipt") + 1;
+                string vNoTo = $"{toBranch.BranchCode}-BR-{fyCode}-{countTo:D5}";
+
+                string narrTo = string.IsNullOrWhiteSpace(request.Narration)
+                    ? $"[आंतर-शाखा सेटलमेंट] {fromBranch.BranchName} कडून IBT शिल्लक सेटलमेंट जमा ({request.PaymentMode})"
+                    : $"[आंतर-शाखा सेटलमेंट] {request.Narration}";
+
+                var vTo = new Voucher
+                {
+                    BranchID = request.ToBranchID,
+                    VoucherNo = vNoTo,
+                    VoucherDate = request.SettlementDate,
+                    VoucherType = "Receipt",
+                    Narration = narrTo,
+                    TotalAmount = request.SettlementAmount,
+                    Status = "Approved",
+                    IsIbtVoucher = true,
+                    TargetBranchID = request.FromBranchID,
+                    CreatedBy = request.CreatedBy ?? 1,
+                    ApprovedBy = request.CreatedBy ?? 1,
+                    ApprovedOn = DateTime.Now,
+                    RelatedVoucherID = vFrom.VoucherID
+                };
+                _context.Vouchers.Add(vTo);
+                await _context.SaveChangesAsync();
+
+                _context.VoucherDetails.Add(new VoucherDetail
+                {
+                    VoucherID = vTo.VoucherID,
+                    LedgerID = toFundLedgerId,
+                    DrCr = "Dr",
+                    Amount = request.SettlementAmount
+                });
+
+                _context.VoucherDetails.Add(new VoucherDetail
+                {
+                    VoucherID = vTo.VoucherID,
+                    LedgerID = ibtInTo,
+                    DrCr = "Cr",
+                    Amount = request.SettlementAmount
+                });
+
+                vFrom.RelatedVoucherID = vTo.VoucherID;
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = $"आंतर-शाखा सेटलमेंट यशस्वीरित्या पूर्ण झाली! व्हाउचर्स तयार झाले: {vNoFrom} व {vNoTo}",
+                    fromVoucherNo = vNoFrom,
+                    toVoucherNo = vNoTo,
+                    amount = request.SettlementAmount
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error creating IBT settlement vouchers", error = ex.Message });
+            }
+        }
     }
+
 
 
     public class MemberLedgerBalanceDto

@@ -220,7 +220,17 @@ namespace Bhisi.Api.Controllers
                 
                 if (cashOutflow > 0)
                 {
-                    decimal currentCash = cashLedger.OpeningBalanceType == "Dr" ? cashLedger.OpeningBalance : -cashLedger.OpeningBalance;
+                    decimal currentCash = 0;
+                    var branchOb = await _context.BranchLedgerOpeningBalances
+                        .FirstOrDefaultAsync(b => b.BranchID == voucher.BranchID && b.LedgerID == branchCashLedgerId);
+                    if (branchOb != null)
+                    {
+                        currentCash = branchOb.OpeningBalanceType == "Dr" ? branchOb.OpeningBalance : -branchOb.OpeningBalance;
+                    }
+                    else if (voucher.BranchID == 1)
+                    {
+                        currentCash = cashLedger.OpeningBalanceType == "Dr" ? cashLedger.OpeningBalance : -cashLedger.OpeningBalance;
+                    }
                     var approvedCashVds = await _context.VoucherDetails
                         .Include(vd => vd.Voucher)
                         .Where(vd => vd.LedgerID == branchCashLedgerId && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == voucher.BranchID)

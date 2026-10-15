@@ -69,6 +69,7 @@ import DaybookSummary from './components/DaybookSummary';
 import BalanceSheet from './components/BalanceSheet';
 import BalanceSheetFormN from './components/BalanceSheetFormN';
 import SwanidhiReport from './components/SwanidhiReport';
+import IbtReconciliationReport from './components/IbtReconciliationReport';
 import GeneralLedger from './components/GeneralLedger';
 import CashBookReport from './components/CashBookReport';
 import VoucherPrint from './components/VoucherPrint';
@@ -800,6 +801,7 @@ function App() {
         {activeTab === 'profit-loss' && <ProfitAndLoss />}
         {activeTab === 'balance-sheet' && <BalanceSheet />}
         {activeTab === 'balance-sheet-form-n' && <BalanceSheetFormN />}
+        {activeTab === 'ibt-reconciliation-report' && <IbtReconciliationReport />}
         {activeTab === 'swanidhi-report' && <SwanidhiReport />}
         {activeTab === 'general-ledger' && <GeneralLedger />}
         {activeTab === 'voucher-batch-print' && <VoucherBatchPrint />}

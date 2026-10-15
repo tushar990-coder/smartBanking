@@ -146,13 +146,13 @@ export default function LoginForm() {
 
       {/* Subtle Aesthetic Background Geometry (Connected Nodes / Clay Dots) */}
       <div className="absolute inset-0 pointer-events-none opacity-40 overflow-hidden">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="15%" cy="20%" r="48" fill="rgba(255,255,255,0.7)" filter="drop-shadow(0 4px 12px rgba(180,165,175,0.12))" />
-          <circle cx="85%" cy="25%" r="40" fill="rgba(255,255,255,0.6)" filter="drop-shadow(0 4px 10px rgba(180,165,175,0.1))" />
-          <circle cx="20%" cy="80%" r="36" fill="rgba(255,255,255,0.6)" filter="drop-shadow(0 4px 10px rgba(180,165,175,0.1))" />
-          <circle cx="82%" cy="78%" r="52" fill="rgba(255,255,255,0.7)" filter="drop-shadow(0 4px 12px rgba(180,165,175,0.12))" />
-          <path d="M 15% 20% Q 50% 10% 85% 25%" stroke="rgba(195, 185, 195, 0.35)" strokeWidth="1.2" strokeDasharray="4 4" fill="none" />
-          <path d="M 20% 80% Q 50% 90% 82% 78%" stroke="rgba(195, 185, 195, 0.35)" strokeWidth="1.2" strokeDasharray="4 4" fill="none" />
+        <svg className="w-full h-full" viewBox="0 0 1000 1000" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="150" cy="200" r="48" fill="rgba(255,255,255,0.7)" filter="drop-shadow(0 4px 12px rgba(180,165,175,0.12))" />
+          <circle cx="850" cy="250" r="40" fill="rgba(255,255,255,0.6)" filter="drop-shadow(0 4px 10px rgba(180,165,175,0.1))" />
+          <circle cx="200" cy="800" r="36" fill="rgba(255,255,255,0.6)" filter="drop-shadow(0 4px 10px rgba(180,165,175,0.1))" />
+          <circle cx="820" cy="780" r="52" fill="rgba(255,255,255,0.7)" filter="drop-shadow(0 4px 12px rgba(180,165,175,0.12))" />
+          <path d="M 150 200 Q 500 100 850 250" stroke="rgba(195, 185, 195, 0.35)" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" fill="none" />
+          <path d="M 200 800 Q 500 900 820 780" stroke="rgba(195, 185, 195, 0.35)" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" fill="none" />
         </svg>
       </div>
 

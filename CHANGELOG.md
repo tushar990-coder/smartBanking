@@ -2,6 +2,16 @@
 
 ---
 
+## 📅 [2026-10-15] - आवृत्ती v2.5.54 (LoginForm Background Geometry SVG Numeric Compliance & Console Error Fix v2.5.54)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **लॉगिन स्क्रीन पार्श्वभूमी SVG मानकीकरण व कन्सोल त्रुटी निवारण (`LoginForm.tsx`):**
+  * **कन्सोल त्रुटी निवारण (`Error: <path> attribute d: Expected number` Fix):** W3C SVG नियमांनुसार `<path d="...">` मध्ये टक्केवारी (`%`) चे निर्देशांक अवैध ठरून ब्राउझर कन्सोलमध्ये येणारा लाल एरर पूर्णपणे बंद केला.
+  * **रिस्पॉन्सिव्ह व्ह्यूबॉक्स मानकीकरण (`viewBox="0 0 1000 1000"` & `preserveAspectRatio="none"`):** पाथ व वर्तुळांचे निर्देशांक शुद्ध संख्यात्मक (उदा. `150 200`, `850 250`, `500 100`) मध्ये रूपांतरित करून सर्व प्रकारच्या स्क्रीनवर (मोबाईल, टॅबलेट, डेस्कटॉप) एकसमान व कुरकुरीत (`vectorEffect="non-scaling-stroke"`) प्रदर्शन सुनिश्चित केले.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (`VPS Multi-App Master Patch v2.5.54`).**
+
+---
+
 ## 📅 [2026-10-15] - आवृत्ती v2.5.53 (Authentication & Core Schema Self-Healing, DefaultIbtLedgerID & BranchLedgerOpeningBalances Automated Migration v2.5.53)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)

@@ -2,6 +2,28 @@
 
 ---
 
+## 📅 [2026-10-15] - आवृत्ती v2.5.57 (Cross-Branch IBT Dual-Voucher for Pigmy, RD & FD Closures v2.5.57)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **कोअर बँकिंग सिस्टीम (CBS) - आंतर-शाखा IBT ड्युअल-व्हाउचर इंजिन (Cross-Branch Dual-Voucher Architecture):**
+  * **मुदत ठेव आंतर-शाखा परतावा व मुदतपूर्व बंद (Cross-Branch FD Maturity & Premature Close):**
+    * मुदत ठेव खाते ज्या शाखेत आहे (उदा. शाखा ब) त्याऐवजी इतर शाखेच्या (उदा. शाखा अ) काऊंटरवर खातेदार पावती वटवण्यासाठी आल्यास आंतर-शाखा ड्युअल-व्हाउचर इंजिन कार्यान्वित.
+    * **काऊंटर शाखा (Branch A, Payment):** काऊंटरच्या प्रत्यक्ष कॅश खात्यातून रोख अदा (`Dr IBT(B)`, `Cr Cash(A)`).
+    * **मूळ शाखा (Branch B, Journal):** ठेवीदाराचे दायित्व व व्याज तरतूद बंद करून IBT खात्याला क्रेडिट (`Dr FD Liability`, `Dr Interest Payable`, `Dr Interest Expense`, `Cr Penalty/Clawback`, `Cr IBT(A)`).
+    * दोन्ही व्हाउचर्स `RelatedVoucherID`, `IsIbtVoucher = true`, व `TargetBranchID` ने परस्पर संलग्न.
+  * **पिग्मी आंतर-शाखा विड्रॉल व क्लोजर (Cross-Branch Pigmy Withdrawal & Account Closure):**
+    * पिग्मी खात्याची अंशतः विड्रॉल किंवा संपूर्ण खाते बंद करण्याची प्रक्रिया दुसऱ्या शाखेच्या काऊंटरवर सुलभ व सुरक्षित.
+    * **काऊंटर शाखा (Payment):** `Dr IBT`, `Cr Cash` (निव्वळ अदा रक्कम `netPaid` / `netPayable`).
+    * **गृह शाखा (Journal):** `Dr Pigmy Liability`, `Dr Interest Expense`, `Cr Penalty Income`, `Cr IBT`.
+  * **आरडी हप्ता भरणा, मुदतपूर्ती व मुदतपूर्व बंद (Cross-Branch RD Collection & Closures):**
+    * **हप्ता भरणा (Counter Receipt):** काऊंटर शाखेत `Dr Cash`, `Cr IBT` आणि मूळ शाखेत `Dr IBT`, `Cr RD Liability`, `Cr Penalty Income`.
+    * **क्लोजर (Matured & Premature):** काऊंटर शाखेतून परतावा पेमेंट व्हाउचर व मूळ शाखेत दायित्व व व्याजाचे परिपूर्ण समायोजन.
+  * **आंतर-शाखा ताळेबंद शून्य ताळमेळ (Zero GL-SL Imbalance):**
+    * दोन्ही शाखांचे स्वतंत्र ताळेबंद (Branch Trial Balance) आणि कन्सॉलिडेटेड ताळेबंद (Consolidated Balance Sheet) पैशा-पैशाने शून्य तफावत (0.00) राहणे हमीबद्ध.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (`VPS Multi-App Master Patch v2.5.57`).**
+
+---
+
 ## 📅 [2026-10-15] - आवृत्ती v2.5.56 (User Branch Isolation, JWT Claims Enforcement & Privilege Escalation Hardening v2.5.56)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)

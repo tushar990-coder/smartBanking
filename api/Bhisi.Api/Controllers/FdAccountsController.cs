@@ -2018,14 +2018,11 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{account.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज पूर्ण फेडल्याशिवाय ही ठेव बंद करता येत नाही.");
             }
 
-            // Multi-branch Security: Restrict closure to Account's Home Branch or Head Office
+            // Multi-branch CBS: Support Cross-Branch Matured Closure with IBT Dual-Voucher
             int userBranchId = User.GetOperatingBranchId();
             bool isHO = User.IsHeadOfficeAdmin();
-
-            if (!isHO && userBranchId > 0 && account.BranchID != userBranchId)
-            {
-                return BadRequest($"मुदत ठेव खाते बंद करण्याची प्रक्रिया फक्त खात्याच्या मूळ शाखेत (Home Branch #{account.BranchID}) किंवा मुख्य कार्यालयातूनच (HO) करता येते.");
-            }
+            int operatingBranchId = userBranchId > 0 ? userBranchId : (account.BranchID > 0 ? account.BranchID : 1);
+            bool isCrossBranchTxn = (operatingBranchId != account.BranchID);
 
             // Fetch accrued interest
             var accruedFromTx = await _context.FdTransactions
@@ -2444,12 +2441,12 @@ namespace Bhisi.Api.Controllers
                             }
                             else
                             {
-                                payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
+                                payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, operatingBranchId, "FD");
                             }
                         }
                         else
                         {
-                            payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
+                            payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, operatingBranchId, "FD");
                         }
 
                         var payoutLedger = await _context.Ledgers.FindAsync(payoutLedgerId);
@@ -2458,47 +2455,127 @@ namespace Bhisi.Api.Controllers
                             return BadRequest("Required payout ledger not found.");
                         }
 
-                        // Create Voucher
-                        var voucher = new Voucher
-                        {
-                            BranchID = account.BranchID,
-                            VoucherNo = $"JV-FD-CLOSE-{account.AccountNo}",
-                            VoucherDate = closureDate,
-                            VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
-                            TotalAmount = totalMaturityPayout,
-                            Narration = (string.IsNullOrWhiteSpace(req?.Narration) 
-                                ? $"मुदत ठेव पूर्ण क्लोजर (FD Maturity Payout - {paymentMode}): {account.AccountNo} [मुदतपूर्ती: {account.MaturityDate:dd/MM/yyyy}, प्रक्रिया: {DateTime.Now:dd/MM/yyyy}{(closureDate.Date < DateTime.Today ? $", As-on: {closureDate:dd/MM/yyyy}" : "")}]{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
-                                : req.Narration) + manualAuditNote,
-                            CreatedBy = 1,
-                            CreatedOn = DateTime.Now
-                        };
-                        _context.Vouchers.Add(voucher);
-                        await _context.SaveChangesAsync();
+                        int finalVoucherId;
 
-                        // Dr FD Liability (Principal)
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                        
-                        // Dr Interest Payable (Contracted Matured Interest)
-                        if (payableLedger != null && totalInterest > 0)
+                        if (!isCrossBranchTxn)
                         {
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = totalInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            // Standard Single-Branch Voucher
+                            var voucher = new Voucher
+                            {
+                                BranchID = account.BranchID,
+                                VoucherNo = $"JV-FD-CLOSE-{account.AccountNo}",
+                                VoucherDate = closureDate,
+                                VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
+                                TotalAmount = totalMaturityPayout,
+                                Narration = (string.IsNullOrWhiteSpace(req?.Narration) 
+                                    ? $"मुदत ठेव पूर्ण क्लोजर (FD Maturity Payout - {paymentMode}): {account.AccountNo} [मुदतपूर्ती: {account.MaturityDate:dd/MM/yyyy}, प्रक्रिया: {DateTime.Now:dd/MM/yyyy}{(closureDate.Date < DateTime.Today ? $", As-on: {closureDate:dd/MM/yyyy}" : "")}]{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
+                                    : req.Narration) + manualAuditNote,
+                                CreatedBy = 1,
+                                CreatedOn = DateTime.Now
+                            };
+                            _context.Vouchers.Add(voucher);
+                            await _context.SaveChangesAsync();
+
+                            // Dr FD Liability (Principal)
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            
+                            // Dr Interest Payable (Contracted Matured Interest)
+                            if (payableLedger != null && totalInterest > 0)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = totalInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            }
+
+                            // Dr Interest Expense (Overdue Post-Maturity Interest)
+                            if (overdueInterest > 0 && expenseLedger != null)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = overdueInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            }
+
+                            // Cr Payout Ledger (Cash, Bank, or Saving)
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                            finalVoucherId = voucher.VoucherID;
                         }
-
-                        // Dr Interest Expense (Overdue Post-Maturity Interest)
-                        if (overdueInterest > 0 && expenseLedger != null)
+                        else
                         {
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = overdueInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                        }
+                            // CBS Dual-Voucher IBT Engine for Cross-Branch FD Maturity Payout
+                            int counterBranchId = operatingBranchId;
+                            int homeBranchId = account.BranchID;
+                            int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, counterBranchId, homeBranchId);
 
-                        // Cr Payout Ledger (Cash, Bank, or Saving)
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            // 1. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash/Payout Ledger
+                            var counterVoucher = new Voucher
+                            {
+                                BranchID = counterBranchId,
+                                VoucherNo = $"PV-{counterBranchId}-{closureDate:yyyyMMdd}-FD-CLOSE-{account.AccountNo}",
+                                VoucherDate = closureDate,
+                                VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
+                                TotalAmount = totalMaturityPayout,
+                                Narration = (string.IsNullOrWhiteSpace(req?.Narration)
+                                    ? $"[आंतर-शाखा मुदत ठेव परतावा] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा"
+                                    : $"[आंतर-शाखा मुदत ठेव परतावा] {req.Narration}") + manualAuditNote,
+                                CreatedBy = 1,
+                                CreatedOn = DateTime.Now,
+                                IsIbtVoucher = true,
+                                TargetBranchID = homeBranchId
+                            };
+                            _context.Vouchers.Add(counterVoucher);
+                            await _context.SaveChangesAsync();
+
+                            // Dr IBT
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            // Cr Cash
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                            // 2. Home Branch Voucher (Branch B, Journal): Dr FD Liability, Dr Payable, Dr Expense, Cr IBT
+                            var homeVoucher = new Voucher
+                            {
+                                BranchID = homeBranchId,
+                                VoucherNo = $"JV-FD-CLOSE-{account.AccountNo}",
+                                VoucherDate = closureDate,
+                                VoucherType = "Journal",
+                                TotalAmount = totalMaturityPayout,
+                                Narration = (string.IsNullOrWhiteSpace(req?.Narration)
+                                    ? $"[आंतर-शाखा मुदत ठेव क्लोजर] काऊंटर शाखा #{counterBranchId} वरून परतावा अदा (खाते: {account.AccountNo})"
+                                    : $"[आंतर-शाखा मुदत ठेव क्लोजर] {req.Narration}") + manualAuditNote,
+                                CreatedBy = 1,
+                                CreatedOn = DateTime.Now,
+                                IsIbtVoucher = true,
+                                TargetBranchID = counterBranchId,
+                                RelatedVoucherID = counterVoucher.VoucherID
+                            };
+                            _context.Vouchers.Add(homeVoucher);
+                            await _context.SaveChangesAsync();
+
+                            counterVoucher.RelatedVoucherID = homeVoucher.VoucherID;
+
+                            // Dr FD Liability (Principal)
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                            // Dr Interest Payable (Contracted Matured Interest)
+                            if (payableLedger != null && totalInterest > 0)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = totalInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            }
+
+                            // Dr Interest Expense (Overdue Post-Maturity Interest)
+                            if (overdueInterest > 0 && expenseLedger != null)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = overdueInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            }
+
+                            // Cr IBT Ledger
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalMaturityPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                            finalVoucherId = counterVoucher.VoucherID;
+                        }
 
                         // Log Close Transaction
                         var tx = new FdTransaction
                         {
-                            BranchID = account.BranchID,
+                            BranchID = isCrossBranchTxn ? operatingBranchId : account.BranchID,
                             FdAccountID = account.FdAccountID,
-                            VoucherID = voucher.VoucherID,
+                            VoucherID = finalVoucherId,
                             TransactionDate = closureDate,
                             TransactionType = "Payout",
                             DebitCredit = "Dr",
@@ -2510,9 +2587,9 @@ namespace Bhisi.Api.Controllers
                         {
                             _context.FdTransactions.Add(new FdTransaction
                             {
-                                BranchID = account.BranchID,
+                                BranchID = isCrossBranchTxn ? operatingBranchId : account.BranchID,
                                 FdAccountID = account.FdAccountID,
-                                VoucherID = voucher.VoucherID,
+                                VoucherID = finalVoucherId,
                                 TransactionDate = closureDate,
                                 TransactionType = "Accrual",
                                 DebitCredit = "Cr",
@@ -2778,14 +2855,11 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"सदर मुदत ठेव पावतीवर कर्ज खाते क्र. '{account.LienLoanAccountNo ?? "अज्ञात"}' चा तारण बोजा (Lien: ₹{account.LienAmount ?? account.DepositAmount:N2}) नोंदवला आहे. कर्ज पूर्ण फेडल्याशिवाय ही ठेव बंद करता येत नाही.");
             }
 
-            // Multi-branch Security: Restrict premature closure to Account's Home Branch or Head Office
+            // Multi-branch CBS: Support Cross-Branch Premature Closure with IBT Dual-Voucher
             int userBranchId = User.GetOperatingBranchId();
             bool isHO = User.IsHeadOfficeAdmin();
-
-            if (!isHO && userBranchId > 0 && account.BranchID != userBranchId)
-            {
-                return BadRequest($"मुदत ठेव खाते बंद करण्याची प्रक्रिया फक्त खात्याच्या मूळ शाखेत (Home Branch #{account.BranchID}) किंवा मुख्य कार्यालयातूनच (HO) करता येते.");
-            }
+            int operatingBranchId = userBranchId > 0 ? userBranchId : (account.BranchID > 0 ? account.BranchID : 1);
+            bool isCrossBranchTxn = (operatingBranchId != account.BranchID);
 
             DateTime effectiveClosureDate = req?.ClosureDate ?? closureDate ?? DateTime.Today;
             if (effectiveClosureDate.Date < account.OpeningDate.Date)
@@ -3222,12 +3296,12 @@ namespace Bhisi.Api.Controllers
                             }
                             else
                             {
-                                payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
+                                payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, operatingBranchId, "FD");
                             }
                         }
                         else
                         {
-                            payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "FD");
+                            payoutLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, operatingBranchId, "FD");
                         }
 
                         var payoutLedger = await _context.Ledgers.FindAsync(payoutLedgerId);
@@ -3236,70 +3310,171 @@ namespace Bhisi.Api.Controllers
                             return BadRequest("Required payout ledger not found.");
                         }
 
-                        // Create Voucher
-                        var voucher = new Voucher
+                        int finalVoucherId;
+
+                        if (!isCrossBranchTxn)
                         {
-                            BranchID = account.BranchID,
-                            VoucherNo = $"JV-FD-PRECLOSE-{account.AccountNo}",
-                            VoucherDate = effectiveClosureDate,
-                            VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
-                            TotalAmount = netPayoutAmount,
-                            Narration = (string.IsNullOrWhiteSpace(req?.Narration)
-                                ? $"मुदतपूर्व बंद (Premature Close - {paymentMode}) - कालावधी: {actualDays} दिवस{(effectiveClosureDate.Date < DateTime.Today ? $" ({effectiveClosureDate:dd/MM/yyyy} As-on)" : "")}, पुनर्हिशोब व्याज: ₹{recalculatedInterest}, दंड कपात: ₹{penaltyClawback}{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}"
-                                : req.Narration) + manualAuditNote,
-                            CreatedBy = 1,
-                            CreatedOn = DateTime.Now
-                        };
-                        _context.Vouchers.Add(voucher);
-                        await _context.SaveChangesAsync();
-
-                        // Dr FD Liability (Principal)
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-
-                        if (isPeriodicPayout)
-                        {
-                            // In MIS: Periodic cash payouts already took place, so no Interest Payable balance to clear.
-                            // Cr Payout Ledger (Net payout)
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-
-                            // Cr Clawback Income / Recovery
-                            if (penaltyClawback > 0 && clawbackLedger != null)
+                            // Standard Single-Branch Voucher
+                            var voucher = new Voucher
                             {
-                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                BranchID = account.BranchID,
+                                VoucherNo = $"JV-FD-PRECLOSE-{account.AccountNo}",
+                                VoucherDate = effectiveClosureDate,
+                                VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
+                                TotalAmount = netPayoutAmount,
+                                Narration = (string.IsNullOrWhiteSpace(req?.Narration)
+                                    ? $"मुदतपूर्व बंद (Premature Close - {paymentMode}) - कालावधी: {actualDays} दिवस{(effectiveClosureDate.Date < DateTime.Today ? $" ({effectiveClosureDate:dd/MM/yyyy} As-on)" : "")}, पुनर्हिशोब व्याज: ₹{recalculatedInterest}, दंड कपात: ₹{penaltyClawback}{(paymentMode == "Bank" && !string.IsNullOrEmpty(req?.ChequeNo) ? $" Cheque: {req.ChequeNo}" : "")}"
+                                    : req.Narration) + manualAuditNote,
+                                CreatedBy = 1,
+                                CreatedOn = DateTime.Now
+                            };
+                            _context.Vouchers.Add(voucher);
+                            await _context.SaveChangesAsync();
+
+                            // Dr FD Liability (Principal)
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                            if (isPeriodicPayout)
+                            {
+                                // In MIS: Periodic cash payouts already took place, so no Interest Payable balance to clear.
+                                // Cr Payout Ledger (Net payout)
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                                // Cr Clawback Income / Recovery
+                                if (penaltyClawback > 0 && clawbackLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
                             }
+                            else
+                            {
+                                // In Cumulative / Simple FD:
+                                // Dr Interest Payable (Interest already accrued is fully debited to clear balance sheet liability)
+                                if (payableLedger != null && alreadyAccruedInt > 0)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = alreadyAccruedInt, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+
+                                // Dr Additional Current Interest Expense (if recalculated interest exceeds already accrued)
+                                if (recalculatedInterest > alreadyAccruedInt && expenseLedger != null)
+                                {
+                                    decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+
+                                // Cr Payout Ledger (Net payout = Principal + recalculatedInterest)
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                                // Cr Interest Expense / Clawback Income (Reversing excess prior year provisions back to P&L)
+                                if (penaltyClawback > 0 && clawbackLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+                            }
+
+                            finalVoucherId = voucher.VoucherID;
                         }
                         else
                         {
-                            // In Cumulative / Simple FD:
-                            // Dr Interest Payable (Interest already accrued is fully debited to clear balance sheet liability)
-                            if (payableLedger != null && alreadyAccruedInt > 0)
+                            // CBS Dual-Voucher IBT Engine for Cross-Branch FD Premature Close
+                            int counterBranchId = operatingBranchId;
+                            int homeBranchId = account.BranchID;
+                            int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, counterBranchId, homeBranchId);
+
+                            // 1. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash/Payout Ledger
+                            var counterVoucher = new Voucher
                             {
-                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = alreadyAccruedInt, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                BranchID = counterBranchId,
+                                VoucherNo = $"PV-{counterBranchId}-{effectiveClosureDate:yyyyMMdd}-FD-PRECLOSE-{account.AccountNo}",
+                                VoucherDate = effectiveClosureDate,
+                                VoucherType = paymentMode == "Cash" ? "Payment" : (paymentMode == "Bank" ? "Bank Payment" : "Transfer"),
+                                TotalAmount = netPayoutAmount,
+                                Narration = (string.IsNullOrWhiteSpace(req?.Narration)
+                                    ? $"[आंतर-शाखा मुदत ठेव मुदतपूर्व परतावा] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा"
+                                    : $"[आंतर-शाखा मुदत ठेव मुदतपूर्व परतावा] {req.Narration}") + manualAuditNote,
+                                CreatedBy = 1,
+                                CreatedOn = DateTime.Now,
+                                IsIbtVoucher = true,
+                                TargetBranchID = homeBranchId
+                            };
+                            _context.Vouchers.Add(counterVoucher);
+                            await _context.SaveChangesAsync();
+
+                            // Dr IBT
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                            // Cr Cash
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                            // 2. Home Branch Voucher (Branch B, Journal): Dr FD Liability, Dr Payable, Dr Expense, Cr Clawback, Cr IBT
+                            var homeVoucher = new Voucher
+                            {
+                                BranchID = homeBranchId,
+                                VoucherNo = $"JV-FD-PRECLOSE-{account.AccountNo}",
+                                VoucherDate = effectiveClosureDate,
+                                VoucherType = "Journal",
+                                TotalAmount = netPayoutAmount,
+                                Narration = (string.IsNullOrWhiteSpace(req?.Narration)
+                                    ? $"[आंतर-शाखा मुदत ठेव मुदतपूर्व बंद] काऊंटर शाखा #{counterBranchId} वरून परतावा अदा (खाते: {account.AccountNo})"
+                                    : $"[आंतर-शाखा मुदत ठेव मुदतपूर्व बंद] {req.Narration}") + manualAuditNote,
+                                CreatedBy = 1,
+                                CreatedOn = DateTime.Now,
+                                IsIbtVoucher = true,
+                                TargetBranchID = counterBranchId,
+                                RelatedVoucherID = counterVoucher.VoucherID
+                            };
+                            _context.Vouchers.Add(homeVoucher);
+                            await _context.SaveChangesAsync();
+
+                            counterVoucher.RelatedVoucherID = homeVoucher.VoucherID;
+
+                            // Dr FD Liability (Principal)
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Dr", Amount = account.DepositAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                            if (isPeriodicPayout)
+                            {
+                                // Cr IBT Ledger
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                                // Cr Clawback Income / Recovery
+                                if (penaltyClawback > 0 && clawbackLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+                            }
+                            else
+                            {
+                                // Dr Interest Payable
+                                if (payableLedger != null && alreadyAccruedInt > 0)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = alreadyAccruedInt, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+
+                                // Dr Additional Current Interest Expense
+                                if (recalculatedInterest > alreadyAccruedInt && expenseLedger != null)
+                                {
+                                    decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
+
+                                // Cr IBT Ledger
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+
+                                // Cr Interest Expense / Clawback Income
+                                if (penaltyClawback > 0 && clawbackLedger != null)
+                                {
+                                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                                }
                             }
 
-                            // Dr Additional Current Interest Expense (if recalculated interest exceeds already accrued)
-                            if (recalculatedInterest > alreadyAccruedInt && expenseLedger != null)
-                            {
-                                decimal unprovisionedInterest = recalculatedInterest - alreadyAccruedInt;
-                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = unprovisionedInterest, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                            }
-
-                            // Cr Payout Ledger (Net payout = Principal + recalculatedInterest)
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutLedger.LedgerID, DrCr = "Cr", Amount = netPayoutAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-
-                            // Cr Interest Expense / Clawback Income (Reversing excess prior year provisions back to P&L)
-                            if (penaltyClawback > 0 && clawbackLedger != null)
-                            {
-                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = clawbackLedger.LedgerID, DrCr = "Cr", Amount = penaltyClawback, CustomerID = account.CustomerID, MemberID = linkedMemberId });
-                            }
+                            finalVoucherId = counterVoucher.VoucherID;
                         }
 
                         // Log Close Transaction
                         var tx = new FdTransaction
                         {
-                            BranchID = account.BranchID,
+                            BranchID = isCrossBranchTxn ? operatingBranchId : account.BranchID,
                             FdAccountID = account.FdAccountID,
-                            VoucherID = voucher.VoucherID,
+                            VoucherID = finalVoucherId,
                             TransactionDate = effectiveClosureDate,
                             TransactionType = "Premature_Close",
                             DebitCredit = "Dr",

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -396,7 +397,12 @@ namespace Bhisi.Api.Controllers
                         ?? await _context.Ledgers.FirstAsync();
                 }
 
-                int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "PIGMY");
+                int userBranchId = User.GetOperatingBranchId();
+                int counterBranchId = userBranchId > 0 ? userBranchId : (request.BranchId > 0 ? request.BranchId : (account.BranchID > 0 ? account.BranchID : 1));
+                int homeBranchId = account.BranchID > 0 ? account.BranchID : 1;
+                bool isCrossBranchTxn = (counterBranchId != homeBranchId);
+
+                int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, counterBranchId, "PIGMY");
                 var cashLedger = await _context.Ledgers.FindAsync(branchCashId)
                     ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Assets")
                     ?? await _context.Ledgers.FirstAsync();
@@ -407,27 +413,7 @@ namespace Bhisi.Api.Controllers
 
                 string penaltyNotice = penaltyAmount > 0 ? $" (दंड: ₹{penaltyAmount:N2} @ {penaltyRate}%)" : "";
 
-                var voucherDetails = new List<VoucherDetail>
-                {
-                    // Debit Liability with requested gross amount
-                    new VoucherDetail
-                    {
-                        LedgerID = liabilityLedger.LedgerID,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Dr",
-                        Amount = request.Amount
-                    },
-                    // Credit Cash with net paid
-                    new VoucherDetail
-                    {
-                        LedgerID = cashLedger.LedgerID,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Cr",
-                        Amount = netPaid
-                    }
-                };
-
-                // If penalty applied, credit Penalty/Sundry Income
+                int penaltyLedgerId = cashLedger.LedgerID;
                 if (penaltyAmount > 0)
                 {
                     var penaltyLedger = await _context.Ledgers.FirstOrDefaultAsync(l =>
@@ -436,41 +422,181 @@ namespace Bhisi.Api.Controllers
                         l.LedgerName.Contains("Penalty") ||
                         (l.AccountType == "Income" && l.LedgerName.Contains("विविध")));
 
-                    int penaltyLedgerId = penaltyLedger?.LedgerID ?? cashLedger.LedgerID;
-                    voucherDetails.Add(new VoucherDetail
-                    {
-                        LedgerID = penaltyLedgerId,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Cr",
-                        Amount = penaltyAmount
-                    });
+                    penaltyLedgerId = penaltyLedger?.LedgerID ?? cashLedger.LedgerID;
                 }
 
-                // If premature interest applied on partial withdrawal, debit Interest Expense
-                if (interestAmount > 0)
+                int expenseLedgerId = account.PigmyScheme?.InterestExpenseLedgerID ?? liabilityLedger.LedgerID;
+                string finalVoucherNo;
+
+                if (!isCrossBranchTxn)
                 {
-                    int expenseLedgerId = account.PigmyScheme?.InterestExpenseLedgerID ?? liabilityLedger.LedgerID;
-                    voucherDetails.Add(new VoucherDetail
+                    // Standard Single-Branch Voucher
+                    var voucherDetails = new List<VoucherDetail>
                     {
-                        LedgerID = expenseLedgerId,
+                        // Debit Liability with requested gross amount
+                        new VoucherDetail
+                        {
+                            LedgerID = liabilityLedger.LedgerID,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Dr",
+                            Amount = request.Amount
+                        },
+                        // Credit Cash with net paid
+                        new VoucherDetail
+                        {
+                            LedgerID = cashLedger.LedgerID,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Cr",
+                            Amount = netPaid
+                        }
+                    };
+
+                    if (penaltyAmount > 0)
+                    {
+                        voucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = penaltyLedgerId,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Cr",
+                            Amount = penaltyAmount
+                        });
+                    }
+
+                    if (interestAmount > 0)
+                    {
+                        voucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = expenseLedgerId,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Dr",
+                            Amount = interestAmount
+                        });
+                    }
+
+                    var voucher = new Voucher
+                    {
+                        BranchID = homeBranchId,
+                        VoucherNo = $"VCH-WDR-{todayStr}-{nextSeq:D4}",
+                        VoucherDate = DateTime.Today,
+                        VoucherType = "Payment",
+                        TotalAmount = request.Amount + interestAmount,
+                        Narration = $"पिग्मी अंशतः विड्रॉल (सायकल #{account.CurrentCycleNumber}) खाते {account.AccountNo} - {account.Customer?.FirstName}. {penaltyNotice} {request.Narration}".Trim(),
+                        CreatedBy = 1,
+                        VoucherDetails = voucherDetails
+                    };
+                    _context.Vouchers.Add(voucher);
+                    await _context.SaveChangesAsync();
+                    finalVoucherNo = voucher.VoucherNo;
+                }
+                else
+                {
+                    // CBS Dual-Voucher IBT Engine for Cross-Branch Pigmy Withdrawal
+                    int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, counterBranchId, homeBranchId);
+
+                    // 1. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash
+                    var counterVoucher = new Voucher
+                    {
+                        BranchID = counterBranchId,
+                        VoucherNo = $"PV-{counterBranchId}-{todayStr}-PIGMY-WDR-{nextSeq:D4}",
+                        VoucherDate = DateTime.Today,
+                        VoucherType = "Payment",
+                        TotalAmount = netPaid,
+                        Narration = $"[आंतर-शाखा पिग्मी विड्रॉल] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा. {penaltyNotice} {request.Narration}".Trim(),
+                        CreatedBy = 1,
+                        CreatedOn = DateTime.Now,
+                        IsIbtVoucher = true,
+                        TargetBranchID = homeBranchId
+                    };
+                    _context.Vouchers.Add(counterVoucher);
+                    await _context.SaveChangesAsync();
+
+                    // Dr IBT
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = counterVoucher.VoucherID,
+                        LedgerID = ibtLedgerId,
                         CustomerID = account.CustomerID,
                         DrCr = "Dr",
-                        Amount = interestAmount
+                        Amount = netPaid
                     });
-                }
+                    // Cr Cash
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = counterVoucher.VoucherID,
+                        LedgerID = cashLedger.LedgerID,
+                        CustomerID = account.CustomerID,
+                        DrCr = "Cr",
+                        Amount = netPaid
+                    });
 
-                var voucher = new Voucher
-                {
-                    BranchID = request.BranchId,
-                    VoucherNo = $"VCH-WDR-{todayStr}-{nextSeq:D4}",
-                    VoucherDate = DateTime.Today,
-                    VoucherType = "Payment",
-                    TotalAmount = request.Amount,
-                    Narration = $"पिग्मी अंशतः विड्रॉल (सायकल #{account.CurrentCycleNumber}) खाते {account.AccountNo} - {account.Customer?.FirstName}. {penaltyNotice} {request.Narration}".Trim(),
-                    CreatedBy = 1,
-                    VoucherDetails = voucherDetails
-                };
-                _context.Vouchers.Add(voucher);
+                    // 2. Home Branch Voucher (Branch B, Journal): Dr Pigmy Liability, Dr Interest Expense, Cr Penalty, Cr IBT
+                    var homeVoucher = new Voucher
+                    {
+                        BranchID = homeBranchId,
+                        VoucherNo = $"JV-PIGMY-WDR-{todayStr}-{nextSeq:D4}",
+                        VoucherDate = DateTime.Today,
+                        VoucherType = "Journal",
+                        TotalAmount = request.Amount + interestAmount,
+                        Narration = $"[आंतर-शाखा पिग्मी विड्रॉल] काऊंटर शाखा #{counterBranchId} वरून विड्रॉल अदा (सायकल #{account.CurrentCycleNumber}, खाते: {account.AccountNo}). {penaltyNotice} {request.Narration}".Trim(),
+                        CreatedBy = 1,
+                        CreatedOn = DateTime.Now,
+                        IsIbtVoucher = true,
+                        TargetBranchID = counterBranchId,
+                        RelatedVoucherID = counterVoucher.VoucherID
+                    };
+                    _context.Vouchers.Add(homeVoucher);
+                    await _context.SaveChangesAsync();
+
+                    counterVoucher.RelatedVoucherID = homeVoucher.VoucherID;
+
+                    // Dr Pigmy Liability
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = homeVoucher.VoucherID,
+                        LedgerID = liabilityLedger.LedgerID,
+                        CustomerID = account.CustomerID,
+                        DrCr = "Dr",
+                        Amount = request.Amount
+                    });
+
+                    // Dr Interest Expense
+                    if (interestAmount > 0)
+                    {
+                        _context.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = homeVoucher.VoucherID,
+                            LedgerID = expenseLedgerId,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Dr",
+                            Amount = interestAmount
+                        });
+                    }
+
+                    // Cr Penalty Income
+                    if (penaltyAmount > 0)
+                    {
+                        _context.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = homeVoucher.VoucherID,
+                            LedgerID = penaltyLedgerId,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Cr",
+                            Amount = penaltyAmount
+                        });
+                    }
+
+                    // Cr IBT
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = homeVoucher.VoucherID,
+                        LedgerID = ibtLedgerId,
+                        CustomerID = account.CustomerID,
+                        DrCr = "Cr",
+                        Amount = netPaid
+                    });
+
+                    finalVoucherNo = counterVoucher.VoucherNo;
+                }
 
                 // Record Audit in PigmyWithdrawals
                 var withdrawalRecord = new PigmyWithdrawal
@@ -489,7 +615,7 @@ namespace Bhisi.Api.Controllers
                     InterestAmount = interestAmount,
                     NetPaidAmount = netPaid,
                     RemainingBalance = newBalance,
-                    VoucherNo = voucher.VoucherNo,
+                    VoucherNo = finalVoucherNo,
                     Narration = request.Narration,
                     CreatedBy = 1,
                     CreatedDate = DateTime.UtcNow
@@ -528,7 +654,7 @@ namespace Bhisi.Api.Controllers
                 return Ok(new
                 {
                     message = $"विड्रॉल यशस्वी! उर्वरित शिल्लक ₹{newBalance:N2} साठी सायकल #{newCycle} (Day 1) सुरू झाली आहे.",
-                    voucherNo = voucher.VoucherNo,
+                    voucherNo = finalVoucherNo,
                     withdrawnAmount = request.Amount,
                     penaltyAmount = penaltyAmount,
                     interestAmount = interestAmount,
@@ -670,7 +796,12 @@ namespace Bhisi.Api.Controllers
                         ?? await _context.Ledgers.FirstAsync();
                 }
 
-                int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "PIGMY");
+                int userBranchId = User.GetOperatingBranchId();
+                int counterBranchId = userBranchId > 0 ? userBranchId : (request.BranchId > 0 ? request.BranchId : (account.BranchID > 0 ? account.BranchID : 1));
+                int homeBranchId = account.BranchID > 0 ? account.BranchID : 1;
+                bool isCrossBranchTxn = (counterBranchId != homeBranchId);
+
+                int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, counterBranchId, "PIGMY");
                 var cashLedger = await _context.Ledgers.FindAsync(branchCashId);
                 if (cashLedger == null)
                 {
@@ -686,27 +817,7 @@ namespace Bhisi.Api.Controllers
                 string penaltyNotice = penaltyAmount > 0 ? $" (दंड: ₹{penaltyAmount:N2} @ {penaltyRate}%)" : "";
                 string interestNotice = interestAmount > 0 ? $" (व्याज: ₹{interestAmount:N2} @ {interestRate}%)" : "";
 
-                var voucherDetails = new List<VoucherDetail>
-                {
-                    // Full liability debited
-                    new VoucherDetail 
-                    { 
-                        LedgerID = liabilityLedger.LedgerID, 
-                        CustomerID = account.CustomerID, 
-                        DrCr = "Dr", 
-                        Amount = account.TotalDepositedAmount 
-                    },
-                    // Net payout cash credited
-                    new VoucherDetail 
-                    { 
-                        LedgerID = cashLedger.LedgerID, 
-                        CustomerID = account.CustomerID, 
-                        DrCr = "Cr", 
-                        Amount = netPayable 
-                    }
-                };
-
-                // If premature penalty applied, credit Penalty Income GL
+                int penaltyLedgerId = cashLedger.LedgerID;
                 if (penaltyAmount > 0)
                 {
                     var penaltyLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
@@ -715,42 +826,182 @@ namespace Bhisi.Api.Controllers
                         l.LedgerName.Contains("Penalty") || 
                         (l.AccountType == "Income" && l.LedgerName.Contains("विविध")));
 
-                    int penaltyLedgerId = penaltyLedger?.LedgerID ?? cashLedger.LedgerID;
-                    voucherDetails.Add(new VoucherDetail
-                    {
-                        LedgerID = penaltyLedgerId,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Cr",
-                        Amount = penaltyAmount
-                    });
+                    penaltyLedgerId = penaltyLedger?.LedgerID ?? cashLedger.LedgerID;
                 }
 
-                // If maturity / premature interest applied, debit Interest Expense GL
-                if (interestAmount > 0)
+                int expenseLedgerId = account.PigmyScheme?.InterestExpenseLedgerID ?? liabilityLedger.LedgerID;
+                string finalVoucherNo;
+
+                if (!isCrossBranchTxn)
                 {
-                    int expenseLedgerId = account.PigmyScheme?.InterestExpenseLedgerID ?? liabilityLedger.LedgerID;
-                    voucherDetails.Add(new VoucherDetail
+                    // Standard Single-Branch Voucher
+                    var voucherDetails = new List<VoucherDetail>
                     {
-                        LedgerID = expenseLedgerId,
+                        // Full liability debited
+                        new VoucherDetail 
+                        { 
+                            LedgerID = liabilityLedger.LedgerID, 
+                            CustomerID = account.CustomerID, 
+                            DrCr = "Dr", 
+                            Amount = account.TotalDepositedAmount 
+                        },
+                        // Net payout cash credited
+                        new VoucherDetail 
+                        { 
+                            LedgerID = cashLedger.LedgerID, 
+                            CustomerID = account.CustomerID, 
+                            DrCr = "Cr", 
+                            Amount = netPayable 
+                        }
+                    };
+
+                    if (penaltyAmount > 0)
+                    {
+                        voucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = penaltyLedgerId,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Cr",
+                            Amount = penaltyAmount
+                        });
+                    }
+
+                    if (interestAmount > 0)
+                    {
+                        voucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = expenseLedgerId,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Dr",
+                            Amount = interestAmount
+                        });
+                    }
+
+                    var voucher = new Voucher
+                    {
+                        BranchID = homeBranchId,
+                        VoucherNo = $"VCH-CLO-{todayStr}-{nextSeq:D4}",
+                        VoucherDate = DateTime.Today,
+                        VoucherType = "Payment",
+                        TotalAmount = account.TotalDepositedAmount + interestAmount,
+                        Narration = $"{typeLabel}Pigmy Closure for A/c {account.AccountNo} - {account.Customer?.FirstName}. (सायकल #{account.CurrentCycleNumber}, {tenureMonthsInCycle:N1}M){penaltyNotice}{interestNotice}{overrideNotice} {request.Narration}".Trim(),
+                        CreatedBy = 1,
+                        VoucherDetails = voucherDetails
+                    };
+
+                    _context.Vouchers.Add(voucher);
+                    await _context.SaveChangesAsync();
+                    finalVoucherNo = voucher.VoucherNo;
+                }
+                else
+                {
+                    // CBS Dual-Voucher IBT Engine for Cross-Branch Pigmy Closure
+                    int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, counterBranchId, homeBranchId);
+
+                    // 1. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash
+                    var counterVoucher = new Voucher
+                    {
+                        BranchID = counterBranchId,
+                        VoucherNo = $"PV-{counterBranchId}-{todayStr}-PIGMY-CLO-{nextSeq:D4}",
+                        VoucherDate = DateTime.Today,
+                        VoucherType = "Payment",
+                        TotalAmount = netPayable,
+                        Narration = $"[आंतर-शाखा पिग्मी क्लोजर] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा. {penaltyNotice}{interestNotice}{overrideNotice} {request.Narration}".Trim(),
+                        CreatedBy = 1,
+                        CreatedOn = DateTime.Now,
+                        IsIbtVoucher = true,
+                        TargetBranchID = homeBranchId
+                    };
+                    _context.Vouchers.Add(counterVoucher);
+                    await _context.SaveChangesAsync();
+
+                    // Dr IBT
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = counterVoucher.VoucherID,
+                        LedgerID = ibtLedgerId,
                         CustomerID = account.CustomerID,
                         DrCr = "Dr",
-                        Amount = interestAmount
+                        Amount = netPayable
                     });
+                    // Cr Cash
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = counterVoucher.VoucherID,
+                        LedgerID = cashLedger.LedgerID,
+                        CustomerID = account.CustomerID,
+                        DrCr = "Cr",
+                        Amount = netPayable
+                    });
+
+                    // 2. Home Branch Voucher (Branch B, Journal): Dr Pigmy Liability, Dr Interest Expense, Cr Penalty, Cr IBT
+                    var homeVoucher = new Voucher
+                    {
+                        BranchID = homeBranchId,
+                        VoucherNo = $"JV-PIGMY-CLO-{todayStr}-{nextSeq:D4}",
+                        VoucherDate = DateTime.Today,
+                        VoucherType = "Journal",
+                        TotalAmount = account.TotalDepositedAmount + interestAmount,
+                        Narration = $"[आंतर-शाखा पिग्मी क्लोजर] काऊंटर शाखा #{counterBranchId} वरून परतावा अदा ({typeLabel}खाते: {account.AccountNo}). {penaltyNotice}{interestNotice}{overrideNotice} {request.Narration}".Trim(),
+                        CreatedBy = 1,
+                        CreatedOn = DateTime.Now,
+                        IsIbtVoucher = true,
+                        TargetBranchID = counterBranchId,
+                        RelatedVoucherID = counterVoucher.VoucherID
+                    };
+                    _context.Vouchers.Add(homeVoucher);
+                    await _context.SaveChangesAsync();
+
+                    counterVoucher.RelatedVoucherID = homeVoucher.VoucherID;
+
+                    // Dr Pigmy Liability
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = homeVoucher.VoucherID,
+                        LedgerID = liabilityLedger.LedgerID,
+                        CustomerID = account.CustomerID,
+                        DrCr = "Dr",
+                        Amount = account.TotalDepositedAmount
+                    });
+
+                    // Dr Interest Expense
+                    if (interestAmount > 0)
+                    {
+                        _context.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = homeVoucher.VoucherID,
+                            LedgerID = expenseLedgerId,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Dr",
+                            Amount = interestAmount
+                        });
+                    }
+
+                    // Cr Penalty Income
+                    if (penaltyAmount > 0)
+                    {
+                        _context.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = homeVoucher.VoucherID,
+                            LedgerID = penaltyLedgerId,
+                            CustomerID = account.CustomerID,
+                            DrCr = "Cr",
+                            Amount = penaltyAmount
+                        });
+                    }
+
+                    // Cr IBT
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = homeVoucher.VoucherID,
+                        LedgerID = ibtLedgerId,
+                        CustomerID = account.CustomerID,
+                        DrCr = "Cr",
+                        Amount = netPayable
+                    });
+
+                    finalVoucherNo = counterVoucher.VoucherNo;
                 }
-
-                var voucher = new Voucher
-                {
-                    BranchID = request.BranchId,
-                    VoucherNo = $"VCH-CLO-{todayStr}-{nextSeq:D4}",
-                    VoucherDate = DateTime.Today,
-                    VoucherType = "Payment",
-                    TotalAmount = account.TotalDepositedAmount + interestAmount,
-                    Narration = $"{typeLabel}Pigmy Closure for A/c {account.AccountNo} - {account.Customer?.FirstName}. (सायकल #{account.CurrentCycleNumber}, {tenureMonthsInCycle:N1}M){penaltyNotice}{interestNotice}{overrideNotice} {request.Narration}".Trim(),
-                    CreatedBy = 1,
-                    VoucherDetails = voucherDetails
-                };
-
-                _context.Vouchers.Add(voucher);
 
                 // Record Pigmy Transaction (Withdrawal/Payout)
                 var closureTx = new PigmyTransaction
@@ -762,7 +1013,7 @@ namespace Bhisi.Api.Controllers
                     DrAmount = account.TotalDepositedAmount,
                     CrAmount = 0,
                     BalanceAmount = 0,
-                    Narration = $"{typeLabel}Pigmy Account Closure Payout - Vch: {voucher.VoucherNo}{penaltyNotice}{interestNotice}",
+                    Narration = $"{typeLabel}Pigmy Account Closure Payout - Vch: {finalVoucherNo}{penaltyNotice}{interestNotice}",
                     MakerId = 1,
                     PostedOn = DateTime.Now
                 };
@@ -778,7 +1029,7 @@ namespace Bhisi.Api.Controllers
                 return Ok(new
                 {
                     message = "खाते यशस्वीरीत्या बंद करण्यात आले आणि परतावा व्हाउचर जनरेट झाले.",
-                    voucherNo = voucher.VoucherNo,
+                    voucherNo = finalVoucherNo,
                     totalDeposited = account.TotalDepositedAmount,
                     penaltyAmount = penaltyAmount,
                     interestAmount = interestAmount,

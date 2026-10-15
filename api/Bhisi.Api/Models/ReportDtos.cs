@@ -226,6 +226,8 @@ namespace Bhisi.Api.Models
         public int? HomeBranchID { get; set; }
         public string HomeBranchName { get; set; } = string.Empty;
         public bool IsCrossBranch { get; set; }
+        public int? VoucherID { get; set; }
+        public int? HomeBranchVoucherID { get; set; }
     }
 
     public class LoanTrancheDetailDto

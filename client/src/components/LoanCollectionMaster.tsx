@@ -220,7 +220,7 @@ interface LienReleasePrompt {
 
 const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate }) => {
     const { user } = useAuth();
-    const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.branchID === 1;
+    const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
 
     const [branches, setBranches] = useState<any[]>([]);
     const [selectedBranchId, setSelectedBranchId] = useState<number>(user?.branchID || 1);

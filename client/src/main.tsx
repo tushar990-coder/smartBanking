@@ -84,6 +84,9 @@ axios.interceptors.request.use((config) => {
         if (!config.headers['Authorization']) {
           config.headers['Authorization'] = `Bearer ${user.token}`;
         }
+        if (user?.branchID && !config.headers['X-Branch-ID']) {
+          config.headers['X-Branch-ID'] = user.branchID.toString();
+        }
       }
     } catch (e) {
       console.error('Failed to parse saved user for token', e);
@@ -156,6 +159,9 @@ window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
         const headers = new Headers(init.headers || {});
         if (!headers.has('Authorization')) {
           headers.set('Authorization', `Bearer ${user.token}`);
+        }
+        if (user?.branchID && !headers.has('X-Branch-ID')) {
+          headers.set('X-Branch-ID', user.branchID.toString());
         }
         init.headers = headers;
       }

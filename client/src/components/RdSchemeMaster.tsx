@@ -35,6 +35,8 @@ interface Ledger {
 
 interface RdScheme {
   rdSchemeID: number;
+  branchID?: number | null;
+  branch?: { branchID: number; branchName: string } | null;
   schemeCode: string;
   schemeCodeNumeric?: number;
   schemeName: string;
@@ -62,6 +64,7 @@ interface RdScheme {
 
 export default function RdSchemeMaster() {
   const [schemes, setSchemes] = useState<RdScheme[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -75,6 +78,8 @@ export default function RdSchemeMaster() {
 
   const [formData, setFormData] = useState({
     rdSchemeID: 0,
+    isGlobal: true,
+    branchID: null as number | null,
     schemeCode: '',
     schemeCodeNumeric: 501,
     schemeName: '',
@@ -121,13 +126,15 @@ export default function RdSchemeMaster() {
     setLoading(true);
     setError('');
     try {
-      const [sRes, lRes] = await Promise.all([
-        axios.get('/api/RdSchemes'),
+      const [sRes, lRes, bRes] = await Promise.all([
+        axios.get('/api/RdSchemes?includeAll=true'),
         axios.get('/api/Ledgers'),
+        axios.get('/api/Branches'),
       ]);
       const fetched: RdScheme[] = sRes.data || [];
       setSchemes(fetched);
       setLedgers(lRes.data || []);
+      setBranches(bRes.data || []);
 
       if (!isEditing) {
         const autoCode = generateSchemeCode(fetched);
@@ -177,6 +184,8 @@ export default function RdSchemeMaster() {
   const handleEdit = (scheme: RdScheme) => {
     setFormData({
       rdSchemeID: scheme.rdSchemeID,
+      isGlobal: !scheme.branchID,
+      branchID: scheme.branchID || null,
       schemeCode: scheme.schemeCode || '',
       schemeCodeNumeric: scheme.schemeCodeNumeric || 501,
       schemeName: scheme.schemeName || '',
@@ -245,6 +254,8 @@ export default function RdSchemeMaster() {
     const autoNumeric = parseInt(autoCode, 10) || 501;
     setFormData({
       rdSchemeID: 0,
+      isGlobal: true,
+      branchID: null,
       schemeCode: autoCode,
       schemeCodeNumeric: autoNumeric,
       schemeName: '',
@@ -298,6 +309,7 @@ export default function RdSchemeMaster() {
 
     const payload = {
       ...formData,
+      branchID: formData.isGlobal ? null : (Number(formData.branchID) || null),
       schemeCodeNumeric: parseInt(String(formData.schemeCodeNumeric), 10) || 501,
       durationMonths: parseInt(String(formData.durationMonths), 10) || 12,
       allowOverdueInterest: Boolean(formData.allowOverdueInterest),
@@ -526,7 +538,44 @@ export default function RdSchemeMaster() {
               <h2 className="text-xs font-bold text-primary">१. योजना माहिती व कालावधी (Basic Details & Duration)</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+              <div>
+                <label className={labelClass}>लागू व्याप्ती (Applicability Scope) <span className="text-red-500">*</span></label>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={formData.isGlobal ? 'GLOBAL' : 'BRANCH'}
+                    onChange={(e) => {
+                      const isGlob = e.target.value === 'GLOBAL';
+                      setFormData(prev => ({
+                        ...prev,
+                        isGlobal: isGlob,
+                        branchID: isGlob ? null : (prev.branchID || (branches[0]?.branchID || 1))
+                      }));
+                    }}
+                    className={`${inputClass} font-semibold ${formData.isGlobal ? 'bg-emerald-50 text-emerald-900 border-emerald-300' : 'bg-purple-50 text-purple-900 border-purple-300'}`}
+                  >
+                    <option value="GLOBAL">🌐 सर्व शाखांसाठी (Global - All)</option>
+                    <option value="BRANCH">🏢 विशिष्ट शाखेसाठी (Branch Specific)</option>
+                  </select>
+
+                  {!formData.isGlobal && (
+                    <select
+                      value={formData.branchID || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, branchID: parseInt(e.target.value) || null }))}
+                      className={`${inputClass} font-semibold bg-white border-purple-300 text-purple-900 min-w-[110px]`}
+                      required={!formData.isGlobal}
+                    >
+                      <option value="">-- शाखा निवडा --</option>
+                      {branches.map(b => (
+                        <option key={b.branchID} value={b.branchID}>
+                          {b.branchName}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
               <div>
                 <div className="flex justify-between items-center mb-0.5">
                   <label className={labelClass}>
@@ -998,6 +1047,7 @@ export default function RdSchemeMaster() {
                     <tr>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजनेचे नाव & कोड</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-28">लागू व्याप्ती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">कालावधी (महिने)</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याज / दंड कपात</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">मॅप्ड देयता खाते</th>
@@ -1037,6 +1087,17 @@ export default function RdSchemeMaster() {
                           <div className="text-[10px] text-gray-500 font-mono mt-0.5">
                             कोड: <span className="font-bold text-indigo-700">{s.schemeCode}</span>
                           </div>
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                          {!s.branchID ? (
+                            <span className="bg-emerald-50 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-300 inline-flex items-center gap-1">
+                              🌐 सर्व शाखा
+                            </span>
+                          ) : (
+                            <span className="bg-purple-50 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded border border-purple-300 inline-flex items-center gap-1" title={s.branch?.branchName || `शाखा #${s.branchID}`}>
+                              🏢 {s.branch?.branchName || `शाखा #${s.branchID}`}
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                           <div className="text-gray-800 font-bold text-[11px]">{s.durationMonths} महिने</div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Building2, RefreshCw, CheckCircle2, XCircle, Search, Edit2, 
-  Trash2, Plus, RotateCcw, CheckSquare, Layers, Building, Phone, Mail, MapPin
+  Trash2, Plus, RotateCcw, CheckSquare, Layers, Building, Phone, Mail, MapPin, Scale, ArrowRightLeft
 } from 'lucide-react';
 
 interface Branch {
@@ -19,6 +19,12 @@ interface Branch {
     ledgerCode?: string;
     ledgerName: string;
   };
+  defaultIbtLedgerID?: number;
+  defaultIbtLedger?: {
+    ledgerID: number;
+    ledgerCode?: string;
+    ledgerName: string;
+  };
   isActive: boolean;
 }
 
@@ -30,9 +36,14 @@ interface LedgerOption {
   accountGroup?: { groupName: string };
 }
 
-export default function BranchMaster() {
+interface BranchMasterProps {
+  onNavigateToOpeningBalance?: (branchId?: number) => void;
+}
+
+export default function BranchMaster({ onNavigateToOpeningBalance }: BranchMasterProps) {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [cashLedgers, setCashLedgers] = useState<LedgerOption[]>([]);
+  const [ibtLedgers, setIbtLedgers] = useState<LedgerOption[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const formContainerRef = useRef<HTMLDivElement>(null);
@@ -46,6 +57,7 @@ export default function BranchMaster() {
     mobileNo: '',
     email: '',
     defaultCashLedgerID: '' as number | '',
+    defaultIbtLedgerID: '' as number | '',
     isActive: true
   });
   const [errorMsg, setErrorMsg] = useState('');
@@ -56,7 +68,7 @@ export default function BranchMaster() {
 
   useEffect(() => {
     fetchBranches();
-    fetchCashLedgers();
+    fetchLedgers();
   }, []);
 
   const fetchBranches = async () => {
@@ -74,21 +86,34 @@ export default function BranchMaster() {
     }
   };
 
-  const fetchCashLedgers = async () => {
+  const fetchLedgers = async () => {
     try {
       const response = await fetch('/api/Ledgers');
       if (response.ok) {
         const data: LedgerOption[] = await response.json();
+        
+        // Filter Cash Ledgers (Group 31 or Cash in hand / रोख)
         const cashFiltered = data.filter(l => 
           (l.accountType && l.accountType.toLowerCase().includes('cash')) ||
           l.ledgerName.includes('रोख') ||
+          l.ledgerName.includes('हात') ||
           l.ledgerName.toLowerCase().includes('cash') ||
           (l.accountGroup && (l.accountGroup.groupName.includes('रोख') || l.accountGroup.groupName.toLowerCase().includes('cash')))
         );
         setCashLedgers(cashFiltered.length > 0 ? cashFiltered : data);
+
+        // Filter IBT Ledgers (Group 57 or IBT / आंतर-शाखा)
+        const ibtFiltered = data.filter(l =>
+          (l.accountType && l.accountType.toLowerCase().includes('ibt')) ||
+          l.ledgerName.includes('IBT') ||
+          l.ledgerName.includes('आंतर') ||
+          l.ledgerName.includes('देवाणघेवाण') ||
+          (l.accountGroup && (l.accountGroup.groupName.includes('IBT') || l.accountGroup.groupName.includes('आंतर')))
+        );
+        setIbtLedgers(ibtFiltered.length > 0 ? ibtFiltered : data);
       }
     } catch (error) {
-      console.error("Error fetching cash ledgers", error);
+      console.error("Error fetching ledgers", error);
     }
   };
 
@@ -96,7 +121,7 @@ export default function BranchMaster() {
     const target = e.target as HTMLInputElement;
     const value = target.type === 'checkbox' 
       ? target.checked 
-      : (target.name === 'defaultCashLedgerID' ? (target.value === '' ? '' : Number(target.value)) : target.value);
+      : ((target.name === 'defaultCashLedgerID' || target.name === 'defaultIbtLedgerID') ? (target.value === '' ? '' : Number(target.value)) : target.value);
     setFormData({
       ...formData,
       [e.target.name]: value
@@ -114,6 +139,7 @@ export default function BranchMaster() {
       mobileNo: branch.mobileNo || '',
       email: branch.email || '',
       defaultCashLedgerID: branch.defaultCashLedgerID || '',
+      defaultIbtLedgerID: branch.defaultIbtLedgerID || '',
       isActive: branch.isActive
     });
     setErrorMsg('');
@@ -144,6 +170,7 @@ export default function BranchMaster() {
       mobileNo: '',
       email: '',
       defaultCashLedgerID: '',
+      defaultIbtLedgerID: '',
       isActive: true
     });
     setErrorMsg('');
@@ -286,6 +313,18 @@ export default function BranchMaster() {
             <Plus className="w-3.5 h-3.5" />
             <span>नवीन नोंद</span>
           </button>
+
+          {onNavigateToOpeningBalance && (
+            <button
+              type="button"
+              onClick={() => onNavigateToOpeningBalance()}
+              className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+              title="शाखानिहाय लेजर शिल्लक स्क्रीन उघडा"
+            >
+              <Scale className="w-3.5 h-3.5 text-purple-600" />
+              <span>शाखानिहाय लेजर शिल्लक</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -500,16 +539,37 @@ export default function BranchMaster() {
               </div>
             </div>
 
-            <div className="pt-1">
-              <label className={labelClass}>शाखेचा संपूर्ण पत्ता (Branch Address)</label>
-              <input 
-                type="text" 
-                name="address" 
-                value={formData.address} 
-                onChange={handleChange} 
-                placeholder="शाखेचा संपूर्ण पत्ता लिहा" 
-                className={inputClass} 
-              />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 pt-1 border-t border-gray-100">
+              <div className="md:col-span-3">
+                <label className={labelClass}>शाखेचा संपूर्ण पत्ता (Branch Address)</label>
+                <input 
+                  type="text" 
+                  name="address" 
+                  value={formData.address} 
+                  onChange={handleChange} 
+                  placeholder="शाखेचा संपूर्ण पत्ता लिहा" 
+                  className={inputClass} 
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  🔄 डिफॉल्ट IBT खाते (Default IBT Ledger)
+                </label>
+                <select
+                  name="defaultIbtLedgerID"
+                  value={formData.defaultIbtLedgerID}
+                  onChange={handleChange}
+                  className={`${inputClass} font-medium text-gray-800`}
+                >
+                  <option value="">-- अनिर्धारित / जनरल IBT खाते --</option>
+                  {ibtLedgers.map((l) => (
+                    <option key={l.ledgerID} value={l.ledgerID}>
+                      {l.ledgerID} - {l.ledgerName}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -576,11 +636,11 @@ export default function BranchMaster() {
                 <th className="p-2 text-center border-r border-gray-200 w-24">प्रकार (Type)</th>
                 <th className="p-2 border-r border-gray-200 w-24">शाखा कोड</th>
                 <th className="p-2 border-r border-gray-200">शाखेचे नाव</th>
-                <th className="p-2 border-r border-gray-200">रोख खाते (Cash Ledger)</th>
+                <th className="p-2 border-r border-gray-200">रोख व IBT खाते (Cash & IBT)</th>
                 <th className="p-2 border-r border-gray-200">मोबाईल / ईमेल</th>
                 <th className="p-2 border-r border-gray-200">पत्ता / IFSC</th>
                 <th className="p-2 text-center border-r border-gray-200 w-20">स्थिती</th>
-                <th className="p-2 text-center w-28">क्रिया (Actions)</th>
+                <th className="p-2 text-center w-36">क्रिया (Actions)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
@@ -605,15 +665,22 @@ export default function BranchMaster() {
                       <td className="p-2 border-r border-gray-200 font-bold text-primary font-mono">{b.branchCode}</td>
                       <td className="p-2 border-r border-gray-200 font-bold text-gray-900">{b.branchName}</td>
                       <td className="p-2 border-r border-gray-200 text-emerald-800 font-medium">
-                        {b.defaultCashLedger ? (
-                          <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 text-[10px] font-semibold">
-                            💼 {b.defaultCashLedger.ledgerName}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 italic text-[10px]">
-                            ⚙️ ऑटोमॅटिक
-                          </span>
-                        )}
+                        <div className="flex flex-col gap-0.5">
+                          {b.defaultCashLedger ? (
+                            <span className="bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200 text-[10px] font-semibold flex items-center gap-1">
+                              <span>💵</span> {b.defaultCashLedger.ledgerName}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 italic text-[10px]">
+                              ⚙️ रोख: ऑटोमॅटिक
+                            </span>
+                          )}
+                          {b.defaultIbtLedger && (
+                            <span className="bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 text-[9px] font-semibold flex items-center gap-1">
+                              <span>🔄</span> {b.defaultIbtLedger.ledgerName}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-2 border-r border-gray-200 text-gray-700">
                         <div>📞 {b.mobileNo || '-'}</div>
@@ -632,6 +699,17 @@ export default function BranchMaster() {
                       </td>
                       <td className="p-2 text-center">
                         <div className="flex items-center justify-center gap-1">
+                          {onNavigateToOpeningBalance && (
+                            <button
+                              type="button"
+                              onClick={() => onNavigateToOpeningBalance(b.branchID)}
+                              title="या शाखेची सुरुवातीची लेजर शिल्लक भरा"
+                              className="px-2 py-0.5 bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              <Scale className="w-3 h-3 text-purple-700" />
+                              <span>शिल्लक</span>
+                            </button>
+                          )}
                           <button 
                             onClick={() => handleEdit(b)}
                             className="px-2 py-0.5 bg-blue-50 text-primary hover:bg-blue-100 border border-blue-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer"

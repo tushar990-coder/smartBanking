@@ -40,6 +40,7 @@ namespace Bhisi.Api.Data
         public DbSet<VoucherMapping> VoucherMappings { get; set; }
         public DbSet<CustomerOpeningBalance> CustomerOpeningBalances { get; set; }
         public DbSet<MemberOpeningBalance> MemberOpeningBalances { get; set; }
+        public DbSet<BranchLedgerOpeningBalance> BranchLedgerOpeningBalances { get; set; }
         public DbSet<LoanRate> LoanRates { get; set; }
         public DbSet<LoanRateHistory> LoanRateHistories { get; set; }
         public DbSet<LoanApplication> LoanApplications { get; set; }
@@ -440,6 +441,13 @@ namespace Bhisi.Api.Data
                 entity.HasIndex(s => s.SchemeCode)
                       .IsUnique()
                       .HasDatabaseName("UQ_FdSchemes_SchemeCode");
+            });
+
+            modelBuilder.Entity<BranchLedgerOpeningBalance>(entity =>
+            {
+                entity.HasIndex(b => new { b.LedgerID, b.BranchID, b.FinancialYearID })
+                      .IsUnique()
+                      .HasDatabaseName("UQ_BranchLedgerOpeningBalances_Ledger_Branch_FY");
             });
 
             // Disable cascade deletes globally to prevent SQL Server multiple cascade paths error

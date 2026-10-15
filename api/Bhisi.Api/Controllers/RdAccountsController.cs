@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -470,6 +471,11 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Invalid RD Scheme.");
             }
 
+            if (scheme.BranchID.HasValue && scheme.BranchID.Value != account.BranchID)
+            {
+                return BadRequest($"निवडलेली आवर्ती ठेव योजना फक्त विशिष्ट शाखेसाठी (शाखा क्र. {scheme.BranchID.Value}) मर्यादित आहे. चालू शाखेतून ({account.BranchID}) या योजनेखाली खाते उघडता येत नाही.");
+            }
+
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
@@ -521,6 +527,7 @@ namespace Bhisi.Api.Controllers
                             {
                                 SavingAccountID = sbAcc.SavingAccountID,
                                 CustomerID = sbAcc.CustomerID,
+                                BranchID = account.BranchID > 0 ? account.BranchID : sbAcc.BranchID,
                                 TransactionDate = account.OpeningDate,
                                 TransactionType = "Withdrawal",
                                 PaymentMode = "Transfer",
@@ -970,15 +977,8 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     var currentUser = HttpContext.User;
-                    string? roleClaim = currentUser?.FindFirst(ClaimTypes.Role)?.Value ?? currentUser?.FindFirst("role")?.Value;
-                    string? branchClaim = currentUser?.FindFirst("BranchID")?.Value ?? currentUser?.FindFirst("branchId")?.Value ?? currentUser?.FindFirst("branch")?.Value;
-                    int.TryParse(branchClaim, out int userBranchId);
-                    if (userBranchId <= 0) userBranchId = 1;
-
-                    bool isHO = (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) ?? false) ||
-                                (roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ?? false) ||
-                                (roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ?? false) ||
-                                userBranchId == 1;
+                    int userBranchId = currentUser.GetOperatingBranchId();
+                    bool isHO = currentUser.IsHeadOfficeAdmin();
 
                     int collectingBranchId = (isHO && branchId.HasValue && branchId.Value > 0)
                         ? branchId.Value

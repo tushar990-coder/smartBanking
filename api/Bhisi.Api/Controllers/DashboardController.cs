@@ -5,12 +5,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     public class DashboardController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -31,6 +32,7 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
+                branchId = User.ResolveBranchId(branchId);
                 // Members
                 var membersQuery = _context.Members.AsNoTracking();
                 if (branchId.HasValue && branchId.Value > 0) membersQuery = membersQuery.Where(m => m.BranchID == branchId.Value);

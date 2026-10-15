@@ -5905,6 +5905,90 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- 7.8 BRANCH LEDGER OPENING BALANCES & IBT MAPPING (v2.5.51)
+-- -----------------------------------------------------------------------------------------
+IF OBJECT_ID(N'[BranchLedgerOpeningBalances]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[BranchLedgerOpeningBalances] (
+        [BranchLedgerOpeningBalanceID] INT IDENTITY(1,1) NOT NULL,
+        [LedgerID] INT NOT NULL,
+        [BranchID] INT NOT NULL,
+        [FinancialYearID] INT NOT NULL,
+        [OpeningBalance] DECIMAL(18,2) NOT NULL DEFAULT (0),
+        [OpeningBalanceType] NVARCHAR(10) NOT NULL DEFAULT 'Dr',
+        [Remarks] NVARCHAR(250) NULL,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT (SYSUTCDATETIME()),
+        [UpdatedAt] DATETIME2 NULL,
+        [CreatedBy] NVARCHAR(100) NULL,
+        [UpdatedBy] NVARCHAR(100) NULL,
+        CONSTRAINT [PK_BranchLedgerOpeningBalances] PRIMARY KEY CLUSTERED ([BranchLedgerOpeningBalanceID] ASC),
+        CONSTRAINT [FK_BranchLedgerOpeningBalances_Ledgers] FOREIGN KEY ([LedgerID]) REFERENCES [dbo].[Ledgers] ([LedgerID]) ON DELETE CASCADE,
+        CONSTRAINT [FK_BranchLedgerOpeningBalances_Branches] FOREIGN KEY ([BranchID]) REFERENCES [dbo].[Branches] ([BranchID]) ON DELETE CASCADE,
+        CONSTRAINT [FK_BranchLedgerOpeningBalances_FinancialYears] FOREIGN KEY ([FinancialYearID]) REFERENCES [dbo].[FinancialYears] ([FinancialYearID]) ON DELETE CASCADE
+    );
+
+    CREATE UNIQUE NONCLUSTERED INDEX [UQ_BranchLedgerOpeningBalances_Ledger_Branch_FY]
+    ON [dbo].[BranchLedgerOpeningBalances] ([LedgerID] ASC, [BranchID] ASC, [FinancialYearID] ASC);
+
+    PRINT '  -> Created BranchLedgerOpeningBalances table with composite unique index';
+END
+GO
+
+IF COL_LENGTH('Branches', 'DefaultIbtLedgerID') IS NULL
+BEGIN
+    ALTER TABLE [Branches] ADD [DefaultIbtLedgerID] INT NULL;
+    PRINT '  -> Added DefaultIbtLedgerID column to Branches';
+END
+GO
+
+-- Auto-migrate legacy Ledgers.OpeningBalance to HeadOffice (BranchID = 1) for active FY if empty
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'BranchLedgerOpeningBalances')
+BEGIN
+    DECLARE @ActiveFY INT = (SELECT TOP 1 FinancialYearID FROM FinancialYears WHERE IsCurrent = 1 ORDER BY FinancialYearID DESC);
+    IF @ActiveFY IS NULL SET @ActiveFY = (SELECT TOP 1 FinancialYearID FROM FinancialYears ORDER BY FinancialYearID DESC);
+
+    IF @ActiveFY IS NOT NULL
+    BEGIN
+        INSERT INTO BranchLedgerOpeningBalances (LedgerID, BranchID, FinancialYearID, OpeningBalance, OpeningBalanceType, Remarks, CreatedAt, CreatedBy)
+        SELECT 
+            l.LedgerID,
+            1 AS BranchID,
+            @ActiveFY AS FinancialYearID,
+            ISNULL(l.OpeningBalance, 0),
+            ISNULL(l.OpeningBalanceType, 'Dr'),
+            N'स्वयंचलित स्थलांतर (Auto-migrated from legacy ledger opening balance for Head Office)',
+            SYSUTCDATETIME(),
+            N'System-Migration'
+        FROM Ledgers l
+        WHERE ISNULL(l.OpeningBalance, 0) > 0
+          AND NOT EXISTS (
+              SELECT 1 FROM BranchLedgerOpeningBalances b 
+              WHERE b.LedgerID = l.LedgerID AND b.BranchID = 1 AND b.FinancialYearID = @ActiveFY
+          );
+
+        PRINT '  -> Auto-migrated legacy Ledgers.OpeningBalance to BranchLedgerOpeningBalances for Branch 1 (HO)';
+    END
+END
+GO
+
+-- 7.9 Log v2.5.51 in SystemVersionHistories
+IF OBJECT_ID(N'[SystemVersionHistories]', N'U') IS NOT NULL
+BEGIN
+    INSERT INTO [SystemVersionHistories] ([VersionNumber], [AppliedOn], [PatchName], [Status], [Remarks], [AppliedBy], [ReleaseDate])
+    VALUES (
+        '2.5.51', 
+        GETUTCDATE(), 
+        'SmartBanking VPS Multi-App Master Patch v2.5.51', 
+        'SUCCESS', 
+        'Branch-wise ledger opening balance architecture, IBT and Cash ledger mapping, multi-branch allocation summary and 100% balance sheet tally v2.5.51.', 
+        'VPS Administrator',
+        '2026-10-15'
+    );
+    PRINT '  -> Logged v2.5.51 in SystemVersionHistories';
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

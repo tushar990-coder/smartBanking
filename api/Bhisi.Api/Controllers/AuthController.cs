@@ -367,7 +367,110 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        [HttpPost("switch-branch")]
+        public async Task<ActionResult<SwitchBranchResponseDto>> SwitchBranch([FromBody] SwitchBranchRequestDto request)
+        {
+            try
+            {
+                var userClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("UserID") ?? User.FindFirst("sub");
+                if (userClaim == null || !int.TryParse(userClaim.Value, out int userId))
+                {
+                    return Unauthorized("कृपया पुन्हा लॉगिन करा.");
+                }
+
+                var user = await _context.Users
+                    .Include(u => u.Role)
+                    .FirstOrDefaultAsync(u => u.UserID == userId);
+
+                if (user == null || !user.IsActive || user.IsLocked)
+                {
+                    return Unauthorized("युझर खाते अवैध किंवा लॉक केलेले आहे.");
+                }
+
+                // Strict Role-based access: Only HO/Admin/SuperAdmin/Auditor can switch branches
+                string userRole = user.Role?.RoleName ?? "User";
+                bool canSwitch = userRole.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                                 userRole.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
+                                 userRole.Equals("Super Admin", StringComparison.OrdinalIgnoreCase) ||
+                                 userRole.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ||
+                                 userRole.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
+                                 userRole.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
+                                 userRole.Equals("Auditor", StringComparison.OrdinalIgnoreCase);
+
+                if (!canSwitch)
+                {
+                    return StatusCode(403, "आपल्या पदाला (Role) इतर शाखेत स्विच करण्याची परवानगी नाही. केवळ मुख्य कार्यालय/ॲडमिनला ही परवानगी आहे.");
+                }
+
+                var targetBranch = await _context.Branches.FindAsync(request.TargetBranchID);
+                if (targetBranch == null || !targetBranch.IsActive)
+                {
+                    return BadRequest("निवडलेली शाखा अस्तित्वात नाही किंवा निष्क्रिय आहे.");
+                }
+
+                var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive) 
+                               ?? await _context.FinancialYears.FirstOrDefaultAsync();
+
+                var activeDateRecord = await _context.BranchDayEndStatuses
+                    .Where(b => b.BranchID == request.TargetBranchID)
+                    .OrderByDescending(b => b.BusinessDate)
+                    .FirstOrDefaultAsync();
+
+                DateTime businessDate = activeDateRecord?.BusinessDate ?? activeFy?.StartDate ?? DateTime.Today;
+
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var keyStr = _configuration["Jwt:Key"] ?? "super_secret_key_for_bhisi_software_backend_12345!@#";
+                var key = Encoding.ASCII.GetBytes(keyStr);
+                var tokenDescriptor = new SecurityTokenDescriptor
+                {
+                    Subject = new ClaimsIdentity(new[]
+                    {
+                        new Claim(ClaimTypes.NameIdentifier, user.UserID.ToString()),
+                        new Claim(ClaimTypes.Name, user.Username),
+                        new Claim(ClaimTypes.Role, userRole),
+                        new Claim("BranchID", targetBranch.BranchID.ToString()),
+                        new Claim("FinancialYearID", (activeFy?.FinancialYearID ?? 1).ToString())
+                    }),
+                    Expires = DateTime.Now.AddHours(8),
+                    SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+                };
+                var token = tokenHandler.CreateToken(tokenDescriptor);
+                var jwt = tokenHandler.WriteToken(token);
+
+                user.ActiveSessionToken = jwt;
+
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    UserID = user.UserID,
+                    Username = user.Username,
+                    Action = "BRANCH_SWITCH",
+                    EntityName = "Branch",
+                    EntityID = targetBranch.BranchID.ToString(),
+                    Timestamp = DateTime.Now,
+                    IPAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown",
+                    Details = $"User '{user.Username}' switched operational branch to '{targetBranch.BranchName}' (BranchID: {targetBranch.BranchID})",
+                    Status = "Success"
+                });
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new SwitchBranchResponseDto
+                {
+                    Token = jwt,
+                    BranchID = targetBranch.BranchID,
+                    BranchName = targetBranch.BranchName,
+                    BusinessDate = businessDate.ToString("yyyy-MM-dd"),
+                    Message = $"शाखा यशस्वीरित्या बदलली: {targetBranch.BranchName}"
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"शाखा बदलताना त्रुटी आली: {ex.Message}");
+            }
+        }
+
         private async Task LogAudit(int userId, string status)
+
         {
             if (userId <= 0) return;
             var audit = new UserLoginAudit

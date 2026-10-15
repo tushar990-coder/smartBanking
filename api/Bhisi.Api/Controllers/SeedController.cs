@@ -289,6 +289,7 @@ namespace Bhisi.Api.Controllers
                     {
                         SavingAccountID = acc.SavingAccountID,
                         CustomerID = acc.CustomerID,
+                        BranchID = acc.BranchID,
                         TransactionDate = acc.OpeningDate,
                         TransactionType = "Deposit",
                         PaymentMode = "Cash",
@@ -672,6 +673,7 @@ namespace Bhisi.Api.Controllers
                         {
                             SavingAccountID = existingAcc.SavingAccountID,
                             CustomerID = member.CustomerID ?? 1,
+                            BranchID = existingAcc.BranchID,
                             TransactionDate = DateTime.Today.AddDays(-30),
                             TransactionType = "Deposit",
                             Amount = 14000,

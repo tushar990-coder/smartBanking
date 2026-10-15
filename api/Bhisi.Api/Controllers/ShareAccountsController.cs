@@ -346,6 +346,7 @@ namespace Bhisi.Api.Controllers
                     {
                         SavingAccountID = savingAccount.SavingAccountID,
                         CustomerID = customerId,
+                        BranchID = savingAccount.BranchID,
                         TransactionDate = txnDate,
                         TransactionType = "Withdrawal",
                         PaymentMode = "Transfer",
@@ -557,6 +558,9 @@ namespace Bhisi.Api.Controllers
                 // Create Voucher (Resolved dynamically via ShareSchemeMaster & ShareLedgerHelper)
                 var shareCapitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context);
 
+                int targetBranch = (member.BranchID > 0) ? member.BranchID : request.BranchId;
+                if (targetBranch == 0) targetBranch = 1;
+
                 // Process Payment Mode (Cash, Transfer, Bank)
                 SavingAccountMaster? savingAccount = null;
                 if (request.PaymentMode == "Transfer")
@@ -587,6 +591,7 @@ namespace Bhisi.Api.Controllers
                     {
                         SavingAccountID = savingAccount.SavingAccountID,
                         CustomerID = savingAccount.CustomerID,
+                        BranchID = targetBranch,
                         TransactionDate = DateTime.Today,
                         TransactionType = "Deposit",
                         PaymentMode = "Transfer",
@@ -598,9 +603,6 @@ namespace Bhisi.Api.Controllers
                     };
                     _context.SavingTransactions.Add(savingTxn);
                 }
-
-                int targetBranch = (member.BranchID > 0) ? member.BranchID : request.BranchId;
-                if (targetBranch == 0) targetBranch = 1;
 
                 // Determine Credit Ledger for Voucher
                 int creditLedgerId;
@@ -2584,6 +2586,7 @@ namespace Bhisi.Api.Controllers
                             {
                                 SavingAccountID = savingAcc.SavingAccountID,
                                 CustomerID = savingAcc.CustomerID,
+                                BranchID = request.BranchId > 0 ? request.BranchId : savingAcc.BranchID,
                                 TransactionDate = DateTime.Today,
                                 TransactionType = "Withdrawal",
                                 PaymentMode = "Transfer",
@@ -3136,6 +3139,7 @@ namespace Bhisi.Api.Controllers
                                     {
                                         SavingAccountID = savAcc.SavingAccountID,
                                         CustomerID = savAcc.CustomerID,
+                                        BranchID = savAcc.BranchID,
                                         TransactionDate = DateTime.Today,
                                         TransactionType = "Deposit",
                                         PaymentMode = "Transfer",

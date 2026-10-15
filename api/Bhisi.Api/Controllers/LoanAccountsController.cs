@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
 using System.Security.Claims;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -108,7 +109,7 @@ namespace Bhisi.Api.Controllers
             string? roleClaim = User.FindFirst(ClaimTypes.Role)?.Value ?? User.FindFirst("role")?.Value;
             string? branchClaim = User.FindFirst("BranchID")?.Value ?? User.FindFirst("branchId")?.Value;
             int.TryParse(branchClaim, out int userBranchId);
-            bool isHO = roleClaim == "Admin" || roleClaim == "SuperAdmin" || roleClaim == "HO_Manager" || roleClaim == "HeadOffice" || userBranchId == 1;
+            bool isHO = User.IsHeadOfficeAdmin();
 
             if (branchId.HasValue && branchId.Value > 0)
             {

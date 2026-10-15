@@ -154,15 +154,16 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   useEffect(() => {
     fetchCustomers();
-    fetchSchemes();
     fetchBranches();
     fetchBankLedgers();
+    fetchSchemes(formData.branchID);
     if (!isPassingMode) {
       fetchFdList(formData.branchID);
     }
   }, [isPassingMode]);
 
   useEffect(() => {
+    fetchSchemes(formData.branchID);
     if (!isPassingMode) {
       fetchNextAccountNo(formData.branchID);
       fetchFdList(formData.branchID);
@@ -356,14 +357,16 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     }
   };
 
-  const fetchSchemes = async () => {
+  const fetchSchemes = async (bId?: number) => {
     try {
-      const response = await axios.get(`${API_URL}/FdSchemes`);
+      const activeBranch = bId !== undefined ? bId : (formData.branchID || 1);
+      const response = await axios.get(`${API_URL}/FdSchemes?branchId=${activeBranch}`);
       const data = response.data || [];
       setSchemes(data);
       if (data.length > 0) {
         setFormData(prev => {
-          if (prev.fdSchemeID === 0) {
+          const schemeExists = data.some((s: any) => getSchemeId(s) === prev.fdSchemeID);
+          if (prev.fdSchemeID === 0 || !schemeExists) {
             const firstScheme = data[0];
             const isSlab = firstScheme.schemeDurationModel === 'Slab';
             return {
@@ -375,6 +378,11 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
           }
           return prev;
         });
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          fdSchemeID: 0,
+        }));
       }
     } catch (err) {
       console.error('Error fetching schemes', err);
@@ -1008,6 +1016,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                       <option value="0">--- योजना निवडा ---</option>
                       {schemes.map((s: any) => (
                         <option key={getSchemeId(s)} value={getSchemeId(s)}>
+                          {s.branchID ? `🏢 [${s.branch?.branchName || 'विशिष्ट शाखा'}] ` : '🌐 [सर्व शाखा] '}
                           {s.schemeName} ({s.schemeCode})
                         </option>
                       ))}

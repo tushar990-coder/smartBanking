@@ -23,15 +23,24 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/FdSchemes
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<FdScheme>>> GetFdSchemes([FromQuery] int? branchId)
+        public async Task<ActionResult<IEnumerable<FdScheme>>> GetFdSchemes([FromQuery] int? branchId, [FromQuery] bool includeAll = false)
         {
-            // In Core Banking, FD Schemes are Sanstha-Wide board policies applicable across all branches
-            return await _context.FdSchemes
+            var query = _context.FdSchemes
+                .Include(s => s.Branch)
                 .Include(s => s.Slabs.OrderBy(sl => sl.FromDays))
                 .Include(s => s.FdLiabilityLedger)
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
                 .Include(s => s.PrematurePenaltyLedger)
+                .AsQueryable();
+
+            if (!includeAll && branchId.HasValue && branchId.Value > 0)
+            {
+                // Applicable schemes: Bank-wide Global (BranchID == null) OR Specific to this branch
+                query = query.Where(s => s.BranchID == null || s.BranchID == branchId.Value);
+            }
+
+            return await query
                 .OrderByDescending(s => s.EffectiveDate)
                 .ToListAsync();
         }
@@ -41,6 +50,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<FdScheme>> GetFdScheme(int id)
         {
             var fdScheme = await _context.FdSchemes
+                .Include(s => s.Branch)
                 .Include(s => s.Slabs.OrderBy(sl => sl.FromDays))
                 .Include(s => s.FdLiabilityLedger)
                 .Include(s => s.InterestExpenseLedger)
@@ -127,6 +137,11 @@ namespace Bhisi.Api.Controllers
             if (!ledgerValidation.IsValid)
             {
                 return BadRequest(ledgerValidation.ErrorMessage);
+            }
+
+            if (fdScheme.BranchID.HasValue && fdScheme.BranchID.Value <= 0)
+            {
+                fdScheme.BranchID = null;
             }
 
             fdScheme.FdLiabilityLedger = null;
@@ -250,6 +265,7 @@ namespace Bhisi.Api.Controllers
             existingScheme.InterestExpenseLedgerID = fdScheme.InterestExpenseLedgerID;
             existingScheme.InterestPayableLedgerID = fdScheme.InterestPayableLedgerID;
             existingScheme.PrematurePenaltyLedgerID = (fdScheme.PrematurePenaltyLedgerID.HasValue && fdScheme.PrematurePenaltyLedgerID.Value > 0) ? fdScheme.PrematurePenaltyLedgerID : null;
+            existingScheme.BranchID = (fdScheme.BranchID.HasValue && fdScheme.BranchID.Value > 0) ? fdScheme.BranchID : null;
 
             // Slabs Synchronization
             var incomingSlabs = fdScheme.Slabs?.ToList() ?? new List<FdSchemeInterestSlab>();

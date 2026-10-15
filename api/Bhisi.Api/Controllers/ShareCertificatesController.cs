@@ -420,6 +420,7 @@ namespace Bhisi.Api.Controllers
                         {
                             SavingAccountID = savingAccount.SavingAccountID,
                             CustomerID = savingAccount.CustomerID,
+                            BranchID = request.BranchId > 0 ? request.BranchId : savingAccount.BranchID,
                             TransactionDate = DateTime.Today,
                             TransactionType = "Deposit",
                             PaymentMode = "Transfer",

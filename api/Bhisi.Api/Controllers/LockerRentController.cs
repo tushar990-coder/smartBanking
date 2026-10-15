@@ -129,6 +129,7 @@ namespace Bhisi.Api.Controllers
                 {
                     SavingAccountID = allotment.LinkedSavingAccount.SavingAccountID,
                     CustomerID = allotment.LinkedSavingAccount.CustomerID,
+                    BranchID = allotment.BranchID > 0 ? allotment.BranchID : allotment.LinkedSavingAccount.BranchID,
                     TransactionDate = dto.PaymentDate,
                     TransactionType = "Withdrawal",
                     Amount = dto.TotalAmount,

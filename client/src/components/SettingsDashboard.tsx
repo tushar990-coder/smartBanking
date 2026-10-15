@@ -34,6 +34,7 @@ import SystemUpdateMaster from './SystemUpdateMaster';
 import CashSchemeSettingMaster from './CashSchemeSettingMaster';
 import InvestmentInstitutionMaster from './InvestmentInstitutionMaster';
 import CustomerOpeningBalance from './CustomerOpeningBalance';
+import BranchLedgerOpeningMaster from './BranchLedgerOpeningMaster';
 
 interface SettingsDashboardProps {
   defaultCategory?: string;
@@ -64,6 +65,7 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       { id: 'sanstha', label: 'संस्था माहिती (Sanstha Profile)', icon: '🏛️' },
       { id: 'theme-settings', label: 'थीम व डिझाईन (Theme & Colors)', icon: '🎨' },
       { id: 'branch', label: 'शाखा माहिती (Branch Master)', icon: '🏢' },
+      { id: 'branch-ledger-ob', label: 'शाखानिहाय लेजर शिल्लक (Branch Ledger OB)', icon: '⚖️' },
       { id: 'department', label: 'विभाग माहिती (Department Master)', icon: '📁' },
       { id: 'company-branch', label: 'कंपनी शाखा (Company Branch)', icon: '🏬' },
       { id: 'financial-year', label: 'आर्थिक वर्ष (Financial Year)', icon: '📅' },
@@ -82,6 +84,7 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       { id: 'security-type', label: 'तारण प्रकार (Security Types)', icon: '🛡️' }
     ],
     'opening-balance': [
+      { id: 'branch-ledger-ob', label: '🏢 शाखानिहाय लेजर शिल्लक (Branch-wise Ledger OB)', icon: '⚖️' },
       { id: 'customer-ob', label: 'खातेदार शिल्लक (Customer OB)', icon: '👥' },
       { id: 'saving-ob', label: 'बचत खाते शिल्लक (Saving OB)', icon: '💰' },
       { id: 'fd-ob', label: 'मुदत ठेव सुरुवातीची शिल्लक स्थलांतर (FD Opening Balance)', icon: '🏛️' },
@@ -116,7 +119,10 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       case 'sanstha': return <SansthaMaster />;
       case 'theme-settings-sub':
       case 'theme-settings': return <ThemeSettingsMaster />;
-      case 'branch': return <BranchMaster />;
+      case 'branch': return <BranchMaster onNavigateToOpeningBalance={() => {
+        setActiveTab('opening-balance');
+        setActiveSubTab('branch-ledger-ob');
+      }} />;
       case 'department': return <DepartmentMaster />;
       case 'company-branch': return <CompanyBranchMaster />;
       case 'financial-year': return <FinancialYearMaster />;
@@ -138,6 +144,7 @@ const SettingsDashboard: React.FC<SettingsDashboardProps> = ({ defaultCategory, 
       case 'saving-setting': return <SavingInterestSettingMaster />;
       case 'loan-rate': return <LoanRateMaster />;
       case 'security-type': return <SecurityTypeMaster />;
+      case 'branch-ledger-ob': return <BranchLedgerOpeningMaster />;
       case 'customer-ob':
       case 'customer-opening': return <CustomerOpeningBalance />;
       case 'saving-ob': return <SavingOpeningBalance />;

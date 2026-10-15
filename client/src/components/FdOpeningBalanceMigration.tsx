@@ -71,6 +71,8 @@ interface FdScheme {
   interestType?: string;
   interestCompoundingFrequency?: string;
   slabs?: FdSchemeInterestSlab[];
+  branchID?: number | null;
+  branch?: { branchID: number; branchName: string } | null;
 }
 
 interface FdAccountRecord {
@@ -264,6 +266,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
         const firstBranchId = response.data[0].branchID;
         setFormData(prev => ({ ...prev, branchID: firstBranchId }));
         fetchNextAccountNo(firstBranchId);
+        fetchSchemes(firstBranchId);
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -285,9 +288,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
     }
   };
 
-  const fetchSchemes = async () => {
+  const fetchSchemes = async (bId?: number) => {
     try {
-      const response = await axios.get(`${API_URL}/FdSchemes`);
+      const activeBranch = bId !== undefined ? bId : (formData.branchID || 1);
+      const url = activeBranch ? `${API_URL}/FdSchemes?branchId=${activeBranch}` : `${API_URL}/FdSchemes`;
+      const response = await axios.get(url);
       if (isMountedRef.current) {
         setSchemes(response.data);
       }
@@ -606,6 +611,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
     if (name === 'branchID') {
       const parsedBranch = parseInt(value, 10) || 1;
       fetchNextAccountNo(parsedBranch, formData.fdSchemeID);
+      fetchSchemes(parsedBranch);
       setFormData(prev => ({ ...prev, branchID: parsedBranch }));
       return;
     }
@@ -1548,6 +1554,7 @@ const FdOpeningBalanceMigration: React.FC = () => {
                     const slabCount = s.slabs?.length || 0;
                     return (
                       <option key={getSchemeId(s)} value={getSchemeId(s)}>
+                        {s.branchID ? `🏢 [${s.branch?.branchName || 'विशिष्ट शाखा'}] ` : '🌐 [सर्व शाखा] '}
                         {s.schemeName} {isSlab ? `[स्लॅब पद्धत: ${slabCount} स्लॅब्स]` : `(${s.interestRate}%)`}
                       </option>
                     );

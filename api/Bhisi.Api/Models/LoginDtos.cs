@@ -44,5 +44,21 @@ namespace Bhisi.Api.Models
         [Required]
         public string ConfirmPassword { get; set; } = string.Empty;
     }
+
+    public class SwitchBranchRequestDto
+    {
+        [Required]
+        public int TargetBranchID { get; set; }
+    }
+
+    public class SwitchBranchResponseDto
+    {
+        public string Token { get; set; } = string.Empty;
+        public int BranchID { get; set; }
+        public string BranchName { get; set; } = string.Empty;
+        public string BusinessDate { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+    }
 }
+
 

@@ -38,6 +38,8 @@ interface RdScheme {
   rdLiabilityLedger?: { ledgerName: string };
   interestExpenseLedger?: { ledgerName: string };
   isActive?: boolean;
+  branchID?: number | null;
+  branch?: { branchID: number; branchName: string } | null;
 }
 
 interface Branch {
@@ -152,23 +154,34 @@ export default function RdOpeningBalanceMigration() {
     }
   };
 
+  const fetchSchemes = async (bId?: number) => {
+    try {
+      const activeBranch = bId !== undefined ? bId : (formData.branchID || 1);
+      const res = await axios.get(`/api/RdSchemes?branchId=${activeBranch}`);
+      const list = (res.data || []).filter((s: any) => s.isActive !== false);
+      setSchemes(list);
+    } catch (err) {
+      console.error('Error fetching schemes', err);
+    }
+  };
+
   useEffect(() => {
     let isMounted = true;
 
     const fetchData = async () => {
       try {
-        const [mRes, sRes, bRes] = await axios.all([
+        const [mRes, bRes] = await axios.all([
           axios.get('/api/Customers'),
-          axios.get('/api/RdSchemes'),
           axios.get('/api/Branches'),
         ]);
         if (!isMounted) return;
         setCustomers(mRes.data || []);
-        setSchemes((sRes.data || []).filter((s: any) => s.isActive !== false));
         setBranches(bRes.data || []);
 
         const defaultBranch = bRes.data?.length > 0 ? bRes.data[0].branchID : 1;
         fetchNextAccountNo(defaultBranch);
+        const sRes = await axios.get(`/api/RdSchemes?branchId=${defaultBranch}`);
+        setSchemes((sRes.data || []).filter((s: any) => s.isActive !== false));
         fetchMigratedAccounts();
 
         const params = new URLSearchParams(window.location.search);
@@ -296,7 +309,9 @@ export default function RdOpeningBalanceMigration() {
       const updated = { ...prev, [name]: value };
 
       if (name === 'branchID') {
-        fetchNextAccountNo(parseInt(value, 10), prev.rdSchemeID);
+        const bId = parseInt(value, 10) || 1;
+        fetchNextAccountNo(bId, prev.rdSchemeID);
+        fetchSchemes(bId);
       }
 
       if (name === 'installmentAmount' || name === 'totalPaidInstallments') {
@@ -736,6 +751,7 @@ export default function RdOpeningBalanceMigration() {
                   <option value="">-- योजना निवडा --</option>
                   {schemes.map((s) => (
                     <option key={s.rdSchemeID} value={s.rdSchemeID}>
+                      {s.branchID ? `🏢 [${s.branch?.branchName || 'विशिष्ट शाखा'}] ` : '🌐 [सर्व शाखा] '}
                       {s.schemeName} ({s.interestRate}%)
                     </option>
                   ))}

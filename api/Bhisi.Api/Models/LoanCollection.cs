@@ -88,6 +88,12 @@ namespace Bhisi.Api.Models
         [ForeignKey("VoucherID")]
         public Voucher? Voucher { get; set; }
 
+        // IBT Home Branch Settlement Voucher
+        public int? HomeBranchVoucherID { get; set; }
+
+        [ForeignKey("HomeBranchVoucherID")]
+        public Voucher? HomeBranchVoucher { get; set; }
+
         [StringLength(200)]
         public string? Remarks { get; set; }
     }

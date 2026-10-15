@@ -36,6 +36,11 @@ namespace Bhisi.Api.Models
         [System.ComponentModel.DataAnnotations.Schema.ForeignKey("DefaultCashLedgerID")]
         public virtual Ledger? DefaultCashLedger { get; set; }
 
+        public int? DefaultIbtLedgerID { get; set; }
+
+        [System.ComponentModel.DataAnnotations.Schema.ForeignKey("DefaultIbtLedgerID")]
+        public virtual Ledger? DefaultIbtLedger { get; set; }
+
         public bool IsActive { get; set; } = true;
     }
 }

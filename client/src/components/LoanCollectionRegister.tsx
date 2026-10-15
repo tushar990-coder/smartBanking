@@ -33,6 +33,8 @@ interface LoanCollectionRegisterDto {
   homeBranchID?: number;
   homeBranchName?: string;
   isCrossBranch?: boolean;
+  voucherID?: number;
+  homeBranchVoucherID?: number;
 }
 
 const fmtCurrency = (n: number | null | undefined) => {
@@ -61,7 +63,7 @@ const formatDisplayDate = (dStr?: string | null) => {
 
 export default function LoanCollectionRegister() {
   const { user } = useAuth();
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.branchID === 1;
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
 
   const [fromDate, setFromDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [toDate, setToDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
@@ -585,8 +587,13 @@ export default function LoanCollectionRegister() {
                             <td className="border border-gray-900 py-1 px-1 text-center font-mono text-[10px]">
                               <div className="font-semibold text-gray-900">{row.branchName || '-'}</div>
                               {row.isCrossBranch && (
-                                <div className="text-[9px] text-amber-800 font-bold bg-amber-50 px-1 py-0.5 rounded border border-amber-200 mt-0.5" title={`मूळ कर्ज शाखा: ${row.homeBranchName}`}>
-                                  [कर्ज: {row.homeBranchName}]
+                                <div className="text-[9px] text-amber-800 font-bold bg-amber-50 px-1 py-0.5 rounded border border-amber-200 mt-0.5" title={`मूळ कर्ज शाखा: ${row.homeBranchName}${row.homeBranchVoucherID ? ` | गृह शाखा व्हाउचर #${row.homeBranchVoucherID}` : ''}`}>
+                                  <div>[कर्ज: {row.homeBranchName}]</div>
+                                  {row.homeBranchVoucherID && (
+                                    <span className="inline-block text-[8px] text-purple-800 font-semibold bg-purple-50 border border-purple-200 px-1 rounded mt-0.5">
+                                      IBT जोडणी #{row.homeBranchVoucherID}
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </td>

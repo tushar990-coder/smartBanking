@@ -8,7 +8,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     public class BranchesController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -26,6 +26,7 @@ namespace Bhisi.Api.Controllers
             {
                 var branches = await _context.Branches
                     .Include(b => b.DefaultCashLedger)
+                    .Include(b => b.DefaultIbtLedger)
                     .ToListAsync();
 
                 if (branches.Count == 0)
@@ -65,6 +66,7 @@ namespace Bhisi.Api.Controllers
         {
             var branch = await _context.Branches
                 .Include(b => b.DefaultCashLedger)
+                .Include(b => b.DefaultIbtLedger)
                 .FirstOrDefaultAsync(b => b.BranchID == id);
 
             if (branch == null)
@@ -76,6 +78,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<ActionResult<Branch>> PostBranch(Branch branch)
         {
             if (string.IsNullOrWhiteSpace(branch.BranchCode))
@@ -108,6 +111,48 @@ namespace Bhisi.Api.Controllers
             branch.BranchCode = branch.BranchCode.Trim().ToUpper();
             branch.BranchName = branch.BranchName.Trim();
 
+            // Auto-provision or assign DefaultCashLedgerID if not provided
+            if (!branch.DefaultCashLedgerID.HasValue || branch.DefaultCashLedgerID.Value <= 0)
+            {
+                var cleanName = branch.BranchName.Replace("शाखा", "").Replace("ब्रांच", "").Replace("कार्यालय", "").Trim();
+                
+                // 1. Look for existing matching ledger in Group 31 or Cash
+                var existingCash = await _context.Ledgers
+                    .FirstOrDefaultAsync(l => 
+                        (l.LedgerName.Contains(cleanName) || (!string.IsNullOrEmpty(branch.BranchCode) && l.LedgerName.Contains(branch.BranchCode))) &&
+                        (l.LedgerName.Contains("रोख") || l.LedgerName.Contains("हात") || l.LedgerName.ToLower().Contains("cash") || l.AccountType == "Cash In Hand"));
+                
+                if (existingCash != null)
+                {
+                    branch.DefaultCashLedgerID = existingCash.LedgerID;
+                }
+                else
+                {
+                    // 2. Automatically create dedicated cash ledger for this branch
+                    int cashGroupId = await _context.AccountGroups
+                        .Where(g => g.GroupName.Contains("हातावरील") || g.GroupName.Contains("रोख") || g.GroupName.ToLower().Contains("cash"))
+                        .Select(g => g.GroupID)
+                        .FirstOrDefaultAsync();
+
+                    if (cashGroupId == 0) cashGroupId = 31;
+
+                    var newCashLedger = new Ledger
+                    {
+                        LedgerName = $"हात शिल्लक {branch.BranchName} शाखा",
+                        LedgerNameEnglish = $"Cash In Hand {branch.BranchName} Branch",
+                        GroupID = cashGroupId,
+                        OpeningBalance = 0,
+                        OpeningBalanceType = "Dr",
+                        ReportType = "ताळेबंद",
+                        AccountType = "Cash In Hand",
+                        IsActive = true
+                    };
+                    _context.Ledgers.Add(newCashLedger);
+                    await _context.SaveChangesAsync();
+                    branch.DefaultCashLedgerID = newCashLedger.LedgerID;
+                }
+            }
+
             _context.Branches.Add(branch);
             await _context.SaveChangesAsync();
 
@@ -115,6 +160,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> PutBranch(int id, Branch branch)
         {
             if (id != branch.BranchID)
@@ -174,6 +220,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,SuperAdmin")]
         public async Task<IActionResult> DeleteBranch(int id)
         {
             var branch = await _context.Branches.FindAsync(id);

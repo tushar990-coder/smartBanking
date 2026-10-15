@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
 using Bhisi.Api.Filters;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -388,25 +389,12 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<object>> PostSavingAccountMaster([FromBody] CreateSavingAccountDto dto)
         {
             // Multi-branch Security: Enforce branch lock for non-HO users
-            int? userBranchId = null;
-            bool isHO = false;
-            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
-            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
-            {
-                userBranchId = parsedBranch;
-                isHO = (userBranchId == 1);
-            }
-            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
-            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                isHO = true;
-            }
+            int userBranchId = User.GetOperatingBranchId();
+            bool isHO = User.IsHeadOfficeAdmin();
 
-            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+            if (!isHO && userBranchId > 0)
             {
-                dto.BranchID = userBranchId.Value;
+                dto.BranchID = userBranchId;
             }
 
             var branch = await _context.Branches.FindAsync(dto.BranchID);
@@ -549,6 +537,7 @@ namespace Bhisi.Api.Controllers
                 {
                     SavingAccountID = savingAccount.SavingAccountID,
                     CustomerID = savingAccount.CustomerID,
+                    BranchID = savingAccount.BranchID,
                     TransactionDate = savingAccount.OpeningDate,
                     TransactionType = "Deposit",
                     PaymentMode = "Cash",
@@ -695,6 +684,7 @@ namespace Bhisi.Api.Controllers
                 {
                     SavingAccountID = savingAccount.SavingAccountID,
                     CustomerID = customer.CustomerID,
+                    BranchID = savingAccount.BranchID,
                     TransactionDate = savingAccount.OpeningDate,
                     TransactionType = "Deposit",
                     PaymentMode = "Cash",
@@ -778,23 +768,10 @@ namespace Bhisi.Api.Controllers
             }
 
             // Multi-branch Security: Non-HO users can only update accounts belonging to their branch
-            int? userBranchId = null;
-            bool isHO = false;
-            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
-            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
-            {
-                userBranchId = parsedBranch;
-                isHO = (userBranchId == 1);
-            }
-            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
-            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                isHO = true;
-            }
+            int userBranchId = User.GetOperatingBranchId();
+            bool isHO = User.IsHeadOfficeAdmin();
 
-            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0 && existing.BranchID != userBranchId.Value)
+            if (!isHO && userBranchId > 0 && existing.BranchID != userBranchId)
             {
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = "तुम्हाला फक्त तुमच्या स्वतःच्या शाखेच्या खात्यात बदल करण्याची परवानगी आहे." });
             }

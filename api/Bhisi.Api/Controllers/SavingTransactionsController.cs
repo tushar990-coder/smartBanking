@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -34,9 +35,14 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(a => a!.Customer)
                 .AsQueryable();
 
-            if (branchId.HasValue && branchId.Value > 0)
+            if (!User.IsHeadOfficeAdmin())
             {
-                query = query.Where(t => t.SavingAccount != null && t.SavingAccount.BranchID == branchId.Value);
+                int opId = User.GetOperatingBranchId();
+                query = query.Where(t => t.BranchID == opId || (t.SavingAccount != null && t.SavingAccount.BranchID == opId));
+            }
+            else if (branchId.HasValue && branchId.Value > 0)
+            {
+                query = query.Where(t => t.BranchID == branchId.Value || (t.SavingAccount != null && t.SavingAccount.BranchID == branchId.Value));
             }
 
             var projected = query
@@ -50,7 +56,8 @@ namespace Bhisi.Api.Controllers
                     t.BalanceAfterTxn,
                     t.Narration,
                     t.VoucherNo,
-                    BranchID = t.SavingAccount != null ? t.SavingAccount.BranchID : 1,
+                    BranchID = t.BranchID,
+                    HomeBranchID = t.SavingAccount != null ? t.SavingAccount.BranchID : 1,
                     AccountNo = t.SavingAccount != null ? t.SavingAccount.AccountNo : "",
                     CustomerName = t.SavingAccount != null && t.SavingAccount.Customer != null
                         ? (t.SavingAccount.Customer.FirstName + (string.IsNullOrWhiteSpace(t.SavingAccount.Customer.MiddleName) ? "" : " " + t.SavingAccount.Customer.MiddleName) + " " + t.SavingAccount.Customer.LastName).Trim()
@@ -173,6 +180,18 @@ namespace Bhisi.Api.Controllers
                     return BadRequest("Invalid Transaction Type.");
                 }
 
+                var currentUser = HttpContext.User;
+                int userBranchId = currentUser.GetOperatingBranchId();
+                bool isHO = currentUser.IsHeadOfficeAdmin();
+
+                // Operating counter branch where cash is deposited or withdrawn
+                int operatingBranchId = (isHO && txn.BranchID > 0)
+                    ? txn.BranchID
+                    : (userBranchId > 0 ? userBranchId : (account.BranchID > 0 ? account.BranchID : 1));
+
+                int targetBranchId = operatingBranchId;
+
+                txn.BranchID = targetBranchId;
                 txn.CustomerID = account.CustomerID;
                 txn.BalanceAfterTxn = account.CurrentBalance;
                 txn.CreatedOn = DateTime.Now;
@@ -186,6 +205,7 @@ namespace Bhisi.Api.Controllers
                     {
                         SavingAccountID = targetAccount.SavingAccountID,
                         CustomerID = targetAccount.CustomerID,
+                        BranchID = targetBranchId,
                         TargetSavingAccountID = account.SavingAccountID,
                         TransactionDate = txn.TransactionDate,
                         TransactionType = txn.TransactionType == "Withdrawal" ? "Deposit" : "Withdrawal",
@@ -218,23 +238,6 @@ namespace Bhisi.Api.Controllers
                     })
                     .FirstOrDefaultAsync();
 
-                var currentUser = HttpContext.User;
-                string? roleClaim = currentUser?.FindFirst(ClaimTypes.Role)?.Value ?? currentUser?.FindFirst("role")?.Value;
-                string? branchClaim = currentUser?.FindFirst("BranchID")?.Value ?? currentUser?.FindFirst("branchId")?.Value ?? currentUser?.FindFirst("branch")?.Value;
-                int.TryParse(branchClaim, out int userBranchId);
-                if (userBranchId <= 0) userBranchId = 1;
-
-                bool isHO = (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) ?? false) ||
-                            (roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ?? false) ||
-                            (roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ?? false) ||
-                            userBranchId == 1;
-
-                // Operating counter branch where cash is deposited or withdrawn
-                int operatingBranchId = (isHO && txn.BranchID.HasValue && txn.BranchID.Value > 0)
-                    ? txn.BranchID.Value
-                    : (userBranchId > 0 ? userBranchId : (customerInfo?.BranchID ?? 1));
-
-                int targetBranchId = operatingBranchId;
                 var branch = await _context.Branches.FindAsync(targetBranchId);
                 string branchCode = branch?.BranchCode ?? "HQ";
 
@@ -295,64 +298,241 @@ namespace Bhisi.Api.Controllers
 
                 var (vStatusSb, appBySb, appOnSb) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, txn.Amount, txn.CreatedBy);
 
-                var voucher = new Voucher
-                {
-                    BranchID = targetBranchId,
-                    VoucherNo = voucherNo,
-                    VoucherDate = txn.TransactionDate,
-                    VoucherType = voucherType,
-                    Narration = narration,
-                    TotalAmount = txn.Amount,
-                    Status = vStatusSb,
-                    ApprovedBy = appBySb,
-                    ApprovedOn = appOnSb,
-                    CreatedBy = txn.CreatedBy,
-                    CreatedOn = DateTime.Now
-                };
+                bool isCrossBranchTxn = (customerInfo?.BranchID != null && customerInfo.BranchID > 0 && customerInfo.BranchID != targetBranchId);
+                int homeBranchId = customerInfo?.BranchID ?? account.BranchID;
 
-
-                // Deposit: Dr Cash/Bank/Target, Cr Saving Control
-                // Withdrawal: Dr Saving Control, Cr Cash/Bank/Target
-                if (txn.TransactionType == "Deposit" || txn.TransactionType == "Interest")
+                if (!isCrossBranchTxn)
                 {
-                    voucher.VoucherDetails.Add(new VoucherDetail
+                    // STANDARD SINGLE-BRANCH VOUCHER
+                    var voucher = new Voucher
                     {
-                        LedgerID = cashBankLedgerID,
-                        DrCr = "Dr",
-                        Amount = txn.Amount,
-                        CustomerID = targetAccount?.CustomerID ?? account.CustomerID
-                    });
-                    voucher.VoucherDetails.Add(new VoucherDetail
+                        BranchID = targetBranchId,
+                        VoucherNo = voucherNo,
+                        VoucherDate = txn.TransactionDate,
+                        VoucherType = voucherType,
+                        Narration = narration,
+                        TotalAmount = txn.Amount,
+                        Status = vStatusSb,
+                        ApprovedBy = appBySb,
+                        ApprovedOn = appOnSb,
+                        CreatedBy = txn.CreatedBy,
+                        CreatedOn = DateTime.Now
+                    };
+
+                    if (txn.TransactionType == "Deposit" || txn.TransactionType == "Interest")
                     {
-                        LedgerID = savingControlLedgerID,
-                        DrCr = "Cr",
-                        Amount = txn.Amount,
-                        CustomerID = account.CustomerID
-                    });
+                        voucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = cashBankLedgerID,
+                            DrCr = "Dr",
+                            Amount = txn.Amount,
+                            CustomerID = targetAccount?.CustomerID ?? account.CustomerID
+                        });
+                        voucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = savingControlLedgerID,
+                            DrCr = "Cr",
+                            Amount = txn.Amount,
+                            CustomerID = account.CustomerID
+                        });
+                    }
+                    else // Withdrawal or Charges
+                    {
+                        voucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = savingControlLedgerID,
+                            DrCr = "Dr",
+                            Amount = txn.Amount,
+                            CustomerID = account.CustomerID
+                        });
+                        voucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = cashBankLedgerID,
+                            DrCr = "Cr",
+                            Amount = txn.Amount,
+                            CustomerID = targetAccount?.CustomerID ?? account.CustomerID
+                        });
+                    }
+
+                    _context.Vouchers.Add(voucher);
+                    await _context.SaveChangesAsync();
+                    txn.VoucherNo = voucherNo;
                 }
-                else // Withdrawal or Charges
+                else
                 {
-                    voucher.VoucherDetails.Add(new VoucherDetail
+                    // DUAL-VOUCHER IBT ENGINE FOR CROSS-BRANCH SAVING TRANSACTION
+                    int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, targetBranchId, homeBranchId);
+                    var homeBranch = await _context.Branches.FindAsync(homeBranchId);
+                    string hbCode = homeBranch?.BranchCode ?? "HB";
+
+                    int countHb = await _context.Vouchers.CountAsync(v => v.BranchID == homeBranchId && v.VoucherType == "Journal") + 1;
+                    string voucherNoHb = $"{hbCode}-JV-{fy}-{countHb:D5}";
+
+                    if (txn.TransactionType == "Deposit" || txn.TransactionType == "Interest")
                     {
-                        LedgerID = savingControlLedgerID,
-                        DrCr = "Dr",
-                        Amount = txn.Amount,
-                        CustomerID = account.CustomerID
-                    });
-                    voucher.VoucherDetails.Add(new VoucherDetail
+                        // 1. Counter Voucher (Branch A, Receipt): Dr Cash, Cr IBT
+                        var counterVoucher = new Voucher
+                        {
+                            BranchID = targetBranchId,
+                            VoucherNo = voucherNo,
+                            VoucherDate = txn.TransactionDate,
+                            VoucherType = voucherType,
+                            Narration = $"[आंतर-शाखा बचत जमा] खाते: {customerInfo?.AccountNo} ({customerInfo?.CustomerName}, मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख जमा",
+                            TotalAmount = txn.Amount,
+                            Status = vStatusSb,
+                            ApprovedBy = appBySb,
+                            ApprovedOn = appOnSb,
+                            CreatedBy = txn.CreatedBy,
+                            CreatedOn = DateTime.Now,
+                            IsIbtVoucher = true,
+                            TargetBranchID = homeBranchId
+                        };
+                        _context.Vouchers.Add(counterVoucher);
+                        await _context.SaveChangesAsync();
+
+                        counterVoucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = counterVoucher.VoucherID,
+                            LedgerID = cashBankLedgerID,
+                            DrCr = "Dr",
+                            Amount = txn.Amount,
+                            CustomerID = account.CustomerID
+                        });
+                        counterVoucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = counterVoucher.VoucherID,
+                            LedgerID = ibtLedgerId,
+                            DrCr = "Cr",
+                            Amount = txn.Amount,
+                            CustomerID = account.CustomerID
+                        });
+
+                        // 2. Home Branch Voucher (Branch B, Journal): Dr IBT, Cr Saving Control
+                        var homeVoucher = new Voucher
+                        {
+                            BranchID = homeBranchId,
+                            VoucherNo = voucherNoHb,
+                            VoucherDate = txn.TransactionDate,
+                            VoucherType = "Journal",
+                            Narration = $"[आंतर-शाखा बचत जमा] काऊंटर शाखा #{targetBranchId} कडून ठेव जमा (खाते: {customerInfo?.AccountNo}, {customerInfo?.CustomerName})",
+                            TotalAmount = txn.Amount,
+                            Status = vStatusSb,
+                            ApprovedBy = appBySb,
+                            ApprovedOn = appOnSb,
+                            CreatedBy = txn.CreatedBy,
+                            CreatedOn = DateTime.Now,
+                            IsIbtVoucher = true,
+                            TargetBranchID = targetBranchId
+                        };
+                        _context.Vouchers.Add(homeVoucher);
+                        await _context.SaveChangesAsync();
+
+                        homeVoucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = homeVoucher.VoucherID,
+                            LedgerID = ibtLedgerId,
+                            DrCr = "Dr",
+                            Amount = txn.Amount,
+                            CustomerID = account.CustomerID
+                        });
+                        homeVoucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = homeVoucher.VoucherID,
+                            LedgerID = savingControlLedgerID,
+                            DrCr = "Cr",
+                            Amount = txn.Amount,
+                            CustomerID = account.CustomerID
+                        });
+
+                        counterVoucher.RelatedVoucherID = homeVoucher.VoucherID;
+                        homeVoucher.RelatedVoucherID = counterVoucher.VoucherID;
+                        await _context.SaveChangesAsync();
+
+                        txn.VoucherNo = voucherNo;
+                    }
+                    else // Withdrawal
                     {
-                        LedgerID = cashBankLedgerID,
-                        DrCr = "Cr",
-                        Amount = txn.Amount,
-                        CustomerID = targetAccount?.CustomerID ?? account.CustomerID
-                    });
+                        // 1. Home Branch Voucher (Branch B, Journal): Dr Saving Control, Cr IBT
+                        var homeVoucher = new Voucher
+                        {
+                            BranchID = homeBranchId,
+                            VoucherNo = voucherNoHb,
+                            VoucherDate = txn.TransactionDate,
+                            VoucherType = "Journal",
+                            Narration = $"[आंतर-शाखा बचत उचल] काऊंटर शाखा #{targetBranchId} वरून रक्कम उचल (खाते: {customerInfo?.AccountNo}, {customerInfo?.CustomerName})",
+                            TotalAmount = txn.Amount,
+                            Status = vStatusSb,
+                            ApprovedBy = appBySb,
+                            ApprovedOn = appOnSb,
+                            CreatedBy = txn.CreatedBy,
+                            CreatedOn = DateTime.Now,
+                            IsIbtVoucher = true,
+                            TargetBranchID = targetBranchId
+                        };
+                        _context.Vouchers.Add(homeVoucher);
+                        await _context.SaveChangesAsync();
+
+                        homeVoucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = homeVoucher.VoucherID,
+                            LedgerID = savingControlLedgerID,
+                            DrCr = "Dr",
+                            Amount = txn.Amount,
+                            CustomerID = account.CustomerID
+                        });
+                        homeVoucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = homeVoucher.VoucherID,
+                            LedgerID = ibtLedgerId,
+                            DrCr = "Cr",
+                            Amount = txn.Amount,
+                            CustomerID = account.CustomerID
+                        });
+
+                        // 2. Counter Voucher (Branch A, Payment): Dr IBT, Cr Cash
+                        var counterVoucher = new Voucher
+                        {
+                            BranchID = targetBranchId,
+                            VoucherNo = voucherNo,
+                            VoucherDate = txn.TransactionDate,
+                            VoucherType = voucherType,
+                            Narration = $"[आंतर-शाखा बचत उचल] खाते: {customerInfo?.AccountNo} ({customerInfo?.CustomerName}, मूळ शाखा #{homeBranchId}) साठी काऊंटरवरून रोख अदा",
+                            TotalAmount = txn.Amount,
+                            Status = vStatusSb,
+                            ApprovedBy = appBySb,
+                            ApprovedOn = appOnSb,
+                            CreatedBy = txn.CreatedBy,
+                            CreatedOn = DateTime.Now,
+                            IsIbtVoucher = true,
+                            TargetBranchID = homeBranchId
+                        };
+                        _context.Vouchers.Add(counterVoucher);
+                        await _context.SaveChangesAsync();
+
+                        counterVoucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = counterVoucher.VoucherID,
+                            LedgerID = ibtLedgerId,
+                            DrCr = "Dr",
+                            Amount = txn.Amount,
+                            CustomerID = account.CustomerID
+                        });
+                        counterVoucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            VoucherID = counterVoucher.VoucherID,
+                            LedgerID = cashBankLedgerID,
+                            DrCr = "Cr",
+                            Amount = txn.Amount,
+                            CustomerID = account.CustomerID
+                        });
+
+                        counterVoucher.RelatedVoucherID = homeVoucher.VoucherID;
+                        homeVoucher.RelatedVoucherID = counterVoucher.VoucherID;
+                        await _context.SaveChangesAsync();
+
+                        txn.VoucherNo = voucherNo;
+                    }
                 }
-
-                _context.Vouchers.Add(voucher);
-                await _context.SaveChangesAsync();
-
-                // Store the voucher number on the transaction
-                txn.VoucherNo = voucherNo;
                 await _context.SaveChangesAsync();
 
                 await dbTransaction.CommitAsync();

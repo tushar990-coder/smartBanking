@@ -57,7 +57,7 @@ const LoanDistributionListModal: React.FC<Props> = ({ onClose, onEdit, onDelete 
     const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
     const initialBranchId = hasGlobalBranch ? parseInt(globalBranchStr as string, 10) : (user?.branchID || 1);
 
-    const isHOUser = user?.role === 'Admin' || user?.role === 'HO_Manager' || (user?.branchID === 1 && !hasGlobalBranch);
+    const isHOUser = user?.role === 'Admin' || user?.role === 'HO_Manager' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice';
 
     const [selectedBranchId, setSelectedBranchId] = useState<string>(
         isHOUser ? (hasGlobalBranch ? String(initialBranchId) : 'all') : String(user?.branchID || initialBranchId)

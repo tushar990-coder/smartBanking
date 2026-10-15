@@ -47,7 +47,8 @@ export interface FdSchemeInterestSlab {
 
 interface FdScheme {
   fdSchemeID: number;
-  branchID: number;
+  branchID?: number | null;
+  branch?: { branchID: number; branchName: string } | null;
   schemeCode: string;
   schemeName: string;
   durationMonths: number;
@@ -82,7 +83,8 @@ interface FdScheme {
 }
 
 interface FdSchemeFormData {
-  branchID: number;
+  isGlobal: boolean;
+  branchID: number | null;
   schemeCode: string;
   schemeName: string;
   durationMonths: number | string;
@@ -132,7 +134,8 @@ const FdSchemeMaster: React.FC = () => {
   const [slabs, setSlabs] = useState<FdSchemeInterestSlab[]>([]);
 
   const [formData, setFormData] = useState<FdSchemeFormData>({
-    branchID: 1,
+    isGlobal: true,
+    branchID: null,
     schemeCode: '',
     schemeName: '',
     durationMonths: 12,
@@ -298,7 +301,7 @@ const FdSchemeMaster: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const response = await axios.get(`${API_URL}/FdSchemes`);
+      const response = await axios.get(`${API_URL}/FdSchemes?includeAll=true`);
       const data = response.data || [];
       setSchemes(data);
 
@@ -405,7 +408,7 @@ const FdSchemeMaster: React.FC = () => {
     }
 
     const payload = {
-      branchID: 1, // Sanstha-wide master
+      branchID: formData.isGlobal ? null : (Number(formData.branchID) || null),
       schemeCode: code,
       schemeName: formData.schemeName.trim(),
       durationMonths: parseInt(formData.durationMonths.toString(), 10) || 12,
@@ -473,7 +476,8 @@ const FdSchemeMaster: React.FC = () => {
     setIsEditMode(true);
     setEditSchemeId(scheme.fdSchemeID);
     setFormData({
-      branchID: scheme.branchID || 1,
+      isGlobal: !scheme.branchID,
+      branchID: scheme.branchID || null,
       schemeCode: scheme.schemeCode || '',
       schemeName: scheme.schemeName || '',
       durationMonths: scheme.durationMonths || 12,
@@ -534,7 +538,8 @@ const FdSchemeMaster: React.FC = () => {
     setEditSchemeId(null);
     const autoCode = generateSchemeCode(schemes);
     setFormData({
-      branchID: 1,
+      isGlobal: true,
+      branchID: null,
       schemeCode: autoCode,
       schemeName: '',
       durationMonths: 12,
@@ -760,14 +765,39 @@ const FdSchemeMaster: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             <div>
-              <label className={labelClass}>लागू व्याप्ती (Applicability Scope)</label>
-              <div className="flex items-center gap-2 px-2.5 py-1 bg-slate-100 border border-slate-200 rounded-sm h-[28px]">
-                <div className="p-0.5 bg-primary text-white rounded-xs">
-                  <Building className="w-3 h-3" />
-                </div>
-                <div>
-                  <span className="font-bold text-[11px] text-primary block leading-tight">🏛️ सर्व शाखांना लागू</span>
-                </div>
+              <label className={labelClass}>लागू व्याप्ती (Applicability Scope) <span className="text-red-500">*</span></label>
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={formData.isGlobal ? 'GLOBAL' : 'BRANCH'}
+                  onChange={(e) => {
+                    const isGlob = e.target.value === 'GLOBAL';
+                    setFormData(prev => ({
+                      ...prev,
+                      isGlobal: isGlob,
+                      branchID: isGlob ? null : (prev.branchID || (branches[0]?.branchID || 1))
+                    }));
+                  }}
+                  className={`${inputClass} font-semibold ${formData.isGlobal ? 'bg-emerald-50 text-emerald-900 border-emerald-300' : 'bg-purple-50 text-purple-900 border-purple-300'}`}
+                >
+                  <option value="GLOBAL">🌐 सर्व शाखांसाठी (Global - All)</option>
+                  <option value="BRANCH">🏢 विशिष्ट शाखेसाठी (Branch Specific)</option>
+                </select>
+
+                {!formData.isGlobal && (
+                  <select
+                    value={formData.branchID || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, branchID: parseInt(e.target.value) || null }))}
+                    className={`${inputClass} font-semibold bg-white border-purple-300 text-purple-900 min-w-[120px]`}
+                    required={!formData.isGlobal}
+                  >
+                    <option value="">-- शाखा निवडा --</option>
+                    {branches.map(b => (
+                      <option key={b.branchID} value={b.branchID}>
+                        {b.branchName}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
 
@@ -1528,6 +1558,7 @@ const FdSchemeMaster: React.FC = () => {
                     <tr>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center w-24">कृती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">योजना कोड & नाव</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 text-center w-28">लागू व्याप्ती</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">कालावधी & दर</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-center">व्याज प्रकार</th>
                       <th className="px-2 py-1.5 border-r border-gray-200 text-left">मॅप्ड देयता लेजर</th>
@@ -1574,6 +1605,17 @@ const FdSchemeMaster: React.FC = () => {
                               </span>
                             )}
                           </div>
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 text-center">
+                          {!s.branchID ? (
+                            <span className="bg-emerald-50 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-300 inline-flex items-center gap-1">
+                              🌐 सर्व शाखा
+                            </span>
+                          ) : (
+                            <span className="bg-purple-50 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded border border-purple-300 inline-flex items-center gap-1" title={s.branch?.branchName || `शाखा #${s.branchID}`}>
+                              🏢 {s.branch?.branchName || `शाखा #${s.branchID}`}
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                           {s.schemeDurationModel === 'Slab' ? (

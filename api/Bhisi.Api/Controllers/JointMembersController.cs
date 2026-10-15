@@ -8,11 +8,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class JointMembersController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -24,28 +26,16 @@ namespace Bhisi.Api.Controllers
 
         private (int userId, string username, int branchId, string role, bool isHeadOfficeAdmin) GetCurrentUserContext()
         {
-            int userId = 1;
-            string username = "System";
-            int branchId = 1;
-            string role = "Admin";
+            if (User?.Identity == null || !User.Identity.IsAuthenticated)
+            {
+                throw new UnauthorizedAccessException("अनाधिकृत विनंती: कृपया प्रथम सिस्टीममध्ये लॉगिन करा (User is not authenticated).");
+            }
 
-            var userClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst("UserID") ?? User.FindFirst("sub");
-            if (userClaim != null && int.TryParse(userClaim.Value, out int uid)) userId = uid;
-
-            var nameClaim = User.FindFirst(ClaimTypes.Name) ?? User.FindFirst("Username");
-            if (nameClaim != null && !string.IsNullOrWhiteSpace(nameClaim.Value)) username = nameClaim.Value;
-
-            var branchClaim = User.FindFirst("BranchID") ?? User.FindFirst("branchID");
-            if (branchClaim != null && int.TryParse(branchClaim.Value, out int bid)) branchId = bid;
-
-            var roleClaim = User.FindFirst(ClaimTypes.Role) ?? User.FindFirst("Role") ?? User.FindFirst("role");
-            if (roleClaim != null && !string.IsNullOrWhiteSpace(roleClaim.Value)) role = roleClaim.Value;
-
-            bool isHeadOfficeAdmin = role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                                     role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
-                                     role.Equals("Super Admin", StringComparison.OrdinalIgnoreCase) ||
-                                     role.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ||
-                                     role.Equals("Auditor", StringComparison.OrdinalIgnoreCase);
+            int userId = User.GetUserId();
+            string username = User.GetUsername();
+            int branchId = User.GetOperatingBranchId();
+            string role = User.FindFirst(ClaimTypes.Role)?.Value ?? User.FindFirst("Role")?.Value ?? "Member";
+            bool isHeadOfficeAdmin = User.IsHeadOfficeAdmin();
 
             return (userId, username, branchId, role, isHeadOfficeAdmin);
         }

@@ -14,7 +14,7 @@ $clientDir = Join-Path $workspaceRoot "client"
 $apiDir = Join-Path $workspaceRoot "api\Bhisi.Api"
 $versionJsonPath = Join-Path $workspaceRoot "version.json"
 
-$version = "2.5.39"
+$version = "2.5.51"
 $gitHash = ""
 $gitShort = ""
 $gitBranch = ""
@@ -237,6 +237,11 @@ if (Test-Path $healFdNarrationSql) {
     Copy-Item $healFdNarrationSql (Join-Path $patchFolder "database\heal_corrupted_fd_voucher_narrations.sql") -Force
     Write-Host "  -> heal_corrupted_fd_voucher_narrations.sql included in database package." -ForegroundColor White
 }
+$branchLedgerOpeningSql = Join-Path $workspaceRoot "tools\create_branch_ledger_opening_balance_table.sql"
+if (Test-Path $branchLedgerOpeningSql) {
+    Copy-Item $branchLedgerOpeningSql (Join-Path $patchFolder "database\create_branch_ledger_opening_balance_table.sql") -Force
+    Write-Host "  -> create_branch_ledger_opening_balance_table.sql included in database package." -ForegroundColor White
+}
 
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
@@ -269,6 +274,12 @@ if (Test-Path $versionJsonSource) {
     Copy-Item $versionJsonSource (Join-Path $backendDest "version.json") -Force
     Copy-Item $versionJsonSource (Join-Path $frontendDest "version.json") -Force
     Write-Host "  -> version.json (v$version Changelog) included in patch." -ForegroundColor White
+}
+
+$changelogSource = Join-Path $workspaceRoot "CHANGELOG.md"
+if (Test-Path $changelogSource) {
+    Copy-Item $changelogSource (Join-Path $patchFolder "CHANGELOG.md") -Force
+    Write-Host "  -> CHANGELOG.md included in patch." -ForegroundColor White
 }
 
 $applyMemberScript = Join-Path $workspaceRoot "tools\apply_member_code_fix_all_sansthas.ps1"
@@ -1117,7 +1128,40 @@ $readmeContent = @"
 # ==============================================================================
 
 ## 1. पॅचमधील मुख्य सुधारणा (What's New in v$version)
-1. **खातेदार ३६०° (Khatedar 360°) संपूर्ण सीबीएस एकत्रीकरण व व्यवहार थेट हस्तांतरण (Khatedar 360° CBS Integration & Transaction Bridge):**
+1. **गुंतवणूक व मालमत्ता व्यवस्थापन बहु-शाखा (Multi-Branch) स्वायत्तता, शाखा रोख ताळमेळ, एकत्रित घसारा व अन-पास सुधारणा (v2.5.49):**
+   - मालमत्ता व्यवस्थापन बहु-शाखा सक्षमीकरण: मालमत्ता खरेदी (Asset Purchases) मध्ये CashLedgerHelper द्वारे शाखा-स्तरीय रोख खाते मॅपिंग; वर्ग २ च्या खरेदीचे पैसे वर्ग १ च्या कॅश खात्याला जमा होणे १००% बंद; संस्था-स्तरीय मालमत्ता वर्ग (Asset Categories) सर्व शाखांसाठी उपलब्ध.
+   - एकत्रित वार्षिक घसारा आकारणी (Consolidated Batch Depreciation Engine): मालमत्ता अहवाल व Depreciations Controller मध्ये 'सर्व शाखा एकत्रित' पर्याय; सर्व शाखांचा घसारा एका क्लिकवर मोजणे आणि प्रत्येक शाखेसाठी संतुलित जर्नल व्हाउचर (Branch-wise JV) स्वतंत्रपणे पोस्ट होऊन प्रत्येक शाखेचा नफा-तोटा व तेरीज तंतोतंत जुळणे.
+   - गुंतवणूक व्यवस्थापन बहु-शाखा स्वायत्तता (Investment Multi-Branch Capability): गुंतवणूक खात्यांची आरंभिक शिल्लक, नवीन खाते उघडणे व मासिक व्याज आकारणी (Monthly Accrual) मध्ये शाखा-स्तरीय रोख/बँक लेजर मॅपिंग; बँका/संस्था सर्व शाखांमध्ये उपलब्ध.
+   - मंजूर व्हाउचर्स अन-पास प्रक्रिया व त्रुटी हाताळणी सुधारणा.
+
+2. **व्हाउचर पासिंग, मंजुरी व व्यवस्थापन: पास केलेले व्हाउचर्स अन-पास (Revert to Pending) करण्याची सुविधा (v2.5.48):**
+   - मंजूर व्हाउचर्स स्क्रीनवर '✅ मंजूर व्हाउचर्स' स्वतंत्र टॅबमध्ये पाहण्याची आणि गरजेनुसार चुकीने किंवा दुरुस्तीसाठी पास झालेले व्हाउचर्स एका क्लिकवर अन-पास (Revert to Pending) करण्याची अधिकृत सीबीएस सुविधा.
+   - वैयक्तिक व एकत्रित अन-पास प्रक्रिया (Bulk Unpass) स्पष्ट कारण नोंद (Reason) व पुष्टीकरणासह.
+   - ॲटॉमिक स्क्रॉल रीसेट (ScrollNo, ApprovedBy व ApprovedOn तात्काळ रीसेट) व दिवसअखेर (EOD) सुरक्षितता guard.
+   - संपूर्ण कोअर बँकिंग सुरक्षा ऑडिट नोंद (Audit Trail Logging).
+
+3. **व्हाउचर पासिंग: तारीख प्रविष्ट केल्यावर केवळ त्याच तारखेचे प्रलंबित व्हाउचर दिसणे (v2.5.47):**
+   - व्हाउचर पासिंग मास्टर स्क्रीनवर तारीख निवडल्यावर केवळ त्याच तारखेचे प्रलंबित व्हाउचर प्रदर्शन; बॅकलॉग चेतावणी व क्विक-जंप पिल्स.
+   - दिवसानिहाय सारांश व मेट्रिक्स ताळमेळ आणि सुरक्षित 'सर्व व्हाउचर्स निवडा'.
+
+4. **मुदत ठेव बाकी अहवाल (FD Outstanding Report) मधील जुने साचलेले व्याज दुप्पट मोजणी दोष निवारण (v2.5.46):**
+   - अहवाल व खातावणीमध्ये Math.Max(txSum, logSum + LegacyAccruedInt) लागू करून मुद्दल + व्याज अचूक जुळणे.
+   - भविष्यातील तिमाही चक्रवाढ भांडवलीकरणातही दुप्पट व्याज आकारले जाणे १००% रोखले.
+
+5. **मुदत ठेव खातावणी विवरणपत्र तपशील (Narration) मधील मराठी फॉन्ट त्रुटीचे संपूर्ण निराकरण (v2.5.45):**
+   - '???? ??? ??????...' ऐवजी सर्व १३ संस्था डेटाबेसमधील व्हाउचर्सचे तपशील शुद्ध व सुवाच्य मराठीत १००% पुनर्स्थापित (UTF-8 N' Unicode).
+   - बॅकएंड इन-मेमरी फॉलबॅक संरक्षण व फ्रंटएंड UI/एक्सेल सॅनिटायझर.
+
+6. **बहु-शाखा स्वायत्तता, क्रॉस-शाखा कर्ज वसुली, काऊंटर रोख ताळमेळ व मुदत ठेव तारण संरक्षण (v2.5.44):**
+   - कर्ज मागणी अर्ज, कर्ज वाटप आणि कर्ज वसुलीमध्ये BranchID सक्तीचे करून शाखास्तरीय अलगीकरण.
+   - काऊंटर रोख ताळमेळ व क्रॉस-शाखा कर्ज वसुली (IsCrossBranch, HomeBranchID) आणि CashLedgerHelper द्वारे शाखा रोख शिल्लक ताळमेळ.
+   - कर्ज खात्यावर तारण बोजा (IsLienMarked) असलेल्या मुदत ठेव पावत्यांचे नूतनीकरण पूर्णतः प्रतिबंधित.
+
+7. **युजर व्यवस्थापन व सुरक्षा मास्टर सायबर सुरक्षा मजबुतीकरण (v2.5.43):**
+   - ॲडमिन बॅकडोअर व हार्डकोडेड बायपास पूर्णतः बंद; BCrypt हॅश सक्तीची; सलग ३ चुकीच्या प्रयत्नांनंतर खाते लॉक.
+   - कर्मचाऱ्यांसाठी स्वयं-सेवा व पहिल्या लॉगिनवेळी अनिवार्य पासवर्ड बदल.
+
+8. **खातेदार ३६०° (Khatedar 360°) संपूर्ण सीबीएस एकत्रीकरण व व्यवहार थेट हस्तांतरण (Khatedar 360° CBS Integration & Transaction Bridge):**
    - Member360 ऐवजी अधिकृत 'खातेदार ३६०°' नामकरण व शोध पेटीतून मेंबर संदर्भ काढून १००% शुद्ध सीआयएफ, जुना सीआयएफ, नाव व मोबाईलद्वारे शोध.
    - खातेदार ३६०° वरून कोणत्याही बचत, चालू, मुदत ठेव, पिग्मी, आरडी किंवा कर्ज खात्यावरून थेट संबंधित व्यवहार (Deposit / Withdrawal / Collection) स्क्रीनवर खात्यासह एका क्लिकवर नेव्हिगेशन.
    - बचत खात्यांमध्ये एकाच खातेदाराची एकापेक्षा जास्त खाती असल्यास वापरकर्त्याला स्पष्ट मोडलद्वारे इच्छित खाते निवडण्याची सोय (Multi-Account Selection Modal).

@@ -6,12 +6,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Microsoft.AspNetCore.Authorization;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [Authorize]
     public class ReportsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -168,6 +170,73 @@ namespace Bhisi.Api.Controllers
             return node;
         }
 
+        private async Task<Dictionary<int, (decimal Dr, decimal Cr)>> GetBranchLedgerOpeningBalanceMapAsync(int? branchId, int? financialYearId = null)
+        {
+            int activeFyId = financialYearId ?? (await _context.FinancialYears
+                .Where(fy => fy.IsActive)
+                .Select(fy => fy.FinancialYearID)
+                .FirstOrDefaultAsync());
+
+            if (activeFyId == 0)
+            {
+                activeFyId = await _context.FinancialYears
+                    .OrderByDescending(fy => fy.FinancialYearID)
+                    .Select(fy => fy.FinancialYearID)
+                    .FirstOrDefaultAsync();
+            }
+
+            var query = _context.BranchLedgerOpeningBalances
+                .AsNoTracking()
+                .Where(b => activeFyId == 0 || b.FinancialYearID == activeFyId);
+
+            bool isSpecificBranch = branchId.HasValue && branchId.Value > 0;
+            bool isHoBranch = false;
+
+            if (isSpecificBranch)
+            {
+                var br = await _context.Branches.AsNoTracking().FirstOrDefaultAsync(b => b.BranchID == branchId.Value);
+                isHoBranch = br != null && (string.Equals(br.BranchType, "HeadOffice", StringComparison.OrdinalIgnoreCase) || br.BranchID == 1);
+                query = query.Where(b => b.BranchID == branchId.Value);
+            }
+
+            var branchBals = await query.ToListAsync();
+            var map = branchBals
+                .GroupBy(b => b.LedgerID)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (
+                        Dr: g.Where(x => x.OpeningBalanceType == "Dr").Sum(x => x.OpeningBalance),
+                        Cr: g.Where(x => x.OpeningBalanceType == "Cr").Sum(x => x.OpeningBalance)
+                    )
+                );
+
+            // Backward Compatibility:
+            // For Head Office specifically, or when viewing Consolidated (All branches),
+            // if a ledger has legacy OpeningBalance in Ledgers table but no row in BranchLedgerOpeningBalances,
+            // fall back to that legacy balance.
+            // For any other specific sub-branch, do NOT fall back to legacy balance (zero data leakage guarantee).
+            if (!isSpecificBranch || isHoBranch)
+            {
+                var ledgersWithLegacyOB = await _context.Ledgers
+                    .AsNoTracking()
+                    .Where(l => l.OpeningBalance > 0)
+                    .Select(l => new { l.LedgerID, l.OpeningBalance, l.OpeningBalanceType })
+                    .ToListAsync();
+
+                foreach (var l in ledgersWithLegacyOB)
+                {
+                    if (!map.ContainsKey(l.LedgerID))
+                    {
+                        decimal dr = l.OpeningBalanceType == "Dr" ? l.OpeningBalance : 0;
+                        decimal cr = l.OpeningBalanceType == "Cr" ? l.OpeningBalance : 0;
+                        map[l.LedgerID] = (Dr: dr, Cr: cr);
+                    }
+                }
+            }
+
+            return map;
+        }
+
         // GET: api/Reports/TrialBalance
         [HttpGet("TrialBalance")]
         public async Task<ActionResult<IEnumerable<ReportNodeDto>>> GetTrialBalance([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
@@ -234,6 +303,9 @@ namespace Bhisi.Api.Controllers
                 priorDict = priorSummary.ToDictionary(x => x.LedgerID, x => (Dr: x.PriorDr, Cr: x.PriorCr));
             }
 
+            // 2.1 Branch Ledger Opening Balances Map
+            var branchOBMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId, activeFy?.FinancialYearID);
+
             var ledgersByGroupId = new Dictionary<int, List<ReportNodeDto>>();
 
             foreach (var ledger in ledgers)
@@ -242,9 +314,13 @@ namespace Bhisi.Api.Controllers
                 decimal totalDr = ledgerVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
                 decimal totalCr = ledgerVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
 
-                decimal baseOpeningBal = ledger.OpeningBalance;
-                decimal initialDr = ledger.OpeningBalanceType == "Dr" ? baseOpeningBal : 0;
-                decimal initialCr = ledger.OpeningBalanceType == "Cr" ? baseOpeningBal : 0;
+                decimal initialDr = 0;
+                decimal initialCr = 0;
+                if (branchOBMap.TryGetValue(ledger.LedgerID, out var obEntry))
+                {
+                    initialDr = obEntry.Dr;
+                    initialCr = obEntry.Cr;
+                }
 
                 if (priorDict.TryGetValue(ledger.LedgerID, out var prior))
                 {
@@ -369,13 +445,17 @@ namespace Bhisi.Api.Controllers
 
             // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
             var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
 
             // Calculate Opening Balance for Cash across matched cash ledgers
             decimal openingBalance = 0;
             var cashLedgersList = ledgers.Where(l => cashLedgerIds.Contains(l.LedgerID)).ToList();
             foreach (var cl in cashLedgersList)
             {
-                openingBalance += cl.OpeningBalanceType == "Dr" ? cl.OpeningBalance : -cl.OpeningBalance;
+                if (obMap.TryGetValue(cl.LedgerID, out var obEntry))
+                {
+                    openingBalance += (obEntry.Dr - obEntry.Cr);
+                }
             }
 
             if (cashLedgerIds.Count > 0)
@@ -747,13 +827,17 @@ namespace Bhisi.Api.Controllers
 
             // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
             var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
 
             // Opening balance as of rangeStart
             decimal baseOpeningBalance = 0;
             var cashLedgersList = ledgers.Where(l => cashLedgerIds.Contains(l.LedgerID)).ToList();
             foreach (var cl in cashLedgersList)
             {
-                baseOpeningBalance += cl.OpeningBalanceType == "Dr" ? cl.OpeningBalance : -cl.OpeningBalance;
+                if (obMap.TryGetValue(cl.LedgerID, out var obEntry))
+                {
+                    baseOpeningBalance += (obEntry.Dr - obEntry.Cr);
+                }
             }
 
             if (cashLedgerIds.Count > 0)
@@ -1156,13 +1240,17 @@ namespace Bhisi.Api.Controllers
             
             // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
             var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
 
             // Calculate Opening Balance for Cash across matched cash ledgers
             decimal openingBalance = 0;
             var cashLedgersList = ledgers.Where(l => cashLedgerIds.Contains(l.LedgerID)).ToList();
             foreach (var cl in cashLedgersList)
             {
-                openingBalance += cl.OpeningBalanceType == "Dr" ? cl.OpeningBalance : -cl.OpeningBalance;
+                if (obMap.TryGetValue(cl.LedgerID, out var obEntry))
+                {
+                    openingBalance += (obEntry.Dr - obEntry.Cr);
+                }
             }
 
             if (cashLedgerIds.Count > 0)
@@ -1460,13 +1548,17 @@ namespace Bhisi.Api.Controllers
 
             // Match cash ledgers scoped to the requested branch (or all cash ledgers for consolidated view)
             var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
 
             // Calculate Opening Balance for Cash as of rangeStart
             decimal baseOpeningBalance = 0;
             var cashLedgersList = ledgers.Where(l => cashLedgerIds.Contains(l.LedgerID)).ToList();
             foreach (var cl in cashLedgersList)
             {
-                baseOpeningBalance += cl.OpeningBalanceType == "Dr" ? cl.OpeningBalance : -cl.OpeningBalance;
+                if (obMap.TryGetValue(cl.LedgerID, out var obEntry))
+                {
+                    baseOpeningBalance += (obEntry.Dr - obEntry.Cr);
+                }
             }
 
             if (cashLedgerIds.Count > 0)
@@ -1825,6 +1917,8 @@ namespace Bhisi.Api.Controllers
             }
             var vds = await query.ToListAsync();
 
+            var branchOBMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
+
             var ledgersByGroupId = new Dictionary<int, List<ReportNodeDto>>();
 
             foreach (var ledger in ledgers)
@@ -1853,8 +1947,13 @@ namespace Bhisi.Api.Controllers
                 decimal totalDr = ledgerVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
                 decimal totalCr = ledgerVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
 
-                decimal drBal = ledger.OpeningBalanceType == "Dr" ? ledger.OpeningBalance : 0;
-                decimal crBal = ledger.OpeningBalanceType == "Cr" ? ledger.OpeningBalance : 0;
+                decimal drBal = 0;
+                decimal crBal = 0;
+                if (branchOBMap.TryGetValue(ledger.LedgerID, out var obEntry))
+                {
+                    drBal = obEntry.Dr;
+                    crBal = obEntry.Cr;
+                }
 
                 decimal drBalOpening = drBal;
                 decimal crBalOpening = crBal;
@@ -2129,8 +2228,14 @@ namespace Bhisi.Api.Controllers
             };
 
             // Calculate opening balance up to fromDate
-            decimal openingDr = ledger.OpeningBalanceType == "Dr" ? ledger.OpeningBalance : 0;
-            decimal openingCr = ledger.OpeningBalanceType == "Cr" ? ledger.OpeningBalance : 0;
+            var obMap = await GetBranchLedgerOpeningBalanceMapAsync(branchId);
+            decimal openingDr = 0;
+            decimal openingCr = 0;
+            if (obMap.TryGetValue(ledgerId, out var obEntry))
+            {
+                openingDr = obEntry.Dr;
+                openingCr = obEntry.Cr;
+            }
 
             var allVdsQuery = _context.VoucherDetails.Include(vd => vd.Voucher)
                                        .Where(vd => vd.LedgerID == ledgerId && vd.Voucher != null && (vd.Voucher.Status == "Approved" || string.IsNullOrEmpty(vd.Voucher.Status) || vd.Voucher.Status == "Posted") && vd.Voucher.Status != "Rejected" && vd.Voucher.Status != "Cancelled");
@@ -2801,7 +2906,9 @@ namespace Bhisi.Api.Controllers
                     BranchName = c.Branch?.BranchName ?? $"शाखा #{c.BranchID}",
                     HomeBranchID = c.HomeBranchID ?? acc?.BranchID,
                     HomeBranchName = acc?.Branch?.BranchName ?? (c.HomeBranchID.HasValue ? $"शाखा #{c.HomeBranchID}" : ""),
-                    IsCrossBranch = c.IsCrossBranch || (c.HomeBranchID.HasValue && c.HomeBranchID != c.BranchID) || (acc != null && acc.BranchID != c.BranchID)
+                    IsCrossBranch = c.IsCrossBranch || (c.HomeBranchID.HasValue && c.HomeBranchID != c.BranchID) || (acc != null && acc.BranchID != c.BranchID),
+                    VoucherID = c.VoucherID,
+                    HomeBranchVoucherID = c.HomeBranchVoucherID
                 };
             });
 
@@ -3074,7 +3181,6 @@ namespace Bhisi.Api.Controllers
         }
 
         // Dashboard Summary API
-        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         [HttpGet("DashboardSummary")]
         [HttpGet("dashboard-summary")]
         [HttpGet("Dashboard")]
@@ -3084,6 +3190,7 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
+                branchId = User.ResolveBranchId(branchId);
                 // Members
                 var membersQuery = _context.Members.Include(m => m.Customer).AsNoTracking();
                 if (branchId.HasValue) membersQuery = membersQuery.Where(m => m.BranchID == branchId.Value);

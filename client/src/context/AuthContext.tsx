@@ -12,13 +12,15 @@ interface AuthUser {
   requirePasswordChange: boolean;
   userID?: number;
   roleName?: string;
+  branchType?: string;
 }
 
 interface AuthContextType {
   user: AuthUser | null;
+  globalBranchId: string | null;
   login: (userData: AuthUser) => void;
   logout: () => void;
-  switchBranch: (branchID: number, branchName: string) => void;
+  switchBranch: (branchID: number, branchName: string) => Promise<boolean>;
   markPasswordChanged: () => void;
 }
 
@@ -79,24 +81,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (_) {}
   };
 
-  const switchBranch = (branchID: number, branchName: string) => {
-    setUser((prevUser) => {
-      if (!prevUser) return null;
-      const updatedUser = {
-        ...prevUser,
-        branchID,
-        branchName
+  const switchBranch = async (branchID: number, branchName: string): Promise<boolean> => {
+    try {
+      const token = user?.token;
+      if (!token) return false;
+
+      const res = await fetch('/api/Auth/switch-branch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ targetBranchID: branchID })
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("Failed to switch branch:", errorText);
+        return false;
+      }
+
+      const data = await res.json();
+      const updatedUser: AuthUser = {
+        ...user!,
+        token: data.token || user!.token,
+        branchID: data.branchID || branchID,
+        branchName: data.branchName || branchName,
+        businessDate: data.businessDate || user!.businessDate
       };
+
+      setUser(updatedUser);
       sessionStorage.setItem('bhisi_user', JSON.stringify(updatedUser));
       sessionStorage.setItem('globalBranchId', branchID.toString());
       localStorage.setItem('globalBranchId', branchID.toString());
+
       try {
         const channel = new BroadcastChannel('smart_banking_session_sync');
         channel.postMessage({ type: 'BRANCH_SWITCH', user: updatedUser });
         channel.close();
       } catch (_) {}
-      return updatedUser;
-    });
+
+      return true;
+    } catch (err) {
+      console.error("Error switching branch:", err);
+      return false;
+    }
   };
 
   const markPasswordChanged = () => {
@@ -161,8 +190,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  const globalBranchId = user?.branchID
+    ? user.branchID.toString()
+    : (sessionStorage.getItem('globalBranchId') || localStorage.getItem('globalBranchId') || null);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, switchBranch, markPasswordChanged }}>
+    <AuthContext.Provider value={{ user, globalBranchId, login, logout, switchBranch, markPasswordChanged }}>
       {children}
     </AuthContext.Provider>
   );

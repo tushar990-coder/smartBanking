@@ -52,6 +52,8 @@ interface RdScheme {
   minimumInstallment?: number;
   maximumInstallment?: number;
   interestMethod?: string;
+  branchID?: number | null;
+  branch?: { branchID: number; branchName: string } | null;
 }
 
 interface Branch {
@@ -185,6 +187,19 @@ export default function RdAccountOpening({
     }
   };
 
+  const fetchSchemesForBranch = async (bId: number) => {
+    try {
+      const res = await axios.get(`/api/RdSchemes?branchId=${bId}`);
+      const sList = Array.isArray(res.data) ? res.data : [];
+      const active = sList.filter((s: any) => s && s.isActive);
+      setSchemes(active);
+      return active;
+    } catch (err) {
+      console.error('Error fetching RD schemes for branch', err);
+      return [];
+    }
+  };
+
   useEffect(() => {
     if (isPassingMode && voucherId) {
       loadPassingVoucher(voucherId);
@@ -200,6 +215,8 @@ export default function RdAccountOpening({
 
       if (rdAccount) {
         setNextAccountNo(rdAccount.accountNo);
+        const bId = rdAccount.branchID || 1;
+        fetchSchemesForBranch(bId);
         setFormData(prev => ({
           ...prev,
           branchID: rdAccount.branchID || 1,
@@ -305,25 +322,25 @@ export default function RdAccountOpening({
 
     const fetchData = async () => {
       try {
-        const [mRes, sRes, bRes, agRes] = await axios.all([
+        const [mRes, bRes, agRes] = await axios.all([
           axios.get('/api/Customers'),
-          axios.get('/api/RdSchemes'),
           axios.get('/api/Branches'),
           axios.get('/api/PigmyAgents'),
         ]);
         if (!isMounted) return;
         const mList = Array.isArray(mRes.data) ? mRes.data : [];
-        const sList = Array.isArray(sRes.data) ? sRes.data : [];
         const bList = Array.isArray(bRes.data) ? bRes.data : [];
         const agList = Array.isArray(agRes.data) ? agRes.data : [];
 
         setMembers(mList);
-        setSchemes(sList.filter((s: any) => s && s.isActive));
         setBranches(bList);
         setAgents(agList);
 
         const defaultBranch = bList.length > 0 ? bList[0].branchID : 1;
         fetchNextAccountNo(defaultBranch);
+        const sRes = await axios.get(`/api/RdSchemes?branchId=${defaultBranch}`);
+        const sList = Array.isArray(sRes.data) ? sRes.data : [];
+        setSchemes(sList.filter((s: any) => s && s.isActive));
 
         const params = new URLSearchParams(window.location.search);
         const memberIdStr = params.get('memberId');
@@ -384,6 +401,7 @@ export default function RdAccountOpening({
     if (name === 'branchID') {
       const bId = parseInt(value, 10) || 1;
       fetchNextAccountNo(bId, formData.rdSchemeID);
+      fetchSchemesForBranch(bId);
     }
 
     setFormData((prev) => {
@@ -795,6 +813,7 @@ export default function RdAccountOpening({
                     <option value="">--- योजना निवडा ---</option>
                     {(Array.isArray(schemes) ? schemes : []).map((s, idx) => (
                       <option key={`scheme-${s.rdSchemeID ?? '0'}-${idx}`} value={s.rdSchemeID}>
+                        {s.branchID ? `🏢 [${s.branch?.branchName || 'विशिष्ट शाखा'}] ` : '🌐 [सर्व शाखा] '}
                         {s.schemeName} (योजना कोड: {s.schemeCode || s.schemeCodeNumeric || 501})
                       </option>
                     ))}

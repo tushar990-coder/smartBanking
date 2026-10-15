@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -40,11 +41,8 @@ namespace Bhisi.Api.Controllers
             int.TryParse(branchClaim, out int branchId);
             if (branchId <= 0) branchId = 1;
 
-            string role = roleClaim ?? "Admin";
-            bool isHO = role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                        role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) ||
-                        role.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ||
-                        branchId == 1;
+            string role = roleClaim ?? "User";
+            bool isHO = user.IsHeadOfficeAdmin();
 
             return (uid > 0 ? uid : (int?)null, role, branchId, isHO);
         }
@@ -544,82 +542,181 @@ namespace Bhisi.Api.Controllers
                         ? $"{loanAccFetched.Member.Customer.FirstName} {loanAccFetched.Member.Customer.LastName}".Trim() 
                         : "Borrower");
 
-                string crossBranchNote = collection.IsCrossBranch 
-                    ? $" [Cross-Branch Collection for Home Branch #{collection.HomeBranchID}]" 
-                    : "";
+                int targetHomeBranchId = collection.HomeBranchID ?? loanAccFetched?.BranchID ?? collectingBranch;
+                bool isCrossBranchTxn = (collectingBranch != targetHomeBranchId);
+                int? custId = loanAccFetched?.CustomerID;
+                int? memId = loanAccFetched?.MemberID;
 
-                var voucher = new Voucher
+                if (!isCrossBranchTxn)
                 {
-                    BranchID = collectingBranch,
-                    VoucherNo = voucherNo,
-                    VoucherDate = collection.CollectionDate,
-                    VoucherType = voucherType,
-                    Narration = $"Loan Collection (Rect No: {collection.ReceiptNo}) from {borrowerName} (A/C: {loanAccFetched?.LoanAccountNo}){crossBranchNote}{(collection.IsOTS ? " [OTS / One Time Settlement]" : "")}",
-                    TotalAmount = totalVoucherAmt,
-                    Status = vStatus,
-                    ApprovedBy = vStatus == "Approved" ? (collection.ApprovedByUserID ?? userId ?? 1) : null,
-                    ApprovedOn = vStatus == "Approved" ? DateTime.Now : null
-                };
-                
-                _context.Vouchers.Add(voucher);
-                await _context.SaveChangesAsync();
-
-
-                // Add Voucher Details
-                // Debit Cash/Bank
-                if (cashLedgerId > 0 && totalReceiptAmount > 0)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Dr", Amount = totalReceiptAmount });
-
-                // Debit Interest Waiver Expense if any
-                if (waiverLedger != null && totalWaiverAmount > 0)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = waiverLedger.LedgerID, DrCr = "Dr", Amount = totalWaiverAmount });
-
-                // Credit Principal
-                if (loanLedgerId > 0 && collection.PrincipalCollected > 0)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanLedgerId, DrCr = "Cr", Amount = collection.PrincipalCollected });
-
-                // Credit Interest (realized to P&L)
-                if (interestLedgerId > 0 && collection.InterestCollected > 0)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = interestLedgerId, DrCr = "Cr", Amount = collection.InterestCollected });
-
-                // Credit Penalty
-                if (overdueInterestLedgerId > 0 && collection.PenaltyInterestCollected > 0)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = overdueInterestLedgerId, DrCr = "Cr", Amount = collection.PenaltyInterestCollected });
-
-                // Credit Surcharge
-                if (surchargeLedgerId > 0 && collection.SurchargeCollected > 0)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = surchargeLedgerId, DrCr = "Cr", Amount = collection.SurchargeCollected });
-
-                // Credit Fees
-                if (collection.Fees != null)
-                {
-                    foreach(var fee in collection.Fees)
+                    // STANDARD SINGLE-BRANCH VOUCHER
+                    var voucher = new Voucher
                     {
-                        if (fee.Amount > 0 && fee.LedgerID > 0)
+                        BranchID = collectingBranch,
+                        VoucherNo = voucherNo,
+                        VoucherDate = collection.CollectionDate,
+                        VoucherType = voucherType,
+                        Narration = $"Loan Collection (Rect No: {collection.ReceiptNo}) from {borrowerName} (A/C: {loanAccFetched?.LoanAccountNo}){(collection.IsOTS ? " [OTS / One Time Settlement]" : "")}",
+                        TotalAmount = totalVoucherAmt,
+                        Status = vStatus,
+                        ApprovedBy = vStatus == "Approved" ? (collection.ApprovedByUserID ?? userId ?? 1) : null,
+                        ApprovedOn = vStatus == "Approved" ? DateTime.Now : null
+                    };
+                    
+                    _context.Vouchers.Add(voucher);
+                    await _context.SaveChangesAsync();
+
+                    // Add Voucher Details
+                    if (cashLedgerId > 0 && totalReceiptAmount > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
+
+                    if (waiverLedger != null && totalWaiverAmount > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = waiverLedger.LedgerID, DrCr = "Dr", Amount = totalWaiverAmount, CustomerID = custId, MemberID = memId });
+
+                    if (loanLedgerId > 0 && collection.PrincipalCollected > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanLedgerId, DrCr = "Cr", Amount = collection.PrincipalCollected, CustomerID = custId, MemberID = memId });
+
+                    if (interestLedgerId > 0 && collection.InterestCollected > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = interestLedgerId, DrCr = "Cr", Amount = collection.InterestCollected, CustomerID = custId, MemberID = memId });
+
+                    if (overdueInterestLedgerId > 0 && collection.PenaltyInterestCollected > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = overdueInterestLedgerId, DrCr = "Cr", Amount = collection.PenaltyInterestCollected, CustomerID = custId, MemberID = memId });
+
+                    if (surchargeLedgerId > 0 && collection.SurchargeCollected > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = surchargeLedgerId, DrCr = "Cr", Amount = collection.SurchargeCollected, CustomerID = custId, MemberID = memId });
+
+                    if (collection.Fees != null)
+                    {
+                        foreach(var fee in collection.Fees)
                         {
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fee.LedgerID, DrCr = "Cr", Amount = fee.Amount });
+                            if (fee.Amount > 0 && fee.LedgerID > 0)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fee.LedgerID, DrCr = "Cr", Amount = fee.Amount, CustomerID = custId, MemberID = memId });
+                            }
                         }
                     }
-                }
 
-                // Reverse Contra Entries for NPA accounts
-                if (isNpa)
+                    if (isNpa)
+                    {
+                        if (interestPaid > 0 && ledgerOverdueIntProv != null && ledgerOverdueIntRec != null)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = ledgerOverdueIntProv.LedgerID, DrCr = "Dr", Amount = interestPaid, CustomerID = custId, MemberID = memId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = ledgerOverdueIntRec.LedgerID, DrCr = "Cr", Amount = interestPaid, CustomerID = custId, MemberID = memId });
+                        }
+                        if (expensesPaid > 0 && ledgerOverdueRecProv != null && ledgerOverdueRecRec != null)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = ledgerOverdueRecProv.LedgerID, DrCr = "Dr", Amount = expensesPaid, CustomerID = custId, MemberID = memId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = ledgerOverdueRecRec.LedgerID, DrCr = "Cr", Amount = expensesPaid, CustomerID = custId, MemberID = memId });
+                        }
+                    }
+
+                    await _context.SaveChangesAsync();
+                    collection.VoucherID = voucher.VoucherID;
+                    collection.HomeBranchVoucherID = null;
+                }
+                else
                 {
-                    if (interestPaid > 0 && ledgerOverdueIntProv != null && ledgerOverdueIntRec != null)
+                    // DUAL-VOUCHER IBT (INTER-BRANCH TRANSFER) ARCHITECTURE
+                    int ibtLedgerId = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, collectingBranch, targetHomeBranchId);
+
+                    // 1. Voucher 1: Collecting / Counter Branch (Dr Cash, Cr IBT)
+                    var counterVoucher = new Voucher
                     {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = ledgerOverdueIntProv.LedgerID, DrCr = "Dr", Amount = interestPaid });
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = ledgerOverdueIntRec.LedgerID, DrCr = "Cr", Amount = interestPaid });
-                    }
-                    if (expensesPaid > 0 && ledgerOverdueRecProv != null && ledgerOverdueRecRec != null)
+                        BranchID = collectingBranch,
+                        VoucherNo = voucherNo,
+                        VoucherDate = collection.CollectionDate,
+                        VoucherType = voucherType,
+                        Narration = $"[आंतर-शाखा वसुली] खातेदार: {borrowerName} (कर्ज खाते: {loanAccFetched?.LoanAccountNo}, मूळ शाखा #{targetHomeBranchId}) साठी काऊंटरवर रोख जमा (पावती क्र: {collection.ReceiptNo})",
+                        TotalAmount = totalReceiptAmount,
+                        Status = vStatus,
+                        IsIbtVoucher = true,
+                        TargetBranchID = targetHomeBranchId,
+                        ApprovedBy = vStatus == "Approved" ? (collection.ApprovedByUserID ?? userId ?? 1) : null,
+                        ApprovedOn = vStatus == "Approved" ? DateTime.Now : null
+                    };
+                    _context.Vouchers.Add(counterVoucher);
+                    await _context.SaveChangesAsync();
+
+                    if (cashLedgerId > 0 && totalReceiptAmount > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
+
+                    if (ibtLedgerId > 0 && totalReceiptAmount > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
+
+                    // 2. Voucher 2: Home Branch Settlement (Dr IBT, Cr Loan Principal, Cr Interest, Cr Penalty, Cr Surcharge, Cr Fees)
+                    var homeBranch = await _context.Branches.FindAsync(targetHomeBranchId);
+                    string hbCode = homeBranch?.BranchCode ?? "HB";
+                    int countHb = await _context.Vouchers.CountAsync(v => v.BranchID == targetHomeBranchId && v.VoucherType == "Journal") + 1;
+                    string voucherNoHb = $"{hbCode}-JV-{fy}-{countHb:D5}";
+
+                    var homeVoucher = new Voucher
                     {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = ledgerOverdueRecProv.LedgerID, DrCr = "Dr", Amount = expensesPaid });
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = ledgerOverdueRecRec.LedgerID, DrCr = "Cr", Amount = expensesPaid });
+                        BranchID = targetHomeBranchId,
+                        VoucherNo = voucherNoHb,
+                        VoucherDate = collection.CollectionDate,
+                        VoucherType = "Journal",
+                        Narration = $"[आंतर-शाखा जमा] काऊंटर शाखा #{collectingBranch} कडून वसुली जमा (खातेदार: {borrowerName}, कर्ज खाते: {loanAccFetched?.LoanAccountNo}, पावती क्र: {collection.ReceiptNo}){(collection.IsOTS ? " [OTS / One Time Settlement]" : "")}",
+                        TotalAmount = totalVoucherAmt,
+                        Status = vStatus,
+                        IsIbtVoucher = true,
+                        TargetBranchID = collectingBranch,
+                        ApprovedBy = vStatus == "Approved" ? (collection.ApprovedByUserID ?? userId ?? 1) : null,
+                        ApprovedOn = vStatus == "Approved" ? DateTime.Now : null
+                    };
+                    _context.Vouchers.Add(homeVoucher);
+                    await _context.SaveChangesAsync();
+
+                    if (ibtLedgerId > 0 && totalReceiptAmount > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
+
+                    if (waiverLedger != null && totalWaiverAmount > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = waiverLedger.LedgerID, DrCr = "Dr", Amount = totalWaiverAmount, CustomerID = custId, MemberID = memId });
+
+                    if (loanLedgerId > 0 && collection.PrincipalCollected > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = loanLedgerId, DrCr = "Cr", Amount = collection.PrincipalCollected, CustomerID = custId, MemberID = memId });
+
+                    if (interestLedgerId > 0 && collection.InterestCollected > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = interestLedgerId, DrCr = "Cr", Amount = collection.InterestCollected, CustomerID = custId, MemberID = memId });
+
+                    if (overdueInterestLedgerId > 0 && collection.PenaltyInterestCollected > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = overdueInterestLedgerId, DrCr = "Cr", Amount = collection.PenaltyInterestCollected, CustomerID = custId, MemberID = memId });
+
+                    if (surchargeLedgerId > 0 && collection.SurchargeCollected > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = surchargeLedgerId, DrCr = "Cr", Amount = collection.SurchargeCollected, CustomerID = custId, MemberID = memId });
+
+                    if (collection.Fees != null)
+                    {
+                        foreach(var fee in collection.Fees)
+                        {
+                            if (fee.Amount > 0 && fee.LedgerID > 0)
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = fee.LedgerID, DrCr = "Cr", Amount = fee.Amount, CustomerID = custId, MemberID = memId });
+                        }
                     }
+
+                    if (isNpa)
+                    {
+                        if (interestPaid > 0 && ledgerOverdueIntProv != null && ledgerOverdueIntRec != null)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ledgerOverdueIntProv.LedgerID, DrCr = "Dr", Amount = interestPaid, CustomerID = custId, MemberID = memId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ledgerOverdueIntRec.LedgerID, DrCr = "Cr", Amount = interestPaid, CustomerID = custId, MemberID = memId });
+                        }
+                        if (expensesPaid > 0 && ledgerOverdueRecProv != null && ledgerOverdueRecRec != null)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ledgerOverdueRecProv.LedgerID, DrCr = "Dr", Amount = expensesPaid, CustomerID = custId, MemberID = memId });
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ledgerOverdueRecRec.LedgerID, DrCr = "Cr", Amount = expensesPaid, CustomerID = custId, MemberID = memId });
+                        }
+                    }
+
+                    // Link the two paired vouchers
+                    counterVoucher.RelatedVoucherID = homeVoucher.VoucherID;
+                    homeVoucher.RelatedVoucherID = counterVoucher.VoucherID;
+
+                    await _context.SaveChangesAsync();
+
+                    collection.VoucherID = counterVoucher.VoucherID;
+                    collection.HomeBranchVoucherID = homeVoucher.VoucherID;
                 }
 
-                await _context.SaveChangesAsync();
-
-                collection.VoucherID = voucher.VoucherID;
                 _context.Entry(collection).State = EntityState.Modified;
                 await _context.SaveChangesAsync();
 
@@ -631,7 +728,10 @@ namespace Bhisi.Api.Controllers
                     {
                         savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == collection.TransferFromSavingAccountNo);
                     }
-                    int? custId = loanAccFetched?.CustomerID ?? loanAccFetched?.Customer?.CustomerID ?? loanAccFetched?.Member?.CustomerID;
+                    if (custId == null)
+                    {
+                        custId = loanAccFetched?.Customer?.CustomerID ?? loanAccFetched?.Member?.CustomerID;
+                    }
                     if (savingAccount == null && custId != null)
                     {
                         savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.CustomerID == custId.Value && s.Status == "Active");
@@ -646,12 +746,13 @@ namespace Bhisi.Api.Controllers
                         {
                             SavingAccountID = savingAccount.SavingAccountID,
                             CustomerID = savingAccount.CustomerID,
+                            BranchID = collection.BranchID > 0 ? collection.BranchID : savingAccount.BranchID,
                             TransactionDate = collection.CollectionDate,
                             TransactionType = "Withdrawal",
                             Amount = totalReceiptAmount,
                             BalanceAfterTxn = savingAccount.CurrentBalance,
                             PaymentMode = "Transfer",
-                            VoucherNo = voucher.VoucherNo,
+                            VoucherNo = voucherNo,
                             Narration = $"Loan Collection Debit for Loan A/C: {loanAccFetched?.LoanAccountNo} (Receipt No: {collection.ReceiptNo})"
                         };
                         _context.SavingTransactions.Add(savingTxn);
@@ -751,11 +852,12 @@ namespace Bhisi.Api.Controllers
                 .Include(c => c.Fees)
                     .ThenInclude(f => f.Ledger)
                 .Include(c => c.Voucher)
-                .FirstOrDefaultAsync(c => c.VoucherID == voucherId);
+                .Include(c => c.HomeBranchVoucher)
+                .FirstOrDefaultAsync(c => c.VoucherID == voucherId || c.HomeBranchVoucherID == voucherId);
 
             if (collection == null) return NotFound("या व्हाउचरशी जोडलेली कोणतीही कर्ज वसुली पावती सापडली नाही.");
 
-            if (!isHOUser && collection.BranchID != userBranchId)
+            if (!isHOUser && collection.BranchID != userBranchId && collection.HomeBranchID != userBranchId)
             {
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = "तुम्हाला फक्त तुमच्या शाखेच्या वसुली पावत्या पाहण्याची परवानगी आहे." });
             }
@@ -869,18 +971,32 @@ namespace Bhisi.Api.Controllers
                     _context.LoanCollectionFees.RemoveRange(collection.Fees);
                 }
 
-                // Delete associated Voucher & Details if present
-                if (collection.VoucherID.HasValue)
-                {
-                    int vId = collection.VoucherID.Value;
-                    collection.VoucherID = null; // Clear FK first
-                    await _context.SaveChangesAsync();
+                // Delete associated Voucher & Details if present (including IBT Home Branch Voucher)
+                var voucherIdsToDelete = new List<int>();
+                if (collection.VoucherID.HasValue) voucherIdsToDelete.Add(collection.VoucherID.Value);
+                if (collection.HomeBranchVoucherID.HasValue) voucherIdsToDelete.Add(collection.HomeBranchVoucherID.Value);
 
+                collection.VoucherID = null;
+                collection.HomeBranchVoucherID = null;
+                await _context.SaveChangesAsync();
+
+                foreach (var vId in voucherIdsToDelete.Distinct())
+                {
                     var voucher = await _context.Vouchers
                         .Include(v => v.VoucherDetails)
                         .FirstOrDefaultAsync(v => v.VoucherID == vId);
                     if (voucher != null)
                     {
+                        if (voucher.RelatedVoucherID.HasValue && !voucherIdsToDelete.Contains(voucher.RelatedVoucherID.Value))
+                        {
+                            var rel = await _context.Vouchers.Include(x => x.VoucherDetails).FirstOrDefaultAsync(x => x.VoucherID == voucher.RelatedVoucherID.Value);
+                            if (rel != null)
+                            {
+                                if (rel.VoucherDetails != null && rel.VoucherDetails.Any())
+                                    _context.VoucherDetails.RemoveRange(rel.VoucherDetails);
+                                _context.Vouchers.Remove(rel);
+                            }
+                        }
                         if (voucher.VoucherDetails != null && voucher.VoucherDetails.Any())
                         {
                             _context.VoucherDetails.RemoveRange(voucher.VoucherDetails);

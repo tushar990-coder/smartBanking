@@ -181,6 +181,7 @@ namespace Bhisi.Api.Controllers
                             {
                                 SavingAccountID = account.SavingAccountID,
                                 CustomerID = account.CustomerID,
+                                BranchID = account.BranchID,
                                 TransactionDate = request.PeriodEnd,
                                 TransactionType = "Interest",
                                 PaymentMode = "Transfer",

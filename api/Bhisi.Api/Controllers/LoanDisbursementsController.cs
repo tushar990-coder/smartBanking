@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -45,8 +46,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<LoanDisbursement>>> GetLoanDisbursements([FromQuery] int? branchId = null)
         {
             var (userId, username, userBranchId) = GetCurrentUserContext();
-            var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
-            bool isHO = userRole == "Admin" || userRole == "HO_Manager" || userBranchId == 1;
+            bool isHO = User.IsHeadOfficeAdmin();
 
             int? effectiveBranchId = null;
             if (!isHO)
@@ -167,8 +167,7 @@ namespace Bhisi.Api.Controllers
 
                 // Multi-Branch Cross-Branch Security Guard
                 var (postUserId, postUsername, userBranchId) = GetCurrentUserContext();
-                var postUserRole = User.FindFirst(ClaimTypes.Role)?.Value;
-                bool isHOUser = postUserRole == "Admin" || postUserRole == "HO_Manager" || userBranchId == 1;
+                bool isHOUser = User.IsHeadOfficeAdmin();
 
                 if (!isHOUser && targetBranchId != userBranchId)
                 {
@@ -767,6 +766,7 @@ namespace Bhisi.Api.Controllers
                         {
                             SavingAccountID = savingAccount.SavingAccountID,
                             CustomerID = savingAccount.CustomerID,
+                            BranchID = disbursement.BranchID > 0 ? disbursement.BranchID : savingAccount.BranchID,
                             TransactionDate = disbursement.DisbursementDate,
                             TransactionType = "Deposit",
                             Amount = disbursement.NetAmountPaid,
@@ -834,8 +834,7 @@ namespace Bhisi.Api.Controllers
             if (disbursement == null) return NotFound();
 
             var (userId, username, userBranchId) = GetCurrentUserContext();
-            var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
-            bool isHO = userRole == "Admin" || userRole == "HO_Manager" || userBranchId == 1;
+            bool isHO = User.IsHeadOfficeAdmin();
 
             int disbBranchId = disbursement.BranchID > 0 ? disbursement.BranchID : (disbursement.LoanAccount?.BranchID ?? 1);
             if (!isHO && disbBranchId != userBranchId)
@@ -871,8 +870,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var (vUserId, vUsername, userBranchId) = GetCurrentUserContext();
-            var vUserRole = User.FindFirst(ClaimTypes.Role)?.Value;
-            bool isHO = vUserRole == "Admin" || vUserRole == "HO_Manager" || userBranchId == 1;
+            bool isHO = User.IsHeadOfficeAdmin();
 
             int disbBranchId = disbursement.BranchID > 0 ? disbursement.BranchID : (disbursement.LoanAccount?.BranchID ?? 1);
             if (!isHO && disbBranchId != userBranchId)
@@ -906,8 +904,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 var (putUserId, putUsername, userBranchId) = GetCurrentUserContext();
-                var putUserRole = User.FindFirst(ClaimTypes.Role)?.Value;
-                bool isHOUser = putUserRole == "Admin" || putUserRole == "HO_Manager" || userBranchId == 1;
+                bool isHOUser = User.IsHeadOfficeAdmin();
 
                 int currentDisbBranchId = existingDisbursement.BranchID > 0 ? existingDisbursement.BranchID : 1;
                 if (!isHOUser && currentDisbBranchId != userBranchId)
@@ -1125,8 +1122,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 var (delUserId, delUsername, userBranchId) = GetCurrentUserContext();
-                var delUserRole = User.FindFirst(ClaimTypes.Role)?.Value;
-                bool isHOUser = delUserRole == "Admin" || delUserRole == "HO_Manager" || userBranchId == 1;
+                bool isHOUser = User.IsHeadOfficeAdmin();
 
                 int currentDisbBranchId = disbursement.BranchID > 0 ? disbursement.BranchID : 1;
                 if (!isHOUser && currentDisbBranchId != userBranchId)

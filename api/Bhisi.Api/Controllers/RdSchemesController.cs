@@ -23,14 +23,23 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/RdSchemes
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<RdScheme>>> GetRdSchemes([FromQuery] int? branchId)
+        public async Task<ActionResult<IEnumerable<RdScheme>>> GetRdSchemes([FromQuery] int? branchId, [FromQuery] bool includeAll = false)
         {
-            // In Core Banking, RD Schemes are Sanstha-Wide board policies applicable across all branches
-            return await _context.RdSchemes
+            var query = _context.RdSchemes
+                .Include(s => s.Branch)
                 .Include(s => s.RdLiabilityLedger)
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
                 .Include(s => s.PenaltyIncomeLedger)
+                .AsQueryable();
+
+            if (!includeAll && branchId.HasValue && branchId.Value > 0)
+            {
+                // Applicable schemes: Bank-wide Global (BranchID == null) OR Specific to this branch
+                query = query.Where(s => s.BranchID == null || s.BranchID == branchId.Value);
+            }
+
+            return await query
                 .OrderByDescending(s => s.EffectiveDate)
                 .ToListAsync();
         }
@@ -40,6 +49,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<RdScheme>> GetRdScheme(int id)
         {
             var rdScheme = await _context.RdSchemes
+                .Include(s => s.Branch)
                 .Include(s => s.RdLiabilityLedger)
                 .Include(s => s.InterestExpenseLedger)
                 .Include(s => s.InterestPayableLedger)
@@ -84,7 +94,8 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<RdScheme>> PostRdScheme(RdScheme rdScheme)
         {
             if (rdScheme.InstitutionID <= 0) rdScheme.InstitutionID = 1;
-            if (rdScheme.BranchID <= 0) rdScheme.BranchID = 1;
+            if (rdScheme.BranchID.HasValue && rdScheme.BranchID.Value <= 0) rdScheme.BranchID = null;
+            rdScheme.Branch = null;
             if (string.IsNullOrWhiteSpace(rdScheme.InterestMethod)) rdScheme.InterestMethod = "Quarterly";
             if (string.IsNullOrWhiteSpace(rdScheme.CompoundingFrequency)) rdScheme.CompoundingFrequency = "Quarterly";
             if (rdScheme.GracePeriodDays <= 0) rdScheme.GracePeriodDays = 5;
@@ -139,6 +150,7 @@ namespace Bhisi.Api.Controllers
                 existing.SchemeCode = $"{parsedNum}";
             }
 
+            existing.BranchID = (rdScheme.BranchID.HasValue && rdScheme.BranchID.Value > 0) ? rdScheme.BranchID : null;
             existing.SchemeName = rdScheme.SchemeName;
             existing.DurationMonths = rdScheme.DurationMonths;
             existing.MinimumInstallment = rdScheme.MinimumInstallment;

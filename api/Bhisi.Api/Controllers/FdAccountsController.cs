@@ -10,6 +10,7 @@ using Bhisi.Api.Filters;
 
 using Microsoft.AspNetCore.Authorization;
 using System.ComponentModel.DataAnnotations;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -55,14 +56,8 @@ namespace Bhisi.Api.Controllers
 
         private (bool isHO, int? userBranchId) GetUserBranchInfo()
         {
-            int? userBranchId = null;
-            bool isHO = User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
-            var branchClaim = User.FindFirst("BranchID")?.Value ?? User.FindFirst("branchId")?.Value;
-            if (int.TryParse(branchClaim, out int parsedBranch))
-            {
-                userBranchId = parsedBranch;
-                isHO = isHO || (userBranchId == 1);
-            }
+            int? userBranchId = User.GetOperatingBranchId();
+            bool isHO = User.IsHeadOfficeAdmin();
             return (isHO, userBranchId);
         }
 
@@ -367,21 +362,8 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<FdAccount>> PostFdAccount(FdAccount account)
         {
             // Multi-branch Security: Enforce branch lock for non-HO users
-            int? userBranchId = null;
-            bool isHO = false;
-            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
-            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
-            {
-                userBranchId = parsedBranch;
-                isHO = (userBranchId == 1);
-            }
-            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
-            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                isHO = true;
-            }
+            int? userBranchId = User.GetOperatingBranchId();
+            bool isHO = User.IsHeadOfficeAdmin();
 
             if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
             {
@@ -395,6 +377,11 @@ namespace Bhisi.Api.Controllers
             if (scheme == null)
             {
                 return BadRequest("Invalid FD Scheme.");
+            }
+
+            if (scheme.BranchID.HasValue && scheme.BranchID.Value != account.BranchID)
+            {
+                return BadRequest($"निवडलेली मुदत ठेव योजना फक्त विशिष्ट शाखेसाठी (शाखा क्र. {scheme.BranchID.Value}) मर्यादित आहे. चालू शाखेतून ({account.BranchID}) या योजनेखाली खाते उघडता येत नाही.");
             }
 
             // 1b. Validate Customer
@@ -561,6 +548,7 @@ namespace Bhisi.Api.Controllers
                         {
                             SavingAccountID = sbAcc.SavingAccountID,
                             CustomerID = sbAcc.CustomerID,
+                            BranchID = account.BranchID > 0 ? account.BranchID : sbAcc.BranchID,
                             TransactionDate = account.OpeningDate,
                             TransactionType = "Withdrawal",
                             PaymentMode = "Transfer",
@@ -971,25 +959,12 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> BulkCreateFdAccounts([FromBody] BulkFdAccountRequest req)
         {
             // Multi-branch Security: Enforce branch lock for non-HO users
-            int? userBranchId = null;
-            bool isHO = false;
-            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
-            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
-            {
-                userBranchId = parsedBranch;
-                isHO = (userBranchId == 1);
-            }
-            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
-            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                isHO = true;
-            }
+            int userBranchId = User.GetOperatingBranchId();
+            bool isHO = User.IsHeadOfficeAdmin();
 
-            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0)
+            if (!isHO && userBranchId > 0)
             {
-                req.BranchID = userBranchId.Value;
+                req.BranchID = userBranchId;
             }
 
             // Resolve Customer & Member
@@ -1034,6 +1009,11 @@ namespace Bhisi.Api.Controllers
                 .Include(s => s.Slabs)
                 .FirstOrDefaultAsync(s => s.FdSchemeID == req.FdSchemeID);
             if (scheme == null) return BadRequest("निवडलेली ठेव योजना अमान्य आहे.");
+
+            if (scheme.BranchID.HasValue && scheme.BranchID.Value != req.BranchID)
+            {
+                return BadRequest($"निवडलेली मुदत ठेव योजना फक्त विशिष्ट शाखेसाठी (शाखा क्र. {scheme.BranchID.Value}) मर्यादित आहे. चालू शाखेतून ({req.BranchID}) या योजनेखाली खाते उघडता येत नाही.");
+            }
 
             decimal perReceiptAmount = req.AmountPerReceipt > 0 ? req.AmountPerReceipt : Math.Round(req.TotalAmount / req.SplitCount, 2);
             if (perReceiptAmount <= 0) return BadRequest("प्रति पावती रक्कम ० पेक्षा जास्त असावी.");
@@ -1246,6 +1226,7 @@ namespace Bhisi.Api.Controllers
                             {
                                 SavingAccountID = sbAcc.SavingAccountID,
                                 CustomerID = sbAcc.CustomerID,
+                                BranchID = acc.BranchID > 0 ? acc.BranchID : sbAcc.BranchID,
                                 TransactionDate = req.OpeningDate,
                                 TransactionType = "Withdrawal",
                                 PaymentMode = "Transfer",
@@ -2038,23 +2019,10 @@ namespace Bhisi.Api.Controllers
             }
 
             // Multi-branch Security: Restrict closure to Account's Home Branch or Head Office
-            int? userBranchId = null;
-            bool isHO = false;
-            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
-            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
-            {
-                userBranchId = parsedBranch;
-                isHO = (userBranchId == 1);
-            }
-            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
-            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                isHO = true;
-            }
+            int userBranchId = User.GetOperatingBranchId();
+            bool isHO = User.IsHeadOfficeAdmin();
 
-            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0 && account.BranchID != userBranchId.Value)
+            if (!isHO && userBranchId > 0 && account.BranchID != userBranchId)
             {
                 return BadRequest($"मुदत ठेव खाते बंद करण्याची प्रक्रिया फक्त खात्याच्या मूळ शाखेत (Home Branch #{account.BranchID}) किंवा मुख्य कार्यालयातूनच (HO) करता येते.");
             }
@@ -2305,6 +2273,7 @@ namespace Bhisi.Api.Controllers
                                     {
                                         SavingAccountID = savAccount.SavingAccountID,
                                         CustomerID = savAccount.CustomerID,
+                                        BranchID = account.BranchID > 0 ? account.BranchID : savAccount.BranchID,
                                         TransactionDate = closureDate,
                                         TransactionType = "Deposit",
                                         PaymentMode = "Transfer",
@@ -2460,6 +2429,7 @@ namespace Bhisi.Api.Controllers
                                 {
                                     SavingAccountID = savAccount.SavingAccountID,
                                     CustomerID = savAccount.CustomerID,
+                                    BranchID = account.BranchID > 0 ? account.BranchID : savAccount.BranchID,
                                     TransactionDate = closureDate,
                                     TransactionType = "Deposit",
                                     PaymentMode = "Transfer",
@@ -2809,23 +2779,10 @@ namespace Bhisi.Api.Controllers
             }
 
             // Multi-branch Security: Restrict premature closure to Account's Home Branch or Head Office
-            int? userBranchId = null;
-            bool isHO = false;
-            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
-            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
-            {
-                userBranchId = parsedBranch;
-                isHO = (userBranchId == 1);
-            }
-            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
-            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                isHO = true;
-            }
+            int userBranchId = User.GetOperatingBranchId();
+            bool isHO = User.IsHeadOfficeAdmin();
 
-            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0 && account.BranchID != userBranchId.Value)
+            if (!isHO && userBranchId > 0 && account.BranchID != userBranchId)
             {
                 return BadRequest($"मुदत ठेव खाते बंद करण्याची प्रक्रिया फक्त खात्याच्या मूळ शाखेत (Home Branch #{account.BranchID}) किंवा मुख्य कार्यालयातूनच (HO) करता येते.");
             }
@@ -3081,6 +3038,7 @@ namespace Bhisi.Api.Controllers
                                     {
                                         SavingAccountID = savAccount.SavingAccountID,
                                         CustomerID = savAccount.CustomerID,
+                                        BranchID = account.BranchID > 0 ? account.BranchID : savAccount.BranchID,
                                         TransactionDate = effectiveClosureDate,
                                         TransactionType = "Deposit",
                                         PaymentMode = "Transfer",
@@ -3249,6 +3207,7 @@ namespace Bhisi.Api.Controllers
                                 {
                                     SavingAccountID = savAccount.SavingAccountID,
                                     CustomerID = savAccount.CustomerID,
+                                    BranchID = account.BranchID > 0 ? account.BranchID : savAccount.BranchID,
                                     TransactionDate = effectiveClosureDate,
                                     TransactionType = "Deposit",
                                     PaymentMode = "Transfer",
@@ -3398,23 +3357,10 @@ namespace Bhisi.Api.Controllers
             }
 
             // Multi-branch Security: Restrict renewal to Account's Home Branch or Head Office
-            int? userBranchId = null;
-            bool isHO = false;
-            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
-            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
-            {
-                userBranchId = parsedBranch;
-                isHO = (userBranchId == 1);
-            }
-            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
-            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                isHO = true;
-            }
+            int userBranchId = User.GetOperatingBranchId();
+            bool isHO = User.IsHeadOfficeAdmin();
 
-            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0 && oldAccount.BranchID != userBranchId.Value)
+            if (!isHO && userBranchId > 0 && oldAccount.BranchID != userBranchId)
             {
                 return BadRequest($"मुदत ठेव खाते नूतनीकरण करण्याची प्रक्रिया फक्त खात्याच्या मूळ शाखेत (Home Branch #{oldAccount.BranchID}) किंवा मुख्य कार्यालयातूनच (HO) करता येते.");
             }
@@ -3747,6 +3693,7 @@ namespace Bhisi.Api.Controllers
                                 {
                                     SavingAccountID = savAccount.SavingAccountID,
                                     CustomerID = savAccount.CustomerID,
+                                    BranchID = oldAccount.BranchID > 0 ? oldAccount.BranchID : savAccount.BranchID,
                                     TransactionDate = closureDate,
                                     TransactionType = "Deposit",
                                     PaymentMode = "Transfer",
@@ -5314,6 +5261,7 @@ namespace Bhisi.Api.Controllers
                             {
                                 SavingAccountID = targetSaving.SavingAccountID,
                                 CustomerID = targetSaving.CustomerID,
+                                BranchID = oldAccount.BranchID > 0 ? oldAccount.BranchID : targetSaving.BranchID,
                                 TransactionDate = newOpeningDate,
                                 TransactionType = "Deposit",
                                 PaymentMode = "Transfer",
@@ -5565,6 +5513,7 @@ namespace Bhisi.Api.Controllers
                                 {
                                     SavingAccountID = savAcc.SavingAccountID,
                                     CustomerID = savAcc.CustomerID,
+                                    BranchID = newAccount.BranchID > 0 ? newAccount.BranchID : savAcc.BranchID,
                                     TransactionDate = DateTime.Today,
                                     TransactionType = "Withdrawal",
                                     PaymentMode = "Transfer",

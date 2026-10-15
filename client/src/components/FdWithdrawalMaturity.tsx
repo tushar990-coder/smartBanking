@@ -148,6 +148,8 @@ interface FdScheme {
   overdueGraceDays?: number | null;
   overdueRenewalPolicy?: string | null;
   slabs?: FdSchemeInterestSlab[];
+  branchID?: number | null;
+  branch?: { branchID: number; branchName: string } | null;
 }
 
 export interface FdWithdrawalMaturityProps {
@@ -1867,13 +1869,16 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                       className="w-full text-xs font-bold border border-indigo-300 bg-white rounded-sm px-2.5 py-1.5 focus:outline-none focus:border-primary text-indigo-950 mt-1 h-[34px]"
                       required
                     >
-                      {schemes.map((s) => {
+                      {schemes
+                        .filter(s => !selectedAccount?.branchID || !s.branchID || s.branchID === selectedAccount.branchID)
+                        .map((s) => {
                         const isSenior = selectedAccount?.isSeniorCitizen;
                         const hasSeniorRate = isSenior && s.seniorCitizenInterestRate && s.seniorCitizenInterestRate > 0;
                         const displayRate = hasSeniorRate ? s.seniorCitizenInterestRate : s.interestRate;
                         const durUnit = s.durationType === 'Days' ? 'दिवस' : s.durationType === 'Years' ? 'वर्षे' : 'महिने';
                         return (
                           <option key={s.fdSchemeID} value={s.fdSchemeID}>
+                            {s.branchID ? `🏢 [${s.branch?.branchName || 'विशिष्ट शाखा'}] ` : '🌐 [सर्व शाखा] '}
                             {s.schemeName} ({s.durationMonths} {durUnit} @ {displayRate}%{hasSeniorRate ? ' - ज्येष्ठ नागरिक' : ''})
                           </option>
                         );

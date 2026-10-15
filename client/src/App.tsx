@@ -32,6 +32,7 @@ import {
   Gavel,
   LogOut
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import FinancialYearMaster from './components/FinancialYearMaster';
 import CustomerMaster from './components/CustomerMaster';
 import CustomerBulkEntry from './components/CustomerBulkEntry';
@@ -105,6 +106,7 @@ import SavingAccountClosingMaster from './components/SavingAccountClosingMaster'
 import SavingPassbookMaster from './components/SavingPassbookMaster';
 import GlobalContextMenu from './components/GlobalContextMenu';
 import SettingsDashboard from './components/SettingsDashboard';
+import BranchLedgerOpeningMaster from './components/BranchLedgerOpeningMaster';
 import CommitteeMaster from './components/CommitteeMaster';
 import CoOpAuditComplianceMaster from './components/CoOpAuditComplianceMaster';
 import SavingAccountListReport from './components/SavingAccountListReport';
@@ -559,11 +561,16 @@ function App() {
               {(user.role === 'Admin' || user.role === 'HO_Manager' || user.role === 'HO Manager') && headerBranches.length > 0 ? (
                 <select
                   value={user.branchID}
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const selectedId = parseInt(e.target.value);
                     const b = headerBranches.find((x: any) => x.branchID === selectedId);
                     if (b) {
-                      switchBranch(b.branchID, b.branchName);
+                      const success = await switchBranch(b.branchID, b.branchName);
+                      if (success) {
+                        toast.success(`शाखा बदलली: ${b.branchName}`);
+                      } else {
+                        toast.error(`शाखा बदलता आली नाही.`);
+                      }
                     }
                   }}
                   className="text-[11px] font-bold text-primary border border-gray-300 rounded px-1.5 py-0 outline-none focus:border-primary cursor-pointer bg-blue-50/50 hover:bg-blue-100/50 transition-colors h-6"
@@ -828,6 +835,8 @@ function App() {
         {/* Settings */}
         {activeTab === 'settings' && <SettingsDashboard />}
         {activeTab === 'system-update' && <SettingsDashboard defaultCategory="admin" defaultSub="system-update" />}
+        {(activeTab === 'branch-ledger-opening' || activeTab === 'branch-ledger-ob') && <BranchLedgerOpeningMaster />}
+        {activeTab === 'branch-master' && <SettingsDashboard defaultCategory="general" defaultSub="branch" />}
         {activeTab === 'users' && <UserMaster />}
 
         </div>

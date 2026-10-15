@@ -465,6 +465,33 @@ using (var scope = app.Services.CreateScope())
             IF COL_LENGTH('LoanCollections', 'HomeBranchID') IS NULL
                 ALTER TABLE [dbo].[LoanCollections] ADD [HomeBranchID] int NULL;
 
+            IF COL_LENGTH('LoanCollections', 'HomeBranchVoucherID') IS NULL
+            BEGIN
+                ALTER TABLE [dbo].[LoanCollections] ADD [HomeBranchVoucherID] int NULL;
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LoanCollections_HomeBranchVoucherID' AND object_id = OBJECT_ID('LoanCollections'))
+                BEGIN
+                    CREATE INDEX [IX_LoanCollections_HomeBranchVoucherID] ON [dbo].[LoanCollections] ([HomeBranchVoucherID]);
+                END
+            END
+
+            IF COL_LENGTH('Vouchers', 'RelatedVoucherID') IS NULL
+            BEGIN
+                ALTER TABLE [dbo].[Vouchers] ADD [RelatedVoucherID] int NULL;
+                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Vouchers_RelatedVoucherID' AND object_id = OBJECT_ID('Vouchers'))
+                BEGIN
+                    CREATE INDEX [IX_Vouchers_RelatedVoucherID] ON [dbo].[Vouchers] ([RelatedVoucherID]);
+                END
+            END
+
+            IF COL_LENGTH('Vouchers', 'IsIbtVoucher') IS NULL
+                ALTER TABLE [dbo].[Vouchers] ADD [IsIbtVoucher] bit NOT NULL CONSTRAINT [DF_Vouchers_IsIbtVoucher] DEFAULT 0;
+
+            IF COL_LENGTH('Vouchers', 'TargetBranchID') IS NULL
+                ALTER TABLE [dbo].[Vouchers] ADD [TargetBranchID] int NULL;
+
+            IF COL_LENGTH('Branches', 'DefaultIbtLedgerID') IS NULL
+                ALTER TABLE [dbo].[Branches] ADD [DefaultIbtLedgerID] int NULL;
+
             -- Backfill existing collections with their LoanAccount BranchID
             IF COL_LENGTH('LoanCollections', 'BranchID') IS NOT NULL
             BEGIN
@@ -596,6 +623,64 @@ using (var scope = app.Services.CreateScope())
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingTransactions]') AND name = 'CustomerID')
                 BEGIN
                     ALTER TABLE [SavingTransactions] ADD [CustomerID] int NOT NULL DEFAULT 1;
+                END
+
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingTransactions]') AND name = 'BranchID')
+                BEGIN
+                    ALTER TABLE [SavingTransactions] ADD [BranchID] int NOT NULL CONSTRAINT [DF_SavingTransactions_BranchID] DEFAULT 1;
+                    
+                    IF EXISTS (SELECT * FROM sys.tables WHERE name = 'Branches')
+                    BEGIN
+                        ALTER TABLE [SavingTransactions] WITH CHECK ADD CONSTRAINT [FK_SavingTransactions_Branches_BranchID] FOREIGN KEY([BranchID]) REFERENCES [Branches] ([BranchID]);
+                    END
+
+                    -- Backfill existing SavingTransactions with their parent account's BranchID
+                    UPDATE st
+                    SET st.[BranchID] = ISNULL(sam.[BranchID], 1)
+                    FROM [SavingTransactions] st
+                    INNER JOIN [SavingAccountMasters] sam ON st.[SavingAccountID] = sam.[SavingAccountID]
+                    WHERE sam.[BranchID] IS NOT NULL;
+
+                    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_SavingTransactions_BranchID_TransactionDate')
+                    BEGIN
+                        CREATE NONCLUSTERED INDEX [IX_SavingTransactions_BranchID_TransactionDate]
+                        ON [SavingTransactions] ([BranchID], [TransactionDate]);
+                    END
+                END
+            END
+
+            -- FdSchemes & RdSchemes: Allow NULL BranchID for Global Bank-Wide Scoping
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'FdSchemes')
+            BEGIN
+                IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[FdSchemes]') AND name = 'BranchID' AND is_nullable = 0)
+                BEGIN
+                    DECLARE @dfNameFd nvarchar(200);
+                    SELECT @dfNameFd = dc.name FROM sys.default_constraints dc
+                    JOIN sys.columns c ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+                    WHERE dc.parent_object_id = OBJECT_ID(N'[FdSchemes]') AND c.name = 'BranchID';
+                    IF @dfNameFd IS NOT NULL EXEC('ALTER TABLE [FdSchemes] DROP CONSTRAINT ' + @dfNameFd);
+
+                    ALTER TABLE [FdSchemes] ALTER COLUMN [BranchID] int NULL;
+
+                    -- Existing BranchID = 1 schemes become Global (null)
+                    UPDATE [FdSchemes] SET [BranchID] = NULL WHERE [BranchID] = 1;
+                END
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'RdSchemes')
+            BEGIN
+                IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[RdSchemes]') AND name = 'BranchID' AND is_nullable = 0)
+                BEGIN
+                    DECLARE @dfNameRd nvarchar(200);
+                    SELECT @dfNameRd = dc.name FROM sys.default_constraints dc
+                    JOIN sys.columns c ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+                    WHERE dc.parent_object_id = OBJECT_ID(N'[RdSchemes]') AND c.name = 'BranchID';
+                    IF @dfNameRd IS NOT NULL EXEC('ALTER TABLE [RdSchemes] DROP CONSTRAINT ' + @dfNameRd);
+
+                    ALTER TABLE [RdSchemes] ALTER COLUMN [BranchID] int NULL;
+
+                    -- Existing BranchID = 1 schemes become Global (null)
+                    UPDATE [RdSchemes] SET [BranchID] = NULL WHERE [BranchID] = 1;
                 END
             END
 
@@ -2747,6 +2832,18 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         Log.Warning(ex, "Failed to auto-sync ShareScheme mappings on startup");
+    }
+
+    try
+    {
+        // Core Banking Inter-Branch Transfer (IBT) Startup Auto-Sync & Historical Self-Healing
+        Bhisi.Api.Helpers.IbtLedgerHelper.EnsureIbtLedgerProvisionedAsync(db).GetAwaiter().GetResult();
+        int repaired = Bhisi.Api.Helpers.IbtLedgerHelper.RepairHistoricalCrossBranchCollectionsAsync(db).GetAwaiter().GetResult();
+        Log.Information("Core Banking Inter-Branch Transfer (IBT) ledger provisioned. Repaired historical cross-branch collections: {RepairedCount}", repaired);
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Failed to auto-provision IBT ledger or repair historical cross-branch collections on startup");
     }
 
     try

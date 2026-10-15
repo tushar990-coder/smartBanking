@@ -49,7 +49,7 @@ const getTodayDate = () => {
 
 export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
   const { user } = useAuth();
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.branchID === 1;
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
   const pagesAreaRef = useRef<HTMLDivElement>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [reportViewType, setReportViewType] = useState<'detailed' | 'ledger-wise'>('detailed');

@@ -12,8 +12,7 @@ namespace Bhisi.Api.Models
         [Required]
         public int InstitutionID { get; set; } = 1;
 
-        [Required]
-        public int BranchID { get; set; } = 1;
+        public int? BranchID { get; set; } = null;
 
         [ForeignKey("BranchID")]
         public virtual Branch? Branch { get; set; }

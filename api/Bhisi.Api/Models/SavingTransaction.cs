@@ -29,8 +29,11 @@ namespace Bhisi.Api.Models
         [NotMapped]
         public int? BankLedgerID { get; set; }
 
-        [NotMapped]
-        public int? BranchID { get; set; }
+        [Required]
+        public int BranchID { get; set; } = 1;
+
+        [ForeignKey("BranchID")]
+        public virtual Branch? Branch { get; set; }
 
         public DateTime TransactionDate { get; set; } = DateTime.Now;
 

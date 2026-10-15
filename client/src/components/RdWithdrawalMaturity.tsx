@@ -17,6 +17,7 @@ interface RdAccount {
   maturityAmount: number;
   status: string;
   openingDate: string;
+  branchID?: number;
 }
 
 interface FdScheme {
@@ -24,6 +25,8 @@ interface FdScheme {
   schemeName: string;
   interestRate: number;
   durationMonths: number;
+  branchID?: number | null;
+  branch?: { branchID: number; branchName: string } | null;
 }
 
 interface RdWithdrawalMaturityProps {
@@ -523,8 +526,11 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
                           required
                         >
                           <option value="">--- योजना निवडा ---</option>
-                          {fdSchemes.map((s) => (
+                          {fdSchemes
+                            .filter(s => !selectedAcc?.branchID || !s.branchID || s.branchID === selectedAcc.branchID)
+                            .map((s) => (
                             <option key={s.fdSchemeID} value={s.fdSchemeID}>
+                              {s.branchID ? `🏢 [${s.branch?.branchName || 'विशिष्ट शाखा'}] ` : '🌐 [सर्व शाखा] '}
                               {s.schemeName} ({s.interestRate}% - {s.durationMonths} महिने)
                             </option>
                           ))}

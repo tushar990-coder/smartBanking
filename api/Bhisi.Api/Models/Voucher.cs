@@ -51,6 +51,19 @@ namespace Bhisi.Api.Models
         [StringLength(500)]
         public string? RejectionReason { get; set; }
 
+        // IBT (Inter-Branch Transfer) Fields
+        public int? RelatedVoucherID { get; set; }
+
+        [ForeignKey("RelatedVoucherID")]
+        public virtual Voucher? RelatedVoucher { get; set; }
+
+        public bool IsIbtVoucher { get; set; } = false;
+
+        public int? TargetBranchID { get; set; }
+
+        [ForeignKey("TargetBranchID")]
+        public virtual Branch? TargetBranch { get; set; }
+
         // Navigation Property
         public virtual ICollection<VoucherDetail> VoucherDetails { get; set; } = new List<VoucherDetail>();
     }

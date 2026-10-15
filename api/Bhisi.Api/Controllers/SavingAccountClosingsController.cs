@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -70,23 +71,10 @@ namespace Bhisi.Api.Controllers
             }
 
             // Multi-branch Security: Only Home Branch or Head Office can close the account
-            int? userBranchId = null;
-            bool isHO = false;
-            var branchClaim = User?.FindFirst("BranchID")?.Value ?? User?.FindFirst("branchId")?.Value ?? User?.FindFirst("branch")?.Value;
-            if (!string.IsNullOrEmpty(branchClaim) && int.TryParse(branchClaim, out int parsedBranch))
-            {
-                userBranchId = parsedBranch;
-                isHO = (userBranchId == 1);
-            }
-            var roleClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
-            if (roleClaim?.Equals("Admin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase) == true ||
-                roleClaim?.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                isHO = true;
-            }
+            int userBranchId = User.GetOperatingBranchId();
+            bool isHO = User.IsHeadOfficeAdmin();
 
-            if (!isHO && userBranchId.HasValue && userBranchId.Value > 0 && account.BranchID != userBranchId.Value)
+            if (!isHO && userBranchId > 0 && account.BranchID != userBranchId)
             {
                 return BadRequest($"बचत खाते बंद करण्याची प्रक्रिया फक्त खात्याच्या मूळ शाखेत (Home Branch #{account.BranchID}) किंवा मुख्य कार्यालयातूनच (HO) करता येते.");
             }
@@ -220,6 +208,7 @@ namespace Bhisi.Api.Controllers
                     {
                         SavingAccountID = account.SavingAccountID,
                         CustomerID = account.CustomerID,
+                        BranchID = account.BranchID,
                         TransactionDate = request.ClosureDate,
                         TransactionType = "Charges",
                         PaymentMode = request.PaymentMode,
@@ -242,6 +231,7 @@ namespace Bhisi.Api.Controllers
                     {
                         SavingAccountID = account.SavingAccountID,
                         CustomerID = account.CustomerID,
+                        BranchID = account.BranchID,
                         TransactionDate = request.ClosureDate,
                         TransactionType = "Withdrawal",
                         PaymentMode = request.PaymentMode,

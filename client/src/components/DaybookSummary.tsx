@@ -53,7 +53,7 @@ export default function DaybookSummary() {
   const [registrationNo, setRegistrationNo] = useState<string>('');
   const [branches, setBranches] = useState<any[]>([]);
 
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.branchID === 1;
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const hasGlobalBranch = Boolean(globalBranchStr && globalBranchStr !== 'all');
   const initialBranchId = hasGlobalBranch

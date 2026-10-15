@@ -337,6 +337,7 @@ namespace Bhisi.Api.Controllers
                         {
                             SavingAccountID = savingAccount.SavingAccountID,
                             CustomerID = savingAccount.CustomerID,
+                            BranchID = voucher.BranchID > 0 ? voucher.BranchID : savingAccount.BranchID,
                             TransactionDate = DateTime.Today,
                             TransactionType = "Deposit",
                             PaymentMode = "Transfer",

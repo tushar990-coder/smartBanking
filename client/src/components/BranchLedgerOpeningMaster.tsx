@@ -53,7 +53,8 @@ interface LedgerRow {
   ledgerNameEnglish?: string;
   groupID: number;
   groupName: string;
-  accountNature: string;
+  accountNature?: string;
+  natureOfGroup?: string;
   reportType?: string;
   accountType?: string;
   masterOpeningBalance: number;
@@ -164,7 +165,12 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
         }
       });
 
-      const data: LedgerRow[] = Array.isArray(res.data) ? res.data : [];
+      const data: LedgerRow[] = (Array.isArray(res.data) ? res.data : []).map((r: any) => ({
+        ...r,
+        accountNature: r.accountNature || r.natureOfGroup || r.NatureOfGroup || 'Asset',
+        masterOpeningBalance: r.masterOpeningBalance ?? r.legacyMasterBalance ?? 0,
+        masterOpeningBalanceType: r.masterOpeningBalanceType ?? r.legacyMasterBalanceType ?? 'Dr',
+      }));
       setRows(data);
 
       // Save initial state to detect modified rows
@@ -332,11 +338,11 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
       'खात्याचे नाव': r.ledgerName,
       'इंग्रजी नाव': r.ledgerNameEnglish || '',
       'खाते गट': r.groupName,
-      'गट स्वरूप': r.accountNature,
-      'HO शिल्लक': r.masterOpeningBalance,
-      'HO प्रकार': r.masterOpeningBalanceType,
-      'शाखा सुरुवातीची शिल्लक': r.openingBalance,
-      'शाखा प्रकार': r.openingBalanceType,
+      'गट स्वरूप': r.accountNature || (r as any).natureOfGroup || '',
+      'HO शिल्लक': r.masterOpeningBalance || 0,
+      'HO प्रकार': r.masterOpeningBalanceType || 'Dr',
+      'शाखा सुरुवातीची शिल्लक': r.openingBalance || 0,
+      'शाखा प्रकार': r.openingBalanceType || 'Dr',
       'शेरा / टिप्पणी': r.remarks || ''
     }));
 
@@ -367,10 +373,11 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
 
       // Nature Filter
       if (natureFilter !== 'All') {
-        if (natureFilter === 'Asset' && !r.accountNature.includes('Asset') && !r.accountNature.includes('मालमत्ता')) return false;
-        if (natureFilter === 'Liability' && !r.accountNature.includes('Liability') && !r.accountNature.includes('देयता')) return false;
-        if (natureFilter === 'Income' && !r.accountNature.includes('Income') && !r.accountNature.includes('उत्पन्न')) return false;
-        if (natureFilter === 'Expense' && !r.accountNature.includes('Expense') && !r.accountNature.includes('खर्च')) return false;
+        const nature = (r.accountNature || (r as any).natureOfGroup || '').toLowerCase();
+        if (natureFilter === 'Asset' && !nature.includes('asset') && !nature.includes('मालमत्ता')) return false;
+        if (natureFilter === 'Liability' && !nature.includes('liability') && !nature.includes('देयता')) return false;
+        if (natureFilter === 'Income' && !nature.includes('income') && !nature.includes('उत्पन्न')) return false;
+        if (natureFilter === 'Expense' && !nature.includes('expense') && !nature.includes('खर्च')) return false;
       }
 
       // Balance Filter
@@ -774,17 +781,24 @@ export default function BranchLedgerOpeningMaster({ initialBranchId }: BranchLed
                       </td>
 
                       <td className="p-1.5 border-r border-gray-200 text-center">
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                          r.accountNature.includes('Asset') || r.accountNature.includes('मालमत्ता')
+                        {(() => {
+                          const nature = r.accountNature || (r as any).natureOfGroup || '';
+                          const isAsset = nature.includes('Asset') || nature.includes('मालमत्ता');
+                          const isLiability = nature.includes('Liability') || nature.includes('देयता');
+                          const isIncome = nature.includes('Income') || nature.includes('उत्पन्न');
+                          const badgeColor = isAsset 
                             ? 'bg-blue-100 text-blue-800'
-                            : r.accountNature.includes('Liability') || r.accountNature.includes('देयता')
+                            : isLiability
                             ? 'bg-emerald-100 text-emerald-800'
-                            : r.accountNature.includes('Income') || r.accountNature.includes('उत्पन्न')
+                            : isIncome
                             ? 'bg-amber-100 text-amber-800'
-                            : 'bg-rose-100 text-rose-800'
-                        }`}>
-                          {r.accountNature}
-                        </span>
+                            : 'bg-rose-100 text-rose-800';
+                          return (
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${badgeColor}`}>
+                              {nature || 'Asset'}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* HO Master Balance (Read-only reference) */}

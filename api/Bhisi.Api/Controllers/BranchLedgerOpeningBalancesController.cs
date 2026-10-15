@@ -30,6 +30,9 @@ namespace Bhisi.Api.Controllers
             public int GroupID { get; set; }
             public string GroupName { get; set; } = string.Empty;
             public string NatureOfGroup { get; set; } = string.Empty;
+            public string AccountNature { get; set; } = string.Empty;
+            public decimal MasterOpeningBalance { get; set; } = 0;
+            public string MasterOpeningBalanceType { get; set; } = "Dr";
             public int BranchID { get; set; }
             public int FinancialYearID { get; set; }
             public decimal OpeningBalance { get; set; }
@@ -116,6 +119,9 @@ namespace Bhisi.Api.Controllers
                     GroupID = l.GroupID,
                     GroupName = l.AccountGroup?.GroupName ?? "",
                     NatureOfGroup = l.AccountGroup?.NatureOfGroup ?? "",
+                    AccountNature = l.AccountGroup?.NatureOfGroup ?? "",
+                    MasterOpeningBalance = l.OpeningBalance,
+                    MasterOpeningBalanceType = !string.IsNullOrEmpty(l.OpeningBalanceType) ? l.OpeningBalanceType : "Dr",
                     BranchID = branchId,
                     FinancialYearID = activeFyId,
                     OpeningBalance = balance,

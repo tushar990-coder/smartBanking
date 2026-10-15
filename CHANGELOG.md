@@ -2,6 +2,17 @@
 
 ---
 
+## 📅 [2026-10-15] - आवृत्ती v2.5.55 (Branch Ledger Opening Balances AccountNature Bug Fix, Null-Safety & VPS Master Patch v2.5.55)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **शाखानिहाय लेजर शिल्लक (Branch Ledger Opening Balances) - AccountNature नमुना दोष निराकरण, कन्सोल क्रॅश व ब्लँक स्क्रीन निवारण (`BranchLedgerOpeningMaster.tsx`):**
+  * **ब्लँक स्क्रीन व क्रॅश निवारण (`BranchLedgerOpeningMaster.tsx:778 includes` Fix):** `accountNature` अनडिफाइन्ड (`undefined`) असल्यामुळे येणारा `Cannot read properties of undefined (reading includes)` एरर पूर्णपणे दूर करून सुरक्षित फॉलबॅक (`r.accountNature || r.natureOfGroup || 'Asset'`) लागू केला.
+  * **बॅकएंड DTO व मॅपिंग संरेखन (`BranchLedgerOpeningBalancesController.cs`):** API रिस्पॉन्समध्ये `AccountNature`, `MasterOpeningBalance` व `MasterOpeningBalanceType` फील्ड्स समाविष्ट करून संस्था मुख्य शिल्लक आणि ग्रुप नेचर दोन्ही उपलब्ध केले.
+  * **फ्रंटएंड फिल्टर व एक्सेल एक्सपोर्ट सुरक्षितता:** स्वरूप फिल्टर (Asset, Liability, Income, Expense) व एक्सेल फाईल जनरेशन पूर्णपणे नल-सेफ केले.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (`VPS Multi-App Master Patch v2.5.55`).**
+
+---
+
 ## 📅 [2026-10-15] - आवृत्ती v2.5.54 (LoginForm Background Geometry SVG Numeric Compliance & Console Error Fix v2.5.54)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)

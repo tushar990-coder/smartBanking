@@ -2,6 +2,22 @@
 
 ---
 
+## 📅 [2026-10-15] - आवृत्ती v2.5.52 (Investment Opening Balance & New Account Date Validation, 4-Digit Year Enforcement, Safe Range Bounds & HttpPut Endpoint v2.5.52)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **गुंतवणूक सुरुवातीची शिल्लक स्थलांतर व नवीन खाते तारीख व्हॅलिडेशन (HTML5 yyyy-MM-dd Date Safety):**
+  * तारीख इनपुट बॉक्समध्ये कीबोर्डने तारीख टाईप करताना अर्धवट वर्ष (उदा. `203`, `3-01-18`) स्टेटमध्ये गेल्याने येणारी ब्राउझर कन्सोल चेतावणी (`The specified value does not conform to the required format, "yyyy-MM-dd"`) पूर्णपणे रोखली.
+  * **क्लायंट-साइड व्हॅलिडेशन (`isValidIsoDate`):** वर्ष अचूक ४ अंकी (`1950` ते `2100`) आणि महिना/दिवस वैध असल्याची खात्री केल्याशिवाय फॉर्म सबमिट होण्यास प्रतिबंध. अपूर्ण तारीख असल्यास स्पष्ट मराठी इशारा प्रदर्शित.
+  * **सुरक्षित तारीख मर्यादा (Date Range Bounds):** इनपुट बॉक्सला `min="1980-01-01"` व `max="2099-12-31"` ॲट्रिब्यूट्स लागू.
+  * **वापरकर्ता-स्नेही UI (Helper UI):** निवडलेली तारीख हिरव्या अक्षरात सुवाच्य मराठी स्वरूपात (उदा. `३१/०३/२०२६`) दाखवणे आणि `📅 कॅलेंडर आयकॉनवरून निवडा` मदत मजकूर समाविष्ट.
+* **अचूक बॅकएंड API त्रुटी संदेश पार्सिंग (Accurate Error Parsing):**
+  * सेव्ह करताना जेनेरिक मेसेज ऐवजी सर्व्हरकडून आलेला खरा व्हॅलिडेशन मेसेज स्क्रीनवर स्पष्ट दिसणे.
+* **बॅकएंड एंडपॉइंट्स व डेटाबेस सुरक्षा (`InvestmentAccountsController.cs`):**
+  * `PostInvestmentAccount` आणि `MigrateInvestmentAccount` वर तारीख मर्यादा तपासणी समाविष्ट, ज्यामुळे SQL Server `datetime` ओव्हरफ्लो एरर टळेल.
+  * यापूर्वी गहाळ असलेला `[HttpPut("{id}")]` एंडपॉइंट समाविष्ट केला, ज्यामुळे स्थलांतरित खात्यांचे संपादन (Edit/Update) निर्दोषपणे कार्य करेल.
+
+---
+
 ## 📅 [2026-10-13] - आवृत्ती v2.5.49 (Investment & Asset Management Multi-Branch Isolation, Branch Cash Drawer Alignment, Consolidated Batch Depreciation & Passing Revert v2.5.49)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)

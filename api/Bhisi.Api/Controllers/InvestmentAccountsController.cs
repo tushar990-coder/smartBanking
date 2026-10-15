@@ -230,6 +230,67 @@ namespace Bhisi.Api.Controllers
             });
         }
 
+        // PUT: api/InvestmentAccounts/5
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutInvestmentAccount(int id, [FromBody] InvestmentAccount account)
+        {
+            if (id != account.InvestmentAccountID)
+            {
+                return BadRequest("खाते आयडी जुळत नाही.");
+            }
+            if (account.PrincipalAmount <= 0)
+            {
+                return BadRequest("मुद्दल रक्कम ₹0 पेक्षा जास्त असणे आवश्यक आहे.");
+            }
+            if (account.InvestmentInstitutionID <= 0)
+            {
+                return BadRequest("कृपया बँक / संस्था निवडा.");
+            }
+            if (account.SchemeID <= 0)
+            {
+                return BadRequest("कृपया गुंतवणूक योजना निवडा.");
+            }
+            if (account.InvestmentDate.Year < 1980 || account.InvestmentDate.Year > 2099)
+            {
+                return BadRequest("गुंतवणूक तारीख अवैध आहे. वर्ष 1980 ते 2099 दरम्यान असणे आवश्यक आहे.");
+            }
+            if (account.MaturityDate.Year < 1980 || account.MaturityDate.Year > 2150)
+            {
+                return BadRequest("मुदतपूर्ती तारीख अवैध आहे. वर्ष 1980 ते 2150 दरम्यान असणे आवश्यक आहे.");
+            }
+
+            var existing = await _context.InvestmentAccounts.FindAsync(id);
+            if (existing == null)
+            {
+                return NotFound("गुंतवणूक खाते सापडले नाही.");
+            }
+
+            existing.BranchID = account.BranchID;
+            existing.InvestmentInstitutionID = account.InvestmentInstitutionID;
+            existing.SchemeID = account.SchemeID;
+            existing.DepositReceiptNo = account.DepositReceiptNo;
+            existing.InvestmentDate = account.InvestmentDate;
+            existing.PrincipalAmount = account.PrincipalAmount;
+            existing.InterestRate = account.InterestRate;
+            existing.MaturityDate = account.MaturityDate;
+            existing.ExpectedMaturityAmount = account.ExpectedMaturityAmount;
+            existing.AccruedInterestTillMigration = account.AccruedInterestTillMigration;
+            existing.BookValue = account.PrincipalAmount + account.AccruedInterestTillMigration;
+            existing.NomineeName = account.NomineeName;
+            existing.NomineeRelation = account.NomineeRelation;
+            existing.Remarks = account.Remarks;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "गुंतवणूक खाते माहिती यशस्वीरीत्या अद्ययावत केली!" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest($"खाते अद्ययावत करताना त्रुटी आली: {ex.Message}");
+            }
+        }
+
         // POST: api/InvestmentAccounts - New Investment Opening
         [HttpPost]
         public async Task<ActionResult> PostInvestmentAccount([FromBody] InvestmentAccount account)
@@ -245,6 +306,14 @@ namespace Bhisi.Api.Controllers
             if (account.SchemeID <= 0)
             {
                 return BadRequest("कृपया गुंतवणूक योजना निवडा.");
+            }
+            if (account.InvestmentDate.Year < 1980 || account.InvestmentDate.Year > 2099)
+            {
+                return BadRequest("गुंतवणूक तारीख अवैध आहे. वर्ष 1980 ते 2099 दरम्यान असणे आवश्यक आहे.");
+            }
+            if (account.MaturityDate.Year < 1980 || account.MaturityDate.Year > 2150)
+            {
+                return BadRequest("मुदतपूर्ती तारीख अवैध आहे. वर्ष 1980 ते 2150 दरम्यान असणे आवश्यक आहे.");
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -376,6 +445,14 @@ namespace Bhisi.Api.Controllers
             if (account.SchemeID <= 0)
             {
                 return BadRequest("कृपया गुंतवणूक योजना निवडा.");
+            }
+            if (account.InvestmentDate.Year < 1980 || account.InvestmentDate.Year > 2099)
+            {
+                return BadRequest("गुंतवणूक तारीख अवैध आहे. वर्ष 1980 ते 2099 दरम्यान असणे आवश्यक आहे.");
+            }
+            if (account.MaturityDate.Year < 1980 || account.MaturityDate.Year > 2150)
+            {
+                return BadRequest("मुदतपूर्ती तारीख अवैध आहे. वर्ष 1980 ते 2150 दरम्यान असणे आवश्यक आहे.");
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();

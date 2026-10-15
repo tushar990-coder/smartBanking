@@ -46,6 +46,20 @@ interface Scheme {
   prematureWithdrawalRate: number;
 }
 
+const isValidIsoDate = (dateStr: string): boolean => {
+  if (!dateStr || typeof dateStr !== 'string') return false;
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  if (year < 1950 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  const d = new Date(year, month - 1, day);
+  return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day;
+};
+
 const InvestmentAccountOpening: React.FC = () => {
   const { user } = useAuth();
   const globalBranchStr = localStorage.getItem('globalBranchId');
@@ -187,7 +201,7 @@ const InvestmentAccountOpening: React.FC = () => {
         interestRate: fv, // Face Value
         durationMonths: 0,
         interestCalculationMethod: 'Dividend',
-        maturityDate: formData.investmentDate, // No maturity, same as invest date
+        maturityDate: isValidIsoDate(formData.investmentDate) ? formData.investmentDate : '', // No maturity, same as invest date
         expectedMaturityAmount: totalShareAmt
       });
     } else {
@@ -197,12 +211,14 @@ const InvestmentAccountOpening: React.FC = () => {
       const months = selectedScheme.durationMonths || 12;
       const method = selectedScheme.interestCalculationMethod || 'Simple';
 
-      const investDate = new Date(formData.investmentDate);
-      let matDateStr = formData.investmentDate;
-      if (!isNaN(investDate.getTime())) {
-        const matDate = new Date(investDate);
-        matDate.setMonth(matDate.getMonth() + months);
-        matDateStr = matDate.toISOString().split('T')[0];
+      let matDateStr = '';
+      if (isValidIsoDate(formData.investmentDate)) {
+        const investDate = new Date(formData.investmentDate);
+        if (!isNaN(investDate.getTime())) {
+          const matDate = new Date(investDate);
+          matDate.setMonth(matDate.getMonth() + months);
+          matDateStr = matDate.toISOString().split('T')[0];
+        }
       }
 
       let maturityAmt = pAmt;
@@ -288,6 +304,14 @@ const InvestmentAccountOpening: React.FC = () => {
       setError('कृपया गुंतवणूक योजना निवडा.');
       return;
     }
+    if (!formData.investmentDate || !isValidIsoDate(formData.investmentDate)) {
+      setError('कृपया वैध मूळ गुंतवणूक / पावती तारीख निवडा (वर्ष ४ अंकी असणे आवश्यक आहे, उदा. 31/03/2026).');
+      return;
+    }
+    if (!isShareMode && (!calcData.maturityDate || !isValidIsoDate(calcData.maturityDate))) {
+      setError('मुदतपूर्ती तारीख अवैध आहे. कृपया गुंतवणूक तारीख व योजना पुन्हा तपासा.');
+      return;
+    }
     if (formData.principalAmount <= 0) {
       setError('कृपया वैध गुंतवणूक रक्कम प्रविष्ट करा.');
       return;
@@ -316,11 +340,25 @@ const InvestmentAccountOpening: React.FC = () => {
       };
 
       const response = await axios.post(`${API_URL}/InvestmentAccounts`, payload);
-      setSuccess(`${response.data.message} (नवीन खाते क्र: ${response.data.investmentNo})`);
+      setSuccess(`${response.data.message || 'गुंतवणूक खाते यशस्वीरीत्या उघडले!'} (नवीन खाते क्र: ${response.data.investmentNo || ''})`);
       resetForm();
       fetchAccounts();
     } catch (err: any) {
-      setError(typeof err.response?.data === 'string' ? err.response.data : 'गुंतवणूक खाते उघडताना त्रुटी आली.');
+      let errorMsg = 'गुंतवणूक खाते उघडताना त्रुटी आली.';
+      if (typeof err.response?.data === 'string' && err.response.data.trim()) {
+        errorMsg = err.response.data;
+      } else if (err.response?.data?.errors) {
+        const validationErrors = Object.entries(err.response.data.errors)
+          .map(([k, v]: [string, any]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`);
+        if (validationErrors.length > 0) {
+          errorMsg = validationErrors.join(' | ');
+        }
+      } else if (err.response?.data?.title) {
+        errorMsg = err.response.data.title;
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      setError(errorMsg);
     } finally {
       setSaving(false);
     }
@@ -612,9 +650,21 @@ const InvestmentAccountOpening: React.FC = () => {
                   name="investmentDate" 
                   value={formData.investmentDate} 
                   onChange={handleChange} 
+                  min="1980-01-01"
+                  max="2099-12-31"
                   required
                   className={inputClass} 
                 />
+                <div className="flex items-center justify-between text-[10px] text-gray-500 mt-0.5">
+                  <span className="text-gray-400">📅 कॅलेंडर आयकॉनवरून निवडा</span>
+                  {isValidIsoDate(formData.investmentDate) ? (
+                    <span className="font-semibold text-emerald-700">
+                      {formatDate(formData.investmentDate)}
+                    </span>
+                  ) : (
+                    <span className="text-rose-500 font-medium">अपूर्ण/अवैध तारीख</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

@@ -15,6 +15,7 @@ namespace Bhisi.Api.Controllers
     [Route("api/[controller]")]
     [Route("api/SavingAccountMasters")]
     [ApiController]
+    [EnforceBranchScope]
     public class SavingAccountsController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -173,6 +174,7 @@ namespace Bhisi.Api.Controllers
             [FromQuery] int? customerId = null,
             [FromQuery] string? search = null)
         {
+            branchId = User.ResolveOptionalBranchId(branchId);
             var query = _context.SavingAccountMasters.AsQueryable();
             if (branchId.HasValue && branchId.Value > 0)
             {

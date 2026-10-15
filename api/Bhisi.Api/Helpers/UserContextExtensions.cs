@@ -25,7 +25,11 @@ namespace Bhisi.Api.Helpers
                    roleClaim.Equals("HeadOffice", StringComparison.OrdinalIgnoreCase) ||
                    roleClaim.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
                    roleClaim.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
-                   roleClaim.Equals("Auditor", StringComparison.OrdinalIgnoreCase);
+                   roleClaim.Equals("Auditor", StringComparison.OrdinalIgnoreCase) ||
+                   roleClaim.Equals("GeneralManager", StringComparison.OrdinalIgnoreCase) ||
+                   roleClaim.Equals("CEO", StringComparison.OrdinalIgnoreCase) ||
+                   roleClaim.Equals("SystemAdmin", StringComparison.OrdinalIgnoreCase) ||
+                   roleClaim.Equals("Chairman", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -54,14 +58,55 @@ namespace Bhisi.Api.Helpers
         /// </summary>
         public static int ResolveBranchId(this ClaimsPrincipal? user, int? requestedBranchId)
         {
+            return user.ResolveRequiredBranchId(requestedBranchId);
+        }
+
+        /// <summary>
+        /// Resolves optional BranchID for filtering reports/queries.
+        /// If user is Head Office Admin: allows null (Consolidated / All Branches) or a specific branch.
+        /// If user is a branch operator: strictly forces their operating BranchID, preventing data leaks.
+        /// </summary>
+        public static int? ResolveOptionalBranchId(this ClaimsPrincipal? user, int? requestedBranchId)
+        {
+            if (user == null) return requestedBranchId;
+
+            if (user.IsHeadOfficeAdmin())
+            {
+                // Head Office / Admin is allowed to view Consolidated (null) or a specific branch
+                return requestedBranchId;
+            }
+
+            // Branch users are strictly locked to their assigned operating branch
+            return user.GetOperatingBranchId();
+        }
+
+        /// <summary>
+        /// Resolves required BranchID for transactional writes (e.g. creating vouchers, loans, accounts).
+        /// If user is Head Office Admin and requests a specific valid branch, it is permitted.
+        /// Otherwise, branch operator is strictly locked to their operating BranchID.
+        /// </summary>
+        public static int ResolveRequiredBranchId(this ClaimsPrincipal? user, int? requestedBranchId)
+        {
             int operatingBranch = user.GetOperatingBranchId();
 
-            if (user.IsHeadOfficeAdmin() && requestedBranchId.HasValue && requestedBranchId.Value > 0)
+            if (user != null && user.IsHeadOfficeAdmin() && requestedBranchId.HasValue && requestedBranchId.Value > 0)
             {
                 return requestedBranchId.Value;
             }
 
             return operatingBranch;
+        }
+
+        /// <summary>
+        /// Validates whether the authenticated user has permission to read or modify a specific branch.
+        /// </summary>
+        public static bool CanAccessBranch(this ClaimsPrincipal? user, int targetBranchId)
+        {
+            if (user == null) return false;
+            if (user.IsHeadOfficeAdmin()) return true;
+            if (targetBranchId <= 0) return false;
+
+            return user.GetOperatingBranchId() == targetBranchId;
         }
 
         /// <summary>

@@ -6,11 +6,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [EnforceBranchScope]
     [Microsoft.AspNetCore.Authorization.AllowAnonymous]
     public class CashManagementController : ControllerBase
     {
@@ -23,19 +25,7 @@ namespace Bhisi.Api.Controllers
 
         private int GetEffectiveBranchId(int? branchId)
         {
-            if (branchId.HasValue && branchId.Value > 0)
-            {
-                return branchId.Value;
-            }
-
-            if (Request.Headers.TryGetValue("X-Branch-ID", out var headerVal) &&
-                int.TryParse(headerVal.FirstOrDefault(), out int parsedHeaderBranch) &&
-                parsedHeaderBranch > 0)
-            {
-                return parsedHeaderBranch;
-            }
-
-            return 1;
+            return User.ResolveRequiredBranchId(branchId);
         }
 
         // ==========================================

@@ -2,6 +2,19 @@
 
 ---
 
+## 📅 [2026-10-15] - आवृत्ती v2.5.56 (User Branch Isolation, JWT Claims Enforcement & Privilege Escalation Hardening v2.5.56)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **कोअर बँकिंग सुरक्षा व युजर शाखा अलगीकरण (User Branch Isolation & Security Hardening):**
+  * **टोकन-आधारित पडताळणी (Token-Based Claims Enforcement & Zero Escalation):** शाखा कर्मचाऱ्यांकडून URL क्वेरी पॅरामीटर (`?branchId=...`) अथवा विनंती पेलोडमध्ये अन्य शाखेचा आयडी पाठवून दुसऱ्या शाखेचा गोपनीय वित्तीय डेटा पाहणे किंवा बदलणे पूर्णपणे ब्लॉक केले. आता प्रत्येक विनंती कॉलरच्या कडक ऑथेंटिकेशन टोकनमधील (`User.Claims`) `BranchID` शी पडताळली जाते.
+  * **`EnforceBranchScope` ऍक्शन फिल्टर (Automated Action Filter):** `ReportsController`, `VouchersController`, `SavingAccountsController`, `LoanAccountsController`, `CashManagementController` व `LoanApplicationsController` वर स्वयंचलित स्कोप फिल्टर लागू केला. सामान्य शाखा कर्मचाऱ्यांसाठी पॅरामीटर आपोआप त्याच्या ऑथेंटिकेटेड शाखेशी संरेखित होतो, तर अधिकार नसलेल्या क्रॉस-शाखा विनंत्या ब्लॉक केल्या जातात.
+  * **मुख्य कार्यालय / प्रशासकीय लवचिकता (HO & Administrative Freedom):** `Admin`, `SuperAdmin`, `HO_Manager`, `CEO`, `Auditor`, `GeneralManager` या प्रशासकीय पदांसाठी 'सर्व शाखा (All Branches / Consolidated)' किंवा कोणत्याही एका शाखेचे विवरण पाहण्याचे अधिकार पूर्ववत अबाधित ठेवले.
+  * **रोख व्यवस्थापन व तिजोरी सुरक्षा (Cash Management Scope Enforcement):** कॅशियर बॅलन्स, रोख तिजोरी वाटप (Cash Allocation) व नोटांची मोजदाद (Denomination Entry) मध्ये टोकन-आधारित अनिवार्य शाखा आयडी सक्ती लागू केली.
+  * **दिवसअखेर (EOD/BOD) ताळमेळ व अचूकता:** दिवसअखेर तपासणीत शाखा-स्तरीय रोख खात्यांचा (`BranchLedgerOpeningBalances` / `CashLedgerHelper`) वापर करून त्या त्या शाखेची प्रत्यक्ष तिजोरी शिल्लक तंतोतंत पडताळली जाणे सुनिश्चित केले.
+* **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (`VPS Multi-App Master Patch v2.5.56`).**
+
+---
+
 ## 📅 [2026-10-15] - आवृत्ती v2.5.55 (Branch Ledger Opening Balances AccountNature Bug Fix, Null-Safety & VPS Master Patch v2.5.55)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)

@@ -50,9 +50,9 @@ namespace Bhisi.Api.Services
                 .Where(v => v.BranchID == branchId && v.Status == "Approved" && v.VoucherDate == businessDate)
                 .ToListAsync();
 
-            // Fetch cash ledger
-            var cashLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("रोख शिल्लक") || l.LedgerName.ToLower().Contains("cash"));
-            int cashLedgerId = cashLedger?.LedgerID ?? 0;
+            // Fetch branch-specific cash ledger via CashLedgerHelper
+            int cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId);
+            var cashLedger = await _context.Ledgers.FindAsync(cashLedgerId);
 
             foreach (var v in transferVouchers)
             {
@@ -74,7 +74,17 @@ namespace Bhisi.Api.Services
             decimal closingCash = 0;
             if (cashLedger != null)
             {
-                openingCash = cashLedger.OpeningBalanceType == "Dr" ? cashLedger.OpeningBalance : -cashLedger.OpeningBalance;
+                var branchOb = await _context.BranchLedgerOpeningBalances
+                    .FirstOrDefaultAsync(b => b.BranchID == branchId && b.LedgerID == cashLedgerId);
+
+                if (branchOb != null)
+                {
+                    openingCash = branchOb.OpeningBalanceType == "Dr" ? branchOb.OpeningBalance : -branchOb.OpeningBalance;
+                }
+                else if (branchId == 1)
+                {
+                    openingCash = cashLedger.OpeningBalanceType == "Dr" ? cashLedger.OpeningBalance : -cashLedger.OpeningBalance;
+                }
                 
                 var priorVds = await _context.VoucherDetails
                     .Include(vd => vd.Voucher)

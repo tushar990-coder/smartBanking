@@ -7,11 +7,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [EnforceBranchScope]
     [Microsoft.AspNetCore.Authorization.AllowAnonymous]
     public class VouchersController : ControllerBase
     {
@@ -24,9 +26,15 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/Vouchers
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Voucher>>> GetVouchers([FromQuery] string? status, [FromQuery] int? page = null, [FromQuery] int? pageSize = null)
+        public async Task<ActionResult<IEnumerable<Voucher>>> GetVouchers([FromQuery] string? status, [FromQuery] int? branchId = null, [FromQuery] int? page = null, [FromQuery] int? pageSize = null)
         {
             var query = _context.Vouchers.AsQueryable();
+
+            int? effectiveBranch = User.ResolveOptionalBranchId(branchId);
+            if (effectiveBranch.HasValue && effectiveBranch.Value > 0)
+            {
+                query = query.Where(v => v.BranchID == effectiveBranch.Value);
+            }
             if (!string.IsNullOrEmpty(status))
             {
                 query = query.Where(v => v.Status == status);
@@ -165,6 +173,8 @@ namespace Bhisi.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<Voucher>> PostVoucher(Voucher voucher)
         {
+            voucher.BranchID = User.ResolveRequiredBranchId(voucher.BranchID);
+
             if (string.IsNullOrWhiteSpace(voucher.VoucherNo) || voucher.VoucherNo == "AUTO")
             {
                 voucher.VoucherNo = await GenerateVoucherNo(voucher.BranchID, voucher.VoucherType);

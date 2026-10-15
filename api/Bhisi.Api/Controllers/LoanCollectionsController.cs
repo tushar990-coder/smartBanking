@@ -458,7 +458,9 @@ namespace Bhisi.Api.Controllers
                     ? loanRate!.OverdueInterestLedgerID!.Value 
                     : interestLedgerId;
 
-                int collectingBranch = collection.BranchID > 0 ? collection.BranchID : (loanAccFetched?.BranchID ?? 1);
+                int collectingBranch = collectingBranchId;
+                collection.BranchID = collectingBranch;
+
                 int surchargeLedgerId = loanRate?.SurchargeLedgerID ?? 0;
                 int cashLedgerId = collection.BankAccountLedgerID ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, collectingBranch, "LOAN");
 

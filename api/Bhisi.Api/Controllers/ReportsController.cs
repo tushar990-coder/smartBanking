@@ -14,6 +14,7 @@ namespace Bhisi.Api.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]
+    [EnforceBranchScope]
     public class ReportsController : ControllerBase
     {
         private readonly AppDbContext _context;

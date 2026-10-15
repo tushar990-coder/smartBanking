@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -119,14 +120,10 @@ namespace Bhisi.Api.Controllers
                     .Include(a => a.RecommendedByDirector)
                     .AsQueryable();
 
-                if (branchId.HasValue && branchId.Value > 0)
+                int? effectiveBranchId = User.ResolveOptionalBranchId(branchId);
+                if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
                 {
-                    query = query.Where(a => a.BranchID == branchId.Value);
-                }
-                else if (!isHoOrAdmin)
-                {
-                    // Branch users are strictly restricted to their own branch applications
-                    query = query.Where(a => a.BranchID == userContext.branchId);
+                    query = query.Where(a => a.BranchID == effectiveBranchId.Value);
                 }
 
                 var list = await query
@@ -150,12 +147,6 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
-                var userContext = GetCurrentUserContext();
-                bool isHoOrAdmin = userContext.role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("HO_Manager", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("HO Manager", StringComparison.OrdinalIgnoreCase) ||
-                                   userContext.role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
-
                 var query = _context.LoanApplications
                     .Include(a => a.Branch)
                     .Include(a => a.Customer)
@@ -167,13 +158,10 @@ namespace Bhisi.Api.Controllers
                     .Include(a => a.RecommendedByDirector)
                     .AsQueryable();
 
-                if (branchId.HasValue && branchId.Value > 0)
+                int? effectiveBranchId = User.ResolveOptionalBranchId(branchId);
+                if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
                 {
-                    query = query.Where(a => a.BranchID == branchId.Value);
-                }
-                else if (!isHoOrAdmin)
-                {
-                    query = query.Where(a => a.BranchID == userContext.branchId);
+                    query = query.Where(a => a.BranchID == effectiveBranchId.Value);
                 }
 
                 var list = await query

@@ -111,14 +111,16 @@ namespace Bhisi.Api.Controllers
             int.TryParse(branchClaim, out int userBranchId);
             bool isHO = User.IsHeadOfficeAdmin();
 
-            if (branchId.HasValue && branchId.Value > 0)
+            int? effectiveBranchId = User.ResolveOptionalBranchId(branchId);
+            if (!isHO && !customerId.HasValue && !memberId.HasValue)
             {
-                query = query.Where(l => l.BranchID == branchId.Value);
+                // Non-HO branch users are strictly locked to their operating branch
+                effectiveBranchId = userBranchId > 0 ? userBranchId : User.GetOperatingBranchId();
             }
-            else if (!isHO && userBranchId > 0 && !customerId.HasValue && !memberId.HasValue)
+
+            if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
             {
-                // Default to operating branch for branch users unless searching specific customer/member
-                query = query.Where(l => l.BranchID == userBranchId);
+                query = query.Where(l => l.BranchID == effectiveBranchId.Value);
             }
             if (customerId.HasValue && customerId.Value > 0)
             {

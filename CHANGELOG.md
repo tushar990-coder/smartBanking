@@ -2,6 +2,46 @@
 
 ---
 
+## 📅 [2026-10-16] - आवृत्ती v2.5.61 (Financial Access Control, Granular RBAC, Maker-Checker & Customer360 Schema Fix v2.5.61)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निवारण (Key Highlights)
+* **कोअर बँकिंग सिस्टीम (CBS) सुरक्षा मजबुतीकरण व P0 क्रिटिकल निवारण (Financial Access Control & P0 Remediation):**
+  * **वित्तीय नियंत्रक सुरक्षा (Vouchers & Cash Management Authorization):**
+    * `VouchersController.cs` आणि `CashManagementController.cs` वरील `[AllowAnonymous]` पूर्णपणे हटवून `[Authorize]` बंधनकारक केले. सर्व विना-लॉगिन प्रवेश तात्काळ `401 Unauthorized` ने ब्लॉक.
+  * **ग्रॅन्युलर RBAC व मेकर-चेकर (Maker-Checker Enforcement):**
+    * व्हाउचर्स मंजुरी (`POST /api/Vouchers/{id}/Approve`) वर Maker ID != Approver ID चे कडक बंधन. स्वतःचे व्हाउचर स्वतः मंजूर करण्यास `400 Bad Request` सह बंदी.
+    * व्हाउचर्स मंजुरी, रद्दबातल (`Cancel`) आणि हटवणे (`Delete`) चे अधिकार केवळ `Manager`, `Admin`, `SuperAdmin` या अधिकृत पदांपुरते मर्यादित.
+  * **कॅशियर व्यवहार मर्यादा व दिवसअखेर लॉक (EOD Closed Lock & Cashier Role Scope):**
+    * ज्या शाखेचा दिवस बंद (`BranchDayEndStatuses.IsDayClosed`) झाला आहे, त्यामध्ये नवीन व्हाउचर तयार करणे किंवा रोख वाटप करणे पूर्णपणे प्रतिबंधित.
+    * कॅशियरला केवळ 'Receipt' (जमा) व 'Payment' (नावे) करण्याची मुभा; 'Journal' (JV) व 'Contra' व्हाउचर तयार करण्यास बंदी.
+  * **कॅश मॅनेजमेंट सुरक्षा (Cash Management Hardening):**
+    * तिजोरी ते काउंटर रोख वाटप (`Allocations`) केवळ शाखा व्यवस्थापक करू शकतील; कॅशियर स्वतःला रोख वाटप करू शकत नाही.
+    * कॅश सेटिंग्ज, लेजर मॅपिंग व सीडिंग केवळ `SuperAdmin/Admin` पुरते मर्यादित.
+  * **डेटाबेस बॅकअप व बल्क इम्पोर्ट संरक्षण (Backup & DataImport Hardening):**
+    * `BackupController`, `DataImportController`, `LegacyDataImportController` व `SeedController` वर `[Authorize(Roles = "SuperAdmin,Admin,SystemAdmin")]` बंधनकारक.
+  * **डेटाबेस स्कीमा ५०० एरर निवारण (SavingPassbooks CustomerID & Customer 360 Fix):**
+    * `SavingPassbooks` टेबलमध्ये `CustomerID INT NULL` कॉलम जोडला, `SavingAccountMasters` मधून डेटा बॅकफिल केला आणि `IX_SavingPassbooks_CustomerID` इंडेक्स तयार केला.
+    * `GET /api/Reports/Customer360/{id}` एरर पूर्णपणे दूर होऊन २०० OK यशस्वी.
+    * `tools/master_vps_update_schema.sql` (Section 50.3.1) अद्ययावत.
+  * **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (`VPS Multi-App Master Patch v2.5.61`).**
+
+---
+
+## 📅 [2026-10-16] - आवृत्ती v2.5.60 (Branch-wise EOD Cash Tally & Multi-Cash Ledger Reconciliation v2.5.60)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)
+* **कोअर बँकिंग सिस्टीम (CBS) - शाखानिहाय दिवसअखेर रोख ताळमेळ (Branch-wise EOD Cash Tally & Multi-Cash Ledger Reconciliation):**
+  * **कॅश लेजर हार्डकोडिंगचे संपूर्ण निर्मूलन (Zero Hardcoded Cash Ledger ID):** EOD/BOD प्रक्रियेमधील मुख्य कार्यालय रोख खाते (`LedgerID = 1` किंवा `branchId == 1`) हार्डकोडिंग पूर्णपणे काढून टाकले. `CashLedgerHelper.GetCashLedgerIdsForBranchAsync` द्वारे संबंधित शाखेच्या सर्व रोख खात्यांचा (Primary Cash Ledger + Counter Cash / Petty Cash Ledgers) अचूक ताळमेळ.
+  * **शाखानिहाय आरंभिक शिल्लक व व्हाउचर हालचाल (Branch Opening Balance & Voucher Movements):** `BranchLedgerOpeningBalances` मधील शाखेची अचूक आरंभिक रोख शिल्लक (Opening Balance) घेऊन आजचे रोख भरणा (Receipts) व रोख उपसा (Payments) यांनुसार अचूक क्लोजिंग कॅश शिल्लक गणना.
+  * **प्रत्यक्ष नोटा मोजदाद पडताळणी (Physical Cash Denomination Verification):** दिवसअखेर करताना प्रत्यक्ष मोजलेली रोख रक्कम (`CashDenominations`) पुस्तकी शिल्लक (Book Balance) शी जुळवून फरक (Difference / Tally Status) पडताळणी.
+  * **कॅशियर खिडकी/ड्रॉवर सेटलमेंट गार्ड (Cashier Drawer Settlement Check):** तिजोरी/खिडकी बंद न केलेल्या कॅशियर्सचा (`CashierBalances`) शोध घेऊन दिवसअखेरीपूर्वी सर्व खिडक्या बंद असल्याची खात्री.
+  * **दिवसअखेर डॅशबोर्ड (DayEndDashboard.tsx UI Polish):** शाखानिहाय रोख खाते नाव, लेजर आयडी, पावती/पेमेंट ब्रेकडाउन, नोटा मोजदाद स्थिती व कॅशियर सेटलमेंटसह अत्याधुनिक प्री-चेकलिस्ट व रंगीत बॅजेस.
+  * **ट्रान्सफर व्हाउचर पडताळणी शुद्धीकरण:** आंतर-खाते ट्रान्सफर व्हाउचर्स तपासताना शाखेच्या सर्व रोख खात्यांचा समावेश करून अचूक ताळमेळ.
+  * **डेटाबेस स्वयं-दुरुस्ती (Schema Self-Healing):** `master_vps_update_schema.sql` (Section 7.12) मध्ये `Branches` टेबलवरील `DefaultCashLedgerID` स्वयंचलित मॅपिंग.
+  * **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (`VPS Multi-App Master Patch v2.5.60`).**
+
+---
+
 ## 📅 [2026-10-15] - आवृत्ती v2.5.59 (Trial Balance IBT Columns & Cross-Branch Loan Collections v2.5.59)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निराकरण (Key Highlights)

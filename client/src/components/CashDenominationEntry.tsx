@@ -7,15 +7,13 @@ import {
   RefreshCw, 
   CheckCircle2, 
   AlertCircle, 
-  Clock, 
   Calendar, 
   Coins, 
   Printer, 
-  FileText, 
   Save,
-  Check,
   ShieldCheck,
-  Building
+  Building,
+  LayoutDashboard
 } from 'lucide-react';
 
 const fmt = (n: number) => '₹ ' + (Number(n) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -109,15 +107,15 @@ export default function CashDenominationEntry({ onNavigate, initialCashierId }: 
       setCashiers(list);
 
       let curCashierId = selectedCashierId;
-      if ((!curCashierId || !list.some((c: any) => c.Id === curCashierId)) && list.length > 0) {
-        curCashierId = list[0].Id;
+      if ((!curCashierId || !list.some((c: any) => (c.id ?? c.Id) === curCashierId)) && list.length > 0) {
+        curCashierId = list[0].id ?? list[0].Id ?? 0;
         setSelectedCashierId(curCashierId);
       }
 
       // Find selected cashier's expected current balance
-      const currentObj = list.find((c: any) => c.Id === curCashierId);
+      const currentObj = list.find((c: any) => (c.id ?? c.Id) === curCashierId);
       if (currentObj) {
-        setExpectedAmount(currentObj.CurrentBalance || 0);
+        setExpectedAmount(currentObj.currentBalance ?? currentObj.CurrentBalance ?? 0);
       }
 
       // Load history
@@ -138,9 +136,9 @@ export default function CashDenominationEntry({ onNavigate, initialCashierId }: 
 
   const handleCashierChange = (id: number) => {
     setSelectedCashierId(id);
-    const cashierObj = cashiers.find(c => c.Id === id);
+    const cashierObj = cashiers.find(c => (c.id ?? c.Id) === id);
     if (cashierObj) {
-      setExpectedAmount(cashierObj.CurrentBalance || 0);
+      setExpectedAmount(cashierObj.currentBalance ?? cashierObj.CurrentBalance ?? 0);
     }
   };
 
@@ -204,271 +202,310 @@ export default function CashDenominationEntry({ onNavigate, initialCashierId }: 
     window.print();
   };
 
-  const selectedCashierObj = cashiers.find(c => c.Id === selectedCashierId);
+  const selectedCashierObj = cashiers.find(c => (c.id ?? c.Id) === selectedCashierId);
 
   return (
-    <div className="flex-1 h-full overflow-y-auto bg-slate-50 text-slate-800 p-3 sm:p-5 font-sans">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs mb-5 print:hidden">
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => onNavigate && onNavigate('cashier-dashboard')}
-            className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-            title="मागे जा"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/20 shrink-0">
-            <Calculator size={22} />
+    <div className="p-3 max-w-full h-full flex flex-col font-sans overflow-y-auto text-slate-800">
+      {/* Outer Container matching Standard ERP Theme */}
+      <div className="bg-white rounded-sm shadow-xs border border-gray-200 overflow-hidden flex flex-col">
+        
+        {/* Standard ERP Header Banner */}
+        <div className="bg-primary px-4 py-3 text-white flex flex-col md:flex-row md:items-center md:justify-between shadow-xs gap-3 print:hidden">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => onNavigate && onNavigate('cashier-dashboard')}
+              className="p-1.5 rounded-sm bg-white/15 hover:bg-white/25 text-white transition-colors"
+              title="मागे जा (डॅशबोर्ड)"
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <div className="w-10 h-10 rounded-sm bg-white/15 border border-white/20 flex items-center justify-center text-white shrink-0 shadow-2xs">
+              <Calculator size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm sm:text-base font-bold tracking-wide">
+                  नोटांची मोजणी व कॅश ताळेबंद (Cash Denomination & Tally)
+                </h1>
+                <span className="bg-white/20 text-white text-[10px] font-bold px-2 py-0.2 rounded-full border border-white/30">
+                  फिजिकल कॅश पडताळणी
+                </span>
+              </div>
+              <p className="text-[11px] text-white/80 font-normal mt-0.5">
+                प्रत्यक्ष रोख नोटांची मोजणी (Physical Cash Count) आणि सिस्टम शिल्लक पडताळणी
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg sm:text-xl font-bold text-slate-800">नोटांची मोजणी व कॅश ताळेबंद (Cash Denomination)</h1>
-            <p className="text-xs text-slate-500">
-              प्रत्यक्ष रोख नोटांची मोजणी (Physical Cash Count) आणि सिस्टम शिल्लक पडताळणी
-            </p>
+
+          {/* Action & Filter Controls */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {branches.length > 1 && (
+              <div className="flex items-center gap-1.5 bg-white/15 border border-white/25 rounded-sm px-2.5 py-1 text-white font-bold">
+                <Building size={13} className="text-white/80" />
+                <select
+                  value={selectedBranchId}
+                  onChange={(e) => setSelectedBranchId(Number(e.target.value))}
+                  className="bg-transparent font-bold text-white outline-none cursor-pointer text-xs"
+                >
+                  {branches.map((b, idx) => {
+                    const bId = b.branchID ?? b.BranchID ?? b.id ?? idx;
+                    const bName = b.branchName ?? b.BranchName ?? `शाखा ${bId}`;
+                    return (
+                      <option key={`cde-branch-${bId}`} value={bId} className="text-slate-800 bg-white">
+                        {bName}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+
+            <button 
+              onClick={() => onNavigate && onNavigate('cashier-dashboard')}
+              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 border border-white/25 rounded-sm px-3 py-1.5 text-xs text-white font-semibold transition-colors"
+            >
+              <LayoutDashboard size={13} />
+              <span>डॅशबोर्ड</span>
+            </button>
+
+            <button 
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 border border-white/25 rounded-sm px-3 py-1.5 text-xs text-white font-semibold transition-colors"
+            >
+              <Printer size={13} />
+              <span>प्रिंट पावती</span>
+            </button>
+
+            <button 
+              onClick={loadData}
+              title="रिफ्रेश करा"
+              className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 border border-white/25 rounded-sm px-3 py-1.5 text-xs text-white font-semibold transition-colors"
+            >
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              <span>रिफ्रेश</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {branches.length > 1 && (
-            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 text-xs text-emerald-950 font-bold">
-              <Building size={14} className="text-emerald-700" />
-              <select
-                value={selectedBranchId}
-                onChange={(e) => setSelectedBranchId(Number(e.target.value))}
-                className="bg-transparent font-bold text-emerald-950 outline-none cursor-pointer"
-              >
-                {branches.map(b => (
-                  <option key={b.BranchID} value={b.BranchID}>
-                    {b.BranchName}
-                  </option>
-                ))}
-              </select>
+        {/* Body Content */}
+        <div className="p-4 bg-slate-50/50 flex-1 space-y-4">
+          
+          {/* Messages */}
+          {successMsg && (
+            <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-sm text-xs font-bold flex items-center gap-2 animate-fadeIn print:hidden">
+              <CheckCircle2 size={16} />
+              <span>{successMsg}</span>
+            </div>
+          )}
+          {errorMsg && (
+            <div className="p-3 bg-rose-50 border border-rose-300 text-rose-800 rounded-sm text-xs font-bold flex items-center gap-2 animate-fadeIn print:hidden">
+              <AlertCircle size={16} />
+              <span>{errorMsg}</span>
             </div>
           )}
 
-          <button 
-            onClick={handlePrint}
-            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 transition-colors"
-          >
-            <Printer size={14} />
-            <span>प्रिंट पावती</span>
-          </button>
+          {/* Main Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            
+            {/* Left Column: Denomination Calculator Form (7 cols) */}
+            <div className="lg:col-span-7 bg-white rounded-sm border border-gray-200 shadow-2xs p-4 flex flex-col">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-200 mb-4">
+                <h2 className="text-xs font-bold text-gray-800 uppercase tracking-wide flex items-center gap-2">
+                  <Coins className="text-primary" size={16} />
+                  <span>नोटांचे मूल्यवर्ग (Denominations Counter)</span>
+                </h2>
 
-          <button 
-            onClick={loadData}
-            title="रिफ्रेश करा"
-            className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 transition-colors"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            <span>रिफ्रेश</span>
-          </button>
-        </div>
-      </div>
+                {/* Cashier & Date Selectors */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={selectedCashierId}
+                    onChange={(e) => handleCashierChange(Number(e.target.value))}
+                    className="px-2.5 py-1 border border-gray-300 rounded-sm text-xs font-bold text-gray-800 bg-white outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                  >
+                    {cashiers.map((c, idx) => {
+                      const cId = c.id ?? c.Id ?? idx;
+                      const cName = c.cashierName ?? c.CashierName;
+                      const cCounter = c.counterNumber ?? c.CounterNumber;
+                      return (
+                        <option key={`cde-cashier-${cId}`} value={cId}>
+                          {cName} ({cCounter})
+                        </option>
+                      );
+                    })}
+                  </select>
 
-      {/* Messages */}
-      {successMsg && (
-        <div className="mb-4 p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn print:hidden">
-          <CheckCircle2 size={16} />
-          <span>{successMsg}</span>
-        </div>
-      )}
-      {errorMsg && (
-        <div className="mb-4 p-3 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn print:hidden">
-          <AlertCircle size={16} />
-          <span>{errorMsg}</span>
-        </div>
-      )}
+                  <div className="flex items-center bg-slate-100 border border-gray-200 rounded-sm px-2 py-0.5 text-xs">
+                    <Calendar size={12} className="mr-1 text-gray-500" />
+                    <input 
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      className="bg-transparent font-semibold text-gray-800 outline-none cursor-pointer text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
 
-      {/* Main Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left Column: Denomination Calculator Form (7 cols) */}
-        <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 shadow-2xs p-4 sm:p-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 mb-4">
-            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
-              <Coins className="text-indigo-600" size={18} />
-              नोटांचे मूल्यवर्ग (Denominations Counter)
-            </h2>
+              <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between">
+                {/* Denomination Input Table */}
+                <div className="overflow-x-auto mb-4 border border-gray-200 rounded-sm">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-gray-700 border-b border-gray-200">
+                        <th className="py-2 px-3 text-left font-bold">नोटा / नाणी (Denomination)</th>
+                        <th className="py-2 px-3 text-center font-bold">नगांची संख्या (Count)</th>
+                        <th className="py-2 px-3 text-right font-bold">एकूण रक्कम (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {denominationsList.map((item) => {
+                        const countVal = (counts as any)[item.key];
+                        const lineTotal = item.isCoin ? (Number(countVal) || 0) : (countVal * item.value);
 
-            {/* Cashier & Date Selectors */}
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={selectedCashierId}
-                onChange={(e) => handleCashierChange(Number(e.target.value))}
-                className="px-2.5 py-1 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 bg-white outline-none focus:border-indigo-600"
-              >
-                {cashiers.map(c => (
-                  <option key={c.Id} value={c.Id}>
-                    {c.CashierName} ({c.CounterNumber})
-                  </option>
-                ))}
-              </select>
-
-              <input 
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="px-2 py-1 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 outline-none focus:border-indigo-600"
-              />
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit}>
-            {/* Denomination Input Table */}
-            <div className="overflow-x-auto mb-4">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                    <th className="py-2 px-3 text-left font-bold">नोटा / नाणी (Denomination)</th>
-                    <th className="py-2 px-3 text-center font-bold">नगांची संख्या (Count)</th>
-                    <th className="py-2 px-3 text-right font-bold">एकूण रक्कम (₹)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {denominationsList.map((item) => {
-                    const countVal = (counts as any)[item.key];
-                    const lineTotal = item.isCoin ? (Number(countVal) || 0) : (countVal * item.value);
-
-                    return (
-                      <tr key={item.key} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="py-2 px-3 font-bold text-slate-700">
-                          {item.label}
+                        return (
+                          <tr key={item.key} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="py-2 px-3 font-bold text-gray-800">
+                              {item.label}
+                            </td>
+                            <td className="py-2 px-3 text-center w-36">
+                              <input 
+                                type="number"
+                                min="0"
+                                placeholder="0"
+                                value={countVal === 0 ? '' : countVal}
+                                onChange={(e) => handleCountChange(item.key, e.target.value)}
+                                className="w-24 text-center py-1 px-2 border border-gray-300 rounded-sm font-bold text-gray-900 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 bg-white"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-right font-black text-gray-900">
+                              {fmt(lineTotal)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-100 font-black border-t-2 border-gray-300 text-gray-900">
+                        <td className="py-2.5 px-3">
+                          एकूण नोटा: <span className="text-primary">{totalNotesCount}</span>
                         </td>
-                        <td className="py-2 px-3 text-center w-36">
-                          <input 
-                            type="number"
-                            min="0"
-                            placeholder="0"
-                            value={countVal === 0 ? '' : countVal}
-                            onChange={(e) => handleCountChange(item.key, e.target.value)}
-                            className="w-24 text-center py-1 px-2 border border-slate-300 rounded-md font-bold text-slate-800 outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
-                          />
+                        <td className="py-2.5 px-3 text-center uppercase tracking-wider text-[11px] text-gray-600">
+                          प्रत्यक्ष रोख (Physical Cash)
                         </td>
-                        <td className="py-2 px-3 text-right font-black text-slate-900">
-                          {fmt(lineTotal)}
+                        <td className="py-2.5 px-3 text-right text-sm text-primary font-black">
+                          {fmt(totalPhysicalAmount)}
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-100/80 font-black border-t-2 border-slate-300 text-slate-900">
-                    <td className="py-2.5 px-3">
-                      एकूण नोटा: <span className="text-indigo-700">{totalNotesCount}</span>
-                    </td>
-                    <td className="py-2.5 px-3 text-center uppercase tracking-wider text-[11px] text-slate-600">
-                      प्रत्यक्ष रोख (Physical Cash)
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-sm text-indigo-700 font-black">
-                      {fmt(totalPhysicalAmount)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-
-            {/* Remarks */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-700 mb-1">शेरा / पडताळणी टिप्पणी</label>
-              <input 
-                type="text"
-                placeholder="उदा. सायंकाळची दिवस अखेर मोजणी (Day End Tally)"
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
-              />
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={handleReset}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 text-xs font-bold"
-              >
-                रिसेट करा
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md flex items-center gap-1.5 transition-all"
-              >
-                <Save size={15} />
-                <span>मोजणी नोंद जतन करा</span>
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Right Column: Tally Comparison & Print Summary (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          {/* Comparison Card */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4 sm:p-5">
-            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide pb-3 border-b border-slate-100 mb-4 flex items-center gap-2">
-              <ShieldCheck className="text-indigo-600" size={18} />
-              रोख ताळेबंद पडताळणी (Cash Tally Summary)
-            </h2>
-
-            <div className="space-y-3 text-xs mb-4">
-              <div className="flex justify-between items-center p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-slate-600 font-semibold">कॅशिअर / काउंटर:</span>
-                <span className="font-bold text-slate-900">{selectedCashierObj?.CashierName || 'N/A'}</span>
-              </div>
-
-              <div className="flex justify-between items-center p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-slate-600 font-semibold">सिस्टम शिल्लक (Book Balance):</span>
-                <span className="font-bold text-slate-900">{fmt(expectedAmount)}</span>
-              </div>
-
-              <div className="flex justify-between items-center p-2.5 bg-indigo-50/70 rounded-lg border border-indigo-100">
-                <span className="text-indigo-900 font-semibold">प्रत्यक्ष मोजलेली रोख (Physical):</span>
-                <span className="font-black text-indigo-950 text-sm">{fmt(totalPhysicalAmount)}</span>
-              </div>
-
-              {/* Difference Highlight */}
-              <div className={`p-3 rounded-xl border text-center transition-all ${
-                Math.abs(difference) < 0.01 
-                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
-                  : difference < 0 
-                  ? 'bg-rose-50 border-rose-300 text-rose-800' 
-                  : 'bg-amber-50 border-amber-300 text-amber-800'
-              }`}>
-                <div className="text-[11px] font-bold uppercase tracking-wider mb-0.5">
-                  ताळेबंद स्थिती (Status)
+                    </tfoot>
+                  </table>
                 </div>
-                <div className="text-base font-black">
-                  {Math.abs(difference) < 0.01 ? (
-                    <span className="flex items-center justify-center gap-1.5">
-                      <CheckCircle2 size={18} /> रक्कम पूर्णपणे जुळली (Tally OK)
-                    </span>
-                  ) : difference < 0 ? (
-                    <span className="flex items-center justify-center gap-1.5">
-                      <AlertCircle size={18} /> कमी रक्कम (Short): {fmt(Math.abs(difference))}
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-1.5">
-                      <AlertCircle size={18} /> जास्त रक्कम (Excess): {fmt(difference)}
-                    </span>
-                  )}
+
+                {/* Remarks */}
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-gray-700 mb-1">शेरा / पडताळणी टिप्पणी</label>
+                  <input 
+                    type="text"
+                    placeholder="उदा. सायंकाळची दिवस अखेर मोजणी (Day End Tally)"
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-sm text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 bg-white"
+                  />
                 </div>
-              </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="px-4 py-2 rounded-sm border border-gray-300 text-gray-700 hover:bg-gray-50 text-xs font-bold"
+                  >
+                    रिसेट करा
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-5 py-2 rounded-sm bg-primary hover:opacity-90 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all"
+                  >
+                    <Save size={15} />
+                    <span>मोजणी नोंद जतन करा</span>
+                  </button>
+                </div>
+              </form>
             </div>
 
-            {/* Printable Slip Preview */}
-            <div className="p-3 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-[11px] text-slate-600">
-              <div className="text-center font-bold text-slate-800 border-b border-slate-200 pb-1 mb-2">
-                दैनिक रोख मोजणी पावती (Cash Denomination Slip)
-              </div>
-              <div className="grid grid-cols-2 gap-1 mb-2">
-                <div>तारीख: {new Date(selectedDate).toLocaleDateString('mr-IN')}</div>
-                <div>काउंटर: {selectedCashierObj?.CounterNumber}</div>
-              </div>
-              <div className="text-right font-bold text-slate-900">
-                एकूण रक्कम: {fmt(totalPhysicalAmount)}
-              </div>
-              <div className="mt-4 pt-3 border-t border-slate-200 flex justify-between text-[10px] text-slate-400">
-                <span>कॅशिअर सही</span>
-                <span>तपासनीस / मॅनेजर सही</span>
+            {/* Right Column: Tally Comparison & Print Summary (5 cols) */}
+            <div className="lg:col-span-5 space-y-4">
+              {/* Comparison Card */}
+              <div className="bg-white rounded-sm border border-gray-200 shadow-2xs p-4">
+                <h2 className="text-xs font-bold text-gray-800 uppercase tracking-wide pb-3 border-b border-gray-200 mb-4 flex items-center gap-2">
+                  <ShieldCheck className="text-primary" size={16} />
+                  <span>रोख ताळेबंद पडताळणी (Cash Tally Summary)</span>
+                </h2>
+
+                <div className="space-y-2.5 text-xs mb-4">
+                  <div className="flex justify-between items-center p-2.5 bg-slate-50 rounded-sm border border-gray-200">
+                    <span className="text-gray-600 font-semibold">कॅशिअर / काउंटर:</span>
+                    <span className="font-bold text-gray-900">
+                      {selectedCashierObj ? (selectedCashierObj.cashierName ?? selectedCashierObj.CashierName) : 'N/A'}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-center p-2.5 bg-slate-50 rounded-sm border border-gray-200">
+                    <span className="text-gray-600 font-semibold">सिस्टम शिल्लक (Book Balance):</span>
+                    <span className="font-bold text-gray-900">{fmt(expectedAmount)}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center p-2.5 bg-primary/5 rounded-sm border border-primary/20">
+                    <span className="text-primary font-bold">प्रत्यक्ष मोजलेली रोख (Physical):</span>
+                    <span className="font-black text-primary text-sm">{fmt(totalPhysicalAmount)}</span>
+                  </div>
+
+                  {/* Difference Highlight */}
+                  <div className={`p-3 rounded-sm border text-center transition-all ${
+                    Math.abs(difference) < 0.01 
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
+                      : difference < 0 
+                      ? 'bg-rose-50 border-rose-300 text-rose-800' 
+                      : 'bg-amber-50 border-amber-300 text-amber-800'
+                  }`}>
+                    <div className="text-[11px] font-bold uppercase tracking-wider mb-0.5">
+                      ताळेबंद स्थिती (Status)
+                    </div>
+                    <div className="text-base font-black">
+                      {Math.abs(difference) < 0.01 ? (
+                        <span className="flex items-center justify-center gap-1.5">
+                          <CheckCircle2 size={18} /> रक्कम पूर्णपणे जुळली (Tally OK)
+                        </span>
+                      ) : difference < 0 ? (
+                        <span className="flex items-center justify-center gap-1.5">
+                          <AlertCircle size={18} /> कमी रक्कम (Shortage): {fmt(Math.abs(difference))}
+                        </span>
+                      ) : (
+                        <span className="flex items-center justify-center gap-1.5">
+                          <AlertCircle size={18} /> जास्त रक्कम (Excess): {fmt(difference)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Printable Slip Preview */}
+                <div className="p-3 border border-dashed border-gray-300 rounded-sm bg-slate-50 text-[11px] text-gray-700">
+                  <div className="text-center font-bold text-gray-900 border-b border-gray-200 pb-1 mb-2">
+                    दैनिक रोख मोजणी पावती (Cash Denomination Slip)
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 mb-2">
+                    <div>तारीख: {new Date(selectedDate).toLocaleDateString('mr-IN')}</div>
+                    <div>काउंटर: {selectedCashierObj ? (selectedCashierObj.counterNumber ?? selectedCashierObj.CounterNumber) : '-'}</div>
+                  </div>
+                  <div className="text-right font-bold text-gray-900">
+                    एकूण रक्कम: {fmt(totalPhysicalAmount)}
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-gray-200 flex justify-between text-[10px] text-gray-400">
+                    <span>कॅशिअर सही</span>
+                    <span>तपासनीस / मॅनेजर सही</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

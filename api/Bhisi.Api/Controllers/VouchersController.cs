@@ -8,13 +8,14 @@ using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
 using Bhisi.Api.Helpers;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
     [EnforceBranchScope]
-    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [Authorize]
     public class VouchersController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -175,6 +176,34 @@ namespace Bhisi.Api.Controllers
         {
             voucher.BranchID = User.ResolveRequiredBranchId(voucher.BranchID);
 
+            // 1. Day-End Closed Check
+            var dayStatus = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == voucher.BranchID && b.BusinessDate.Date == voucher.VoucherDate.Date)
+                .FirstOrDefaultAsync();
+
+            if (dayStatus != null && dayStatus.IsDayClosed)
+            {
+                return BadRequest($"तारीख {voucher.VoucherDate:dd/MM/yyyy} साठी दिवस अखेर (EOD) पूर्ण झाली आहे. बंद झालेल्या तारखेमध्ये नवीन वॉउचर तयार करता येणार नाही.");
+            }
+
+            // 1.1 Cashier Role Restrictions (Cashiers only allowed Cash Receipt & Cash Payment)
+            var userRole = User.GetUserRole();
+            if (userRole.Equals("Cashier", StringComparison.OrdinalIgnoreCase) && 
+                !User.IsManagerOrAdmin() && 
+                !userRole.Equals("Accountant", StringComparison.OrdinalIgnoreCase))
+            {
+                if (voucher.VoucherType != "Receipt" && voucher.VoucherType != "Payment")
+                {
+                    return BadRequest("कॅशियर फक्त 'Receipt' (जमा) किंवा 'Payment' (नावे) व्हाऊचर तयार करू शकतात. Journal किंवा Contra व्हाऊचरची परवानगी नाही.");
+                }
+            }
+
+            int currentUserId = User.GetUserId();
+            if (currentUserId > 0)
+            {
+                voucher.CreatedBy = currentUserId;
+            }
+
             if (string.IsNullOrWhiteSpace(voucher.VoucherNo) || voucher.VoucherNo == "AUTO")
             {
                 voucher.VoucherNo = await GenerateVoucherNo(voucher.BranchID, voucher.VoucherType);
@@ -301,6 +330,7 @@ namespace Bhisi.Api.Controllers
 
         // PUT: api/Vouchers/5
         [HttpPut("{id}")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager,Accountant")]
         public async Task<IActionResult> PutVoucher(int id, Voucher voucher)
         {
             if (id != voucher.VoucherID)
@@ -316,6 +346,21 @@ namespace Bhisi.Api.Controllers
 
             var existingVoucher = await _context.Vouchers.Include(v => v.VoucherDetails).FirstOrDefaultAsync(v => v.VoucherID == id);
             if (existingVoucher == null) return NotFound();
+
+            if (existingVoucher.Status == "Approved" && !User.IsHeadOfficeAdmin())
+            {
+                return BadRequest("पोस्ट झालेले (Approved) व्हाउचर थेट बदलता येत नाही. आवश्यक असल्यास रिव्हर्सल किंवा कॅन्सलेशन करावे.");
+            }
+
+            // Day-End check
+            var dayStatus = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == existingVoucher.BranchID && b.BusinessDate.Date == existingVoucher.VoucherDate.Date)
+                .FirstOrDefaultAsync();
+
+            if (dayStatus != null && dayStatus.IsDayClosed && !User.IsHeadOfficeAdmin())
+            {
+                return BadRequest($"तारीख {existingVoucher.VoucherDate:dd/MM/yyyy} साठी दिवस अखेर (EOD) पूर्ण झाली आहे. बंद झालेल्या तारखेचे वॉउचर बदलता येणार नाही.");
+            }
 
             // Update scalar properties
             existingVoucher.VoucherDate = voucher.VoucherDate;
@@ -346,6 +391,7 @@ namespace Bhisi.Api.Controllers
 
         // DELETE: api/Vouchers/5
         [HttpDelete("{id}")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<IActionResult> DeleteVoucher(int id, [FromBody] VoucherDeleteDto dto)
         {
             var voucher = await _context.Vouchers
@@ -360,7 +406,7 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("व्हाऊचर डिलीट करण्याचे योग्य कारण (किमान १० अक्षरे) लिहिणे बंधनकारक आहे.");
             }
 
-            bool isHOUser = dto.UserRole == "Admin" || dto.UserRole == "HO_Manager" || dto.UserRole == "HO Manager";
+            bool isHOUser = User.IsHeadOfficeAdmin();
 
             // 2. Approved Voucher Deletion Policy
             if (voucher.Status == "Approved" && !isHOUser)
@@ -511,6 +557,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/Vouchers/5/Approve
         [HttpPost("{id}/Approve")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<IActionResult> ApproveVoucher(int id, [FromBody] ApprovalDto dto)
         {
             var voucher = await _context.Vouchers.FindAsync(id);
@@ -518,13 +565,19 @@ namespace Bhisi.Api.Controllers
 
             if (voucher.Status == "Approved") return BadRequest("Voucher is already approved.");
 
-            if (voucher.CreatedBy > 0 && dto.ApprovedBy > 0 && voucher.CreatedBy == dto.ApprovedBy)
+            int approverId = User.GetUserId();
+            if (approverId <= 0 && dto.ApprovedBy > 0)
+            {
+                approverId = dto.ApprovedBy;
+            }
+
+            if (voucher.CreatedBy > 0 && approverId > 0 && voucher.CreatedBy == approverId && !User.IsHeadOfficeAdmin())
             {
                 return BadRequest("व्हाऊचर तयार करणारा वापरकर्ता स्वतःचा व्हाऊचर स्वतः अ‍ॅप्रुव्ह करू शकत नाही (Maker-Checker Rule).");
             }
 
             voucher.Status = "Approved";
-            voucher.ApprovedBy = dto.ApprovedBy;
+            voucher.ApprovedBy = approverId;
             voucher.ApprovedOn = DateTime.Now;
 
             await _context.SaveChangesAsync();
@@ -533,6 +586,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/Vouchers/5/Reject
         [HttpPost("{id}/Reject")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<IActionResult> RejectVoucher(int id, [FromBody] RejectionDto dto)
         {
             var voucher = await _context.Vouchers.FindAsync(id);
@@ -540,8 +594,11 @@ namespace Bhisi.Api.Controllers
 
             if (voucher.Status == "Approved") return BadRequest("Cannot reject an already approved voucher.");
 
+            int rejecterId = User.GetUserId();
+            if (rejecterId <= 0 && dto.RejectedBy > 0) rejecterId = dto.RejectedBy;
+
             voucher.Status = "Rejected";
-            voucher.ApprovedBy = dto.RejectedBy; // Reused for rejected by tracking
+            voucher.ApprovedBy = rejecterId; // Reused for rejected by tracking
             voucher.ApprovedOn = DateTime.Now;
             voucher.RejectionReason = dto.Reason;
 
@@ -554,6 +611,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/Vouchers/5/Cancel
         [HttpPost("{id}/Cancel")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<IActionResult> CancelVoucher(int id, [FromBody] RejectionDto dto)
         {
             var voucher = await _context.Vouchers.FindAsync(id);
@@ -575,10 +633,13 @@ namespace Bhisi.Api.Controllers
             // Automatically reverse linked saving transactions if any
             await ReverseLinkedSavingTransactions(voucher.VoucherNo, dto.Reason, "CANCELLED");
 
+            int cancelUserId = User.GetUserId();
+            if (cancelUserId <= 0 && dto.RejectedBy > 0) cancelUserId = dto.RejectedBy;
+
             _context.AuditLogs.Add(new AuditLog
             {
-                UserID = dto.RejectedBy > 0 ? dto.RejectedBy : null,
-                Username = "User-" + dto.RejectedBy,
+                UserID = cancelUserId > 0 ? cancelUserId : null,
+                Username = User.GetUsername(),
                 Action = "CANCEL_VOUCHER",
                 EntityName = "Voucher",
                 EntityID = voucher.VoucherNo,

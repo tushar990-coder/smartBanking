@@ -7,13 +7,14 @@ using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
 using Bhisi.Api.Helpers;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
     [EnforceBranchScope]
-    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [Authorize]
     public class CashManagementController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -127,6 +128,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/CashManagement/Settings
         [HttpPost("Settings")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice")]
         public async Task<ActionResult<CashManagementSetting>> PostSettings([FromBody] CashManagementSetting dto)
         {
             try
@@ -336,6 +338,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/CashManagement/Cashiers
         [HttpPost("Cashiers")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<ActionResult<Cashier>> PostCashier([FromBody] Cashier cashier)
         {
             if (string.IsNullOrWhiteSpace(cashier.CashierName))
@@ -366,6 +369,7 @@ namespace Bhisi.Api.Controllers
 
         // PUT: api/CashManagement/Cashiers/5
         [HttpPut("Cashiers/{id}")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<IActionResult> PutCashier(int id, [FromBody] Cashier cashier)
         {
             if (id != cashier.Id)
@@ -398,6 +402,7 @@ namespace Bhisi.Api.Controllers
 
         // DELETE: api/CashManagement/Cashiers/5
         [HttpDelete("Cashiers/{id}")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin")]
         public async Task<IActionResult> DeleteCashier(int id)
         {
             var cashier = await _context.Cashiers.FindAsync(id);
@@ -482,6 +487,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/CashManagement/Allocations
         [HttpPost("Allocations")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin,HeadOffice,HO_Manager,Manager,BranchManager")]
         public async Task<ActionResult<CashAllocation>> PostAllocation([FromBody] CashAllocation allocation)
         {
             if (allocation.Amount <= 0)
@@ -489,9 +495,17 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("रक्कम ० पेक्षा जास्त असावी.");
             }
 
-            if (!allocation.BranchId.HasValue || allocation.BranchId.Value <= 0)
+            int effectiveBranch = GetEffectiveBranchId(allocation.BranchId);
+            allocation.BranchId = effectiveBranch;
+
+            // Day-End check for the branch
+            var dayStatus = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == effectiveBranch && b.BusinessDate.Date == (allocation.AllocationDate != default ? allocation.AllocationDate.Date : DateTime.Today))
+                .FirstOrDefaultAsync();
+
+            if (dayStatus != null && dayStatus.IsDayClosed)
             {
-                allocation.BranchId = GetEffectiveBranchId(null);
+                return BadRequest("सदर शाखेचा दिवस अखेर (EOD) पूर्ण झाली आहे. रोख हस्तांतरण करता येणार नाही.");
             }
 
             if (allocation.AllocationDate == default)
@@ -786,6 +800,7 @@ namespace Bhisi.Api.Controllers
         // ==========================================
 
         [HttpPost("SeedDefaults")]
+        [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin")]
         public async Task<IActionResult> SeedDefaults([FromQuery] int? branchId = null)
         {
             int targetBranchId = GetEffectiveBranchId(branchId);

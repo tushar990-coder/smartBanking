@@ -29,6 +29,9 @@ namespace Bhisi.Api.Services
 
         public async Task<object> GetEodStatusAsync(int branchId)
         {
+            var branch = await _context.Branches.FindAsync(branchId);
+            string branchName = branch?.BranchName ?? $"Branch {branchId}";
+
             var activeDateRecord = await _context.BranchDayEndStatuses
                 .Where(b => b.BranchID == branchId)
                 .OrderByDescending(b => b.BusinessDate)
@@ -40,7 +43,24 @@ namespace Bhisi.Api.Services
             var unpostedCount = await _context.Vouchers
                 .CountAsync(v => v.BranchID == branchId && v.Status == "Pending" && v.VoucherDate <= businessDate);
 
-            // 2. Check Transfer Batch Tally
+            // 2. Fetch all branch-specific cash ledgers via CashLedgerHelper
+            var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
+            if (cashLedgerIds == null || !cashLedgerIds.Any())
+            {
+                int singleId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId);
+                cashLedgerIds = new HashSet<int> { singleId };
+            }
+
+            var cashLedgers = await _context.Ledgers
+                .AsNoTracking()
+                .Where(l => cashLedgerIds.Contains(l.LedgerID))
+                .ToListAsync();
+
+            int primaryCashLedgerId = branch?.DefaultCashLedgerID ?? cashLedgers.FirstOrDefault()?.LedgerID ?? 1;
+            var primaryCashLedger = cashLedgers.FirstOrDefault(l => l.LedgerID == primaryCashLedgerId) 
+                ?? cashLedgers.FirstOrDefault();
+
+            // 3. Check Transfer Batch Tally (Exclude all branch cash ledger entries)
             var transferTallyOk = true;
             decimal transferDr = 0;
             decimal transferCr = 0;
@@ -50,13 +70,9 @@ namespace Bhisi.Api.Services
                 .Where(v => v.BranchID == branchId && v.Status == "Approved" && v.VoucherDate == businessDate)
                 .ToListAsync();
 
-            // Fetch branch-specific cash ledger via CashLedgerHelper
-            int cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId);
-            var cashLedger = await _context.Ledgers.FindAsync(cashLedgerId);
-
             foreach (var v in transferVouchers)
             {
-                bool hasCash = v.VoucherDetails.Any(vd => vd.LedgerID == cashLedgerId);
+                bool hasCash = v.VoucherDetails.Any(vd => cashLedgerIds.Contains(vd.LedgerID));
                 if (!hasCash)
                 {
                     transferDr += v.VoucherDetails.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
@@ -69,42 +85,89 @@ namespace Bhisi.Api.Services
                 transferTallyOk = false;
             }
 
-            // 3. Cash Tally
+            // 4. Branch-Specific Multi-Ledger Cash Tally
+            var branchObs = await _context.BranchLedgerOpeningBalances
+                .AsNoTracking()
+                .Where(b => b.BranchID == branchId && cashLedgerIds.Contains(b.LedgerID))
+                .ToListAsync();
+
             decimal openingCash = 0;
-            decimal closingCash = 0;
-            if (cashLedger != null)
+            var perLedgerBreakdown = new List<object>();
+
+            foreach (var cl in cashLedgers)
             {
-                var branchOb = await _context.BranchLedgerOpeningBalances
-                    .FirstOrDefaultAsync(b => b.BranchID == branchId && b.LedgerID == cashLedgerId);
-
-                if (branchOb != null)
+                decimal ledgerOb = 0;
+                var obRecord = branchObs.FirstOrDefault(b => b.LedgerID == cl.LedgerID);
+                if (obRecord != null)
                 {
-                    openingCash = branchOb.OpeningBalanceType == "Dr" ? branchOb.OpeningBalance : -branchOb.OpeningBalance;
+                    ledgerOb = obRecord.OpeningBalanceType == "Dr" ? obRecord.OpeningBalance : -obRecord.OpeningBalance;
                 }
-                else if (branchId == 1)
+                else if (branchId == 1 || (branch != null && string.Equals(branch.BranchType, "HeadOffice", StringComparison.OrdinalIgnoreCase)))
                 {
-                    openingCash = cashLedger.OpeningBalanceType == "Dr" ? cashLedger.OpeningBalance : -cashLedger.OpeningBalance;
+                    ledgerOb = cl.OpeningBalanceType == "Dr" ? cl.OpeningBalance : -cl.OpeningBalance;
                 }
-                
-                var priorVds = await _context.VoucherDetails
-                    .Include(vd => vd.Voucher)
-                    .Where(vd => vd.LedgerID == cashLedgerId && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate < businessDate)
-                    .ToListAsync();
-                
-                openingCash += priorVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
-                openingCash -= priorVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
 
-                var todayVds = await _context.VoucherDetails
-                    .Include(vd => vd.Voucher)
-                    .Where(vd => vd.LedgerID == cashLedgerId && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate == businessDate)
-                    .ToListAsync();
+                // Prior approved vouchers for this specific cash ledger and branch
+                decimal priorDr = await _context.VoucherDetails
+                    .Where(vd => vd.LedgerID == cl.LedgerID && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate < businessDate && vd.DrCr == "Dr")
+                    .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
 
-                closingCash = openingCash;
-                closingCash += todayVds.Where(vd => vd.DrCr == "Dr").Sum(vd => vd.Amount);
-                closingCash -= todayVds.Where(vd => vd.DrCr == "Cr").Sum(vd => vd.Amount);
+                decimal priorCr = await _context.VoucherDetails
+                    .Where(vd => vd.LedgerID == cl.LedgerID && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate < businessDate && vd.DrCr == "Cr")
+                    .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
+
+                decimal ledgerStartDay = ledgerOb + priorDr - priorCr;
+                openingCash += ledgerStartDay;
+
+                // Today's approved vouchers for this specific cash ledger and branch
+                decimal todayDr = await _context.VoucherDetails
+                    .Where(vd => vd.LedgerID == cl.LedgerID && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate == businessDate && vd.DrCr == "Dr")
+                    .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
+
+                decimal todayCr = await _context.VoucherDetails
+                    .Where(vd => vd.LedgerID == cl.LedgerID && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate == businessDate && vd.DrCr == "Cr")
+                    .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
+
+                decimal ledgerClosing = ledgerStartDay + todayDr - todayCr;
+
+                perLedgerBreakdown.Add(new
+                {
+                    cl.LedgerID,
+                    cl.LedgerName,
+                    cl.LedgerCode,
+                    Opening = ledgerStartDay,
+                    Receipts = todayDr,
+                    Payments = todayCr,
+                    Closing = ledgerClosing
+                });
             }
 
-            // 4. Pigmy Agent Unverified Collections Check
+            decimal totalTodayReceipts = await _context.VoucherDetails
+                .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate == businessDate && vd.DrCr == "Dr")
+                .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
+
+            decimal totalTodayPayments = await _context.VoucherDetails
+                .Where(vd => cashLedgerIds.Contains(vd.LedgerID) && vd.Voucher != null && vd.Voucher.Status == "Approved" && vd.Voucher.BranchID == branchId && vd.Voucher.VoucherDate == businessDate && vd.DrCr == "Cr")
+                .SumAsync(vd => (decimal?)vd.Amount) ?? 0m;
+
+            decimal closingCash = openingCash + totalTodayReceipts - totalTodayPayments;
+
+            // 5. Physical Denomination Count Check
+            var latestDenomination = await _context.CashDenominations
+                .Where(cd => cd.BranchId == branchId && cd.DenominationDate.Date == businessDate.Date)
+                .OrderByDescending(cd => cd.Id)
+                .FirstOrDefaultAsync();
+
+            decimal physicalCash = latestDenomination?.TotalAmount ?? 0m;
+            decimal denominationDiff = physicalCash - closingCash;
+            bool isPhysicalSubmitted = latestDenomination != null;
+            bool isPhysicalMatched = isPhysicalSubmitted && Math.Abs(denominationDiff) == 0;
+
+            // 6. Cashier Drawers Settlement Check (Counters must return cash to Vault or settle at EOD)
+            var openCashierDrawers = await _context.CashierBalances
+                .CountAsync(cb => cb.BranchId == branchId && cb.BalanceDate.Date == businessDate.Date && cb.Status == "OPEN" && cb.ClosingBalance > 0);
+
+            // 7. Pigmy Agent Unverified Collections Check
             var unverifiedPigmyCount = await _context.PigmyCollections
                 .CountAsync(p => p.PigmyAccount != null && p.PigmyAccount.BranchID == branchId && p.CollectionDate == businessDate && !p.IsVoucherGenerated);
 
@@ -114,7 +177,32 @@ namespace Bhisi.Api.Services
                 IsDayClosed = activeDateRecord?.IsDayClosed ?? false,
                 UnpostedVouchers = unpostedCount,
                 TransferTally = new { Debit = transferDr, Credit = transferCr, IsMatched = transferTallyOk },
-                CashTally = new { Opening = openingCash, Closing = closingCash, IsPositive = closingCash >= 0 },
+                CashTally = new
+                {
+                    BranchID = branchId,
+                    BranchName = branchName,
+                    PrimaryCashLedger = primaryCashLedger != null ? new { primaryCashLedger.LedgerID, primaryCashLedger.LedgerName, primaryCashLedger.LedgerCode } : null,
+                    Opening = openingCash,
+                    TodayReceipts = totalTodayReceipts,
+                    TodayPayments = totalTodayPayments,
+                    Closing = closingCash,
+                    IsPositive = closingCash >= 0,
+                    Ledgers = perLedgerBreakdown,
+                    PhysicalDenomination = new
+                    {
+                        IsSubmitted = isPhysicalSubmitted,
+                        TotalAmount = physicalCash,
+                        Difference = denominationDiff,
+                        IsMatched = isPhysicalMatched,
+                        EntryType = latestDenomination?.EntryType ?? "PENDING",
+                        VerifiedBy = latestDenomination?.VerifiedBy ?? ""
+                    },
+                    CashierDrawers = new
+                    {
+                        OpenDrawersCount = openCashierDrawers,
+                        IsAllSettled = openCashierDrawers == 0
+                    }
+                },
                 PigmyReconciliation = new { PendingCollections = unverifiedPigmyCount, IsReconciled = unverifiedPigmyCount == 0 }
             };
         }
@@ -186,7 +274,11 @@ namespace Bhisi.Api.Services
             await AddLogAsync(branchId, businessDate, 6, "PIGMY_BALANCE_AND_COMMISSION_UPDATE", "SUCCESS", activePigmy, $"{activePigmy} पिग्मी खात्यांची शिल्लक अपडेट केली.");
 
             // Step 7: Closing Cash Position Calculation
-            await AddLogAsync(branchId, businessDate, 7, "CLOSING_CASH_POSITION_CALCULATION", "SUCCESS", 1, $"अखेरची रोख शिल्लक: ₹ {status.CashTally.Closing}");
+            string ledgerInfo = status.CashTally.PrimaryCashLedger != null 
+                ? $"{status.CashTally.PrimaryCashLedger.LedgerName} (GL: {status.CashTally.PrimaryCashLedger.LedgerID})" 
+                : "सर्व रोख खाती";
+            await AddLogAsync(branchId, businessDate, 7, "CLOSING_CASH_POSITION_CALCULATION", "SUCCESS", 1, 
+                $"अखेरची रोख शिल्लक: ₹ {status.CashTally.Closing} | लेजर: {ledgerInfo} | जमा: ₹ {status.CashTally.TodayReceipts} | नावे: ₹ {status.CashTally.TodayPayments}");
 
             // Step 8: Freeze Business Date D
             if (activeDateRecord == null)
@@ -235,7 +327,7 @@ namespace Bhisi.Api.Services
                 EntityName = "BranchBusinessDate",
                 EntityID = branchId.ToString(),
                 Timestamp = DateTime.Now,
-                Details = $"EOD complete. Business Date advanced from {businessDate:dd/MM/yyyy} to {nextBusinessDate:dd/MM/yyyy}. Closing Cash: ₹{status.CashTally.Closing}"
+                Details = $"EOD complete. Business Date advanced from {businessDate:dd/MM/yyyy} to {nextBusinessDate:dd/MM/yyyy}. Closing Cash: ₹{status.CashTally.Closing} ({ledgerInfo})"
             });
 
             await AddLogAsync(branchId, businessDate, 9, "ADVANCE_BUSINESS_DATE_BOD", "SUCCESS", 1, $"नवीन बिझनेस डेट उघडली: {nextBusinessDate:dd/MM/yyyy}");

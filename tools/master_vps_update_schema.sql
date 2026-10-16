@@ -2865,13 +2865,19 @@ GO
 -- -----------------------------------------------------------------------------------------
 -- 50. SAVING & DEPOSIT CIF-FIRST SCHEMA & NULLABLE MEMBERID UPGRADES
 -- -----------------------------------------------------------------------------------------
--- 50.1 SavingTransactions: Ensure CustomerID column exists
+-- 50.1 SavingTransactions: Ensure CustomerID and BranchID columns exist
 IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SavingTransactions')
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SavingTransactions') AND name = 'CustomerID')
     BEGIN
         ALTER TABLE [SavingTransactions] ADD [CustomerID] INT NOT NULL DEFAULT 1;
         PRINT 'Added CustomerID to SavingTransactions';
+    END
+
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SavingTransactions') AND name = 'BranchID')
+    BEGIN
+        ALTER TABLE [SavingTransactions] ADD [BranchID] INT NOT NULL CONSTRAINT DF_SavingTransactions_BranchID DEFAULT 1;
+        PRINT 'Added BranchID to SavingTransactions';
     END
 END
 GO
@@ -2900,6 +2906,23 @@ BEGIN
     BEGIN
         ALTER TABLE [SavingAccountMasters] ALTER COLUMN [MemberID] INT NULL;
         PRINT 'Altered MemberID to INT NULL on SavingAccountMasters';
+    END
+END
+GO
+
+-- 50.3.1 SavingPassbooks: Ensure CustomerID column and index exist
+IF EXISTS (SELECT 1 FROM sys.tables WHERE name = 'SavingPassbooks')
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SavingPassbooks') AND name = 'CustomerID')
+    BEGIN
+        ALTER TABLE [SavingPassbooks] ADD [CustomerID] INT NULL;
+        PRINT 'Added CustomerID to SavingPassbooks';
+    END
+
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_SavingPassbooks_CustomerID' AND object_id = OBJECT_ID('SavingPassbooks'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_SavingPassbooks_CustomerID] ON [SavingPassbooks] ([CustomerID]);
+        PRINT 'Created Index IX_SavingPassbooks_CustomerID';
     END
 END
 GO
@@ -5707,6 +5730,23 @@ GO
 -- 7.0 MULTI-BRANCH ISOLATION, CROSS-BRANCH LOAN RECOVERY & CASH DRAWER ALIGNMENT (v2.5.44)
 -- -----------------------------------------------------------------------------------------
 
+-- 7.0.1 SavingTransactions BranchID
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingTransactions')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingTransactions]') AND name = 'BranchID')
+    BEGIN
+        ALTER TABLE [SavingTransactions] ADD [BranchID] int NOT NULL CONSTRAINT DF_SavingTransactions_BranchID DEFAULT 1;
+        PRINT '  -> Added BranchID to SavingTransactions';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_SavingTransactions_BranchID' AND object_id = OBJECT_ID(N'[SavingTransactions]'))
+    BEGIN
+        CREATE NONCLUSTERED INDEX [IX_SavingTransactions_BranchID] ON [SavingTransactions] ([BranchID]);
+        PRINT '  -> Created Index IX_SavingTransactions_BranchID';
+    END
+END
+GO
+
 -- 7.1 LoanApplications BranchID
 IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanApplications')
 BEGIN
@@ -6082,6 +6122,50 @@ BEGIN
         ALTER TABLE [dbo].[Branches] ADD [DefaultCashLedgerID] INT NULL;
         PRINT '  -> Added [DefaultCashLedgerID] to Branches';
     END
+END
+GO
+
+-- 7.12 Auto-Heal & Auto-Map Branch DefaultCashLedgerID for EOD Cash Tally
+IF OBJECT_ID(N'[Branches]', N'U') IS NOT NULL AND OBJECT_ID(N'[Ledgers]', N'U') IS NOT NULL
+BEGIN
+    -- 1. Auto-map Head Office Cash Ledger (Branch 1 / HeadOffice)
+    UPDATE b
+    SET b.[DefaultCashLedgerID] = l.[LedgerID]
+    FROM [Branches] b
+    CROSS APPLY (
+        SELECT TOP 1 [LedgerID] FROM [Ledgers]
+        WHERE ([LedgerName] LIKE N'%मेन%' OR [LedgerName] LIKE N'%मुख्य%' OR LOWER([LedgerName]) LIKE '%main%' OR LOWER([LedgerName]) LIKE '%head office%')
+          AND ([LedgerName] LIKE N'%रोख%' OR [LedgerName] LIKE N'%हात%' OR LOWER([LedgerName]) LIKE '%cash%')
+        ORDER BY [LedgerID]
+    ) l
+    WHERE b.[BranchID] = 1 AND b.[DefaultCashLedgerID] IS NULL;
+
+    -- If still null for Branch 1, fallback to primary cash ledger
+    UPDATE b
+    SET b.[DefaultCashLedgerID] = l.[LedgerID]
+    FROM [Branches] b
+    CROSS APPLY (
+        SELECT TOP 1 [LedgerID] FROM [Ledgers]
+        WHERE ([LedgerName] LIKE N'%हातातील रोख शिल्लक%' OR [LedgerName] LIKE N'%हातावरील रोख शिल्लक%' OR [LedgerName] = N'रोख खाते' OR LOWER([LedgerName]) = 'cash in hand')
+          AND [LedgerName] NOT LIKE N'%शाखा%' AND [LedgerName] NOT LIKE N'%ब्रांच%'
+        ORDER BY [LedgerID]
+    ) l
+    WHERE b.[BranchID] = 1 AND b.[DefaultCashLedgerID] IS NULL;
+
+    -- 2. Auto-map Sub-Branch Cash Ledgers based on Branch Name / Branch Code
+    UPDATE b
+    SET b.[DefaultCashLedgerID] = l.[LedgerID]
+    FROM [Branches] b
+    CROSS APPLY (
+        SELECT TOP 1 [LedgerID] FROM [Ledgers]
+        WHERE ([LedgerName] LIKE N'%' + LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(b.[BranchName], N'शाखा', N''), N'ब्रांच', N''), N'कार्यालय', N''))) + N'%'
+           OR (b.[BranchCode] IS NOT NULL AND b.[BranchCode] <> '' AND [LedgerName] LIKE N'%' + b.[BranchCode] + N'%'))
+          AND ([LedgerName] LIKE N'%रोख%' OR [LedgerName] LIKE N'%हात%' OR LOWER([LedgerName]) LIKE '%cash%')
+        ORDER BY [LedgerID]
+    ) l
+    WHERE b.[BranchID] > 1 AND b.[DefaultCashLedgerID] IS NULL;
+
+    PRINT '  -> Verified and auto-mapped DefaultCashLedgerID for all branches';
 END
 GO
 

@@ -6,20 +6,19 @@ import {
   ArrowLeftRight, 
   CheckCircle2, 
   AlertTriangle, 
-  Printer, 
-  Download, 
   RefreshCw, 
   Building2, 
   ShieldCheck, 
   FileText, 
   Search,
-  Filter,
   DollarSign,
   TrendingUp,
   XCircle,
-  HelpCircle,
-  ExternalLink
+  ExternalLink,
+  Layers,
+  Sparkles
 } from 'lucide-react';
+import CbsReportLayout, { formatDisplayDate, CbsPaperSize, SansthaDetails } from './common/CbsReportLayout';
 
 interface IbtBranchItem {
   branchID: number;
@@ -107,12 +106,13 @@ interface IbtPairStatementResponse {
   openingBalanceInB: number;
   totalDebitInA: number;
   totalCreditInA: number;
+  closingBalanceInA: number;
   totalDebitInB: number;
   totalCreditInB: number;
-  closingBalanceInA: number;
   closingBalanceInB: number;
   difference: number;
   isTallied: boolean;
+  totalTurnover: number;
   vouchers: IbtVoucherRow[];
 }
 
@@ -125,7 +125,6 @@ interface IbtUnreconciledItem {
   targetBranchID?: number;
   targetBranchName?: string;
   amount: number;
-  drCr: string;
   status: string;
   reason: string;
   relatedVoucherID?: number;
@@ -135,9 +134,9 @@ interface IbtUnreconciledItem {
 
 export default function IbtReconciliationReport() {
   const { user } = useAuth();
-  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
 
   const [activeTab, setActiveTab] = useState<'matrix' | 'drilldown' | 'radar'>('matrix');
+  const [paperSize, setPaperSize] = useState<CbsPaperSize>('a4-landscape');
   const [fromDate, setFromDate] = useState<string>(() => {
     const now = new Date();
     return new Date(now.getFullYear(), 3, 1).toISOString().split('T')[0];
@@ -148,6 +147,7 @@ export default function IbtReconciliationReport() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const [sansthaInfo, setSansthaInfo] = useState<SansthaDetails | null>(null);
   const [matrixData, setMatrixData] = useState<IbtMatrixResponse | null>(null);
   const [selectedBranchA, setSelectedBranchA] = useState<number>(1);
   const [selectedBranchB, setSelectedBranchB] = useState<number>(2);
@@ -173,6 +173,7 @@ export default function IbtReconciliationReport() {
   const [moduleFilter, setModuleFilter] = useState<string>('ALL');
 
   useEffect(() => {
+    fetchSansthaDetails();
     fetchMatrixReport();
     fetchBankLedgers();
   }, [fromDate, toDate]);
@@ -184,6 +185,17 @@ export default function IbtReconciliationReport() {
       fetchUnreconciledVouchers();
     }
   }, [activeTab, selectedBranchA, selectedBranchB]);
+
+  const fetchSansthaDetails = async () => {
+    try {
+      const res = await axios.get('/api/SansthaDetails');
+      if (res.data) {
+        setSansthaInfo(res.data);
+      }
+    } catch (err) {
+      console.error('Error fetching SansthaDetails:', err);
+    }
+  };
 
   const fetchMatrixReport = async () => {
     setLoading(true);
@@ -219,7 +231,7 @@ export default function IbtReconciliationReport() {
       });
       setDrilldownData(res.data);
     } catch (err: any) {
-      console.error("Failed to fetch drilldown", err);
+      console.error('Failed to fetch drilldown', err);
     } finally {
       setDrilldownLoading(false);
     }
@@ -233,7 +245,7 @@ export default function IbtReconciliationReport() {
       });
       setUnreconciledItems(res.data?.vouchers || []);
     } catch (err: any) {
-      console.error("Failed to fetch unreconciled vouchers", err);
+      console.error('Failed to fetch unreconciled vouchers', err);
     } finally {
       setUnreconciledLoading(false);
     }
@@ -248,32 +260,39 @@ export default function IbtReconciliationReport() {
       );
       setBankLedgers(banks);
       if (banks.length > 0) setSelectedBankLedgerId(banks[0].ledgerID);
-    } catch (e) {
-      console.error("Failed to fetch bank ledgers", e);
+    } catch (err) {
+      console.error('Error fetching bank ledgers', err);
     }
   };
 
-  const handleOpenSettlement = (fromId: number, toId: number, defaultAmt?: number) => {
-    setSettlementFromBranch(fromId);
-    setSettlementToBranch(toId);
-    setSettlementAmount(Math.abs(defaultAmt || 0));
-    setSettlementNarration(`आंतर-शाखा क्लिअरिंग सेटलमेंट - ${fromDate} ते ${toDate}`);
+  const handleOpenSettlement = (fromBranchId: number, toBranchId: number, amount: number) => {
+    setSettlementFromBranch(fromBranchId);
+    setSettlementToBranch(toBranchId);
+    setSettlementAmount(amount > 0 ? Number(amount.toFixed(2)) : 0);
+    setSettlementNarration(`आंतर-शाखा शिल्लक सेटलमेंट: ${formatDisplayDate(fromDate)} ते ${formatDisplayDate(toDate)}`);
     setIsSettlementModalOpen(true);
   };
 
   const handleExecuteSettlement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (settlementAmount <= 0) {
-      alert("कृपया वैध सेटलमेंट रक्कम टाका.");
+      alert('कृपया वैध सेटलमेंट रक्कम प्रविष्ट करा.');
       return;
     }
+    if (settlementFromBranch === settlementToBranch) {
+      alert('देणारी व घेणारी शाखा एकच असू शकत नाही.');
+      return;
+    }
+    if (settlementMode === 'Bank' && !selectedBankLedgerId) {
+      alert('कृपया बँक खाते निवडा.');
+      return;
+    }
+
     setSettling(true);
-    setError(null);
     try {
       const payload = {
         fromBranchID: settlementFromBranch,
         toBranchID: settlementToBranch,
-        settlementDate: new Date().toISOString().split('T')[0],
         settlementAmount: settlementAmount,
         paymentMode: settlementMode,
         bankLedgerID: settlementMode === 'Bank' ? selectedBankLedgerId : null,
@@ -345,72 +364,126 @@ export default function IbtReconciliationReport() {
     return matchesSearch && matchesModule;
   });
 
-  return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6 bg-slate-50 min-h-screen text-slate-800">
-      
-      {/* 1. Header Bar */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-700">
-              <ArrowLeftRight className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
-                आंतर-शाखा ताळमेळ व क्लिअरिंग मॅट्रिक्स
-                <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  CBS v2.5.58
-                </span>
-              </h1>
-              <p className="text-sm text-slate-500 mt-0.5">
-                Inter-Branch Transfer (IBT) Clearing, Reconciliation & Zero GL-SL Balance Audit
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Global Action Buttons */}
-        <div className="flex items-center flex-wrap gap-2 w-full md:w-auto">
-          <button
-            onClick={() => handleOpenSettlement(selectedBranchA, selectedBranchB, 0)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-all"
-          >
-            <DollarSign className="w-4 h-4" />
-            आंतर-शाखा सेटलमेंट
-          </button>
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
-          >
-            <Printer className="w-4 h-4" />
-            प्रिंट
-          </button>
-          <button
-            onClick={exportToExcel}
-            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-sm font-medium transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            एक्सेल
-          </button>
-          <button
-            onClick={fetchMatrixReport}
-            disabled={loading}
-            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-            title="रिफ्रेश"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-indigo-600' : ''}`} />
-          </button>
-        </div>
+  // CBS Standard Unified Top Toolbar Filter Controls
+  const filterToolbarControls = (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded border border-slate-300">
+        <span className="font-bold text-slate-700">कालावधी:</span>
+        <input
+          type="date"
+          value={fromDate}
+          onChange={(e) => setFromDate(e.target.value)}
+          className="px-1.5 py-0.5 text-xs border border-slate-300 rounded bg-white font-medium text-slate-800 outline-none focus:border-primary"
+        />
+        <span className="text-slate-500">ते</span>
+        <input
+          type="date"
+          value={toDate}
+          onChange={(e) => setToDate(e.target.value)}
+          className="px-1.5 py-0.5 text-xs border border-slate-300 rounded bg-white font-medium text-slate-800 outline-none focus:border-primary"
+        />
+        <button
+          onClick={fetchMatrixReport}
+          disabled={loading}
+          className="px-2.5 py-0.5 bg-primary hover:bg-primary/90 text-white rounded font-bold transition-colors cursor-pointer flex items-center gap-1"
+          title="अहवाल रीफ्रेश करा"
+        >
+          <Search size={12} />
+          <span>पहा</span>
+        </button>
       </div>
 
+      <button
+        onClick={() => handleOpenSettlement(selectedBranchA, selectedBranchB, 0)}
+        className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-bold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+        title="आंतर-शाखा देणी/घेणी शिल्लक सेटल करा"
+      >
+        <DollarSign size={13} />
+        <span>आंतर-शाखा सेटलमेंट</span>
+      </button>
+
+      <button
+        onClick={fetchMatrixReport}
+        disabled={loading}
+        className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-300 transition-colors"
+        title="ताजे आकडे मिळवा"
+      >
+        <RefreshCw size={13} className={loading ? 'animate-spin text-primary' : ''} />
+      </button>
+    </div>
+  );
+
+  // Executive KPI Summary Banner beneath CBS Header
+  const summaryBanner = (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs py-2 px-3 bg-slate-50 border border-slate-300 rounded-sm mb-3">
+      <div className="border-r border-slate-200 last:border-0 pr-2">
+        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण आंतर-शाखा व्हाउचर्स</span>
+        <strong className="text-slate-900 font-mono text-[12px]">
+          {matrixData?.totalVouchersCount ?? 0}
+        </strong>
+        <span className="block text-[9px] text-slate-400">द्विमार्गी संलग्न व्हाउचर्स</span>
+      </div>
+
+      <div className="border-r border-slate-200 last:border-0 pr-2">
+        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">एकूण क्लिअरिंग उलाढाल</span>
+        <strong className="text-primary font-mono text-[12px]">
+          ₹ {(matrixData?.totalInterBranchTurnover ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+        </strong>
+        <span className="block text-[9px] text-slate-400">एकत्रित देवाणघेवाण</span>
+      </div>
+
+      <div className="border-r border-slate-200 last:border-0 pr-2">
+        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">समोरासमोर कॉन्ट्रा स्थिती</span>
+        {(matrixData?.totalDiscrepancy ?? 0) < 0.01 ? (
+          <strong className="text-emerald-700 font-mono text-[12px] flex items-center justify-center gap-1">
+            <CheckCircle2 size={13} className="stroke-[2.5]" />
+            तंतोतंत जुळले (₹ ०.००)
+          </strong>
+        ) : (
+          <strong className="text-rose-700 font-mono text-[12px] flex items-center justify-center gap-1">
+            <AlertTriangle size={13} className="stroke-[2.5]" />
+            तफावत: ₹ {(matrixData?.totalDiscrepancy ?? 0).toFixed(2)}
+          </strong>
+        )}
+        <span className="block text-[9px] text-slate-400">GL-SL झिरो बॅलन्स ऑडिट</span>
+      </div>
+
+      <div className="sm:text-right">
+        <span className="text-slate-500 block text-[9.5px] uppercase font-semibold">विसंगत / प्रलंबित व्हाउचर्स</span>
+        <div className="flex items-center justify-center sm:justify-end gap-1.5 mt-0.5">
+          <strong className={`font-mono text-[12px] ${unreconciledItems.length === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {unreconciledItems.length}
+          </strong>
+          {unreconciledItems.length > 0 && (
+            <button
+              onClick={() => setActiveTab('radar')}
+              className="text-[10px] text-primary underline font-bold cursor-pointer"
+            >
+              रडार पहा →
+            </button>
+          )}
+        </div>
+        <span className="block text-[9px] text-slate-400">
+          {unreconciledItems.length === 0 ? 'कोणताही प्रलंबित नाही' : 'तातडीने मंजूर करा'}
+        </span>
+      </div>
+    </div>
+  );
+
+  const fromDisplay = formatDisplayDate(fromDate);
+  const toDisplay = formatDisplayDate(toDate);
+  const periodTextStr = `कालावधी : ${fromDisplay} ते ${toDisplay}`;
+
+  return (
+    <div className="w-full">
       {/* Success Notification Alert */}
       {successMsg && (
-        <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-3 rounded-xl flex items-center justify-between shadow-sm animate-fade-in">
+        <div className="mx-auto max-w-5xl mb-3 bg-emerald-50 border border-emerald-300 text-emerald-800 px-4 py-2.5 rounded-sm flex items-center justify-between shadow-2xs no-print">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-            <span className="text-sm font-medium">{successMsg}</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span className="text-xs font-bold">{successMsg}</span>
           </div>
-          <button onClick={() => setSuccessMsg(null)} className="text-emerald-700 hover:text-emerald-900">
+          <button onClick={() => setSuccessMsg(null)} className="text-emerald-700 hover:text-emerald-900 cursor-pointer">
             <XCircle className="w-4 h-4" />
           </button>
         </div>
@@ -418,687 +491,667 @@ export default function IbtReconciliationReport() {
 
       {/* Error Alert */}
       {error && (
-        <div className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded-xl flex items-center gap-2 shadow-sm">
-          <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
-          <span className="text-sm font-medium">{error}</span>
+        <div className="mx-auto max-w-5xl mb-3 bg-rose-50 border border-rose-300 text-rose-800 px-4 py-2.5 rounded-sm flex items-center gap-2 shadow-2xs no-print">
+          <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+          <span className="text-xs font-bold">{error}</span>
         </div>
       )}
 
-      {/* 2. Filter & Date Range Selection Bar */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">कालावधी:</span>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-              />
-              <span className="text-slate-400 text-sm">ते</span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-              />
-            </div>
+      <CbsReportLayout
+        defaultPaperSize={paperSize}
+        allowPaperSizeToggle={true}
+        titleStyle="classic-badge"
+        reportTitle="आंतर-शाखा ताळमेळ व क्लिअरिंग अहवाल"
+        reportSubtitle="Inter-Branch Clearing & Reconciliation Matrix (N × N) & Pair-wise Contra Statement"
+        periodText={periodTextStr}
+        sansthaInfo={sansthaInfo}
+        summaryBanner={summaryBanner}
+        signatureTier="4-tier"
+        signatureTitles={[
+          { title: 'लिपिक / हिशोबनीस', subtitle: '(Clerk / Maker)' },
+          { title: 'आंतर-शाखा तपासनीस / मुख्य रोखपाल', subtitle: '(IBT Checker / Chief Cashier)' },
+          { title: 'शाखा व्यवस्थापक / मानद सचिव', subtitle: '(Manager / Secretary)' },
+          { title: 'मुख्य कार्यकारी अधिकारी / वैधानिक लेखापरीक्षक', subtitle: '(CEO / Statutory Auditor)' }
+        ]}
+        onExportExcel={exportToExcel}
+        extraToolbarControls={filterToolbarControls}
+        isLoading={loading}
+        hasData={Boolean(matrixData && matrixData.branches?.length > 0)}
+        preparedBy="Admin"
+        emptyState={
+          <div className="bg-white p-12 text-center text-slate-500 rounded-sm border border-slate-200 shadow-2xs max-w-4xl mx-auto">
+            <Building2 size={36} className="mx-auto mb-2 text-primary/40" />
+            <p className="font-semibold text-xs text-slate-700">निवडलेल्या कालावधीत कोणतेही आंतर-शाखा व्यवहार आढळले नाहीत.</p>
+            <p className="text-[11px] text-slate-500 mt-1">कृपया कालावधी निवडून 'पहा' बटणावर क्लिक करा.</p>
+          </div>
+        }
+      >
+        {/* Interactive Tab Navigation Strip (Screen Mode) */}
+        <div className="no-print flex border-b border-slate-300 gap-1 bg-slate-50 px-2 pt-2 rounded-t mb-3">
+          <button
+            onClick={() => setActiveTab('matrix')}
+            className={`py-2 px-3 font-bold text-xs border-b-2 flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'matrix'
+                ? 'border-primary text-primary bg-white shadow-2xs rounded-t'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>१. शाखा-ते-शाखा मॅट्रिक्स (N × N Clearing Grid)</span>
+          </button>
 
-            <button
-              onClick={fetchMatrixReport}
-              className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-colors"
-            >
-              <Search className="w-3.5 h-3.5" />
-              लागू करा
-            </button>
-          </div>
+          <button
+            onClick={() => setActiveTab('drilldown')}
+            className={`py-2 px-3 font-bold text-xs border-b-2 flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'drilldown'
+                ? 'border-primary text-primary bg-white shadow-2xs rounded-t'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5" />
+            <span>२. शाखा जोडी समोरासमोर ताळमेळ (Contra Drill-Down)</span>
+          </button>
 
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>आंतर-शाखा अखंडता पडताळणी: <strong>सक्रिय (Strict Dual-Voucher Enforced)</strong></span>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Executive KPI Status Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
-        {/* Total IBT Transactions */}
-        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">एकूण आंतर-शाखा व्हाउचर्स</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
-              {matrixData?.totalVouchersCount ?? 0}
-            </p>
-            <p className="text-xs text-slate-400 mt-0.5">संलग्न ड्युअल व्हाउचर्स</p>
-          </div>
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
-            <FileText className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Total Clearing Turnover */}
-        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">एकूण क्लिअरिंग उलाढाल</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
-              ₹ {(matrixData?.totalInterBranchTurnover ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-            </p>
-            <p className="text-xs text-emerald-600 font-medium mt-0.5">दोन्ही शाखांची एकत्रित देवाणघेवाण</p>
-          </div>
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
-            <TrendingUp className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Contra Reconciliation Status */}
-        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">समोरासमोर कॉन्ट्रा ताळमेळ</p>
-            <p className={`text-2xl font-bold mt-1 ${(matrixData?.totalDiscrepancy ?? 0) < 0.01 ? 'text-emerald-700' : 'text-red-600'}`}>
-              {(matrixData?.totalDiscrepancy ?? 0) < 0.01 ? '🟢 ₹ ०.०० (तंतोतंत)' : `🔴 ₹ ${(matrixData?.totalDiscrepancy ?? 0).toFixed(2)}`}
-            </p>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {(matrixData?.totalDiscrepancy ?? 0) < 0.01 ? 'सर्व शाखांचे ताळेबंद जुळले आहेत' : 'आंतर-शाखा तफावत आढळली!'}
-            </p>
-          </div>
-          <div className={`p-3 rounded-xl border ${(matrixData?.totalDiscrepancy ?? 0) < 0.01 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
-            <CheckCircle2 className="w-6 h-6" />
-          </div>
+          <button
+            onClick={() => setActiveTab('radar')}
+            className={`py-2 px-3 font-bold text-xs border-b-2 flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'radar'
+                ? 'border-primary text-primary bg-white shadow-2xs rounded-t'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>३. प्रलंबित व विसंगत व्हाउचर रडार ({unreconciledItems.length})</span>
+          </button>
         </div>
 
-        {/* Unreconciled Radar Count */}
-        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">विसंगत / प्रलंबित व्हाउचर्स</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
-              {unreconciledItems.length}
-            </p>
-            <button 
-              onClick={() => setActiveTab('radar')}
-              className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold mt-0.5 flex items-center gap-1"
-            >
-              रडार तपासा <ExternalLink className="w-3 h-3" />
-            </button>
-          </div>
-          <div className={`p-3 rounded-xl border ${unreconciledItems.length === 0 ? 'bg-slate-50 text-slate-500 border-slate-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}>
-            <AlertTriangle className="w-6 h-6" />
-          </div>
-        </div>
-
-      </div>
-
-      {/* 4. Tab Navigation */}
-      <div className="flex border-b border-slate-200 gap-2 bg-white px-4 pt-2 rounded-t-xl">
-        <button
-          onClick={() => setActiveTab('matrix')}
-          className={`py-3 px-4 font-semibold text-sm border-b-2 flex items-center gap-2 transition-all ${
-            activeTab === 'matrix'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Building2 className="w-4 h-4" />
-          १. शाखा-ते-शाखा मॅट्रिक्स (N x N Clearing Grid)
-        </button>
-
-        <button
-          onClick={() => setActiveTab('drilldown')}
-          className={`py-3 px-4 font-semibold text-sm border-b-2 flex items-center gap-2 transition-all ${
-            activeTab === 'drilldown'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <ArrowLeftRight className="w-4 h-4" />
-          २. शाखा जोडी समोरासमोर ताळमेळ (Contra Drill-Down)
-        </button>
-
-        <button
-          onClick={() => setActiveTab('radar')}
-          className={`py-3 px-4 font-semibold text-sm border-b-2 flex items-center gap-2 transition-all ${
-            activeTab === 'radar'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <AlertTriangle className="w-4 h-4" />
-          ३. प्रलंबित व विसंगत व्हाउचर रडार ({unreconciledItems.length})
-        </button>
-      </div>
-
-      {/* 5. Tab Contents */}
-
-      {/* TAB 1: N x N Matrix Grid */}
-      {activeTab === 'matrix' && (
-        <div className="bg-white rounded-b-xl shadow-sm border border-t-0 border-slate-200 p-5 space-y-6">
-          <div className="flex justify-between items-center flex-wrap gap-2">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">शाखा-ते-शाखा १-स्क्रीन क्लिअरिंग मॅट्रिक्स</h2>
-              <p className="text-xs text-slate-500">
-                प्रत्येक शाखेचे इतर सर्व शाखांकडील निव्वळ येणे (+ Dr / हिरवा) किंवा देणे (- Cr / लाल) शिल्लक स्थिती:
-              </p>
-            </div>
-            <div className="flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1 text-emerald-700 font-medium">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> + येणे (Receivable / Dr)
-              </span>
-              <span className="flex items-center gap-1 text-rose-700 font-medium">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> - देणे (Payable / Cr)
-              </span>
-            </div>
-          </div>
-
-          {/* Pair Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(matrixData?.pairs || []).map((p, idx) => (
-              <div 
-                key={idx} 
-                className={`p-4 rounded-xl border transition-all hover:shadow-md ${
-                  p.isTallied ? 'bg-slate-50/70 border-slate-200' : 'bg-red-50/50 border-red-200'
-                }`}
-              >
-                <div className="flex justify-between items-start mb-3">
-                  <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
-                    {p.branchAName} ⟷ {p.branchBName}
-                  </div>
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
-                    p.isTallied 
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
-                      : 'bg-red-100 text-red-800 border-red-300'
-                  }`}>
-                    {p.isTallied ? '🟢 तंतोतंत जुळले' : '🔴 तफावत!'}
-                  </span>
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                    <span className="text-slate-600">{p.branchAName} चे पुस्तक:</span>
-                    <span className={`font-semibold ${p.branchAPosition >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {p.branchAPosition >= 0 ? '+' : ''} ₹ {p.branchAPosition.toLocaleString('en-IN', { maximumFractionDigits: 2 })} 
-                      {p.branchAPosition >= 0 ? ' (Dr)' : ' (Cr)'}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                    <span className="text-slate-600">{p.branchBName} चे पुस्तक:</span>
-                    <span className={`font-semibold ${p.branchBPosition >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {p.branchBPosition >= 0 ? '+' : ''} ₹ {p.branchBPosition.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                      {p.branchBPosition >= 0 ? ' (Dr)' : ' (Cr)'}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-center pt-1 font-bold">
-                    <span className="text-slate-700">कॉन्ट्रा फरक (Difference):</span>
-                    <span className={p.isTallied ? 'text-emerald-700' : 'text-rose-700'}>
-                      ₹ {p.difference.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-3 pt-3 border-t border-slate-200 flex justify-between items-center">
-                  <span className="text-[11px] text-slate-500">उलाढाल: ₹ {p.totalTurnover.toLocaleString('en-IN')}</span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        setSelectedBranchA(p.branchAId);
-                        setSelectedBranchB(p.branchBId);
-                        setActiveTab('drilldown');
-                      }}
-                      className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold"
-                    >
-                      तपशील पहा →
-                    </button>
-                    {Math.abs(p.branchAPosition) > 0 && (
-                      <button
-                        onClick={() => handleOpenSettlement(
-                          p.branchAPosition < 0 ? p.branchAId : p.branchBId,
-                          p.branchAPosition < 0 ? p.branchBId : p.branchAId,
-                          Math.abs(p.branchAPosition)
-                        )}
-                        className="text-xs text-emerald-600 hover:text-emerald-800 font-semibold"
-                        title="आंतर-शाखा शिल्लक सेटल करा"
-                      >
-                        सेटल करा ⚡
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Full N x N Matrix Table */}
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                  <th className="p-3 border-r border-slate-200">शाखा (Branch)</th>
-                  {(matrixData?.branches || []).map(b => (
-                    <th key={b.branchID} className="p-3 border-r border-slate-200 text-center min-w-[140px]">
-                      {b.branchName}
-                    </th>
-                  ))}
-                  <th className="p-3 text-center bg-slate-200/80 font-bold">एकूण निव्वळ स्थिती (Net Position)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {(matrixData?.branches || []).map(source => {
-                  let rowTotal = 0;
-                  return (
-                    <tr key={source.branchID} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="p-3 font-bold text-slate-800 bg-slate-50/50 border-r border-slate-200">
-                        {source.branchName}
-                      </td>
-
-                      {(matrixData?.branches || []).map(target => {
-                        if (source.branchID === target.branchID) {
-                          return (
-                            <td key={target.branchID} className="p-3 text-center bg-slate-100/50 text-slate-400 border-r border-slate-200 font-mono">
-                              —
-                            </td>
-                          );
-                        }
-
-                        const cell = (matrixData?.matrixCells || []).find(c => 
-                          c.sourceBranchID === source.branchID && c.targetBranchID === target.branchID
-                        );
-
-                        const bal = cell ? cell.closingBalance : 0;
-                        rowTotal += bal;
-
-                        return (
-                          <td 
-                            key={target.branchID} 
-                            onClick={() => {
-                              setSelectedBranchA(source.branchID);
-                              setSelectedBranchB(target.branchID);
-                              setActiveTab('drilldown');
-                            }}
-                            className="p-3 text-center border-r border-slate-200 cursor-pointer hover:bg-indigo-50/50 transition-colors"
-                          >
-                            <span className={`inline-block font-semibold px-2 py-1 rounded-md text-[11px] ${
-                              bal > 0 
-                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
-                                : bal < 0 
-                                ? 'bg-rose-50 text-rose-800 border border-rose-200' 
-                                : 'text-slate-400'
-                            }`}>
-                              {bal > 0 ? '+' : ''} ₹ {bal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                            </span>
-                          </td>
-                        );
-                      })}
-
-                      <td className="p-3 text-center font-bold bg-slate-100/40">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                          rowTotal > 0 
-                            ? 'bg-emerald-100 text-emerald-900' 
-                            : rowTotal < 0 
-                            ? 'bg-rose-100 text-rose-900' 
-                            : 'bg-slate-200 text-slate-700'
-                        }`}>
-                          {rowTotal >= 0 ? '+' : ''} ₹ {rowTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: Pair-Wise Contra Drill-Down */}
-      {activeTab === 'drilldown' && (
-        <div className="bg-white rounded-b-xl shadow-sm border border-t-0 border-slate-200 p-5 space-y-6">
-          
-          {/* Branch Selectors for Pair Drill-Down */}
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-xs font-bold text-slate-700 uppercase">शाखा १:</span>
-              <select
-                value={selectedBranchA}
-                onChange={(e) => setSelectedBranchA(Number(e.target.value))}
-                className="px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium"
-              >
-                {(matrixData?.branches || []).map(b => (
-                  <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
-                ))}
-              </select>
-
-              <ArrowLeftRight className="w-4 h-4 text-slate-400" />
-
-              <span className="text-xs font-bold text-slate-700 uppercase">शाखा २:</span>
-              <select
-                value={selectedBranchB}
-                onChange={(e) => setSelectedBranchB(Number(e.target.value))}
-                className="px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium"
-              >
-                {(matrixData?.branches || []).map(b => (
-                  <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
-                ))}
-              </select>
-
-              <button
-                onClick={fetchDrilldownData}
-                disabled={drilldownLoading}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-colors"
-              >
-                {drilldownLoading ? 'लोड होत आहे...' : 'ताळमेळ काढा'}
-              </button>
-            </div>
-
-            {drilldownData && (
-              <button
-                onClick={() => handleOpenSettlement(
-                  drilldownData.closingBalanceInA < 0 ? selectedBranchA : selectedBranchB,
-                  drilldownData.closingBalanceInA < 0 ? selectedBranchB : selectedBranchA,
-                  Math.abs(drilldownData.closingBalanceInA)
-                )}
-                className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm"
-              >
-                ⚡ ही शिल्लक सेटल करा (Zero Out)
-              </button>
-            )}
-          </div>
-
-          {/* Contra Comparison Cards */}
-          {drilldownData && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              
-              {/* Branch A Card */}
-              <div className="bg-blue-50/50 border border-blue-200 rounded-xl p-4">
-                <h3 className="font-bold text-blue-900 text-sm flex items-center gap-1.5 mb-2">
-                  <Building2 className="w-4 h-4 text-blue-700" />
-                  {drilldownData.branchA.branchName}
+        {/* ========================================================================= */}
+        {/* TAB 1: N × N MATRIX GRID & PAIR SUMMARY CARDS                             */}
+        {/* ========================================================================= */}
+        {(activeTab === 'matrix' || true) && (
+          <div className={`${activeTab !== 'matrix' ? 'hidden print:block' : ''} space-y-4`}>
+            
+            {/* Header info bar */}
+            <div className="no-print flex justify-between items-center flex-wrap gap-2 pb-1 border-b border-slate-200">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                  <Sparkles size={13} className="text-primary" />
+                  शाखा-ते-शाखा १-स्क्रीन क्लिअरिंग मॅट्रिक्स
                 </h3>
-                <div className="space-y-1.5 text-xs text-slate-700">
-                  <div className="flex justify-between">
-                    <span>आरंभिक शिल्लक (Opening):</span>
-                    <span className="font-semibold">₹ {drilldownData.openingBalanceInA.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>एकूण नावे (Total Dr):</span>
-                    <span className="font-semibold text-emerald-700">+ ₹ {drilldownData.totalDebitInA.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>एकूण जमा (Total Cr):</span>
-                    <span className="font-semibold text-rose-700">- ₹ {drilldownData.totalCreditInA.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="pt-2 border-t border-blue-200 flex justify-between font-bold text-sm">
-                    <span>अखेरची शिल्लक:</span>
-                    <span className={drilldownData.closingBalanceInA >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
-                      {drilldownData.closingBalanceInA >= 0 ? '+' : ''} ₹ {drilldownData.closingBalanceInA.toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                </div>
+                <p className="text-[11px] text-slate-500">
+                  प्रत्येक शाखेचे इतर सर्व शाखांकडील निव्वळ येणे (+ Dr / हिरवा) किंवा देणे (- Cr / लाल) शिल्लक स्थिती:
+                </p>
               </div>
-
-              {/* Branch B Card */}
-              <div className="bg-purple-50/50 border border-purple-200 rounded-xl p-4">
-                <h3 className="font-bold text-purple-900 text-sm flex items-center gap-1.5 mb-2">
-                  <Building2 className="w-4 h-4 text-purple-700" />
-                  {drilldownData.branchB.branchName}
-                </h3>
-                <div className="space-y-1.5 text-xs text-slate-700">
-                  <div className="flex justify-between">
-                    <span>आरंभिक शिल्लक (Opening):</span>
-                    <span className="font-semibold">₹ {drilldownData.openingBalanceInB.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>एकूण नावे (Total Dr):</span>
-                    <span className="font-semibold text-emerald-700">+ ₹ {drilldownData.totalDebitInB.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>एकूण जमा (Total Cr):</span>
-                    <span className="font-semibold text-rose-700">- ₹ {drilldownData.totalCreditInB.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="pt-2 border-t border-purple-200 flex justify-between font-bold text-sm">
-                    <span>अखेरची शिल्लक:</span>
-                    <span className={drilldownData.closingBalanceInB >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
-                      {drilldownData.closingBalanceInB >= 0 ? '+' : ''} ₹ {drilldownData.closingBalanceInB.toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                </div>
+              <div className="flex items-center gap-3 text-[11px]">
+                <span className="flex items-center gap-1 text-emerald-800 font-bold">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span> + येणे (Receivable / Dr)
+                </span>
+                <span className="flex items-center gap-1 text-rose-800 font-bold">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-600 inline-block"></span> - देणे (Payable / Cr)
+                </span>
               </div>
-
-              {/* Contra Match Evaluation Card */}
-              <div className={`border rounded-xl p-4 flex flex-col justify-between ${
-                drilldownData.isTallied ? 'bg-emerald-50/70 border-emerald-200' : 'bg-rose-50/70 border-rose-200'
-              }`}>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5 mb-2">
-                    {drilldownData.isTallied ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-rose-600" />
-                    )}
-                    समोरासमोर कॉन्ट्रा निकाल
-                  </h3>
-                  <p className="text-xs text-slate-600">
-                    {drilldownData.isTallied 
-                      ? 'दोन्ही शाखांच्या पुस्तकातील IBT रकमा तंतोतंत एकमेकांना संतुलित करतात.' 
-                      : 'सावधान! दोन्ही शाखांच्या बेरजेमध्ये फरक आढळला आहे.'}
-                  </p>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200/80">
-                  <div className="flex justify-between items-center text-sm font-bold">
-                    <span>कॉन्ट्रा फरक:</span>
-                    <span className={drilldownData.isTallied ? 'text-emerald-700 text-base' : 'text-rose-700 text-base'}>
-                      ₹ {drilldownData.difference.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {/* Vouchers Search and Module Filter */}
-          <div className="flex flex-wrap justify-between items-center gap-3 pt-2">
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Search className="w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="व्हाउचर, खातेदार किंवा तपशील शोधा..."
-                value={drilldownSearch}
-                onChange={(e) => setDrilldownSearch(e.target.value)}
-                className="px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg w-64 focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">विभाग:</span>
-              {['ALL', 'LOAN', 'SAVING', 'FD', 'RD', 'PIGMY', 'SETTLEMENT'].map(mod => (
-                <button
-                  key={mod}
-                  onClick={() => setModuleFilter(mod)}
-                  className={`text-xs px-2.5 py-1 rounded-md font-semibold transition-all ${
-                    moduleFilter === mod 
-                      ? 'bg-indigo-600 text-white shadow-sm' 
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            {/* Branch Pairs Summary Cards (Interactive Screen Mode) */}
+            <div className="no-print grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(matrixData?.pairs || []).map((p, idx) => (
+                <div 
+                  key={idx} 
+                  className={`p-3 rounded border transition-all hover:shadow-2xs ${
+                    p.isTallied ? 'bg-slate-50/70 border-slate-300' : 'bg-rose-50/50 border-rose-300'
                   }`}
                 >
-                  {mod === 'ALL' ? 'सर्व' : mod}
-                </button>
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-primary"></span>
+                      <span>{p.branchAName} ⟷ {p.branchBName}</span>
+                    </div>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                      p.isTallied 
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+                        : 'bg-rose-100 text-rose-800 border-rose-300'
+                    }`}>
+                      {p.isTallied ? '🟢 तंतोतंत जुळले' : '🔴 तफावत!'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 text-[11px]">
+                    <div className="flex justify-between items-center py-0.5 border-b border-slate-200">
+                      <span className="text-slate-600">{p.branchAName} चे पुस्तक:</span>
+                      <span className={`font-mono font-semibold ${p.branchAPosition >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {p.branchAPosition >= 0 ? '+' : ''} ₹ {p.branchAPosition.toLocaleString('en-IN', { maximumFractionDigits: 2 })} 
+                        {p.branchAPosition >= 0 ? ' (Dr)' : ' (Cr)'}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center py-0.5 border-b border-slate-200">
+                      <span className="text-slate-600">{p.branchBName} चे पुस्तक:</span>
+                      <span className={`font-mono font-semibold ${p.branchBPosition >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {p.branchBPosition >= 0 ? '+' : ''} ₹ {p.branchBPosition.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        {p.branchBPosition >= 0 ? ' (Dr)' : ' (Cr)'}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-0.5 font-bold">
+                      <span className="text-slate-700">कॉन्ट्रा फरक (Difference):</span>
+                      <span className={`font-mono ${p.isTallied ? 'text-emerald-700' : 'text-rose-700 font-bold'}`}>
+                        ₹ {p.difference.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-2.5 pt-2 border-t border-slate-200 flex justify-between items-center">
+                    <span className="text-[10px] text-slate-500 font-mono">उलाढाल: ₹ {p.totalTurnover.toLocaleString('en-IN')}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedBranchA(p.branchAId);
+                          setSelectedBranchB(p.branchBId);
+                          setActiveTab('drilldown');
+                        }}
+                        className="text-[11px] text-primary hover:underline font-bold cursor-pointer"
+                      >
+                        तपशील पहा →
+                      </button>
+                      {Math.abs(p.branchAPosition) > 0 && (
+                        <button
+                          onClick={() => handleOpenSettlement(
+                            p.branchAPosition < 0 ? p.branchAId : p.branchBId,
+                            p.branchAPosition < 0 ? p.branchBId : p.branchAId,
+                            Math.abs(p.branchAPosition)
+                          )}
+                          className="text-[10.5px] px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded font-bold hover:bg-emerald-100 transition-colors cursor-pointer"
+                          title="आंतर-शाखा शिल्लक सेटल करा"
+                        >
+                          सेटल करा ⚡
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
-          </div>
 
-          {/* Vouchers Table */}
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                  <th className="p-3">दिनांक</th>
-                  <th className="p-3">व्हाउचर क्र.</th>
-                  <th className="p-3">शाखा</th>
-                  <th className="p-3">संलग्न व्हाउचर</th>
-                  <th className="p-3">खातेदार / तपशील</th>
-                  <th className="p-3 text-center">विभाग</th>
-                  <th className="p-3 text-center">IBT बाजू</th>
-                  <th className="p-3 text-right">रक्कम (₹)</th>
-                  <th className="p-3 text-center">कॉन्ट्रा स्थिती</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {filteredVouchers.map((v) => (
-                  <tr key={v.voucherID} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-3 whitespace-nowrap text-slate-600 font-medium">
-                      {v.voucherDate.split('T')[0]}
-                    </td>
-                    <td className="p-3 font-mono font-bold text-indigo-700">
-                      {v.voucherNo}
-                    </td>
-                    <td className="p-3 font-medium text-slate-800">
-                      {v.branchName}
-                    </td>
-                    <td className="p-3 font-mono text-slate-600">
-                      {v.relatedVoucherNo || <span className="text-amber-600 font-bold">— (प्रलंबित)</span>}
-                    </td>
-                    <td className="p-3">
-                      <div className="font-semibold text-slate-800">{v.customerName || v.memberNo || 'सामान्य व्यवहार'}</div>
-                      <div className="text-[11px] text-slate-500 truncate max-w-xs">{v.narration}</div>
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className="px-2 py-0.5 rounded font-bold text-[10px] bg-slate-100 text-slate-700 border border-slate-200">
-                        {v.module}
-                      </span>
-                    </td>
-                    <td className="p-3 text-center font-bold">
-                      <span className={`px-2 py-0.5 rounded text-[11px] ${
-                        v.ibtDrCr === 'Dr' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                      }`}>
-                        {v.ibtDrCr}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right font-mono font-bold text-slate-900">
-                      ₹ {v.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="p-3 text-center">
-                      {v.isContraMatched ? (
-                        <span className="text-emerald-700 flex items-center justify-center gap-1 font-semibold text-[11px]">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> जुळले
-                        </span>
-                      ) : (
-                        <span className="text-amber-700 flex items-center justify-center gap-1 font-semibold text-[11px]">
-                          <AlertTriangle className="w-3.5 h-3.5" /> विसंगत
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {filteredVouchers.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="p-8 text-center text-slate-400 font-medium">
-                      निवडलेल्या कालावधीत कोणतेही आंतर-शाखा व्हाउचर्स सापडले नाहीत.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-        </div>
-      )}
-
-      {/* TAB 3: Unreconciled Radar */}
-      {activeTab === 'radar' && (
-        <div className="bg-white rounded-b-xl shadow-sm border border-t-0 border-slate-200 p-5 space-y-6">
-          <div className="flex justify-between items-center">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">प्रलंबित व विसंगत आंतर-शाखा व्हाउचर्स रडार</h2>
-              <p className="text-xs text-slate-500">
-                ज्या व्हाउचर्सना संलग्न जोडीदार व्हाउचर नाही किंवा स्टेटस/रक्कम जुळत नाही त्यांची यादी:
-              </p>
-            </div>
-            <button
-              onClick={fetchUnreconciledVouchers}
-              className="text-xs font-semibold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg flex items-center gap-1"
-            >
-              <RefreshCw className="w-3 h-3" /> पुन्हा स्कॅन करा
-            </button>
-          </div>
-
-          {unreconciledItems.length === 0 ? (
-            <div className="p-12 text-center bg-emerald-50/50 rounded-2xl border border-emerald-200 space-y-3">
-              <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
-              <h3 className="text-lg font-bold text-emerald-900">सर्व आंतर-शाखा व्हाउचर्स १००% जुळले आहेत!</h3>
-              <p className="text-sm text-emerald-700 max-w-md mx-auto">
-                सिस्टीममध्ये कोणताही विसंगत (Unmatched) किंवा एकाच बाजूला पडलेला (One-sided) व्हाउचर आढळला नाही. दोन्ही बाजूंचे ताळेबंद तंतोतंत जुळत आहेत.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-red-200">
-              <table className="w-full text-left text-xs border-collapse">
+            {/* Official N × N Matrix Table (Statutory CBS Table Format) */}
+            <div className="overflow-x-auto">
+              <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
                 <thead>
-                  <tr className="bg-red-50 text-red-900 font-bold border-b border-red-200">
-                    <th className="p-3">दिनांक</th>
-                    <th className="p-3">व्हाउचर क्र.</th>
-                    <th className="p-3">शाखा</th>
-                    <th className="p-3">लक्ष्य शाखा</th>
-                    <th className="p-3 text-right">रक्कम</th>
-                    <th className="p-3 text-center">सद्य स्थिती</th>
-                    <th className="p-3">विसंगतीचे कारण (Audit Reason)</th>
+                  <tr className="bg-slate-100 text-slate-950 border-b border-slate-900 text-center font-bold">
+                    <th className="border border-slate-900 py-1.5 px-2 text-left w-[20%]">शाखा (Branch)</th>
+                    {(matrixData?.branches || []).map(b => (
+                      <th key={b.branchID} className="border border-slate-900 py-1.5 px-2 text-center min-w-[130px]">
+                        {b.branchName}
+                      </th>
+                    ))}
+                    <th className="border border-slate-900 py-1.5 px-2 text-right bg-slate-200 font-extrabold w-[18%]">
+                      एकूण निव्वळ स्थिती (Net Position)
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-red-100">
-                  {unreconciledItems.map((item) => (
-                    <tr key={item.voucherID} className="hover:bg-red-50/30">
-                      <td className="p-3 whitespace-nowrap">{item.voucherDate.split('T')[0]}</td>
-                      <td className="p-3 font-mono font-bold text-red-700">{item.voucherNo}</td>
-                      <td className="p-3 font-semibold">{item.branchName}</td>
-                      <td className="p-3 font-medium text-slate-600">{item.targetBranchName}</td>
-                      <td className="p-3 text-right font-mono font-bold text-slate-900">
-                        ₹ {item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                <tbody>
+                  {(matrixData?.branches || []).map(source => {
+                    let rowTotal = 0;
+                    return (
+                      <tr key={source.branchID} className="hover:bg-slate-50 transition-colors text-slate-900">
+                        <td className="border border-slate-900 py-1.5 px-2 font-bold bg-slate-50/60">
+                          {source.branchName}
+                        </td>
+
+                        {(matrixData?.branches || []).map(target => {
+                          if (source.branchID === target.branchID) {
+                            return (
+                              <td key={target.branchID} className="border border-slate-900 py-1.5 px-2 text-center bg-slate-100/50 text-slate-400 font-mono">
+                                —
+                              </td>
+                            );
+                          }
+
+                          const cell = (matrixData?.matrixCells || []).find(c => 
+                            c.sourceBranchID === source.branchID && c.targetBranchID === target.branchID
+                          );
+
+                          const bal = cell ? cell.closingBalance : 0;
+                          rowTotal += bal;
+
+                          return (
+                            <td 
+                              key={target.branchID} 
+                              onClick={() => {
+                                setSelectedBranchA(source.branchID);
+                                setSelectedBranchB(target.branchID);
+                                setActiveTab('drilldown');
+                              }}
+                              className="border border-slate-900 py-1 px-2 text-center cursor-pointer hover:bg-primary/5 transition-colors font-mono"
+                            >
+                              <span className={`inline-block font-semibold px-1.5 py-0.5 rounded text-[10.5px] ${
+                                bal > 0 
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-300' 
+                                  : bal < 0 
+                                  ? 'bg-rose-50 text-rose-800 border border-rose-300' 
+                                  : 'text-slate-400'
+                              }`}>
+                                {bal > 0 ? '+' : ''} ₹ {bal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                              </span>
+                            </td>
+                          );
+                        })}
+
+                        <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold bg-slate-100/50">
+                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                            rowTotal > 0 
+                              ? 'bg-emerald-100 text-emerald-900' 
+                              : rowTotal < 0 
+                              ? 'bg-rose-100 text-rose-900' 
+                              : 'bg-slate-200 text-slate-700'
+                          }`}>
+                            {rowTotal >= 0 ? '+' : ''} ₹ {rowTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-200 font-bold border-t-2 border-slate-900 text-slate-950">
+                    <td className="border border-slate-900 py-1.5 px-2 text-left font-black">
+                      सर्व शाखा एकत्रित ताळमेळ (Total Net)
+                    </td>
+                    {(matrixData?.branches || []).map(target => {
+                      let colTotal = 0;
+                      (matrixData?.matrixCells || []).forEach(c => {
+                        if (c.targetBranchID === target.branchID) {
+                          colTotal += c.closingBalance;
+                        }
+                      });
+                      return (
+                        <td key={target.branchID} className="border border-slate-900 py-1.5 px-2 text-center font-mono font-bold text-xs">
+                          {colTotal >= 0 ? '+' : ''} ₹ {colTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </td>
+                      );
+                    })}
+                    <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-emerald-800 bg-emerald-100">
+                      🟢 ₹ ०.०० (संतुलित)
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Audit compliance notes */}
+            <div className="p-2.5 bg-slate-50 border border-slate-300 rounded text-[11px] text-slate-700 space-y-1">
+              <p className="font-bold flex items-center gap-1 text-slate-900">
+                <ShieldCheck size={13} className="text-primary" />
+                वैधानिक बँकिंग अखंडता नियम (Statutory Banking Rule):
+              </p>
+              <p className="text-slate-600">
+                १) कोणत्याही दोन शाखांच्या परस्पर खात्यांमधील शिल्लक बेरीज नेहमी शून्य (Net Difference = ₹ ०.००) असणे अनिवार्य आहे.
+              </p>
+              <p className="text-slate-600">
+                २) संस्था स्तरावर सर्व शाखांचे IBT खात्यांचे कन्सॉलिडेटेड निव्वळ ताळेबंद शून्य (Zero Imbalance) राहून तेरीज तंतोतंत जुळते.
+              </p>
+            </div>
+
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 2: PAIR-WISE CONTRA DRILL-DOWN STATEMENT                              */}
+        {/* ========================================================================= */}
+        {activeTab === 'drilldown' && (
+          <div className="space-y-4">
+            
+            {/* Branch Selectors Strip */}
+            <div className="no-print flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-300 rounded">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-700">शाखा १:</span>
+                <select
+                  value={selectedBranchA}
+                  onChange={(e) => setSelectedBranchA(Number(e.target.value))}
+                  className="px-2 py-1 text-xs bg-white border border-slate-300 rounded font-semibold text-slate-800 outline-none focus:border-primary"
+                >
+                  {(matrixData?.branches || []).map(b => (
+                    <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
+                  ))}
+                </select>
+
+                <ArrowLeftRight className="w-3.5 h-3.5 text-slate-400" />
+
+                <span className="text-xs font-bold text-slate-700">शाखा २:</span>
+                <select
+                  value={selectedBranchB}
+                  onChange={(e) => setSelectedBranchB(Number(e.target.value))}
+                  className="px-2 py-1 text-xs bg-white border border-slate-300 rounded font-semibold text-slate-800 outline-none focus:border-primary"
+                >
+                  {(matrixData?.branches || []).map(b => (
+                    <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
+                  ))}
+                </select>
+
+                <button
+                  onClick={fetchDrilldownData}
+                  disabled={drilldownLoading}
+                  className="px-3 py-1 bg-primary hover:bg-primary/90 text-white rounded text-xs font-bold transition-colors cursor-pointer"
+                >
+                  {drilldownLoading ? 'लोड होत आहे...' : 'ताळमेळ काढा'}
+                </button>
+              </div>
+
+              {drilldownData && (
+                <button
+                  onClick={() => handleOpenSettlement(
+                    drilldownData.closingBalanceInA < 0 ? selectedBranchA : selectedBranchB,
+                    drilldownData.closingBalanceInA < 0 ? selectedBranchB : selectedBranchA,
+                    Math.abs(drilldownData.closingBalanceInA)
+                  )}
+                  className="px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-xs font-bold shadow-2xs cursor-pointer flex items-center gap-1"
+                >
+                  <DollarSign size={13} />
+                  <span>ही शिल्लक सेटल करा (Zero Out)</span>
+                </button>
+              )}
+            </div>
+
+            {/* Contra Comparison Summary Cards */}
+            {drilldownData && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Branch A Card */}
+                <div className="bg-slate-50 border border-slate-300 rounded p-3">
+                  <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5 mb-1.5 pb-1 border-b border-slate-200">
+                    <Building2 className="w-3.5 h-3.5 text-primary" />
+                    <span>{drilldownData.branchA.branchName}</span>
+                  </h4>
+                  <div className="space-y-1 text-[11px] text-slate-700">
+                    <div className="flex justify-between">
+                      <span>आरंभिक शिल्लक (Opening):</span>
+                      <span className="font-mono font-semibold">₹ {drilldownData.openingBalanceInA.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>एकूण नावे (Total Dr):</span>
+                      <span className="font-mono font-semibold text-emerald-700">+ ₹ {drilldownData.totalDebitInA.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>एकूण जमा (Total Cr):</span>
+                      <span className="font-mono font-semibold text-rose-700">- ₹ {drilldownData.totalCreditInA.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="pt-1 border-t border-slate-300 flex justify-between font-bold text-xs">
+                      <span>अखेरची शिल्लक:</span>
+                      <span className={`font-mono ${drilldownData.closingBalanceInA >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {drilldownData.closingBalanceInA >= 0 ? '+' : ''} ₹ {drilldownData.closingBalanceInA.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Branch B Card */}
+                <div className="bg-slate-50 border border-slate-300 rounded p-3">
+                  <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5 mb-1.5 pb-1 border-b border-slate-200">
+                    <Building2 className="w-3.5 h-3.5 text-primary" />
+                    <span>{drilldownData.branchB.branchName}</span>
+                  </h4>
+                  <div className="space-y-1 text-[11px] text-slate-700">
+                    <div className="flex justify-between">
+                      <span>आरंभिक शिल्लक (Opening):</span>
+                      <span className="font-mono font-semibold">₹ {drilldownData.openingBalanceInB.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>एकूण नावे (Total Dr):</span>
+                      <span className="font-mono font-semibold text-emerald-700">+ ₹ {drilldownData.totalDebitInB.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>एकूण जमा (Total Cr):</span>
+                      <span className="font-mono font-semibold text-rose-700">- ₹ {drilldownData.totalCreditInB.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="pt-1 border-t border-slate-300 flex justify-between font-bold text-xs">
+                      <span>अखेरची शिल्लक:</span>
+                      <span className={`font-mono ${drilldownData.closingBalanceInB >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {drilldownData.closingBalanceInB >= 0 ? '+' : ''} ₹ {drilldownData.closingBalanceInB.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Contra Match Evaluation Card */}
+                <div className={`border rounded p-3 flex flex-col justify-between ${
+                  drilldownData.isTallied ? 'bg-emerald-50/70 border-emerald-300' : 'bg-rose-50/70 border-rose-300'
+                }`}>
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5 mb-1">
+                      {drilldownData.isTallied ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-rose-600" />
+                      )}
+                      <span>समोरासमोर कॉन्ट्रा निकाल</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-600">
+                      {drilldownData.isTallied 
+                        ? 'दोन्ही शाखांच्या पुस्तकातील IBT रकमा तंतोतंत एकमेकांना संतुलित करतात.' 
+                        : 'सावधान! दोन्ही शाखांच्या बेरजेमध्ये फरक आढळला आहे.'}
+                    </p>
+                  </div>
+
+                  <div className="pt-1.5 border-t border-slate-300/80">
+                    <div className="flex justify-between items-center text-xs font-bold">
+                      <span>कॉन्ट्रा फरक:</span>
+                      <span className={`font-mono ${drilldownData.isTallied ? 'text-emerald-700 text-sm' : 'text-rose-700 text-sm font-black'}`}>
+                        ₹ {drilldownData.difference.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Search and Module Filter Pills (Screen Mode) */}
+            <div className="no-print flex flex-wrap justify-between items-center gap-2 pt-1">
+              <div className="flex items-center gap-1.5">
+                <Search className="w-3.5 h-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="व्हाउचर, खातेदार किंवा तपशील शोधा..."
+                  value={drilldownSearch}
+                  onChange={(e) => setDrilldownSearch(e.target.value)}
+                  className="px-2 py-1 text-xs bg-white border border-slate-300 rounded w-60 outline-none focus:border-primary font-medium"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-500">विभाग:</span>
+                {['ALL', 'LOAN', 'SAVING', 'FD', 'RD', 'PIGMY', 'SETTLEMENT'].map(mod => (
+                  <button
+                    key={mod}
+                    onClick={() => setModuleFilter(mod)}
+                    className={`text-[10.5px] px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                      moduleFilter === mod 
+                        ? 'bg-primary text-white shadow-2xs' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {mod === 'ALL' ? 'सर्व' : mod}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Detailed Transaction Vouchers Table */}
+            <div className="overflow-x-auto">
+              <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-950 border-b border-slate-900 text-center font-bold">
+                    <th className="border border-slate-900 py-1.5 px-2 text-center w-[10%]">दिनांक</th>
+                    <th className="border border-slate-900 py-1.5 px-2 text-left w-[12%]">व्हाउचर क्र.</th>
+                    <th className="border border-slate-900 py-1.5 px-2 text-left w-[12%]">शाखा</th>
+                    <th className="border border-slate-900 py-1.5 px-2 text-left w-[12%]">संलग्न व्हाउचर</th>
+                    <th className="border border-slate-900 py-1.5 px-2 text-left w-[24%]">खातेदार / तपशील</th>
+                    <th className="border border-slate-900 py-1.5 px-1 text-center w-[8%]">विभाग</th>
+                    <th className="border border-slate-900 py-1.5 px-1 text-center w-[6%]">IBT</th>
+                    <th className="border border-slate-900 py-1.5 px-2 text-right w-[10%] font-extrabold">रक्कम (₹)</th>
+                    <th className="border border-slate-900 py-1.5 px-2 text-center w-[6%]">स्थिती</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredVouchers.map((v) => (
+                    <tr key={v.voucherID} className="hover:bg-slate-50 transition-colors text-slate-900 text-[11px]">
+                      <td className="border border-slate-900 py-1 px-2 text-center whitespace-nowrap font-mono">
+                        {v.voucherDate.split('T')[0]}
                       </td>
-                      <td className="p-3 text-center">
-                        <span className="px-2 py-0.5 rounded font-bold text-[10px] bg-red-100 text-red-800">
-                          {item.status}
+                      <td className="border border-slate-900 py-1 px-2 font-mono font-bold text-primary">
+                        {v.voucherNo}
+                      </td>
+                      <td className="border border-slate-900 py-1 px-2 font-medium">
+                        {v.branchName}
+                      </td>
+                      <td className="border border-slate-900 py-1 px-2 font-mono">
+                        {v.relatedVoucherNo || <span className="text-amber-700 font-bold">— (प्रलंबित)</span>}
+                      </td>
+                      <td className="border border-slate-900 py-1 px-2">
+                        <div className="font-bold text-slate-950">{v.customerName || v.memberNo || 'सामान्य व्यवहार'}</div>
+                        <div className="text-[10px] text-slate-500 truncate max-w-xs">{v.narration}</div>
+                      </td>
+                      <td className="border border-slate-900 py-1 px-1 text-center font-bold text-[10px]">
+                        <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-300">
+                          {v.module}
                         </span>
                       </td>
-                      <td className="p-3 text-red-700 font-semibold">{item.reason}</td>
+                      <td className="border border-slate-900 py-1 px-1 text-center font-bold font-mono">
+                        <span className={`px-1.5 py-0.2 rounded text-[10px] ${
+                          v.ibtDrCr === 'Dr' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {v.ibtDrCr}
+                        </span>
+                      </td>
+                      <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold">
+                        ₹ {v.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="border border-slate-900 py-1 px-2 text-center text-[10px]">
+                        {v.isContraMatched ? (
+                          <span className="text-emerald-700 font-bold inline-flex items-center gap-0.5">
+                            <CheckCircle2 size={11} /> जुळले
+                          </span>
+                        ) : (
+                          <span className="text-amber-700 font-bold inline-flex items-center gap-0.5">
+                            <AlertTriangle size={11} /> विसंगत
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   ))}
+                  {filteredVouchers.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="border border-slate-900 py-8 text-center text-slate-400 font-medium">
+                        निवडलेल्या कालावधीत कोणतेही आंतर-शाखा व्हाउचर्स सापडले नाहीत.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-      )}
 
-      {/* 6. Settlement Action Modal */}
-      {isSettlementModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden">
-            <div className="p-5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex justify-between items-center">
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 3: UNRECONCILED & IN-TRANSIT RADAR                                    */}
+        {/* ========================================================================= */}
+        {activeTab === 'radar' && (
+          <div className="space-y-4">
+            <div className="no-print flex justify-between items-center pb-1 border-b border-slate-200">
               <div>
-                <h3 className="font-bold text-base flex items-center gap-2">
-                  <DollarSign className="w-5 h-5" /> आंतर-शाखा शिल्लक सेटलमेंट व्हाउचर
+                <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1">
+                  <AlertTriangle size={13} className="text-amber-600" />
+                  प्रलंबित व विसंगत आंतर-शाखा व्हाउचर्स रडार
                 </h3>
-                <p className="text-xs text-indigo-100 mt-0.5">दोन शाखांमधील IBT देणे-घेणे बँक/कॅशद्वारे क्लिअर करा</p>
+                <p className="text-[11px] text-slate-500">
+                  ज्या व्हाउचर्सना संलग्न जोडीदार व्हाउचर नाही किंवा स्टेटस/रक्कम जुळत नाही त्यांची यादी:
+                </p>
               </div>
-              <button 
-                onClick={() => setIsSettlementModalOpen(false)}
-                className="text-white/80 hover:text-white"
+              <button
+                onClick={fetchUnreconciledVouchers}
+                className="text-xs font-bold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-300 flex items-center gap-1 cursor-pointer"
               >
-                <XCircle className="w-5 h-5" />
+                <RefreshCw className={`w-3 h-3 ${unreconciledLoading ? 'animate-spin text-primary' : ''}`} />
+                <span>पुन्हा स्कॅन करा</span>
               </button>
             </div>
 
-            <form onSubmit={handleExecuteSettlement} className="p-6 space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-4">
+            {unreconciledItems.length === 0 ? (
+              <div className="p-10 text-center bg-emerald-50/50 rounded border border-emerald-300 space-y-2">
+                <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+                <h4 className="text-sm font-bold text-emerald-900">सर्व आंतर-शाखा व्हाउचर्स १००% जुळले आहेत!</h4>
+                <p className="text-xs text-emerald-700 max-w-md mx-auto">
+                  सिस्टीममध्ये कोणताही विसंगत (Unmatched) किंवा एकाच बाजूला पडलेला (One-sided) व्हाउचर आढळला नाही. दोन्ही बाजूंचे ताळेबंद तंतोतंत जुळत आहेत.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
+                  <thead>
+                    <tr className="bg-rose-100 text-rose-950 font-bold border-b border-slate-900">
+                      <th className="border border-slate-900 py-1.5 px-2 text-center w-[10%]">दिनांक</th>
+                      <th className="border border-slate-900 py-1.5 px-2 text-left w-[12%]">व्हाउचर क्र.</th>
+                      <th className="border border-slate-900 py-1.5 px-2 text-left w-[14%]">शाखा</th>
+                      <th className="border border-slate-900 py-1.5 px-2 text-left w-[14%]">लक्ष्य शाखा</th>
+                      <th className="border border-slate-900 py-1.5 px-2 text-right w-[12%] font-extrabold">रक्कम</th>
+                      <th className="border border-slate-900 py-1.5 px-2 text-center w-[10%]">सद्य स्थिती</th>
+                      <th className="border border-slate-900 py-1.5 px-2 text-left w-[28%]">विसंगतीचे कारण (Audit Reason)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unreconciledItems.map((item) => (
+                      <tr key={item.voucherID} className="hover:bg-rose-50/40 text-[11px] text-slate-900">
+                        <td className="border border-slate-900 py-1 px-2 text-center whitespace-nowrap font-mono">{item.voucherDate.split('T')[0]}</td>
+                        <td className="border border-slate-900 py-1 px-2 font-mono font-bold text-rose-800">{item.voucherNo}</td>
+                        <td className="border border-slate-900 py-1 px-2 font-semibold">{item.branchName}</td>
+                        <td className="border border-slate-900 py-1 px-2 font-medium text-slate-700">{item.targetBranchName}</td>
+                        <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold">
+                          ₹ {item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="border border-slate-900 py-1 px-2 text-center">
+                          <span className="px-1.5 py-0.2 rounded font-bold text-[10px] bg-rose-100 text-rose-800 border border-rose-300">
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="border border-slate-900 py-1 px-2 text-rose-800 font-bold">{item.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+      </CbsReportLayout>
+
+      {/* ========================================================================= */}
+      {/* 1-CLICK IBT SETTLEMENT ACTION MODAL                                       */}
+      {/* ========================================================================= */}
+      {isSettlementModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in no-print">
+          <div className="bg-white rounded-sm shadow-xl border border-slate-300 max-w-lg w-full overflow-hidden">
+            <div className="p-4 bg-primary text-white flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-sm flex items-center gap-1.5">
+                  <DollarSign className="w-4 h-4" /> आंतर-शाखा शिल्लक सेटलमेंट व्हाउचर
+                </h3>
+                <p className="text-[11px] text-white/80 mt-0.5">दोन शाखांमधील IBT देणे-घेणे बँक/कॅशद्वारे क्लिअर करा</p>
+              </div>
+              <button 
+                onClick={() => setIsSettlementModalOpen(false)}
+                className="text-white/80 hover:text-white cursor-pointer"
+              >
+                <XCircle className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleExecuteSettlement} className="p-5 space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-600 font-bold mb-1">देणारी शाखा (Payer):</label>
+                  <label className="block text-slate-700 font-bold mb-1">देणारी शाखा (Payer):</label>
                   <select
                     value={settlementFromBranch}
                     onChange={(e) => setSettlementFromBranch(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 font-semibold"
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-slate-50 font-semibold outline-none focus:border-primary"
                   >
                     {(matrixData?.branches || []).map(b => (
                       <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
@@ -1107,11 +1160,11 @@ export default function IbtReconciliationReport() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-600 font-bold mb-1">घेणारी शाखा (Receiver):</label>
+                  <label className="block text-slate-700 font-bold mb-1">घेणारी शाखा (Receiver):</label>
                   <select
                     value={settlementToBranch}
                     onChange={(e) => setSettlementToBranch(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50 font-semibold"
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded bg-slate-50 font-semibold outline-none focus:border-primary"
                   >
                     {(matrixData?.branches || []).map(b => (
                       <option key={b.branchID} value={b.branchID}>{b.branchName}</option>
@@ -1121,25 +1174,25 @@ export default function IbtReconciliationReport() {
               </div>
 
               <div>
-                <label className="block text-slate-600 font-bold mb-1">सेटलमेंट रक्कम (₹):</label>
+                <label className="block text-slate-700 font-bold mb-1">सेटलमेंट रक्कम (₹):</label>
                 <input
                   type="number"
                   step="0.01"
                   value={settlementAmount}
                   onChange={(e) => setSettlementAmount(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono font-bold text-sm focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded font-mono font-bold text-sm focus:border-primary outline-none"
                   placeholder="0.00"
                   required
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-600 font-bold mb-1">माध्यम (Payment Mode):</label>
+                  <label className="block text-slate-700 font-bold mb-1">माध्यम (Payment Mode):</label>
                   <select
                     value={settlementMode}
                     onChange={(e) => setSettlementMode(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold"
+                    className="w-full px-2.5 py-1.5 border border-slate-300 rounded font-semibold outline-none focus:border-primary"
                   >
                     <option value="Bank">बँक ट्रान्सफर (RTGS/NEFT)</option>
                     <option value="Cash">रोख गल्ला हस्तांतरण (Cash)</option>
@@ -1148,11 +1201,11 @@ export default function IbtReconciliationReport() {
 
                 {settlementMode === 'Bank' && (
                   <div>
-                    <label className="block text-slate-600 font-bold mb-1">बँक खाते (Bank Ledger):</label>
+                    <label className="block text-slate-700 font-bold mb-1">बँक खाते (Bank Ledger):</label>
                     <select
                       value={selectedBankLedgerId}
                       onChange={(e) => setSelectedBankLedgerId(Number(e.target.value))}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium"
+                      className="w-full px-2.5 py-1.5 border border-slate-300 rounded font-medium outline-none focus:border-primary"
                     >
                       {bankLedgers.map((l: any) => (
                         <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
@@ -1163,19 +1216,19 @@ export default function IbtReconciliationReport() {
               </div>
 
               <div>
-                <label className="block text-slate-600 font-bold mb-1">शेरा (Narration):</label>
+                <label className="block text-slate-700 font-bold mb-1">शेरा (Narration):</label>
                 <input
                   type="text"
                   value={settlementNarration}
                   onChange={(e) => setSettlementNarration(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-2.5 py-1.5 border border-slate-300 rounded outline-none focus:border-primary"
                   placeholder="उदा. HDFC बँक RTGS UTR#123456 द्वारे सेटलमेंट"
                 />
               </div>
 
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px] space-y-1">
+              <div className="p-2.5 bg-amber-50 border border-amber-300 rounded text-amber-900 text-[11px] space-y-0.5">
                 <p className="font-bold flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" /> CBS स्वयंचलित कॉन्ट्रा व्हाउचर्स:
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-700" /> CBS स्वयंचलित कॉन्ट्रा व्हाउचर्स:
                 </p>
                 <p>• देणाऱ्या शाखेत पेमेंट व्हाउचर (Dr IBT / Cr Bank/Cash)</p>
                 <p>• घेणाऱ्या शाखेत रिसिप्ट व्हाउचर (Dr Bank/Cash / Cr IBT)</p>
@@ -1185,14 +1238,14 @@ export default function IbtReconciliationReport() {
                 <button
                   type="button"
                   onClick={() => setIsSettlementModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg"
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded cursor-pointer transition-colors"
                 >
                   रद्द करा
                 </button>
                 <button
                   type="submit"
                   disabled={settling}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm"
+                  className="px-4 py-1.5 bg-primary hover:bg-primary/90 text-white font-bold rounded shadow-2xs cursor-pointer transition-colors"
                 >
                   {settling ? 'तयार होत आहे...' : 'सेटलमेंट व्हाउचर्स बनवा ⚡'}
                 </button>
@@ -1201,7 +1254,6 @@ export default function IbtReconciliationReport() {
           </div>
         </div>
       )}
-
     </div>
   );
 }

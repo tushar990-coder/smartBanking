@@ -12,7 +12,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
+    [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin")]
     public class SeedController : ControllerBase
     {
         private readonly AppDbContext _context;

@@ -140,5 +140,32 @@ namespace Bhisi.Api.Helpers
                    ?? user.FindFirst("Username")?.Value 
                    ?? "System";
         }
+
+        /// <summary>
+        /// Extracts User Role from Claims.
+        /// </summary>
+        public static string GetUserRole(this ClaimsPrincipal? user)
+        {
+            if (user == null) return string.Empty;
+
+            return user.FindFirst(ClaimTypes.Role)?.Value 
+                   ?? user.FindFirst("Role")?.Value 
+                   ?? user.FindFirst("role")?.Value 
+                   ?? string.Empty;
+        }
+
+        /// <summary>
+        /// Checks whether the user has Manager, HeadOffice, or Admin authority.
+        /// </summary>
+        public static bool IsManagerOrAdmin(this ClaimsPrincipal? user)
+        {
+            if (user == null) return false;
+            if (user.IsHeadOfficeAdmin()) return true;
+
+            var role = user.GetUserRole();
+            return role.Equals("Manager", StringComparison.OrdinalIgnoreCase) ||
+                   role.Equals("BranchManager", StringComparison.OrdinalIgnoreCase) ||
+                   role.Equals("Branch_Manager", StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

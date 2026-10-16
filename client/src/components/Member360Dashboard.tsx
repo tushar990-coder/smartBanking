@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import { 
     Search, 
     ShieldAlert, 
@@ -279,48 +279,52 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
     }, [selectedMemberId]);
 
     // Fetch customers on load
-    useEffect(() => {
-        let isMounted = true;
-        const fetchMembers = async () => {
-            try {
-                const res = await axios.get('/api/Customers');
-                if (!isMounted) return;
-                setRawMembers(res.data || []);
-                
-                if (res.data && res.data.length > 0) {
-                    const params = new URLSearchParams(window.location.search);
-                    const urlMemberId = params.get('memberId');
-                    const savedMemberId = sessionStorage.getItem('last_member360_selected_id');
-                    const targetId = urlMemberId || savedMemberId || selectedMemberId;
+    const fetchMembers = async () => {
+        try {
+            setError('');
+            const res = await api.get('/Customers');
+            setRawMembers(res.data || []);
+            
+            if (res.data && res.data.length > 0) {
+                const params = new URLSearchParams(window.location.search);
+                const urlMemberId = params.get('memberId');
+                const savedMemberId = sessionStorage.getItem('last_member360_selected_id');
+                const targetId = urlMemberId || savedMemberId || selectedMemberId;
 
-                    if (targetId && res.data.some((m: any) => String(m.customerID || m.memberID) === targetId)) {
-                        setSelectedMemberId(targetId);
-                    } else {
-                        setSelectedMemberId(String(res.data[0].customerID || res.data[0].memberID));
-                    }
-                }
-            } catch (err) {
-                if (isMounted) {
-                    console.error("Failed to load customer list", err);
-                    setError("खातेदारांची यादी लोड करता आली नाही.");
+                if (targetId && res.data.some((m: any) => String(m.customerID || m.memberID) === targetId)) {
+                    setSelectedMemberId(targetId);
+                } else {
+                    setSelectedMemberId(String(res.data[0].customerID || res.data[0].memberID));
                 }
             }
-        };
+        } catch (err: any) {
+            console.error("Failed to load customer list", err);
+            const msg = err?.response?.data?.message || err?.message;
+            setError(msg ? `खातेदारांची यादी लोड करता आली नाही (${msg})` : "खातेदारांची यादी लोड करता आली नाही. सर्व्हर कनेक्शन तपासा.");
+        }
+    };
+
+    useEffect(() => {
         fetchMembers();
-        return () => { isMounted = false; };
     }, []);
 
     // Fetch 360 view when member selection changes
     const fetch360Data = async () => {
-        if (!selectedMemberId) return;
+        if (!selectedMemberId) {
+            if (rawMembers.length === 0) {
+                await fetchMembers();
+            }
+            return;
+        }
         setLoading(true);
         setError('');
         try {
-            const res = await axios.get(`/api/Reports/Customer360/${selectedMemberId}`);
+            const res = await api.get(`/Reports/Customer360/${selectedMemberId}`);
             setData(res.data);
-        } catch (err) {
+        } catch (err: any) {
             console.error("Failed to load 360 summary", err);
-            setError("खातेदार ३६०° सारांश लोड करता आला नाही.");
+            const msg = err?.response?.data?.message || (err?.response?.status === 404 ? 'सदर खातेदाराची माहिती उपलब्ध नाही.' : err?.message);
+            setError(msg && typeof msg === 'string' && msg.length < 150 ? `खातेदार ३६०° सारांश लोड करता आला नाही (${msg})` : "खातेदार ३६०° सारांश लोड करता आला नाही. सर्व्हर कनेक्शन किंवा लॉगिन तपासा.");
             setData(null);
         } finally {
             setLoading(false);
@@ -434,7 +438,13 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                             <span className="font-semibold">{error}</span>
                         </div>
                         <button
-                            onClick={fetch360Data}
+                            onClick={() => {
+                                if (rawMembers.length === 0) {
+                                    fetchMembers();
+                                } else {
+                                    fetch360Data();
+                                }
+                            }}
                             className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded cursor-pointer transition-colors shadow-2xs"
                         >
                             पुनः प्रयत्न करा (Retry)

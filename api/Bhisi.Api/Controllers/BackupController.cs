@@ -9,7 +9,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize] // Requires authentication
+    [Authorize(Roles = "SuperAdmin,Admin,SystemAdmin")]
     public class BackupController : ControllerBase
     {
         private readonly IBackupService _backupService;

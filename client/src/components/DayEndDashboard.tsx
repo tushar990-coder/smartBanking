@@ -11,9 +11,39 @@ interface EodStatus {
     isMatched: boolean;
   };
   cashTally: {
+    branchID?: number;
+    branchName?: string;
+    primaryCashLedger?: {
+      ledgerID: number;
+      ledgerName: string;
+      ledgerCode?: string;
+    } | null;
     opening: number;
+    todayReceipts?: number;
+    todayPayments?: number;
     closing: number;
     isPositive: boolean;
+    ledgers?: Array<{
+      ledgerID: number;
+      ledgerName: string;
+      ledgerCode?: string;
+      opening: number;
+      receipts: number;
+      payments: number;
+      closing: number;
+    }>;
+    physicalDenomination?: {
+      isSubmitted: boolean;
+      totalAmount: number;
+      difference: number;
+      isMatched: boolean;
+      entryType: string;
+      verifiedBy: string;
+    };
+    cashierDrawers?: {
+      openDrawersCount: number;
+      isAllSettled: boolean;
+    };
   };
   pigmyReconciliation: {
     pendingCollections: number;
@@ -307,20 +337,81 @@ const DayEndDashboard: React.FC = () => {
                 </span>
               </div>
 
-              {/* Check 3: Closing Cash */}
+              {/* Check 3: Branch-Specific Cash Tally */}
+              <div className="p-2 rounded-sm border border-gray-200 bg-gray-50/50 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="font-bold text-xs text-gray-800 flex items-center gap-1.5">
+                      <span>शाखानिहाय रोख ताळमेळ (Branch Cash Tally)</span>
+                      {status.cashTally.primaryCashLedger && (
+                        <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-mono font-medium">
+                          {status.cashTally.primaryCashLedger.ledgerName}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-gray-600 font-mono mt-0.5">
+                      आरंभ: {formatCurrency(status.cashTally.opening)} | 
+                      <span className="text-emerald-700 font-semibold"> जमा (+): {formatCurrency(status.cashTally.todayReceipts || 0)}</span> | 
+                      <span className="text-rose-700 font-semibold"> खर्च (-): {formatCurrency(status.cashTally.todayPayments || 0)}</span> | 
+                      <span className="font-bold text-gray-900"> अखेर: {formatCurrency(status.cashTally.closing)}</span>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-sm text-[10px] font-extrabold shrink-0 ${status.cashTally.isPositive ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-red-100 text-red-800 border border-red-300'}`}>
+                    {status.cashTally.isPositive ? '🟢 POSITIVE CASH' : '🔴 NEGATIVE CASH'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Check 4: Physical Denomination Tally */}
               <div className="p-2 rounded-sm border border-gray-200 flex justify-between items-center bg-gray-50/50">
                 <div>
-                  <div className="font-bold text-xs text-gray-800">अखेरची रोख शिल्लक (Closing Cash Balance)</div>
+                  <div className="font-bold text-xs text-gray-800 flex items-center gap-1">
+                    <span>प्रत्यक्ष नोटा मोजदाद (Physical Denomination Tally)</span>
+                  </div>
                   <div className="text-[11px] text-gray-500 font-mono">
-                    शुरुवात: {formatCurrency(status.cashTally.opening)} | अखेर: {formatCurrency(status.cashTally.closing)}
+                    {status.cashTally.physicalDenomination?.isSubmitted ? (
+                      <span>
+                        मोजलेली रोख: {formatCurrency(status.cashTally.physicalDenomination.totalAmount)} | 
+                        तफावत: {formatCurrency(status.cashTally.physicalDenomination.difference)}
+                      </span>
+                    ) : (
+                      <span className="text-amber-700 font-medium">आजच्या नोटांची प्रत्यक्ष मोजणी सिस्टीममध्ये नोंदवलेली नाही.</span>
+                    )}
                   </div>
                 </div>
-                <span className={`px-2 py-0.5 rounded-sm text-[10px] font-extrabold ${status.cashTally.isPositive ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-red-100 text-red-800 border border-red-300'}`}>
-                  {status.cashTally.isPositive ? '🟢 POSITIVE CASH' : '🔴 NEGATIVE CASH'}
+                <span className={`px-2 py-0.5 rounded-sm text-[10px] font-extrabold shrink-0 ${
+                  !status.cashTally.physicalDenomination?.isSubmitted 
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300' 
+                    : status.cashTally.physicalDenomination.isMatched 
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                      : 'bg-red-100 text-red-800 border border-red-300'
+                }`}>
+                  {!status.cashTally.physicalDenomination?.isSubmitted 
+                    ? '🟡 PENDING COUNT' 
+                    : status.cashTally.physicalDenomination.isMatched 
+                      ? '🟢 MATCHED (₹०.००)' 
+                      : `🔴 DIFF (${formatCurrency(status.cashTally.physicalDenomination.difference)})`}
                 </span>
               </div>
 
-              {/* Check 4: Pigmy Agent Reconciliation */}
+              {/* Check 5: Cashier Drawers Settlement */}
+              <div className="p-2 rounded-sm border border-gray-200 flex justify-between items-center bg-gray-50/50">
+                <div>
+                  <div className="font-bold text-xs text-gray-800">काऊंटर कॅशिअर तिजोरी परतावा (Drawers Settlement)</div>
+                  <div className="text-[11px] text-gray-500">
+                    प्रलंबित काऊंटर ड्रॉवर्स: {status.cashTally.cashierDrawers?.openDrawersCount || 0}
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded-sm text-[10px] font-extrabold shrink-0 ${
+                  status.cashTally.cashierDrawers?.isAllSettled 
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                    : 'bg-amber-100 text-amber-800 border border-amber-300'
+                }`}>
+                  {status.cashTally.cashierDrawers?.isAllSettled ? '🟢 ALL DRAWERS SETTLED' : '🟡 DRAWERS PENDING'}
+                </span>
+              </div>
+
+              {/* Check 6: Pigmy Agent Reconciliation */}
               <div className="p-2 rounded-sm border border-gray-200 flex justify-between items-center bg-gray-50/50">
                 <div>
                   <div className="font-bold text-xs text-gray-800">पिग्मी एजंट डे-बुक मेळ (Pigmy Collection Reconciliation)</div>

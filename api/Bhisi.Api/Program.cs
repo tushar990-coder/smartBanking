@@ -1503,6 +1503,27 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAccounts')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyAccounts]') AND name = 'OldAccountNo')
+                BEGIN
+                    ALTER TABLE [PigmyAccounts] ADD [OldAccountNo] nvarchar(50) NULL;
+                    EXEC(N'UPDATE [PigmyAccounts] SET [OldAccountNo] = COALESCE([LegacyAccountNumber], [PreviousAccountNo]) WHERE [OldAccountNo] IS NULL AND ([LegacyAccountNumber] IS NOT NULL OR [PreviousAccountNo] IS NOT NULL);');
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyAccounts]') AND name = 'DailyDepositAmount')
+                BEGIN
+                    ALTER TABLE [PigmyAccounts] ADD [DailyDepositAmount] decimal(18,2) NOT NULL DEFAULT 100;
+                END
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'AgentCustomerRequests')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[AgentCustomerRequests]') AND name = 'OldAccountNo')
+                BEGIN
+                    ALTER TABLE [AgentCustomerRequests] ADD [OldAccountNo] nvarchar(50) NULL;
+                END
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingInterestSettings')
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingInterestSettings]') AND name = 'SchemeCode')

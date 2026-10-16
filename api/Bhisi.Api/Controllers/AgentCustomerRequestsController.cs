@@ -259,6 +259,9 @@ namespace Bhisi.Api.Controllers
                             InterestRate = scheme.InterestRate,
                             TotalDepositedAmount = dto.PigmyData.OpeningBalance,
                             Status = "Active",
+                            OldAccountNo = request.OldAccountNo,
+                            LegacyAccountNumber = request.OldAccountNo,
+                            DailyDepositAmount = request.DailyDepositAmount > 0 ? request.DailyDepositAmount : 100m,
                             CreatedBy = dto.ApprovedByUserID ?? 0,
                             CreatedDate = DateTime.UtcNow
                         };

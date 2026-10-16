@@ -344,8 +344,11 @@ namespace Bhisi.Api.Controllers
 
         public class AppCollectionItemDto
         {
-            [Required]
             public int PigmyAccountId { get; set; }
+            public int? AccountId { get; set; }
+            public string? AccountNo { get; set; }
+            public string? OldAccountNo { get; set; }
+            public string? TransactionId { get; set; }
             [Required]
             public decimal CollectionAmount { get; set; }
             public DateTime? CollectionDate { get; set; }
@@ -458,7 +461,25 @@ namespace Bhisi.Api.Controllers
                 {
                     if (item.CollectionAmount <= 0) continue;
 
-                    var account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.PigmyAccountID == item.PigmyAccountId);
+                    int targetId = item.PigmyAccountId > 0 ? item.PigmyAccountId : (item.AccountId ?? 0);
+                    PigmyAccount? account = null;
+
+                    if (targetId > 0)
+                    {
+                        account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.PigmyAccountID == targetId);
+                    }
+                    if (account == null && !string.IsNullOrWhiteSpace(item.OldAccountNo))
+                    {
+                        string cleanOld = item.OldAccountNo.Trim();
+                        account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.PigmyAgentID == agentId &&
+                            (a.OldAccountNo == cleanOld || a.LegacyAccountNumber == cleanOld || a.PreviousAccountNo == cleanOld));
+                    }
+                    if (account == null && !string.IsNullOrWhiteSpace(item.AccountNo))
+                    {
+                        string cleanAcc = item.AccountNo.Trim();
+                        account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.AccountNo == cleanAcc);
+                    }
+
                     if (account == null || account.Status != "Active") continue;
 
                     DateTime collDate = item.CollectionDate ?? DateTime.Now;
@@ -478,6 +499,7 @@ namespace Bhisi.Api.Controllers
                         {
                             pigmyAccountId = account.PigmyAccountID,
                             accountNo = account.AccountNo,
+                            oldAccountNo = account.OldAccountNo ?? account.LegacyAccountNumber ?? account.PreviousAccountNo ?? "",
                             receiptNo = receiptNo,
                             amount = existingReceipt.CollectionAmount,
                             newBalance = account.TotalDepositedAmount, // We might not have exact snapshot, but it's safe to return current
@@ -565,6 +587,7 @@ namespace Bhisi.Api.Controllers
                     {
                         pigmyAccountId = account.PigmyAccountID,
                         accountNo = account.AccountNo,
+                        oldAccountNo = account.OldAccountNo ?? account.LegacyAccountNumber ?? account.PreviousAccountNo ?? "",
                         receiptNo = receiptNo,
                         amount = addedAmount,
                         newBalance = account.TotalDepositedAmount

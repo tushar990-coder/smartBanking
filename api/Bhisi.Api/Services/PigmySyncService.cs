@@ -64,6 +64,7 @@ namespace Bhisi.Api.Services
                     TransactionId = cleanTxId,
                     AccountId = existingCollection.PigmyAccountId,
                     AccountNo = existingCollection.PigmyAccount?.AccountNo ?? "",
+                    OldAccountNo = existingCollection.PigmyAccount?.OldAccountNo ?? existingCollection.PigmyAccount?.LegacyAccountNumber ?? existingCollection.PigmyAccount?.PreviousAccountNo ?? "",
                     CustomerName = customerName,
                     MemberName = customerName,
                     CustomerMobile = existingCollection.PigmyAccount?.Customer?.MobileNo ?? "",
@@ -97,19 +98,46 @@ namespace Bhisi.Api.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var account = await _context.PigmyAccounts
-                    .Include(a => a.Customer)
-                    .FirstOrDefaultAsync(a => a.PigmyAccountID == dto.AccountId);
+                int targetId = dto.AccountId > 0 ? dto.AccountId : (dto.PigmyAccountId ?? 0);
+                PigmyAccount? account = null;
+
+                // 1. Try finding by Primary Key ID
+                if (targetId > 0)
+                {
+                    account = await _context.PigmyAccounts
+                        .Include(a => a.Customer)
+                        .FirstOrDefaultAsync(a => a.PigmyAccountID == targetId);
+                }
+
+                // 2. Try finding by Old Account Number (Physical Passbook No) under this agent
+                if (account == null && !string.IsNullOrWhiteSpace(dto.OldAccountNo))
+                {
+                    string cleanOldNo = dto.OldAccountNo.Trim();
+                    account = await _context.PigmyAccounts
+                        .Include(a => a.Customer)
+                        .FirstOrDefaultAsync(a => a.PigmyAgentID == agentId && 
+                            (a.OldAccountNo == cleanOldNo || a.LegacyAccountNumber == cleanOldNo || a.PreviousAccountNo == cleanOldNo));
+                }
+
+                // 3. Try finding by CBS Account Number
+                if (account == null && !string.IsNullOrWhiteSpace(dto.AccountNo))
+                {
+                    string cleanAccNo = dto.AccountNo.Trim();
+                    account = await _context.PigmyAccounts
+                        .Include(a => a.Customer)
+                        .FirstOrDefaultAsync(a => a.AccountNo == cleanAccNo);
+                }
 
                 if (account == null)
                 {
+                    string searchIdentifier = targetId > 0 ? $"ID {targetId}" : (!string.IsNullOrWhiteSpace(dto.OldAccountNo) ? $"OldAccountNo '{dto.OldAccountNo}'" : $"AccountNo '{dto.AccountNo}'");
                     return new SingleCollectionResponseDto
                     {
                         Success = false,
                         StatusCode = 404,
                         TransactionId = cleanTxId,
-                        AccountId = dto.AccountId,
-                        Message = $"Pigmy account with ID {dto.AccountId} not found."
+                        AccountId = targetId,
+                        Message = $"Pigmy account with {searchIdentifier} not found."
                     };
                 }
 
@@ -120,12 +148,12 @@ namespace Bhisi.Api.Services
                         Success = false,
                         StatusCode = 400,
                         TransactionId = cleanTxId,
-                        AccountId = dto.AccountId,
+                        AccountId = account.PigmyAccountID,
                         Message = $"Pigmy account is {account.Status} and cannot accept deposits."
                     };
                 }
 
-                DateTime collDate = dto.CollectionDate ?? DateTime.Today;
+                DateTime collDate = dto.Timestamp ?? dto.CollectionDate ?? DateTime.Today;
                 decimal openingBal = account.TotalDepositedAmount;
                 decimal addedAmount = dto.Amount;
                 decimal closingBal = openingBal + addedAmount;
@@ -263,6 +291,7 @@ namespace Bhisi.Api.Services
                     TransactionId = cleanTxId,
                     AccountId = account.PigmyAccountID,
                     AccountNo = account.AccountNo,
+                    OldAccountNo = account.OldAccountNo ?? account.LegacyAccountNumber ?? account.PreviousAccountNo ?? "",
                     CustomerName = customerName,
                     MemberName = customerName,
                     CustomerMobile = customerMobile,

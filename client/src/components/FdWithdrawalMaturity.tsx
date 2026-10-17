@@ -221,8 +221,6 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [showVoucherPreview, setShowVoucherPreview] = useState<boolean>(true);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
   const [showInlineSchedule, setShowInlineSchedule] = useState<boolean>(false);
-  // Active Tab for 2-Column Responsive Cockpit Workspace
-  const [activeTab, setActiveTab] = useState<'overview' | 'interest' | 'payout'>('overview');
 
   // 🛡️ Live Premature Preview State from Backend (RBI Tenor Slabs Resolution)
   const [prematurePreview, setPrematurePreview] = useState<any>(null);
@@ -686,7 +684,6 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     setSelectedAccount(selected);
     setError('');
     setSuccess('');
-    setActiveTab('overview');
     handleResetManualOverride();
     if (selected) {
       fetchCustomerSavingsAccounts(selected.customerID, selected.memberID);
@@ -1623,94 +1620,52 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
             return (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
-                {/* ================= LEFT COLUMN: OPERATIONAL WORKSPACE (7 Cols) ================= */}
-                <div className="lg:col-span-7 space-y-2.5">
-                  {/* Tab Navigation Strip */}
-                  <div className="bg-white p-1 rounded-sm border border-slate-200 shadow-2xs flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('overview')}
-                      className={`flex-1 py-1.5 px-2 rounded font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        activeTab === 'overview'
-                          ? 'bg-primary text-white shadow-xs'
-                          : 'text-gray-600 hover:bg-slate-100 hover:text-gray-900'
-                      }`}
-                    >
-                      <Layers className="w-3.5 h-3.5" />
-                      <span>१. कृती व नूतनीकरण</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('interest')}
-                      className={`flex-1 py-1.5 px-2 rounded font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        activeTab === 'interest'
-                          ? 'bg-primary text-white shadow-xs'
-                          : 'text-gray-600 hover:bg-slate-100 hover:text-gray-900'
-                      }`}
-                    >
-                      <BookOpen className="w-3.5 h-3.5" />
-                      <span>२. व्याज व स्लॅब हिशोब</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('payout')}
-                      className={`flex-1 py-1.5 px-2 rounded font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                        activeTab === 'payout'
-                          ? 'bg-primary text-white shadow-xs'
-                          : 'text-gray-600 hover:bg-slate-100 hover:text-gray-900'
-                      }`}
-                    >
-                      <DollarSign className="w-3.5 h-3.5" />
-                      <span>३. पेआउट पद्धत व खाती</span>
-                    </button>
-                  </div>
-
-                  {/* ---------- TAB 1: TRANSACTION ACTION & RENEWAL ---------- */}
-                  {activeTab === 'overview' && (
-                    <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-2xs space-y-2.5 animate-in fade-in">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                {/* ================= LEFT COLUMN: OPERATIONAL WORKSPACE (7 Cols - No Tabs, Minimal Scroll) ================= */}
+                <div className="lg:col-span-7 space-y-2">
+                  <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-2xs space-y-2.5">
+                    {/* SECTION 1: TRANSACTION ACTION SELECTOR */}
+                    <div>
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-1 mb-2">
                         <h2 className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase tracking-wide">
-                          <span className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold">१</span>
-                          <span>व्यवहाराचा प्रकार निवडा (Select Transaction Action)</span>
+                          <span className="w-4 h-4 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold">१</span>
+                          <span>व्यवहाराचा प्रकार व कृती (Transaction Action)</span>
                         </h2>
-                        <span className="text-[11px] text-gray-500">
+                        <span className="text-[11px] text-gray-500 font-semibold">
                           {isMatured ? 'ठेव मुदत पूर्ण झालेली आहे' : 'मुदतपूर्व बंद व्यवहार'}
                         </span>
                       </div>
 
                       {!isMatured ? (
                         /* Premature Close Action Card */
-                        <div className="bg-amber-50 border border-amber-300 rounded p-2.5 flex items-center justify-between gap-3 shadow-2xs">
-                          <div className="flex items-center gap-2.5">
-                            <div className="p-1.5 bg-amber-200 text-amber-900 rounded-full shrink-0">
-                              <Clock className="w-4 h-4" />
+                        <div className="bg-amber-50 border border-amber-300 rounded p-2 flex items-center justify-between gap-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1 bg-amber-200 text-amber-900 rounded-full shrink-0">
+                              <Clock className="w-3.5 h-3.5" />
                             </div>
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
                                 <span className="font-bold text-xs text-amber-950">⚡ मुदतपूर्व बंद व परतावा (Premature Close & Payout)</span>
-                                <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.2 rounded-full font-bold">
+                                <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-full font-bold">
                                   स्वयंचलित निवड
                                 </span>
                               </div>
-                              <p className="text-[11px] text-amber-900 mt-0.5">
-                                ठेव मुदतपूर्तीपूर्वी बंद करत असल्याने आरबीआय/संस्था नियमानुसार प्रत्यक्षात पूर्ण केलेल्या कालावधीच्या स्लॅब दरानुसार व्याज पुनर्गणना होईल.
+                              <p className="text-[11px] text-amber-900 leading-tight">
+                                मुदतपूर्तीपूर्वी बंद करत असल्याने आरबीआय नियमानुसार प्रत्यक्ष पूर्ण केलेल्या कालावधीच्या स्लॅब दरानुसार व्याज पुनर्गणना होईल.
                               </p>
                             </div>
                           </div>
                           {prematurePreview && (
-                            <div className="text-right shrink-0 bg-white/80 px-2.5 py-1 rounded border border-amber-200 text-xs">
-                              <span className="text-[10px] text-gray-500 block">सवलतीचा लागू व्याजदर</span>
-                              <strong className="text-amber-900 font-mono text-xs">{prematurePreview.prematureRate}%</strong>
+                            <div className="text-right shrink-0 bg-white/90 px-2 py-0.5 rounded border border-amber-200 text-xs">
+                              <span className="text-[10px] text-gray-500 block">सवलतीचा लागू दर</span>
+                              <strong className="text-amber-900 font-mono text-xs font-black">{prematurePreview.prematureRate}%</strong>
                             </div>
                           )}
                         </div>
                       ) : (
                         /* Matured: 2 Side-by-Side Compact Action Cards */
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {/* Action 1: Maturity Payout */}
-                          <label className={`p-2.5 rounded-sm border cursor-pointer transition-all flex items-start gap-2.5 ${
+                          <label className={`p-2 rounded-sm border cursor-pointer transition-all flex items-start gap-2 ${
                             actionType === 'MaturityClose'
                               ? 'border-2 border-emerald-600 bg-emerald-50/70 shadow-2xs ring-1 ring-emerald-500'
                               : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
@@ -1721,7 +1676,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               value="MaturityClose"
                               checked={actionType === 'MaturityClose'}
                               onChange={(e) => setActionType(e.target.value)}
-                              className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0 cursor-pointer"
+                              className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0 cursor-pointer"
                             />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between gap-1">
@@ -1729,19 +1684,19 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   १. मुदतपूर्ती पेमेंट (Maturity Payout)
                                 </span>
                                 {actionType === 'MaturityClose' && (
-                                  <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.2 rounded font-bold">
+                                  <span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.2 rounded font-bold">
                                     निवडलेले
                                   </span>
                                 )}
                               </div>
-                              <p className="text-[11px] text-gray-600 mt-0.5 leading-snug">
-                                मुदत पूर्ण झालेली ठेव रक्कम (मुद्दल + साचलेले व्याज) खातेदारास रोख, बँकेद्वारे किंवा बचत खात्यात अदा करणे.
+                              <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">
+                                मुदत पूर्ण झालेली ठेव रक्कम (मुद्दल + साचलेले व्याज) खातेदारास अदा करणे.
                               </p>
                             </div>
                           </label>
 
                           {/* Action 2: FD Renewal */}
-                          <label className={`p-2.5 rounded-sm border cursor-pointer transition-all flex items-start gap-2.5 ${
+                          <label className={`p-2 rounded-sm border cursor-pointer transition-all flex items-start gap-2 ${
                             actionType === 'Renewal'
                               ? 'border-2 border-blue-600 bg-blue-50/70 shadow-2xs ring-1 ring-blue-500'
                               : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
@@ -1757,7 +1712,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   setTargetSchemeId(selectedAccount?.fdSchemeID || schemes[0].fdSchemeID);
                                 }
                               }}
-                              className="w-4 h-4 text-blue-600 mt-0.5 shrink-0 cursor-pointer"
+                              className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0 cursor-pointer"
                             />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between gap-1">
@@ -1765,13 +1720,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   २. मुदत ठेव नूतनीकरण (FD Renewal)
                                 </span>
                                 {actionType === 'Renewal' && (
-                                  <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.2 rounded font-bold">
+                                  <span className="text-[9px] bg-blue-600 text-white px-1.5 py-0.2 rounded font-bold">
                                     निवडलेले
                                   </span>
                                 )}
                               </div>
-                              <p className="text-[11px] text-gray-600 mt-0.5 leading-snug">
-                                मुदत ठेव पुढील कालावधीसाठी नवीन पावतीमध्ये रोलओव्हर (नूतनीकरण) करणे (मुद्दल + व्याज किंवा केवळ मुद्दल).
+                              <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">
+                                पुढील कालावधीसाठी नवीन पावतीमध्ये रोलओव्हर (नूतनीकरण) करणे.
                               </p>
                             </div>
                           </label>
@@ -1780,13 +1735,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
                       {/* Sub-panel if Renewal Selected */}
                       {actionType === 'Renewal' && (
-                        <div className="bg-blue-50/50 p-2.5 rounded border border-blue-200 space-y-2 text-xs animate-in fade-in">
-                          <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+                        <div className="mt-2 bg-blue-50/60 p-2 rounded border border-blue-200 space-y-1.5 text-xs animate-in fade-in">
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
                             {/* Renewal Type Radio */}
-                            <div className="md:col-span-5">
-                              <label className={`${labelClass} !mb-1 text-blue-900`}>नूतनीकरण प्रकार (Renewal Mode) *</label>
-                              <div className="grid grid-cols-2 gap-1.5">
-                                <label className={`p-1.5 rounded border text-center cursor-pointer transition ${
+                            <div className="sm:col-span-5">
+                              <label className={`${labelClass} !mb-0.5 text-blue-900 text-[11px]`}>नूतनीकरण प्रकार (Renewal Mode) *</label>
+                              <div className="grid grid-cols-2 gap-1">
+                                <label className={`p-1 rounded border text-center cursor-pointer transition ${
                                   renewalType === 'PrincipalPlusInterest' ? 'bg-blue-600 text-white font-bold border-blue-700' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                                 }`}>
                                   <input
@@ -1797,9 +1752,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                     onChange={(e) => setRenewalType(e.target.value)}
                                     className="sr-only"
                                   />
-                                  <span className="block text-[11px]">मुद्दल + व्याज (Full Roll)</span>
+                                  <span className="block text-[10px]">मुद्दल + व्याज (Full Roll)</span>
                                 </label>
-                                <label className={`p-1.5 rounded border text-center cursor-pointer transition ${
+                                <label className={`p-1 rounded border text-center cursor-pointer transition ${
                                   renewalType === 'PrincipalOnly' ? 'bg-blue-600 text-white font-bold border-blue-700' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                                 }`}>
                                   <input
@@ -1810,18 +1765,18 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                     onChange={(e) => setRenewalType(e.target.value)}
                                     className="sr-only"
                                   />
-                                  <span className="block text-[11px]">केवळ मूळ मुद्दल (Principal)</span>
+                                  <span className="block text-[10px]">केवळ मूळ मुद्दल</span>
                                 </label>
                               </div>
                             </div>
 
                             {/* New Scheme Selection */}
-                            <div className="md:col-span-4">
-                              <label className={`${labelClass} !mb-1 text-blue-900`}>नवीन मुदत ठेव योजना (New Scheme) *</label>
+                            <div className={isOverdue ? 'sm:col-span-4' : 'sm:col-span-7'}>
+                              <label className={`${labelClass} !mb-0.5 text-blue-900 text-[11px]`}>नवीन मुदत ठेव योजना (New Scheme) *</label>
                               <select
                                 value={targetSchemeId}
                                 onChange={(e) => setTargetSchemeId(parseInt(e.target.value))}
-                                className={`${inputClass} font-semibold`}
+                                className={`${inputClass} font-semibold h-[30px]`}
                                 required
                               >
                                 {schemes.map(s => (
@@ -1834,12 +1789,12 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
                             {/* Renewal Effective Date Policy (Overdue handling) */}
                             {isOverdue && (
-                              <div className="md:col-span-3">
-                                <label className={`${labelClass} !mb-1 text-amber-900`}>नूतनीकरण प्रभावी दिनांक</label>
+                              <div className="sm:col-span-3">
+                                <label className={`${labelClass} !mb-0.5 text-amber-900 text-[11px]`}>नूतनीकरण प्रभावी दिनांक</label>
                                 <select
                                   value={renewalEffectiveFrom}
                                   onChange={(e) => setRenewalEffectiveFrom(e.target.value as 'ClosureDate' | 'MaturityDate')}
-                                  className={`${inputClass} font-semibold bg-amber-50 border-amber-300`}
+                                  className={`${inputClass} font-semibold bg-amber-50 border-amber-300 h-[30px]`}
                                 >
                                   <option value="ClosureDate">आजपासून (Closure Date)</option>
                                   <option value="MaturityDate">मुदतपूर्तीपासून (Retroactive)</option>
@@ -1849,298 +1804,145 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                           </div>
                         </div>
                       )}
-
-                      {/* Navigation to Tab 2 */}
-                      <div className="flex justify-end pt-1 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('interest')}
-                          className="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-primary font-bold rounded border border-blue-200 text-xs flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
-                        >
-                          <span>पुढील: व्याज व स्लॅब हिशोब</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
                     </div>
-                  )}
 
-                  {/* ---------- TAB 2: INTEREST, KPI & SCHEDULE ---------- */}
-                  {activeTab === 'interest' && (
-                    <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-2xs space-y-2.5 animate-in fade-in">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                    {/* SECTION 2: PAYMENT METHOD, SETTLEMENT & NARRATION */}
+                    <div className="pt-1.5 border-t border-slate-100 space-y-1.5">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-1">
                         <h2 className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase tracking-wide">
-                          <span className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold">२</span>
-                          <span>परतावा व हिशोब तपशील (Payout & Financial Breakdown)</span>
-                        </h2>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setShowInlineSchedule(!showInlineSchedule)}
-                            className="text-[11px] text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1 cursor-pointer bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors"
-                          >
-                            <BookOpen className="w-3.5 h-3.5 text-blue-600" />
-                            <span>{showInlineSchedule ? 'शेड्युल लपवा ▲' : 'शेड्युल तक्ता पाहा ▼'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setIsScheduleModalOpen(true)}
-                            className="text-[11px] text-gray-700 hover:text-gray-900 font-bold flex items-center gap-1 cursor-pointer bg-gray-100 hover:bg-gray-200 px-2 py-0.5 rounded border border-gray-300 transition-colors"
-                          >
-                            <span>प्रिंट 🖨️</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Single Unified 4-Card KPI Strip */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                        {/* Card 1: Principal */}
-                        <div className="bg-slate-50 p-2 rounded border border-slate-200">
-                          <span className="text-[10px] text-gray-500 uppercase font-semibold block">मूळ मुद्दल (Principal)</span>
-                          <strong className="text-gray-900 font-mono text-sm block mt-0.5">
-                            ₹ {principal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </strong>
-                          <span className="text-[10px] text-gray-500 block truncate">
-                            ठेव तारीख: {formatDateDisplay(selectedAccount.openingDate)}
-                          </span>
-                        </div>
-
-                        {/* Card 2: Interest Payable */}
-                        <div className="bg-blue-50/60 p-2 rounded border border-blue-200">
-                          <span className="text-[10px] text-blue-800 uppercase font-semibold block">
-                            {actionType === 'PrematureClose' ? 'सवलतीचे देय व्याज' : 'करारानुसार साचलेले व्याज'}
-                          </span>
-                          <strong className="text-blue-900 font-mono text-sm block mt-0.5">
-                            + ₹ {interestPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </strong>
-                          <span className="text-[10px] text-blue-700 block truncate">
-                            दर: {actionType === 'PrematureClose' ? (prematurePreview?.prematureRate ?? selectedAccount.interestRate) : selectedAccount.interestRate}% p.a.
-                          </span>
-                        </div>
-
-                        {/* Card 3: Overdue Interest or Clawback */}
-                        <div className={`p-2 rounded border ${
-                          actionType === 'PrematureClose' 
-                            ? (clawback > 0 ? 'bg-rose-50/70 border-rose-200' : 'bg-slate-50 border-slate-200')
-                            : (effOverdue > 0 ? 'bg-amber-50/70 border-amber-200' : 'bg-slate-50 border-slate-200')
-                        }`}>
-                          <span className={`text-[10px] uppercase font-semibold block ${
-                            actionType === 'PrematureClose' ? 'text-rose-800' : 'text-amber-800'
-                          }`}>
-                            {actionType === 'PrematureClose' ? 'जादा व्याज कपात (Clawback)' : `ओव्हरड्यू व्याज ${isOverdue ? `(${overdueDays} दिवस)` : ''}`}
-                          </span>
-                          <strong className={`font-mono text-sm block mt-0.5 ${
-                            actionType === 'PrematureClose' ? 'text-rose-700' : (effOverdue > 0 ? 'text-amber-800' : 'text-gray-500')
-                          }`}>
-                            {actionType === 'PrematureClose'
-                              ? (clawback > 0 ? `- ₹ ${clawback.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹ 0.00')
-                              : (effOverdue > 0 ? `+ ₹ ${effOverdue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹ 0.00')}
-                          </strong>
-                          <span className="text-[10px] text-gray-500 block truncate">
-                            {actionType === 'PrematureClose'
-                              ? (clawback > 0 ? 'P&L रिव्हर्सल नोंद' : 'कपात नाही')
-                              : (effOverdue > 0 ? `दर @ ${effectiveOverdueRate}% p.a.` : 'मुदतीत व्यवहार')}
-                          </span>
-                        </div>
-
-                        {/* Card 4: Net Settlement Amount */}
-                        <div className="bg-emerald-50 p-2 rounded border-2 border-emerald-500 text-emerald-950">
-                          <span className="text-[10px] text-emerald-800 uppercase font-black block">
-                            {actionType === 'Renewal'
-                              ? (renewalType === 'PrincipalPlusInterest' ? 'नवीन ठेव मुद्दल (Full Roll)' : 'नवीन ठेव मुद्दल')
-                              : 'एकूण अंतिम देय परतावा'}
-                          </span>
-                          <strong className="text-emerald-900 font-mono text-base font-black block mt-0.5">
-                            ₹ {(actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest' ? (principal + interestPayable + effOverdue) : netPayout).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </strong>
-                          <span className="text-[10px] text-emerald-700 font-semibold block truncate">
-                            {actionType === 'Renewal' ? 'नवीन मुदत ठेवीत जमा' : `पेमेंट पद्धत: ${paymentMode}`}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Inline Interest Schedule Accordion (Type-safe with scheduleSummary.periods) */}
-                      {showInlineSchedule && scheduleSummary && (
-                        <div className="bg-slate-50 border border-slate-200 rounded p-2.5 space-y-2 text-xs animate-in fade-in">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-gray-800">
-                              📊 कालावधीनिहाय व्याज आकारणी वेळापत्रक (Interest Accrual Schedule)
-                            </span>
-                            <span className="text-[10px] text-gray-500">
-                              एकूण टप्पे: {scheduleSummary.periods.length}
-                            </span>
-                          </div>
-                          <div className="max-h-48 overflow-y-auto border border-slate-200 rounded bg-white">
-                            <table className="w-full border-collapse text-[11px]">
-                              <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase font-bold sticky top-0">
-                                <tr>
-                                  <th className="p-1.5 text-left">टप्पा (Period)</th>
-                                  <th className="p-1.5 text-center">कालावधी</th>
-                                  <th className="p-1.5 text-center">दिवस</th>
-                                  <th className="p-1.5 text-right">आरंभी शिल्लक (₹)</th>
-                                  <th className="p-1.5 text-right">व्याज (₹)</th>
-                                  <th className="p-1.5 text-right">अंतिम शिल्लक (₹)</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
-                                {scheduleSummary.periods.map((q, idx) => (
-                                  <tr key={idx} className="hover:bg-slate-50">
-                                    <td className="p-1.5 font-bold text-gray-800">{q.periodLabel}</td>
-                                    <td className="p-1.5 text-center text-gray-600">{q.fromDate} ते {q.toDate}</td>
-                                    <td className="p-1.5 text-center font-mono">{q.days}</td>
-                                    <td className="p-1.5 text-right font-mono">₹{q.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                    <td className="p-1.5 text-right font-mono font-bold text-blue-900">+₹{q.interestAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                    <td className="p-1.5 text-right font-mono font-bold text-emerald-900">₹{q.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Navigation Buttons */}
-                      <div className="flex justify-between items-center pt-1 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('overview')}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-xs flex items-center gap-1 cursor-pointer transition"
-                        >
-                          <span>⬅️ मागील (कृती)</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('payout')}
-                          className="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-primary font-bold rounded border border-blue-200 text-xs flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
-                        >
-                          <span>पुढील: पेआउट पद्धत व खाती</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ---------- TAB 3: PAYMENT METHOD, SETTLEMENT & NARRATION ---------- */}
-                  {activeTab === 'payout' && (
-                    <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-2xs space-y-2.5 animate-in fade-in">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                        <h2 className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase tracking-wide">
-                          <span className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold">३</span>
+                          <span className="w-4 h-4 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold">२</span>
                           <span>
-                            {actionType === 'Renewal' ? 'व्याज परतावा पद्धत व खाती (Interest Payout Settlement)' : 'परतावा पेमेंट पद्धत व खाती (Payout Method & Settlement)'}
+                            {actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest'
+                              ? 'नूतनीकरण नोंदणी तपशील (Renewal Details)'
+                              : actionType === 'Renewal'
+                              ? 'शिल्लक व्याज परतावा पद्धत व खाती (Interest Payout Settlement)'
+                              : 'परतावा पेमेंट पद्धत व खाती (Payout Method & Accounts)'}
                           </span>
                         </h2>
-                        <span className="text-[11px] text-gray-500 font-medium">
-                          पेमेंट पद्धतीनुसार लेजर व शेरा निवडा
+                        <span className="text-[10px] text-gray-500 font-medium">
+                          {actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest'
+                            ? 'संपूर्ण रक्कम नवीन मुदत ठेवीत रोलओव्हर होईल'
+                            : 'पेमेंट पद्धतीनुसार लेजर व शेरा निवडा'}
                         </span>
                       </div>
 
                       {/* Active Loans Warning Banner (if any) */}
                       {activeLoansData?.hasActiveLoan && (
-                        <div className="bg-amber-50 border border-amber-300 rounded p-2 text-xs text-amber-900 flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <div className="bg-amber-50 border border-amber-300 rounded p-1.5 text-xs text-amber-900 flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                           <span>
-                            <b>कर्ज सूचना:</b> या खातेदाराकडे एकूण <b>₹{(activeLoansData.totalOutstandingLiability || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b> चे सक्रिय कर्ज बाकी आहे. मुदत ठेवीचा परतावा <u>'बचत खात्यात वर्ग (Transfer)'</u> करून नंतर कर्ज वसुली (Loan Collection) मधून हप्ता भरावा.
+                            <b>कर्ज सूचना:</b> या खातेदाराकडे <b>₹{(activeLoansData.totalOutstandingLiability || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b> चे सक्रिय कर्ज बाकी आहे. मुदत ठेवीचा परतावा <u>'बचत खात्यात वर्ग (Transfer)'</u> करून नंतर कर्ज वसुली करावी.
                           </span>
                         </div>
                       )}
 
-                      {/* 3-Column Side-by-Side Grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
-                        {/* Col 1 (4 cols): Payment Mode */}
-                        <div className="md:col-span-4">
-                          <label className={`${labelClass} !mb-1`}>
-                            {actionType === 'Renewal' ? 'व्याज पेमेंट पद्धत (Mode) *' : 'परतावा पेमेंट पद्धत (Mode) *'}
-                          </label>
-                          <select
-                            value={paymentMode}
-                            onChange={(e) => setPaymentMode(e.target.value as 'Cash' | 'Bank' | 'Transfer')}
-                            className={`${inputClass} font-bold text-gray-900 h-[34px] cursor-pointer`}
-                          >
-                            <option value="Cash">💵 रोख (Cash)</option>
-                            <option value="Bank">🏦 बँक (Bank)</option>
-                            <option value="Transfer">🔄 बचत खात्यात वर्ग (Saving Account Transfer)</option>
-                          </select>
+                      {/* If Full Roll Renewal, inform user that no cash/bank disbursement is required */}
+                      {actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest' ? (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded p-2 text-xs text-emerald-950 flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>
+                            मूळ मुद्दल (₹{principal.toLocaleString()}) + साचलेले व्याज (₹{interestPayable.toLocaleString()}) = <b>₹{(principal + interestPayable + effOverdue).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b> संपूर्ण रक्कम नवीन मुदत ठेव पावतीमध्ये जमा होईल. बाह्य रोख/बँक पेआउटची आवश्यकता नाही.
+                          </span>
                         </div>
+                      ) : (
+                        /* Compact Payout Controls Grid */
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                          {/* Col 1 (4 cols): Payment Mode */}
+                          <div className="sm:col-span-4">
+                            <label className={`${labelClass} !mb-0.5 text-[11px]`}>
+                              {actionType === 'Renewal' ? 'व्याज पेमेंट पद्धत (Mode) *' : 'परतावा पेमेंट पद्धत (Mode) *'}
+                            </label>
+                            <select
+                              value={paymentMode}
+                              onChange={(e) => setPaymentMode(e.target.value as 'Cash' | 'Bank' | 'Transfer')}
+                              className={`${inputClass} font-bold text-gray-900 h-[32px] cursor-pointer text-xs`}
+                            >
+                              <option value="Cash">💵 रोख (Cash)</option>
+                              <option value="Bank">🏦 बँक (Bank)</option>
+                              <option value="Transfer">🔄 बचत खात्यात वर्ग (Saving Transfer)</option>
+                            </select>
+                          </div>
 
-                        {/* Col 2 (4 cols): Payout Ledger / Bank Account / Savings Account */}
-                        <div className="md:col-span-4">
-                          {paymentMode === 'Cash' && (
-                            <div>
-                              <label className={`${labelClass} !mb-1 text-gray-700`}>
-                                परतावा रोख खाते (Payout Cash Ledger)
-                              </label>
-                              <div className="h-[34px] flex items-center">
-                                <CashLedgerReflectBadge 
-                                  branchId={selectedAccount.branchID} 
-                                  transactionType="Withdrawal" 
-                                  customTitle="रोख खाते (Cash Ledger)"
-                                />
+                          {/* Col 2 (4 cols): Payout Ledger / Bank Account / Savings Account */}
+                          <div className="sm:col-span-4">
+                            {paymentMode === 'Cash' && (
+                              <div>
+                                <label className={`${labelClass} !mb-0.5 text-gray-700 text-[11px]`}>
+                                  परतावा रोख खाते (Cash Ledger)
+                                </label>
+                                <div className="h-[32px] flex items-center">
+                                  <CashLedgerReflectBadge 
+                                    branchId={selectedAccount.branchID} 
+                                    transactionType="Withdrawal" 
+                                    customTitle="रोख खाते (Cash Ledger)"
+                                  />
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )}
 
-                          {paymentMode === 'Bank' && (
-                            <div>
-                              <label className={`${labelClass} !mb-1 text-gray-700`}>
-                                बँक लेजर निवडा (Select Bank GL) *
-                              </label>
-                              <div className="h-[34px]">
-                                <SearchableSelect
-                                  options={bankLedgers.map(b => ({
-                                    value: b.ledgerID.toString(),
-                                    label: `${b.ledgerID} - ${b.ledgerName}`
-                                  }))}
-                                  value={bankAccountLedgerID.toString()}
-                                  onChange={(val: any) => {
-                                    const v = typeof val === 'object' && val?.target ? val.target.value : val;
-                                    setBankAccountLedgerID(parseInt(String(v || 0)));
-                                  }}
-                                  placeholder="बँक खाते शोधा..."
-                                  disabled={isPassingMode}
-                                />
+                            {paymentMode === 'Bank' && (
+                              <div>
+                                <label className={`${labelClass} !mb-0.5 text-gray-700 text-[11px]`}>
+                                  बँक लेजर निवडा (Bank GL) *
+                                </label>
+                                <div className="h-[32px]">
+                                  <SearchableSelect
+                                    options={bankLedgers.map(b => ({
+                                      value: b.ledgerID.toString(),
+                                      label: `${b.ledgerID} - ${b.ledgerName}`
+                                    }))}
+                                    value={bankAccountLedgerID.toString()}
+                                    onChange={(val: any) => {
+                                      const v = typeof val === 'object' && val?.target ? val.target.value : val;
+                                      setBankAccountLedgerID(parseInt(String(v || 0)));
+                                    }}
+                                    placeholder="बँक खाते शोधा..."
+                                    disabled={isPassingMode}
+                                  />
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )}
 
-                          {paymentMode === 'Transfer' && (
-                            <div>
-                              <label className={`${labelClass} !mb-1 text-gray-700`}>
-                                बचत खाते निवडा (Saving Account) *
-                              </label>
-                              <select
-                                value={selectedSavingAccountId}
-                                onChange={(e) => setSelectedSavingAccountId(e.target.value ? parseInt(e.target.value) : '')}
-                                className={`${inputClass} font-semibold h-[34px] cursor-pointer`}
-                                required
-                              >
-                                <option value="">-- बचत खाते निवडा --</option>
-                                {memberSavingAccounts.map(s => (
-                                  <option key={s.savingAccountID} value={s.savingAccountID}>
-                                    {s.accountNo} (शिल्लक: ₹{s.currentBalance.toLocaleString()})
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </div>
+                            {paymentMode === 'Transfer' && (
+                              <div>
+                                <label className={`${labelClass} !mb-0.5 text-gray-700 text-[11px]`}>
+                                  बचत खाते निवडा (Saving Account) *
+                                </label>
+                                <select
+                                  value={selectedSavingAccountId}
+                                  onChange={(e) => setSelectedSavingAccountId(e.target.value ? parseInt(e.target.value) : '')}
+                                  className={`${inputClass} font-semibold h-[32px] cursor-pointer text-xs`}
+                                  required
+                                >
+                                  <option value="">-- बचत खाते निवडा --</option>
+                                  {memberSavingAccounts.map(s => (
+                                    <option key={s.savingAccountID} value={s.savingAccountID}>
+                                      {s.accountNo} (शिल्लक: ₹{s.currentBalance.toLocaleString()})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
 
-                        {/* Col 3 (4 cols): Narration */}
-                        <div className="md:col-span-4">
-                          <label className={`${labelClass} !mb-1 text-gray-700`}>
-                            तपशील / शेरा (Narration - Optional)
-                          </label>
-                          <input
-                            type="text"
-                            value={narration}
-                            onChange={(e) => setNarration(e.target.value)}
-                            placeholder="उदा. मुदत ठेव परतावा / मुदतपूर्व बंद"
-                            className={`${inputClass} h-[34px]`}
-                          />
+                          {/* Col 3 (4 cols): Narration */}
+                          <div className="sm:col-span-4">
+                            <label className={`${labelClass} !mb-0.5 text-gray-700 text-[11px]`}>
+                              तपशील / शेरा (Narration)
+                            </label>
+                            <input
+                              type="text"
+                              value={narration}
+                              onChange={(e) => setNarration(e.target.value)}
+                              placeholder="उदा. मुदत ठेव परतावा / मुदतपूर्व बंद"
+                              className={`${inputClass} h-[32px] text-xs`}
+                            />
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       {/* Bank Cheque / UTR row if Bank mode */}
-                      {paymentMode === 'Bank' && (
+                      {paymentMode === 'Bank' && !(actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest') && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-slate-100">
                           <div>
                             <label className="block text-[10px] font-bold text-gray-700 mb-0.5">धनादेश / संदर्भ क्र. (Cheque / UTR)</label>
@@ -2149,7 +1951,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               value={chequeNo}
                               onChange={(e) => setChequeNo(e.target.value)}
                               placeholder="उदा. Cheque 123456 / UTR"
-                              className={`${inputClass} h-[30px] font-bold`}
+                              className={`${inputClass} h-[28px] font-bold text-xs`}
                             />
                           </div>
                           <div>
@@ -2158,24 +1960,85 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               type="date"
                               value={chequeDate}
                               onChange={(e) => setChequeDate(e.target.value)}
-                              className={`${inputClass} h-[30px]`}
+                              className={`${inputClass} h-[28px] text-xs`}
                             />
                           </div>
                         </div>
                       )}
+                    </div>
 
-                      {/* Navigation back */}
-                      <div className="flex justify-start pt-1 border-t border-slate-100">
+                    {/* SECTION 3: INTEREST SNAPSHOT & SCHEDULE QUICK ACTIONS */}
+                    <div className="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2 text-gray-600 text-[11px]">
+                        <span>लागू व्याजदर: <strong className="text-blue-900 font-mono font-bold">{actionType === 'PrematureClose' ? (prematurePreview?.prematureRate ?? selectedAccount.interestRate) : selectedAccount.interestRate}% p.a.</strong></span>
+                        <span>•</span>
+                        <span>मुदतपूर्ती: <strong className="text-gray-900">{formatDateDisplay(selectedAccount.maturityDate)}</strong></span>
+                        {isOverdue && (
+                          <>
+                            <span>•</span>
+                            <span className="text-amber-800 font-bold">ओव्हरड्यू: {overdueDays} दिवस</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setActiveTab('interest')}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-xs flex items-center gap-1 cursor-pointer transition"
+                          onClick={() => setShowInlineSchedule(!showInlineSchedule)}
+                          className="text-[11px] text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1 cursor-pointer bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded border border-blue-200 transition-colors shadow-2xs"
                         >
-                          <span>⬅️ मागील (व्याज हिशोब)</span>
+                          <BookOpen className="w-3 h-3 text-blue-600" />
+                          <span>{showInlineSchedule ? 'शेड्युल लपवा ▲' : 'शेड्युल तक्ता पाहा ▼'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsScheduleModalOpen(true)}
+                          className="text-[11px] text-gray-700 hover:text-gray-900 font-bold flex items-center gap-1 cursor-pointer bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded border border-gray-300 transition-colors shadow-2xs"
+                        >
+                          <span>🖨️ प्रिंट वेळापत्रक</span>
                         </button>
                       </div>
                     </div>
-                  )}
+
+                    {/* Inline Interest Schedule Accordion (Type-safe with scheduleSummary.periods) */}
+                    {showInlineSchedule && scheduleSummary && (
+                      <div className="bg-slate-50 border border-slate-200 rounded p-2 space-y-1.5 text-xs animate-in fade-in">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-gray-800 text-[11px]">
+                            📊 कालावधीनिहाय व्याज आकारणी वेळापत्रक (Interest Accrual Schedule)
+                          </span>
+                          <span className="text-[10px] text-gray-500">
+                            एकूण टप्पे: {scheduleSummary.periods.length}
+                          </span>
+                        </div>
+                        <div className="max-h-40 overflow-y-auto border border-slate-200 rounded bg-white">
+                          <table className="w-full border-collapse text-[11px]">
+                            <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase font-bold sticky top-0">
+                              <tr>
+                                <th className="p-1 text-left">टप्पा</th>
+                                <th className="p-1 text-center">कालावधी</th>
+                                <th className="p-1 text-center">दिवस</th>
+                                <th className="p-1 text-right">आरंभी शिल्लक (₹)</th>
+                                <th className="p-1 text-right">व्याज (₹)</th>
+                                <th className="p-1 text-right">अंतिम शिल्लक (₹)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {scheduleSummary.periods.map((q, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50">
+                                  <td className="p-1 font-bold text-gray-800">{q.periodLabel}</td>
+                                  <td className="p-1 text-center text-gray-600">{q.fromDate} ते {q.toDate}</td>
+                                  <td className="p-1 text-center font-mono">{q.days}</td>
+                                  <td className="p-1 text-right font-mono">₹{q.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                  <td className="p-1 text-right font-mono font-bold text-blue-900">+₹{q.interestAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                  <td className="p-1 text-right font-mono font-bold text-emerald-900">₹{q.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* ================= RIGHT COLUMN: STICKY REAL-TIME COCKPIT (5 Cols) ================= */}

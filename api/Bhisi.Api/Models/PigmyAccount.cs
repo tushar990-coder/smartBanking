@@ -85,6 +85,12 @@ namespace Bhisi.Api.Models
         [MaxLength(50)]
         public string? PreviousAccountNo { get; set; }
 
+        [MaxLength(50)]
+        public string? OldAccountNo { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal DailyDepositAmount { get; set; } = 100;
+
         [NotMapped]
         public string? FormattedAccountNo { get; set; }
 

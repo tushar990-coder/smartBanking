@@ -10,11 +10,13 @@ namespace Bhisi.Api.Services
         [Required]
         public string TransactionId { get; set; } = string.Empty; // UUID from client
 
-        [Required]
         public int AccountId { get; set; }
+        public int? PigmyAccountId { get; set; }
+        public string? AccountNo { get; set; }
+        public string? OldAccountNo { get; set; }
 
         [Required]
-        [Range(1, 10000000)]
+        [Range(0.01, 10000000)]
         public decimal Amount { get; set; }
 
         public string PaymentMode { get; set; } = "CASH"; // CASH | UPI
@@ -22,6 +24,7 @@ namespace Bhisi.Api.Services
         public string? Notes { get; set; }
 
         public DateTime? CollectionDate { get; set; }
+        public DateTime? Timestamp { get; set; }
 
         public int? AgentId { get; set; }
     }
@@ -33,6 +36,7 @@ namespace Bhisi.Api.Services
         public string TransactionId { get; set; } = string.Empty;
         public int AccountId { get; set; }
         public string AccountNo { get; set; } = string.Empty;
+        public string? OldAccountNo { get; set; }
         public string CustomerName { get; set; } = string.Empty;
         public string MemberName { get; set; } = string.Empty;
         public string ReceiptNo { get; set; } = string.Empty;

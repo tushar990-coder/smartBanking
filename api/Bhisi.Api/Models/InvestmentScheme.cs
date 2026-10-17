@@ -39,6 +39,11 @@ namespace Bhisi.Api.Models
         [Required]
         public int DurationMonths { get; set; }
 
+        [StringLength(20)]
+        public string DurationType { get; set; } = "Months"; // Months, Days
+
+        public int? DurationDays { get; set; }
+
         [Required]
         [StringLength(50)]
         public string InterestCalculationMethod { get; set; } = "Simple"; // Simple, Cumulative, MonthlyMIS

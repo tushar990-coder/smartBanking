@@ -94,9 +94,19 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                // 2.5 Auto-heal: Ensure all historical/migrated FD opening vouchers are marked Approved so they never appear in pending queue
+                // 2.5 Auto-heal: Ensure all historical/migrated opening vouchers are marked Approved so they never appear in pending queue
                 var pendingMigrationVouchers = await _context.Vouchers
-                    .Where(v => v.Status == "Pending" && v.VoucherNo.StartsWith("JV-FD-OP-"))
+                    .Where(v => v.Status == "Pending" && (
+                        v.VoucherNo.Contains("-OP-") ||
+                        v.VoucherNo.StartsWith("JV-FD-OP-") ||
+                        v.VoucherNo.StartsWith("REC-FD-OP-") ||
+                        v.VoucherNo.StartsWith("JV-RD-OP-") ||
+                        v.VoucherNo.StartsWith("REC-RD-OP-") ||
+                        v.VoucherNo.StartsWith("JV-SH-OP-") ||
+                        v.VoucherNo.StartsWith("JV-INV-OP-") ||
+                        v.VoucherType == "Opening" ||
+                        (v.Narration != null && (v.Narration.Contains("आरंभिक शिल्लक") || v.Narration.Contains("Opening Balance Migration")))
+                    ))
                     .ToListAsync();
                 if (pendingMigrationVouchers.Any())
                 {
@@ -115,7 +125,7 @@ namespace Bhisi.Api.Controllers
                 Console.WriteLine("Self-healing voucher audit error: " + ex.Message);
             }
 
-            // 3. Return all pending vouchers (excluding historical FD opening migration vouchers)
+            // 3. Return all pending vouchers (excluding all opening balance migration vouchers)
             var query = _context.Vouchers.AsQueryable();
             if (branchId.HasValue && branchId.Value > 0)
             {
@@ -136,7 +146,16 @@ namespace Bhisi.Api.Controllers
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Member)
                         .ThenInclude(m => m!.Customer)
-                .Where(v => v.Status == "Pending" && !v.VoucherNo.StartsWith("JV-FD-OP-"))
+                .Where(v => v.Status == "Pending" && 
+                            !v.VoucherNo.Contains("-OP-") && 
+                            !v.VoucherNo.StartsWith("JV-FD-OP-") &&
+                            !v.VoucherNo.StartsWith("REC-FD-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-RD-OP-") &&
+                            !v.VoucherNo.StartsWith("REC-RD-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-SH-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-INV-OP-") &&
+                            v.VoucherType != "Opening" &&
+                            !(v.Narration != null && (v.Narration.Contains("आरंभिक शिल्लक") || v.Narration.Contains("Opening Balance Migration"))))
                 .OrderBy(v => v.VoucherDate)
                 .ThenBy(v => v.VoucherID)
                 .ToListAsync();
@@ -169,7 +188,16 @@ namespace Bhisi.Api.Controllers
                 .Include(v => v.VoucherDetails)
                     .ThenInclude(vd => vd.Member)
                         .ThenInclude(m => m!.Customer)
-                .Where(v => v.Status == "Approved" && !v.VoucherNo.StartsWith("JV-FD-OP-"))
+                .Where(v => v.Status == "Approved" && 
+                            !v.VoucherNo.Contains("-OP-") && 
+                            !v.VoucherNo.StartsWith("JV-FD-OP-") &&
+                            !v.VoucherNo.StartsWith("REC-FD-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-RD-OP-") &&
+                            !v.VoucherNo.StartsWith("REC-RD-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-SH-OP-") &&
+                            !v.VoucherNo.StartsWith("JV-INV-OP-") &&
+                            v.VoucherType != "Opening" &&
+                            !(v.Narration != null && (v.Narration.Contains("आरंभिक शिल्लक") || v.Narration.Contains("Opening Balance Migration"))))
                 .OrderBy(v => v.VoucherDate)
                 .ThenBy(v => v.ScrollNo ?? 0)
                 .ThenBy(v => v.VoucherID)
@@ -327,6 +355,21 @@ namespace Bhisi.Api.Controllers
 
                 foreach (var voucher in vouchers)
                 {
+                    // 0. Safety Lock: Opening Balance Migration Vouchers cannot be unpassed
+                    if (voucher.VoucherNo.Contains("-OP-") || 
+                        voucher.VoucherNo.StartsWith("JV-FD-OP-") ||
+                        voucher.VoucherNo.StartsWith("REC-FD-OP-") ||
+                        voucher.VoucherNo.StartsWith("JV-RD-OP-") ||
+                        voucher.VoucherNo.StartsWith("REC-RD-OP-") ||
+                        voucher.VoucherNo.StartsWith("JV-SH-OP-") ||
+                        voucher.VoucherNo.StartsWith("JV-INV-OP-") ||
+                        voucher.VoucherType == "Opening" ||
+                        (voucher.Narration != null && (voucher.Narration.Contains("आरंभिक शिल्लक") || voucher.Narration.Contains("Opening Balance Migration"))))
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest($"सुरक्षा ऑडिट: आरंभिक शिल्लक स्थलांतर व्हाउचर क्र. {voucher.VoucherNo} अन-पास करण्यास सक्त मनाई आहे (Opening balance migration cannot be unpassed).");
+                    }
+
                     // 1. Closed Business Date Lock Check (EOD)
                     var dayStatus = await _context.BranchDayEndStatuses
                         .Where(b => b.BranchID == voucher.BranchID && b.BusinessDate.Date == voucher.VoucherDate.Date)

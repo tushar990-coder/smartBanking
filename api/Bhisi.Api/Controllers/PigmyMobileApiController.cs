@@ -119,6 +119,7 @@ namespace Bhisi.Api.Controllers
                     accountId = a.PigmyAccountID,
                     pigmyAccountId = a.PigmyAccountID,
                     accountNo = a.AccountNo,
+                    oldAccountNo = a.OldAccountNo ?? a.LegacyAccountNumber ?? a.PreviousAccountNo ?? "",
                     customerId = a.CustomerID,
                     memberId = a.CustomerID,
                     customerName = a.Customer != null ? (a.Customer.FirstName + (string.IsNullOrWhiteSpace(a.Customer.MiddleName) ? "" : " " + a.Customer.MiddleName) + (string.IsNullOrWhiteSpace(a.Customer.LastName) ? "" : " " + a.Customer.LastName)).Trim() : "",
@@ -126,6 +127,8 @@ namespace Bhisi.Api.Controllers
                     mobileNo = a.Customer != null ? a.Customer.MobileNo : "",
                     address = a.Customer != null ? a.Customer.Address : "",
                     cifNo = a.Customer != null ? a.Customer.CIFNo : "",
+                    dailyDepositAmount = a.DailyDepositAmount > 0 ? a.DailyDepositAmount : 100m,
+                    dailyTargetAmount = a.DailyDepositAmount > 0 ? a.DailyDepositAmount : 100m,
                     currentBalance = a.TotalDepositedAmount,
                     totalDepositedAmount = a.TotalDepositedAmount,
                     interestRate = a.InterestRate,
@@ -151,36 +154,41 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "Agent ID is required (e.g. ?agentId=1 or X-Agent-Id header or Bearer token)." });
             }
 
-            var customerIds = await _context.PigmyAccounts
-                .Where(a => a.PigmyAgentID == targetAgentId)
-                .Select(a => a.CustomerID)
-                .Distinct()
+            var accounts = await _context.PigmyAccounts
+                .AsNoTracking()
+                .Include(a => a.Customer)
+                .Where(a => a.PigmyAgentID == targetAgentId && (a.Status == "Active" || a.Status == null))
+                .OrderBy(a => a.AccountNo)
                 .ToListAsync();
 
-            var customers = await _context.Customers
-                .AsNoTracking()
-                .Where(c => customerIds.Contains(c.CustomerID))
-                .OrderBy(c => c.FirstName)
-                .Select(c => new
-                {
-                    customerId = c.CustomerID,
-                    memberId = c.CustomerID,
-                    cifNo = c.CIFNo,
-                    customerName = (c.FirstName + (string.IsNullOrWhiteSpace(c.MiddleName) ? "" : " " + c.MiddleName) + (string.IsNullOrWhiteSpace(c.LastName) ? "" : " " + c.LastName)).Trim(),
-                    firstName = c.FirstName,
-                    middleName = c.MiddleName,
-                    lastName = c.LastName,
-                    mobileNo = c.MobileNo,
-                    address = c.Address,
-                    aadhaarNo = c.AadhaarNo,
-                    panNo = c.PANNo,
-                    gender = c.Gender,
-                    photoPath = c.PhotoPath,
-                    status = c.Status,
-                    totalAccounts = _context.PigmyAccounts.Count(a => a.CustomerID == c.CustomerID && a.PigmyAgentID == targetAgentId),
-                    totalBalance = _context.PigmyAccounts.Where(a => a.CustomerID == c.CustomerID && a.PigmyAgentID == targetAgentId).Sum(a => (decimal?)a.TotalDepositedAmount) ?? 0m
-                })
-                .ToListAsync();
+            var customers = accounts.Select(a => new
+            {
+                customerId = a.CustomerID,
+                memberId = a.CustomerID,
+                cifNo = a.Customer?.CIFNo ?? "",
+                customerName = a.Customer != null 
+                    ? (a.Customer.FirstName + (string.IsNullOrWhiteSpace(a.Customer.MiddleName) ? "" : " " + a.Customer.MiddleName) + (string.IsNullOrWhiteSpace(a.Customer.LastName) ? "" : " " + a.Customer.LastName)).Trim() 
+                    : "",
+                firstName = a.Customer?.FirstName ?? "",
+                middleName = a.Customer?.MiddleName ?? "",
+                lastName = a.Customer?.LastName ?? "",
+                accountNo = a.AccountNo,
+                oldAccountNo = a.OldAccountNo ?? a.LegacyAccountNumber ?? a.PreviousAccountNo ?? "",
+                accountId = a.PigmyAccountID,
+                pigmyAccountId = a.PigmyAccountID,
+                mobileNo = a.Customer?.MobileNo,
+                address = a.Customer?.Address,
+                aadhaarNo = a.Customer?.AadhaarNo,
+                panNo = a.Customer?.PANNo,
+                gender = a.Customer?.Gender,
+                photoPath = a.Customer?.PhotoPath ?? "",
+                totalAccounts = 1,
+                totalBalance = a.TotalDepositedAmount,
+                currentBalance = a.TotalDepositedAmount,
+                dailyDepositAmount = a.DailyDepositAmount > 0 ? a.DailyDepositAmount : 100m,
+                dailyTargetAmount = a.DailyDepositAmount > 0 ? a.DailyDepositAmount : 100m,
+                status = a.Status ?? "Active"
+            }).ToList();
 
             return Ok(customers);
         }
@@ -202,6 +210,8 @@ namespace Bhisi.Api.Controllers
             public string? Gender { get; set; } = "Male";
             public int BranchID { get; set; } = 1;
             public int? AgentId { get; set; }
+            public string? OldAccountNo { get; set; }
+            public decimal DailyDepositAmount { get; set; } = 100;
         }
 
         [HttpPost("api/accounts")]
@@ -266,6 +276,9 @@ namespace Bhisi.Api.Controllers
                     InterestRate = scheme.InterestRate,
                     TotalDepositedAmount = 0m,
                     Status = "Active",
+                    OldAccountNo = string.IsNullOrWhiteSpace(dto.OldAccountNo) ? null : dto.OldAccountNo.Trim(),
+                    LegacyAccountNumber = string.IsNullOrWhiteSpace(dto.OldAccountNo) ? null : dto.OldAccountNo.Trim(),
+                    DailyDepositAmount = dto.DailyDepositAmount > 0 ? dto.DailyDepositAmount : 100m,
                     CreatedBy = agentId,
                     CreatedDate = DateTime.UtcNow
                 };
@@ -316,6 +329,7 @@ namespace Bhisi.Api.Controllers
             public int? PigmySchemeID { get; set; }
             public int BranchID { get; set; } = 1;
             public int? AgentId { get; set; }
+            public string? OldAccountNo { get; set; }
         }
 
         [HttpPost("api/PigmyApp/create-request")]
@@ -348,6 +362,7 @@ namespace Bhisi.Api.Controllers
                     PANNo = dto.PANNo?.Trim(),
                     PigmySchemeID = dto.PigmySchemeID,
                     DailyDepositAmount = dto.DailyDepositAmount,
+                    OldAccountNo = string.IsNullOrWhiteSpace(dto.OldAccountNo) ? null : dto.OldAccountNo.Trim(),
                     OpenPigmyAccount = true,
                     BranchID = branchId,
                     PigmyAgentID = agentId,

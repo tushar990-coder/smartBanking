@@ -36,9 +36,11 @@ namespace Bhisi.Api.Models
         [ForeignKey("SchemeID")]
         public virtual InvestmentScheme? InvestmentScheme { get; set; }
 
-        [Required]
         [StringLength(30)]
-        public string InvestmentNo { get; set; } = string.Empty;
+        public string? InvestmentNo { get; set; } = string.Empty;
+
+        [StringLength(50)]
+        public string? OldInvestmentNo { get; set; } // जुना गुंतवणूक खाते क्रमांक (Manual & Required in OB)
 
         [StringLength(50)]
         public string? DepositReceiptNo { get; set; } // ठेव पावती क्रमांक / Deposit Receipt Number

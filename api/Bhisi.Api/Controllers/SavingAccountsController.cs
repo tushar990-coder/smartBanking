@@ -205,6 +205,8 @@ namespace Bhisi.Api.Controllers
                 );
             }
 
+            query = query.OrderBy(s => s.AccountNo);
+
             var accounts = await query
                 .Include(s => s.Customer)
                 .Include(s => s.Branch)

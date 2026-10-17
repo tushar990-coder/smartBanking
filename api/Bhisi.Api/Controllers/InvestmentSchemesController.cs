@@ -49,6 +49,8 @@ namespace Bhisi.Api.Controllers
                     s.InvestmentType,
                     s.InterestRate,
                     s.DurationMonths,
+                    DurationType = !string.IsNullOrWhiteSpace(s.DurationType) ? s.DurationType : "Months",
+                    s.DurationDays,
                     s.InterestCalculationMethod,
                     s.PrematureWithdrawalRate,
                     s.IsActive,
@@ -153,6 +155,10 @@ namespace Bhisi.Api.Controllers
                 scheme.SchemeCode = scheme.SchemeCode.Trim();
             }
 
+            if (string.IsNullOrWhiteSpace(scheme.DurationType))
+            {
+                scheme.DurationType = "Months";
+            }
             scheme.CreatedDate = DateTime.Now;
             _context.InvestmentSchemes.Add(scheme);
             await _context.SaveChangesAsync();
@@ -185,6 +191,8 @@ namespace Bhisi.Api.Controllers
             existingScheme.InvestmentType = !string.IsNullOrWhiteSpace(scheme.InvestmentType) ? scheme.InvestmentType : existingScheme.InvestmentType;
             existingScheme.InterestRate = scheme.InterestRate;
             existingScheme.DurationMonths = scheme.DurationMonths;
+            existingScheme.DurationType = !string.IsNullOrWhiteSpace(scheme.DurationType) ? scheme.DurationType : "Months";
+            existingScheme.DurationDays = scheme.DurationDays;
             existingScheme.InterestCalculationMethod = !string.IsNullOrWhiteSpace(scheme.InterestCalculationMethod) ? scheme.InterestCalculationMethod : existingScheme.InterestCalculationMethod;
             existingScheme.PrematureWithdrawalRate = scheme.PrematureWithdrawalRate;
             existingScheme.IsActive = scheme.IsActive;

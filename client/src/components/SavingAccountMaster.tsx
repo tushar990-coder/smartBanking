@@ -633,7 +633,7 @@ const SavingAccountMaster: React.FC = () => {
       nameStr.includes(query) ||
       cifStr.includes(query) ||
       mobStr.includes(query);
-  });
+  }).sort((a: any, b: any) => (a.accountNo || '').localeCompare(b.accountNo || '', undefined, { numeric: true, sensitivity: 'base' }));
 
   // Nominee relation options
   const relationOptions = ['स्वतः', 'पती', 'पत्नी', 'मुलगा', 'मुलगी', 'भाऊ', 'बहीण', 'आई', 'वडील', 'इतर'];

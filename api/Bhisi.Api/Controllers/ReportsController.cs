@@ -2695,6 +2695,9 @@ namespace Bhisi.Api.Controllers
             var activeShareMemberIds = isShareLedger 
                 ? await _context.ShareAccounts.Where(s => s.TotalShareCount > 0).Select(s => s.MemberId).ToHashSetAsync()
                 : null;
+            var activeShareCustomerIds = isShareLedger
+                ? await _context.ShareAccounts.Where(s => s.TotalShareCount > 0 && s.CustomerID > 0).Select(s => s.CustomerID).ToHashSetAsync()
+                : null;
             
             var result = new List<MemberBalanceReportDto>();
             var orphanMobsToRemove = new List<MemberOpeningBalance>();
@@ -2705,8 +2708,13 @@ namespace Bhisi.Api.Controllers
                 string opType = "Dr";
                 if (openingBalances.TryGetValue(member.MemberID, out var opBal))
                 {
-                    // Self-healing check: if this is a share capital ledger, and member has no share account and no vouchers, this is an orphan leftover
-                    if (isShareLedger && activeShareMemberIds != null && !activeShareMemberIds.Contains(member.MemberID))
+                    // Self-healing check: if this is a share capital ledger, and member has no active share account and no vouchers, this is an orphan leftover
+                    bool hasActiveShares = activeShareMemberIds != null && (
+                        activeShareMemberIds.Contains(member.MemberID) ||
+                        (member.CustomerID.HasValue && activeShareCustomerIds != null && activeShareCustomerIds.Contains(member.CustomerID.Value))
+                    );
+
+                    if (isShareLedger && !hasActiveShares)
                     {
                         var hasVouchers = voucherDetails.Any(vd => vd.MemberID == member.MemberID);
                         if (!hasVouchers)

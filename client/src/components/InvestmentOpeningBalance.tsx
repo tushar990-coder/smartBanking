@@ -86,6 +86,7 @@ const InvestmentOpeningBalance: React.FC = () => {
     branchID: initialBranchId,
     investmentInstitutionID: 0,
     schemeID: 0,
+    oldInvestmentNo: '', // जुना गुंतवणूक खाते क्रमांक (Compulsory in OB)
     depositReceiptNo: '',
     investmentDate: new Date().toISOString().split('T')[0],
     principalAmount: 0,
@@ -97,9 +98,14 @@ const InvestmentOpeningBalance: React.FC = () => {
     remarks: '३१/३ स्थलांतर गुंतवणूक',
   });
 
+  const [auto14DigitAccountNo, setAuto14DigitAccountNo] = useState('');
+
   const [calcData, setCalcData] = useState({
     interestRate: 0,
+    durationType: 'Months',
     durationMonths: 0,
+    durationDays: 0,
+    durationDisplay: '',
     interestCalculationMethod: '',
     maturityDate: '',
     expectedMaturityAmount: 0,
@@ -110,7 +116,19 @@ const InvestmentOpeningBalance: React.FC = () => {
     fetchSchemes();
     fetchBranches();
     fetchMigratedAccounts();
+    fetchNextAccountNo(formData.branchID, formData.schemeID);
   }, []);
+
+  const fetchNextAccountNo = async (bId?: number, sId?: number) => {
+    try {
+      const targetBranch = bId || formData.branchID || initialBranchId || 1;
+      const targetScheme = sId !== undefined ? sId : formData.schemeID;
+      const res = await axios.get(`${API_URL}/InvestmentAccounts/next-account-no?branchId=${targetBranch}&schemeId=${targetScheme || 0}`);
+      if (res.data && res.data.nextAccountNo) {
+        setAuto14DigitAccountNo(res.data.nextAccountNo);
+      }
+    } catch {}
+  };
 
   const fetchBranches = async () => {
     try {
@@ -139,7 +157,9 @@ const InvestmentOpeningBalance: React.FC = () => {
         investmentInstitutionID: Number(s.investmentInstitutionID || s.investmentInstitutionId || s.InvestmentInstitutionID || 0),
         investmentType: s.investmentType || s.InvestmentType || 'Deposit',
         interestRate: Number(s.interestRate || s.InterestRate || 0),
+        durationType: s.durationType || s.DurationType || 'Months',
         durationMonths: Number(s.durationMonths || s.DurationMonths || 0),
+        durationDays: s.durationDays != null ? Number(s.durationDays) : (s.DurationDays != null ? Number(s.DurationDays) : null),
         interestCalculationMethod: s.interestCalculationMethod || s.InterestCalculationMethod || 'Simple',
         prematureWithdrawalRate: Number(s.prematureWithdrawalRate || s.PrematureWithdrawalRate || 0)
       }));
@@ -174,7 +194,10 @@ const InvestmentOpeningBalance: React.FC = () => {
     if (!selectedScheme) {
       setCalcData({
         interestRate: 0,
+        durationType: 'Months',
         durationMonths: 0,
+        durationDays: 0,
+        durationDisplay: '',
         interestCalculationMethod: '',
         maturityDate: '',
         expectedMaturityAmount: 0
@@ -192,7 +215,10 @@ const InvestmentOpeningBalance: React.FC = () => {
       }));
       setCalcData({
         interestRate: fv,
+        durationType: 'Months',
         durationMonths: 0,
+        durationDays: 0,
+        durationDisplay: 'कायमस्वरूपी (Permanent)',
         interestCalculationMethod: 'Dividend',
         maturityDate: isValidIsoDate(formData.investmentDate) ? formData.investmentDate : '',
         expectedMaturityAmount: totalShareAmt
@@ -200,6 +226,8 @@ const InvestmentOpeningBalance: React.FC = () => {
     } else {
       const pAmt = parseFloat(formData.principalAmount.toString()) || 0;
       const rate = selectedScheme.interestRate || 0;
+      const isDays = (selectedScheme.durationType || 'Months').toLowerCase() === 'days';
+      const days = Number(selectedScheme.durationDays) || (selectedScheme.durationMonths * 30) || 91;
       const months = selectedScheme.durationMonths || 12;
       const method = selectedScheme.interestCalculationMethod || 'Simple';
 
@@ -208,7 +236,11 @@ const InvestmentOpeningBalance: React.FC = () => {
         const investDate = new Date(formData.investmentDate);
         if (!isNaN(investDate.getTime())) {
           const matDate = new Date(investDate);
-          matDate.setMonth(matDate.getMonth() + months);
+          if (isDays) {
+            matDate.setDate(matDate.getDate() + days);
+          } else {
+            matDate.setMonth(matDate.getMonth() + months);
+          }
           matDateStr = matDate.toISOString().split('T')[0];
         }
       }
@@ -216,20 +248,30 @@ const InvestmentOpeningBalance: React.FC = () => {
       let maturityAmt = pAmt;
       if (pAmt > 0 && rate > 0) {
         if (method === 'Simple') {
-          const interest = (pAmt * rate * months) / (12 * 100);
-          maturityAmt = pAmt + interest;
+          if (isDays) {
+            // Banking Day-based interest: (P * R * Days) / (365 * 100)
+            const interest = (pAmt * rate * days) / (365 * 100);
+            maturityAmt = pAmt + interest;
+          } else {
+            // Month-based interest: (P * R * Months) / (12 * 100)
+            const interest = (pAmt * rate * months) / (12 * 100);
+            maturityAmt = pAmt + interest;
+          }
         } else if (method === 'Monthly') {
           maturityAmt = pAmt;
         } else {
           const r = rate / 100;
-          const t = months / 12;
+          const t = isDays ? (days / 365) : (months / 12);
           maturityAmt = pAmt * Math.pow(1 + r / 4, 4 * t);
         }
       }
 
       setCalcData({
         interestRate: rate,
+        durationType: isDays ? 'Days' : 'Months',
         durationMonths: months,
+        durationDays: days,
+        durationDisplay: isDays ? `${days} दिवस` : `${months} महिने`,
         interestCalculationMethod: method,
         maturityDate: matDateStr,
         expectedMaturityAmount: Math.round(maturityAmt * 100) / 100
@@ -244,6 +286,12 @@ const InvestmentOpeningBalance: React.FC = () => {
       val = parseInt(String(value), 10) || 0;
     }
     setFormData(prev => ({ ...prev, [name]: val }));
+
+    if (name === 'branchID' || name === 'schemeID') {
+      const b = name === 'branchID' ? parseInt(String(value), 10) || 1 : formData.branchID;
+      const s = name === 'schemeID' ? parseInt(String(value), 10) || 0 : formData.schemeID;
+      fetchNextAccountNo(b, s);
+    }
   };
 
   const handleShareQtyChange = (qty: number) => {
@@ -260,10 +308,12 @@ const InvestmentOpeningBalance: React.FC = () => {
     const accId = acc.investmentAccountID || acc.investmentAccountId;
     const isShare = acc.investmentType === 'Share' || acc.durationMonths === 0;
     setEditingAccountId(accId);
+    setAuto14DigitAccountNo(acc.investmentNo || '');
     setFormData({
       branchID: acc.branchID || 1,
       investmentInstitutionID: acc.investmentInstitutionID || 0,
       schemeID: acc.schemeID || 0,
+      oldInvestmentNo: acc.oldInvestmentNo || '',
       depositReceiptNo: acc.depositReceiptNo || '',
       investmentDate: acc.investmentDate ? acc.investmentDate.split('T')[0] : new Date().toISOString().split('T')[0],
       principalAmount: acc.principalAmount || 0,
@@ -307,6 +357,7 @@ const InvestmentOpeningBalance: React.FC = () => {
       branchID: initialBranchId,
       investmentInstitutionID: 0,
       schemeID: 0,
+      oldInvestmentNo: '',
       depositReceiptNo: '',
       investmentDate: new Date().toISOString().split('T')[0],
       principalAmount: 0,
@@ -317,6 +368,7 @@ const InvestmentOpeningBalance: React.FC = () => {
       nomineeRelation: '',
       remarks: '३१/३ स्थलांतर गुंतवणूक',
     });
+    fetchNextAccountNo(initialBranchId, 0);
     setCalcData({
       interestRate: 0,
       durationMonths: 0,
@@ -349,6 +401,10 @@ const InvestmentOpeningBalance: React.FC = () => {
       setError('मुदतपूर्ती तारीख अवैध आहे. कृपया गुंतवणूक तारीख व योजना निवडून पुन्हा तपासा.');
       return;
     }
+    if (!formData.oldInvestmentNo?.trim()) {
+      setError('कृपया जुना गुंतवणूक खाते क्रमांक (Old Investment No) प्रविष्ट करा.');
+      return;
+    }
     if (formData.principalAmount <= 0) {
       setError('कृपया मुद्दल / शेअर्स रक्कम प्रविष्ट करा.');
       return;
@@ -359,6 +415,8 @@ const InvestmentOpeningBalance: React.FC = () => {
       financialYearID: 1,
       investmentInstitutionID: Number(formData.investmentInstitutionID),
       schemeID: Number(formData.schemeID),
+      investmentNo: editingAccountId ? auto14DigitAccountNo : '',
+      oldInvestmentNo: formData.oldInvestmentNo.trim(),
       depositReceiptNo: formData.depositReceiptNo?.trim() || (isShareMode ? 'SHARE-OB' : 'FDR-OB'),
       investmentDate: formData.investmentDate,
       principalAmount: parseFloat(formData.principalAmount.toString()) || 0,
@@ -415,7 +473,8 @@ const InvestmentOpeningBalance: React.FC = () => {
       const isShare = a.investmentType === 'Share' || a.durationMonths === 0;
       return {
         'अ.क्र.': idx + 1,
-        'खाते क्रमांक': a.investmentNo,
+        '१४-अंकी CBS खाते क्र.': a.investmentNo,
+        'जुना गुंतवणूक खाते क्र.': a.oldInvestmentNo || '-',
         'पावती / दाखला क्र.': a.depositReceiptNo || '-',
         'संस्था / बँक': a.institutionName || '-',
         'योजना': a.schemeName || '-',
@@ -665,10 +724,15 @@ const InvestmentOpeningBalance: React.FC = () => {
                     { value: 0, label: '-- योजना निवडा --' },
                     ...filteredSchemes
                       .filter((s: any) => Number(s.schemeID || 0) > 0)
-                      .map((s: any) => ({
-                        value: s.schemeID,
-                        label: `${s.schemeName} [${s.schemeCode}] (${s.investmentType === 'Share' ? 'शेअर्स' : s.interestRate + '%'})`
-                      }))
+                      .map((s: any) => {
+                        const durLabel = s.investmentType === 'Share' 
+                          ? 'शेअर्स' 
+                          : (s.durationType === 'Days' ? `${s.durationDays || s.durationMonths * 30} दिवस` : `${s.durationMonths} महिने`);
+                        return {
+                          value: s.schemeID,
+                          label: `${s.schemeName} [${s.schemeCode}] (${durLabel} @ ${s.interestRate}%)`
+                        };
+                      })
                   ]}
                   placeholder="-- योजना निवडा --"
                 />
@@ -698,6 +762,45 @@ const InvestmentOpeningBalance: React.FC = () => {
                     <span className="text-rose-500 font-medium">अपूर्ण/अवैध तारीख</span>
                   )}
                 </div>
+              </div>
+            </div>
+
+            {/* Account Numbers: Auto 14-Digit CBS and Compulsory Old Account No */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-gray-200 bg-slate-50/80 p-2.5 rounded-sm border border-slate-200">
+              <div>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-[11px] font-bold text-gray-700 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    नवीन १४-अंकी CBS खाते क्रमांक (Standard CBS Account No)
+                  </label>
+                  <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-1.5 py-0.2 rounded-xs">
+                    ⚡ ऑटो-जनरेटेड
+                  </span>
+                </div>
+                <div className="flex items-center h-[30px] px-2.5 bg-white border border-gray-300 rounded-sm font-mono font-bold text-xs text-primary shadow-2xs">
+                  {auto14DigitAccountNo || '001-701-0000001-X (ऑटो)'}
+                </div>
+                <span className="text-[9px] text-gray-500 block mt-0.5">
+                  कोअर बँकिंग सिस्टीमद्वारे (CBS) आंतरराष्ट्रीय १४-अंकी खाते क्रमांक.
+                </span>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-gray-800 block mb-0.5">
+                  जुना गुंतवणूक खाते क्रमांक (Old Investment No) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="oldInvestmentNo"
+                  value={formData.oldInvestmentNo}
+                  onChange={handleChange}
+                  required
+                  placeholder="उदा. 102 किंवा INV-2022/45 किंवा DCCB-581"
+                  className={`${inputClass} font-mono font-bold text-blue-900 bg-amber-50/40 border-amber-300 focus:border-amber-500`}
+                />
+                <span className="text-[9px] text-gray-500 block mt-0.5">
+                  मागील लेजर / सॉफ्टवेअरमधील जुना पावती किंवा खाते क्रमांक (भरणे अनिवार्य).
+                </span>
               </div>
             </div>
           </div>
@@ -798,7 +901,9 @@ const InvestmentOpeningBalance: React.FC = () => {
                     </div>
                     <div>
                       <span className="text-gray-500 text-[10px] block">कालावधी (मुदत):</span>
-                      <span className="font-bold text-gray-800 font-mono">{calcData.durationMonths} महिने</span>
+                      <span className="font-bold text-gray-800 font-mono">
+                        {calcData.durationDisplay || (calcData.durationMonths ? `${calcData.durationMonths} महिने` : '-')}
+                      </span>
                     </div>
                     <div>
                       <span className="text-gray-500 text-[10px] block">मुदतपूर्ती तारीख (Maturity):</span>
@@ -1077,7 +1182,14 @@ const InvestmentOpeningBalance: React.FC = () => {
                         return (
                           <tr key={a.investmentAccountID || idx} className="hover:bg-primary/5 transition-colors">
                             <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-500">{idx + 1}</td>
-                            <td className="px-3 py-1.5 border-r border-gray-200 font-mono font-bold text-primary">{a.investmentNo}</td>
+                            <td className="px-3 py-1.5 border-r border-gray-200">
+                              <div className="font-mono font-bold text-primary">{a.investmentNo}</div>
+                              {a.oldInvestmentNo && (
+                                <div className="text-[10px] font-bold text-blue-900 bg-blue-50 border border-blue-200 px-1 py-0.2 rounded mt-0.5 inline-block">
+                                  जुने: {a.oldInvestmentNo}
+                                </div>
+                              )}
+                            </td>
                             <td className="px-3 py-1.5 border-r border-gray-200 font-mono font-bold text-purple-900">{a.depositReceiptNo || '-'}</td>
                             <td className="px-3 py-1.5 border-r border-gray-200 font-medium text-gray-900">{a.institutionName}</td>
                             <td className="px-3 py-1.5 border-r border-gray-200 text-gray-700">

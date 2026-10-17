@@ -318,13 +318,26 @@ namespace Bhisi.Api.Controllers
                 .OrderBy(p => p.AccountNo)
                 .Select(p => new
                 {
-                    p.PigmyAccountID,
-                    p.AccountNo,
+                    pigmyAccountId = p.PigmyAccountID,
+                    accountId = p.PigmyAccountID,
+                    PigmyAccountID = p.PigmyAccountID,
+                    accountNo = p.AccountNo,
+                    AccountNo = p.AccountNo,
+                    oldAccountNo = p.OldAccountNo ?? p.LegacyAccountNumber ?? p.PreviousAccountNo ?? "",
+                    OldAccountNo = p.OldAccountNo ?? p.LegacyAccountNumber ?? p.PreviousAccountNo ?? "",
+                    formattedAccountNo = LuhnHelper.Format14Digit(p.AccountNo),
                     FormattedAccountNo = LuhnHelper.Format14Digit(p.AccountNo),
-                    p.PreviousAccountNo,
-                    p.LegacyAccountNumber,
-                    p.CustomerID,
-                    CIFNo = p.Customer != null ? p.Customer.CIFNo : "",
+                    previousAccountNo = p.PreviousAccountNo,
+                    PreviousAccountNo = p.PreviousAccountNo,
+                    legacyAccountNumber = p.LegacyAccountNumber,
+                    LegacyAccountNumber = p.LegacyAccountNumber,
+                    customerId = p.CustomerID,
+                    CustomerID = p.CustomerID,
+                    cifNo = p.Customer != null ? (p.Customer.CIFNo ?? "") : "",
+                    CIFNo = p.Customer != null ? (p.Customer.CIFNo ?? "") : "",
+                    customerName = p.Customer != null 
+                        ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
+                        : "",
                     CustomerName = p.Customer != null 
                         ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
                         : "",
@@ -332,14 +345,27 @@ namespace Bhisi.Api.Controllers
                         ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
                         : "",
                     CustomerNo = p.Customer != null ? (p.Customer.CIFNo ?? p.Customer.LegacyCustomerNo ?? "") : "",
-                    MobileNo = p.Customer != null ? p.Customer.MobileNo : "",
-                    Address = p.Customer != null ? p.Customer.Address : "",
+                    mobileNo = p.Customer != null ? (p.Customer.MobileNo ?? "") : "",
+                    MobileNo = p.Customer != null ? (p.Customer.MobileNo ?? "") : "",
+                    address = p.Customer != null ? (p.Customer.Address ?? "") : "",
+                    Address = p.Customer != null ? (p.Customer.Address ?? "") : "",
+                    schemeName = p.PigmyScheme != null ? p.PigmyScheme.SchemeName : "",
                     SchemeName = p.PigmyScheme != null ? p.PigmyScheme.SchemeName : "",
+                    dailyDepositAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
+                    DailyDepositAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
+                    dailyTargetAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
+                    DailyTargetAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
+                    interestRate = p.InterestRate,
                     InterestRate = p.InterestRate,
+                    currentBalance = p.TotalDepositedAmount,
                     CurrentBalance = p.TotalDepositedAmount,
+                    totalDepositedAmount = p.TotalDepositedAmount,
                     TotalDepositedAmount = p.TotalDepositedAmount,
+                    openingDate = p.OpeningDate.ToString("yyyy-MM-dd"),
                     OpeningDate = p.OpeningDate.ToString("yyyy-MM-dd"),
+                    maturityDate = p.MaturityDate.ToString("yyyy-MM-dd"),
                     MaturityDate = p.MaturityDate.ToString("yyyy-MM-dd"),
+                    status = p.Status,
                     Status = p.Status
                 })
                 .ToListAsync();

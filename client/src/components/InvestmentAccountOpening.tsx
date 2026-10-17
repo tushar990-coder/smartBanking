@@ -101,7 +101,10 @@ const InvestmentAccountOpening: React.FC = () => {
 
   const [calcData, setCalcData] = useState({
     interestRate: 0,
+    durationType: 'Months',
     durationMonths: 0,
+    durationDays: 0,
+    durationDisplay: '',
     interestCalculationMethod: '',
     maturityDate: '',
     expectedMaturityAmount: 0,
@@ -141,7 +144,9 @@ const InvestmentAccountOpening: React.FC = () => {
         investmentInstitutionID: Number(s.investmentInstitutionID || s.investmentInstitutionId || s.InvestmentInstitutionID || 0),
         investmentType: s.investmentType || s.InvestmentType || 'Deposit',
         interestRate: Number(s.interestRate || s.InterestRate || 0),
+        durationType: s.durationType || s.DurationType || 'Months',
         durationMonths: Number(s.durationMonths || s.DurationMonths || 0),
+        durationDays: s.durationDays != null ? Number(s.durationDays) : (s.DurationDays != null ? Number(s.DurationDays) : null),
         interestCalculationMethod: s.interestCalculationMethod || s.InterestCalculationMethod || 'Simple',
         prematureWithdrawalRate: Number(s.prematureWithdrawalRate || s.PrematureWithdrawalRate || 0)
       }));
@@ -178,7 +183,10 @@ const InvestmentAccountOpening: React.FC = () => {
     if (!selectedScheme) {
       setCalcData({
         interestRate: 0,
+        durationType: 'Months',
         durationMonths: 0,
+        durationDays: 0,
+        durationDisplay: '',
         interestCalculationMethod: '',
         maturityDate: '',
         expectedMaturityAmount: 0
@@ -199,7 +207,10 @@ const InvestmentAccountOpening: React.FC = () => {
 
       setCalcData({
         interestRate: fv, // Face Value
+        durationType: 'Months',
         durationMonths: 0,
+        durationDays: 0,
+        durationDisplay: 'कायमस्वरूपी (Permanent)',
         interestCalculationMethod: 'Dividend',
         maturityDate: isValidIsoDate(formData.investmentDate) ? formData.investmentDate : '', // No maturity, same as invest date
         expectedMaturityAmount: totalShareAmt
@@ -208,6 +219,8 @@ const InvestmentAccountOpening: React.FC = () => {
       // For Deposits:
       const pAmt = parseFloat(formData.principalAmount.toString()) || 0;
       const rate = selectedScheme.interestRate || 0;
+      const isDays = (selectedScheme.durationType || 'Months').toLowerCase() === 'days';
+      const days = Number(selectedScheme.durationDays) || (selectedScheme.durationMonths * 30) || 91;
       const months = selectedScheme.durationMonths || 12;
       const method = selectedScheme.interestCalculationMethod || 'Simple';
 
@@ -216,7 +229,11 @@ const InvestmentAccountOpening: React.FC = () => {
         const investDate = new Date(formData.investmentDate);
         if (!isNaN(investDate.getTime())) {
           const matDate = new Date(investDate);
-          matDate.setMonth(matDate.getMonth() + months);
+          if (isDays) {
+            matDate.setDate(matDate.getDate() + days);
+          } else {
+            matDate.setMonth(matDate.getMonth() + months);
+          }
           matDateStr = matDate.toISOString().split('T')[0];
         }
       }
@@ -224,21 +241,31 @@ const InvestmentAccountOpening: React.FC = () => {
       let maturityAmt = pAmt;
       if (pAmt > 0 && rate > 0) {
         if (method === 'Simple') {
-          const interest = (pAmt * rate * months) / (12 * 100);
-          maturityAmt = pAmt + interest;
+          if (isDays) {
+            // Banking Day-based interest: (P * R * Days) / (365 * 100)
+            const interest = (pAmt * rate * days) / (365 * 100);
+            maturityAmt = pAmt + interest;
+          } else {
+            // Month-based interest: (P * R * Months) / (12 * 100)
+            const interest = (pAmt * rate * months) / (12 * 100);
+            maturityAmt = pAmt + interest;
+          }
         } else if (method === 'Monthly') {
           maturityAmt = pAmt; // Principal returned on maturity, monthly interest paid out
         } else {
           // Compound
           const r = rate / 100;
-          const t = months / 12;
+          const t = isDays ? (days / 365) : (months / 12);
           maturityAmt = pAmt * Math.pow(1 + r / 4, 4 * t);
         }
       }
 
       setCalcData({
         interestRate: rate,
+        durationType: isDays ? 'Days' : 'Months',
         durationMonths: months,
+        durationDays: days,
+        durationDisplay: isDays ? `${days} दिवस` : `${months} महिने`,
         interestCalculationMethod: method,
         maturityDate: matDateStr,
         expectedMaturityAmount: Math.round(maturityAmt * 100) / 100
@@ -324,6 +351,8 @@ const InvestmentAccountOpening: React.FC = () => {
         financialYearID: 1,
         investmentInstitutionID: Number(formData.investmentInstitutionID),
         schemeID: Number(formData.schemeID),
+        investmentNo: '',
+        oldInvestmentNo: null,
         depositReceiptNo: formData.depositReceiptNo?.trim() || (isShareMode ? 'SHARE-CERT' : 'FDR'),
         investmentDate: formData.investmentDate,
         principalAmount: parseFloat(formData.principalAmount.toString()) || 0,
@@ -632,10 +661,15 @@ const InvestmentAccountOpening: React.FC = () => {
                     { value: 0, label: '-- योजना निवडा --' },
                     ...filteredSchemes
                       .filter((s: any) => Number(s.schemeID || 0) > 0)
-                      .map((s: any) => ({
-                        value: s.schemeID,
-                        label: `${s.schemeName} [${s.schemeCode}] (${s.investmentType === 'Share' ? 'शेअर्स' : s.interestRate + '%'})`
-                      }))
+                      .map((s: any) => {
+                        const durLabel = s.investmentType === 'Share' 
+                          ? 'शेअर्स' 
+                          : (s.durationType === 'Days' ? `${s.durationDays || s.durationMonths * 30} दिवस` : `${s.durationMonths} महिने`);
+                        return {
+                          value: s.schemeID,
+                          label: `${s.schemeName} [${s.schemeCode}] (${durLabel} @ ${s.interestRate}%)`
+                        };
+                      })
                   ]}
                   placeholder="-- योजना निवडा --"
                 />
@@ -759,7 +793,9 @@ const InvestmentAccountOpening: React.FC = () => {
                     </div>
                     <div>
                       <span className="text-gray-500 text-[10px] block">कालावधी (मुदत):</span>
-                      <span className="font-bold text-gray-800 font-mono">{calcData.durationMonths} महिने</span>
+                      <span className="font-bold text-gray-800 font-mono">
+                        {calcData.durationDisplay || (calcData.durationMonths ? `${calcData.durationMonths} महिने` : '-')}
+                      </span>
                     </div>
                     <div>
                       <span className="text-gray-500 text-[10px] block">मुदतपूर्ती तारीख (Maturity):</span>

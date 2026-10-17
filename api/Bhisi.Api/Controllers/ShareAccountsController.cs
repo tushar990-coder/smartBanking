@@ -2012,9 +2012,10 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     // Reconcile MemberOpeningBalances to new account amount
+                    int targetCustId = account.CustomerID > 0 ? account.CustomerID : (account.Member?.CustomerID ?? 0);
                     var mobs = await _context.MemberOpeningBalances
                         .Include(m => m.Ledger)
-                        .Where(m => m.MemberID == account.MemberId && m.Ledger != null &&
+                        .Where(m => (m.MemberID == account.MemberId || (targetCustId > 0 && m.CustomerID == targetCustId)) && m.Ledger != null &&
                                     (m.Ledger.AccountType == "Share Capital" || 
                                      m.Ledger.LedgerName.Contains("भाग") || 
                                      m.Ledger.LedgerName.Contains("शेअर्स") ||
@@ -2044,9 +2045,10 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // Otherwise, delete the entire account opening balance
+                int resolvedCustId = account.CustomerID > 0 ? account.CustomerID : (account.Member?.CustomerID ?? 0);
                 var shareCapitalMobs = await _context.MemberOpeningBalances
                     .Include(m => m.Ledger)
-                    .Where(m => m.MemberID == account.MemberId && m.Ledger != null &&
+                    .Where(m => (m.MemberID == account.MemberId || (resolvedCustId > 0 && m.CustomerID == resolvedCustId)) && m.Ledger != null &&
                                 (m.Ledger.AccountType == "Share Capital" || 
                                  m.Ledger.LedgerName.Contains("भाग") || 
                                  m.Ledger.LedgerName.Contains("शेअर्स") ||
@@ -2067,9 +2069,23 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
+                // Clean linked Opening/Demo Vouchers if any exist for this account
+                if (!string.IsNullOrWhiteSpace(account.AccountNo))
+                {
+                    var linkedVouchers = await _context.Vouchers
+                        .Include(v => v.VoucherDetails)
+                        .Where(v => v.VoucherNo == $"JV-SH-OP-{account.AccountNo}" || 
+                                    (v.Narration != null && v.Narration.Contains(account.AccountNo)))
+                        .ToListAsync();
+                    if (linkedVouchers.Any())
+                    {
+                        _context.Vouchers.RemoveRange(linkedVouchers);
+                    }
+                }
+
                 var divMobs = await _context.MemberOpeningBalances
                     .Include(m => m.Ledger)
-                    .Where(m => m.MemberID == account.MemberId && m.Ledger != null &&
+                    .Where(m => (m.MemberID == account.MemberId || (resolvedCustId > 0 && m.CustomerID == resolvedCustId)) && m.Ledger != null &&
                                 (m.Ledger.AccountType == "Dividend Payable" || 
                                  m.Ledger.LedgerName.Contains("लाभांश") || 
                                  m.Ledger.LedgerName.ToLower().Contains("dividend")))

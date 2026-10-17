@@ -137,6 +137,9 @@ namespace Bhisi.Api.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal DailyDepositAmount { get; set; } = 100;
 
+        [MaxLength(50)]
+        public string? OldAccountNo { get; set; }
+
         [Column(TypeName = "decimal(18,2)")]
         public decimal InitialDepositAmount { get; set; } = 0;
 

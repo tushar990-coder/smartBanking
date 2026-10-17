@@ -311,64 +311,68 @@ namespace Bhisi.Api.Controllers
         [HttpGet("Agent/{agentId}")]
         public async Task<ActionResult<IEnumerable<object>>> GetAccountsByAgent(int agentId, [FromQuery] string status = "Active")
         {
-            var accounts = await _context.PigmyAccounts
+            // 1. Fetch records into memory first (avoids EF Core SQL translation issues with LuhnHelper and ToString)
+            var dbAccounts = await _context.PigmyAccounts
+                .AsNoTracking()
                 .Include(p => p.Customer)
                 .Include(p => p.PigmyScheme)
                 .Where(p => p.PigmyAgentID == agentId && (string.IsNullOrEmpty(status) || p.Status == status))
                 .OrderBy(p => p.AccountNo)
-                .Select(p => new
-                {
-                    pigmyAccountId = p.PigmyAccountID,
-                    accountId = p.PigmyAccountID,
-                    PigmyAccountID = p.PigmyAccountID,
-                    accountNo = p.AccountNo,
-                    AccountNo = p.AccountNo,
-                    oldAccountNo = p.OldAccountNo ?? p.LegacyAccountNumber ?? p.PreviousAccountNo ?? "",
-                    OldAccountNo = p.OldAccountNo ?? p.LegacyAccountNumber ?? p.PreviousAccountNo ?? "",
-                    formattedAccountNo = LuhnHelper.Format14Digit(p.AccountNo),
-                    FormattedAccountNo = LuhnHelper.Format14Digit(p.AccountNo),
-                    previousAccountNo = p.PreviousAccountNo,
-                    PreviousAccountNo = p.PreviousAccountNo,
-                    legacyAccountNumber = p.LegacyAccountNumber,
-                    LegacyAccountNumber = p.LegacyAccountNumber,
-                    customerId = p.CustomerID,
-                    CustomerID = p.CustomerID,
-                    cifNo = p.Customer != null ? (p.Customer.CIFNo ?? "") : "",
-                    CIFNo = p.Customer != null ? (p.Customer.CIFNo ?? "") : "",
-                    customerName = p.Customer != null 
-                        ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
-                        : "",
-                    CustomerName = p.Customer != null 
-                        ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
-                        : "",
-                    MemberName = p.Customer != null 
-                        ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
-                        : "",
-                    CustomerNo = p.Customer != null ? (p.Customer.CIFNo ?? p.Customer.LegacyCustomerNo ?? "") : "",
-                    mobileNo = p.Customer != null ? (p.Customer.MobileNo ?? "") : "",
-                    MobileNo = p.Customer != null ? (p.Customer.MobileNo ?? "") : "",
-                    address = p.Customer != null ? (p.Customer.Address ?? "") : "",
-                    Address = p.Customer != null ? (p.Customer.Address ?? "") : "",
-                    schemeName = p.PigmyScheme != null ? p.PigmyScheme.SchemeName : "",
-                    SchemeName = p.PigmyScheme != null ? p.PigmyScheme.SchemeName : "",
-                    dailyDepositAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
-                    DailyDepositAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
-                    dailyTargetAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
-                    DailyTargetAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
-                    interestRate = p.InterestRate,
-                    InterestRate = p.InterestRate,
-                    currentBalance = p.TotalDepositedAmount,
-                    CurrentBalance = p.TotalDepositedAmount,
-                    totalDepositedAmount = p.TotalDepositedAmount,
-                    TotalDepositedAmount = p.TotalDepositedAmount,
-                    openingDate = p.OpeningDate.ToString("yyyy-MM-dd"),
-                    OpeningDate = p.OpeningDate.ToString("yyyy-MM-dd"),
-                    maturityDate = p.MaturityDate.ToString("yyyy-MM-dd"),
-                    MaturityDate = p.MaturityDate.ToString("yyyy-MM-dd"),
-                    status = p.Status,
-                    Status = p.Status
-                })
                 .ToListAsync();
+
+            // 2. Perform in-memory projection with full formatting and dual-casing compatibility
+            var accounts = dbAccounts.Select(p => new
+            {
+                pigmyAccountId = p.PigmyAccountID,
+                accountId = p.PigmyAccountID,
+                PigmyAccountID = p.PigmyAccountID,
+                accountNo = p.AccountNo,
+                AccountNo = p.AccountNo,
+                oldAccountNo = p.OldAccountNo ?? p.LegacyAccountNumber ?? p.PreviousAccountNo ?? "",
+                OldAccountNo = p.OldAccountNo ?? p.LegacyAccountNumber ?? p.PreviousAccountNo ?? "",
+                formattedAccountNo = LuhnHelper.Format14Digit(p.AccountNo),
+                FormattedAccountNo = LuhnHelper.Format14Digit(p.AccountNo),
+                previousAccountNo = p.PreviousAccountNo,
+                PreviousAccountNo = p.PreviousAccountNo,
+                legacyAccountNumber = p.LegacyAccountNumber,
+                LegacyAccountNumber = p.LegacyAccountNumber,
+                customerId = p.CustomerID,
+                CustomerID = p.CustomerID,
+                cifNo = p.Customer != null ? (p.Customer.CIFNo ?? "") : "",
+                CIFNo = p.Customer != null ? (p.Customer.CIFNo ?? "") : "",
+                customerName = p.Customer != null 
+                    ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
+                    : "",
+                CustomerName = p.Customer != null 
+                    ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
+                    : "",
+                MemberName = p.Customer != null 
+                    ? (p.Customer.FirstName + (string.IsNullOrWhiteSpace(p.Customer.MiddleName) ? "" : " " + p.Customer.MiddleName) + (string.IsNullOrWhiteSpace(p.Customer.LastName) ? "" : " " + p.Customer.LastName)).Trim()
+                    : "",
+                CustomerNo = p.Customer != null ? (p.Customer.CIFNo ?? p.Customer.LegacyCustomerNo ?? "") : "",
+                mobileNo = p.Customer != null ? (p.Customer.MobileNo ?? "") : "",
+                MobileNo = p.Customer != null ? (p.Customer.MobileNo ?? "") : "",
+                address = p.Customer != null ? (p.Customer.Address ?? "") : "",
+                Address = p.Customer != null ? (p.Customer.Address ?? "") : "",
+                schemeName = p.PigmyScheme != null ? p.PigmyScheme.SchemeName : "",
+                SchemeName = p.PigmyScheme != null ? p.PigmyScheme.SchemeName : "",
+                dailyDepositAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
+                DailyDepositAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
+                dailyTargetAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
+                DailyTargetAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
+                interestRate = p.InterestRate,
+                InterestRate = p.InterestRate,
+                currentBalance = p.TotalDepositedAmount,
+                CurrentBalance = p.TotalDepositedAmount,
+                totalDepositedAmount = p.TotalDepositedAmount,
+                TotalDepositedAmount = p.TotalDepositedAmount,
+                openingDate = p.OpeningDate.ToString("yyyy-MM-dd"),
+                OpeningDate = p.OpeningDate.ToString("yyyy-MM-dd"),
+                maturityDate = p.MaturityDate.ToString("yyyy-MM-dd"),
+                MaturityDate = p.MaturityDate.ToString("yyyy-MM-dd"),
+                status = p.Status,
+                Status = p.Status
+            }).ToList();
 
             return Ok(accounts);
         }

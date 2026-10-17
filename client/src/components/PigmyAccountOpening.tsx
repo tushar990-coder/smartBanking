@@ -64,6 +64,7 @@ export default function PigmyAccountOpening() {
 
   const [formData, setFormData] = useState({
     accountNo: '',
+    legacyAccountNumber: '',
     customerID: '',
     branchID: '1',
     pigmySchemeID: '',
@@ -73,6 +74,7 @@ export default function PigmyAccountOpening() {
   });
 
   const [autoAccountNo, setAutoAccountNo] = useState<string>('लोड होत आहे...');
+  const [isCustomAccountNo, setIsCustomAccountNo] = useState<boolean>(false);
   const [loadingAccountNo, setLoadingAccountNo] = useState<boolean>(false);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [selectedScheme, setSelectedScheme] = useState<any>(null);
@@ -219,7 +221,9 @@ export default function PigmyAccountOpening() {
         const nextNo = res.data.accountNo || res.data.nextAccountNo || (typeof res.data === 'string' ? res.data : '');
         if (nextNo) {
           setAutoAccountNo(nextNo);
-          setFormData(prev => ({ ...prev, accountNo: nextNo }));
+          if (!isCustomAccountNo) {
+            setFormData(prev => ({ ...prev, accountNo: nextNo }));
+          }
         }
       }
     } catch (err) {
@@ -227,6 +231,16 @@ export default function PigmyAccountOpening() {
     } finally {
       setLoadingAccountNo(false);
     }
+  };
+
+  const handleResetAccountNo = () => {
+    setIsCustomAccountNo(false);
+    setFormData(prev => ({ ...prev, accountNo: autoAccountNo }));
+  };
+
+  const handleAccountNoChange = (val: string) => {
+    setIsCustomAccountNo(true);
+    setFormData(prev => ({ ...prev, accountNo: val }));
   };
 
 
@@ -286,6 +300,7 @@ export default function PigmyAccountOpening() {
       setSubmitting(true);
       const payload = {
         accountNo: activeAccountNo,
+        legacyAccountNumber: formData.legacyAccountNumber ? formData.legacyAccountNumber.trim() : null,
         customerID: parseInt(formData.customerID),
         branchID: parseInt(formData.branchID),
         pigmySchemeID: parseInt(formData.pigmySchemeID),
@@ -308,10 +323,12 @@ export default function PigmyAccountOpening() {
         });
         toast.success(`नवीन पिग्मी खाते क्रमांक '${createdNo}' यशस्वीरीत्या उघडले गेले!`);
         await fetchSavedAccounts();
+        setIsCustomAccountNo(false);
         await fetchNextAccountNo(parseInt(formData.branchID || '1'), formData.pigmySchemeID ? parseInt(formData.pigmySchemeID) : 1);
         setFormData(prev => ({
           ...prev,
           customerID: '',
+          legacyAccountNumber: '',
           openingBalance: '0'
         }));
         setSelectedCustomer(null);
@@ -497,41 +514,67 @@ export default function PigmyAccountOpening() {
             <span>१. खातेदार व खाते क्रमांक माहिती (Customer & Account Info)</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {/* PIGMY ACCOUNT NUMBER FIELD (Auto-generated & Protected) */}
+          {/* Top Form Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            {/* PIGMY ACCOUNT NUMBER FIELD (Editable + Reset) */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="font-semibold text-slate-700 text-xs">
-                  पिग्मी खाते क्रमांक (Pigmy Account No) <span className="text-rose-500">*</span>
+                  पिग्मी खाते क्रमांक (Pigmy A/c No) <span className="text-rose-500">*</span>
                 </label>
-                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                  ✓ ऑटो-जनरेटेड (Auto)
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                    isCustomAccountNo
+                      ? 'bg-amber-100 text-amber-800 border-amber-300'
+                      : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  }`}>
+                    {isCustomAccountNo ? 'कस्टम' : 'ऑटो'}
+                  </span>
+                  {isCustomAccountNo && (
+                    <button
+                      type="button"
+                      onClick={handleResetAccountNo}
+                      title="ऑटो नंबरवर रिसेट करा"
+                      className="text-[10px] text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
+                    >
+                      ↺ रीसेट
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-1">
-                {/* Account Number Input - Read Only to prevent accidental skipping */}
                 <input 
                   type="text" 
                   name="accountNo"
-                  readOnly
                   value={formData.accountNo || autoAccountNo} 
+                  onChange={(e) => handleAccountNoChange(e.target.value)}
                   placeholder="उदा. 00130100000010"
-                  title="हा खाते क्रमांक सिस्टीमद्वारे सलगपणे ऑटो-जनरेट केला जातो."
-                  className="flex-1 border rounded-lg px-2.5 py-1.5 font-extrabold font-mono text-xs outline-none shadow-2xs transition-colors text-center border-slate-300 bg-slate-100 text-slate-800 cursor-not-allowed select-all"
+                  className={`w-full border rounded-lg px-2.5 py-1.5 font-bold font-mono text-xs outline-none shadow-2xs transition-colors ${
+                    isCustomAccountNo 
+                      ? 'border-amber-400 bg-amber-50/50 text-amber-900 focus:ring-amber-400' 
+                      : 'border-slate-300 bg-slate-50 text-slate-800'
+                  }`}
                 />
-
-                {/* Reset / Next Sequence Button */}
-                <button
-                  type="button"
-                  onClick={() => fetchNextAccountNo(parseInt(formData.branchID || '1'), formData.pigmySchemeID ? parseInt(formData.pigmySchemeID) : 1)}
-                  disabled={loadingAccountNo}
-                  title="ऑटो पुढील उपलब्ध खाते क्र. रिफ्रेश करा (Refresh Next Auto)"
-                  className="h-8 px-2.5 flex items-center justify-center bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs rounded-lg border border-primary/30 transition-colors cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loadingAccountNo ? 'animate-spin' : ''}`} />
-                </button>
               </div>
+            </div>
+
+            {/* OLD / LEGACY ACCOUNT NUMBER */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-semibold text-slate-700 text-xs">
+                  जुना पिग्मी खाते क्र. (Old A/c No)
+                </label>
+                <span className="text-[10px] text-amber-700 font-medium">पर्यायी</span>
+              </div>
+              <input 
+                type="text" 
+                name="legacyAccountNumber"
+                value={formData.legacyAccountNumber} 
+                onChange={(e) => setFormData(p => ({ ...p, legacyAccountNumber: e.target.value }))}
+                placeholder="उदा. PG-101 / 45"
+                className="w-full border border-amber-300 bg-amber-50/30 rounded-lg px-2.5 py-1.5 font-semibold text-xs outline-none shadow-2xs transition-colors text-slate-800 focus:border-blue-500"
+              />
             </div>
 
             {/* SELECT CUSTOMER SEARCHABLE DROPDOWN */}

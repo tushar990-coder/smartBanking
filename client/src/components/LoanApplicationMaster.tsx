@@ -205,9 +205,10 @@ interface LoanApplicationMasterProps {
   editingApplicationId?: number;
   isReadOnly?: boolean;
   onNavigate?: (tab: string, params?: any) => void;
+  initialSuccessMessage?: string;
 }
 
-const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, editingApplicationId, isReadOnly, onNavigate }) => {
+const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, editingApplicationId, isReadOnly, onNavigate, initialSuccessMessage }) => {
   const queryParams = new URLSearchParams(window.location.search);
   const voucherIdFromUrl = queryParams.get('voucherId');
   const isPassingMode = Boolean(isReadOnly || queryParams.get('passingMode') === 'true');
@@ -225,7 +226,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [success, setSuccess] = useState(initialSuccessMessage || '');
   const [scheduleData, setScheduleData] = useState<any[]>([]);
   const [showListModal, setShowListModal] = useState(false);
   const [guarantor1Summary, setGuarantor1Summary] = useState<GuarantorSummary | null>(null);

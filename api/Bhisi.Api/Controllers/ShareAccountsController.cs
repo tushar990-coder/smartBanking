@@ -170,6 +170,8 @@ namespace Bhisi.Api.Controllers
             public long? FromShareNo { get; set; }
             public long? ToShareNo { get; set; }
             public string? CertificateNo { get; set; }
+            public string? LegacyAccountNumber { get; set; }
+            public string? AccountNo { get; set; }
         }
 
         // POST: api/ShareAccounts/Allot
@@ -254,21 +256,36 @@ namespace Bhisi.Api.Controllers
 
                 if (account == null)
                 {
-                    int nextSeq = await _context.ShareAccounts.CountAsync() + 1;
+                    string finalAccNo = !string.IsNullOrWhiteSpace(request.AccountNo)
+                        ? request.AccountNo.Trim()
+                        : $"SH-{(await _context.ShareAccounts.CountAsync() + 1):D4}";
+
                     account = new ShareAccount
                     {
                         MemberId = member.MemberID,
                         CustomerID = customerId,
-                        AccountNo = $"SH-{nextSeq:D4}",
+                        AccountNo = finalAccNo,
+                        LegacyAccountNumber = !string.IsNullOrWhiteSpace(request.LegacyAccountNumber) ? request.LegacyAccountNumber.Trim() : null,
                         TotalShareCount = 0,
                         TotalShareAmount = 0
                     };
                     _context.ShareAccounts.Add(account);
                     await _context.SaveChangesAsync(); // Save to get ShareAccountId
                 }
-                else if (account.CustomerID <= 0)
+                else
                 {
-                    account.CustomerID = customerId;
+                    if (account.CustomerID <= 0)
+                    {
+                        account.CustomerID = customerId;
+                    }
+                    if (!string.IsNullOrWhiteSpace(request.LegacyAccountNumber))
+                    {
+                        account.LegacyAccountNumber = request.LegacyAccountNumber.Trim();
+                    }
+                    if (!string.IsNullOrWhiteSpace(request.AccountNo) && account.AccountNo != request.AccountNo.Trim())
+                    {
+                        account.AccountNo = request.AccountNo.Trim();
+                    }
                     _context.ShareAccounts.Update(account);
                 }
 

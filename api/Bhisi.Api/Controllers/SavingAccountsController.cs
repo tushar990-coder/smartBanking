@@ -101,19 +101,37 @@ namespace Bhisi.Api.Controllers
             }
             string schemeCode3 = schemeCodeNum.ToString("D3");
 
-            // 3. Sequence: Atomic sequence per (BranchID, SchemeCodeNumeric)
+            // 3. Sequence: Scan all existing saving accounts to find the maximum existing sequence number
+            var existingAccNos = await _context.SavingAccountMasters
+                .Where(s => s.BranchID == branchId && !string.IsNullOrWhiteSpace(s.AccountNo))
+                .Select(s => s.AccountNo)
+                .ToListAsync();
+
+            int maxExistingSeq = 0;
+            foreach (var accNo in existingAccNos)
+            {
+                var digits = new string(accNo.Where(char.IsDigit).ToArray());
+                if (digits.Length == 14)
+                {
+                    // Format: [3-digit Branch][3-digit Scheme][7-digit Seq][1-digit Luhn]
+                    if (int.TryParse(digits.Substring(6, 7), out int parsedSeq) && parsedSeq > maxExistingSeq)
+                    {
+                        maxExistingSeq = parsedSeq;
+                    }
+                }
+            }
+
             var seq = await _context.SavingAccountSequences
                 .FirstOrDefaultAsync(s => s.BranchID == branchId && s.SchemeCodeNumeric == schemeCodeNum);
 
             if (seq == null)
             {
-                int existingCount = await _context.SavingAccountMasters
-                    .CountAsync(s => s.BranchID == branchId);
+                int initialVal = Math.Max(existingAccNos.Count, maxExistingSeq);
                 seq = new SavingAccountSequence
                 {
                     BranchID = branchId,
                     SchemeCodeNumeric = schemeCodeNum,
-                    LastSequenceNumber = existingCount,
+                    LastSequenceNumber = initialVal,
                     UpdatedOn = DateTime.UtcNow
                 };
                 _context.SavingAccountSequences.Add(seq);
@@ -121,29 +139,37 @@ namespace Bhisi.Api.Controllers
             }
             else
             {
-                // Self-healing / Auto-sync: If table was wiped clean, reset sequence counter
-                int totalExistingInBranch = await _context.SavingAccountMasters
-                    .CountAsync(s => s.BranchID == branchId);
-                if (totalExistingInBranch == 0 && seq.LastSequenceNumber > 0)
+                if (maxExistingSeq > seq.LastSequenceNumber)
                 {
-                    seq.LastSequenceNumber = 0;
+                    seq.LastSequenceNumber = maxExistingSeq;
                     seq.UpdatedOn = DateTime.UtcNow;
                     await _context.SaveChangesAsync();
                 }
             }
 
-            int nextSeqNumber = seq.LastSequenceNumber + 1;
-            if (incrementSequence)
-            {
-                seq.LastSequenceNumber++;
-                seq.UpdatedOn = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-                nextSeqNumber = seq.LastSequenceNumber;
-            }
+            int currentVal = Math.Max(seq.LastSequenceNumber, maxExistingSeq);
+            int nextSeqNumber = currentVal + 1;
 
             string thirteenDigits = $"{branchCode3}{schemeCode3}{nextSeqNumber:D7}";
             int checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
-            return $"{thirteenDigits}{checkDigit}";
+            string candidate = $"{thirteenDigits}{checkDigit}";
+
+            while (existingAccNos.Contains(candidate) || await _context.SavingAccountMasters.AnyAsync(s => s.BranchID == branchId && s.AccountNo == candidate))
+            {
+                nextSeqNumber++;
+                thirteenDigits = $"{branchCode3}{schemeCode3}{nextSeqNumber:D7}";
+                checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
+                candidate = $"{thirteenDigits}{checkDigit}";
+            }
+
+            if (incrementSequence)
+            {
+                seq.LastSequenceNumber = nextSeqNumber;
+                seq.UpdatedOn = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+            }
+
+            return candidate;
         }
 
         // GET: api/SavingAccounts/next-account-no?branchId=1&schemeId=1
@@ -348,6 +374,7 @@ namespace Bhisi.Api.Controllers
         public class CreateSavingAccountDto
         {
             public int BranchID { get; set; } = 1;
+            public string? AccountNo { get; set; }
             public int? CustomerID { get; set; }
             public string AccountType { get; set; } = "Personal";
             public DateTime OpeningDate { get; set; } = DateTime.Today;
@@ -446,20 +473,95 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"या खातेदाराचे स्टेटस '{customer.Status}' असल्यामुळे नवीन बचत खाते उघडता येत नाही. केवळ सक्रिय (Active) खातेदारांचेच खाते उघडता येते.");
             }
 
-            // Generate 14-digit CBS account number with atomic sequence increment
-            string generatedAccountNo = await GenerateNextSavingAccountNo(dto.BranchID, targetSchemeId, incrementSequence: true);
+            int schemeCodeNum = 101;
+            if (targetSchemeId.HasValue && targetSchemeId.Value > 0)
+            {
+                var scheme = await _context.SavingInterestSettings.FindAsync(targetSchemeId.Value);
+                if (scheme != null && !string.IsNullOrWhiteSpace(scheme.SchemeCode))
+                {
+                    var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
+                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
+                    {
+                        schemeCodeNum = parsedScheme;
+                    }
+                }
+            }
+
+            // Determine account number: Custom (editable) or auto-generated CBS
+            string finalAccountNo;
+            if (!string.IsNullOrWhiteSpace(dto.AccountNo) && dto.AccountNo != "AUTO")
+            {
+                finalAccountNo = dto.AccountNo.Trim();
+                bool exists = await _context.SavingAccountMasters.AnyAsync(s => s.AccountNo == finalAccountNo);
+                if (exists)
+                {
+                    return BadRequest($"बचत खाते क्रमांक '{finalAccountNo}' आधीच अस्तित्वात आहे. कृपया दुसरा खाते क्रमांक निवडा.");
+                }
+
+                // Sync sequence tracking if 14-digit CBS format
+                var digitsOnly = new string(finalAccountNo.Where(char.IsDigit).ToArray());
+                if (digitsOnly.Length == 14)
+                {
+                    string seqPart = digitsOnly.Substring(6, 7);
+                    if (int.TryParse(seqPart, out int sVal) && sVal > 0)
+                    {
+                        var seq = await _context.SavingAccountSequences
+                            .FirstOrDefaultAsync(s => s.BranchID == dto.BranchID && s.SchemeCodeNumeric == schemeCodeNum);
+                        if (seq != null)
+                        {
+                            if (sVal > seq.LastSequenceNumber)
+                            {
+                                seq.LastSequenceNumber = sVal;
+                                seq.UpdatedOn = DateTime.UtcNow;
+                                await _context.SaveChangesAsync();
+                            }
+                        }
+                        else
+                        {
+                            _context.SavingAccountSequences.Add(new SavingAccountSequence
+                            {
+                                BranchID = dto.BranchID,
+                                SchemeCodeNumeric = schemeCodeNum,
+                                LastSequenceNumber = sVal,
+                                UpdatedOn = DateTime.UtcNow
+                            });
+                            await _context.SaveChangesAsync();
+                        }
+                    }
+                }
+            }
+            else
+            {
+                finalAccountNo = await GenerateNextSavingAccountNo(dto.BranchID, targetSchemeId, incrementSequence: true);
+            }
+
+            string? legacyNo = !string.IsNullOrWhiteSpace(dto.LegacyAccountNumber) 
+                ? dto.LegacyAccountNumber.Trim() 
+                : (!string.IsNullOrWhiteSpace(dto.OldAccountNo) ? dto.OldAccountNo.Trim() : dto.PreviousAccountNo?.Trim());
+
+            if (!string.IsNullOrWhiteSpace(legacyNo))
+            {
+                bool legacyExists = await _context.SavingAccountMasters.AnyAsync(s => 
+                    s.BranchID == dto.BranchID && 
+                    ((s.LegacyAccountNumber != null && s.LegacyAccountNumber.Trim() == legacyNo) || 
+                     (s.OldAccountNo != null && s.OldAccountNo.Trim() == legacyNo)));
+                if (legacyExists)
+                {
+                    return BadRequest($"जुना बचत खाते क्रमांक '{legacyNo}' या शाखेत आधीच अस्तित्वात आहे.");
+                }
+            }
 
             var savingAccount = new SavingAccountMaster
             {
                 BranchID = dto.BranchID,
-                AccountNo = generatedAccountNo,
+                AccountNo = finalAccountNo,
                 SavingSchemeID = targetSchemeId ?? 1,
                 CustomerID = customer.CustomerID,
                 AccountType = dto.AccountType,
                 OpeningDate = dto.OpeningDate,
-                IsLegacyAccount = dto.IsLegacyAccount,
-                OldAccountNo = dto.OldAccountNo ?? dto.PreviousAccountNo ?? dto.LegacyAccountNumber,
-                LegacyAccountNumber = dto.OldAccountNo ?? dto.PreviousAccountNo ?? dto.LegacyAccountNumber,
+                IsLegacyAccount = dto.IsLegacyAccount || !string.IsNullOrWhiteSpace(legacyNo),
+                OldAccountNo = legacyNo,
+                LegacyAccountNumber = legacyNo,
                 LedgerID = targetLedgerId,
                 OpeningBalance = dto.OpeningBalance,
                 CurrentBalance = dto.OpeningBalance,

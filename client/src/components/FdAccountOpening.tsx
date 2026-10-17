@@ -30,6 +30,7 @@ interface FdScheme {
 interface FdAccount {
   fdAccountID: number;
   accountNo: string;
+  legacyAccountNumber?: string;
   customerName?: string;
   memberName: string;
   memberCode: string;
@@ -93,8 +94,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   const [customerSavingsAccounts, setCustomerSavingsAccounts] = useState<any[]>([]);
   const [selectedSavingAccountID, setSelectedSavingAccountID] = useState<number>(0);
 
-  // Next account number preview (branch-specific)
+  // Next account number preview and editable manual override
   const [nextAccountNo, setNextAccountNo] = useState('');
+  const [suggestedAccountNo, setSuggestedAccountNo] = useState('');
+  const [isManualAccountNo, setIsManualAccountNo] = useState(false);
   const [loadingAccountNo, setLoadingAccountNo] = useState(false);
 
   // List view state
@@ -117,6 +120,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     customerID: 0,
     memberID: 0,
     fdSchemeID: 0,
+    legacyAccountNumber: '',
     durationType: 'Months', // 'Days' | 'Months' | 'Years'
     durationValue: 12,
     openingDate: new Date().toISOString().split('T')[0],
@@ -389,18 +393,26 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     }
   };
 
-  const fetchNextAccountNo = async (branchId: number) => {
+  const fetchNextAccountNo = async (branchId: number, schemeId?: number) => {
     if (isPassingMode) return;
     setLoadingAccountNo(true);
-    setNextAccountNo('');
     try {
-      const response = await axios.get(`${API_URL}/FdAccounts/next-account-no/${branchId}`);
+      const activeSchemeId = schemeId !== undefined ? schemeId : formData.fdSchemeID;
+      const url = activeSchemeId && activeSchemeId > 0
+        ? `${API_URL}/FdAccounts/next-account-no/${branchId}?schemeId=${activeSchemeId}`
+        : `${API_URL}/FdAccounts/next-account-no/${branchId}`;
+      const response = await axios.get(url);
       const val = typeof response.data === 'string'
         ? response.data
         : (response.data.formattedAccountNo || response.data.displayAccountNo || response.data.accountNo || response.data.nextAccountNo || '');
-      setNextAccountNo(val);
+      setSuggestedAccountNo(val);
+      if (!isManualAccountNo) {
+        setNextAccountNo(val);
+      }
     } catch (err) {
-      setNextAccountNo('---');
+      if (!isManualAccountNo) {
+        setNextAccountNo('---');
+      }
     } finally {
       setLoadingAccountNo(false);
     }
@@ -673,7 +685,8 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
           durationType: calcData.durationType,
           durationValue: calcData.durationValue,
           durationInDays: calcData.durationInDays,
-          accountNo: 'AUTO',
+          accountNo: (nextAccountNo && nextAccountNo.trim() !== '---') ? nextAccountNo.trim() : 'AUTO',
+          legacyAccountNumber: formData.legacyAccountNumber ? formData.legacyAccountNumber.trim() : null,
           interestRate: calcData.interestRate,
           maturityDate: calcData.maturityDate,
           maturityAmount: calcData.maturityAmount,
@@ -715,6 +728,8 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
           nomineeRelation: formData.nomineeRelation,
           remarks: formData.remarks,
           isSeniorCitizen: formData.isSeniorCitizen,
+          startAccountNo: (nextAccountNo && nextAccountNo.trim() !== '---') ? nextAccountNo.trim() : null,
+          legacyAccountNumber: formData.legacyAccountNumber ? formData.legacyAccountNumber.trim() : null,
           paymentMode: paymentMode,
           bankAccountLedgerID: paymentMode === 'Bank' ? bankAccountLedgerID : null,
           chequeNo: paymentMode === 'Bank' ? chequeNo : null,
@@ -743,6 +758,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
               durationValue: calcData.durationValue,
               durationInDays: calcData.durationInDays,
               accountNo: 'AUTO',
+              legacyAccountNumber: formData.legacyAccountNumber ? `${formData.legacyAccountNumber.trim()} (${i}/${count})` : null,
               interestRate: calcData.interestRate,
               maturityDate: calcData.maturityDate,
               maturityAmount: calcData.maturityAmount,
@@ -776,12 +792,14 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       setFormData((prev) => ({
         ...prev,
         depositAmount: 50000,
+        legacyAccountNumber: '',
         nomineeName: '',
         nomineeRelation: '',
         remarks: 'नवीन मुदत ठेव खाते उघडले (New FD Opened)',
       }));
       setChequeNo('');
       setChequeDate('');
+      setIsManualAccountNo(false);
       fetchNextAccountNo(formData.branchID);
       fetchFdList(formData.branchID);
       if (activeCustId > 0) {
@@ -808,6 +826,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   const filteredList = fdList.filter((fd: any) =>
     fd.accountNo?.toLowerCase().includes(listSearch.toLowerCase()) ||
+    fd.legacyAccountNumber?.toLowerCase().includes(listSearch.toLowerCase()) ||
     (fd.customerName || fd.memberName)?.toLowerCase().includes(listSearch.toLowerCase()) ||
     (fd.cifNo || fd.memberCode)?.toLowerCase().includes(listSearch.toLowerCase()) ||
     fd.schemeName?.toLowerCase().includes(listSearch.toLowerCase())
@@ -927,13 +946,38 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
             {/* Top Receipt Bar & Mode Selector */}
             <div className="bg-gray-50 p-2 rounded border border-gray-200 mb-3 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-gray-700">आरंभिक ठेव पावती क्र. (FD Receipt No):</span>
+                <span className="text-[11px] font-bold text-gray-700">ठेव पावती क्र. (Receipt No) *:</span>
                 {loadingAccountNo ? (
                   <span className="text-xs text-blue-600 font-medium animate-pulse">क्रमांक तयार होत आहे...</span>
                 ) : (
-                  <span className="text-xs font-extrabold text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-mono">
-                    {nextAccountNo || '---'}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={nextAccountNo}
+                      onChange={(e) => {
+                        setNextAccountNo(e.target.value);
+                        setIsManualAccountNo(true);
+                      }}
+                      placeholder="उदा. 001-401-0000006-2 किंवा क्र."
+                      className="w-48 font-mono font-bold text-blue-900 bg-white border border-blue-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                    />
+                    {isManualAccountNo && suggestedAccountNo && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNextAccountNo(suggestedAccountNo);
+                          setIsManualAccountNo(false);
+                        }}
+                        title="सिस्टीमने सुचवलेला पुढील क्रमांक पूर्ववत करा"
+                        className="text-[10px] px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-slate-700 font-semibold cursor-pointer"
+                      >
+                        ↺ रीसेट
+                      </button>
+                    )}
+                    <span className="text-[10px] text-slate-500">
+                      {isManualAccountNo ? '(मॅन्युअल संपादित)' : '(स्वयंचलित पुढील क्र.)'}
+                    </span>
+                  </div>
                 )}
               </div>
 
@@ -977,7 +1021,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                   <div>
                     <label className="block text-[11px] font-medium text-gray-600 mb-0.5">शाखा (Branch) *</label>
                     {user?.role === 'Admin' ? (
@@ -995,7 +1039,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     )}
                   </div>
 
-                  <div className="md:col-span-2">
+                  <div className="lg:col-span-2">
                     <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खातेदार निवडा (Select Customer / CIF) *</label>
                     <CustomerSearchSelect
                       customers={customers}
@@ -1014,13 +1058,33 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     <select name="fdSchemeID" value={formData.fdSchemeID} onChange={handleChange} required
                       className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
                       <option value="0">--- योजना निवडा ---</option>
-                      {schemes.map((s: any) => (
-                        <option key={getSchemeId(s)} value={getSchemeId(s)}>
-                          {s.branchID ? `🏢 [${s.branch?.branchName || 'विशिष्ट शाखा'}] ` : '🌐 [सर्व शाखा] '}
-                          {s.schemeName} ({s.schemeCode})
-                        </option>
-                      ))}
+                      {schemes.map((s: any) => {
+                        const durationInfo = s.schemeDurationModel === 'Slab'
+                          ? 'स्लॅब आधारित'
+                          : `${s.durationMonths} महिने`;
+                        const rateInfo = s.interestRate ? `@ ${s.interestRate}%` : '';
+                        const codeInfo = s.schemeCode ? `(${s.schemeCode})` : '';
+                        return (
+                          <option key={getSchemeId(s)} value={getSchemeId(s)}>
+                            {s.schemeName} {codeInfo} - {durationInfo} {rateInfo}
+                          </option>
+                        );
+                      })}
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
+                      जुना ठेव / पावती क्र. (Legacy No)
+                    </label>
+                    <input
+                      type="text"
+                      name="legacyAccountNumber"
+                      value={formData.legacyAccountNumber}
+                      onChange={handleChange}
+                      placeholder="उदा. 45 / जुना पावती क्र."
+                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs font-mono font-bold text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
                   </div>
                 </div>
               </div>
@@ -1555,7 +1619,14 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                   ) : (
                     filteredList.map((fd: any) => (
                       <tr key={fd.fdAccountID} className="hover:bg-emerald-50/50 border-b border-gray-100 transition-colors">
-                        <td className="px-3 py-1.5 font-mono font-bold text-blue-900">{fd.accountNo}</td>
+                        <td className="px-3 py-1.5 font-mono text-blue-900">
+                          <div className="font-bold">{fd.accountNo}</div>
+                          {fd.legacyAccountNumber && (
+                            <div className="text-[10px] text-amber-800 font-semibold">
+                              जुना क्र: {fd.legacyAccountNumber}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-3 py-1.5 font-bold text-gray-800">
                           {fd.customerName || fd.memberName}{' '}
                           <span className="text-[10px] text-gray-500 font-normal">({fd.cifNo || fd.memberCode || ''})</span>

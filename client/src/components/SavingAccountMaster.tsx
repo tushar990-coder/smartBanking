@@ -128,6 +128,7 @@ const SavingAccountMaster: React.FC = () => {
     accountType: 'Personal',
     isLegacyAccount: false,
     accountNo: '',
+    legacyAccountNumber: '',
     openingDate: getTodayDate(),
     openingBalance: 0,
     interestRate: 4.0,
@@ -143,6 +144,8 @@ const SavingAccountMaster: React.FC = () => {
   // Joint holders state
   const [jointHolderCustomerIDs, setJointHolderCustomerIDs] = useState<number[]>([]);
   const [selectedJointCustomerID, setSelectedJointCustomerID] = useState<number>(0);
+  const [autoAccountNo, setAutoAccountNo] = useState<string>('');
+  const [isCustomAccountNo, setIsCustomAccountNo] = useState<boolean>(false);
 
   useEffect(() => {
     fetchAccounts();
@@ -186,7 +189,8 @@ const SavingAccountMaster: React.FC = () => {
           ? response.data
           : (response.data.accountNo || response.data.nextAccountNo || '');
         const formattedNo = response.data.formattedAccountNo || response.data.displayAccountNo || format14DigitDisplay(nextNo);
-        if (nextNo) {
+        setAutoAccountNo(nextNo);
+        if (nextNo && !isCustomAccountNo) {
           setFormData(prev => ({
             ...prev,
             accountNo: nextNo,
@@ -198,6 +202,28 @@ const SavingAccountMaster: React.FC = () => {
     } catch (err) {
       console.error('Error fetching next account no', err);
     }
+  };
+
+  const handleResetAccountNo = () => {
+    setIsCustomAccountNo(false);
+    if (autoAccountNo) {
+      setFormData(prev => ({
+        ...prev,
+        accountNo: autoAccountNo,
+        displayAccountNo: format14DigitDisplay(autoAccountNo)
+      }));
+    } else {
+      fetchNextAccountNo(formData.branchID, formData.savingSchemeID);
+    }
+  };
+
+  const handleAccountNoChange = (val: string) => {
+    setIsCustomAccountNo(true);
+    setFormData(prev => ({
+      ...prev,
+      accountNo: val,
+      displayAccountNo: val
+    }));
   };
 
   const fetchAccounts = async () => {
@@ -438,6 +464,7 @@ const SavingAccountMaster: React.FC = () => {
       accountType: 'Personal',
       isLegacyAccount: false,
       accountNo: '',
+      legacyAccountNumber: '',
       openingDate: getTodayDate(),
       openingBalance: 0,
       interestRate: 4.0,
@@ -451,6 +478,8 @@ const SavingAccountMaster: React.FC = () => {
     });
     setJointHolderCustomerIDs([]);
     setSelectedJointCustomerID(0);
+    setIsCustomAccountNo(false);
+    setAutoAccountNo('');
     setIsEditMode(false);
     setEditAccountId(null);
     fetchNextAccountNo();
@@ -459,6 +488,7 @@ const SavingAccountMaster: React.FC = () => {
   const handleEdit = (acc: any) => {
     setIsEditMode(true);
     setEditAccountId(acc.savingAccountID);
+    setIsCustomAccountNo(true);
     const dateStr = acc.openingDate 
       ? (acc.openingDate.includes('T') ? acc.openingDate.split('T')[0] : acc.openingDate) 
       : new Date().toISOString().split('T')[0];
@@ -470,6 +500,8 @@ const SavingAccountMaster: React.FC = () => {
       accountType: acc.accountType || 'Personal',
       isLegacyAccount: acc.isLegacyAccount || false,
       accountNo: acc.accountNo || '',
+      legacyAccountNumber: acc.legacyAccountNumber || acc.oldAccountNo || acc.previousAccountNo || '',
+      displayAccountNo: acc.formattedAccountNo || format14DigitDisplay(acc.accountNo) || acc.accountNo || '',
       openingDate: dateStr,
       openingBalance: acc.openingBalance ?? 0,
       interestRate: acc.interestRate ?? 0,
@@ -645,6 +677,17 @@ const SavingAccountMaster: React.FC = () => {
     a.savingAccountID !== editAccountId
   );
 
+  const duplicateLegacyAccount = useMemo(() => {
+    if (!formData.legacyAccountNumber || !formData.legacyAccountNumber.trim()) return null;
+    const clean = formData.legacyAccountNumber.trim().toLowerCase();
+    return accounts.find(a => 
+      (!isEditMode || a.savingAccountID !== editAccountId) &&
+      (a.branchID === formData.branchID || !a.branchID) &&
+      ((a.legacyAccountNumber && a.legacyAccountNumber.trim().toLowerCase() === clean) ||
+       (a.oldAccountNo && a.oldAccountNo.trim().toLowerCase() === clean))
+    );
+  }, [formData.legacyAccountNumber, formData.branchID, accounts, isEditMode, editAccountId]);
+
   return (
     <div className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
       {/* Standard ERP Header Banner */}
@@ -721,8 +764,8 @@ const SavingAccountMaster: React.FC = () => {
               )}
             </div>
 
-            {/* Searchable Customer Dropdown - 6 cols */}
-            <div className="lg:col-span-6">
+            {/* Searchable Customer Dropdown - 4 cols */}
+            <div className="lg:col-span-4">
               <label className="block text-xs font-semibold text-gray-700 mb-0.5">खातेदार निवडा (Select Customer / CIF) *</label>
               <div className={isEditMode ? 'opacity-70 pointer-events-none' : ''}>
                 <CustomerSearchSelect
@@ -735,27 +778,77 @@ const SavingAccountMaster: React.FC = () => {
 
               {/* Live Duplicate Warning Notification Badge */}
               {existingCustomerAccounts.length > 0 && !isEditMode && (
-                <div className="mt-1.5 p-2 bg-amber-50 border border-amber-300 rounded-sm text-[11px] text-amber-900 font-semibold flex items-start gap-1.5 shadow-2xs">
+                <div className="mt-1.5 p-1 bg-amber-50 border border-amber-300 rounded-sm text-[10.5px] text-amber-900 font-semibold flex items-start gap-1 shadow-2xs">
                   <span className="text-amber-600 font-bold shrink-0">⚠️</span>
-                  <div>
-                    <span>सूचना: या खातेदाराचे <b>{existingCustomerAccounts.length} बचत खाते</b> आधीच सुरू आहे ({existingCustomerAccounts.map(a => a.accountNo).join(', ')}).</span>
-                  </div>
+                  <span>या खातेदाराचे <b>{existingCustomerAccounts.length} बचत खाते</b> आधीच सुरू आहे ({existingCustomerAccounts.map(a => a.accountNo).join(', ')}).</span>
                 </div>
+              )}
+            </div>
+
+            {/* Old / Legacy Account No - 2 cols */}
+            <div className="lg:col-span-2">
+              <div className="flex items-center justify-between mb-0.5">
+                <label className="block text-xs font-semibold text-gray-700">
+                  जुना खाते क्र. (Old A/c No)
+                </label>
+                <span className="text-[10px] text-amber-700 font-medium">पर्यायी</span>
+              </div>
+              <input
+                type="text"
+                name="legacyAccountNumber"
+                value={formData.legacyAccountNumber || ''}
+                onChange={handleInputChange}
+                placeholder="उदा. 101 / SB-45"
+                className={`w-full border px-2 py-1 rounded-sm text-xs font-semibold h-7 transition-colors ${
+                  duplicateLegacyAccount 
+                    ? 'border-red-500 bg-red-50 text-red-900 focus:ring-red-400' 
+                    : 'border-amber-300 bg-amber-50/40 text-gray-900 focus:border-blue-500 focus:ring-blue-500'
+                }`}
+              />
+              {duplicateLegacyAccount && (
+                <span className="text-[10px] text-red-600 font-bold block mt-0.5 leading-tight">
+                  ⚠️ हा नंबर {duplicateLegacyAccount.accountNo} ला आहे!
+                </span>
               )}
             </div>
 
             {/* Saving Account No - 3 cols */}
             <div className="lg:col-span-3">
-              <label className="block text-xs font-bold text-blue-900 mb-0.5">
-                बचत खाते क्र. (14-Digit CBS A/c No) *
-              </label>
+              <div className="flex items-center justify-between mb-0.5">
+                <label className="block text-xs font-bold text-blue-900">
+                  बचत खाते क्र. (CBS A/c No) *
+                </label>
+                <div className="flex items-center gap-1">
+                  <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                    isCustomAccountNo
+                      ? 'bg-amber-100 text-amber-800 border-amber-300'
+                      : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                  }`}>
+                    {isCustomAccountNo ? 'कस्टम' : 'ऑटो'}
+                  </span>
+                  {isCustomAccountNo && (
+                    <button
+                      type="button"
+                      onClick={handleResetAccountNo}
+                      title="ऑटो नंबरवर रिसेट करा"
+                      className="text-[10px] text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
+                    >
+                      ↺ रीसेट
+                    </button>
+                  )}
+                </div>
+              </div>
               <input
                 type="text"
                 name="accountNo"
-                value={formData.displayAccountNo || format14DigitDisplay(formData.accountNo) || formData.accountNo}
-                readOnly={true}
+                value={formData.displayAccountNo || formData.accountNo}
+                onChange={(e) => handleAccountNoChange(e.target.value)}
                 placeholder="उदा. 001-101-0000001-4"
-                className="w-full border border-blue-400 px-2.5 py-1 rounded-sm text-xs bg-blue-50/80 font-mono font-bold text-blue-900 shadow-xs cursor-not-allowed h-7"
+                className={`w-full border px-2.5 py-1 rounded-sm text-xs font-mono font-bold shadow-xs h-7 transition-colors ${
+                  isCustomAccountNo 
+                    ? 'border-amber-400 bg-amber-50/50 text-amber-900 focus:ring-amber-400' 
+                    : 'border-blue-400 bg-blue-50/80 text-blue-900 focus:ring-blue-400'
+                }`}
               />
             </div>
 

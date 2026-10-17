@@ -425,13 +425,74 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // 3. Generate 14-digit CBS Account No
+            // 3. Resolve 14-digit CBS Account No (Support custom/edited receipt number)
+            var cleanDigits = !string.IsNullOrWhiteSpace(account.AccountNo)
+                ? new string(account.AccountNo.Where(char.IsDigit).ToArray())
+                : "";
+
+            bool isManualNumber = !string.IsNullOrWhiteSpace(account.AccountNo) && account.AccountNo.Trim() != "AUTO";
+            if (isManualNumber)
+            {
+                var existingAcc = await _context.FdAccounts
+                    .Include(a => a.Customer)
+                    .FirstOrDefaultAsync(a => a.BranchID == account.BranchID && (a.AccountNo == account.AccountNo.Trim() || (!string.IsNullOrEmpty(cleanDigits) && a.AccountNo == cleanDigits)));
+                if (existingAcc != null)
+                {
+                    return BadRequest($"पावती / खाते क्रमांक '{account.AccountNo}' आधीच अस्तित्वात आहे (खातेदार: {existingAcc.Customer?.FullName ?? "इतर"}). कृपया वेगळा क्रमांक टाका किंवा सिस्टीमने सुचवलेला क्रमांक वापरा.");
+                }
+            }
+
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
                 {
-                    var (generatedAccountNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(account.BranchID, account.FdSchemeID, incrementSequence: true);
-                    account.AccountNo = generatedAccountNo;
+                    if (!isManualNumber)
+                    {
+                        var (generatedAccountNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(account.BranchID, account.FdSchemeID, incrementSequence: true);
+                        account.AccountNo = generatedAccountNo;
+                    }
+                    else
+                    {
+                        if (cleanDigits.Length == 14)
+                        {
+                            account.AccountNo = cleanDigits;
+                            string seqPart = cleanDigits.Substring(6, 7);
+                            if (int.TryParse(seqPart, out int customSeq))
+                            {
+                                var seq = await _context.FdAccountSequences
+                                    .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "FD");
+                                if (seq != null && customSeq > seq.CurrentValue)
+                                {
+                                    seq.CurrentValue = customSeq;
+                                    await _context.SaveChangesAsync();
+                                }
+                            }
+                        }
+                        else if (int.TryParse(cleanDigits, out int simpleSeq) && simpleSeq > 0)
+                        {
+                            int schemeCodeNum = 401;
+                            if (scheme != null)
+                            {
+                                var sDigits = new string((scheme.SchemeCode ?? "").Where(char.IsDigit).ToArray());
+                                if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsed) && parsed > 0)
+                                    schemeCodeNum = parsed < 100 ? 400 + parsed : parsed;
+                                else
+                                    schemeCodeNum = 400 + scheme.FdSchemeID;
+                            }
+                            account.AccountNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(account.BranchID, schemeCodeNum, simpleSeq);
+                            var seq = await _context.FdAccountSequences
+                                .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "FD");
+                            if (seq != null && simpleSeq > seq.CurrentValue)
+                            {
+                                seq.CurrentValue = simpleSeq;
+                                await _context.SaveChangesAsync();
+                            }
+                        }
+                        else
+                        {
+                            account.AccountNo = account.AccountNo.Trim();
+                        }
+                    }
 
                     // 4. Auto-Calculate Maturity Date & Amount with Slabs & Duration Support
                     string durType = !string.IsNullOrWhiteSpace(account.DurationType) ? account.DurationType : (scheme.DurationType ?? "Months");

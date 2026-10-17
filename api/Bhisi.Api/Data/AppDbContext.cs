@@ -34,6 +34,7 @@ namespace Bhisi.Api.Data
         public DbSet<AuditLedgerMapping> AuditLedgerMappings { get; set; }
         public DbSet<SwanidhiLedgerMapping> SwanidhiLedgerMappings { get; set; }
         public DbSet<SwanidhiSetting> SwanidhiSettings { get; set; }
+        public DbSet<RegulatoryMisReport> RegulatoryMisReports { get; set; }
         public DbSet<Voucher> Vouchers { get; set; }
         public DbSet<VoucherDetail> VoucherDetails { get; set; }
         public DbSet<SansthaDetail> SansthaDetails { get; set; }

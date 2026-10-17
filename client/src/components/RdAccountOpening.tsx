@@ -167,8 +167,13 @@ export default function RdAccountOpening({
     passbookNo: '',
     nomineeName: '',
     nomineeRelation: '',
+    accountNo: '',
+    legacyAccountNumber: '',
     remarks: 'नवीन आवर्ती ठेव खाते उघडले',
   });
+
+  const [autoAccountNo, setAutoAccountNo] = useState('');
+  const [isCustomAccountNo, setIsCustomAccountNo] = useState(false);
 
 
   const fetchNextAccountNo = async (branchId: number, schemeId?: string | number) => {
@@ -177,14 +182,38 @@ export default function RdAccountOpening({
     try {
       const q = schemeId ? `?branchId=${branchId}&schemeId=${schemeId}&t=${Date.now()}` : `?branchId=${branchId}&t=${Date.now()}`;
       const res = await axios.get(`/api/RdAccounts/next-account-no${q}`);
-      const acc = res.data?.formattedAccountNo || res.data?.accountNo || (typeof res.data === 'string' ? res.data : '---');
-      setNextAccountNo(acc);
+      const rawNo = res.data?.accountNo || (typeof res.data === 'string' ? res.data : '');
+      const formatted = res.data?.formattedAccountNo || rawNo || '---';
+      setAutoAccountNo(rawNo);
+      setNextAccountNo(formatted);
+      if (!isCustomAccountNo && rawNo) {
+        setFormData(prev => ({
+          ...prev,
+          accountNo: rawNo
+        }));
+      }
     } catch (err) {
       console.error('Error fetching next account number', err);
       setNextAccountNo('---');
     } finally {
       setLoadingAccountNo(false);
     }
+  };
+
+  const handleResetAccountNo = () => {
+    setIsCustomAccountNo(false);
+    setFormData(prev => ({
+      ...prev,
+      accountNo: autoAccountNo
+    }));
+  };
+
+  const handleAccountNoChange = (val: string) => {
+    setIsCustomAccountNo(true);
+    setFormData(prev => ({
+      ...prev,
+      accountNo: val
+    }));
   };
 
   const fetchSchemesForBranch = async (bId: number) => {
@@ -533,8 +562,12 @@ export default function RdAccountOpening({
       passbookNo: '',
       nomineeName: '',
       nomineeRelation: '',
+      accountNo: '',
+      legacyAccountNumber: '',
       remarks: 'नवीन आवर्ती ठेव खाते उघडले',
     });
+    setIsCustomAccountNo(false);
+    setAutoAccountNo('');
     if (!keepMessages) {
       setError('');
       setSuccess('');
@@ -568,7 +601,8 @@ export default function RdAccountOpening({
     try {
       const payload = {
         ...formData,
-        accountNo: 'AUTO',
+        accountNo: isCustomAccountNo && formData.accountNo ? formData.accountNo.trim() : (autoAccountNo || 'AUTO'),
+        legacyAccountNumber: formData.legacyAccountNumber ? formData.legacyAccountNumber.trim() : null,
         branchID: parseInt(formData.branchID as any, 10) || 1,
         customerID: parseInt(formData.memberID, 10),
         rdSchemeID: parseInt(formData.rdSchemeID, 10),
@@ -652,6 +686,16 @@ export default function RdAccountOpening({
     }
     return rows;
   };
+
+  const duplicateLegacyAccount = useMemo(() => {
+    if (!formData.legacyAccountNumber || !formData.legacyAccountNumber.trim() || !formData.rdSchemeID) return null;
+    const clean = formData.legacyAccountNumber.trim().toLowerCase();
+    const sId = Number(formData.rdSchemeID);
+    return rdList.find(r => 
+      Number(r.rdSchemeID) === sId &&
+      r.legacyAccountNumber && r.legacyAccountNumber.trim().toLowerCase() === clean
+    );
+  }, [formData.legacyAccountNumber, formData.rdSchemeID, rdList]);
 
   const labelClass = "block text-[11px] font-bold text-gray-700 mb-0.5";
   const inputClass = "w-full px-2 py-1 text-xs border border-gray-300 rounded-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white font-medium";
@@ -813,11 +857,80 @@ export default function RdAccountOpening({
                     <option value="">--- योजना निवडा ---</option>
                     {(Array.isArray(schemes) ? schemes : []).map((s, idx) => (
                       <option key={`scheme-${s.rdSchemeID ?? '0'}-${idx}`} value={s.rdSchemeID}>
-                        {s.branchID ? `🏢 [${s.branch?.branchName || 'विशिष्ट शाखा'}] ` : '🌐 [सर्व शाखा] '}
                         {s.schemeName} (योजना कोड: {s.schemeCode || s.schemeCodeNumeric || 501})
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              {/* Account Number & Legacy Number Row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className={labelClass}>
+                      आरडी खाते क्रमांक (RD Account No) <span className="text-red-500">*</span>
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                        isCustomAccountNo
+                          ? 'bg-amber-100 text-amber-800 border-amber-300'
+                          : 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                      }`}>
+                        {isCustomAccountNo ? 'कस्टम' : 'ऑटो'}
+                      </span>
+                      {isCustomAccountNo && (
+                        <button
+                          type="button"
+                          onClick={handleResetAccountNo}
+                          title="ऑटो नंबरवर रिसेट करा"
+                          className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline cursor-pointer"
+                        >
+                          ↺ रीसेट
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    name="accountNo"
+                    value={formData.accountNo || autoAccountNo}
+                    onChange={(e) => handleAccountNoChange(e.target.value)}
+                    placeholder="उदा. 001-501-0000001-4"
+                    disabled={isPassingMode}
+                    className={`${inputClass} font-mono font-bold ${
+                      isCustomAccountNo
+                        ? 'border-amber-400 bg-amber-50/50 text-amber-900 focus:ring-amber-400'
+                        : 'border-indigo-300 bg-indigo-50/40 text-indigo-900 focus:ring-indigo-400'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className={labelClass}>
+                      जुना आरडी खाते / पावती क्र. (Old/Legacy RD No)
+                    </label>
+                    <span className="text-[10px] text-amber-700 font-medium">पर्यायी</span>
+                  </div>
+                  <input
+                    type="text"
+                    name="legacyAccountNumber"
+                    value={formData.legacyAccountNumber}
+                    onChange={handleChange}
+                    placeholder="उदा. RD-101 / 55"
+                    disabled={isPassingMode}
+                    className={`${inputClass} font-semibold ${
+                      duplicateLegacyAccount
+                        ? 'border-red-500 bg-red-50 text-red-900 focus:ring-red-400'
+                        : 'border-amber-300 bg-amber-50/30 text-gray-900 focus:border-indigo-500'
+                    }`}
+                  />
+                  {duplicateLegacyAccount && (
+                    <span className="text-[10px] text-red-600 font-bold block mt-0.5 leading-tight">
+                      ⚠️ हा जुना नंबर खाते क्र. {duplicateLegacyAccount.accountNo} ला वापरला आहे!
+                    </span>
+                  )}
                 </div>
               </div>
 

@@ -69,6 +69,8 @@ import DaybookSummary from './components/DaybookSummary';
 import BalanceSheet from './components/BalanceSheet';
 import BalanceSheetFormN from './components/BalanceSheetFormN';
 import SwanidhiReport from './components/SwanidhiReport';
+import RegulatoryMisReport from './components/RegulatoryMisReport';
+import CrrReport from './components/CrrReport';
 import IbtReconciliationReport from './components/IbtReconciliationReport';
 import GeneralLedger from './components/GeneralLedger';
 import CashBookReport from './components/CashBookReport';
@@ -392,6 +394,8 @@ function App() {
     'balance-sheet': '/reports/balance-sheet',
     'balance-sheet-form-n': '/reports/balance-sheet-form-n',
     'swanidhi-report': '/reports/swanidhi',
+    'regulatory-mis-report': '/reports/regulatory-mis',
+    'crr-report': '/reports/crr',
     'general-ledger': '/reports/general-ledger',
     'member-balance-report': '/reports/member-balance',
     'loan-disbursement-register': '/reports/loan-disbursement',
@@ -803,6 +807,8 @@ function App() {
         {activeTab === 'balance-sheet-form-n' && <BalanceSheetFormN />}
         {activeTab === 'ibt-reconciliation-report' && <IbtReconciliationReport />}
         {activeTab === 'swanidhi-report' && <SwanidhiReport />}
+        {activeTab === 'regulatory-mis-report' && <RegulatoryMisReport />}
+        {activeTab === 'crr-report' && <CrrReport />}
         {activeTab === 'general-ledger' && <GeneralLedger />}
         {activeTab === 'voucher-batch-print' && <VoucherBatchPrint />}
         {activeTab === 'member-balance-report' && <MemberBalanceReport />}

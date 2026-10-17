@@ -1552,10 +1552,11 @@ const FdOpeningBalanceMigration: React.FC = () => {
                   {schemes.map((s: any) => {
                     const isSlab = s.schemeDurationModel === 'Slab';
                     const slabCount = s.slabs?.length || 0;
+                    const durationInfo = isSlab ? `[स्लॅब पद्धत: ${slabCount} स्लॅब्स]` : `${s.durationMonths} महिने (${s.interestRate}%)`;
+                    const codeInfo = s.schemeCode ? `(${s.schemeCode})` : '';
                     return (
                       <option key={getSchemeId(s)} value={getSchemeId(s)}>
-                        {s.branchID ? `🏢 [${s.branch?.branchName || 'विशिष्ट शाखा'}] ` : '🌐 [सर्व शाखा] '}
-                        {s.schemeName} {isSlab ? `[स्लॅब पद्धत: ${slabCount} स्लॅब्स]` : `(${s.interestRate}%)`}
+                        {s.schemeName} {codeInfo} - {durationInfo}
                       </option>
                     );
                   })}

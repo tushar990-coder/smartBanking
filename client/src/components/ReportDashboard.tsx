@@ -26,6 +26,8 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
         { id: 'balance-sheet-form-n', name: 'ताळेबंद (नमुना न)' },
         { id: 'ibt-reconciliation-report', name: '🔄 आंतर-शाखा ताळमेळ व क्लिअरिंग अहवाल (IBT Clearing & Reconciliation Matrix)' },
         { id: 'swanidhi-report', name: '🏛️ स्वनिधी व कमाल उचल अहवाल (Rule 35 Swanidhi)' },
+        { id: 'regulatory-mis-report', name: '🏛️ पतसंस्था नियामक मंडळ MIS अहवाल (Regulatory MIS)' },
+        { id: 'crr-report', name: '💵 CRR रोख राखीव प्रमाण अहवाल (Cash Reserve Ratio)' },
         { id: 'voucher-batch-print', name: 'व्हाउचर प्रिंटिंग (Voucher Print)' },
       ]
     },

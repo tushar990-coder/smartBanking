@@ -98,7 +98,24 @@ interface FdAccount {
   prematurePenaltyLedgerName?: string;
   birthDate?: string | null;
   isSeniorCitizen?: boolean;
+  legacyAccountNumber?: string | null;
+  isLegacyAccount?: boolean;
 }
+
+// प्रभावी स्थिती: API status + मुदतपूर्ती तारीख यावरून (Matured / Active / इतर)
+const getFdEffectiveStatus = (acc: Pick<FdAccount, 'status' | 'maturityDate'>): { key: string; label: string } => {
+  const raw = (acc.status || '').trim();
+  const now = new Date();
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const matIso = acc.maturityDate ? acc.maturityDate.split('T')[0] : '';
+  if (raw.toLowerCase() === 'matured' || (matIso && matIso <= todayIso && (raw === '' || raw.toLowerCase() === 'active'))) {
+    return { key: 'Matured', label: 'मुदतपूर्ण (Matured)' };
+  }
+  if (raw === '' || raw.toLowerCase() === 'active') {
+    return { key: 'Active', label: 'चालू (Active)' };
+  }
+  return { key: raw, label: raw };
+};
 
 export interface FdSchemeInterestSlab {
   slabID?: number;
@@ -151,6 +168,39 @@ interface FdScheme {
   branchID?: number | null;
   branch?: { branchID: number; branchName: string } | null;
 }
+
+// ---------- CBS-style layout primitives (label left, field right) ----------
+const FormRow: React.FC<{ label: string; required?: boolean; align?: 'center' | 'start'; children: React.ReactNode }> = ({
+  label,
+  required,
+  align = 'center',
+  children
+}) => (
+  <div className={`grid grid-cols-1 sm:grid-cols-[170px_1fr] gap-x-3 gap-y-1 ${align === 'start' ? 'sm:items-start' : 'sm:items-center'}`}>
+    <label className={`text-[12px] font-semibold text-slate-600 sm:text-right leading-tight ${align === 'start' ? 'sm:pt-1.5' : ''}`}>
+      {label}
+      {required && <span className="text-red-600 ml-0.5">*</span>}
+    </label>
+    <div className="min-w-0">{children}</div>
+  </div>
+);
+
+const SectionTitle: React.FC<{ title: string; right?: React.ReactNode }> = ({ title, right }) => (
+  <div className="flex items-center justify-between gap-2 mb-2">
+    <h2 className="text-[12px] font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+      <span className="w-1 h-4 bg-primary rounded-sm" />
+      {title}
+    </h2>
+    {right}
+  </div>
+);
+
+const InfoItem: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="flex items-baseline gap-2 min-w-0">
+    <span className="w-28 shrink-0 text-[11px] text-slate-500">{label}</span>
+    <span className="text-xs font-semibold text-slate-900 truncate">{children}</span>
+  </div>
+);
 
 export interface FdWithdrawalMaturityProps {
   voucherId?: number;
@@ -1001,7 +1051,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
               : (customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : null)) 
           : null,
         customOverdueInterest: isManualOverride && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
-        manualOverrideReason: isManualOverride ? manualOverrideReason.trim() : null
+        manualOverrideReason: isManualOverride ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null
       };
 
       if (actionType === 'MaturityClose') {
@@ -1068,7 +1118,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           isManualAmountOverride: isManualOverride,
           customAccruedInterest: isManualOverride && customAccruedInterest !== '' ? parseFloat(customAccruedInterest) : null,
           customOverdueInterest: isManualOverride && customOverdueInterest !== '' ? parseFloat(customOverdueInterest) : null,
-          manualOverrideReason: isManualOverride ? manualOverrideReason.trim() : null
+          manualOverrideReason: isManualOverride ? (manualOverrideReason.trim() || 'थेट सेटलमेंट संपादन') : null
         };
 
         const response = await axios.post(
@@ -1337,270 +1387,132 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     ...accounts.map(a => {
       const cifDisplay = a.cifNo || (a.customerID ? `CIF-${a.customerID}` : '-');
       const custName = a.customerName || a.memberName || 'खातेदार';
+      const legacyNo = (a.legacyAccountNumber || '').trim();
+      const legacyPart = legacyNo ? ` [जुना: ${legacyNo}]` : '';
+      const statusObj = getFdEffectiveStatus(a);
+      const isMatured = statusObj.key.toLowerCase() === 'matured';
+      const matDateStr = a.maturityDate ? a.maturityDate.split('T')[0].split('-').reverse().join('/') : '';
       return {
         value: a.fdAccountID.toString(),
-        label: `${a.accountNo} - ${custName} (CIF: ${cifDisplay}) | ठेव: ₹${a.depositAmount.toLocaleString()} | मुदतपूर्ती: ${a.maturityDate ? a.maturityDate.split('T')[0].split('-').reverse().join('/') : ''} [${a.schemeName}]`
+        label: `${a.accountNo}${legacyPart} • ${custName}`,
+        badge: statusObj.label,
+        badgeColor: isMatured
+          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+          : 'bg-amber-50 text-amber-800 border-amber-300',
+        subLabel: `ठेव: ₹${a.depositAmount.toLocaleString()} • मुदतपूर्ती: ${matDateStr} • CIF: ${cifDisplay} • ${a.schemeName}`
       };
     })
   ];
 
   return (
     <div className="p-2.5 sm:p-3 max-w-6xl mx-auto space-y-2.5 font-sans text-xs">
-      {/* 1. ERP Header Banner */}
-      <div className="bg-primary px-3.5 py-2 text-white flex items-center justify-between shadow-xs rounded-sm">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
-            <Layers className="w-4 h-4 text-blue-200" />
-          </div>
-          <div>
-            <h1 className="text-xs sm:text-sm font-bold tracking-wide flex items-center gap-2">
-              <span>मुदत ठेव क्लोजर आणि नूतनीकरण (FD Closures & Renewals)</span>
-              <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded font-mono font-semibold">CBS ERP</span>
-            </h1>
-            <p className="text-[10px] text-blue-100 font-normal">
-              मुदत संपलेल्या किंवा मुदतपूर्व ठेवींचा परतावा (Payout) अथवा नवीन मुदत ठेव नूतनीकरण (FD Renewal)
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {selectedAccount && (
-            <div className="hidden md:flex items-center gap-1.5 bg-blue-900/70 border border-blue-400/30 text-blue-100 text-[11px] px-2 py-0.5 rounded">
-              <span>शाखा: <strong className="text-white">{selectedAccount.branchID}</strong></span>
-              <span className="text-blue-300">|</span>
-              <span>खाते: <strong className="text-amber-300 font-mono">{selectedAccount.accountNo}</strong></span>
+      {/* ================= TITLE BAR ================= */}
+      <div className="bg-white border border-slate-200 rounded-sm shadow-2xs border-l-4 border-l-primary">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+          <div className="flex items-center gap-2.5">
+            <Layers className="w-4 h-4 text-primary shrink-0" />
+            <div>
+              <h1 className="text-sm font-bold text-slate-900 leading-tight">
+                मुदत ठेव क्लोजर आणि नूतनीकरण (FD Closures &amp; Renewals)
+              </h1>
+              <p className="text-[11px] text-slate-500 leading-tight">
+                मुदत संपलेल्या किंवा मुदतपूर्व ठेवींचा परतावा (Payout) अथवा नूतनीकरण (Renewal)
+              </p>
             </div>
-          )}
-          <div className="hidden sm:flex items-center gap-1 bg-blue-800/60 border border-blue-400/40 text-blue-100 text-[10px] px-2 py-0.5 rounded font-medium">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
-            <span>सुरक्षित बँकिंग व ऑटो-व्हाउचर सक्षम</span>
+          </div>
+          <div className="hidden md:flex items-center gap-3 text-[11px] text-slate-600">
+            {selectedAccount && (
+              <>
+                <span>शाखा: <strong className="text-slate-900">{selectedAccount.branchID}</strong></span>
+                <span className="h-3 w-px bg-slate-300" />
+                <span>खाते: <strong className="font-mono text-primary">{selectedAccount.accountNo}</strong></span>
+                <span className="h-3 w-px bg-slate-300" />
+              </>
+            )}
+            <span>व्यवहार दिनांक: <strong className="text-slate-900">{formatDateDisplay(closureDate)}</strong></span>
           </div>
         </div>
       </div>
 
-      {/* Checker Mode Amber Alert Banner */}
+      {/* Checker Mode Banner */}
       {isPassingMode && (
-        <div className="bg-amber-500 text-slate-950 p-2.5 rounded shadow-sm border-2 border-amber-600 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="bg-amber-50 border border-amber-300 border-l-4 border-l-amber-500 px-3 py-2 rounded-sm flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-slate-950 shrink-0" />
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <div>
-              <span className="font-extrabold uppercase tracking-wide">मुदत ठेव बंद व्हाउचर तपासणी (FD Withdrawal Checker Mode):</span>{' '}
-              व्हाउचर क्र: <span className="font-mono font-bold">{passingVoucherData?.voucherNo || voucherId}</span> |
-              रक्कम: <span className="font-bold">₹{passingVoucherData?.totalAmount?.toLocaleString('en-IN') || (selectedAccount?.maturityAmount ?? selectedAccount?.depositAmount)}</span> |
+              <span className="font-bold">मुदत ठेव बंद व्हाउचर तपासणी (Checker Mode):</span>{' '}
+              व्हाउचर क्र: <span className="font-mono font-bold">{passingVoucherData?.voucherNo || voucherId}</span>
+              <span className="mx-1.5 text-amber-400">|</span>
+              रक्कम: <span className="font-bold">₹{passingVoucherData?.totalAmount?.toLocaleString('en-IN') || (selectedAccount?.maturityAmount ?? selectedAccount?.depositAmount)}</span>
+              <span className="mx-1.5 text-amber-400">|</span>
               तारीख: <span className="font-bold">{passingVoucherData?.voucherDate ? new Date(passingVoucherData.voucherDate).toLocaleDateString('mr-IN') : closureDate}</span>
             </div>
           </div>
-          <div className="text-[11px] font-bold bg-amber-100 text-amber-950 px-2 py-0.5 rounded border border-amber-400">
-            🔒 तपासणी मोड (Read-Only)
+          <div className="text-[11px] font-bold bg-white text-amber-900 px-2 py-0.5 rounded-sm border border-amber-300 flex items-center gap-1">
+            <Lock className="w-3 h-3" /> तपासणी मोड (Read-Only)
           </div>
         </div>
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-300 text-red-800 text-xs p-2.5 rounded-sm font-medium flex items-center gap-2 shadow-2xs">
+        <div className="bg-red-50 border border-red-200 border-l-4 border-l-red-500 text-red-800 text-xs px-3 py-2 rounded-sm font-medium flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
           <span>{error}</span>
         </div>
       )}
       {success && (
-        <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs p-2.5 rounded-sm font-semibold flex items-center gap-2 shadow-2xs">
+        <div className="bg-emerald-50 border border-emerald-200 border-l-4 border-l-emerald-500 text-emerald-900 text-xs px-3 py-2 rounded-sm font-semibold flex items-center gap-2">
           <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{success}</span>
         </div>
       )}
       {noFdFoundAlert && (
-        <div className="bg-amber-50 border border-amber-300 text-amber-900 text-xs p-2.5 rounded-sm font-medium flex items-center justify-between shadow-2xs">
+        <div className="bg-amber-50 border border-amber-200 border-l-4 border-l-amber-500 text-amber-900 text-xs px-3 py-2 rounded-sm font-medium flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <span>{noFdFoundAlert}</span>
           </div>
-          <button type="button" onClick={() => setNoFdFoundAlert(null)} className="font-bold text-amber-700 hover:text-black cursor-pointer">✕</button>
+          <button type="button" onClick={() => setNoFdFoundAlert(null)} className="text-amber-700 hover:text-black cursor-pointer" title="बंद करा">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-2.5">
-        <fieldset disabled={isPassingMode} className="space-y-2.5">
+      <form onSubmit={handleSubmit}>
+        {(() => {
+          const acc = selectedAccount;
 
-          {/* ================= STEP 1: ACCOUNT & DATE SELECTION ================= */}
-          <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-2xs space-y-2">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-              <h2 className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase tracking-wide">
-                <span className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[11px] font-bold">१</span>
-                <span>मुदत ठेव खाते व तारीख निवडा (Select FD Account & Transaction Date)</span>
-              </h2>
-              {selectedAccount && (
-                <span className="text-[11px] font-mono text-gray-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                  शाखा: <strong className="text-slate-800">{selectedAccount.branchID}</strong> | खाते क्र.: <strong className="text-primary">{selectedAccount.accountNo}</strong>
-                </span>
-              )}
-            </div>
+          // ---------- Settlement computations (unchanged business logic) ----------
+          let principal = 0;
+          let interestPayable = 0;
+          let clawback = 0;
+          let systemAccruedInt = 0;
+          let systemRecalcInt = 0;
+          let effOverdue = 0;
+          let netPayout = 0;
+          let totalDr = 0;
+          let totalCr = 0;
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
-              {/* Account Dropdown (8 cols) */}
-              <div className="md:col-span-8">
-                <div className="flex items-center justify-between mb-1">
-                  <label className={`${labelClass} !mb-0`}>
-                    मुदत ठेव खाते शोधा व निवडा *
-                  </label>
-                  {customerMatchingFds.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const first = customerMatchingFds[0];
-                        setMultiFdCustomerInfo({
-                          name: first.customerName || first.memberName || 'खातेदार',
-                          cifNo: first.cifNo || '-',
-                          customerId: first.customerID
-                        });
-                        setShowMultiFdModal(true);
-                      }}
-                      className="text-[10px] text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1 cursor-pointer bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200"
-                    >
-                      <Layers className="w-3 h-3 text-blue-600" />
-                      <span>{customerMatchingFds.length} मुदत ठेवी उपलब्ध (निवडा ⚡)</span>
-                    </button>
-                  )}
-                </div>
-                <SearchableSelect
-                  options={accountOptions}
-                  value={selectedAccId.toString()}
-                  onChange={handleAccountSelect}
-                  placeholder="पावती क्र., खातेदार नाव किंवा CIF ने शोधा..."
-                  disabled={isPassingMode}
-                />
-              </div>
-
-              {/* Transaction Date (4 cols) */}
-              <div className="md:col-span-4">
-                <div className="flex items-center justify-between mb-1">
-                  <label className={`${labelClass} !mb-0`}>
-                    व्यवहाराची तारीख (Transaction Date) *
-                  </label>
-                  {isOverdue && selectedAccount && (
-                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
-                      {overdueDays} दिवस ओव्हरड्यू
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="date"
-                  value={closureDate}
-                  min={effectiveMinDate}
-                  max={todayStr}
-                  onChange={(e) => setClosureDate(e.target.value)}
-                  className={`w-full text-xs font-bold border rounded-sm px-2.5 py-1 focus:outline-none shadow-2xs h-[34px] ${
-                    isBeforeOpeningDate || isBeforeLastAccrual || isFutureDate || isBackdatedSavingsTransfer
-                      ? 'border-red-500 bg-red-50 text-red-900 focus:border-red-600' 
-                      : 'border-gray-300 bg-white text-gray-900 focus:border-primary'
-                  }`}
-                  required
-                  disabled={isPassingMode}
-                />
-              </div>
-            </div>
-
-            {/* Contextual Date Alerts */}
-            {isBeforeOpeningDate && selectedAccount && (
-              <div className="text-[11px] text-red-700 bg-red-50 p-1.5 rounded border border-red-200 font-semibold flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                <span>तारीख खाते उघडण्याच्या ({formatDateDisplay(selectedAccount.openingDate)}) आधीची असू शकत नाही.</span>
-              </div>
-            )}
-            {isFutureDate && (
-              <div className="text-[11px] text-red-700 bg-red-50 p-1.5 rounded border border-red-200 font-semibold flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                <span>भविष्यातील तारीख प्रतिबंधित आहे. कृपया आजची किंवा मागील तारीख निवडा.</span>
-              </div>
-            )}
-            {isBeforeLastAccrual && selectedAccount?.lastInterestPostingDate && (
-              <div className="text-[11px] text-red-700 bg-red-50 p-1.5 rounded border border-red-200 font-semibold flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                <span>तारीख शेवटच्या व्याज तरतुदीच्या ({formatDateDisplay(selectedAccount.lastInterestPostingDate)}) आधीची असू शकत नाही.</span>
-              </div>
-            )}
-            {isBackdatedSavingsTransfer && (
-              <div className="text-[11px] text-red-700 bg-red-50 p-1.5 rounded border border-red-200 font-semibold flex items-center justify-between gap-1">
-                <div className="flex items-center gap-1">
-                  <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                  <span>बचत खात्यात वर्ग करताना आजचीच तारीख लागते.</span>
-                </div>
-                <button type="button" onClick={() => setClosureDate(todayStr)} className="text-[10px] bg-red-200 hover:bg-red-300 text-red-900 px-2 py-0.5 rounded font-bold cursor-pointer">
-                  आजची करा
-                </button>
-              </div>
-            )}
-
-            {/* Compact Customer Info Ribbon (Replaces large cards with 1 clean strip) */}
-            {selectedAccount && (() => {
-              const hasLien = Boolean(activeLoansData?.hasActiveLoan && (activeLoansData?.totalOutstandingLiability || 0) > 0);
-              return (
-                <div className="bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold text-gray-900 flex items-center gap-1">
-                      <span>👤</span> {selectedAccount.customerName || selectedAccount.memberName}
-                    </span>
-                    <span className="font-mono text-[11px] text-primary font-bold">
-                      (CIF: {selectedAccount.cifNo || (selectedAccount.customerID ? `CIF-${selectedAccount.customerID}` : '-')})
-                    </span>
-                    <span className="text-gray-300">|</span>
-                    <span className="text-gray-700">
-                      योजना: <strong className="text-blue-900">{selectedAccount.schemeName}</strong>
-                    </span>
-                    <span className="text-gray-300">|</span>
-                    <span>
-                      मुद्दल: <strong className="font-mono text-gray-900">₹{selectedAccount.depositAmount.toLocaleString()}</strong>
-                    </span>
-                    <span className="text-gray-300">|</span>
-                    <span>
-                      व्याजदर: <strong className="font-mono text-blue-800">{selectedAccount.interestRate}%</strong>
-                    </span>
-                    <span className="text-gray-300">|</span>
-                    <span>
-                      मुदतपूर्ती: <strong className="font-mono text-gray-800">{formatDateDisplay(selectedAccount.maturityDate)}</strong>
-                    </span>
-                    {selectedAccount.isSeniorCitizen && (
-                      <span className="bg-purple-100 text-purple-900 text-[10px] px-1.5 py-0.2 rounded-full font-bold border border-purple-200">
-                        👴 ज्येष्ठ नागरिक
-                      </span>
-                    )}
-                    <span className={`text-[10px] px-2 py-0.2 rounded-full font-bold border ${
-                      isMatured ? 'bg-emerald-100 text-emerald-900 border-emerald-300' : 'bg-amber-100 text-amber-900 border-amber-300'
-                    }`}>
-                      {isMatured ? '✅ मुदत संपली (Matured)' : '⏳ मुदत चालू (Premature)'}
-                    </span>
-                  </div>
-                  {hasLien && (
-                    <span className="bg-amber-100 text-amber-900 text-[10px] px-2 py-0.5 rounded font-bold border border-amber-300 flex items-center gap-1 shrink-0">
-                      ⚠️ सक्रिय कर्ज बाकी: ₹ {(activeLoansData?.totalOutstandingLiability || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (बचत खात्यातून कर्ज वसुली करावी)
-                    </span>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-
-          {selectedAccount && (() => {
-            const principal = selectedAccount.depositAmount;
-            const totalMaturity = selectedAccount.maturityAmount && selectedAccount.maturityAmount > selectedAccount.depositAmount
-              ? selectedAccount.maturityAmount
-              : (selectedAccount.depositAmount + (selectedAccount.legacyAccruedInt || 0));
-            const systemAccruedInt = Math.max(0, totalMaturity - principal);
-
-            let interestPayable = 0;
-            let clawback = 0;
+          if (acc) {
+            principal = acc.depositAmount;
+            const totalMaturity = acc.maturityAmount && acc.maturityAmount > acc.depositAmount
+              ? acc.maturityAmount
+              : (acc.depositAmount + (acc.legacyAccruedInt || 0));
+            systemAccruedInt = Math.max(0, totalMaturity - principal);
 
             if (actionType === 'PrematureClose') {
-              const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
+              const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(acc.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
               const ledgers = getSchemeLedgers();
-              const resolution = resolvePrematureRateDetails(selectedAccount, ledgers?.scheme, actualDays);
+              const resolution = resolvePrematureRateDetails(acc, ledgers?.scheme, actualDays);
               const prematureRate = prematurePreview?.prematureRate ?? resolution.prematureRate;
-              const systemRecalcInt = prematurePreview?.recalculatedInterest ?? Math.round((principal * prematureRate * actualDays) / 36500);
+              systemRecalcInt = prematurePreview?.recalculatedInterest ?? Math.round((principal * prematureRate * actualDays) / 36500);
 
               const effInt = (isManualOverride && customPrematureInterest !== '')
                 ? (parseFloat(customPrematureInterest) || 0)
                 : systemRecalcInt;
 
               interestPayable = effInt;
-              const accruedInt = selectedAccount.legacyAccruedInt || 0;
+              const accruedInt = acc.legacyAccruedInt || 0;
               clawback = Math.max(0, accruedInt - interestPayable);
             } else {
               const effAccrued = (isManualOverride && customAccruedInterest !== '')
@@ -1609,803 +1521,878 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
               interestPayable = effAccrued;
             }
 
-            const effOverdue = (actionType !== 'PrematureClose' && isOverdue)
+            effOverdue = (actionType !== 'PrematureClose' && isOverdue)
               ? (isManualOverride && customOverdueInterest !== '' ? (parseFloat(customOverdueInterest) || 0) : overdueInterest)
               : 0;
 
-            const netPayout = getTotalFdPayout();
-            const totalDr = voucherPreview ? voucherPreview.filter(e => e.drCr === 'Dr').reduce((s, e) => s + e.amount, 0) : 0;
-            const totalCr = voucherPreview ? voucherPreview.filter(e => e.drCr === 'Cr').reduce((s, e) => s + e.amount, 0) : 0;
-            const isBalanced = Math.abs(totalDr - totalCr) < 0.01;
+            netPayout = getTotalFdPayout();
+            totalDr = voucherPreview ? voucherPreview.filter(e => e.drCr === 'Dr').reduce((s, e) => s + e.amount, 0) : 0;
+            totalCr = voucherPreview ? voucherPreview.filter(e => e.drCr === 'Cr').reduce((s, e) => s + e.amount, 0) : 0;
+          }
 
-            return (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
-                {/* ================= LEFT COLUMN: OPERATIONAL WORKSPACE (7 Cols - No Tabs, Minimal Scroll) ================= */}
-                <div className="lg:col-span-7 space-y-2">
-                  <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-2xs space-y-2.5">
-                    {/* SECTION 1: TRANSACTION ACTION SELECTOR */}
-                    <div>
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-1 mb-2">
-                        <h2 className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase tracking-wide">
-                          <span className="w-4 h-4 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold">२</span>
-                          <span>व्यवहाराचा प्रकार व कृती (Transaction Action)</span>
-                        </h2>
-                        <span className="text-[11px] text-gray-500 font-semibold">
-                          {isMatured ? 'ठेव मुदत पूर्ण झालेली आहे' : 'मुदतपूर्व बंद व्यवहार'}
-                        </span>
-                      </div>
+          const isBalanced = Math.abs(totalDr - totalCr) < 0.01;
+          const hasLien = Boolean(activeLoansData?.hasActiveLoan && (activeLoansData?.totalOutstandingLiability || 0) > 0);
+          const isFullRoll = actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest';
+          const finalAmount = isFullRoll ? (principal + interestPayable + effOverdue) : netPayout;
+          const fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const hasDateError = isBeforeOpeningDate || isBeforeLastAccrual || isFutureDate || isBackdatedSavingsTransfer;
+          const submitDisabled =
+            loading ||
+            !acc ||
+            isPendingMaturityAction ||
+            hasDateError;
+          const paymentModeLabel = paymentMode === 'Cash' ? 'रोख (Cash)' : paymentMode === 'Bank' ? 'बँक (Bank)' : 'बचत खात्यात वर्ग (Transfer)';
+          const ctrl = 'w-full h-8 text-xs border border-slate-300 rounded-sm px-2 bg-white text-slate-900 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 disabled:bg-slate-100 disabled:text-slate-600';
+          const segBase = 'flex-1 h-8 px-3 text-xs font-semibold border-y border-r first:border-l first:rounded-l-sm last:rounded-r-sm flex items-center justify-center gap-1.5 cursor-pointer transition-colors select-none';
+          const segOn = 'bg-primary text-white border-primary';
+          const segOff = 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50';
 
-                      {!isMatured ? (
-                        /* Premature Close Action Card */
-                        <div className="bg-amber-50 border border-amber-300 rounded p-2 flex items-center justify-between gap-2.5">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1 bg-amber-200 text-amber-900 rounded-full shrink-0">
-                              <Clock className="w-3.5 h-3.5" />
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-xs text-amber-950">⚡ मुदतपूर्व बंद व परतावा (Premature Close & Payout)</span>
-                                <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-full font-bold">
-                                  स्वयंचलित निवड
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-amber-900 leading-tight">
-                                मुदतपूर्तीपूर्वी बंद करत असल्याने आरबीआय नियमानुसार प्रत्यक्ष पूर्ण केलेल्या कालावधीच्या स्लॅब दरानुसार व्याज पुनर्गणना होईल.
-                              </p>
-                            </div>
-                          </div>
-                          {prematurePreview && (
-                            <div className="text-right shrink-0 bg-white/90 px-2 py-0.5 rounded border border-amber-200 text-xs">
-                              <span className="text-[10px] text-gray-500 block">सवलतीचा लागू दर</span>
-                              <strong className="text-amber-900 font-mono text-xs font-black">{prematurePreview.prematureRate}%</strong>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        /* Matured: 2 Side-by-Side Compact Action Cards */
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {/* Action 1: Maturity Payout */}
-                          <label className={`p-2 rounded-sm border cursor-pointer transition-all flex items-start gap-2 ${
-                            actionType === 'MaturityClose'
-                              ? 'border-2 border-emerald-600 bg-emerald-50/70 shadow-2xs ring-1 ring-emerald-500'
-                              : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                          }`}>
-                            <input
-                              type="radio"
-                              name="actionType"
-                              value="MaturityClose"
-                              checked={actionType === 'MaturityClose'}
-                              onChange={(e) => setActionType(e.target.value)}
-                              className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0 cursor-pointer"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-xs text-gray-900">
-                                  १. मुदतपूर्ती पेमेंट (Maturity Payout)
-                                </span>
-                                {actionType === 'MaturityClose' && (
-                                  <span className="text-[9px] bg-emerald-600 text-white px-1.5 py-0.2 rounded font-bold">
-                                    निवडलेले
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">
-                                मुदत पूर्ण झालेली ठेव रक्कम (मुद्दल + साचलेले व्याज) खातेदारास अदा करणे.
-                              </p>
-                            </div>
-                          </label>
+          return (
+            <>
+              <fieldset disabled={isPassingMode} className="min-w-0">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
+                  {/* ================= LEFT: DATA ENTRY (GROUP BOXES) ================= */}
+                  <div className={`${acc ? 'lg:col-span-7' : 'lg:col-span-12'} space-y-3.5`}>
 
-                          {/* Action 2: FD Renewal */}
-                          <label className={`p-2 rounded-sm border cursor-pointer transition-all flex items-start gap-2 ${
-                            actionType === 'Renewal'
-                              ? 'border-2 border-blue-600 bg-blue-50/70 shadow-2xs ring-1 ring-blue-500'
-                              : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                          }`}>
-                            <input
-                              type="radio"
-                              name="actionType"
-                              value="Renewal"
-                              checked={actionType === 'Renewal'}
-                              onChange={(e) => {
-                                setActionType(e.target.value);
-                                if (!targetSchemeId && schemes.length > 0) {
-                                  setTargetSchemeId(selectedAccount?.fdSchemeID || schemes[0].fdSchemeID);
-                                }
-                              }}
-                              className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0 cursor-pointer"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-xs text-gray-900">
-                                  २. मुदत ठेव नूतनीकरण (FD Renewal)
-                                </span>
-                                {actionType === 'Renewal' && (
-                                  <span className="text-[9px] bg-blue-600 text-white px-1.5 py-0.2 rounded font-bold">
-                                    निवडलेले
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">
-                                पुढील कालावधीसाठी नवीन पावतीमध्ये रोलओव्हर (नूतनीकरण) करणे.
-                              </p>
-                            </div>
-                          </label>
+                    {/* Group Box 1: Account Selection */}
+                    <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3 bg-white shadow-2xs">
+                      <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+                        <span>१. मुदत ठेव खाते व तारीख निवड (Account &amp; Date Selection)</span>
+                      </legend>
+
+                      {customerMatchingFds.length > 1 && (
+                        <div className="flex justify-end -mt-6 mb-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const first = customerMatchingFds[0];
+                              setMultiFdCustomerInfo({
+                                name: first.customerName || first.memberName || 'खातेदार',
+                                cifNo: first.cifNo || '-',
+                                customerId: first.customerID
+                              });
+                              setShowMultiFdModal(true);
+                            }}
+                            className="text-[10px] text-primary hover:underline font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200 flex items-center gap-1 cursor-pointer"
+                          >
+                            <Layers className="w-3 h-3" />
+                            <span>{customerMatchingFds.length} मुदत ठेवी उपलब्ध – निवडा</span>
+                          </button>
                         </div>
                       )}
 
-                      {/* Sub-panel if Renewal Selected */}
-                      {actionType === 'Renewal' && (
-                        <div className="mt-2 bg-blue-50/60 p-2 rounded border border-blue-200 space-y-1.5 text-xs animate-in fade-in">
-                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-                            {/* Renewal Type Radio */}
-                            <div className="sm:col-span-5">
-                              <label className={`${labelClass} !mb-0.5 text-blue-900 text-[11px]`}>नूतनीकरण प्रकार (Renewal Mode) *</label>
-                              <div className="grid grid-cols-2 gap-1">
-                                <label className={`p-1 rounded border text-center cursor-pointer transition ${
-                                  renewalType === 'PrincipalPlusInterest' ? 'bg-blue-600 text-white font-bold border-blue-700' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                }`}>
-                                  <input
-                                    type="radio"
-                                    name="renewalType"
-                                    value="PrincipalPlusInterest"
-                                    checked={renewalType === 'PrincipalPlusInterest'}
-                                    onChange={(e) => setRenewalType(e.target.value)}
-                                    className="sr-only"
-                                  />
-                                  <span className="block text-[10px]">मुद्दल + व्याज (Full Roll)</span>
-                                </label>
-                                <label className={`p-1 rounded border text-center cursor-pointer transition ${
-                                  renewalType === 'PrincipalOnly' ? 'bg-blue-600 text-white font-bold border-blue-700' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                }`}>
-                                  <input
-                                    type="radio"
-                                    name="renewalType"
-                                    value="PrincipalOnly"
-                                    checked={renewalType === 'PrincipalOnly'}
-                                    onChange={(e) => setRenewalType(e.target.value)}
-                                    className="sr-only"
-                                  />
-                                  <span className="block text-[10px]">केवळ मूळ मुद्दल</span>
-                                </label>
-                              </div>
-                            </div>
+                      <div className="space-y-2 mt-1">
+                        <FormRow label="मुदत ठेव खाते (FD Account)" required>
+                          <SearchableSelect
+                            options={accountOptions}
+                            value={selectedAccId.toString()}
+                            onChange={handleAccountSelect}
+                            placeholder="पावती क्र., जुना क्र., खातेदार नाव किंवा CIF ने शोधा..."
+                            disabled={isPassingMode}
+                          />
+                        </FormRow>
 
-                            {/* New Scheme Selection */}
-                            <div className={isOverdue ? 'sm:col-span-4' : 'sm:col-span-7'}>
-                              <label className={`${labelClass} !mb-0.5 text-blue-900 text-[11px]`}>नवीन मुदत ठेव योजना (New Scheme) *</label>
-                              <select
-                                value={targetSchemeId}
-                                onChange={(e) => setTargetSchemeId(parseInt(e.target.value))}
-                                className={`${inputClass} font-semibold h-[30px]`}
-                                required
-                              >
-                                {schemes.map(s => (
-                                  <option key={s.fdSchemeID} value={s.fdSchemeID}>
-                                    {s.schemeName} ({s.interestRate}%, {s.durationMonths} महिने)
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Renewal Effective Date Policy (Overdue handling) */}
-                            {isOverdue && (
-                              <div className="sm:col-span-3">
-                                <label className={`${labelClass} !mb-0.5 text-amber-900 text-[11px]`}>नूतनीकरण प्रभावी दिनांक</label>
-                                <select
-                                  value={renewalEffectiveFrom}
-                                  onChange={(e) => setRenewalEffectiveFrom(e.target.value as 'ClosureDate' | 'MaturityDate')}
-                                  className={`${inputClass} font-semibold bg-amber-50 border-amber-300 h-[30px]`}
-                                >
-                                  <option value="ClosureDate">आजपासून (Closure Date)</option>
-                                  <option value="MaturityDate">मुदतपूर्तीपासून (Retroactive)</option>
-                                </select>
-                              </div>
+                        <FormRow label="व्यवहार तारीख (Txn Date)" required>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input
+                              type="date"
+                              value={closureDate}
+                              min={effectiveMinDate}
+                              max={todayStr}
+                              onChange={(e) => setClosureDate(e.target.value)}
+                              className={`${ctrl} !w-[170px] font-semibold ${hasDateError ? '!border-red-500 !bg-red-50 !text-red-900' : ''}`}
+                              required
+                              disabled={isPassingMode}
+                            />
+                            {isOverdue && acc && (
+                              <span className="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-sm border border-amber-200">
+                                मुदतपूर्तीनंतर {overdueDays} दिवस
+                              </span>
                             )}
                           </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* SECTION 2: PAYMENT METHOD, SETTLEMENT & NARRATION */}
-                    <div className="pt-2 border-t border-slate-100 space-y-2">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                        <h2 className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase tracking-wide">
-                          <span className="w-4 h-4 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold">३</span>
-                          <span>
-                            {actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest'
-                              ? 'नूतनीकरण नोंदणी तपशील (Renewal Details)'
-                              : actionType === 'Renewal'
-                              ? 'शिल्लक व्याज परतावा पद्धत व खाती (Interest Payout Settlement)'
-                              : 'परतावा पेमेंट पद्धत व खाती (Payout Method & Accounts)'}
-                          </span>
-                        </h2>
-                        <span className="text-[10px] text-gray-500 font-medium">
-                          {actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest'
-                            ? 'संपूर्ण रक्कम नवीन मुदत ठेवीत रोलओव्हर होईल'
-                            : 'पेमेंट पद्धतीनुसार लेजर व शेरा निवडा'}
-                        </span>
+                          {isBeforeOpeningDate && acc && (
+                            <p className="mt-1 text-[11px] text-red-700 font-medium">
+                              तारीख खाते उघडण्याच्या ({formatDateDisplay(acc.openingDate)}) आधीची असू शकत नाही.
+                            </p>
+                          )}
+                          {isFutureDate && (
+                            <p className="mt-1 text-[11px] text-red-700 font-medium">
+                              भविष्यातील तारीख प्रतिबंधित आहे. कृपया आजची किंवा मागील तारीख निवडा.
+                            </p>
+                          )}
+                          {isBeforeLastAccrual && acc?.lastInterestPostingDate && (
+                            <p className="mt-1 text-[11px] text-red-700 font-medium">
+                              तारीख शेवटच्या व्याज तरतुदीच्या ({formatDateDisplay(acc.lastInterestPostingDate)}) आधीची असू शकत नाही.
+                            </p>
+                          )}
+                          {isBackdatedSavingsTransfer && (
+                            <p className="mt-1 text-[11px] text-red-700 font-medium flex items-center gap-2">
+                              <span>बचत खात्यात वर्ग करताना आजचीच तारीख लागते.</span>
+                              <button type="button" onClick={() => setClosureDate(todayStr)} className="text-primary font-bold underline cursor-pointer">
+                                आजची तारीख घ्या
+                              </button>
+                            </p>
+                          )}
+                        </FormRow>
                       </div>
+                    </fieldset>
 
-                      {/* Active Loans Warning Banner (if any) */}
-                      {activeLoansData?.hasActiveLoan && (
-                        <div className="bg-amber-50 border border-amber-300 rounded p-1.5 text-xs text-amber-900 flex items-center gap-1.5">
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          <span>
-                            <b>कर्ज सूचना:</b> या खातेदाराकडे <b>₹{(activeLoansData.totalOutstandingLiability || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b> चे सक्रिय कर्ज बाकी आहे. मुदत ठेवीचा परतावा <u>'बचत खात्यात वर्ग (Transfer)'</u> करून नंतर कर्ज वसुली करावी.
-                          </span>
-                        </div>
-                      )}
+                    {!acc && (
+                      <div className="p-8 text-center space-y-1.5 border border-dashed border-slate-300 rounded-sm bg-white">
+                        <BookOpen className="w-6 h-6 text-slate-400 mx-auto" />
+                        <h3 className="text-xs font-bold text-slate-700">कोणतेही मुदत ठेव खाते निवडलेले नाही</h3>
+                        <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                          कृपया वरील शोध पट्टीमधून खाते क्रमांक, पावती क्रमांक, जुना क्रमांक, खातेदाराचे नाव किंवा CIF प्रविष्ट करून मुदत ठेव निवडा.
+                        </p>
+                      </div>
+                    )}
 
-                      {/* If Full Roll Renewal, inform user that no cash/bank disbursement is required */}
-                      {actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest' ? (
-                        <div className="bg-emerald-50 border border-emerald-200 rounded p-2 text-xs text-emerald-950 flex items-center gap-2">
-                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span>
-                            मूळ मुद्दल (₹{principal.toLocaleString()}) + साचलेले व्याज (₹{interestPayable.toLocaleString()}) = <b>₹{(principal + interestPayable + effOverdue).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</b> संपूर्ण रक्कम नवीन मुदत ठेव पावतीमध्ये जमा होईल. बाह्य रोख/बँक पेआउटची आवश्यकता नाही.
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {/* Row 1: Payment Mode (5 cols) & Account/CashLedgerReflectBadge (7 cols) */}
-                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-start">
-                            {/* Col 1 (5 cols): Payment Mode */}
-                            <div className="sm:col-span-5">
-                              <label className={`${labelClass} !mb-1 text-[11px]`}>
-                                {actionType === 'Renewal' ? 'व्याज पेमेंट पद्धत (Mode) *' : 'परतावा पेमेंट पद्धत (Mode) *'}
-                              </label>
-                              <select
-                                value={paymentMode}
-                                onChange={(e) => setPaymentMode(e.target.value as 'Cash' | 'Bank' | 'Transfer')}
-                                className={`${inputClass} font-bold text-gray-900 h-[36px] cursor-pointer text-xs`}
-                              >
-                                <option value="Cash">💵 रोख (Cash)</option>
-                                <option value="Bank">🏦 बँक (Bank)</option>
-                                <option value="Transfer">🔄 बचत खात्यात वर्ग (Saving Transfer)</option>
-                              </select>
-                            </div>
+                    {acc && (
+                      <>
+                        {/* Group Box 2: Deposit Details */}
+                        <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3 bg-white shadow-2xs">
+                          <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                            <Info className="w-3.5 h-3.5 text-primary shrink-0" />
+                            <span>२. मुदत ठेव तपशील (Deposit Details - Read Only)</span>
+                          </legend>
 
-                            {/* Col 2 (7 cols): Payout Account (Cash Ledger / Bank Account / Savings Account) */}
-                            <div className="sm:col-span-7">
-                              {paymentMode === 'Cash' && (
-                                <div>
-                                  <label className={`${labelClass} !mb-1 text-gray-700 text-[11px]`}>
-                                    परतावा रोख खाते (Cash Ledger)
+                          <div className="overflow-x-auto mt-1 border border-slate-200 rounded-sm">
+                            <table className="w-full border-collapse text-[11.5px] bg-white">
+                              <tbody>
+                                <tr className="border-b border-slate-200">
+                                  <th className="w-28 sm:w-32 bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    खातेदार
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-bold text-slate-900 border-r border-slate-200">
+                                    {acc.customerName || acc.memberName || '-'}
+                                  </td>
+                                  <th className="w-24 sm:w-28 bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    CIF क्र.
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-mono text-slate-800">
+                                    {acc.cifNo || (acc.customerID ? `CIF-${acc.customerID}` : '-')}
+                                  </td>
+                                </tr>
+                                <tr className="border-b border-slate-200">
+                                  <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    खाते क्र.
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-mono font-bold text-primary border-r border-slate-200">
+                                    {acc.accountNo}
+                                  </td>
+                                  <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    जुना क्र.
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-mono font-bold text-slate-800">
+                                    {acc.legacyAccountNumber?.trim() || '-'}
+                                  </td>
+                                </tr>
+                                <tr className="border-b border-slate-200">
+                                  <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    ठेव योजना
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-medium text-slate-800 border-r border-slate-200">
+                                    {acc.schemeName}
+                                  </td>
+                                  <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    खाते स्थिती
+                                  </th>
+                                  <td className="px-2.5 py-1.5">
+                                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm border ${
+                                      isMatured ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-amber-50 text-amber-800 border-amber-300'
+                                    }`}>
+                                      {isMatured ? 'मुदत संपली (Matured)' : 'मुदत चालू (Premature)'}
+                                    </span>
+                                    {isOverdue && (
+                                      <span className="ml-2 text-[10.5px] font-semibold text-amber-700">
+                                        ({overdueDays} दिवस ओव्हरड्यू)
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                                <tr className="border-b border-slate-200">
+                                  <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    सुरू दिनांक
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-mono text-slate-800 border-r border-slate-200">
+                                    {formatDateDisplay(acc.openingDate)}
+                                  </td>
+                                  <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    मुदतपूर्ती दिनांक
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-mono font-bold text-slate-900">
+                                    {formatDateDisplay(acc.maturityDate)}
+                                  </td>
+                                </tr>
+                                <tr className="border-b border-slate-200">
+                                  <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    ठेव मुद्दल
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-mono font-bold text-slate-900 border-r border-slate-200">
+                                    ₹ {fmt(acc.depositAmount)}
+                                  </td>
+                                  <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    व्याजदर
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-mono font-bold text-blue-700">
+                                    {acc.interestRate}% p.a.
+                                    {acc.isSeniorCitizen && (
+                                      <span className="ml-1.5 text-[10px] text-amber-700 font-normal">
+                                        (ज्येष्ठ नागरिक)
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                                <tr>
+                                  <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    मुदतपूर्ती रक्कम
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-mono font-bold text-emerald-700 border-r border-slate-200">
+                                    ₹ {fmt(acc.maturityAmount || 0)}
+                                  </td>
+                                  <th className="bg-slate-50/80 px-2.5 py-1.5 text-left font-medium text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                                    इतर तपशील
+                                  </th>
+                                  <td className="px-2.5 py-1.5 text-slate-700">
+                                    {acc.isSeniorCitizen ? 'ज्येष्ठ नागरिक ठेव' : 'नियमित ठेव'}
+                                    {acc.legacyAccruedInt > 0 ? ` • जुने संचित व्याज: ₹ ${fmt(acc.legacyAccruedInt)}` : ''}
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </fieldset>
+
+                        {/* Group Box 3: Transaction Action */}
+                        <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3 bg-white shadow-2xs">
+                          <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
+                            <span>३. व्यवहार प्रकार व कृती (Transaction Action)</span>
+                          </legend>
+
+                          <div className="space-y-2 mt-1">
+                            <FormRow label="कृती (Action)" required>
+                              {!isMatured ? (
+                                <div className="flex">
+                                  <span className={`${segBase} ${segOn} !cursor-default !flex-none`}>
+                                    <Clock className="w-3.5 h-3.5" />
+                                    मुदतपूर्व बंद व परतावा (Premature Close)
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex">
+                                  <label className={`${segBase} ${actionType === 'MaturityClose' ? segOn : segOff}`}>
+                                    <input
+                                      type="radio"
+                                      name="actionType"
+                                      value="MaturityClose"
+                                      checked={actionType === 'MaturityClose'}
+                                      onChange={(e) => setActionType(e.target.value)}
+                                      className="sr-only"
+                                    />
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                    मुदतपूर्ती पेमेंट (Maturity Payout)
                                   </label>
-                                  <CashLedgerReflectBadge 
-                                    branchId={selectedAccount.branchID} 
-                                    transactionType="Withdrawal" 
-                                    customTitle="रोख खाते (Cash Ledger)"
-                                    className="!py-1.5 !px-2"
-                                  />
+                                  <label className={`${segBase} ${actionType === 'Renewal' ? segOn : segOff}`}>
+                                    <input
+                                      type="radio"
+                                      name="actionType"
+                                      value="Renewal"
+                                      checked={actionType === 'Renewal'}
+                                      onChange={(e) => {
+                                        setActionType(e.target.value);
+                                        if (!targetSchemeId && schemes.length > 0) {
+                                          setTargetSchemeId(acc.fdSchemeID || schemes[0].fdSchemeID);
+                                        }
+                                      }}
+                                      className="sr-only"
+                                    />
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                    नूतनीकरण (FD Renewal)
+                                  </label>
                                 </div>
                               )}
+                            </FormRow>
 
-                              {paymentMode === 'Bank' && (
-                                <div>
-                                  <label className={`${labelClass} !mb-1 text-gray-700 text-[11px]`}>
-                                    बँक लेजर निवडा (Bank GL) *
-                                  </label>
-                                  <SearchableSelect
-                                    options={bankLedgers.map(b => ({
-                                      value: b.ledgerID.toString(),
-                                      label: `${b.ledgerID} - ${b.ledgerName}`
-                                    }))}
-                                    value={bankAccountLedgerID.toString()}
-                                    onChange={(val: any) => {
-                                      const v = typeof val === 'object' && val?.target ? val.target.value : val;
-                                      setBankAccountLedgerID(parseInt(String(v || 0)));
-                                    }}
-                                    placeholder="बँक खाते शोधा..."
-                                    disabled={isPassingMode}
-                                  />
+                            {actionType === 'PrematureClose' && (
+                              <FormRow label="लागू सवलत दर (Rate)">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="h-8 inline-flex items-center px-2.5 border border-slate-200 bg-slate-50 rounded-sm font-mono font-bold text-xs text-slate-900">
+                                    {prematurePreview?.prematureRate ?? acc.interestRate}% p.a.
+                                  </span>
+                                  <span className="text-[11px] text-slate-500">
+                                    प्रत्यक्ष पूर्ण कालावधीच्या स्लॅब दरानुसार व्याज पुनर्गणना (RBI नियम)
+                                  </span>
                                 </div>
-                              )}
+                              </FormRow>
+                            )}
 
-                              {paymentMode === 'Transfer' && (
-                                <div>
-                                  <label className={`${labelClass} !mb-1 text-gray-700 text-[11px]`}>
-                                    बचत खाते निवडा (Saving Account) *
-                                  </label>
+                            {actionType === 'Renewal' && (
+                              <>
+                                <FormRow label="नूतनीकरण प्रकार (Mode)" required>
+                                  <div className="flex">
+                                    <label className={`${segBase} ${renewalType === 'PrincipalPlusInterest' ? segOn : segOff}`}>
+                                      <input
+                                        type="radio"
+                                        name="renewalType"
+                                        value="PrincipalPlusInterest"
+                                        checked={renewalType === 'PrincipalPlusInterest'}
+                                        onChange={(e) => setRenewalType(e.target.value)}
+                                        className="sr-only"
+                                      />
+                                      मुद्दल + व्याज (Full Roll)
+                                    </label>
+                                    <label className={`${segBase} ${renewalType === 'PrincipalOnly' ? segOn : segOff}`}>
+                                      <input
+                                        type="radio"
+                                        name="renewalType"
+                                        value="PrincipalOnly"
+                                        checked={renewalType === 'PrincipalOnly'}
+                                        onChange={(e) => setRenewalType(e.target.value)}
+                                        className="sr-only"
+                                      />
+                                      केवळ मूळ मुद्दल (Principal Only)
+                                    </label>
+                                  </div>
+                                </FormRow>
+                                <FormRow label="नवीन योजना (New Scheme)" required>
                                   <select
-                                    value={selectedSavingAccountId}
-                                    onChange={(e) => setSelectedSavingAccountId(e.target.value ? parseInt(e.target.value) : '')}
-                                    className={`${inputClass} font-semibold h-[36px] cursor-pointer text-xs`}
+                                    value={targetSchemeId}
+                                    onChange={(e) => setTargetSchemeId(parseInt(e.target.value))}
+                                    className={`${ctrl} font-semibold cursor-pointer`}
                                     required
                                   >
-                                    <option value="">-- बचत खाते निवडा --</option>
-                                    {memberSavingAccounts.map(s => (
-                                      <option key={s.savingAccountID} value={s.savingAccountID}>
-                                        {s.accountNo} (शिल्लक: ₹{s.currentBalance.toLocaleString()})
+                                    {schemes.map(s => (
+                                      <option key={s.fdSchemeID} value={s.fdSchemeID}>
+                                        {s.schemeName} ({s.interestRate}%, {s.durationMonths} महिने)
                                       </option>
                                     ))}
                                   </select>
-                                </div>
-                              )}
+                                </FormRow>
+                                {isOverdue && (
+                                  <FormRow label="प्रभावी दिनांक (Effective)">
+                                    <select
+                                      value={renewalEffectiveFrom}
+                                      onChange={(e) => setRenewalEffectiveFrom(e.target.value as 'ClosureDate' | 'MaturityDate')}
+                                      className={`${ctrl} font-semibold cursor-pointer`}
+                                    >
+                                      <option value="ClosureDate">आजपासून (Closure Date)</option>
+                                      <option value="MaturityDate">मुदतपूर्तीपासून (Retroactive)</option>
+                                    </select>
+                                  </FormRow>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </fieldset>
+
+                        {/* Group Box 4: Payment Details */}
+                        <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3 bg-white shadow-2xs">
+                          <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                            <DollarSign className="w-3.5 h-3.5 text-primary shrink-0" />
+                            <span>
+                              {isFullRoll
+                                ? '४. नूतनीकरण नोंद (Renewal Details)'
+                                : actionType === 'Renewal'
+                                ? '४. व्याज परतावा तपशील (Interest Payout)'
+                                : '४. परतावा पेमेंट तपशील व खाती (Payment Details)'}
+                            </span>
+                          </legend>
+
+                          <div className="space-y-2 mt-1">
+                            {isFullRoll ? (
+                              <div className="bg-emerald-50 border border-emerald-200 rounded-sm px-3 py-2 text-xs text-emerald-950 flex items-start gap-2">
+                                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                                <span>
+                                  मूळ मुद्दल (₹{fmt(principal)}) + साचलेले व्याज (₹{fmt(interestPayable)})
+                                  {effOverdue > 0 && <> + ओव्हरड्यू व्याज (₹{fmt(effOverdue)})</>} = <b>₹{fmt(finalAmount)}</b> संपूर्ण रक्कम नवीन मुदत ठेव पावतीमध्ये जमा होईल. रोख/बँक पेआउटची आवश्यकता नाही.
+                                </span>
+                              </div>
+                            ) : (
+                              <>
+                                <FormRow label={actionType === 'Renewal' ? 'व्याज पेमेंट पद्धत (Mode)' : 'पेमेंट पद्धत (Mode)'} required>
+                                  <select
+                                    value={paymentMode}
+                                    onChange={(e) => setPaymentMode(e.target.value as 'Cash' | 'Bank' | 'Transfer')}
+                                    className={`${ctrl} font-semibold cursor-pointer`}
+                                  >
+                                    <option value="Cash">रोख (Cash)</option>
+                                    <option value="Bank">बँक (Bank)</option>
+                                    <option value="Transfer">बचत खात्यात वर्ग (Saving Transfer)</option>
+                                  </select>
+                                </FormRow>
+
+                                {paymentMode === 'Cash' && (
+                                  <FormRow label="रोख खाते (Cash Ledger)" align="start">
+                                    <CashLedgerReflectBadge
+                                      branchId={acc.branchID}
+                                      transactionType="Withdrawal"
+                                      customTitle="रोख खाते (Cash Ledger)"
+                                      className="!py-1.5 !px-2"
+                                    />
+                                  </FormRow>
+                                )}
+
+                                {paymentMode === 'Bank' && (
+                                  <>
+                                    <FormRow label="बँक लेजर (Bank GL)" required>
+                                      <SearchableSelect
+                                        options={bankLedgers.map(b => ({
+                                          value: b.ledgerID.toString(),
+                                          label: `${b.ledgerID} - ${b.ledgerName}`
+                                        }))}
+                                        value={bankAccountLedgerID.toString()}
+                                        onChange={(val: any) => {
+                                          const v = typeof val === 'object' && val?.target ? val.target.value : val;
+                                          setBankAccountLedgerID(parseInt(String(v || 0)));
+                                        }}
+                                        placeholder="बँक खाते शोधा..."
+                                        disabled={isPassingMode}
+                                      />
+                                    </FormRow>
+                                    <FormRow label="धनादेश / UTR क्र.">
+                                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_170px] gap-2">
+                                        <input
+                                          type="text"
+                                          value={chequeNo}
+                                          onChange={(e) => setChequeNo(e.target.value)}
+                                          placeholder="उदा. Cheque 123456 / UTR"
+                                          className={`${ctrl} font-semibold`}
+                                        />
+                                        <input
+                                          type="date"
+                                          value={chequeDate}
+                                          onChange={(e) => setChequeDate(e.target.value)}
+                                          className={ctrl}
+                                          title="धनादेश तारीख (Cheque Date)"
+                                        />
+                                      </div>
+                                    </FormRow>
+                                  </>
+                                )}
+
+                                {paymentMode === 'Transfer' && (
+                                  <FormRow label="बचत खाते (Saving A/c)" required>
+                                    <select
+                                      value={selectedSavingAccountId}
+                                      onChange={(e) => setSelectedSavingAccountId(e.target.value ? parseInt(e.target.value) : '')}
+                                      className={`${ctrl} font-semibold cursor-pointer`}
+                                      required
+                                    >
+                                      <option value="">-- बचत खाते निवडा --</option>
+                                      {memberSavingAccounts.map(s => (
+                                        <option key={s.savingAccountID} value={s.savingAccountID}>
+                                          {s.accountNo} (शिल्लक: ₹{s.currentBalance.toLocaleString()})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </FormRow>
+                                )}
+
+                                <FormRow label="तपशील / शेरा (Narration)">
+                                  <input
+                                    type="text"
+                                    value={narration}
+                                    onChange={(e) => setNarration(e.target.value)}
+                                    placeholder="उदा. मुदत ठेव परतावा / मुदतपूर्व बंद"
+                                    className={ctrl}
+                                  />
+                                </FormRow>
+                              </>
+                            )}
+                          </div>
+                        </fieldset>
+
+                        {/* Inline Interest Schedule (toggle from action bar) */}
+                        {showInlineSchedule && scheduleSummary && (
+                          <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3 bg-white shadow-2xs">
+                            <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
+                              <span>कालावधीनिहाय व्याज आकारणी वेळापत्रक (Interest Schedule)</span>
+                            </legend>
+                            <div className="flex justify-end -mt-6 mb-2">
+                              <span className="text-[11px] text-slate-500">एकूण टप्पे: {scheduleSummary.periods.length}</span>
                             </div>
+                            <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-sm mt-1">
+                              <table className="w-full border-collapse text-[11px]">
+                                <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase font-bold sticky top-0">
+                                  <tr>
+                                    <th className="px-2 py-1 text-left">टप्पा</th>
+                                    <th className="px-2 py-1 text-center">कालावधी</th>
+                                    <th className="px-2 py-1 text-center">दिवस</th>
+                                    <th className="px-2 py-1 text-right">आरंभी शिल्लक (₹)</th>
+                                    <th className="px-2 py-1 text-right">व्याज (₹)</th>
+                                    <th className="px-2 py-1 text-right">अंतिम शिल्लक (₹)</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {scheduleSummary.periods.map((q, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-50">
+                                      <td className="px-2 py-1 font-semibold text-slate-800">{q.periodLabel}</td>
+                                      <td className="px-2 py-1 text-center text-slate-600">{q.fromDate} ते {q.toDate}</td>
+                                      <td className="px-2 py-1 text-center font-mono">{q.days}</td>
+                                      <td className="px-2 py-1 text-right font-mono">{fmt(q.openingBalance)}</td>
+                                      <td className="px-2 py-1 text-right font-mono font-semibold text-primary">{fmt(q.interestAmount)}</td>
+                                      <td className="px-2 py-1 text-right font-mono font-semibold text-slate-900">{fmt(q.closingBalance)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </fieldset>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* ================= RIGHT: SETTLEMENT PANEL (GROUP BOXES) ================= */}
+                  {acc && (
+                    <div className="lg:col-span-5 space-y-3.5 lg:sticky lg:top-2">
+                      {/* Group Box 5: Settlement Summary */}
+                      <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3 bg-white shadow-2xs">
+                        <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                          <Scale className="w-3.5 h-3.5 text-primary shrink-0" />
+                          <span>थेट सेटलमेंट सारांश (Settlement Summary)</span>
+                        </legend>
+
+                        <div className="flex justify-end -mt-6 mb-2">
+                          <span className="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-sm">
+                            {actionType === 'PrematureClose' ? 'मुदतपूर्व बंद' : actionType === 'Renewal' ? 'नूतनीकरण' : 'मुदतपूर्ती पेमेंट'}
+                          </span>
+                        </div>
+
+                        <dl className="text-xs divide-y divide-slate-100 mt-1">
+                          {/* Row 1: Principal */}
+                          <div className="flex justify-between items-center py-1.5">
+                            <dt className="text-slate-600">ठेव मुद्दल (Principal)</dt>
+                            <dd className="font-mono font-semibold text-slate-900">{fmt(principal)}</dd>
                           </div>
 
-                          {/* Bank Cheque / UTR row if Bank mode */}
-                          {paymentMode === 'Bank' && !(actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest') && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-slate-100">
-                              <div>
-                                <label className="block text-[10px] font-bold text-gray-700 mb-0.5">धनादेश / संदर्भ क्र. (Cheque / UTR)</label>
-                                <input
-                                  type="text"
-                                  value={chequeNo}
-                                  onChange={(e) => setChequeNo(e.target.value)}
-                                  placeholder="उदा. Cheque 123456 / UTR"
-                                  className={`${inputClass} h-[30px] font-bold text-xs`}
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-gray-700 mb-0.5">धनादेश तारीख (Cheque Date)</label>
-                                <input
-                                  type="date"
-                                  value={chequeDate}
-                                  onChange={(e) => setChequeDate(e.target.value)}
-                                  className={`${inputClass} h-[30px] text-xs`}
-                                />
-                              </div>
+                          {/* Row 2: Editable Interest */}
+                          <div className="py-1.5 flex items-center justify-between gap-2">
+                            <dt className="text-slate-700 font-medium">
+                              {actionType === 'PrematureClose' ? 'सवलतीचे देय व्याज:' : 'करारानुसार साचलेले व्याज:'}
+                            </dt>
+                            <dd className="flex items-center gap-1.5">
+                              <span className="text-slate-500 font-mono text-xs">+ ₹</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={
+                                  actionType === 'PrematureClose'
+                                    ? (customPrematureInterest !== '' ? customPrematureInterest : systemRecalcInt)
+                                    : (customAccruedInterest !== '' ? customAccruedInterest : systemAccruedInt)
+                                }
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setIsManualOverride(true);
+                                  setManualOverrideReason('थेट सेटलमेंट संपादन');
+                                  if (actionType === 'PrematureClose') {
+                                    setCustomPrematureInterest(val);
+                                  } else {
+                                    setCustomAccruedInterest(val);
+                                  }
+                                }}
+                                className="w-28 h-7 text-right font-mono font-bold text-xs bg-amber-50/70 border border-amber-300 rounded-sm px-2 text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white focus:ring-1 focus:ring-amber-400"
+                                title="व्याज रक्कम थेट येथे बदला"
+                              />
+                              {(actionType === 'PrematureClose' ? customPrematureInterest !== '' : customAccruedInterest !== '') && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (actionType === 'PrematureClose') {
+                                      setCustomPrematureInterest('');
+                                    } else {
+                                      setCustomAccruedInterest('');
+                                    }
+                                    if (
+                                      (actionType === 'PrematureClose' || customAccruedInterest === '') &&
+                                      customOverdueInterest === ''
+                                    ) {
+                                      setIsManualOverride(false);
+                                      setManualOverrideReason('');
+                                    }
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-amber-700 hover:bg-amber-100 rounded cursor-pointer transition"
+                                  title="सिस्टीम गणनेनुसार पूर्ववत करा"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                </button>
+                              )}
+                            </dd>
+                          </div>
+
+                          {/* Row 3: Clawback (Premature only) */}
+                          {actionType === 'PrematureClose' && clawback > 0 && (
+                            <div className="flex justify-between items-center py-1.5">
+                              <dt className="text-slate-600">जादा व्याज कपात (Clawback)</dt>
+                              <dd className="font-mono font-semibold text-red-700">- {fmt(clawback)}</dd>
                             </div>
                           )}
 
-                          {/* Row 2: Full-width Narration */}
-                          <div>
-                            <label className={`${labelClass} !mb-1 text-gray-700 text-[11px]`}>
-                              तपशील / शेरा (Narration)
-                            </label>
-                            <input
-                              type="text"
-                              value={narration}
-                              onChange={(e) => setNarration(e.target.value)}
-                              placeholder="उदा. मुदत ठेव परतावा / मुदतपूर्व बंद"
-                              className={`${inputClass} h-[34px] text-xs`}
-                            />
+                          {/* Row 4: Editable Overdue Interest (if applicable) */}
+                          {(isOverdue || effOverdue > 0) && (
+                            <div className="py-1.5 flex items-center justify-between gap-2">
+                              <dt className="text-slate-700 font-medium">
+                                ओव्हरड्यू व्याज ({overdueDays} दिवस):
+                              </dt>
+                              <dd className="flex items-center gap-1.5">
+                                <span className="text-slate-500 font-mono text-xs">+ ₹</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={customOverdueInterest !== '' ? customOverdueInterest : overdueInterest}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setIsManualOverride(true);
+                                    setManualOverrideReason('थेट सेटलमेंट संपादन');
+                                    setCustomOverdueInterest(val);
+                                  }}
+                                  className="w-28 h-7 text-right font-mono font-bold text-xs bg-amber-50/70 border border-amber-300 rounded-sm px-2 text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white focus:ring-1 focus:ring-amber-400"
+                                  title="ओव्हरड्यू व्याज थेट येथे बदला"
+                                />
+                                {customOverdueInterest !== '' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setCustomOverdueInterest('');
+                                      if (customAccruedInterest === '' && customPrematureInterest === '') {
+                                        setIsManualOverride(false);
+                                        setManualOverrideReason('');
+                                      }
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-amber-700 hover:bg-amber-100 rounded cursor-pointer transition"
+                                    title="सिस्टीम गणनेनुसार पूर्ववत करा"
+                                  >
+                                    <RotateCcw className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </dd>
+                            </div>
+                          )}
+                        </dl>
+
+                        {/* Inline override indicator if any amount is manually edited */}
+                        {isManualOverride && (
+                          <div className="flex items-center justify-between text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-sm mt-2">
+                            <span className="flex items-center gap-1 font-semibold">
+                              <Edit3 className="w-3 h-3 text-amber-600" />
+                              रक्कम मॅन्युअल संपादित आहे
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleResetManualOverride}
+                              className="text-amber-900 underline font-bold hover:text-amber-950 cursor-pointer text-[10px]"
+                            >
+                              सर्व पूर्ववत करा
+                            </button>
                           </div>
+                        )}
+
+                        <div className="mt-2 pt-2 border-t-2 border-slate-800 flex items-end justify-between bg-slate-50/80 -mx-3.5 px-3.5 py-2 -mb-2 rounded-b-sm border-b border-slate-200">
+                          <div>
+                            <div className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
+                              {actionType === 'Renewal'
+                                ? (isFullRoll ? 'नवीन मुदत ठेव रक्कम' : 'नवीन ठेव मुद्दल')
+                                : 'अंतिम देय रक्कम (Net Payable)'}
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              {actionType === 'Renewal' ? 'नवीन मुदत ठेव पावतीमध्ये जमा' : `पद्धत: ${paymentModeLabel}`}
+                            </div>
+                          </div>
+                          <div className="text-xl font-mono font-black text-primary tracking-tight">₹ {fmt(finalAmount)}</div>
                         </div>
+                      </fieldset>
+
+                      {/* Group Box 6: Voucher Entries (Clean, without separate override box) */}
+                      {voucherPreview && (
+                        <fieldset className="border border-slate-300 rounded-sm px-3.5 pt-1.5 pb-3 bg-white shadow-2xs">
+                          <legend className="float-none w-auto text-[11px] font-bold text-primary px-2.5 py-0.5 bg-white border border-slate-300 rounded-sm shadow-2xs inline-flex items-center gap-1.5">
+                            <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+                            <span>लेखा व्हाउचर नोंदी (Accounting Voucher)</span>
+                          </legend>
+
+                          <div className="flex items-center justify-end gap-2 -mt-6 mb-2">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-sm border ${
+                              isBalanced ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-red-50 text-red-800 border-red-300'
+                            }`}>
+                              {isBalanced ? 'संतुलित' : 'असंतुलित'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setShowVoucherPreview(!showVoucherPreview)}
+                              className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-0.5 cursor-pointer"
+                            >
+                              {showVoucherPreview ? <>लपवा <ChevronUp className="w-3 h-3" /></> : <>पाहा <ChevronDown className="w-3 h-3" /></>}
+                            </button>
+                          </div>
+
+                          <div className="mt-1 space-y-2">
+                            {showVoucherPreview && (
+                              <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-sm">
+                                <table className="w-full border-collapse text-[11px]">
+                                  <thead className="bg-slate-50 text-slate-600 text-[10px] uppercase font-bold sticky top-0 border-b border-slate-200">
+                                    <tr>
+                                      <th className="py-1 px-3 text-left w-12">Dr/Cr</th>
+                                      <th className="py-1 px-2 text-left">खाते (Ledger)</th>
+                                      <th className="py-1 px-3 text-right w-28">रक्कम (₹)</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {voucherPreview.map((entry, idx) => (
+                                      <tr key={idx}>
+                                        <td className="py-1 px-3 font-bold text-slate-600">{entry.drCr}</td>
+                                        <td className="py-1 px-2 font-medium text-slate-800 truncate max-w-[160px]" title={entry.ledgerName}>
+                                          {entry.ledgerName}
+                                        </td>
+                                        <td className="py-1 px-3 text-right font-mono font-semibold text-slate-900 whitespace-nowrap">
+                                          {fmt(entry.amount)}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                  <tfoot className="bg-slate-50 border-t border-slate-200 font-mono text-[10px] font-bold text-slate-700">
+                                    <tr>
+                                      <td colSpan={2} className="py-1 px-3">एकूण Dr: {fmt(totalDr)}</td>
+                                      <td className="py-1 px-3 text-right">Cr: {fmt(totalCr)}</td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </fieldset>
                       )}
                     </div>
+                  )}
+                </div>
+              </fieldset>
 
-                    {/* SECTION 4: INTEREST SNAPSHOT & SCHEDULE QUICK ACTIONS */}
-                    <div className="bg-slate-50 border border-slate-200 rounded p-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div className="flex flex-wrap items-center gap-2 text-slate-700 text-[11px]">
-                        <span className="font-semibold text-slate-600">लागू व्याजदर:</span>
-                        <span className="font-mono font-bold text-blue-900 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                          {actionType === 'PrematureClose' ? (prematurePreview?.prematureRate ?? selectedAccount.interestRate) : selectedAccount.interestRate}% p.a.
-                        </span>
-                        <span className="text-slate-300">•</span>
-                        <span className="font-semibold text-slate-600">मुदतपूर्ती:</span>
-                        <span className="font-bold text-gray-900 bg-white px-1.5 py-0.5 rounded border border-gray-200">
-                          {formatDateDisplay(selectedAccount.maturityDate)}
-                        </span>
-                        {isOverdue && (
-                          <>
-                            <span className="text-slate-300">•</span>
-                            <span className="font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                              ओव्हरड्यू: {overdueDays} दिवस
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setShowInlineSchedule(!showInlineSchedule)}
-                          className="text-[11px] text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1 cursor-pointer bg-white hover:bg-blue-50 px-2 py-1 rounded border border-blue-200 transition-colors shadow-2xs"
-                        >
-                          <BookOpen className="w-3 h-3 text-blue-600" />
-                          <span>{showInlineSchedule ? 'शेड्युल लपवा ▲' : 'शेड्युल तक्ता पाहा ▼'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setIsScheduleModalOpen(true)}
-                          className="text-[11px] text-gray-700 hover:text-gray-900 font-bold flex items-center gap-1 cursor-pointer bg-white hover:bg-gray-100 px-2 py-1 rounded border border-gray-300 transition-colors shadow-2xs"
-                        >
-                          <span>🖨️ प्रिंट वेळापत्रक</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Inline Interest Schedule Accordion (Type-safe with scheduleSummary.periods) */}
-                    {showInlineSchedule && scheduleSummary && (
-                      <div className="bg-slate-50 border border-slate-200 rounded p-2 space-y-1.5 text-xs animate-in fade-in">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-gray-800 text-[11px]">
-                            📊 कालावधीनिहाय व्याज आकारणी वेळापत्रक (Interest Accrual Schedule)
-                          </span>
-                          <span className="text-[10px] text-gray-500">
-                            एकूण टप्पे: {scheduleSummary.periods.length}
-                          </span>
-                        </div>
-                        <div className="max-h-40 overflow-y-auto border border-slate-200 rounded bg-white">
-                          <table className="w-full border-collapse text-[11px]">
-                            <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase font-bold sticky top-0">
-                              <tr>
-                                <th className="p-1 text-left">टप्पा</th>
-                                <th className="p-1 text-center">कालावधी</th>
-                                <th className="p-1 text-center">दिवस</th>
-                                <th className="p-1 text-right">आरंभी शिल्लक (₹)</th>
-                                <th className="p-1 text-right">व्याज (₹)</th>
-                                <th className="p-1 text-right">अंतिम शिल्लक (₹)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {scheduleSummary.periods.map((q, idx) => (
-                                <tr key={idx} className="hover:bg-slate-50">
-                                  <td className="p-1 font-bold text-gray-800">{q.periodLabel}</td>
-                                  <td className="p-1 text-center text-gray-600">{q.fromDate} ते {q.toDate}</td>
-                                  <td className="p-1 text-center font-mono">{q.days}</td>
-                                  <td className="p-1 text-right font-mono">₹{q.openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                  <td className="p-1 text-right font-mono font-bold text-blue-900">+₹{q.interestAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                  <td className="p-1 text-right font-mono font-bold text-emerald-900">₹{q.closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
+              {/* ================= STICKY ACTION BAR ================= */}
+              {acc && (
+                <div className="sticky bottom-0 z-20 mt-3 bg-white border border-slate-200 rounded-sm shadow-[0_-2px_8px_rgba(15,23,42,0.08)] px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-[11px] min-w-0">
+                    {hasLien ? (
+                      <span className="flex items-center gap-1.5 text-amber-900 bg-amber-50 border border-amber-200 rounded-sm px-2 py-1 font-medium">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        सक्रिय कर्ज बाकी: <b>₹{fmt(activeLoansData?.totalOutstandingLiability || 0)}</b> – परतावा बचत खात्यात वर्ग करून कर्ज वसुली करावी.
+                      </span>
+                    ) : hasDateError ? (
+                      <span className="flex items-center gap-1.5 text-red-700 font-medium">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        व्यवहार तारीख तपासा.
+                      </span>
+                    ) : isManualOverride ? (
+                      <span className="flex items-center gap-1.5 text-amber-800 font-medium">
+                        <Edit3 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        रक्कम मॅन्युअल संपादित आहे.
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">
+                        {acc.accountNo} • {acc.customerName || acc.memberName} • <b className="text-slate-800">₹ {fmt(finalAmount)}</b>
+                      </span>
                     )}
                   </div>
-                </div>
 
-                {/* ================= RIGHT COLUMN: STICKY REAL-TIME COCKPIT (5 Cols) ================= */}
-                <div className="lg:col-span-5 space-y-2.5 sticky top-2">
-                  {/* Card 1: Live Financial Settlement Card */}
-                  <div className="bg-white p-3 rounded-sm border border-slate-200 shadow-2xs space-y-2.5">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                      <h3 className="text-xs font-bold text-gray-800 flex items-center gap-1.5 uppercase tracking-wide">
-                        <Scale className="w-4 h-4 text-primary" />
-                        <span>थेट सेटलमेंट सारांश (Live Cockpit)</span>
-                      </h3>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
-                        isMatured ? 'bg-emerald-100 text-emerald-900 border-emerald-300' : 'bg-amber-100 text-amber-900 border-amber-300'
-                      }`}>
-                        {isMatured ? 'मुदत संपली' : 'मुदतपूर्व बंद'}
-                      </span>
-                    </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowInlineSchedule(!showInlineSchedule)}
+                      className="h-8 px-3 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-sm flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      {showInlineSchedule ? 'वेळापत्रक लपवा' : 'व्याज वेळापत्रक'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsScheduleModalOpen(true)}
+                      className="h-8 px-3 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-sm flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      प्रिंट वेळापत्रक
+                    </button>
 
-                    <div className="space-y-1.5 text-xs font-medium divide-y divide-slate-100">
-                      <div className="flex justify-between items-center py-1">
-                        <span className="text-gray-600">ठेव मुद्दल (Principal):</span>
-                        <span className="font-mono font-bold text-gray-900 text-xs">
-                          ₹ {principal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 text-blue-900">
-                        <span>{actionType === 'PrematureClose' ? 'सवलतीचे देय व्याज:' : 'करारानुसार साचलेले व्याज:'}</span>
-                        <span className="font-mono font-bold text-xs">
-                          + ₹ {interestPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      {actionType === 'PrematureClose' && clawback > 0 && (
-                        <div className="flex justify-between items-center py-1 text-rose-700">
-                          <span>जादा व्याज कपात (Clawback):</span>
-                          <span className="font-mono font-bold text-xs">
-                            - ₹ {clawback.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      )}
-                      {effOverdue > 0 && (
-                        <div className="flex justify-between items-center py-1 text-amber-800">
-                          <span>ओव्हरड्यू व्याज ({overdueDays} दिवस):</span>
-                          <span className="font-mono font-bold text-xs">
-                            + ₹ {effOverdue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Net Payout Banner Box */}
-                    <div className="bg-emerald-50 border-2 border-emerald-500 rounded p-2 text-center shadow-xs">
-                      <span className="text-[10px] uppercase font-bold text-emerald-800 block">
-                        {actionType === 'Renewal'
-                          ? (renewalType === 'PrincipalPlusInterest' ? 'नवीन मुदत ठेव रक्कम (Full Roll)' : 'नवीन ठेव मुद्दल')
-                          : 'अंतिम देय रक्कम (Net Payable Payout)'}
-                      </span>
-                      <div className="text-lg font-mono font-black text-emerald-950 tracking-tight mt-0.5">
-                        ₹ {(actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest' ? (principal + interestPayable + effOverdue) : netPayout).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                      <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">
-                        {actionType === 'Renewal' ? 'नवीन मुदत ठेव पावतीमध्ये जमा होईल' : `पेमेंट पद्धत: ${paymentMode}`}
-                      </span>
-                    </div>
-
-                    {/* Active Loans Caution Badge */}
-                    {activeLoansData?.hasActiveLoan && (
-                      <div className="text-[11px] bg-amber-50 text-amber-900 border border-amber-300 rounded p-1.5 flex items-center gap-1.5 font-semibold">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span>सक्रिय कर्ज बाकी: ₹{(activeLoansData.totalOutstandingLiability || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                      </div>
-                    )}
-
-                    {/* Primary Action Execution Buttons (Always in view without scrolling) */}
-                    <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                      {isPassingMode ? (
-                        <div className="space-y-1.5">
-                          <button
-                            type="button"
-                            onClick={handlePassVoucher}
-                            disabled={passingActionLoading}
-                            className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded shadow-xs text-xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
-                          >
-                            <span>✅</span> {passingActionLoading ? 'मंजूर होत आहे...' : 'मंजूर व पास करा (Pass Voucher)'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setRejectModalOpen(true)}
-                            disabled={passingActionLoading}
-                            className="w-full py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded shadow-xs text-xs flex items-center justify-center gap-1 transition cursor-pointer disabled:opacity-50"
-                          >
-                            <span>❌</span> नामंजूर करा (Reject)
-                          </button>
-                        </div>
-                      ) : (
+                    {isPassingMode ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setRejectModalOpen(true)}
+                          disabled={passingActionLoading}
+                          className="h-8 px-4 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          नामंजूर करा (Reject)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handlePassVoucher}
+                          disabled={passingActionLoading}
+                          className="h-8 px-4 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {passingActionLoading ? 'मंजूर होत आहे...' : 'मंजूर व पास करा (Pass)'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedAccId(0);
+                            setSelectedAccount(null);
+                            handleResetManualOverride();
+                          }}
+                          className="h-8 px-3 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-sm flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          पूर्ववत (Reset)
+                        </button>
                         <button
                           type="submit"
-                          disabled={
-                            loading ||
-                            !selectedAccount ||
-                            isPendingMaturityAction ||
-                            isBeforeOpeningDate ||
-                            isBeforeLastAccrual ||
-                            isFutureDate ||
-                            isBackdatedSavingsTransfer ||
-                            (isManualOverride && !manualOverrideReason.trim())
-                          }
-                          className={`w-full py-2.5 rounded font-bold text-xs shadow-sm transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer ${
-                            loading ||
-                            !selectedAccount ||
-                            isPendingMaturityAction ||
-                            isBeforeOpeningDate ||
-                            isBeforeLastAccrual ||
-                            isFutureDate ||
-                            isBackdatedSavingsTransfer ||
-                            (isManualOverride && !manualOverrideReason.trim())
-                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          disabled={submitDisabled}
+                          className={`h-8 px-5 text-xs font-bold rounded-sm flex items-center gap-1.5 transition-colors ${
+                            submitDisabled
+                              ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                               : actionType === 'PrematureClose'
-                              ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-900/20'
+                              ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
                               : actionType === 'Renewal'
-                              ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-900/20'
-                              : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-900/20'
+                              ? 'bg-primary hover:opacity-90 text-white cursor-pointer'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
                           }`}
                         >
                           {loading ? (
                             <>
                               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                              <span>प्रक्रिया सुरू आहे...</span>
+                              प्रक्रिया सुरू आहे...
                             </>
                           ) : actionType === 'PrematureClose' ? (
                             <>
                               <Clock className="w-3.5 h-3.5" />
-                              <span>⚡ मुदतपूर्व परतावा करा (Submit Premature)</span>
+                              मुदतपूर्व परतावा जतन करा
                             </>
                           ) : actionType === 'Renewal' ? (
                             <>
                               <RefreshCw className="w-3.5 h-3.5" />
-                              <span>🔄 मुदत ठेव नूतनीकरण करा (Submit Renewal)</span>
+                              नूतनीकरण जतन करा
                             </>
                           ) : (
                             <>
                               <CheckCircle className="w-3.5 h-3.5" />
-                              <span>✔️ मुदतपूर्ती पेमेंट करा (Submit Payout)</span>
+                              मुदतपूर्ती पेमेंट जतन करा
                             </>
                           )}
                         </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedAccId(0);
-                          setSelectedAccount(null);
-                          handleResetManualOverride();
-                        }}
-                        className="w-full py-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded text-[11px] font-semibold flex items-center justify-center gap-1 transition cursor-pointer"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        <span>खाते निवड पूर्ववत करा (Reset Selection)</span>
-                      </button>
-                    </div>
+                      </>
+                    )}
                   </div>
-
-                  {/* Card 2: Accounting Preview (Voucher Table & Manual Override) */}
-                  {voucherPreview && (
-                    <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-2xs space-y-2">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <h3 className="text-xs font-bold text-primary uppercase">व्हाउचर स्थिती</h3>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
-                            isBalanced ? 'bg-emerald-100 text-emerald-900 border-emerald-300' : 'bg-red-100 text-red-900 border-red-300'
-                          }`}>
-                            {isBalanced ? 'संतुलित ✅' : 'असंतुलित ⚠️'}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setShowVoucherPreview(!showVoucherPreview)}
-                          className="text-[11px] text-blue-700 hover:text-blue-900 font-bold cursor-pointer"
-                        >
-                          {showVoucherPreview ? 'नोंदी लपवा ▲' : 'नोंदी पाहा ▼'}
-                        </button>
-                      </div>
-
-                      {/* Voucher Table Drawer */}
-                      {showVoucherPreview && (
-                        <div className="border border-slate-200 rounded overflow-hidden max-h-52 overflow-y-auto">
-                          <table className="w-full border-collapse text-[11px]">
-                            <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase font-bold sticky top-0 border-b border-slate-200">
-                              <tr>
-                                <th className="py-1 px-1.5 text-center w-12">Dr/Cr</th>
-                                <th className="py-1 px-1.5 text-left">खाते (Ledger)</th>
-                                <th className="py-1 px-1.5 text-right w-24">रक्कम (₹)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white">
-                              {voucherPreview.map((entry, idx) => (
-                                <tr key={idx} className="hover:bg-slate-50">
-                                  <td className="py-1 px-1.5 text-center">
-                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                                      entry.drCr === 'Dr' ? 'bg-blue-100 text-blue-900' : 'bg-emerald-100 text-emerald-900'
-                                    }`}>
-                                      {entry.drCr}
-                                    </span>
-                                  </td>
-                                  <td className="py-1 px-1.5 font-bold text-gray-800 truncate max-w-[140px]" title={entry.ledgerName}>
-                                    {entry.ledgerName}
-                                  </td>
-                                  <td className="py-1 px-1.5 text-right font-mono font-bold text-gray-900 whitespace-nowrap">
-                                    ₹ {entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                            <tfoot className="bg-slate-50 border-t border-slate-200 font-mono text-[10px]">
-                              <tr>
-                                <td colSpan={2} className="py-1 px-1.5 text-left font-bold text-gray-700">
-                                  Dr: ₹ {totalDr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                </td>
-                                <td className="py-1 px-1.5 text-right font-bold text-emerald-900">
-                                  Cr: ₹ {totalCr.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                </td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-                      )}
-
-                      {/* Manual Amount Override Accordion */}
-                      <div className="pt-1 border-t border-slate-100">
-                        <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px]">
-                          <input
-                            type="checkbox"
-                            checked={isManualOverride}
-                            onChange={(e) => {
-                              const willEnable = e.target.checked;
-                              setIsManualOverride(willEnable);
-                              if (!willEnable) {
-                                handleResetManualOverride();
-                              } else {
-                                if (actionType === 'PrematureClose') {
-                                  if (!customPrematureInterest) {
-                                    const actualDays = Math.max(1, Math.floor((new Date(closureDate).getTime() - new Date(selectedAccount.openingDate).getTime()) / (1000 * 60 * 60 * 24)));
-                                    const ledgers = getSchemeLedgers();
-                                    const resolution = resolvePrematureRateDetails(selectedAccount, ledgers?.scheme, actualDays);
-                                    const prematureRate = prematurePreview?.prematureRate ?? resolution.prematureRate;
-                                    const systemRecalcInt = prematurePreview?.recalculatedInterest ?? Math.round((principal * prematureRate * actualDays) / 36500);
-                                    setCustomPrematureInterest(systemRecalcInt.toString());
-                                  }
-                                } else {
-                                  if (!customAccruedInterest) {
-                                    setCustomAccruedInterest(systemAccruedInt.toString());
-                                  }
-                                  if (isOverdue && !customOverdueInterest) {
-                                    setCustomOverdueInterest(overdueInterest.toString());
-                                  }
-                                }
-                              }
-                            }}
-                            className="w-3.5 h-3.5 text-amber-600 rounded border-amber-400 focus:ring-amber-500 cursor-pointer"
-                          />
-                          <span className="font-bold text-amber-950 flex items-center gap-1">
-                            <Edit3 className="w-3 h-3 text-amber-700" />
-                            रक्कम मॅन्युअल बदल (Manual Override)
-                          </span>
-                        </label>
-
-                        {isManualOverride && (
-                          <div className="bg-amber-50 border border-amber-300 rounded p-2 mt-1.5 space-y-1.5 text-xs animate-in fade-in">
-                            <div className="flex flex-wrap items-center gap-2">
-                              {actionType === 'PrematureClose' ? (
-                                <div className="flex-1 min-w-[120px]">
-                                  <label className="text-[10px] font-bold text-gray-700 block">मुदतपूर्व व्याज (₹):</label>
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    value={customPrematureInterest}
-                                    onChange={(e) => setCustomPrematureInterest(e.target.value)}
-                                    placeholder="0.00"
-                                    className="w-full text-right font-mono font-bold text-xs bg-white border border-amber-400 rounded px-2 py-0.5 text-gray-900"
-                                  />
-                                </div>
-                              ) : (
-                                <>
-                                  <div className="flex-1 min-w-[100px]">
-                                    <label className="text-[10px] font-bold text-gray-700 block">देणे व्याज (₹):</label>
-                                    <input
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      value={customAccruedInterest}
-                                      onChange={(e) => setCustomAccruedInterest(e.target.value)}
-                                      placeholder="0.00"
-                                      className="w-full text-right font-mono font-bold text-xs bg-white border border-amber-400 rounded px-2 py-0.5 text-gray-900"
-                                    />
-                                  </div>
-                                  {isOverdue && (
-                                    <div className="flex-1 min-w-[100px]">
-                                      <label className="text-[10px] font-bold text-gray-700 block">ओव्हरड्यू व्याज (₹):</label>
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={customOverdueInterest}
-                                        onChange={(e) => setCustomOverdueInterest(e.target.value)}
-                                        placeholder="0.00"
-                                        className="w-full text-right font-mono font-bold text-xs bg-white border border-amber-400 rounded px-2 py-0.5 text-gray-900"
-                                      />
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] font-bold text-amber-950 mb-0.5">
-                                बदलाचे कारण / शेरा *
-                              </label>
-                              <input
-                                type="text"
-                                value={manualOverrideReason}
-                                onChange={(e) => setManualOverrideReason(e.target.value)}
-                                placeholder="उदा. जुन्या पावतीनुसार रकमेची जुळवणी"
-                                className="w-full text-xs border border-amber-400 rounded px-2 py-0.5 bg-white text-gray-900 font-medium"
-                                required
-                              />
-                            </div>
-
-                            <div className="flex justify-end">
-                              <button
-                                type="button"
-                                onClick={handleResetManualOverride}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-amber-900 bg-white hover:bg-amber-100 border border-amber-300 rounded shadow-2xs transition cursor-pointer"
-                              >
-                                <RotateCcw className="w-3 h-3" />
-                                पूर्ववत करा
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
-              </div>
-            );
-          })()}
-
-          {!selectedAccount && (
-            <div className="bg-white rounded-sm border border-dashed border-slate-300 p-8 text-center space-y-2">
-              <div className="w-10 h-10 rounded-full bg-blue-50 text-primary flex items-center justify-center mx-auto text-lg font-bold">
-                <BookOpen className="w-5 h-5" />
-              </div>
-              <h3 className="text-xs font-bold text-gray-800">कोणतेही मुदत ठेव खाते निवडलेले नाही</h3>
-              <p className="text-[11px] text-gray-500 max-w-md mx-auto">
-                कृपया वरील शोध पट्टीमधून खाते क्रमांक, पावती क्रमांक, खातेदाराचे नाव किंवा CIF प्रविष्ट करून मुदत ठेव निवडा.
-              </p>
-            </div>
-          )}
-        </fieldset>
+              )}
+            </>
+          );
+        })()}
       </form>
 
 
@@ -2540,9 +2527,24 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                             <span className="font-mono font-bold text-xs text-slate-900 tracking-wide">
                               {acc.accountNo}
                             </span>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              {acc.status || 'Active'}
-                            </span>
+                            {acc.legacyAccountNumber && acc.legacyAccountNumber.trim() && (
+                              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300">
+                                जुना: {acc.legacyAccountNumber.trim()}
+                              </span>
+                            )}
+                            {(() => {
+                              const st = getFdEffectiveStatus(acc);
+                              const cls = st.key === 'Matured'
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                : st.key === 'Active'
+                                ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                : 'bg-slate-100 text-slate-700 border-slate-200';
+                              return (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cls}`}>
+                                  {st.label}
+                                </span>
+                              );
+                            })()}
                           </div>
                           <div className="text-[11px] text-slate-600 font-semibold mt-1">
                             योजना: <span className="text-slate-800 font-bold">{acc.schemeName}</span>

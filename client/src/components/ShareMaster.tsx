@@ -119,6 +119,9 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
   const [selectedMemberId, setSelectedMemberId] = useState<number | ''>('');
   const [legacyMemberNo, setLegacyMemberNo] = useState('');
   const [nextCertNo, setNextCertNo] = useState('CERT-2026-00001');
+  const [customCertNo, setCustomCertNo] = useState('');
+  const [isCustomCertNo, setIsCustomCertNo] = useState(false);
+  const [legacyAccountNo, setLegacyAccountNo] = useState('');
   const [nextFromShareNo, setNextFromShareNo] = useState<number>(1);
   const [shareAccount, setShareAccount] = useState<ShareAccount | null>(null);
   const [certificates, setCertificates] = useState<CertificateData[]>([]);
@@ -498,7 +501,11 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
       if (!isMountedRef.current) return;
 
       if (accRes.ok && accRes.headers.get('content-type')?.includes('application/json')) {
-        setShareAccount(await accRes.json());
+        const accData = await accRes.json();
+        setShareAccount(accData);
+        if (accData?.legacyAccountNumber) {
+          setLegacyAccountNo(accData.legacyAccountNumber);
+        }
       }
       if (certRes.ok && certRes.headers.get('content-type')?.includes('application/json')) {
         setCertificates(await certRes.json());
@@ -532,6 +539,9 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
     setNumberOfShares('');
     setNarration('');
     setPaymentMode('Cash');
+    setCustomCertNo('');
+    setIsCustomCertNo(false);
+    setLegacyAccountNo('');
     setMessage(null);
     fetchNextShareConfig();
   };
@@ -572,7 +582,8 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
       faceValue: faceValue,
       fromShareNo: autoFromShareNo,
       toShareNo: autoToShareNo,
-      certificateNo: autoCertificateNo !== '-' ? autoCertificateNo : null,
+      certificateNo: isCustomCertNo && customCertNo.trim() ? customCertNo.trim() : (autoCertificateNo !== '-' ? autoCertificateNo : null),
+      legacyAccountNumber: legacyAccountNo.trim() || null,
       paymentMode: paymentMode,
       savingAccountId: paymentMode === 'Transfer' ? selectedSavingAccountId : null,
       bankLedgerId: paymentMode === 'Bank' ? selectedBankLedgerId : null,
@@ -1088,16 +1099,59 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                 />
               </div>
 
-              <div className="sm:col-span-2">
+              <div>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className={labelClass}>
+                    <span>सर्टिफिकेट क्र. (Cert No)</span>
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                      isCustomCertNo ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-slate-100 text-slate-600 border border-slate-200'
+                    }`}>
+                      {isCustomCertNo ? 'कस्टम' : 'ऑटो'}
+                    </span>
+                    {isCustomCertNo && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomCertNo(nextCertNo);
+                          setIsCustomCertNo(false);
+                        }}
+                        className="text-[9px] text-primary hover:underline font-bold cursor-pointer"
+                        title="सिस्टीमने जनरेट केलेल्या क्रमांकावर परत जा"
+                      >
+                        ↺ रीसेट
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  value={isCustomCertNo ? customCertNo : (hasShares ? (customCertNo || autoCertificateNo) : '-')}
+                  onChange={(e) => {
+                    setCustomCertNo(e.target.value);
+                    setIsCustomCertNo(true);
+                  }}
+                  placeholder="उदा. CERT-2026-00001"
+                  className={`${inputClass} font-mono font-bold text-primary ${
+                    isCustomCertNo ? 'border-amber-400 bg-amber-50/30' : 'bg-white'
+                  }`}
+                  disabled={isPassing}
+                />
+              </div>
+
+              <div>
                 <label className={labelClass}>
-                  <span>सर्टिफिकेट नं. (Certificate No)</span>
-                  <span className="text-[10px] text-blue-600 font-bold ml-1">[Auto]</span>
+                  <span>जुना शेअर खाते / नोंद क्र. (Legacy No)</span>
+                  <span className="text-[10px] text-gray-400 font-normal ml-1">(ऐच्छिक)</span>
                 </label>
                 <input
                   type="text"
-                  readOnly
-                  value={hasShares ? autoCertificateNo : '-'}
-                  className={`${inputClass} font-mono font-bold bg-slate-50 text-primary text-center cursor-not-allowed border-slate-300`}
+                  value={legacyAccountNo}
+                  onChange={(e) => setLegacyAccountNo(e.target.value)}
+                  placeholder="उदा. OLD-SH-102"
+                  className={`${inputClass} font-mono`}
+                  disabled={isPassing}
                 />
               </div>
             </div>

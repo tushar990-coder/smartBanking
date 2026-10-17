@@ -18,6 +18,7 @@ const LoanProcessMaster: React.FC<LoanProcessMasterProps> = ({ onNavigate }) => 
     });
     const [draftApplication, setDraftApplication] = useState<any>(null);
     const [editingDisbursement, setEditingDisbursement] = useState<any>(null);
+    const [applicationKey, setApplicationKey] = useState<number>(0);
 
     const queryParams = new URLSearchParams(window.location.search);
     const voucherIdParam = queryParams.get('voucherId');
@@ -63,6 +64,13 @@ const LoanProcessMaster: React.FC<LoanProcessMasterProps> = ({ onNavigate }) => 
         setActiveTab(1);
     };
 
+    const handleDisbursementSaved = () => {
+        setDraftApplication(null);
+        setEditingDisbursement(null);
+        setApplicationKey(prev => prev + 1);
+        setActiveTab(1);
+    };
+
     return (
         <div className="flex flex-col h-full bg-slate-50 font-sans">
             {/* Top Modern CBS Workflow Tab Navigation */}
@@ -104,10 +112,12 @@ const LoanProcessMaster: React.FC<LoanProcessMasterProps> = ({ onNavigate }) => 
             <div className="flex-1 overflow-y-auto relative">
                 <div className={`${activeTab === 1 ? 'block' : 'hidden'}`}>
                     <LoanApplicationMaster 
+                        key={`loan-app-${applicationKey}`}
                         onNext={handleNext} 
                         editingApplicationId={passingApplicationId || editingDisbursement?.loanAccount?.loanApplicationID}
                         isReadOnly={isPassingMode}
                         onNavigate={onNavigate}
+                        initialSuccessMessage={applicationKey > 0 ? "✅ मागील कर्ज वाटप नोंद यशस्वीरीत्या पूर्ण झाली आहे. नवीन कर्ज अर्जासाठी कोरा फॉर्म तयार आहे." : undefined}
                     />
                 </div>
                 <div className={`${activeTab === 2 ? 'block' : 'hidden'}`}>
@@ -115,7 +125,7 @@ const LoanProcessMaster: React.FC<LoanProcessMasterProps> = ({ onNavigate }) => 
                         draftApplication={draftApplication} 
                         editingDisbursement={editingDisbursement}
                         onRequestEditApplication={handleRequestEditApplication}
-                        onSaveSuccess={() => { setActiveTab(1); setDraftApplication(null); setEditingDisbursement(null); }}
+                        onSaveSuccess={handleDisbursementSaved}
                         onNavigate={onNavigate}
                     />
                 </div>

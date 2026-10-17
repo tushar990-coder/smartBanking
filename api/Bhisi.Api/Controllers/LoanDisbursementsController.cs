@@ -364,15 +364,45 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                    int nextSeq = maxSeq + 1;
-                    string nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchIdForAcc, schemeCodeNum, nextSeq);
-                    while (existingLoanAccs.Contains(nextAccNo))
+                    // Determine Loan Account Number: Custom or auto-generated
+                    if (string.IsNullOrWhiteSpace(disbursement.LoanAccount.LoanAccountNo) || disbursement.LoanAccount.LoanAccountNo == "AUTO")
                     {
-                        nextSeq++;
-                        nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchIdForAcc, schemeCodeNum, nextSeq);
+                        int nextSeq = maxSeq + 1;
+                        string nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchIdForAcc, schemeCodeNum, nextSeq);
+                        while (existingLoanAccs.Contains(nextAccNo))
+                        {
+                            nextSeq++;
+                            nextAccNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(branchIdForAcc, schemeCodeNum, nextSeq);
+                        }
+                        disbursement.LoanAccount.LoanAccountNo = nextAccNo;
+                    }
+                    else
+                    {
+                        disbursement.LoanAccount.LoanAccountNo = disbursement.LoanAccount.LoanAccountNo.Trim();
+                        bool exists = await _context.LoanAccounts.AnyAsync(l => l.BranchID == branchIdForAcc && l.LoanAccountNo == disbursement.LoanAccount.LoanAccountNo);
+                        if (exists)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(new { message = $"कर्ज खाते क्रमांक '{disbursement.LoanAccount.LoanAccountNo}' आधीपासून शाखा क्र. {branchIdForAcc} मध्ये अस्तित्वात आहे." });
+                        }
                     }
 
-                    disbursement.LoanAccount.LoanAccountNo = nextAccNo;
+                    // Validate LegacyAccountNumber duplicate
+                    if (!string.IsNullOrWhiteSpace(disbursement.LoanAccount.LegacyAccountNumber))
+                    {
+                        string cleanLegacy = disbursement.LoanAccount.LegacyAccountNumber.Trim();
+                        var dup = await _context.LoanAccounts.AsNoTracking().FirstOrDefaultAsync(l => 
+                            l.LoanRateID == disbursement.LoanAccount.LoanRateID && 
+                            l.LegacyAccountNumber != null && 
+                            l.LegacyAccountNumber.Trim() == cleanLegacy);
+                        if (dup != null)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(new { message = $"जुना कर्ज खाते क्रमांक '{cleanLegacy}' हा आधीच कर्ज खाते क्र. '{dup.LoanAccountNo}' ला नोंदवला गेला आहे!" });
+                        }
+                        disbursement.LoanAccount.LegacyAccountNumber = cleanLegacy;
+                    }
+
                     disbursement.LoanAccount.SanctionedAmount = sanctionedLimit;
                     disbursement.LoanAccount.PrincipalBalance = disbursement.DisbursementAmount;
 

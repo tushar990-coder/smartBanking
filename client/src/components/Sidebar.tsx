@@ -22,6 +22,7 @@ import {
   Moon, 
   Calculator, 
   ShieldCheck, 
+  Landmark,
   FileSpreadsheet, 
   FileText,
   FileCheck,
@@ -63,7 +64,7 @@ export default function Sidebar({
   const isLockerActive = activeTab === 'locker' || activeTab.startsWith('locker-');
   const isNpaActive = activeTab === 'npa-dashboard' || activeTab === 'npa-statement' || activeTab === 'collateral-compliance' || activeTab === 'npa-defaulters';
   const isLegalActive = activeTab === 'legal-recovery' || activeTab.startsWith('sec101-');
-  const isReportsActive = activeTab === 'reports' || activeTab === 'swanidhi-report' || activeTab === 'trial-balance' || activeTab === 'trial-balance-namuna-n' || activeTab === 'daybook' || activeTab === 'daybook-summary' || activeTab === 'profit-loss' || activeTab === 'balance-sheet' || activeTab === 'balance-sheet-form-n' || activeTab === 'general-ledger' || activeTab === 'member-balance-report' || activeTab === 'loan-disbursement-register' || activeTab === 'loan-collection-register' || activeTab === 'loan-ledger-report' || activeTab === 'loan-outstanding-report' || activeTab === 'loan-overdue-report' || activeTab === 'saving-account-list-report' || activeTab === 'saving-khatavani-report' || activeTab === 'npa-register' || activeTab === 'loan-rate' || activeTab === 'sabhasad-labhansh-report' || activeTab === 'shares-khatavani-report';
+  const isReportsActive = activeTab === 'reports' || activeTab === 'crr-report' || activeTab === 'regulatory-mis-report' || activeTab === 'swanidhi-report' || activeTab === 'trial-balance' || activeTab === 'trial-balance-namuna-n' || activeTab === 'daybook' || activeTab === 'daybook-summary' || activeTab === 'profit-loss' || activeTab === 'balance-sheet' || activeTab === 'balance-sheet-form-n' || activeTab === 'general-ledger' || activeTab === 'member-balance-report' || activeTab === 'loan-disbursement-register' || activeTab === 'loan-collection-register' || activeTab === 'loan-ledger-report' || activeTab === 'loan-outstanding-report' || activeTab === 'loan-overdue-report' || activeTab === 'saving-account-list-report' || activeTab === 'saving-khatavani-report' || activeTab === 'npa-register' || activeTab === 'loan-rate' || activeTab === 'sabhasad-labhansh-report' || activeTab === 'shares-khatavani-report';
 
   const getItemClass = (isActive: boolean) => `
     w-full flex items-center ${isSidebarOpen ? 'px-2.5 justify-start' : 'px-0 justify-center'} py-1.5 rounded-lg text-[11px] transition-all duration-150 select-none group ${
@@ -692,6 +693,24 @@ export default function Sidebar({
         >
           <ShieldCheck size={15} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'audit-compliance' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
           {isSidebarOpen && <span className="truncate">ऑडीट व कम्प्लायन्स</span>}
+        </button>
+
+        <button 
+          onClick={() => handleNavigate('regulatory-mis-report')}
+          title="महाराष्ट्र राज्य नियामक मंडळ MIS अहवाल"
+          className={getItemClass(activeTab === 'regulatory-mis-report')}
+        >
+          <Landmark size={15} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'regulatory-mis-report' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          {isSidebarOpen && <span className="truncate">नियामक मंडळ MIS</span>}
+        </button>
+
+        <button 
+          onClick={() => handleNavigate('crr-report')}
+          title="CRR रोख राखीव प्रमाण व तरलता अहवाल"
+          className={getItemClass(activeTab === 'crr-report')}
+        >
+          <Coins size={15} className={`${isSidebarOpen ? 'mr-2' : ''} shrink-0 ${activeTab === 'crr-report' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'}`} />
+          {isSidebarOpen && <span className="truncate">CRR तरलता अहवाल</span>}
         </button>
 
         {/* ========================================================================= */}

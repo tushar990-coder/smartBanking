@@ -5,9 +5,17 @@ const convertMarathiDigits = (val: string): string => {
   return val.replace(/[०-९]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0x0966 + 48));
 };
 
+export interface SearchableSelectOption {
+  value: string | number;
+  label: string;
+  subLabel?: string;
+  badge?: string;
+  badgeColor?: string;
+}
+
 interface SearchableSelectProps {
   id?: string;
-  options?: Array<{ value: string | number; label: string }>;
+  options?: Array<SearchableSelectOption>;
   value?: string | number;
   onChange?: (e: { target: { name?: string; value: string | number } }) => void;
   name?: string;
@@ -75,8 +83,14 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const normalizedSearch = convertMarathiDigits(searchTerm).toLowerCase().trim();
   const filteredOptions = safeOptions.filter((o: any) => {
     const normLabel = convertMarathiDigits(o.label || '').toLowerCase();
+    const normSub = convertMarathiDigits(o.subLabel || '').toLowerCase();
+    const normBadge = convertMarathiDigits(o.badge || '').toLowerCase();
     const normVal = convertMarathiDigits(String(o.value || '')).toLowerCase();
-    return normLabel.includes(normalizedSearch) || normVal === normalizedSearch || normVal.includes(normalizedSearch);
+    return normLabel.includes(normalizedSearch) ||
+           normSub.includes(normalizedSearch) ||
+           normBadge.includes(normalizedSearch) ||
+           normVal === normalizedSearch ||
+           normVal.includes(normalizedSearch);
   });
 
   const triggerChange = (selectedVal: string | number) => {
@@ -125,7 +139,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
       </div>
 
       {isOpen && (
-        <div className="absolute z-50 min-w-full w-max max-w-[520px] left-0 mt-1 bg-white border border-slate-300 shadow-xl rounded-xl max-h-60 overflow-y-auto">
+        <div className="absolute z-50 min-w-full sm:min-w-[560px] max-w-[680px] left-0 mt-1 bg-white border border-slate-300 shadow-xl rounded-xl max-h-64 overflow-y-auto">
           <div className="sticky top-0 bg-slate-50 p-2 border-b border-slate-200 z-10">
             <input
               id={inputId}
@@ -178,25 +192,44 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
           >
             {placeholder}
           </div>
-          {filteredOptions.map((option: any, idx: number) => (
-            <div
-              key={`${option.value}-${idx}`}
-              title={option.label}
-              className={`px-3 py-2 hover:bg-indigo-50 cursor-pointer text-xs whitespace-nowrap transition duration-100 ${
-                String(value) === String(option.value)
-                  ? 'bg-indigo-100 font-bold text-indigo-900'
-                  : 'text-slate-700'
-              }`}
-              onClick={() => {
-                triggerChange(option.value);
-                setIsOpen(false);
-                setSearchTerm('');
-                setTimeout(() => triggerRef.current?.focus(), 0);
-              }}
-            >
-              {option.label}
-            </div>
-          ))}
+          {filteredOptions.map((option: any, idx: number) => {
+            const isSelected = String(value) === String(option.value);
+            return (
+              <div
+                key={`${option.value}-${idx}`}
+                title={option.label + (option.subLabel ? `\n${option.subLabel}` : '')}
+                className={`px-3 py-2 hover:bg-indigo-50/80 cursor-pointer text-xs transition duration-100 border-b border-slate-100 last:border-b-0 ${
+                  isSelected
+                    ? 'bg-indigo-50 text-indigo-950 font-semibold'
+                    : 'text-slate-700'
+                }`}
+                onClick={() => {
+                  triggerChange(option.value);
+                  setIsOpen(false);
+                  setSearchTerm('');
+                  setTimeout(() => triggerRef.current?.focus(), 0);
+                }}
+              >
+                {option.subLabel ? (
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-900 truncate">{option.label}</span>
+                      {option.badge && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm shrink-0 border ${option.badgeColor || 'bg-slate-100 text-slate-700 border-slate-300'}`}>
+                          {option.badge}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 truncate">
+                      {option.subLabel}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="whitespace-nowrap truncate">{option.label}</div>
+                )}
+              </div>
+            );
+          })}
           {filteredOptions.length === 0 && (
             <div className="px-3 py-4 text-slate-400 text-xs text-center">माहिती आढळली नाही</div>
           )}

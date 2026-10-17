@@ -751,7 +751,6 @@ export default function RdOpeningBalanceMigration() {
                   <option value="">-- योजना निवडा --</option>
                   {schemes.map((s) => (
                     <option key={s.rdSchemeID} value={s.rdSchemeID}>
-                      {s.branchID ? `🏢 [${s.branch?.branchName || 'विशिष्ट शाखा'}] ` : '🌐 [सर्व शाखा] '}
                       {s.schemeName} ({s.interestRate}%)
                     </option>
                   ))}

@@ -502,23 +502,6 @@ namespace Bhisi.Api.Controllers
                         return BadRequest($"पिग्मी खाते क्रमांक '{accountNo}' आधीच अस्तित्वात आहे. कृपया दुसरा क्रमांक निवडा.");
                     }
 
-                    // Gap Prevention: Disallow skipping sequence numbers ahead of current sequence
-                    var digitsOnly = new string(accountNo.Where(char.IsDigit).ToArray());
-                    if (digitsOnly.Length == 14)
-                    {
-                        string seqPart = digitsOnly.Substring(6, 7);
-                        if (int.TryParse(seqPart, out int sVal) && sVal > 0)
-                        {
-                            var currentSeq = await _context.PigmyAccountSequences
-                                .FirstOrDefaultAsync(s => s.BranchID == request.BranchID && s.SchemeCodeNumeric == schemeCodeNum);
-                            int lastSeq = currentSeq?.LastSequenceNumber ?? 0;
-                            if (sVal > lastSeq + 1)
-                            {
-                                return BadRequest($"अवैध खाते क्रमांक! अनुक्रमांकामध्ये अंतर (Gap) सोडता येत नाही. पुढील अपेक्षित क्रमांक {lastSeq + 1} असायला हवा.");
-                            }
-                        }
-                    }
-
                     await SyncSequenceWithAccountNoAsync(request.BranchID, schemeCodeNum, accountNo);
                 }
                 else
@@ -526,11 +509,25 @@ namespace Bhisi.Api.Controllers
                     accountNo = await GenerateNextPigmyAccountNo(request.BranchID, request.PigmySchemeID, incrementSequence: true);
                 }
 
+                // Validate LegacyAccountNumber duplicate within the same scheme
+                string? cleanLegacy = string.IsNullOrWhiteSpace(request.LegacyAccountNumber) ? null : request.LegacyAccountNumber.Trim();
+                if (!string.IsNullOrWhiteSpace(cleanLegacy))
+                {
+                    bool legacyExists = await _context.PigmyAccounts.AnyAsync(p => 
+                        p.PigmySchemeID == request.PigmySchemeID && 
+                        p.LegacyAccountNumber != null && 
+                        p.LegacyAccountNumber.Trim() == cleanLegacy);
+                    if (legacyExists)
+                    {
+                        return BadRequest($"जुना पिग्मी खाते क्रमांक '{cleanLegacy}' या योजनेखाली आधीच नोंदवला आहे.");
+                    }
+                }
+
                 // 3. Create Account
                 var pigmyAccount = new PigmyAccount
                 {
                     AccountNo = accountNo,
-                    LegacyAccountNumber = string.IsNullOrWhiteSpace(request.LegacyAccountNumber) ? null : request.LegacyAccountNumber.Trim(),
+                    LegacyAccountNumber = cleanLegacy,
                     CustomerID = customer.CustomerID,
                     BranchID = request.BranchID,
                     PigmySchemeID = request.PigmySchemeID,

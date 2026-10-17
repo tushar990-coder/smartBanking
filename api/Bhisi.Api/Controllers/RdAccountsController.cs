@@ -480,10 +480,56 @@ namespace Bhisi.Api.Controllers
             {
                 try
                 {
-                    // Generate Standard 14-Digit CBS Account Number: [Branch:3][Scheme:3][Seq:7][Luhn:1]
+                    // Generate Standard 14-Digit CBS Account Number or accept Custom Number
                     if (string.IsNullOrWhiteSpace(account.AccountNo) || account.AccountNo == "AUTO")
                     {
                         account.AccountNo = await GenerateNextRdAccountNo(account.BranchID, account.RdSchemeID, incrementSequence: true);
+                    }
+                    else
+                    {
+                        account.AccountNo = account.AccountNo.Trim();
+                        bool exists = await _context.RdAccounts.AnyAsync(r => r.AccountNo == account.AccountNo);
+                        if (exists)
+                        {
+                            return BadRequest($"आवर्ती ठेव (RD) खाते क्रमांक '{account.AccountNo}' आधीच अस्तित्वात आहे. कृपया दुसरा खाते क्रमांक निवडा.");
+                        }
+
+                        // Sync sequence if 14-digit CBS format
+                        var digitsOnly = new string(account.AccountNo.Where(char.IsDigit).ToArray());
+                        if (digitsOnly.Length == 14)
+                        {
+                            string seqPart = digitsOnly.Substring(6, 7);
+                            if (int.TryParse(seqPart, out int sVal) && sVal > 0)
+                            {
+                                int sNum = scheme.SchemeCodeNumeric > 0 ? scheme.SchemeCodeNumeric : 501;
+                                var seq = await _context.RdAccountSequences
+                                    .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && (s.SchemeCodeNumeric == sNum || s.ProductType == "RD"));
+                                if (seq != null)
+                                {
+                                    if (sVal > seq.LastSequenceNumber)
+                                    {
+                                        seq.LastSequenceNumber = sVal;
+                                        seq.CurrentValue = sVal;
+                                        seq.UpdatedOn = DateTime.UtcNow;
+                                        await _context.SaveChangesAsync();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Validate LegacyAccountNumber duplicate within the same scheme
+                    if (!string.IsNullOrWhiteSpace(account.LegacyAccountNumber))
+                    {
+                        account.LegacyAccountNumber = account.LegacyAccountNumber.Trim();
+                        bool legacyExists = await _context.RdAccounts.AnyAsync(r => 
+                            r.RdSchemeID == account.RdSchemeID && 
+                            r.LegacyAccountNumber != null && 
+                            r.LegacyAccountNumber.Trim() == account.LegacyAccountNumber);
+                        if (legacyExists)
+                        {
+                            return BadRequest($"जुना आरडी खाते / पावती क्रमांक '{account.LegacyAccountNumber}' या योजनेखाली आधीच नोंदवला आहे.");
+                        }
                     }
 
                     // Calculations

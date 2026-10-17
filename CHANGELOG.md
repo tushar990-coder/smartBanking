@@ -2,6 +2,26 @@
 
 ---
 
+## 📅 [2026-10-17] - आवृत्ती v2.5.65 (FD Closures & Renewals 2-Column Compact Cockpit Workspace & Schedule Periods Typing Fix v2.5.65)
+
+### 🌟 प्रमुख वैशिष्ट्ये व निवारण (Key Highlights)
+* **कोअर बँकिंग सिस्टीम (CBS) - मुदत ठेव क्लोजर व नूतनीकरण २-कॉलम कॉम्पॅक्ट फायनान्शियल कॉकपिट व वेळापत्रक त्रुटी निवारण (FD Closures & Renewals 2-Column Compact Cockpit Workspace & Schedule Periods Typing Fix v2.5.65):**
+  * **२-कॉलम स्प्लिट कॉकपिट लेआउट (2-Column Minimal-Scroll Workspace):**
+    * जुनी ३२००px उभी रचना बदलून स्क्रीन २ स्तंभांमध्ये विभागली.
+    * डावा स्तंभ (७ कॉलम्स): ३ सुलभ टॅब्स — १. कृती व नूतनीकरण (Overview & Renewal), २. व्याज व स्लॅब हिशोब (Interest & Schedule), ३. पेआउट पद्धत व खाती (Payout & Accounts).
+    * उजवा स्तंभ (५ कॉलम्स - Sticky Real-Time Cockpit): थेट सेटलमेंट कार्ड, व्हाउचर ताळेबंद आणि त्वरित सबमिट/पासिंग बटणे.
+  * **थेट सेटलमेंट सारांश व नेट पेआउट बॅज (Live Net Payout Banner):**
+    * मुदत मुद्दल, देय व्याज, मुदतपूर्व दंड (Clawback) व ओव्हरड्यू व्याज यांनुसार अंतिम देय परतावा रक्कम (Net Payable Payout) मोठ्या ठळक हिरव्या बॉक्समध्ये स्क्रीन स्क्रोल न करता त्वरित दृश्यमान.
+  * **व्हाउचर बॅलन्सिंग व जर्नल ड्रॉवर (Voucher Dr/Cr Check & Drawer):**
+    * ताळेबंद संतुलित/असंतुलित बॅज आणि गरजेनुसार विस्तृत लेजर नोंदी पाहण्यासाठी सुबक ड्रॉवर.
+  * **स्टिकी अ‍ॅक्शन बार (Sticky Command Bar):**
+    * ऑपरेटर सबमिट बटणे (मुदतपूर्व परतावा, नूतनीकरण, मुदतपूर्ती पेमेंट), मेकर-चेकर पासिंग बटणे (मंजूर व पास करा, नामंजूर करा), आणि व्याज वेळापत्रक प्रिंट बटणे एकाच ठिकाणी उपलब्ध.
+  * **टाईपस्क्रिप्ट त्रुटींचे संपूर्ण निवारण (Schedule Periods Typing Parity):**
+    * `scheduleSummary.quarters` ऐवजी `scheduleSummary.periods` चे योग्य मॅपिंग करून सर्व ४ प्रकारच्या TypeScript त्रुटी पूर्णपणे दूर.
+  * **सर्व संस्थांसाठी १-क्लिक मास्टर पॅच (`VPS Multi-App Master Patch v2.5.65`).**
+
+---
+
 ## 📅 [2026-10-16] - आवृत्ती v2.5.61 (Financial Access Control, Granular RBAC, Maker-Checker & Customer360 Schema Fix v2.5.61)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व निवारण (Key Highlights)

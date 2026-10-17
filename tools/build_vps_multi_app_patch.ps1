@@ -14,7 +14,7 @@ $clientDir = Join-Path $workspaceRoot "client"
 $apiDir = Join-Path $workspaceRoot "api\Bhisi.Api"
 $versionJsonPath = Join-Path $workspaceRoot "version.json"
 
-$version = "2.5.66"
+$version = "2.5.67"
 $gitHash = ""
 $gitShort = ""
 $gitBranch = ""

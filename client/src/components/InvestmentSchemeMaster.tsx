@@ -43,7 +43,9 @@ interface InvestmentScheme {
   schemeName: string;
   investmentType: string; // 'Deposit' | 'Share'
   interestRate: number; // Deposit: Interest % | Share: Face Value ₹ or Dividend %
+  durationType?: string; // 'Months' | 'Days'
   durationMonths: number; // Deposit: Duration in Months | Share: 0
+  durationDays?: number | null; // Deposit: Duration in Days
   interestCalculationMethod: string; // Deposit: Simple/Quarterly/Monthly | Share: Dividend
   prematureWithdrawalRate: number; // Deposit: Premature Rate | Share: Expected Dividend %
   isActive: boolean;
@@ -88,7 +90,9 @@ const InvestmentSchemeMaster: React.FC = () => {
     investmentType: 'Deposit', // 'Deposit' | 'Share'
     // Deposit specific fields:
     interestRate: 7.0, // % p.a.
+    durationType: 'Months', // 'Months' | 'Days'
     durationMonths: 12, // months
+    durationDays: 365, // days
     interestCalculationMethod: 'Simple', // Simple, Quarterly, Monthly, Yearly
     prematureWithdrawalRate: 5.5, // %
     // Share specific fields:
@@ -233,7 +237,9 @@ const InvestmentSchemeMaster: React.FC = () => {
       schemeName: '',
       investmentType: 'Deposit',
       interestRate: 7.0,
+      durationType: 'Months',
       durationMonths: 12,
+      durationDays: 365,
       interestCalculationMethod: 'Simple',
       prematureWithdrawalRate: 5.5,
       faceValuePerShare: 100,
@@ -251,6 +257,9 @@ const InvestmentSchemeMaster: React.FC = () => {
   const handleEdit = (scheme: InvestmentScheme) => {
     const sId = getSchemeId(scheme);
     const isShare = scheme.investmentType === 'Share';
+    const durType = scheme.durationType || 'Months';
+    const durMonths = scheme.durationMonths || 0;
+    const durDays = scheme.durationDays != null ? Number(scheme.durationDays) : (durMonths ? durMonths * 30 : 91);
     setIsEditMode(true);
     setEditId(sId);
     setFormData({
@@ -260,7 +269,9 @@ const InvestmentSchemeMaster: React.FC = () => {
       schemeName: scheme.schemeName || '',
       investmentType: scheme.investmentType || 'Deposit',
       interestRate: isShare ? 0 : (scheme.interestRate || 0),
-      durationMonths: isShare ? 0 : (scheme.durationMonths || 0),
+      durationType: isShare ? 'Months' : durType,
+      durationMonths: isShare ? 0 : durMonths,
+      durationDays: isShare ? 0 : durDays,
       interestCalculationMethod: scheme.interestCalculationMethod || (isShare ? 'Dividend' : 'Simple'),
       prematureWithdrawalRate: isShare ? 0 : (scheme.prematureWithdrawalRate || 0),
       faceValuePerShare: isShare ? (scheme.interestRate || 100) : 100,
@@ -301,6 +312,10 @@ const InvestmentSchemeMaster: React.FC = () => {
 
     const isShare = formData.investmentType === 'Share';
 
+    const isDays = formData.durationType === 'Days';
+    const durDays = parseInt(formData.durationDays?.toString() || '0', 10) || 0;
+    const durMonths = parseInt(formData.durationMonths?.toString() || '0', 10) || 0;
+
     // Core Banking Data Payload
     const payload = {
       branchID: 1,
@@ -313,7 +328,13 @@ const InvestmentSchemeMaster: React.FC = () => {
       interestRate: isShare 
         ? (parseFloat(formData.faceValuePerShare.toString()) || 100)
         : (parseFloat(formData.interestRate.toString()) || 0),
-      durationMonths: isShare ? 0 : (parseInt(formData.durationMonths.toString(), 10) || 0),
+      durationType: isShare ? 'Months' : formData.durationType,
+      durationMonths: isShare 
+        ? 0 
+        : (isDays ? Math.max(1, Math.round(durDays / 30)) : durMonths),
+      durationDays: isShare 
+        ? null 
+        : (isDays ? durDays : (durMonths * 30)),
       interestCalculationMethod: isShare ? 'Dividend' : formData.interestCalculationMethod,
       prematureWithdrawalRate: isShare 
         ? (parseFloat(formData.expectedDividendRate.toString()) || 0)
@@ -373,7 +394,7 @@ const InvestmentSchemeMaster: React.FC = () => {
         'योजनेचे नाव': s.schemeName,
         'संस्था / बँक': s.investmentInstitution?.institutionName || s.institutionName || '-',
         'गुंतवणूक वर्गवारी': isShare ? 'शेअर्स मधील गुंतवणूक' : 'ठेवी मधील गुंतवणूक',
-        'मुदत (महिने)': isShare ? 'लागू नाही (कायमस्वरूपी)' : `${s.durationMonths} महिने`,
+        'मुदत / कालावधी': isShare ? 'लागू नाही (कायमस्वरूपी)' : (s.durationType === 'Days' ? `${s.durationDays || s.durationMonths * 30} दिवस` : `${s.durationMonths} महिने`),
         'व्याजदर / दर्शनी मूल्य': isShare ? `दर्शनी मूल्य: ₹${s.interestRate}` : `${s.interestRate}% p.a.`,
         'परतावा / पद्धत': isShare ? `अपेक्षित लाभांश: ${s.prematureWithdrawalRate}%` : s.interestCalculationMethod,
         'मालमत्ता खाते': s.investmentAssetLedger?.ledgerName || 'डिफॉल्ट',
@@ -722,18 +743,73 @@ const InvestmentSchemeMaster: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className={labelClass}>
-                    मुदत (महिने - Duration) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    name="durationMonths"
-                    value={formData.durationMonths}
-                    onChange={handleChange}
-                    className={`${inputClass} font-mono font-bold`}
-                    placeholder="उदा. 12"
-                    required={!isShareMode}
-                  />
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className={labelClass}>
+                      मुदत (कालावधी) <span className="text-red-500">*</span>
+                    </label>
+                    {/* Unit Switch: महिने vs दिवस */}
+                    <div className="inline-flex rounded-xs border border-gray-300 p-0.5 bg-slate-100 text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, durationType: 'Months' }))}
+                        className={`px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer ${
+                          formData.durationType === 'Months'
+                            ? 'bg-primary text-white shadow-2xs'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        महिने
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, durationType: 'Days' }))}
+                        className={`px-1.5 py-0.5 rounded-xs transition-colors cursor-pointer ${
+                          formData.durationType === 'Days'
+                            ? 'bg-primary text-white shadow-2xs'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        दिवस
+                      </button>
+                    </div>
+                  </div>
+
+                  {formData.durationType === 'Days' ? (
+                    <div className="relative">
+                      <input
+                        type="number"
+                        name="durationDays"
+                        value={formData.durationDays || ''}
+                        onChange={handleChange}
+                        className={`${inputClass} font-mono font-bold text-blue-900 bg-blue-50/40 pr-12`}
+                        placeholder="उदा. 91, 180"
+                        required={!isShareMode}
+                      />
+                      <span className="absolute right-2 top-1 text-[11px] font-bold text-blue-700 pointer-events-none">
+                        दिवस
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input
+                        type="number"
+                        name="durationMonths"
+                        value={formData.durationMonths || ''}
+                        onChange={handleChange}
+                        className={`${inputClass} font-mono font-bold pr-14`}
+                        placeholder="उदा. 12, 24"
+                        required={!isShareMode}
+                      />
+                      <span className="absolute right-2 top-1 text-[11px] font-bold text-gray-500 pointer-events-none">
+                        महिने
+                      </span>
+                    </div>
+                  )}
+                  <span className="text-[9px] text-gray-500 block mt-0.5">
+                    {formData.durationType === 'Days' 
+                      ? 'अल्पमुदत ठेव (उदा. 15, 30, 45, 91, 180 दिवस)' 
+                      : 'नियमित ठेव (उदा. 12, 24, 36, 60 महिने)'}
+                  </span>
                 </div>
 
                 <div>
@@ -1123,8 +1199,14 @@ const InvestmentSchemeMaster: React.FC = () => {
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center">
                             {isShare ? (
                               <span className="font-mono font-bold text-indigo-950">₹{scheme.interestRate} / शेअर</span>
+                            ) : scheme.durationType === 'Days' ? (
+                              <span className="font-mono font-bold text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                                {scheme.durationDays || (scheme.durationMonths * 30)} दिवस
+                              </span>
                             ) : (
-                              <span className="font-mono text-gray-700">{scheme.durationMonths} महिने</span>
+                              <span className="font-mono font-medium text-gray-800 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                                {scheme.durationMonths} महिने
+                              </span>
                             )}
                           </td>
                           <td className="px-2 py-1.5 border-r border-gray-200 text-center font-bold font-mono">

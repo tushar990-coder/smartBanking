@@ -41,7 +41,15 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(v => v.Status == status);
                 if (status == "Pending")
                 {
-                    query = query.Where(v => !v.VoucherNo.StartsWith("JV-FD-OP-"));
+                    query = query.Where(v => !v.VoucherNo.Contains("-OP-") && 
+                                             !v.VoucherNo.StartsWith("JV-FD-OP-") && 
+                                             !v.VoucherNo.StartsWith("REC-FD-OP-") && 
+                                             !v.VoucherNo.StartsWith("JV-RD-OP-") && 
+                                             !v.VoucherNo.StartsWith("REC-RD-OP-") && 
+                                             !v.VoucherNo.StartsWith("JV-SH-OP-") && 
+                                             !v.VoucherNo.StartsWith("JV-INV-OP-") && 
+                                             v.VoucherType != "Opening" && 
+                                             !(v.Narration != null && (v.Narration.Contains("आरंभिक शिल्लक") || v.Narration.Contains("Opening Balance Migration"))));
                 }
             }
 

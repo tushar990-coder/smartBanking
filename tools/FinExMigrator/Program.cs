@@ -20,10 +20,23 @@ namespace FinExMigrator
 
             try
             {
+                if (args.Length > 0 && (args[0] == "--dry-run" || args[0] == "--fix-db"))
+                {
+                    using var fixConn = new SqlConnection(targetConnStr);
+                    fixConn.Open();
+                    CleanDatabaseMarathi(fixConn, args[0] == "--fix-db");
+                    return;
+                }
+
                 using var sourceConn = new SqlConnection(sourceConnStr);
                 using var targetConn = new SqlConnection(targetConnStr);
                 sourceConn.Open();
                 targetConn.Open();
+
+                // 0. Sanstha & Branch Info from BANK_DETAILS
+                Console.WriteLine("\n[0/10] Migrating Sanstha & Branch Details...");
+                MigrateSansthaAndBranch(sourceConn, targetConn);
+                Console.WriteLine("  ✓ Sanstha & Branch info synchronized.");
 
                 // 1. Financial Years
                 Console.WriteLine("\n[1/10] Migrating Financial Years...");
@@ -94,6 +107,82 @@ namespace FinExMigrator
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine($"\nFATAL ERROR: {ex.Message}\n{ex.StackTrace}");
                 Console.ResetColor();
+            }
+        }
+
+        static void MigrateSansthaAndBranch(SqlConnection src, SqlConnection tgt)
+        {
+            string sansthaName = "";
+            string regNo = "";
+            DateTime? regDate = null;
+            using (var cmdSrc = new SqlCommand("SELECT TOP 1 Bank_name, Reg_no, Reg_date FROM BANK_DETAILS", src))
+            using (var r = cmdSrc.ExecuteReader())
+            {
+                if (r.Read())
+                {
+                    sansthaName = MarathiUnicodeEngine.ConvertFromRawIsm(r["Bank_name"]?.ToString() ?? "");
+                    regNo = r["Reg_no"]?.ToString()?.Trim() ?? "";
+                    if (r["Reg_date"] != DBNull.Value) regDate = Convert.ToDateTime(r["Reg_date"]);
+                }
+            }
+
+            string branchName = "मुख्य शाखा (Main Branch)";
+            string address = "मु. पो. यड्राव, ता. शिरोळ, जि. कोल्हापूर";
+            string contact = "7841901899";
+            using (var cmdBr = new SqlCommand("SELECT TOP 1 Branch_name, Contact_no FROM BRANCH_DETAILS WHERE Is_main_branch = 1", src))
+            using (var r = cmdBr.ExecuteReader())
+            {
+                if (r.Read())
+                {
+                    string brRaw = r["Branch_name"]?.ToString() ?? "";
+                    if (!string.IsNullOrWhiteSpace(brRaw)) branchName = MarathiUnicodeEngine.ConvertFromRawIsm(brRaw) + " (Main Branch)";
+                    string c = r["Contact_no"]?.ToString()?.Trim() ?? "";
+                    if (!string.IsNullOrWhiteSpace(c)) contact = c;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(sansthaName))
+            {
+                using var updSanstha = new SqlCommand(@"
+                    IF EXISTS (SELECT 1 FROM SansthaDetails WHERE SansthaID = 1)
+                    BEGIN
+                        UPDATE SansthaDetails SET 
+                            SansthaName = @name,
+                            RegistrationNo = @regNo,
+                            RegistrationDate = ISNULL(@regDate, RegistrationDate),
+                            Address = @add,
+                            Village = N'यड्राव',
+                            Taluka = N'शिरोळ',
+                            District = N'कोल्हापूर',
+                            State = N'महाराष्ट्र',
+                            ContactNo = @contact
+                        WHERE SansthaID = 1;
+                    END
+                    ELSE
+                    BEGIN
+                        INSERT INTO SansthaDetails (SansthaID, SansthaName, RegistrationNo, RegistrationDate, Address, Village, Taluka, District, State, ContactNo, AutoPostVouchers, AutoPostVoucherLimit)
+                        VALUES (1, @name, @regNo, ISNULL(@regDate, GETDATE()), @add, N'यड्राव', N'शिरोळ', N'कोल्हापूर', N'महाराष्ट्र', @contact, 1, 50000);
+                    END", tgt);
+                updSanstha.Parameters.AddWithValue("@name", sansthaName);
+                updSanstha.Parameters.AddWithValue("@regNo", regNo);
+                updSanstha.Parameters.AddWithValue("@regDate", (object)regDate ?? DBNull.Value);
+                updSanstha.Parameters.AddWithValue("@add", address);
+                updSanstha.Parameters.AddWithValue("@contact", contact);
+                updSanstha.ExecuteNonQuery();
+
+                using var updBranch = new SqlCommand(@"
+                    IF EXISTS (SELECT 1 FROM Branches WHERE BranchID = 1)
+                    BEGIN
+                        UPDATE Branches SET 
+                            BranchName = @bname,
+                            Address = @add,
+                            MobileNo = @contact
+                        WHERE BranchID = 1;
+                    END", tgt);
+                updBranch.Parameters.AddWithValue("@bname", branchName);
+                updBranch.Parameters.AddWithValue("@add", address);
+                updBranch.Parameters.AddWithValue("@contact", contact);
+                updBranch.ExecuteNonQuery();
             }
         }
 
@@ -473,7 +562,10 @@ namespace FinExMigrator
             }
 
             int count = 0;
-            using var cmdSrc = new SqlCommand("SELECT Acc_id, Cust_id, Acc_no, Acc_open_date, Opn_bal FROM SAVING_ACCOUNT", src);
+            using var cmdSrc = new SqlCommand(@"
+                SELECT Acc_id, Cust_id, Acc_no, Acc_open_date, Opn_bal 
+                FROM SAVING_ACCOUNT 
+                ORDER BY CASE WHEN ISNUMERIC(Acc_no) = 1 THEN CAST(Acc_no AS INT) ELSE 999999 END ASC, Acc_open_date ASC, Acc_id ASC", src);
             using var r = cmdSrc.ExecuteReader();
             var list = new List<dynamic>();
             while (r.Read())
@@ -490,27 +582,42 @@ namespace FinExMigrator
             }
             r.Close();
 
+            int seq = 1;
             foreach (var item in list)
             {
+                string standard14 = AccountNumberHelper.Format14Digit(AccountNumberHelper.Generate14DigitAccountNo(1, 101, seq));
                 using var ins = new SqlCommand(@"
                     INSERT INTO SavingAccountMasters (
                         BranchID, CustomerID, AccountNo, AccountType, OpeningDate, IsLegacyAccount, LedgerID,
                         OpeningBalance, CurrentBalance, InterestRate, MinimumBalance, Status, CreatedBy, CreatedOn,
-                        LegacyAccountId, LegacyAccountNumber, LienAmount
+                        LegacyAccountId, LegacyAccountNumber, OldAccountNo, LienAmount
                     )
                     VALUES (
                         1, @cid, @acc, 'Regular', @opDate, 1, @lid,
                         @bal, @bal, 4.0, 500, 'Active', 1, GETDATE(),
-                        @aid, @acc, 0
+                        @aid, @legAcc, @legAcc, 0
                     )", tgt);
                 ins.Parameters.AddWithValue("@cid", custMap[item.CustId]);
-                ins.Parameters.AddWithValue("@acc", item.AccNo);
+                ins.Parameters.AddWithValue("@acc", standard14);
                 ins.Parameters.AddWithValue("@opDate", item.OpenDate);
                 ins.Parameters.AddWithValue("@lid", defaultLedger);
                 ins.Parameters.AddWithValue("@bal", item.OpnBal);
                 ins.Parameters.AddWithValue("@aid", item.AccId);
+                ins.Parameters.AddWithValue("@legAcc", item.AccNo);
                 ins.ExecuteNonQuery();
+                seq++;
                 count++;
+            }
+
+            if (count > 0)
+            {
+                using var updSeq = new SqlCommand(@"
+                    IF EXISTS (SELECT 1 FROM SavingAccountSequences WHERE BranchID = 1 AND SchemeCodeNumeric = 101)
+                        UPDATE SavingAccountSequences SET LastSequenceNumber = CASE WHEN @cur > LastSequenceNumber THEN @cur ELSE LastSequenceNumber END, UpdatedOn = GETDATE() WHERE BranchID = 1 AND SchemeCodeNumeric = 101;
+                    ELSE
+                        INSERT INTO SavingAccountSequences (BranchID, SchemeCodeNumeric, LastSequenceNumber, UpdatedOn) VALUES (1, 101, @cur, GETDATE());", tgt);
+                updSeq.Parameters.AddWithValue("@cur", seq - 1);
+                updSeq.ExecuteNonQuery();
             }
             return count;
         }
@@ -784,49 +891,139 @@ namespace FinExMigrator
             }
             return count;
         }
+
+        static void CleanDatabaseMarathi(SqlConnection tgt, bool commitChanges)
+        {
+            Console.WriteLine(commitChanges 
+                ? "\n>>> APPLYING MARATHI UNICODE FIX TO DATABASE <<<" 
+                : "\n>>> RUNNING DRY-RUN PREVIEW (NO CHANGES WILL BE COMMITTED) <<<");
+
+            using var trans = commitChanges ? tgt.BeginTransaction() : null;
+            
+            // 1. Customers
+            int custChanged = 0;
+            var custUpdates = new List<(int id, string fn, string mn, string ln)>();
+            using (var cmd = new SqlCommand("SELECT CustomerID, FirstName, MiddleName, LastName FROM Customers", tgt, trans))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    int id = Convert.ToInt32(r["CustomerID"]);
+                    string fn = r["FirstName"]?.ToString() ?? "";
+                    string mn = r["MiddleName"]?.ToString() ?? "";
+                    string ln = r["LastName"]?.ToString() ?? "";
+
+                    string newFn = MarathiUnicodeEngine.CleanExistingText(fn);
+                    string newMn = MarathiUnicodeEngine.CleanExistingText(mn);
+                    string newLn = MarathiUnicodeEngine.CleanExistingText(ln);
+
+                    if (newFn != fn || newMn != mn || newLn != ln)
+                    {
+                        custUpdates.Add((id, newFn, newMn, newLn));
+                        custChanged++;
+                        if (custChanged <= 10 || id == 1 || id == 2 || id == 3 || id == 11 || id == 14)
+                        {
+                            Console.WriteLine($"  [Customer #{id}]");
+                            Console.WriteLine($"    Before: '{fn}' '{mn}' '{ln}'");
+                            Console.WriteLine($"    After:  '{newFn}' '{newMn}' '{newLn}'");
+                        }
+                    }
+                }
+            }
+
+            if (commitChanges)
+            {
+                foreach (var u in custUpdates)
+                {
+                    using var upd = new SqlCommand("UPDATE Customers SET FirstName = @fn, MiddleName = @mn, LastName = @ln WHERE CustomerID = @id", tgt, trans);
+                    upd.Parameters.AddWithValue("@fn", u.fn);
+                    upd.Parameters.AddWithValue("@mn", string.IsNullOrEmpty(u.mn) ? (object)DBNull.Value : u.mn);
+                    upd.Parameters.AddWithValue("@ln", u.ln);
+                    upd.Parameters.AddWithValue("@id", u.id);
+                    upd.ExecuteNonQuery();
+                }
+            }
+            Console.WriteLine($"\n  ✓ Total Customers to update: {custChanged}");
+
+            // 2. Ledgers
+            int ledgChanged = 0;
+            var ledgUpdates = new List<(int id, string name)>();
+            using (var cmd = new SqlCommand("SELECT LedgerID, LedgerName FROM Ledgers", tgt, trans))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    int id = Convert.ToInt32(r["LedgerID"]);
+                    string name = r["LedgerName"]?.ToString() ?? "";
+                    string newName = MarathiUnicodeEngine.CleanExistingText(name);
+                    if (newName != name)
+                    {
+                        ledgUpdates.Add((id, newName));
+                        ledgChanged++;
+                        if (ledgChanged <= 5)
+                        {
+                            Console.WriteLine($"  [Ledger #{id}] '{name}' -> '{newName}'");
+                        }
+                    }
+                }
+            }
+
+            if (commitChanges)
+            {
+                foreach (var u in ledgUpdates)
+                {
+                    using var upd = new SqlCommand("UPDATE Ledgers SET LedgerName = @name WHERE LedgerID = @id", tgt, trans);
+                    upd.Parameters.AddWithValue("@name", u.name);
+                    upd.Parameters.AddWithValue("@id", u.id);
+                    upd.ExecuteNonQuery();
+                }
+            }
+            Console.WriteLine($"  ✓ Total Ledgers to update: {ledgChanged}");
+
+            // 3. EmployerMasters
+            int empChanged = 0;
+            var empUpdates = new List<(int id, string name)>();
+            using (var cmd = new SqlCommand("SELECT Id, Name FROM EmployerMasters", tgt, trans))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    int id = Convert.ToInt32(r["Id"]);
+                    string name = r["Name"]?.ToString() ?? "";
+                    string newName = MarathiUnicodeEngine.CleanExistingText(name);
+                    if (newName != name)
+                    {
+                        empUpdates.Add((id, newName));
+                        empChanged++;
+                        Console.WriteLine($"  [Employer #{id}] '{name}' -> '{newName}'");
+                    }
+                }
+            }
+
+            if (commitChanges)
+            {
+                foreach (var u in empUpdates)
+                {
+                    using var upd = new SqlCommand("UPDATE EmployerMasters SET Name = @name WHERE Id = @id", tgt, trans);
+                    upd.Parameters.AddWithValue("@name", u.name);
+                    upd.Parameters.AddWithValue("@id", u.id);
+                    upd.ExecuteNonQuery();
+                }
+                trans?.Commit();
+                Console.WriteLine("\n>>> DATABASE SUCCESSFULLY UPDATED AND COMMITTED! <<<");
+            }
+            else
+            {
+                Console.WriteLine("\n>>> DRY-RUN COMPLETE: NO CHANGES WERE WRITTEN TO DATABASE <<<");
+            }
+        }
     }
 
     public static class IsmConverter
     {
         public static string Convert(string ismText)
         {
-            if (string.IsNullOrWhiteSpace(ismText)) return ismText;
-            string text = ismText;
-
-            var replacements = new Dictionary<string, string>
-            {
-                { "Ý", "ग्" }, { "Þ", "ण्" }, { "¯", "प्" }, { "Ÿ", "त्" }, { "¾", "व्" },
-                { "¸ü", "र" }, { "´", "म्" }, { "Û", "क्" }, { "Ü", "ख्" }, { "‘", "घ्" },
-                { "“", "च्" }, { "”û", "छ" }, { "•", "ज्" }, { "—", "झ्" }, { "™ü", "ट" },
-                { "šü", "ठ" }, { "›ü", "ड" }, { "œü", "ढ" }, { "£", "थ्" }, { "¤ü", "द" },
-                { "¬", "ध्" }, { "®", "न्" }, { "±", "फ्" }, { "²", "ब्" }, { "³", "भ्" },
-                { "µ", "य्" }, { "»", "ल्" }, { "¿", "श्" }, { "Â", "ष्" }, { "Ã", "स्" },
-                { "Æü", "ह" }, { "ô", "ळ्" }, { "õ", "क्ष्" }, { "–", "ज्ञ्" },
-
-                { "†", "अ" }, { "†Ö", "आ" }, { "‡", "इ" }, { "ˆ", "ई" }, { "‰", "उ" },
-                { "Š", "ऊ" }, { "‹", "ए" }, { "‹ê", "ऐ" }, { "†Öê", "ओ" }, { "†Öî", "औ" },
-                
-                { "Ö", "ा" }, { "Ï", "्र" }, { "Õ", "ृ" }, { "ê", "े" }, { "î", "ै" },
-                { "ã", "ु" }, { "æ", "ू" }, { "Ó", "ं" }, { "Ñ", "ँ" }
-            };
-
-            foreach (var kvp in replacements) text = text.Replace(kvp.Key, kvp.Value);
-
-            text = text.Replace("्ा", "");
-            text = text.Replace("्ú", "").Replace("्ü", "").Replace("्û", "");
-
-            var matras = new string[] { "ा", "ि", "ी", "ु", "ू", "ृ", "े", "ै", "ो", "ौ", "ं", "ः", "ँ" };
-            foreach (var m in matras) text = text.Replace("्" + m, m);
-
-            text = text.Replace("ú", "").Replace("ü", "").Replace("û", "");
-            text = Regex.Replace(text, "([क-ह])Ô", "र्$1");
-
-            text = text.Replace("×", "ि");
-            var regex = new Regex("ि([क-ह])");
-            text = regex.Replace(text, "$1ि");
-            text = text.Replace("ß", "ी");
-            text = text.Replace("Ô", "र्");
-            return text.Trim();
+            return MarathiUnicodeEngine.ConvertFromRawIsm(ismText);
         }
     }
 

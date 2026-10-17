@@ -21,6 +21,79 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
+        // Helper class for Modulo-10 Luhn Check Digit calculation and validation
+        public static class LuhnHelper
+        {
+            public static int CalculateCheckDigit(string digits)
+            {
+                int sum = 0;
+                bool alternate = true;
+                for (int i = digits.Length - 1; i >= 0; i--)
+                {
+                    int d = digits[i] - '0';
+                    if (alternate)
+                    {
+                        d *= 2;
+                        if (d > 9) d -= 9;
+                    }
+                    sum += d;
+                    alternate = !alternate;
+                }
+                int mod = sum % 10;
+                return (mod == 0) ? 0 : 10 - mod;
+            }
+        }
+
+        private async Task<string> GenerateNextInvestmentAccountNo(int branchId, int? schemeId, bool incrementSequence = false)
+        {
+            var branch = await _context.Branches.FindAsync(branchId);
+            string branchCode3 = branch != null && !string.IsNullOrWhiteSpace(branch.BranchCode)
+                ? branch.BranchCode.PadLeft(3, '0').Substring(0, Math.Min(3, branch.BranchCode.PadLeft(3, '0').Length))
+                : branchId.ToString("D3");
+
+            // Product code for Investments: 701 (Deposit Investments) or 702 (Share Investments)
+            string productCode3 = "701";
+            if (schemeId.HasValue && schemeId.Value > 0)
+            {
+                var scheme = await _context.InvestmentSchemes.FindAsync(schemeId.Value);
+                if (scheme != null && scheme.InvestmentType == "Share")
+                {
+                    productCode3 = "702";
+                }
+            }
+
+            var seq = await _context.InvestmentAccountSequences
+                .FirstOrDefaultAsync(s => s.BranchID == branchId && s.ProductType == "INV");
+
+            if (seq == null)
+            {
+                seq = new InvestmentAccountSequence { BranchID = branchId, ProductType = "INV", CurrentValue = 0 };
+                _context.InvestmentAccountSequences.Add(seq);
+                await _context.SaveChangesAsync();
+            }
+
+            int nextSeqNumber = seq.CurrentValue + 1;
+            if (incrementSequence)
+            {
+                seq.CurrentValue++;
+                await _context.SaveChangesAsync();
+                nextSeqNumber = seq.CurrentValue;
+            }
+
+            string thirteenDigits = $"{branchCode3}{productCode3}{nextSeqNumber:D7}";
+            int checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
+            return $"{branchCode3}-{productCode3}-{nextSeqNumber:D7}-{checkDigit}";
+        }
+
+        // GET: api/InvestmentAccounts/next-account-no?branchId=1&schemeId=1
+        [HttpGet("next-account-no")]
+        public async Task<ActionResult<object>> GetNextAccountNo([FromQuery] int? branchId, [FromQuery] int? schemeId)
+        {
+            int targetBranchId = branchId ?? 1;
+            string nextNo = await GenerateNextInvestmentAccountNo(targetBranchId, schemeId, incrementSequence: false);
+            return Ok(new { nextAccountNo = nextNo });
+        }
+
         private async Task<int> GetDefaultCashBankLedgerId(int branchId = 1)
         {
             // 1. Try branch default cash ledger
@@ -171,6 +244,7 @@ namespace Bhisi.Api.Controllers
                     SchemeName = a.InvestmentScheme != null ? a.InvestmentScheme.SchemeName : "",
                     SchemeCode = a.InvestmentScheme != null ? a.InvestmentScheme.SchemeCode : "",
                     a.InvestmentNo,
+                    a.OldInvestmentNo,
                     a.DepositReceiptNo,
                     a.InvestmentDate,
                     a.PrincipalAmount,
@@ -214,6 +288,7 @@ namespace Bhisi.Api.Controllers
                 a.SchemeID,
                 SchemeName = a.InvestmentScheme != null ? a.InvestmentScheme.SchemeName : "",
                 a.InvestmentNo,
+                a.OldInvestmentNo,
                 a.DepositReceiptNo,
                 a.InvestmentDate,
                 a.PrincipalAmount,
@@ -278,6 +353,7 @@ namespace Bhisi.Api.Controllers
             existing.BookValue = account.PrincipalAmount + account.AccruedInterestTillMigration;
             existing.NomineeName = account.NomineeName;
             existing.NomineeRelation = account.NomineeRelation;
+            existing.OldInvestmentNo = account.OldInvestmentNo;
             existing.Remarks = account.Remarks;
 
             try
@@ -316,25 +392,19 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("मुदतपूर्ती तारीख अवैध आहे. वर्ष 1980 ते 2150 दरम्यान असणे आवश्यक आहे.");
             }
 
+            if (account.IsLegacyAccount && string.IsNullOrWhiteSpace(account.OldInvestmentNo))
+            {
+                return BadRequest("सुरुवातीची शिल्लक स्थलांतर करताना जुना गुंतवणूक खाते क्रमांक (Old Investment No) भरणे अनिवार्य आहे.");
+            }
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Generate auto account number
-                var seq = await _context.InvestmentAccountSequences
-                    .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "INV");
-
-                if (seq == null)
+                // Generate standard 14-digit CBS account number
+                if (string.IsNullOrWhiteSpace(account.InvestmentNo))
                 {
-                    seq = new InvestmentAccountSequence { BranchID = account.BranchID, ProductType = "INV", CurrentValue = 0 };
-                    _context.InvestmentAccountSequences.Add(seq);
-                    await _context.SaveChangesAsync();
+                    account.InvestmentNo = await GenerateNextInvestmentAccountNo(account.BranchID, account.SchemeID, incrementSequence: true);
                 }
-
-                seq.CurrentValue += 1;
-                
-                Bhisi.Api.Models.Branch? branchEntity = await _context.Branches.FindAsync(account.BranchID);
-                string branchCode = branchEntity?.BranchCode ?? "001";
-                account.InvestmentNo = $"{branchCode}-INV-{seq.CurrentValue:D6}";
 
                 // Calculate maturity amount if not provided
                 if (account.ExpectedMaturityAmount == 0)
@@ -455,24 +525,19 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("मुदतपूर्ती तारीख अवैध आहे. वर्ष 1980 ते 2150 दरम्यान असणे आवश्यक आहे.");
             }
 
+            if (string.IsNullOrWhiteSpace(account.OldInvestmentNo))
+            {
+                return BadRequest("सुरुवातीची शिल्लक स्थलांतर करताना जुना गुंतवणूक खाते क्रमांक (Old Investment No) भरणे अनिवार्य आहे.");
+            }
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Generate auto account number
-                var seq = await _context.InvestmentAccountSequences
-                    .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "INV");
-
-                if (seq == null)
+                // Generate standard 14-digit CBS account number
+                if (string.IsNullOrWhiteSpace(account.InvestmentNo))
                 {
-                    seq = new InvestmentAccountSequence { BranchID = account.BranchID, ProductType = "INV", CurrentValue = 0 };
-                    _context.InvestmentAccountSequences.Add(seq);
-                    await _context.SaveChangesAsync();
+                    account.InvestmentNo = await GenerateNextInvestmentAccountNo(account.BranchID, account.SchemeID, incrementSequence: true);
                 }
-
-                seq.CurrentValue += 1;
-                Bhisi.Api.Models.Branch? branchEntity = await _context.Branches.FindAsync(account.BranchID);
-                string branchCode = branchEntity?.BranchCode ?? "001";
-                account.InvestmentNo = $"{branchCode}-INV-{seq.CurrentValue:D6}";
                 account.IsLegacyAccount = true;
                 account.BookValue = account.PrincipalAmount + account.AccruedInterestTillMigration;
 

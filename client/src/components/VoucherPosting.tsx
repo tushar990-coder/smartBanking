@@ -138,6 +138,23 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     fetchApprovedVouchers();
   }, []);
 
+  const isOpeningMigrationVoucher = (v: Voucher) => {
+    const vNo = v.voucherNo || '';
+    const narr = (v.narration || '').toLowerCase();
+    return (
+      vNo.includes('-OP-') ||
+      vNo.startsWith('JV-FD-OP-') ||
+      vNo.startsWith('REC-FD-OP-') ||
+      vNo.startsWith('JV-RD-OP-') ||
+      vNo.startsWith('REC-RD-OP-') ||
+      vNo.startsWith('JV-SH-OP-') ||
+      vNo.startsWith('JV-INV-OP-') ||
+      (v.voucherType || '').toLowerCase() === 'opening' ||
+      narr.includes('आरंभिक शिल्लक') ||
+      narr.includes('opening balance migration')
+    );
+  };
+
   const fetchApprovedVouchers = async () => {
     setLoadingApproved(true);
     try {
@@ -145,7 +162,8 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       const res = await fetch(`/api/VoucherPosting/Approved?branchId=${branchId}`);
       if (res.ok) {
         const data = await res.json();
-        setApprovedVouchers(data);
+        const safeList: Voucher[] = (Array.isArray(data) ? data : []).filter((v: Voucher) => !isOpeningMigrationVoucher(v));
+        setApprovedVouchers(safeList);
       } else {
         console.error('Failed to fetch approved vouchers:', res.status, res.statusText);
       }
@@ -169,7 +187,8 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       const res = await fetch(`/api/VoucherPosting/Unposted?branchId=${branchId}`);
       if (res.ok) {
         const data = await res.json();
-        setVouchers(data);
+        const safeList: Voucher[] = (Array.isArray(data) ? data : []).filter((v: Voucher) => !isOpeningMigrationVoucher(v));
+        setVouchers(safeList);
         setSelectedVouchers(new Set());
 
         const params = new URLSearchParams(window.location.search);

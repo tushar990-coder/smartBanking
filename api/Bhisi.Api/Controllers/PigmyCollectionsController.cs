@@ -69,9 +69,12 @@ namespace Bhisi.Api.Controllers
             [FromQuery] DateTime? toDate,
             [FromQuery] int? agentId,
             [FromQuery] int? branchId,
-            [FromQuery] int? pigmyAccountId)
+            [FromQuery] int? pigmyAccountId,
+            [FromQuery] int? page = null,
+            [FromQuery] int? pageSize = null)
         {
             var query = _context.PigmyCollections
+                .AsNoTracking()
                 .Include(c => c.PigmyAccount)
                     .ThenInclude(a => a!.Customer)
                 .Include(c => c.Agent)
@@ -104,9 +107,25 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(c => c.PigmyAccountId == pigmyAccountId.Value);
             }
 
-            var collections = await query
+            query = query
                 .OrderByDescending(c => c.CollectionDate)
-                .ThenByDescending(c => c.CollectionId)
+                .ThenByDescending(c => c.CollectionId);
+
+            if (page.HasValue || pageSize.HasValue)
+            {
+                int p = page ?? 1;
+                int ps = pageSize ?? 50;
+                if (p < 1) p = 1;
+                if (ps < 1 || ps > 500) ps = 50;
+                query = query.Skip((p - 1) * ps).Take(ps);
+            }
+            else if (!fromDate.HasValue && !toDate.HasValue && !pigmyAccountId.HasValue)
+            {
+                // Default safety limit for unconstrained queries (Pillar 2)
+                query = query.Take(50);
+            }
+
+            var collections = await query
                 .Select(c => new
                 {
                     c.CollectionId,

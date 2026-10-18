@@ -245,6 +245,7 @@ namespace Bhisi.Api.Controllers
             [FromQuery] string? sortOrder = null)
         {
             var query = _context.PigmyAccounts
+                .AsNoTracking()
                 .Include(p => p.Customer)
                 .Include(p => p.PigmyScheme)
                 .Include(p => p.PigmyAgent)
@@ -382,6 +383,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<PigmyAccount>>> GetAccountsByCustomer(int customerId)
         {
             var accounts = await _context.PigmyAccounts
+                .AsNoTracking()
                 .Include(p => p.Customer)
                 .Include(p => p.PigmyScheme)
                 .Include(p => p.PigmyAgent)
@@ -391,6 +393,7 @@ namespace Bhisi.Api.Controllers
 
             var accountIds = accounts.Select(a => a.PigmyAccountID).ToList();
             var openingBals = await _context.PigmyOpeningBalances
+                .AsNoTracking()
                 .Where(o => accountIds.Contains(o.PigmyAccountID))
                 .ToListAsync();
 
@@ -421,6 +424,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<PigmyAccount>> GetPigmyAccount(int id)
         {
             var pigmyAccount = await _context.PigmyAccounts
+                .AsNoTracking()
                 .Include(p => p.Customer)
                 .Include(p => p.PigmyScheme)
                 .Include(p => p.PigmyAgent)

@@ -109,27 +109,78 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
 
   const fetchActiveAccounts = async () => {
     try {
-      const response = await axios.get(`${API_URL}/SavingAccounts`);
-      // Only filter active accounts
-      const active = response.data.filter((a: any) => a.status === 'Active');
-      setActiveAccounts(active);
-
       const params = new URLSearchParams(window.location.search);
-      const customerIdStr = params.get('customerId') || params.get('customerID');
-      const accountIdStr = params.get('accountId') || params.get('savingAccountId');
+      let customerIdStr = params.get('customerId') || params.get('customerID');
+      let accountIdStr = params.get('accountId') || params.get('savingAccountId');
 
-      let matchedAcc: any = null;
-      if (accountIdStr) {
-        const accId = parseInt(accountIdStr, 10);
-        matchedAcc = active.find((a: any) => a.savingAccountID === accId);
-      } else if (customerIdStr) {
-        const cId = parseInt(customerIdStr, 10);
-        matchedAcc = active.find((a: any) => a.customerID === cId);
+      if (!customerIdStr && !accountIdStr) {
+        try {
+          const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+          if (rawBridge) {
+            sessionStorage.removeItem('cbs_active_customer_transfer');
+            const bridgeData = JSON.parse(rawBridge);
+            if (bridgeData) {
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
+              accountIdStr = bridgeData.savingAccountId || bridgeData.accountId ? String(bridgeData.savingAccountId || bridgeData.accountId) : null;
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
       }
 
-      if (matchedAcc) {
-        setFormData((prev) => ({ ...prev, savingAccountID: matchedAcc.savingAccountID }));
-        setSelectedAccount(matchedAcc);
+      let fastTrackDone = false;
+      const targetAccId = accountIdStr ? parseInt(accountIdStr, 10) : 0;
+      const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+
+      // ⚡ FAST-TRACK 1: Direct targeted account ID lookup (~15-20ms)
+      if (targetAccId > 0) {
+        try {
+          const singleRes = await axios.get(`${API_URL}/SavingAccounts/${targetAccId}`);
+          if (singleRes.data && singleRes.data.savingAccountID) {
+            const acc = singleRes.data;
+            setActiveAccounts([acc]);
+            setFormData((prev) => ({ ...prev, savingAccountID: acc.savingAccountID }));
+            setSelectedAccount(acc);
+            fastTrackDone = true;
+          }
+        } catch (e) {
+          console.warn('Fast-track account lookup failed, falling back', e);
+        }
+      }
+      // ⚡ FAST-TRACK 2: Direct targeted customer ID lookup (~20-30ms)
+      else if (cId > 0) {
+        try {
+          const custRes = await axios.get(`${API_URL}/SavingAccounts?customerId=${cId}`);
+          const active = (custRes.data || []).filter((a: any) => a.status === 'Active');
+          if (active.length > 0) {
+            setActiveAccounts(active);
+            setFormData((prev) => ({ ...prev, savingAccountID: active[0].savingAccountID }));
+            setSelectedAccount(active[0]);
+            fastTrackDone = true;
+          }
+        } catch (e) {
+          console.warn('Fast-track customer lookup failed, falling back', e);
+        }
+      }
+
+      if (!fastTrackDone) {
+        const response = await axios.get(`${API_URL}/SavingAccounts`);
+        const active = response.data.filter((a: any) => a.status === 'Active');
+        setActiveAccounts(active);
+      } else {
+        // Load full dropdown list in background lazily
+        axios.get(`${API_URL}/SavingAccounts`).then(res => {
+          if (Array.isArray(res.data)) {
+            const active = res.data.filter((a: any) => a.status === 'Active');
+            setActiveAccounts(prev => {
+              const map = new Map<number, any>();
+              prev.forEach(a => map.set(a.savingAccountID, a));
+              active.forEach((a: any) => map.set(a.savingAccountID, a));
+              return Array.from(map.values());
+            });
+          }
+        }).catch(e => console.error(e));
       }
     } catch (err) {
       console.error('Error fetching accounts', err);

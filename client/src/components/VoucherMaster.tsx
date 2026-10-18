@@ -357,7 +357,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
 
   const fetchVouchers = async () => {
     try {
-      const response = await fetch(API_URL);
+      const response = await fetch(`${API_URL}?pageSize=50`);
       if (response.ok) {
         const data = await response.json();
         setVouchers(Array.isArray(data) ? data : []);

@@ -1349,6 +1349,7 @@ namespace Bhisi.Api.Controllers
         public class CloseMemberRequest
         {
             public int BranchId { get; set; } = 1;
+            public DateTime? ClosureDate { get; set; }
             public string Narration { get; set; } = "Member Closure";
         }
 
@@ -1407,11 +1408,12 @@ namespace Bhisi.Api.Controllers
                     var cashLedger = await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Assets") ?? await _context.Ledgers.FirstAsync();
 
                     int vchCount = await _context.Vouchers.CountAsync() + 1;
+                    DateTime effCloseDate = request.ClosureDate?.Date ?? DateTime.Today;
                     var voucher = new Voucher
                     {
                         BranchID = request.BranchId,
-                        VoucherNo = $"VCH-SHR-WD-{DateTime.Today:yyyyMMdd}-{vchCount:D4}",
-                        VoucherDate = DateTime.Today,
+                        VoucherNo = $"VCH-SHR-WD-{effCloseDate:yyyyMMdd}-{vchCount:D4}",
+                        VoucherDate = effCloseDate,
                         VoucherType = "Payment",
                         TotalAmount = totalShareAmount,
                         Narration = $"Share Withdrawal on Member Closure for {memberName}. {request.Narration}",
@@ -1429,6 +1431,7 @@ namespace Bhisi.Api.Controllers
                     {
                         ShareAccountId = shareAccount.ShareAccountId,
                         CustomerID = member.CustomerID ?? (member.Customer?.CustomerID ?? 1),
+                        TransactionDate = effCloseDate,
                         TransactionType = "Withdrawal",
                         NumberOfShares = shareAccount.TotalShareCount,
                         Amount = totalShareAmount,
@@ -1542,6 +1545,7 @@ namespace Bhisi.Api.Controllers
         {
             public int BranchId { get; set; } = 1;
             public DateTime DeathDate { get; set; } = DateTime.Today;
+            public DateTime? SettlementDate { get; set; }
             public string? DeathCertificateNo { get; set; }
             public string NomineeName { get; set; } = string.Empty;
             public string? NomineeRelation { get; set; }
@@ -1640,12 +1644,13 @@ namespace Bhisi.Api.Controllers
 
                     int vchCount = await _context.Vouchers.CountAsync() + 1;
                     string memberCustName = member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "Member";
+                    DateTime effClaimDate = req.SettlementDate?.Date ?? (req.ResolutionDate?.Date ?? DateTime.Today);
 
                     var voucher = new Voucher
                     {
                         BranchID = req.BranchId,
-                        VoucherNo = $"VCH-CLM-{DateTime.Today:yyyyMMdd}-{vchCount:D4}",
-                        VoucherDate = DateTime.Today,
+                        VoucherNo = $"VCH-CLM-{effClaimDate:yyyyMMdd}-{vchCount:D4}",
+                        VoucherDate = effClaimDate,
                         VoucherType = "Payment",
                         TotalAmount = netAmount,
                         Narration = $"मयत सभासद वारसदार क्लेम सेटलमेंट: {memberCustName} (वारसदार: {req.NomineeName}, मयत दाखला: {req.DeathCertificateNo}, ठराव: {req.ResolutionNo})",
@@ -1662,6 +1667,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // Create DeceasedClaimSettlement Record
+                DateTime effSettlementDate = req.SettlementDate?.Date ?? (req.ResolutionDate?.Date ?? DateTime.Today);
                 var settlement = new DeceasedClaimSettlement
                 {
                     MemberID = id,
@@ -1684,7 +1690,7 @@ namespace Bhisi.Api.Controllers
                     ResolutionDate = req.ResolutionDate,
                     VoucherID = voucherId,
                     Status = "Settled",
-                    SettlementDate = DateTime.Today,
+                    SettlementDate = effSettlementDate,
                     Remarks = req.Remarks,
                     CreatedBy = userId,
                     CreatedOn = DateTime.Now

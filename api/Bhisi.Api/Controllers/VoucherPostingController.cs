@@ -126,7 +126,7 @@ namespace Bhisi.Api.Controllers
             }
 
             // 3. Return all pending vouchers (excluding all opening balance migration vouchers)
-            var query = _context.Vouchers.AsQueryable();
+            var query = _context.Vouchers.AsNoTracking().AsQueryable();
             if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(v => v.BranchID == branchId.Value || v.BranchID == 0);
@@ -168,7 +168,7 @@ namespace Bhisi.Api.Controllers
             [FromQuery] DateTime? voucherDate = null,
             [FromQuery] bool allDates = false)
         {
-            var query = _context.Vouchers.AsQueryable();
+            var query = _context.Vouchers.AsNoTracking().AsQueryable();
             if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(v => v.BranchID == branchId.Value || v.BranchID == 0);

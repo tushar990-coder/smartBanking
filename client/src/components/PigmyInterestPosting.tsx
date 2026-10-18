@@ -14,6 +14,7 @@ interface InterestPreviewResult {
 const PigmyInterestPosting: React.FC = () => {
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 3, 1).toISOString().split('T')[0]); // April 1
   const [endDate, setEndDate] = useState(new Date(new Date().getFullYear(), 8, 30).toISOString().split('T')[0]); // Sept 30
+  const [postingDate, setPostingDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [previews, setPreviews] = useState<InterestPreviewResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -50,6 +51,7 @@ const PigmyInterestPosting: React.FC = () => {
       const res = await axios.post('/api/PigmyInterest/PostInterest', {
         startDate,
         endDate,
+        postingDate,
         branchId: 1
       });
       const successMsg = res.data?.message || 'व्याज खात्यात यशस्वीरीत्या जमा झाले.';
@@ -94,17 +96,21 @@ const PigmyInterestPosting: React.FC = () => {
           {/* Period Selection Card */}
           <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200">
             <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-2 pb-1 border-b border-gray-200">
-              १. व्याज आकारणी कालावधी निवडा (Interest Posting Period)
+              १. व्याज आकारणी कालावधी व तारीख निवडा (Interest Posting Period & Date)
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 items-end">
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">सुरुवातीची तारीख (Start Date) *</label>
                 <input type="date" className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">अखेरची तारीख (End Date) *</label>
-                <input type="date" className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                <input type="date" className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPostingDate(e.target.value); }} />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-gray-600 mb-0.5">जमा / व्हाउचर तारीख (Posting Date) *</label>
+                <input type="date" className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-mono" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} />
               </div>
               <div>
                 <button 
@@ -112,7 +118,7 @@ const PigmyInterestPosting: React.FC = () => {
                   onClick={handlePreview}
                   disabled={loading}
                 >
-                  {loading ? 'कॅल्क्युलेट करत आहे...' : '🔍 व्याज कॅल्क्युलेट करा (Preview Interest)'}
+                  {loading ? 'कॅल्क्युलेट करत आहे...' : '🔍 व्याज कॅल्क्युलेट करा (Preview)'}
                 </button>
               </div>
             </div>

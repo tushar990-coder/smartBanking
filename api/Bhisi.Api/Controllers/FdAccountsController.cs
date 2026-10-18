@@ -14,6 +14,18 @@ using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
+    public class BulkFdReceiptItemDto
+    {
+        public string? AccountNo { get; set; }
+        public string? LegacyAccountNumber { get; set; }
+        public decimal DepositAmount { get; set; }
+        public string? DurationType { get; set; }
+        public int? DurationValue { get; set; }
+        public decimal? InterestRate { get; set; }
+        public decimal? MaturityAmount { get; set; }
+        public DateTime? MaturityDate { get; set; }
+    }
+
     public class BulkFdAccountRequest
     {
         public int BranchID { get; set; } = 1;
@@ -41,6 +53,9 @@ namespace Bhisi.Api.Controllers
         public bool IsAutoRenewable { get; set; } = false;
         public string AutoRenewalOption { get; set; } = "PrincipalPlusInterest"; // PrincipalPlusInterest, PrincipalOnly
         public int MaxAutoRenewalCycles { get; set; } = 3;
+
+        // Dynamic individual receipt rows from grid
+        public List<BulkFdReceiptItemDto>? Receipts { get; set; }
     }
 
     [Route("api/[controller]")]
@@ -230,9 +245,10 @@ namespace Bhisi.Api.Controllers
 
         // GET: api/FdAccounts
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<object>>> GetFdAccounts([FromQuery] int? branchId)
+        public async Task<ActionResult<IEnumerable<object>>> GetFdAccounts([FromQuery] int? branchId, [FromQuery] int? customerId = null, [FromQuery] string? status = null)
         {
             var query = _context.FdAccounts
+                .AsNoTracking()
                 .Include(f => f.Customer)
                 .Include(f => f.FdScheme)
                 .Include(f => f.Branch)
@@ -246,6 +262,16 @@ namespace Bhisi.Api.Controllers
             else if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(f => f.BranchID == branchId.Value);
+            }
+
+            if (customerId.HasValue && customerId.Value > 0)
+            {
+                query = query.Where(f => f.CustomerID == customerId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                query = query.Where(f => f.Status == status);
             }
 
             var seniorCutoffDate = DateTime.Today.AddYears(-60);
@@ -308,6 +334,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<object>> GetFdAccount(int id)
         {
             var f = await _context.FdAccounts
+                .AsNoTracking()
                 .Include(x => x.Customer)
                 .Include(x => x.FdScheme)
                 .Include(x => x.Branch)
@@ -471,14 +498,11 @@ namespace Bhisi.Api.Controllers
                         else if (int.TryParse(cleanDigits, out int simpleSeq) && simpleSeq > 0)
                         {
                             int schemeCodeNum = 401;
-                            if (scheme != null)
-                            {
-                                var sDigits = new string((scheme.SchemeCode ?? "").Where(char.IsDigit).ToArray());
-                                if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsed) && parsed > 0)
-                                    schemeCodeNum = parsed < 100 ? 400 + parsed : parsed;
-                                else
-                                    schemeCodeNum = 400 + scheme.FdSchemeID;
-                            }
+                            var sDigits = new string((scheme.SchemeCode ?? "").Where(char.IsDigit).ToArray());
+                            if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsed) && parsed > 0)
+                                schemeCodeNum = parsed < 100 ? 400 + parsed : parsed;
+                            else
+                                schemeCodeNum = 400 + scheme.FdSchemeID;
                             account.AccountNo = Helpers.AccountNumberHelper.Generate14DigitAccountNo(account.BranchID, schemeCodeNum, simpleSeq);
                             var seq = await _context.FdAccountSequences
                                 .FirstOrDefaultAsync(s => s.BranchID == account.BranchID && s.ProductType == "FD");
@@ -1014,7 +1038,7 @@ namespace Bhisi.Api.Controllers
         }
 
 
-        // POST: api/FdAccounts/BulkCreate (Create multiple split FD receipts sequentially)
+        // POST: api/FdAccounts/BulkCreate (Create multiple split FD receipts with dynamic grid support)
         [HttpPost("BulkCreate")]
         [Authorize(Roles = "Admin,SuperAdmin,Manager,Officer,Cashier")]
         public async Task<IActionResult> BulkCreateFdAccounts([FromBody] BulkFdAccountRequest req)
@@ -1035,22 +1059,22 @@ namespace Bhisi.Api.Controllers
             if (req.CustomerID.HasValue && req.CustomerID.Value > 0)
             {
                 customer = await _context.Customers.FindAsync(req.CustomerID.Value);
-                if (customer == null) return BadRequest("निवडलेला ग्राहक सिस्टीममध्ये अस्तित्वात नाही.");
-                if (customer.Status != "Active") return BadRequest($"या ग्राहकाचे स्टेटस '{customer.Status}' असल्यामुळे नवीन मुदत ठेव खाते उघडता येत नाही. केवळ सक्रिय (Active) ग्राहकांचीच ठेव स्वीकारली जाऊ शकते.");
+                if (customer == null) return BadRequest(new { message = "निवडलेला ग्राहक सिस्टीममध्ये अस्तित्वात नाही." });
+                if (customer.Status != "Active") return BadRequest(new { message = $"या ग्राहकाचे स्टेटस '{customer.Status}' असल्यामुळे नवीन मुदत ठेव खाते उघडता येत नाही. केवळ सक्रिय (Active) ग्राहकांचीच ठेव स्वीकारली जाऊ शकते." });
 
                 member = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
             }
             else if (req.MemberID.HasValue && req.MemberID.Value > 0)
             {
                 member = await _context.Members.Include(m => m.Customer).FirstOrDefaultAsync(m => m.MemberID == req.MemberID.Value);
-                if (member == null) return BadRequest("निवडलेला सभासद सिस्टीममध्ये अस्तित्वात नाही.");
-                if (member.Status != "Active") return BadRequest($"या सभासदाचे स्टेटस '{member.Status}' असल्यामुळे नवीन मुदत ठेव खाते उघडता येत नाही. केवळ सक्रिय (Active) सभासदांचीच ठेव स्वीकारली जाऊ शकते.");
+                if (member == null) return BadRequest(new { message = "निवडलेला सभासद सिस्टीममध्ये अस्तित्वात नाही." });
+                if (member.Status != "Active") return BadRequest(new { message = $"या सभासदाचे स्टेटस '{member.Status}' असल्यामुळे नवीन मुदत ठेव खाते उघडता येत नाही. केवळ सक्रिय (Active) सभासदांचीच ठेव स्वीकारली जाऊ शकते." });
 
                 if (member.CustomerID > 0) customer = await _context.Customers.FindAsync(member.CustomerID);
             }
             else
             {
-                return BadRequest("कृपया खातेदाराची (Customer / Member) निवड करा.");
+                return BadRequest(new { message = "कृपया खातेदाराची (Customer / Member) निवड करा." });
             }
 
             int? resolvedCustomerId = customer?.CustomerID ?? (member?.CustomerID > 0 ? member.CustomerID : null);
@@ -1058,74 +1082,253 @@ namespace Bhisi.Api.Controllers
 
             if (!resolvedCustomerId.HasValue || resolvedCustomerId.Value <= 0)
             {
-                return BadRequest("खातेदाराचा ग्राहक आयडी (Customer ID) उपलब्ध नाही.");
+                return BadRequest(new { message = "खातेदाराचा ग्राहक आयडी (Customer ID) उपलब्ध नाही." });
             }
 
             int finalCustomerId = resolvedCustomerId.Value;
 
-            if (req.FdSchemeID <= 0) return BadRequest("कृपया ठेव योजना निवडा.");
-            if (req.SplitCount <= 0) return BadRequest("पावत्यांची संख्या १ किंवा अधिक असावी.");
+            if (req.FdSchemeID <= 0) return BadRequest(new { message = "कृपया ठेव योजना निवडा." });
 
             var scheme = await _context.FdSchemes
                 .Include(s => s.Slabs)
                 .FirstOrDefaultAsync(s => s.FdSchemeID == req.FdSchemeID);
-            if (scheme == null) return BadRequest("निवडलेली ठेव योजना अमान्य आहे.");
+            if (scheme == null) return BadRequest(new { message = "निवडलेली ठेव योजना अमान्य आहे." });
 
             if (scheme.BranchID.HasValue && scheme.BranchID.Value != req.BranchID)
             {
-                return BadRequest($"निवडलेली मुदत ठेव योजना फक्त विशिष्ट शाखेसाठी (शाखा क्र. {scheme.BranchID.Value}) मर्यादित आहे. चालू शाखेतून ({req.BranchID}) या योजनेखाली खाते उघडता येत नाही.");
+                return BadRequest(new { message = $"निवडलेली मुदत ठेव योजना फक्त विशिष्ट शाखेसाठी (शाखा क्र. {scheme.BranchID.Value}) मर्यादित आहे. चालू शाखेतून ({req.BranchID}) या योजनेखाली खाते उघडता येत नाही." });
             }
 
-            decimal perReceiptAmount = req.AmountPerReceipt > 0 ? req.AmountPerReceipt : Math.Round(req.TotalAmount / req.SplitCount, 2);
-            if (perReceiptAmount <= 0) return BadRequest("प्रति पावती रक्कम ० पेक्षा जास्त असावी.");
-
-            if (perReceiptAmount < scheme.MinimumAmount || perReceiptAmount > scheme.MaximumAmount)
+            // Resolve receipt items from grid or generate fallback even split
+            var receiptItems = req.Receipts ?? new List<BulkFdReceiptItemDto>();
+            if (receiptItems.Count == 0)
             {
-                return BadRequest($"प्रति पावती रक्कम ₹{scheme.MinimumAmount} आणि ₹{scheme.MaximumAmount} च्या दरम्यान असावी.");
-            }
-
-            var createdAccounts = new List<FdAccount>();
-
-            using (var transaction = await _context.Database.BeginTransactionAsync())
-            {
-                try
+                int count = req.SplitCount > 0 ? req.SplitCount : 1;
+                decimal perReceipt = req.AmountPerReceipt > 0 ? req.AmountPerReceipt : (req.TotalAmount / count);
+                for (int i = 0; i < count; i++)
                 {
-                    var branch = await _context.Branches.FindAsync(req.BranchID);
-                    string branchPrefix = branch != null ? branch.BranchCode : "BR";
-
-                    var seq = await _context.FdAccountSequences
-                        .FirstOrDefaultAsync(s => s.BranchID == req.BranchID && s.ProductType == "FD");
-
-                    if (seq == null)
+                    receiptItems.Add(new BulkFdReceiptItemDto
                     {
-                        seq = new FdAccountSequence { BranchID = req.BranchID, ProductType = "FD", CurrentValue = 0 };
-                        _context.FdAccountSequences.Add(seq);
-                        await _context.SaveChangesAsync();
+                        DepositAmount = perReceipt,
+                        DurationType = req.DurationType,
+                        DurationValue = req.DurationValue
+                    });
+                }
+            }
+
+            if (receiptItems.Count == 0)
+            {
+                return BadRequest(new { message = "पावत्यांची यादी रिकामी असू शकत नाही." });
+            }
+
+            // Financial Reconciliation: Sum(receipts) must equal TotalAmount
+            decimal allocatedTotal = receiptItems.Sum(r => r.DepositAmount);
+            if (Math.Abs(allocatedTotal - req.TotalAmount) > 0.01m)
+            {
+                return BadRequest(new { message = $"एकूण ठेव रक्कम (₹{req.TotalAmount:N2}) आणि ग्रिडमधील पावत्यांची बेरीज (₹{allocatedTotal:N2}) जुळत नाही. तफावत: ₹{Math.Abs(allocatedTotal - req.TotalAmount):N2}." });
+            }
+
+            // Validate each individual receipt
+            for (int i = 0; i < receiptItems.Count; i++)
+            {
+                var r = receiptItems[i];
+                if (r.DepositAmount <= 0)
+                {
+                    return BadRequest(new { message = $"पावती क्र. {i + 1} ची ठेव रक्कम ० पेक्षा जास्त असावी." });
+                }
+                if (scheme.MinimumAmount > 0 && r.DepositAmount < scheme.MinimumAmount)
+                {
+                    return BadRequest(new { message = $"पावती क्र. {i + 1} ची रक्कम (₹{r.DepositAmount:N2}) योजनेच्या किमान रकमेपेक्षा (₹{scheme.MinimumAmount:N2}) कमी आहे." });
+                }
+                if (scheme.MaximumAmount > 0 && r.DepositAmount > scheme.MaximumAmount)
+                {
+                    return BadRequest(new { message = $"पावती क्र. {i + 1} ची रक्कम (₹{r.DepositAmount:N2}) योजनेच्या कमाल मर्यादेपेक्षा (₹{scheme.MaximumAmount:N2}) जास्त आहे." });
+                }
+            }
+
+            // Resolve payment mode & debit ledger
+            Ledger? debitLedger = null;
+            SavingAccountMaster? sbAcc = null;
+
+            if (req.PaymentMode == "Bank")
+            {
+                if (!req.BankAccountLedgerID.HasValue || req.BankAccountLedgerID.Value <= 0)
+                {
+                    return BadRequest(new { message = "कृपया बँक लेजर खाते निवडा." });
+                }
+                debitLedger = await _context.Ledgers.FindAsync(req.BankAccountLedgerID.Value);
+                if (debitLedger == null)
+                {
+                    return BadRequest(new { message = "निवडलेले बँक खाते लेजर आढळले नाही." });
+                }
+            }
+            else if (req.PaymentMode == "Transfer")
+            {
+                if (!req.SavingAccountID.HasValue || req.SavingAccountID.Value <= 0)
+                {
+                    return BadRequest(new { message = "कृपया वर्ग करण्यासाठी सभासदाचे बचत खाते निवडा." });
+                }
+
+                sbAcc = await _context.SavingAccountMasters.FindAsync(req.SavingAccountID.Value);
+                if (sbAcc == null)
+                {
+                    return BadRequest(new { message = "निवडलेले बचत खाते आढळले नाही." });
+                }
+
+                if (sbAcc.CurrentBalance < req.TotalAmount)
+                {
+                    return BadRequest(new { message = $"अपुऱ्या शिल्लकेमुळे वर्ग करता येणार नाही! बचत खात्यात फक्त ₹{sbAcc.CurrentBalance:N2} शिल्लक आहेत (हवी असलेली एकूण रक्कम ₹{req.TotalAmount:N2})." });
+                }
+
+                if (sbAcc.LedgerID > 0)
+                {
+                    debitLedger = await _context.Ledgers.FindAsync(sbAcc.LedgerID);
+                }
+
+                if (debitLedger == null)
+                {
+                    debitLedger = await _context.Ledgers.FirstOrDefaultAsync(l =>
+                        l.AccountType == "Savings" ||
+                        l.LedgerName.Contains("सभासद बचत ठेव") ||
+                        l.LedgerName.Contains("बचत ठेव") ||
+                        l.LedgerName.ToLower().Contains("savings"));
+                }
+            }
+
+            if (debitLedger == null)
+            {
+                int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, req.BranchID, "FD");
+                debitLedger = await _context.Ledgers.FindAsync(branchCashId);
+            }
+
+            Ledger? fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(scheme);
+            if (fdLiabilityLedger == null)
+            {
+                return BadRequest(new { message = "मुदत ठेव दायित्व लेजर (FD Liability Ledger) सापडले नाही. कृपया योजनेमध्ये लेजर खाते मॅप केले असल्याची खात्री करा." });
+            }
+
+            if (debitLedger == null)
+            {
+                return BadRequest(new { message = "डिपॉझिट जमा करण्यासाठी डेबिट लेजर (Cash/Bank/SB) सापडले नाही." });
+            }
+
+            var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive);
+            int fyId = activeFy?.FinancialYearID ?? 1;
+            bool isSenior = customer?.BirthDate.HasValue == true && (customer.BirthDate.Value.Date <= req.OpeningDate.Date.AddYears(-60));
+            
+            int currentOperatorId = 1;
+            var userClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier) ?? User.FindFirst("UserID") ?? User.FindFirst("sub");
+            if (userClaim != null && int.TryParse(userClaim.Value, out int uid))
+            {
+                currentOperatorId = uid;
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // If SB transfer, deduct total from SB account
+                if (req.PaymentMode == "Transfer" && sbAcc != null)
+                {
+                    sbAcc.CurrentBalance -= req.TotalAmount;
+                    _context.SavingTransactions.Add(new SavingTransaction
+                    {
+                        SavingAccountID = sbAcc.SavingAccountID,
+                        CustomerID = sbAcc.CustomerID,
+                        BranchID = req.BranchID > 0 ? req.BranchID : sbAcc.BranchID,
+                        TransactionDate = req.OpeningDate,
+                        TransactionType = "Withdrawal",
+                        PaymentMode = "Transfer",
+                        Amount = req.TotalAmount,
+                        BalanceAfterTxn = sbAcc.CurrentBalance,
+                        Narration = $"बल्क मुदत ठेव खात्यांसाठी वर्ग ({receiptItems.Count} FD Receipts Total SB Debit)",
+                        CreatedBy = currentOperatorId,
+                        CreatedOn = DateTime.Now
+                    });
+                }
+
+                var createdAccounts = new List<FdAccount>();
+                var createdAccountNos = new List<string>();
+
+                foreach (var item in receiptItems)
+                {
+                    // 1. Account Number Resolution
+                    string resolvedAccountNo = "";
+                    bool isManual = !string.IsNullOrWhiteSpace(item.AccountNo) && item.AccountNo.Trim() != "AUTO" && item.AccountNo.Trim() != "---";
+                    if (isManual)
+                    {
+                        string manualAccNo = item.AccountNo!.Trim();
+                        var rawCleanDigits = new string(manualAccNo.Where(char.IsDigit).ToArray());
+                        string searchCandidate = rawCleanDigits.Length == 14 ? rawCleanDigits : manualAccNo;
+
+                        var dup = await _context.FdAccounts.FirstOrDefaultAsync(a => a.BranchID == req.BranchID && (a.AccountNo == searchCandidate || a.AccountNo == manualAccNo));
+                        if (dup != null)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(new { message = $"पावती / खाते क्रमांक '{manualAccNo}' आधीच अस्तित्वात आहे. कृपया वेगळा क्रमांक टाका." });
+                        }
+                        resolvedAccountNo = searchCandidate;
+
+                        // Advance sequence tracker if 14-digit CBS sequence number is higher
+                        if (rawCleanDigits.Length == 14)
+                        {
+                            string seqPart = rawCleanDigits.Substring(6, 7);
+                            if (int.TryParse(seqPart, out int customSeq))
+                            {
+                                var seq = await _context.FdAccountSequences
+                                    .FirstOrDefaultAsync(s => s.BranchID == req.BranchID && s.ProductType == "FD");
+                                if (seq != null && customSeq > seq.CurrentValue)
+                                {
+                                    seq.CurrentValue = customSeq;
+                                    await _context.SaveChangesAsync();
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var (genNo, _, _) = await GenerateNextFdAccountNoAsync(req.BranchID, req.FdSchemeID, incrementSequence: true);
+                        resolvedAccountNo = genNo;
                     }
 
-                    // 4. Calculate Duration and Maturity metrics with Slabs Support
-                    string durType = !string.IsNullOrWhiteSpace(req.DurationType) ? req.DurationType : (scheme.DurationType ?? "Months");
-                    int durVal = req.DurationValue.HasValue && req.DurationValue.Value > 0 ? req.DurationValue.Value : (scheme.DurationMonths > 0 ? scheme.DurationMonths : 12);
+                    // 2. Validate Legacy Account Number uniqueness
+                    if (!string.IsNullOrWhiteSpace(item.LegacyAccountNumber))
+                    {
+                        var trimmedLegacy = item.LegacyAccountNumber.Trim();
+                        var dupLegacy = await _context.FdAccounts.FirstOrDefaultAsync(a => 
+                            a.BranchID == req.BranchID && 
+                            a.FdSchemeID == req.FdSchemeID && 
+                            a.LegacyAccountNumber != null && 
+                            a.LegacyAccountNumber.Trim() == trimmedLegacy);
+                        if (dupLegacy != null)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(new { message = $"जुना पावती क्र. '{trimmedLegacy}' आधीच खाते क्र. '{dupLegacy.AccountNo}' साठी नोंदवला आहे." });
+                        }
+                    }
 
-                    DateTime matDate;
+                    // 3. Duration & Maturity
+                    string durType = !string.IsNullOrWhiteSpace(item.DurationType) ? item.DurationType : (!string.IsNullOrWhiteSpace(req.DurationType) ? req.DurationType : (scheme.DurationType ?? "Months"));
+                    int durVal = item.DurationValue.HasValue && item.DurationValue.Value > 0 ? item.DurationValue.Value : (req.DurationValue.HasValue && req.DurationValue.Value > 0 ? req.DurationValue.Value : (scheme.DurationMonths > 0 ? scheme.DurationMonths : 12));
+
+                    DateTime maturityDate;
                     int totalDays;
                     if (durType.Equals("Days", StringComparison.OrdinalIgnoreCase))
                     {
                         totalDays = durVal;
-                        matDate = req.OpeningDate.AddDays(totalDays);
+                        maturityDate = req.OpeningDate.AddDays(totalDays);
                     }
                     else if (durType.Equals("Years", StringComparison.OrdinalIgnoreCase))
                     {
-                        matDate = req.OpeningDate.AddYears(durVal);
-                        totalDays = (int)(matDate - req.OpeningDate).TotalDays;
+                        totalDays = (int)(req.OpeningDate.AddYears(durVal) - req.OpeningDate).TotalDays;
+                        maturityDate = req.OpeningDate.AddYears(durVal);
                     }
                     else
                     {
-                        matDate = req.OpeningDate.AddMonths(durVal);
-                        totalDays = (int)(matDate - req.OpeningDate).TotalDays;
+                        maturityDate = req.OpeningDate.AddMonths(durVal);
+                        totalDays = (int)(maturityDate - req.OpeningDate).TotalDays;
                     }
 
-                    // Resolve Rate
+                    // 4. Rate Calculation
                     decimal appliedRate;
                     if (scheme.SchemeDurationModel == "Slab")
                     {
@@ -1133,18 +1336,18 @@ namespace Bhisi.Api.Controllers
                         if (matchedSlab == null)
                         {
                             await transaction.RollbackAsync();
-                            return BadRequest($"निवडलेला कालावधी ({totalDays} दिवस) मुदत ठेव योजनेच्या कोणत्याही मंजूर स्लॅबमध्ये बसत नाही (योजना मर्यादा: {scheme.MinDurationDays ?? 1} ते {scheme.MaxDurationDays ?? 0} दिवस).");
+                            return BadRequest(new { message = $"निवडलेला कालावधी ({totalDays} दिवस) मुदत ठेव योजनेच्या कोणत्याही मंजूर स्लॅबमध्ये बसत नाही." });
                         }
-                        appliedRate = req.IsSeniorCitizen ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
+                        appliedRate = isSenior ? matchedSlab.SeniorCitizenRate : matchedSlab.InterestRate;
                     }
                     else
                     {
-                        appliedRate = req.IsSeniorCitizen ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
+                        appliedRate = isSenior ? scheme.SeniorCitizenInterestRate : scheme.InterestRate;
                     }
 
-                    decimal p = perReceiptAmount;
+                    decimal p = item.DepositAmount;
                     decimal r = appliedRate;
-                    decimal matAmount = 0;
+                    decimal matAmt;
 
                     if (scheme.InterestType == "Cumulative")
                     {
@@ -1155,211 +1358,159 @@ namespace Bhisi.Api.Controllers
 
                         double baseVal = 1.0 + ((double)r / (n * 100.0));
                         double exponent = n * ((double)totalDays / 365.0);
-                        matAmount = Math.Round(p * (decimal)Math.Pow(baseVal, exponent), 0, MidpointRounding.AwayFromZero);
+                        matAmt = Math.Round(p * (decimal)Math.Pow(baseVal, exponent), 0, MidpointRounding.AwayFromZero);
                     }
                     else if (scheme.InterestType == "MIS" || scheme.InterestType == "Monthly Interest")
                     {
-                        matAmount = p;
+                        matAmt = p;
                     }
                     else
                     {
-                        matAmount = Math.Round(p * (1.0m + ((r * (decimal)totalDays) / (365.0m * 100.0m))), 0, MidpointRounding.AwayFromZero);
+                        matAmt = Math.Round(p * (1.0m + ((r * (decimal)totalDays) / (365.0m * 100.0m))), 0, MidpointRounding.AwayFromZero);
                     }
 
-                    var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive);
-                    int fyId = activeFy?.FinancialYearID ?? 1;
-
-                    // Resolve ledgers
-                    Ledger? fdLiabilityLedger = null;
-                    if (scheme.FdLiabilityLedgerID.HasValue && scheme.FdLiabilityLedgerID.Value > 0)
+                    var acc = new FdAccount
                     {
-                        fdLiabilityLedger = await _context.Ledgers.FindAsync(scheme.FdLiabilityLedgerID.Value);
-                    }
-                    if (fdLiabilityLedger == null)
-                    {
-                        fdLiabilityLedger = await _context.Ledgers.FirstOrDefaultAsync(l =>
-                            l.AccountType == "FD" ||
-                            l.AccountType == "FixedDeposit" ||
-                            l.LedgerName.Contains("मुदत ठेव") ||
-                            l.LedgerName.ToLower().Contains("fixed deposit") ||
-                            l.LedgerName.ToLower().Contains("fd"));
-                    }
+                        BranchID = req.BranchID,
+                        CustomerID = finalCustomerId,
+                        FdSchemeID = req.FdSchemeID,
+                        AccountNo = resolvedAccountNo,
+                        LegacyAccountNumber = item.LegacyAccountNumber?.Trim(),
+                        OpeningDate = req.OpeningDate,
+                        DepositAmount = p,
+                        DurationType = durType,
+                        DurationValue = durVal,
+                        DurationInDays = totalDays,
+                        InterestRate = appliedRate,
+                        MaturityDate = maturityDate,
+                        MaturityAmount = matAmt,
+                        IsLegacyAccount = false,
+                        LegacyAccruedInt = 0,
+                        Status = "Active",
+                        NomineeName = req.NomineeName ?? "",
+                        NomineeRelation = req.NomineeRelation ?? "",
+                        Remarks = string.IsNullOrWhiteSpace(req.Remarks) 
+                            ? $"बल्क मुदत ठेव पावती ({createdAccounts.Count + 1}/{receiptItems.Count})"
+                            : $"{req.Remarks} - पावती ({createdAccounts.Count + 1}/{receiptItems.Count})",
+                        PaymentMode = req.PaymentMode ?? "Cash",
+                        BankAccountLedgerID = req.BankAccountLedgerID,
+                        ChequeNo = req.ChequeNo,
+                        ChequeDate = req.ChequeDate,
+                        SavingAccountID = req.SavingAccountID,
+                        IsAutoRenewable = req.IsAutoRenewable,
+                        AutoRenewalOption = string.IsNullOrWhiteSpace(req.AutoRenewalOption) ? "PrincipalPlusInterest" : req.AutoRenewalOption,
+                        MaxAutoRenewalCycles = req.MaxAutoRenewalCycles > 0 ? req.MaxAutoRenewalCycles : 3,
+                        AutoRenewalCount = 0,
+                        FinancialYearID = fyId,
+                        CreatedBy = currentOperatorId,
+                        CreatedDate = DateTime.Now
+                    };
 
-                    Ledger? debitLedger = null;
-                    SavingAccountMaster? sbAcc = null;
-
-                    if (req.PaymentMode == "Bank" && req.BankAccountLedgerID.HasValue && req.BankAccountLedgerID.Value > 0)
-                    {
-                        debitLedger = await _context.Ledgers.FindAsync(req.BankAccountLedgerID.Value);
-                    }
-                    else if (req.PaymentMode == "Transfer")
-                    {
-                        if (!req.SavingAccountID.HasValue || req.SavingAccountID.Value <= 0)
-                        {
-                            return BadRequest("कृपया वर्ग करण्यासाठी सभासदाचे बचत खाते निवडा.");
-                        }
-
-                        sbAcc = await _context.SavingAccountMasters.FindAsync(req.SavingAccountID.Value);
-                        if (sbAcc == null)
-                        {
-                            return BadRequest("निवडलेले बचत खाते आढळले नाही.");
-                        }
-
-                        decimal totalRequired = perReceiptAmount * req.SplitCount;
-                        if (sbAcc.CurrentBalance < totalRequired)
-                        {
-                            return BadRequest($"अपुऱ्या शिल्लकेमुळे वर्ग करता येणार नाही! बचत खात्यात फक्त ₹{sbAcc.CurrentBalance:N2} शिल्लक आहेत (एकूण वर्ग करायची रक्कम ₹{totalRequired:N2}).");
-                        }
-
-                        if (sbAcc.LedgerID > 0)
-                        {
-                            debitLedger = await _context.Ledgers.FindAsync(sbAcc.LedgerID);
-                        }
-
-                        if (debitLedger == null)
-                        {
-                            debitLedger = await _context.Ledgers.FirstOrDefaultAsync(l =>
-                                l.AccountType == "Savings" ||
-                                l.LedgerName.Contains("सभासद बचत ठेव") ||
-                                l.LedgerName.Contains("बचत ठेव") ||
-                                l.LedgerName.ToLower().Contains("savings"));
-                        }
-                    }
-
-                    if (debitLedger == null)
-                    {
-                        int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, req.BranchID, "FD");
-                        debitLedger = await _context.Ledgers.FindAsync(branchCashId);
-                    }
-
-                    var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
-                    bool autoPost = sanstha?.AutoPostVouchers ?? false;
-                    string voucherStatus = autoPost ? "Approved" : "Pending";
-
-                    for (int i = 1; i <= req.SplitCount; i++)
-                    {
-                        var (accNo, formattedNo, nextSeq) = await GenerateNextFdAccountNoAsync(req.BranchID, req.FdSchemeID, incrementSequence: true);
-
-                        var acc = new FdAccount
-                        {
-                            BranchID = req.BranchID,
-                            CustomerID = finalCustomerId,
-                            FdSchemeID = req.FdSchemeID,
-                            AccountNo = accNo,
-                            OpeningDate = req.OpeningDate,
-                            DepositAmount = perReceiptAmount,
-                            DurationType = durType,
-                            DurationValue = durVal,
-                            DurationInDays = totalDays,
-                            InterestRate = appliedRate,
-                            MaturityDate = matDate,
-                            MaturityAmount = matAmount,
-                            IsLegacyAccount = false,
-                            LegacyAccruedInt = 0,
-                            Status = "Active",
-                            NomineeName = req.NomineeName ?? "",
-                            NomineeRelation = req.NomineeRelation ?? "",
-                            Remarks = string.IsNullOrWhiteSpace(req.Remarks) 
-                                ? $"बल्क स्प्लिट मुदत ठेव पावती ({i}/{req.SplitCount})"
-                                : $"{req.Remarks} - स्प्लिट पावती ({i}/{req.SplitCount})",
-                            PaymentMode = req.PaymentMode ?? "Cash",
-                            BankAccountLedgerID = req.BankAccountLedgerID,
-                            ChequeNo = req.ChequeNo,
-                            ChequeDate = req.ChequeDate,
-                            SavingAccountID = req.SavingAccountID,
-                            IsAutoRenewable = req.IsAutoRenewable,
-                            AutoRenewalOption = string.IsNullOrWhiteSpace(req.AutoRenewalOption) ? "PrincipalPlusInterest" : req.AutoRenewalOption,
-                            MaxAutoRenewalCycles = req.MaxAutoRenewalCycles > 0 ? req.MaxAutoRenewalCycles : 3,
-                            AutoRenewalCount = 0,
-                            FinancialYearID = fyId,
-                            CreatedBy = 1,
-                            CreatedDate = DateTime.UtcNow
-                        };
-
-                        _context.FdAccounts.Add(acc);
-                        await _context.SaveChangesAsync();
-
-                        // If SB account transfer, deduct balance per receipt
-                        if (req.PaymentMode == "Transfer" && sbAcc != null)
-                        {
-                            sbAcc.CurrentBalance -= perReceiptAmount;
-                            _context.SavingTransactions.Add(new SavingTransaction
-                            {
-                                SavingAccountID = sbAcc.SavingAccountID,
-                                CustomerID = sbAcc.CustomerID,
-                                BranchID = acc.BranchID > 0 ? acc.BranchID : sbAcc.BranchID,
-                                TransactionDate = req.OpeningDate,
-                                TransactionType = "Withdrawal",
-                                PaymentMode = "Transfer",
-                                Amount = perReceiptAmount,
-                                BalanceAfterTxn = sbAcc.CurrentBalance,
-                                Narration = $"बल्क मुदत ठेव पावतीसाठी वर्ग (Bulk FD Opening SB Debit {i}/{req.SplitCount}): {acc.AccountNo}",
-                                CreatedBy = 1,
-                                CreatedOn = DateTime.Now
-                            });
-                        }
-
-                        // Create Accounting Voucher for each receipt
-                        if (fdLiabilityLedger != null && debitLedger != null)
-                        {
-                            var voucher = new Voucher
-                            {
-                                BranchID = req.BranchID,
-                                VoucherNo = $"JV-FD-{acc.AccountNo}",
-                                VoucherDate = req.OpeningDate,
-                                VoucherType = "Receipt",
-                                TotalAmount = perReceiptAmount,
-                                Narration = $"मुदत ठेव पावती जमा (FD Receipt Opened - Bulk {i}/{req.SplitCount} - {acc.PaymentMode}): {acc.AccountNo}",
-                                Status = voucherStatus,
-                                ApprovedBy = autoPost ? 1 : null,
-                                ApprovedOn = autoPost ? DateTime.Now : null,
-                                CreatedBy = 1,
-                                CreatedOn = DateTime.Now
-                            };
-                            _context.Vouchers.Add(voucher);
-                            await _context.SaveChangesAsync();
-
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitLedger.LedgerID, DrCr = "Dr", Amount = perReceiptAmount, CustomerID = finalCustomerId, MemberID = resolvedMemberId });
-                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = fdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = perReceiptAmount, CustomerID = finalCustomerId, MemberID = resolvedMemberId });
-
-                            // Transaction log
-                            var tx = new FdTransaction
-                            {
-                                BranchID = req.BranchID,
-                                FdAccountID = acc.FdAccountID,
-                                VoucherID = voucher.VoucherID,
-                                TransactionDate = req.OpeningDate,
-                                TransactionType = "Opening",
-                                DebitCredit = "Cr",
-                                Amount = perReceiptAmount,
-                                CreatedBy = 1
-                            };
-                            _context.FdTransactions.Add(tx);
-                        }
-
-                        createdAccounts.Add(acc);
-                    }
-
-                    await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
-
-                    string startNo = createdAccounts.First().AccountNo;
-                    string endNo = createdAccounts.Last().AccountNo;
-
-                    return Ok(new
-                    {
-                        Message = $"एकूण {createdAccounts.Count} पावत्या यशस्वीरीत्या उघडल्या गेल्या! (पावती क्र. {startNo} ते {endNo})",
-                        TotalCount = createdAccounts.Count,
-                        StartAccountNo = startNo,
-                        EndAccountNo = endNo,
-                        Accounts = createdAccounts
-                    });
+                    _context.FdAccounts.Add(acc);
+                    createdAccounts.Add(acc);
+                    createdAccountNos.Add(resolvedAccountNo);
                 }
-                catch (Exception ex)
+
+                await _context.SaveChangesAsync();
+
+                // 8. Create Consolidated Accounting Voucher
+                var (voucherStatus, approvedBy, approvedOn) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, req.TotalAmount, currentOperatorId);
+
+                string firstAcc = createdAccountNos.FirstOrDefault() ?? "FD";
+                string lastAcc = createdAccountNos.LastOrDefault() ?? "FD";
+                string firstAccFormatted = Helpers.AccountNumberHelper.Format14Digit(firstAcc);
+                string lastAccFormatted = Helpers.AccountNumberHelper.Format14Digit(lastAcc);
+
+                string voucherNo = $"REC-FD-BLK-{firstAcc}-TO-{lastAcc}";
+                if (voucherNo.Length > 50)
                 {
-                    await transaction.RollbackAsync();
-                    return BadRequest("बल्क पावत्या उघडताना त्रुटी आली: " + ex.Message);
+                    voucherNo = $"REC-FD-BLK-{DateTime.Now:yyyyMMddHHmmss}";
                 }
+
+                var voucher = new Voucher
+                {
+                    BranchID = req.BranchID,
+                    VoucherNo = voucherNo,
+                    VoucherDate = req.OpeningDate,
+                    VoucherType = "Receipt",
+                    Status = voucherStatus,
+                    ApprovedBy = approvedBy,
+                    ApprovedOn = approvedOn,
+                    TotalAmount = req.TotalAmount,
+                    Narration = $"बल्क मुदत ठेव खाती उघडली ({createdAccounts.Count} पावत्या - {req.PaymentMode}): {string.Join(", ", createdAccountNos.Select(a => Helpers.AccountNumberHelper.Format14Digit(a)))}",
+                    CreatedBy = currentOperatorId,
+                    CreatedOn = DateTime.Now
+                };
+
+                _context.Vouchers.Add(voucher);
+                await _context.SaveChangesAsync();
+
+                // Debit Leg: Cash / Bank / SB
+                bool isDebitCustomerPersonal = (req.PaymentMode == "Transfer" || req.PaymentMode == "Savings") 
+                    && debitLedger.AccountType != "Cash In Hand" 
+                    && !debitLedger.LedgerName.Contains("रोख")
+                    && !debitLedger.LedgerName.ToLower().Contains("cash");
+
+                var debitDetail = new VoucherDetail
+                {
+                    VoucherID = voucher.VoucherID,
+                    LedgerID = debitLedger.LedgerID,
+                    DrCr = "Dr",
+                    Amount = req.TotalAmount,
+                    CustomerID = isDebitCustomerPersonal ? finalCustomerId : null,
+                    MemberID = isDebitCustomerPersonal ? resolvedMemberId : null
+                };
+                _context.VoucherDetails.Add(debitDetail);
+
+                // Credit Legs: Individual FD Accounts under Liability Ledger
+                foreach (var acc in createdAccounts)
+                {
+                    var creditDetail = new VoucherDetail
+                    {
+                        VoucherID = voucher.VoucherID,
+                        LedgerID = fdLiabilityLedger.LedgerID,
+                        DrCr = "Cr",
+                        Amount = acc.DepositAmount,
+                        CustomerID = finalCustomerId,
+                        MemberID = resolvedMemberId
+                    };
+                    _context.VoucherDetails.Add(creditDetail);
+
+                    // Add FdTransaction for each account
+                    var tx = new FdTransaction
+                    {
+                        BranchID = acc.BranchID,
+                        FdAccountID = acc.FdAccountID,
+                        VoucherID = voucher.VoucherID,
+                        TransactionDate = acc.OpeningDate,
+                        TransactionType = "Opening",
+                        DebitCredit = "Cr",
+                        Amount = acc.DepositAmount,
+                        CreatedBy = acc.CreatedBy
+                    };
+                    _context.FdTransactions.Add(tx);
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new
+                {
+                    success = true,
+                    message = $"एकूण {createdAccounts.Count} पावत्या यशस्वीरीत्या उघडल्या गेल्या! (पावती क्र. {firstAccFormatted} ते {lastAccFormatted})",
+                    totalAmount = req.TotalAmount,
+                    totalCount = createdAccounts.Count,
+                    startAccountNo = firstAccFormatted,
+                    endAccountNo = lastAccFormatted,
+                    voucherNo = voucher.VoucherNo,
+                    accountNos = createdAccountNos.Select(a => Helpers.AccountNumberHelper.Format14Digit(a)).ToList(),
+                    accounts = createdAccounts.Select(a => new { a.FdAccountID, AccountNo = Helpers.AccountNumberHelper.Format14Digit(a.AccountNo), a.DepositAmount, a.MaturityAmount, a.MaturityDate })
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return BadRequest("बल्क पावत्या उघडताना त्रुटी आली: " + ex.Message);
             }
         }
 

@@ -49,6 +49,30 @@ const MemberClosure: React.FC = () => {
 
   const fetchMembers = async () => {
     try {
+      const params = new URLSearchParams(window.location.search);
+      let customerIdStr = params.get('customerId') || params.get('customerID');
+      let memberIdStr = params.get('memberId') || params.get('memberID');
+
+      if (!customerIdStr && !memberIdStr) {
+        try {
+          const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+          if (rawBridge) {
+            sessionStorage.removeItem('cbs_active_customer_transfer');
+            const bridgeData = JSON.parse(rawBridge);
+            if (bridgeData) {
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
+              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : null;
+            }
+          }
+        } catch (e) {}
+      }
+
+      const targetMemId = memberIdStr || customerIdStr;
+      if (targetMemId) {
+        setSelectedMemberId(targetMemId);
+        loadClosureInfo(targetMemId);
+      }
+
       const res = await fetch('/api/Members');
       if (res.ok) {
         const data = await res.json();

@@ -171,6 +171,38 @@ export default function PigmyAccountOpening() {
 
   const fetchMasters = async () => {
     try {
+      const params = new URLSearchParams(window.location.search);
+      let customerIdStr = params.get('customerId') || params.get('customerID') || params.get('memberId');
+
+      if (!customerIdStr) {
+        try {
+          const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+          if (rawBridge) {
+            sessionStorage.removeItem('cbs_active_customer_transfer');
+            const bridgeData = JSON.parse(rawBridge);
+            if (bridgeData) {
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : (bridgeData.memberId ? String(bridgeData.memberId) : null);
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Fast-track single customer load (~20ms)
+      if (customerIdStr) {
+        const cId = parseInt(customerIdStr, 10);
+        axios.get(`/api/Customers/${cId}`).then(singleRes => {
+          if (singleRes.data) {
+            const cust = singleRes.data;
+            setCustomers(prev => {
+              if (prev.length <= 1) return [cust];
+              return prev;
+            });
+            setFormData(prev => ({ ...prev, customerID: cId.toString() }));
+            setSelectedCustomer(cust);
+          }
+        }).catch(err => console.warn('Fast-track customer lookup failed', err));
+      }
+
       const [customersRes, branchesRes, schemesRes, agentsRes] = await Promise.all([
         axios.get('/api/Customers'),
         axios.get('/api/Branches'),
@@ -182,6 +214,15 @@ export default function PigmyAccountOpening() {
       if (branchesRes.data) setBranches(branchesRes.data);
       if (schemesRes.data) setSchemes(schemesRes.data);
       if (agentsRes.data) setAgents(agentsRes.data);
+
+      if (customerIdStr && customersRes.data) {
+        const cId = parseInt(customerIdStr, 10);
+        const matched = customersRes.data.find((c: any) => getCustomerId(c) === cId.toString());
+        if (matched) {
+          setFormData(prev => ({ ...prev, customerID: cId.toString() }));
+          setSelectedCustomer(matched);
+        }
+      }
     } catch (error) {
       console.error('Failed to fetch masters', error);
       toast.error('मास्टर डेटा लोड करताना त्रुटी आली.');

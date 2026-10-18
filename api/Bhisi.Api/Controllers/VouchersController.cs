@@ -29,7 +29,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Voucher>>> GetVouchers([FromQuery] string? status, [FromQuery] int? branchId = null, [FromQuery] int? page = null, [FromQuery] int? pageSize = null)
         {
-            var query = _context.Vouchers.AsQueryable();
+            var query = _context.Vouchers.AsNoTracking().AsQueryable();
 
             int? effectiveBranch = User.ResolveOptionalBranchId(branchId);
             if (effectiveBranch.HasValue && effectiveBranch.Value > 0)
@@ -65,16 +65,13 @@ namespace Bhisi.Api.Controllers
                                   .OrderByDescending(v => v.VoucherDate)
                                   .ThenByDescending(v => v.VoucherID);
 
-            if (page.HasValue || pageSize.HasValue)
-            {
-                int p = page ?? 1;
-                int ps = pageSize ?? 50;
-                if (p < 1) p = 1;
-                if (ps < 1 || ps > 500) ps = 50;
-                return await orderedQuery.Skip((p - 1) * ps).Take(ps).ToListAsync();
-            }
+            int p = page ?? 1;
+            int ps = pageSize ?? 50;
+            if (p < 1) p = 1;
+            if (ps < 1 || ps > 500) ps = 50;
 
-            return await orderedQuery.ToListAsync();
+            // Safe bounded pagination (Pillar 2)
+            return await orderedQuery.Skip((p - 1) * ps).Take(ps).ToListAsync();
         }
 
         // GET: api/Vouchers/5
@@ -82,6 +79,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<Voucher>> GetVoucher(int id)
         {
             var voucher = await _context.Vouchers
+                                        .AsNoTracking()
                                         .Include(v => v.Branch)
                                         .Include(v => v.VoucherDetails)
                                         .ThenInclude(d => d.Ledger)

@@ -95,6 +95,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<LoanAccount>>> GetLoanAccounts([FromQuery] int? branchId = null, [FromQuery] int? customerId = null, [FromQuery] int? memberId = null)
         {
             var query = _context.LoanAccounts
+                .AsNoTracking()
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.CoCustomer)
@@ -141,6 +142,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<LoanAccount>>> GetLoanAccountsByCustomer(int customerId)
         {
             return await _context.LoanAccounts
+                .AsNoTracking()
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.LoanRate)
@@ -155,6 +157,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<LoanAccount>>> GetLoanAccountsByMember(int memberId)
         {
             return await _context.LoanAccounts
+                .AsNoTracking()
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.LoanRate)
@@ -169,6 +172,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<LoanAccount>> GetLoanAccount(int id)
         {
             var loanAccount = await _context.LoanAccounts
+                .AsNoTracking()
                 .Include(l => l.Customer)
                 .Include(l => l.Member)
                 .Include(l => l.CoCustomer)

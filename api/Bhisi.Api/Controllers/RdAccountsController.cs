@@ -205,6 +205,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<object>>> GetRdAccounts([FromQuery] int? branchId, [FromQuery] int? customerId = null, [FromQuery] int? memberId = null, [FromQuery] int? schemeId = null)
         {
             var query = _context.RdAccounts
+                .AsNoTracking()
                 .Include(r => r.Customer)
                     .ThenInclude(c => c!.MemberProfile)
                 .Include(r => r.RdScheme)
@@ -228,34 +229,37 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(r => r.Customer != null && r.Customer.MemberProfile != null && r.Customer.MemberProfile.MemberID == memberId.Value);
             }
 
-            // Self-healing: Ensure legacy RD accounts opening balances are synchronized to General Ledger
-            try
+            // Self-healing: Ensure legacy RD accounts opening balances are synchronized to General Ledger (skip on targeted customer queries)
+            if (!customerId.HasValue && !memberId.HasValue)
             {
-                var hasLegacy = await _context.RdAccounts.AnyAsync(a => a.IsLegacyAccount && a.Status == "Active");
-                if (hasLegacy)
+                try
                 {
-                    var schemeLedgerIds = await _context.RdSchemes
-                        .Where(s => s.RdLiabilityLedgerID.HasValue)
-                        .Select(s => s.RdLiabilityLedgerID!.Value)
-                        .ToListAsync();
-
-                    var totalLegacySum = await _context.RdAccounts
-                        .Where(a => a.IsLegacyAccount && a.Status == "Active")
-                        .SumAsync(a => a.TotalDepositedAmount);
-
-                    var currentLedgerSum = await _context.Ledgers
-                        .Where(l => schemeLedgerIds.Contains(l.LedgerID))
-                        .SumAsync(l => l.OpeningBalance);
-
-                    if (totalLegacySum > 0 && currentLedgerSum != totalLegacySum)
+                    var hasLegacy = await _context.RdAccounts.AnyAsync(a => a.IsLegacyAccount && a.Status == "Active");
+                    if (hasLegacy)
                     {
-                        await SyncRdOpeningBalancesInternalAsync();
+                        var schemeLedgerIds = await _context.RdSchemes
+                            .Where(s => s.RdLiabilityLedgerID.HasValue)
+                            .Select(s => s.RdLiabilityLedgerID!.Value)
+                            .ToListAsync();
+
+                        var totalLegacySum = await _context.RdAccounts
+                            .Where(a => a.IsLegacyAccount && a.Status == "Active")
+                            .SumAsync(a => a.TotalDepositedAmount);
+
+                        var currentLedgerSum = await _context.Ledgers
+                            .Where(l => schemeLedgerIds.Contains(l.LedgerID))
+                            .SumAsync(l => l.OpeningBalance);
+
+                        if (totalLegacySum > 0 && currentLedgerSum != totalLegacySum)
+                        {
+                            await SyncRdOpeningBalancesInternalAsync();
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Auto-heal RD check error: {ex.Message}");
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Auto-heal RD check error: {ex.Message}");
+                }
             }
 
             var accounts = await query
@@ -313,6 +317,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<object>> GetRdAccount(int id)
         {
             var r = await _context.RdAccounts
+                .AsNoTracking()
                 .Include(x => x.Customer)
                     .ThenInclude(c => c!.MemberProfile)
                 .Include(x => x.RdScheme)
@@ -326,6 +331,7 @@ namespace Bhisi.Api.Controllers
 
             // Get payment history details
             var history = await _context.RdTransactions
+                .AsNoTracking()
                 .Where(t => t.RdAccountID == id)
                 .OrderBy(t => t.TransactionDate)
                 .Select(t => new {
@@ -987,7 +993,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/RdAccounts/5/CollectInstallment
         [HttpPost("{id}/CollectInstallment")]
-        public async Task<IActionResult> CollectInstallment(int id, [FromQuery] int count, [FromQuery] decimal penaltyAmount, [FromQuery] string payMode = "Cash", [FromQuery] int? branchId = null)
+        public async Task<IActionResult> CollectInstallment(int id, [FromQuery] int count, [FromQuery] decimal penaltyAmount, [FromQuery] string payMode = "Cash", [FromQuery] int? branchId = null, [FromQuery] DateTime? collectionDate = null)
         {
             var account = await _context.RdAccounts
                 .Include(a => a.RdScheme)
@@ -1005,6 +1011,8 @@ namespace Bhisi.Api.Controllers
             {
                 return BadRequest($"हप्ते कमाल मर्यादा संपली आहे. केवळ {totalDuration - currentPaid} हप्ते भरता येतील.");
             }
+
+            DateTime effDate = collectionDate?.Date ?? DateTime.Today;
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
@@ -1054,7 +1062,7 @@ namespace Bhisi.Api.Controllers
                         {
                             BranchID = collectingBranchId,
                             VoucherNo = $"JV-RD-COLL-{account.AccountNo}-{currentPaid + 1}",
-                            VoucherDate = DateTime.Today,
+                            VoucherDate = effDate,
                             VoucherType = "Receipt",
                             Status = vStatusColl,
                             ApprovedBy = appByColl,
@@ -1097,8 +1105,8 @@ namespace Bhisi.Api.Controllers
                         var counterVoucher = new Voucher
                         {
                             BranchID = collectingBranchId,
-                            VoucherNo = $"RV-{collectingBranchId}-{DateTime.Today:yyyyMMdd}-RD-COLL-{account.AccountNo}-{currentPaid + 1}",
-                            VoucherDate = DateTime.Today,
+                            VoucherNo = $"RV-{collectingBranchId}-{effDate:yyyyMMdd}-RD-COLL-{account.AccountNo}-{currentPaid + 1}",
+                            VoucherDate = effDate,
                             VoucherType = "Receipt",
                             Status = vStatusColl,
                             ApprovedBy = appByColl,
@@ -1123,7 +1131,7 @@ namespace Bhisi.Api.Controllers
                         {
                             BranchID = homeBranchId,
                             VoucherNo = $"JV-RD-COLL-{account.AccountNo}-{currentPaid + 1}",
-                            VoucherDate = DateTime.Today,
+                            VoucherDate = effDate,
                             VoucherType = "Journal",
                             Status = vStatusColl,
                             ApprovedBy = appByColl,
@@ -1188,7 +1196,7 @@ namespace Bhisi.Api.Controllers
                             BranchID = collectingBranchId,
                             RdAccountID = account.RdAccountID,
                             VoucherID = finalVoucherId,
-                            TransactionDate = DateTime.Now,
+                            TransactionDate = effDate,
                             TransactionType = "Installment",
                             InstallmentNo = currentPaid + i,
                             DebitCredit = "Cr",
@@ -1354,7 +1362,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/RdAccounts/5/MaturedClose
         [HttpPost("{id}/MaturedClose")]
-        public async Task<IActionResult> MaturedClose(int id)
+        public async Task<IActionResult> MaturedClose(int id, [FromQuery] DateTime? closureDate = null)
         {
             var account = await _context.RdAccounts
                 .Include(a => a.RdScheme)
@@ -1364,6 +1372,8 @@ namespace Bhisi.Api.Controllers
             {
                 return BadRequest("Account is closed or invalid.");
             }
+
+            DateTime effClosureDate = closureDate?.Date ?? DateTime.Today;
 
             // Sum accrued interest
             var accruedInt = await _context.RdTransactions
@@ -1406,7 +1416,7 @@ namespace Bhisi.Api.Controllers
                         {
                             BranchID = homeBranchId,
                             VoucherNo = $"JV-RD-CLOSE-{account.AccountNo}",
-                            VoucherDate = DateTime.Today,
+                            VoucherDate = effClosureDate,
                             VoucherType = "Payment",
                             TotalAmount = totalPayout,
                             Narration = $"आरडी मुदतपूर्ती पेआउट (RD Maturity Close): {account.AccountNo}",
@@ -1439,8 +1449,8 @@ namespace Bhisi.Api.Controllers
                         var counterVoucher = new Voucher
                         {
                             BranchID = operatingBranchId,
-                            VoucherNo = $"PV-{operatingBranchId}-{DateTime.Today:yyyyMMdd}-RD-CLOSE-{account.AccountNo}",
-                            VoucherDate = DateTime.Today,
+                            VoucherNo = $"PV-{operatingBranchId}-{effClosureDate:yyyyMMdd}-RD-CLOSE-{account.AccountNo}",
+                            VoucherDate = effClosureDate,
                             VoucherType = "Payment",
                             TotalAmount = totalPayout,
                             Narration = $"[आंतर-शाखा आरडी मुदतपूर्ती परतावा] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा",
@@ -1462,7 +1472,7 @@ namespace Bhisi.Api.Controllers
                         {
                             BranchID = homeBranchId,
                             VoucherNo = $"JV-RD-CLOSE-{account.AccountNo}",
-                            VoucherDate = DateTime.Today,
+                            VoucherDate = effClosureDate,
                             VoucherType = "Journal",
                             TotalAmount = totalPayout,
                             Narration = $"[आंतर-शाखा आरडी मुदतपूर्ती क्लोजर] काऊंटर शाखा #{operatingBranchId} वरून परतावा अदा (खाते: {account.AccountNo})",
@@ -1499,7 +1509,7 @@ namespace Bhisi.Api.Controllers
                         BranchID = isCrossBranchTxn ? operatingBranchId : account.BranchID,
                         RdAccountID = account.RdAccountID,
                         VoucherID = finalVoucherId,
-                        TransactionDate = DateTime.Now,
+                        TransactionDate = effClosureDate,
                         TransactionType = "Payout",
                         DebitCredit = "Dr",
                         PrincipalAmount = account.TotalDepositedAmount,
@@ -1766,7 +1776,7 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/RdAccounts/5/Renew
         [HttpPost("{id}/Renew")]
-        public async Task<IActionResult> Renew(int id, [FromQuery] int targetSchemeId)
+        public async Task<IActionResult> Renew(int id, [FromQuery] int targetSchemeId, [FromQuery] DateTime? closureDate = null)
         {
             var oldAccount = await _context.RdAccounts
                 .Include(a => a.RdScheme)
@@ -1788,6 +1798,7 @@ namespace Bhisi.Api.Controllers
                 .SumAsync(t => t.InterestAmount) + oldAccount.LegacyAccruedInt;
 
             decimal totalMaturityAmount = oldAccount.TotalDepositedAmount + accruedInt;
+            DateTime effClosureDate = closureDate?.Date ?? DateTime.Today;
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
@@ -1839,7 +1850,7 @@ namespace Bhisi.Api.Controllers
                     seq.CurrentValue += 1;
                     await _context.SaveChangesAsync();
 
-                    DateTime newOpeningDate = DateTime.Today;
+                    DateTime newOpeningDate = effClosureDate;
                     var matchingFy = await _context.FinancialYears
                         .FirstOrDefaultAsync(fy => newOpeningDate >= fy.StartDate.Date && newOpeningDate <= fy.EndDate.Date);
 
@@ -1887,7 +1898,7 @@ namespace Bhisi.Api.Controllers
                     {
                         BranchID = oldAccount.BranchID,
                         VoucherNo = $"JV-RD-REN-{newFd.AccountNo}",
-                        VoucherDate = DateTime.Today,
+                        VoucherDate = effClosureDate,
                         VoucherType = "Journal",
                         TotalAmount = totalMaturityAmount,
                         Narration = $"आरडी मुदतपूर्ती रक्कम एफडी खात्यावर नूतनीकरण केली: {oldAccount.AccountNo} -> {newFd.AccountNo}",
@@ -1915,7 +1926,7 @@ namespace Bhisi.Api.Controllers
                         BranchID = oldAccount.BranchID,
                         RdAccountID = oldAccount.RdAccountID,
                         VoucherID = voucher.VoucherID,
-                        TransactionDate = DateTime.Now,
+                        TransactionDate = effClosureDate,
                         TransactionType = "Renewal",
                         DebitCredit = "Dr",
                         PrincipalAmount = oldAccount.TotalDepositedAmount,

@@ -50,6 +50,7 @@ export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId
 
   const [formData, setFormData] = useState({
     deathDate: new Date().toISOString().split('T')[0],
+    settlementDate: new Date().toISOString().split('T')[0],
     deathCertificateNo: '',
     nomineeName: '',
     nomineeRelation: 'Spouse',
@@ -258,7 +259,7 @@ export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId
                   वैधानिक क्लेम व वारसदार तपशील (Statutory Nominee & Claim Details)
                 </h4>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
                   <div>
                     <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">मृत्यू दिनांक *</label>
                     <input
@@ -268,6 +269,18 @@ export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId
                       onChange={handleChange}
                       required
                       className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">सेटलमेंट / व्हाउचर दिनांक *</label>
+                    <input
+                      type="date"
+                      name="settlementDate"
+                      value={formData.settlementDate}
+                      onChange={handleChange}
+                      required
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-primary font-mono"
                     />
                   </div>
 

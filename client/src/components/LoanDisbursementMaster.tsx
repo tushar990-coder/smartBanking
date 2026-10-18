@@ -543,7 +543,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         setLoading(true);
         try {
             const bId = targetBranchId ?? selectedBranchId;
-            const url = bId ? `/api/LoanDisbursements?branchId=${bId}` : '/api/LoanDisbursements';
+            const url = bId ? `/api/LoanDisbursements?branchId=${bId}&pageSize=50` : '/api/LoanDisbursements?pageSize=50';
             const res = await axios.get(url);
             setDisbursements(res.data || []);
         } catch (err) {
@@ -562,7 +562,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 axios.get('/api/Ledgers'),
                 axios.get('/api/Branches'),
                 axios.get('/api/SavingAccounts'),
-                axios.get(bId ? `/api/LoanDisbursements?branchId=${bId}` : '/api/LoanDisbursements')
+                axios.get(bId ? `/api/LoanDisbursements?branchId=${bId}&pageSize=50` : '/api/LoanDisbursements?pageSize=50')
             ]);
             
             const allDisbursements: LoanDisbursement[] = disbRes.data || [];

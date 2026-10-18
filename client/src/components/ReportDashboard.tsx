@@ -79,7 +79,8 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
       bgColor: 'bg-amber-50',
       reports: [
         { id: 'saving-account-list-report', name: 'बचत खाते यादी (Saving Account List)' },
-        { id: 'saving-khatavani-report', name: 'बचत ठेव खतावणी (Saving Ledger)' }
+        { id: 'saving-khatavani-report', name: 'बचत ठेव खतावणी (Saving Ledger)' },
+        { id: 'saving-passbook', name: 'बचत पासबुक छपाई (Passbook Print)' }
       ]
     },
     {

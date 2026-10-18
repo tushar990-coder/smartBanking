@@ -354,6 +354,7 @@ namespace Bhisi.Api.Controllers
             public int? BankLedgerId { get; set; }
             public int? CashLedgerId { get; set; }
             public int BranchId { get; set; } = 1;
+            public DateTime? CancellationDate { get; set; }
         }
 
         // POST: api/ShareCertificates/5/cancel
@@ -416,12 +417,13 @@ namespace Bhisi.Api.Controllers
                         savingAccount.CurrentBalance += totalAmount;
                         _context.Entry(savingAccount).State = EntityState.Modified;
 
+                        DateTime effDate = request.CancellationDate?.Date ?? DateTime.Today;
                         _context.SavingTransactions.Add(new SavingTransaction
                         {
                             SavingAccountID = savingAccount.SavingAccountID,
                             CustomerID = savingAccount.CustomerID,
                             BranchID = request.BranchId > 0 ? request.BranchId : savingAccount.BranchID,
-                            TransactionDate = DateTime.Today,
+                            TransactionDate = effDate,
                             TransactionType = "Deposit",
                             PaymentMode = "Transfer",
                             Amount = totalAmount,
@@ -452,7 +454,8 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // 5. Generate Accounting Voucher in Day Book (Payment / Journal Voucher)
-                var voucherDate = DateTime.Today;
+                DateTime effCertDate = request.CancellationDate?.Date ?? DateTime.Today;
+                var voucherDate = effCertDate;
                 int vchCount = await _context.Vouchers.CountAsync() + 1;
                 string memberNameStr = member?.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "सभासद";
 
@@ -483,7 +486,7 @@ namespace Bhisi.Api.Controllers
                 {
                     ShareAccountId = account.ShareAccountId,
                     CustomerID = member?.CustomerID ?? (account.CustomerID > 0 ? account.CustomerID : (account.Member?.CustomerID ?? 1)),
-                    TransactionDate = DateTime.Today,
+                    TransactionDate = effCertDate,
                     TransactionType = "Withdrawal",
                     NumberOfShares = certificate.NumberOfShares,
                     Amount = totalAmount,

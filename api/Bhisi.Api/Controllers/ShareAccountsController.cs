@@ -63,6 +63,7 @@ namespace Bhisi.Api.Controllers
             }
 
             var account = await _context.ShareAccounts
+                .AsNoTracking()
                 .Include(s => s.Certificates)
                 .Where(s => s.MemberId == memberId || (resolvedCustId > 0 && s.CustomerID == resolvedCustId) || (s.MemberId == 0 && s.CustomerID == memberId))
                 .OrderByDescending(s => s.TotalShareCount > 0)
@@ -104,6 +105,7 @@ namespace Bhisi.Api.Controllers
         public async Task<IActionResult> GetShareholders([FromQuery] int? branchId)
         {
             var query = _context.ShareAccounts
+                .AsNoTracking()
                 .Include(s => s.Member)
                     .ThenInclude(m => m!.Customer)
                 .Include(s => s.Customer)
@@ -515,6 +517,7 @@ namespace Bhisi.Api.Controllers
             public int MemberId { get; set; }
             public int NumberOfShares { get; set; }
             public int BranchId { get; set; } = 1;
+            public DateTime? WithdrawalDate { get; set; }
             public string Narration { get; set; } = "Share Withdrawal";
             public string PaymentMode { get; set; } = "Cash"; // "Cash", "Transfer", "Bank", "LedgerTransfer"
             public int? SavingAccountId { get; set; }
@@ -604,12 +607,13 @@ namespace Bhisi.Api.Controllers
 
                     // Create SavingTransaction Deposit
                     var (userId, _, _) = GetCurrentUserContext();
+                    DateTime effDate = request.WithdrawalDate?.Date ?? DateTime.Today;
                     var savingTxn = new SavingTransaction
                     {
                         SavingAccountID = savingAccount.SavingAccountID,
                         CustomerID = savingAccount.CustomerID,
                         BranchID = targetBranch,
-                        TransactionDate = DateTime.Today,
+                        TransactionDate = effDate,
                         TransactionType = "Deposit",
                         PaymentMode = "Transfer",
                         Amount = totalAmount,
@@ -644,7 +648,8 @@ namespace Bhisi.Api.Controllers
                     creditLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranch, "SHARE");
                 }
 
-                var voucherDate = DateTime.Today;
+                DateTime effWdDate = request.WithdrawalDate?.Date ?? DateTime.Today;
+                var voucherDate = effWdDate;
                 int vchCount = await _context.Vouchers.CountAsync() + 1;
 
                 int maxScroll = await _context.Vouchers
@@ -696,6 +701,7 @@ namespace Bhisi.Api.Controllers
                 {
                     ShareAccountId = account.ShareAccountId,
                     CustomerID = customerId,
+                    TransactionDate = effWdDate,
                     TransactionType = "Withdrawal",
                     NumberOfShares = request.NumberOfShares,
                     Amount = totalAmount, // or -totalAmount depending on convention
@@ -2433,6 +2439,7 @@ namespace Bhisi.Api.Controllers
             public int ToMemberId { get; set; }
             public int NumberOfShares { get; set; }
             public int BranchId { get; set; } = 1;
+            public DateTime? TransferDate { get; set; }
             public string? ResolutionNo { get; set; }
             public DateTime? ResolutionDate { get; set; }
             public decimal TransferFee { get; set; } = 0M;
@@ -2569,7 +2576,8 @@ namespace Bhisi.Api.Controllers
                 var shareCapitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context);
 
                 // 2. Create Journal Voucher for Transfer
-                var voucherDate = DateTime.Today;
+                DateTime effDate = request.TransferDate?.Date ?? (request.ResolutionDate?.Date ?? DateTime.Today);
+                var voucherDate = effDate;
                 int vchCount = await _context.Vouchers.CountAsync() + 1;
                 string vchNo = $"VCH-SHR-TRF-{voucherDate:yyyyMMdd}-{vchCount:D4}";
 
@@ -2620,7 +2628,7 @@ namespace Bhisi.Api.Controllers
                                 SavingAccountID = savingAcc.SavingAccountID,
                                 CustomerID = savingAcc.CustomerID,
                                 BranchID = request.BranchId > 0 ? request.BranchId : savingAcc.BranchID,
-                                TransactionDate = DateTime.Today,
+                                TransactionDate = effDate,
                                 TransactionType = "Withdrawal",
                                 PaymentMode = "Transfer",
                                 Amount = request.TransferFee,

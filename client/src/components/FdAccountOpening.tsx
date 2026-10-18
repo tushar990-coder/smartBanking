@@ -27,6 +27,19 @@ interface FdScheme {
   slabs?: any[];
 }
 
+export interface BulkReceiptRow {
+  id: string;
+  accountNo: string;
+  legacyAccountNumber: string;
+  depositAmount: number | '';
+  durationType: 'Days' | 'Months' | 'Years';
+  durationValue: number;
+  durationInDays: number;
+  interestRate: number;
+  maturityDate: string;
+  maturityAmount: number;
+}
+
 interface FdAccount {
   fdAccountID: number;
   accountNo: string;
@@ -83,8 +96,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   // Entry Mode: 'single' | 'bulk'
   const [entryMode, setEntryMode] = useState<'single' | 'bulk'>('single');
   const [totalDepositAmount, setTotalDepositAmount] = useState<number | ''>(1000000);
-  const [splitCount, setSplitCount] = useState<number | ''>(10);
-  const [amountPerReceipt, setAmountPerReceipt] = useState<number | ''>(100000);
+  const [splitCount, setSplitCount] = useState<number | ''>(5);
+  const [amountPerReceipt, setAmountPerReceipt] = useState<number | ''>(200000);
+  const [receiptRows, setReceiptRows] = useState<BulkReceiptRow[]>([]);
 
   // Payment Mode & Customer SB Accounts State
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank' | 'Transfer'>('Cash');
@@ -312,27 +326,503 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     }
   };
 
+  const getSchemeId = (s: any) => s?.fdSchemeID ?? s?.fdSchemeId ?? s?.FdSchemeID ?? 0;
+  const selectedScheme = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
+
+  // Check Digit and Sequential Account Number Prediction Helper (Luhn Mod 10)
+  const calculateCheckDigit = (digits: string): number => {
+    if (!digits) return 0;
+    let sum = 0;
+    let alternate = true;
+    for (let i = digits.length - 1; i >= 0; i--) {
+      const d = parseInt(digits[i], 10);
+      if (isNaN(d)) continue;
+      let val = d;
+      if (alternate) {
+        val *= 2;
+        if (val > 9) val -= 9;
+      }
+      sum += val;
+      alternate = !alternate;
+    }
+    const mod = sum % 10;
+    return mod === 0 ? 0 : 10 - mod;
+  };
+
+  const predictSequentialAccountNo = (baseAccountNo: string, offsetIndex: number): string => {
+    if (!baseAccountNo || baseAccountNo === '---' || baseAccountNo.trim() === '' || baseAccountNo === 'AUTO') {
+      return 'AUTO';
+    }
+
+    const clean = baseAccountNo.replace(/\D/g, '');
+    if (clean.length === 14) {
+      const branchPart = clean.substring(0, 3);
+      const schemePart = clean.substring(3, 6);
+      const seqPart = parseInt(clean.substring(6, 13), 10);
+      if (!isNaN(seqPart)) {
+        const nextSeq = seqPart + offsetIndex;
+        const seqStr = String(nextSeq).padStart(7, '0');
+        const thirteen = `${branchPart}${schemePart}${seqStr}`;
+        const chk = calculateCheckDigit(thirteen);
+        return `${branchPart}-${schemePart}-${seqStr}-${chk}`;
+      }
+    }
+
+    // Fallback for custom formatted numbers ending with digits
+    const match = baseAccountNo.match(/^(.*?)(\d+)$/);
+    if (match) {
+      const prefix = match[1];
+      const numStr = match[2];
+      const num = parseInt(numStr, 10);
+      if (!isNaN(num)) {
+        const nextNum = num + offsetIndex;
+        return `${prefix}${String(nextNum).padStart(numStr.length, '0')}`;
+      }
+    }
+
+    return offsetIndex === 0 ? baseAccountNo : `${baseAccountNo}-${offsetIndex + 1}`;
+  };
+
+  // Dynamic Row Calculation Helper
+  const calculateRowDetails = (
+    p: number,
+    durType: 'Days' | 'Months' | 'Years',
+    durVal: number,
+    scheme: FdScheme | undefined,
+    opDateStr: string,
+    isSenior: boolean
+  ) => {
+    if (!scheme || p <= 0 || durVal <= 0) {
+      return {
+        durationInDays: 0,
+        interestRate: 0,
+        maturityDate: '',
+        maturityAmount: 0,
+      };
+    }
+
+    const opDate = new Date(opDateStr);
+    let totalDays = 0;
+    let maturityDateStr = '';
+
+    if (!isNaN(opDate.getTime())) {
+      const targetDate = new Date(opDate);
+      if (durType === 'Days') {
+        targetDate.setDate(targetDate.getDate() + durVal);
+        totalDays = durVal;
+      } else if (durType === 'Years') {
+        targetDate.setFullYear(targetDate.getFullYear() + durVal);
+        totalDays = Math.round((targetDate.getTime() - opDate.getTime()) / (1000 * 60 * 60 * 24));
+      } else {
+        const targetMonth = targetDate.getMonth() + durVal;
+        const targetDay = targetDate.getDate();
+        targetDate.setMonth(targetMonth);
+        if (targetDate.getDate() !== targetDay) {
+          targetDate.setDate(0);
+        }
+        totalDays = Math.round((targetDate.getTime() - opDate.getTime()) / (1000 * 60 * 60 * 24));
+      }
+      maturityDateStr = targetDate.toISOString().split('T')[0];
+    }
+
+    let rate = 0;
+    if (scheme.schemeDurationModel === 'Slab' && scheme.slabs && scheme.slabs.length > 0) {
+      const matchedSlab = scheme.slabs.find(
+        (s: any) => totalDays >= Number(s.fromDays) && totalDays <= Number(s.toDays) && s.isActive !== false
+      );
+      if (matchedSlab) {
+        rate = Number(isSenior ? (matchedSlab.seniorCitizenRate || matchedSlab.interestRate) : matchedSlab.interestRate) || 0;
+      } else {
+        rate = Number(isSenior ? (scheme.seniorCitizenInterestRate || scheme.interestRate) : scheme.interestRate) || 0;
+      }
+    } else {
+      rate = Number(isSenior ? (scheme.seniorCitizenInterestRate || scheme.interestRate) : scheme.interestRate) || 0;
+    }
+
+    const type = scheme.interestType || 'Simple';
+    let matAmount = 0;
+
+    if (p > 0 && totalDays > 0) {
+      const r = rate;
+      if (type === 'Cumulative') {
+        let n = 4;
+        if (scheme.interestCompoundingFrequency === 'Half-Yearly') n = 2;
+        if (scheme.interestCompoundingFrequency === 'Yearly') n = 1;
+        if (scheme.interestCompoundingFrequency === 'Monthly') n = 12;
+        matAmount = p * Math.pow(1 + r / (n * 100), n * (totalDays / 365));
+      } else if (type === 'MIS' || type === 'Monthly Interest') {
+        matAmount = p;
+      } else {
+        matAmount = p * (1 + (r * totalDays) / (365 * 100));
+      }
+    }
+
+    return {
+      durationInDays: totalDays,
+      interestRate: rate,
+      maturityDate: maturityDateStr,
+      maturityAmount: Math.round(matAmount),
+    };
+  };
+
+  // Generate or Re-allocate Receipt Rows
+  const generateReceiptRows = (
+    count: number,
+    totalAmt: number,
+    scheme: FdScheme | undefined,
+    baseDurType: string,
+    baseDurVal: number,
+    opDate: string,
+    isSenior: boolean,
+    existingRows?: BulkReceiptRow[],
+    startAccountNo?: string
+  ): BulkReceiptRow[] => {
+    if (count <= 0) return [];
+
+    const durType = (baseDurType as 'Days' | 'Months' | 'Years') || 'Months';
+    const durVal = baseDurVal > 0 ? baseDurVal : 12;
+
+    const basePerReceipt = totalAmt > 0 ? Math.floor((totalAmt / count) * 100) / 100 : 0;
+    const remainder = totalAmt > 0 ? Math.round((totalAmt - basePerReceipt * (count - 1)) * 100) / 100 : 0;
+
+    const baseAcc = startAccountNo || (existingRows && existingRows[0]?.accountNo && existingRows[0].accountNo !== 'AUTO' ? existingRows[0].accountNo : '') || nextAccountNo || suggestedAccountNo || '';
+    const rows: BulkReceiptRow[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const amt = i === count - 1 ? remainder : basePerReceipt;
+      const existing = existingRows && existingRows[i];
+      const rowDurType = (existing?.durationType as any) || durType;
+      const rowDurVal = existing?.durationValue || durVal;
+      
+      const accNo = (existing?.accountNo && existing.accountNo !== 'AUTO')
+        ? existing.accountNo
+        : predictSequentialAccountNo(baseAcc, i);
+      const legacyNo = existing?.legacyAccountNumber || '';
+
+      const calcs = calculateRowDetails(
+        amt,
+        rowDurType,
+        rowDurVal,
+        scheme,
+        opDate,
+        isSenior
+      );
+
+      rows.push({
+        id: existing?.id || `receipt-${Date.now()}-${i + 1}-${Math.random().toString(36).substring(2, 7)}`,
+        accountNo: accNo,
+        legacyAccountNumber: legacyNo,
+        depositAmount: amt,
+        durationType: rowDurType,
+        durationValue: rowDurVal,
+        durationInDays: calcs.durationInDays,
+        interestRate: calcs.interestRate,
+        maturityDate: calcs.maturityDate,
+        maturityAmount: calcs.maturityAmount,
+      });
+    }
+
+    return rows;
+  };
+
+  // Re-sequence all rows based on row 1 or nextAccountNo
+  const handleReSequenceAccountNumbers = (startNo?: string) => {
+    const base = startNo || (receiptRows.length > 0 && receiptRows[0].accountNo && receiptRows[0].accountNo !== 'AUTO' ? receiptRows[0].accountNo : '') || nextAccountNo || suggestedAccountNo || '';
+    if (!base || base === '---' || base === 'AUTO') return;
+
+    setReceiptRows(prev => prev.map((row, idx) => ({
+      ...row,
+      accountNo: predictSequentialAccountNo(base, idx)
+    })));
+  };
+
   // Synchronize Bulk Split Amount Calculations
   const handleTotalAmountChange = (val: number | '') => {
     setTotalDepositAmount(val);
-    if (val !== '' && splitCount !== '' && Number(splitCount) > 0) {
-      setAmountPerReceipt(Math.round((Number(val) / Number(splitCount)) * 100) / 100);
+    const count = Number(splitCount) > 0 ? Number(splitCount) : 5;
+    if (val !== '') {
+      setAmountPerReceipt(Math.round((Number(val) / count) * 100) / 100);
+      setReceiptRows(generateReceiptRows(
+        count,
+        Number(val),
+        selectedScheme,
+        formData.durationType,
+        formData.durationValue,
+        formData.openingDate,
+        formData.isSeniorCitizen,
+        receiptRows
+      ));
     }
   };
 
   const handleSplitCountChange = (val: number | '') => {
     setSplitCount(val);
-    if (val !== '' && totalDepositAmount !== '' && Number(val) > 0) {
-      setAmountPerReceipt(Math.round((Number(totalDepositAmount) / Number(val)) * 100) / 100);
+    const total = Number(totalDepositAmount) > 0 ? Number(totalDepositAmount) : 0;
+    if (val !== '' && Number(val) > 0) {
+      setAmountPerReceipt(Math.round((total / Number(val)) * 100) / 100);
+      setReceiptRows(generateReceiptRows(
+        Number(val),
+        total,
+        selectedScheme,
+        formData.durationType,
+        formData.durationValue,
+        formData.openingDate,
+        formData.isSeniorCitizen,
+        receiptRows
+      ));
     }
   };
 
   const handleAmountPerReceiptChange = (val: number | '') => {
     setAmountPerReceipt(val);
     if (val !== '' && totalDepositAmount !== '' && Number(val) > 0) {
-      setSplitCount(Math.max(1, Math.round(Number(totalDepositAmount) / Number(val))));
+      const calculatedCount = Math.max(1, Math.round(Number(totalDepositAmount) / Number(val)));
+      setSplitCount(calculatedCount);
+      setReceiptRows(generateReceiptRows(
+        calculatedCount,
+        Number(totalDepositAmount),
+        selectedScheme,
+        formData.durationType,
+        formData.durationValue,
+        formData.openingDate,
+        formData.isSeniorCitizen,
+        receiptRows
+      ));
     }
   };
+
+  const handleRowAmountChange = (index: number, val: number | '') => {
+    setReceiptRows(prev => {
+      const updated = [...prev];
+      const row = { ...updated[index] };
+      row.depositAmount = val;
+      const numAmt = val === '' ? 0 : Number(val);
+      const calcs = calculateRowDetails(
+        numAmt,
+        row.durationType,
+        row.durationValue,
+        selectedScheme,
+        formData.openingDate,
+        formData.isSeniorCitizen
+      );
+      row.durationInDays = calcs.durationInDays;
+      row.interestRate = calcs.interestRate;
+      row.maturityDate = calcs.maturityDate;
+      row.maturityAmount = calcs.maturityAmount;
+      updated[index] = row;
+      return updated;
+    });
+  };
+
+  const handleRowDurationChange = (index: number, durType: 'Days' | 'Months' | 'Years', durVal: number) => {
+    setReceiptRows(prev => {
+      const updated = [...prev];
+      const row = { ...updated[index] };
+      row.durationType = durType;
+      row.durationValue = durVal;
+      const calcs = calculateRowDetails(
+        Number(row.depositAmount) || 0,
+        durType,
+        durVal,
+        selectedScheme,
+        formData.openingDate,
+        formData.isSeniorCitizen
+      );
+      row.durationInDays = calcs.durationInDays;
+      row.interestRate = calcs.interestRate;
+      row.maturityDate = calcs.maturityDate;
+      row.maturityAmount = calcs.maturityAmount;
+      updated[index] = row;
+      return updated;
+    });
+  };
+
+  const handleRowAccountNoChange = (index: number, val: string) => {
+    setReceiptRows(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], accountNo: val };
+      return updated;
+    });
+    if (index === 0 && val && val.trim() !== '') {
+      setNextAccountNo(val);
+      setIsManualAccountNo(true);
+    }
+  };
+
+  const handleRowLegacyNoChange = (index: number, val: string) => {
+    setReceiptRows(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], legacyAccountNumber: val };
+      return updated;
+    });
+  };
+
+  const handleBalanceLastReceipt = () => {
+    if (receiptRows.length === 0) return;
+    const target = Number(totalDepositAmount) || 0;
+    const sumExceptLast = receiptRows.slice(0, -1).reduce((sum, r) => sum + (Number(r.depositAmount) || 0), 0);
+    const balancedAmount = Math.max(0, Math.round((target - sumExceptLast) * 100) / 100);
+
+    setReceiptRows(prev => {
+      const updated = [...prev];
+      const lastIndex = updated.length - 1;
+      const lastRow = { ...updated[lastIndex] };
+      lastRow.depositAmount = balancedAmount;
+      const calcs = calculateRowDetails(
+        balancedAmount,
+        lastRow.durationType,
+        lastRow.durationValue,
+        selectedScheme,
+        formData.openingDate,
+        formData.isSeniorCitizen
+      );
+      lastRow.durationInDays = calcs.durationInDays;
+      lastRow.interestRate = calcs.interestRate;
+      lastRow.maturityDate = calcs.maturityDate;
+      lastRow.maturityAmount = calcs.maturityAmount;
+      updated[lastIndex] = lastRow;
+      return updated;
+    });
+  };
+
+  const handleDistributeEqually = () => {
+    const count = receiptRows.length > 0 ? receiptRows.length : (Number(splitCount) > 0 ? Number(splitCount) : 5);
+    const total = Number(totalDepositAmount) || 0;
+    const newRows = generateReceiptRows(
+      count,
+      total,
+      selectedScheme,
+      formData.durationType,
+      formData.durationValue,
+      formData.openingDate,
+      formData.isSeniorCitizen,
+      receiptRows
+    );
+    setReceiptRows(newRows);
+  };
+
+  const handleAddReceiptRow = () => {
+    const target = Number(totalDepositAmount) || 0;
+    const currentSum = receiptRows.reduce((sum, r) => sum + (Number(r.depositAmount) || 0), 0);
+    const rem = Math.max(0, Math.round((target - currentSum) * 100) / 100);
+    const newIndex = receiptRows.length;
+    const durType = (formData.durationType as any) || 'Months';
+    const durVal = formData.durationValue > 0 ? formData.durationValue : 12;
+
+    const baseAcc = (receiptRows.length > 0 && receiptRows[0].accountNo && receiptRows[0].accountNo !== 'AUTO' ? receiptRows[0].accountNo : '') || nextAccountNo || suggestedAccountNo || '';
+    const accNo = predictSequentialAccountNo(baseAcc, newIndex);
+
+    const calcs = calculateRowDetails(
+      rem,
+      durType,
+      durVal,
+      selectedScheme,
+      formData.openingDate,
+      formData.isSeniorCitizen
+    );
+
+    const newRow: BulkReceiptRow = {
+      id: `receipt-${Date.now()}-${newIndex + 1}-${Math.random().toString(36).substring(2, 7)}`,
+      accountNo: accNo,
+      legacyAccountNumber: '',
+      depositAmount: rem,
+      durationType: durType,
+      durationValue: durVal,
+      durationInDays: calcs.durationInDays,
+      interestRate: calcs.interestRate,
+      maturityDate: calcs.maturityDate,
+      maturityAmount: calcs.maturityAmount,
+    };
+
+    const nextRows = [...receiptRows, newRow];
+    setReceiptRows(nextRows);
+    setSplitCount(nextRows.length);
+  };
+
+  const handleDeleteReceiptRow = (index: number) => {
+    if (receiptRows.length <= 1) {
+      alert('कमीत कमी १ पावती असणे आवश्यक आहे.');
+      return;
+    }
+    const nextRows = receiptRows.filter((_, idx) => idx !== index);
+    setReceiptRows(nextRows);
+    setSplitCount(nextRows.length);
+  };
+
+  // Reconcile and Financial Balance Metrics
+  const gridTotal = React.useMemo(() => {
+    return receiptRows.reduce((sum, r) => sum + (Number(r.depositAmount) || 0), 0);
+  }, [receiptRows]);
+
+  const roundedGridTotal = Math.round(gridTotal * 100) / 100;
+
+  const gridMaturityTotal = React.useMemo(() => {
+    return receiptRows.reduce((sum, r) => sum + (Number(r.maturityAmount) || 0), 0);
+  }, [receiptRows]);
+
+  const targetTotal = Number(totalDepositAmount) || 0;
+  const difference = Math.round((targetTotal - roundedGridTotal) * 100) / 100;
+  const isDifferenceZero = Math.abs(difference) < 0.01;
+  const hasInvalidRow = receiptRows.length === 0 || receiptRows.some(r => Number(r.depositAmount) <= 0);
+  const isBulkSubmitDisabled = entryMode === 'bulk' && (!isDifferenceZero || hasInvalidRow);
+
+  // Initialize receiptRows when entering bulk mode
+  useEffect(() => {
+    if (entryMode === 'bulk' && receiptRows.length === 0) {
+      const count = Number(splitCount) > 0 ? Number(splitCount) : 5;
+      const total = Number(totalDepositAmount) > 0 ? Number(totalDepositAmount) : 500000;
+      setReceiptRows(generateReceiptRows(
+        count,
+        total,
+        selectedScheme,
+        formData.durationType,
+        formData.durationValue,
+        formData.openingDate,
+        formData.isSeniorCitizen
+      ));
+    }
+  }, [entryMode, selectedScheme]);
+
+  // Synchronize receiptRows with sequential numbers when nextAccountNo is fetched or updated
+  useEffect(() => {
+    if (entryMode === 'bulk' && nextAccountNo && nextAccountNo !== '---' && receiptRows.length > 0) {
+      const hasAuto = receiptRows.some(r => !r.accountNo || r.accountNo === 'AUTO');
+      if (hasAuto) {
+        setReceiptRows(prev => prev.map((row, idx) => {
+          if (!row.accountNo || row.accountNo === 'AUTO') {
+            return {
+              ...row,
+              accountNo: predictSequentialAccountNo(nextAccountNo, idx)
+            };
+          }
+          return row;
+        }));
+      }
+    }
+  }, [nextAccountNo, entryMode, receiptRows.length]);
+
+  // Recalculate row details if scheme or senior citizen status or openingDate changes
+  useEffect(() => {
+    if (receiptRows.length > 0 && selectedScheme) {
+      setReceiptRows(prev => prev.map(row => {
+        const calcs = calculateRowDetails(
+          Number(row.depositAmount) || 0,
+          row.durationType,
+          row.durationValue,
+          selectedScheme,
+          formData.openingDate,
+          formData.isSeniorCitizen
+        );
+        return {
+          ...row,
+          durationInDays: calcs.durationInDays,
+          interestRate: calcs.interestRate,
+          maturityDate: calcs.maturityDate,
+          maturityAmount: calcs.maturityAmount,
+        };
+      }));
+    }
+  }, [formData.fdSchemeID, formData.openingDate, formData.isSeniorCitizen]);
 
   const fetchBranches = async () => {
     try {
@@ -345,19 +835,53 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   const fetchCustomers = async () => {
     try {
-      const response = await axios.get(`${API_URL}/Customers`);
-      setCustomers(response.data || []);
       const params = new URLSearchParams(window.location.search);
-      const custIdStr = params.get('customerId') || params.get('memberId');
-      if (custIdStr && response.data.length > 0) {
-        const cId = parseInt(custIdStr, 10);
-        const matchedCustomer = response.data.find((m: any) => (m.customerID || m.memberID || m.id) === cId);
-        if (matchedCustomer) {
-          setFormData((prev) => ({ ...prev, customerID: cId, memberID: cId }));
+      let custIdStr = params.get('customerId') || params.get('memberId');
+      
+      if (!custIdStr) {
+        try {
+          const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+          if (rawBridge) {
+            sessionStorage.removeItem('cbs_active_customer_transfer');
+            const bridgeData = JSON.parse(rawBridge);
+            if (bridgeData) {
+              custIdStr = bridgeData.customerId ? String(bridgeData.customerId) : (bridgeData.memberId ? String(bridgeData.memberId) : null);
+            }
+          }
+        } catch (e) {
+          console.error(e);
         }
       }
+
+      // Fast-track targeted single customer load (~20ms)
+      if (custIdStr) {
+        const cId = parseInt(custIdStr, 10);
+        try {
+          const singleRes = await axios.get(`${API_URL}/Customers/${cId}`);
+          if (singleRes.data && (singleRes.data.customerID || singleRes.data.id)) {
+            const cust = singleRes.data;
+            setCustomers([cust]);
+            setFormData((prev) => ({ ...prev, customerID: cId, memberID: cId }));
+          }
+        } catch (err) {
+          console.warn('Fast-track customer fetch failed, falling back', err);
+        }
+      }
+
+      // Full customers list loads in background asynchronously
+      axios.get(`${API_URL}/Customers`).then(response => {
+        const allCusts = response.data || [];
+        setCustomers(allCusts);
+        if (custIdStr && allCusts.length > 0) {
+          const cId = parseInt(custIdStr, 10);
+          const matchedCustomer = allCusts.find((m: any) => (m.customerID || m.memberID || m.id) === cId);
+          if (matchedCustomer) {
+            setFormData((prev) => ({ ...prev, customerID: cId, memberID: cId }));
+          }
+        }
+      }).catch(err => console.error('Error fetching full customers list', err));
     } catch (err) {
-      console.error('Error fetching customers', err);
+      console.error('Error in fetchCustomers', err);
     }
   };
 
@@ -453,10 +977,6 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       setDeleting(false);
     }
   };
-
-  const getSchemeId = (s: any) => s?.fdSchemeID ?? s?.fdSchemeId ?? s?.FdSchemeID ?? 0;
-
-  const selectedScheme = schemes.find((s: any) => getSchemeId(s) === Number(formData.fdSchemeID));
 
   // Dynamic Maturity & Slabs calculations with ROUND UP (nearest whole rupee)
   useEffect(() => {
@@ -707,12 +1227,21 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       } else {
         // BULK SPLIT MODE
         const totalAmt = Number(totalDepositAmount) || 0;
-        const count = Number(splitCount) || 0;
-        const perReceipt = Number(amountPerReceipt) || 0;
+        const count = receiptRows.length;
+        const perReceipt = receiptRows.length > 0 ? (Number(receiptRows[0].depositAmount) || 0) : 0;
 
         if (totalAmt <= 0) { setError('एकूण ठेव रक्कम ० पेक्षा जास्त असावी.'); setLoading(false); return; }
-        if (count <= 0) { setError('पावत्यांची संख्या १ किंवा अधिक असावी.'); setLoading(false); return; }
-        if (perReceipt <= 0) { setError('प्रति पावती रक्कम ० पेक्षा जास्त असावी.'); setLoading(false); return; }
+        if (count <= 0) { setError('पावत्यांची यादी रिकामी असू शकत नाही.'); setLoading(false); return; }
+        if (!isDifferenceZero) {
+          setError(`एकूण ठेव रक्कम (₹${totalAmt.toLocaleString('en-IN')}) आणि ग्रिडमधील पावत्यांची बेरीज (₹${roundedGridTotal.toLocaleString('en-IN')}) जुळत नाही. तफावत: ₹${difference.toLocaleString('en-IN')}.`);
+          setLoading(false);
+          return;
+        }
+        if (hasInvalidRow) {
+          setError('ग्रिडमधील प्रत्येक पावतीची ठेव रक्कम ० पेक्षा जास्त असणे बंधनकारक आहे.');
+          setLoading(false);
+          return;
+        }
 
         const bulkPayload = {
           branchID: formData.branchID,
@@ -738,54 +1267,23 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
           isAutoRenewable: formData.isAutoRenewable,
           autoRenewalOption: formData.autoRenewalOption,
           maxAutoRenewalCycles: formData.maxAutoRenewalCycles,
+          receipts: receiptRows.map(r => ({
+            accountNo: r.accountNo && r.accountNo.trim() !== 'AUTO' ? r.accountNo.trim() : null,
+            legacyAccountNumber: r.legacyAccountNumber ? r.legacyAccountNumber.trim() : null,
+            depositAmount: Number(r.depositAmount) || 0,
+            durationType: r.durationType,
+            durationValue: Number(r.durationValue) || 12,
+          }))
         };
 
         try {
           const response = await axios.post(`${API_URL}/FdAccounts/BulkCreate`, bulkPayload);
           setSuccess(`✅ ${response.data.message}`);
+          fetchNextAccountNo(formData.branchID);
+          fetchFdList(formData.branchID);
         } catch (bulkErr: any) {
-          console.warn('BulkCreate endpoint fallback to sequential creation:', bulkErr);
-          const createdNos: string[] = [];
-          for (let i = 1; i <= count; i++) {
-            const singleRes = await axios.post(`${API_URL}/FdAccounts`, {
-              branchID: formData.branchID,
-              customerID: resolvedCustId,
-              memberID: resolvedCustId,
-              fdSchemeID: formData.fdSchemeID,
-              openingDate: formData.openingDate,
-              depositAmount: perReceipt,
-              durationType: calcData.durationType,
-              durationValue: calcData.durationValue,
-              durationInDays: calcData.durationInDays,
-              accountNo: 'AUTO',
-              legacyAccountNumber: formData.legacyAccountNumber ? `${formData.legacyAccountNumber.trim()} (${i}/${count})` : null,
-              interestRate: calcData.interestRate,
-              maturityDate: calcData.maturityDate,
-              maturityAmount: calcData.maturityAmount,
-              nomineeName: formData.nomineeName,
-              nomineeRelation: formData.nomineeRelation,
-              remarks: formData.remarks ? `${formData.remarks} (${i}/${count})` : `बल्क स्प्लिट मुदत ठेव पावती (${i}/${count})`,
-              isSeniorCitizen: formData.isSeniorCitizen,
-              paymentMode: paymentMode,
-              bankAccountLedgerID: paymentMode === 'Bank' ? bankAccountLedgerID : null,
-              chequeNo: paymentMode === 'Bank' ? chequeNo : null,
-              chequeDate: paymentMode === 'Bank' && chequeDate ? chequeDate : null,
-              savingAccountID: paymentMode === 'Transfer' ? selectedSavingAccountID : null,
-              isAutoRenewable: formData.isAutoRenewable,
-              autoRenewalOption: formData.autoRenewalOption,
-              maxAutoRenewalCycles: formData.maxAutoRenewalCycles,
-            });
-            if (singleRes.data?.accountNo) {
-              createdNos.push(singleRes.data.accountNo);
-            }
-          }
-          if (createdNos.length > 0) {
-            const startNo = createdNos[0];
-            const endNo = createdNos[createdNos.length - 1];
-            setSuccess(`✅ एकूण ${createdNos.length} पावत्या यशस्वीरीत्या उघडल्या गेल्या! (पावती क्र. ${startNo} ते ${endNo})`);
-          } else {
-            throw bulkErr;
-          }
+          const errMsg = bulkErr.response?.data?.message || bulkErr.response?.data || bulkErr.message || 'बल्क पावत्या सेव्ह करताना त्रुटी आली.';
+          setError(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
         }
       }
 
@@ -955,8 +1453,12 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                       type="text"
                       value={nextAccountNo}
                       onChange={(e) => {
-                        setNextAccountNo(e.target.value);
+                        const val = e.target.value;
+                        setNextAccountNo(val);
                         setIsManualAccountNo(true);
+                        if (entryMode === 'bulk') {
+                          handleReSequenceAccountNumbers(val);
+                        }
                       }}
                       placeholder="उदा. 001-401-0000006-2 किंवा क्र."
                       className="w-48 font-mono font-bold text-blue-900 bg-white border border-blue-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
@@ -967,6 +1469,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         onClick={() => {
                           setNextAccountNo(suggestedAccountNo);
                           setIsManualAccountNo(false);
+                          if (entryMode === 'bulk') {
+                            handleReSequenceAccountNumbers(suggestedAccountNo);
+                          }
                         }}
                         title="सिस्टीमने सुचवलेला पुढील क्रमांक पूर्ववत करा"
                         className="text-[10px] px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-slate-700 font-semibold cursor-pointer"
@@ -1183,81 +1688,374 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                 )}
 
                 {entryMode === 'bulk' && (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2.5">
+                  <div className="space-y-3">
+                    {/* Bulk Header Controls */}
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2.5 bg-white p-2.5 rounded border border-blue-200 shadow-2xs">
                       <div>
                         <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खाते उघडल्याची तारीख *</label>
-                        <input type="date" name="openingDate" value={formData.openingDate} onChange={handleChange} required
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" />
+                        <input
+                          type="date"
+                          name="openingDate"
+                          value={formData.openingDate}
+                          onChange={handleChange}
+                          required
+                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                        />
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">एकूण ठेव रक्कम (Total ₹) *</label>
-                        <input type="number" value={totalDepositAmount} onChange={(e) => handleTotalAmountChange(e.target.value === '' ? '' : parseFloat(e.target.value))} required
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-blue-900" />
+                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
+                          🎯 एकूण लक्ष्य ठेव (Total ₹) *
+                        </label>
+                        <input
+                          type="number"
+                          value={totalDepositAmount}
+                          onChange={(e) => handleTotalAmountChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                          required
+                          className="w-full border border-blue-400 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/50 font-black text-blue-950 font-mono"
+                        />
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">पावत्यांची संख्या (Count) *</label>
-                        <input type="number" value={splitCount} onChange={(e) => handleSplitCountChange(e.target.value === '' ? '' : parseInt(e.target.value, 10))} required min="1"
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-center" />
+                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
+                          पावत्यांची संख्या (Count) *
+                        </label>
+                        <input
+                          type="number"
+                          value={splitCount}
+                          onChange={(e) => handleSplitCountChange(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                          required
+                          min="1"
+                          max="50"
+                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-black text-center font-mono"
+                        />
                       </div>
 
-                      {/* Duration in bulk mode */}
-                      {selectedScheme?.schemeDurationModel === 'Slab' ? (
-                        <div>
-                          <div className="flex justify-between items-center mb-0.5">
-                            <label className="text-[11px] font-medium text-gray-600">कालावधी (Duration) *</label>
-                            <span className="text-[10px] text-blue-700 font-semibold font-mono">({calcData.durationInDays || 0}d)</span>
-                          </div>
-                          <div className="flex gap-1">
-                            <input 
-                              type="number" 
-                              name="durationValue" 
-                              value={formData.durationValue} 
-                              onChange={handleChange} 
-                              onFocus={(e) => e.target.select()}
-                              required 
-                              min="1"
-                              className="w-1/2 border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold text-center focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" 
-                            />
-                            <select 
-                              name="durationType" 
-                              value={formData.durationType} 
-                              onChange={handleChange}
-                              className="w-1/2 border border-gray-300 rounded-sm px-1 py-1 text-xs bg-white font-medium">
-                              <option value="Days">दिवस</option>
-                              <option value="Months">महिने</option>
-                              <option value="Years">वर्षे</option>
-                            </select>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="block text-[11px] font-medium text-gray-600 mb-0.5">प्रति पावती रक्कम (₹)</label>
-                          <input type="number" value={amountPerReceipt} onChange={(e) => handleAmountPerReceiptChange(e.target.value === '' ? '' : parseFloat(e.target.value))} required
-                            className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-emerald-50 font-extrabold text-emerald-900 border-emerald-300" />
-                        </div>
-                      )}
-
-                      {selectedScheme?.schemeDurationModel === 'Slab' ? (
-                        <div>
-                          <label className="block text-[11px] font-medium text-gray-600 mb-0.5">प्रति पावती रक्कम (₹)</label>
-                          <input type="number" value={amountPerReceipt} onChange={(e) => handleAmountPerReceiptChange(e.target.value === '' ? '' : parseFloat(e.target.value))} required
-                            className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-emerald-50 font-extrabold text-emerald-900 border-emerald-300" />
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="block text-[11px] font-medium text-gray-600 mb-0.5">व्याजदर (%)</label>
-                          <input type="text" value={`${calcData.interestRate} %`} readOnly
-                            className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-50 font-bold text-emerald-800 cursor-not-allowed" />
-                        </div>
-                      )}
-
+                      {/* Default Duration Controls */}
                       <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">प्रति पावती मुदतपूर्ती (₹)</label>
-                        <input type="text" value={formData.fdSchemeID === 0 ? 'योजना निवडा' : (calcData.maturityAmount > 0 ? `₹ ${Math.round(calcData.maturityAmount).toLocaleString('en-IN')}` : '₹ 0')} readOnly
-                          className="w-full border border-emerald-300 rounded-sm px-2 py-1 text-xs bg-emerald-100 font-extrabold text-emerald-950 cursor-not-allowed font-mono shadow-2xs" />
+                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">
+                          डिफॉल्ट कालावधी (Default Duration)
+                        </label>
+                        <div className="flex gap-1">
+                          <input
+                            type="number"
+                            name="durationValue"
+                            value={formData.durationValue}
+                            onChange={(e) => {
+                              handleChange(e);
+                              const val = parseInt(e.target.value, 10) || 12;
+                              setReceiptRows(prev => prev.map(r => {
+                                const calcs = calculateRowDetails(
+                                  Number(r.depositAmount) || 0,
+                                  r.durationType,
+                                  val,
+                                  selectedScheme,
+                                  formData.openingDate,
+                                  formData.isSeniorCitizen
+                                );
+                                return {
+                                  ...r,
+                                  durationValue: val,
+                                  durationInDays: calcs.durationInDays,
+                                  interestRate: calcs.interestRate,
+                                  maturityDate: calcs.maturityDate,
+                                  maturityAmount: calcs.maturityAmount
+                                };
+                              }));
+                            }}
+                            onFocus={(e) => e.target.select()}
+                            min="1"
+                            className="w-1/2 border border-gray-300 rounded-sm px-1.5 py-1 text-xs font-bold text-center bg-white"
+                          />
+                          <select
+                            name="durationType"
+                            value={formData.durationType}
+                            onChange={(e) => {
+                              handleChange(e);
+                              const t = e.target.value as any;
+                              setReceiptRows(prev => prev.map(r => {
+                                const calcs = calculateRowDetails(
+                                  Number(r.depositAmount) || 0,
+                                  t,
+                                  r.durationValue,
+                                  selectedScheme,
+                                  formData.openingDate,
+                                  formData.isSeniorCitizen
+                                );
+                                return {
+                                  ...r,
+                                  durationType: t,
+                                  durationInDays: calcs.durationInDays,
+                                  interestRate: calcs.interestRate,
+                                  maturityDate: calcs.maturityDate,
+                                  maturityAmount: calcs.maturityAmount
+                                };
+                              }));
+                            }}
+                            className="w-1/2 border border-gray-300 rounded-sm px-1 py-1 text-xs bg-white font-medium"
+                          >
+                            <option value="Days">दिवस</option>
+                            <option value="Months">महिने</option>
+                            <option value="Years">वर्षे</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Quick Action Helpers */}
+                      <div className="md:col-span-2 flex items-end gap-1.5 pb-0.5">
+                        <button
+                          type="button"
+                          onClick={handleDistributeEqually}
+                          className="flex-1 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 px-2 py-1 rounded text-[11px] font-bold shadow-2xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                          title="एकूण रक्कम सर्व पावत्यांमध्ये समान वाटा"
+                        >
+                          <span>🔄</span>
+                          <span>समान वाटप</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleBalanceLastReceipt}
+                          className="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-2 py-1 rounded text-[11px] font-bold shadow-2xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                          title="उर्वरित तफावत शेवटच्या पावतीमध्ये आपोआप ॲडजस्ट करा"
+                        >
+                          <span>⚖️</span>
+                          <span>शेवटची ॲडजस्ट</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleAddReceiptRow}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded text-[11px] font-bold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                          title="नवीन पावती जोडा"
+                        >
+                          <span>➕</span>
+                          <span>पावती जोडा</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Dynamic Interactive Receipt Rows Grid */}
+                    <div className="overflow-x-auto border border-blue-200 rounded bg-white shadow-2xs">
+                      <table className="w-full text-left text-[11px] border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
+                            <th className="py-1.5 px-2 text-center w-8">#</th>
+                            <th className="py-1.5 px-2 w-48">
+                              <div className="flex items-center justify-between gap-1">
+                                <span>पावती / खाते क्र.</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReSequenceAccountNumbers()}
+                                  title="पहिल्या पावती क्रमांकावरून पुढील सर्व पावत्या सलग करा (Auto-Sequence All Rows)"
+                                  className="text-[9px] px-1.5 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-900 border border-blue-300 rounded font-bold cursor-pointer transition-colors"
+                                >
+                                  ⚡ सलग करा
+                                </button>
+                              </div>
+                            </th>
+                            <th className="py-1.5 px-2 w-32">जुना पावती क्र.</th>
+                            <th className="py-1.5 px-2 w-36 text-right">ठेव रक्कम (₹) *</th>
+                            <th className="py-1.5 px-2 w-36">कालावधी</th>
+                            <th className="py-1.5 px-2 text-center w-20">व्याजदर</th>
+                            <th className="py-1.5 px-2 text-center w-28">मुदतपूर्ती तारीख</th>
+                            <th className="py-1.5 px-2 text-right w-32">मुदतपूर्ती (₹)</th>
+                            <th className="py-1.5 px-2 text-center w-12">क्रिया</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {receiptRows.map((row, idx) => (
+                            <tr key={row.id} className="hover:bg-blue-50/30 transition-colors">
+                              <td className="py-1 px-2 text-center font-bold text-slate-500 bg-slate-50/50">
+                                {idx + 1}
+                              </td>
+                              <td className="py-1 px-2">
+                                <input
+                                  type="text"
+                                  value={row.accountNo}
+                                  onChange={(e) => handleRowAccountNoChange(idx, e.target.value)}
+                                  placeholder={predictSequentialAccountNo(nextAccountNo, idx)}
+                                  className="w-full border border-blue-200 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-blue-950 bg-blue-50/20 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                                />
+                              </td>
+                              <td className="py-1 px-2">
+                                <input
+                                  type="text"
+                                  value={row.legacyAccountNumber}
+                                  onChange={(e) => handleRowLegacyNoChange(idx, e.target.value)}
+                                  placeholder="उदा. 45"
+                                  className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                />
+                              </td>
+                              <td className="py-1 px-2 text-right">
+                                <input
+                                  type="number"
+                                  value={row.depositAmount}
+                                  onChange={(e) => handleRowAmountChange(idx, e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                  onFocus={(e) => e.target.select()}
+                                  min="1"
+                                  step="1"
+                                  placeholder="0"
+                                  className={`w-full border rounded px-2 py-0.5 text-xs text-right font-black focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                                    Number(row.depositAmount) <= 0
+                                      ? 'border-red-400 bg-red-50 text-red-700'
+                                      : 'border-blue-300 bg-blue-50/20 text-blue-950 font-mono'
+                                  }`}
+                                />
+                              </td>
+                              <td className="py-1 px-2">
+                                <div className="flex gap-1 items-center">
+                                  <input
+                                    type="number"
+                                    value={row.durationValue}
+                                    onChange={(e) => handleRowDurationChange(idx, row.durationType, parseInt(e.target.value, 10) || 1)}
+                                    onFocus={(e) => e.target.select()}
+                                    min="1"
+                                    className="w-14 border border-slate-200 rounded px-1 py-0.5 text-xs text-center font-bold bg-white"
+                                  />
+                                  <select
+                                    value={row.durationType}
+                                    onChange={(e) => handleRowDurationChange(idx, e.target.value as any, row.durationValue)}
+                                    className="border border-slate-200 rounded px-1 py-0.5 text-[10px] bg-white text-slate-700"
+                                  >
+                                    <option value="Days">दिवस</option>
+                                    <option value="Months">महिने</option>
+                                    <option value="Years">वर्षे</option>
+                                  </select>
+                                </div>
+                              </td>
+                              <td className="py-1 px-2 text-center">
+                                <span className="inline-block px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded font-bold font-mono text-[11px]">
+                                  {row.interestRate} %
+                                </span>
+                              </td>
+                              <td className="py-1 px-2 text-center font-mono text-slate-700 text-xs">
+                                {row.maturityDate ? new Date(row.maturityDate).toLocaleDateString('en-GB') : '-'}
+                              </td>
+                              <td className="py-1 px-2 text-right">
+                                <span className="font-extrabold text-emerald-900 font-mono text-xs">
+                                  ₹ {Number(row.maturityAmount || 0).toLocaleString('en-IN')}
+                                </span>
+                              </td>
+                              <td className="py-1 px-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteReceiptRow(idx)}
+                                  disabled={receiptRows.length <= 1}
+                                  className="text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:hover:text-slate-400 p-0.5 transition-colors cursor-pointer"
+                                  title={receiptRows.length <= 1 ? 'किमान १ पावती आवश्यक आहे' : 'ही पावती काढून टाका'}
+                                >
+                                  ❌
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-300 text-slate-800">
+                          <tr>
+                            <td colSpan={3} className="py-2 px-2 text-right uppercase tracking-wider text-[11px]">
+                              ग्रिड बेरीज (Grid Total):
+                            </td>
+                            <td className="py-2 px-2 text-right font-black text-blue-950 font-mono text-xs">
+                              ₹ {roundedGridTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td colSpan={3} className="py-2 px-2 text-right text-[11px] text-slate-600">
+                              एकूण मुदतपूर्ती रक्कम:
+                            </td>
+                            <td className="py-2 px-2 text-right font-extrabold text-emerald-950 font-mono text-xs">
+                              ₹ {gridMaturityTotal.toLocaleString('en-IN')}
+                            </td>
+                            <td></td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+
+                    {/* Financial Reconciliation Cockpit (हिशोब ताळेबंद बार) */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 p-2.5 rounded border shadow-2xs transition-all bg-white border-slate-200">
+                      {/* Target Total Card */}
+                      <div className="bg-slate-50 border border-slate-200 rounded p-2 flex flex-col justify-between">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                          🎯 एकूण लक्ष्य ठेव (Target Total)
+                        </span>
+                        <span className="text-base font-black text-slate-900 font-mono mt-0.5">
+                          ₹ {targetTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          एकूण पावत्या: <b>{receiptRows.length}</b>
+                        </span>
+                      </div>
+
+                      {/* Grid Sum Card */}
+                      <div className="bg-blue-50/50 border border-blue-200 rounded p-2 flex flex-col justify-between">
+                        <span className="text-[10px] uppercase font-bold text-blue-700 tracking-wider">
+                          📊 पावत्यांची बेरीज (Grid Sum)
+                        </span>
+                        <span className="text-base font-black text-blue-950 font-mono mt-0.5">
+                          ₹ {roundedGridTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
+                        <span className="text-[10px] text-blue-700">
+                          सरासरी प्रति पावती: ₹ {receiptRows.length > 0 ? Math.round(roundedGridTotal / receiptRows.length).toLocaleString('en-IN') : 0}
+                        </span>
+                      </div>
+
+                      {/* Reconciliation Variance Card */}
+                      <div
+                        className={`rounded p-2 border flex flex-col justify-between transition-colors ${
+                          isDifferenceZero
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                            : difference > 0
+                            ? 'bg-amber-50 border-amber-300 text-amber-950'
+                            : 'bg-rose-50 border-rose-300 text-rose-950'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] uppercase font-bold tracking-wider">
+                            ⚖️ हिशोब ताळेबंद (Reconciliation)
+                          </span>
+                          <span
+                            className={`text-[10px] font-black px-1.5 py-0.2 rounded border ${
+                              isDifferenceZero
+                                ? 'bg-emerald-200 text-emerald-900 border-emerald-400'
+                                : difference > 0
+                                ? 'bg-amber-200 text-amber-950 border-amber-400'
+                                : 'bg-rose-200 text-rose-950 border-rose-400'
+                            }`}
+                          >
+                            {isDifferenceZero ? 'तंतोतंत जुळले' : 'तफावत'}
+                          </span>
+                        </div>
+
+                        <div className="mt-1 flex items-baseline justify-between">
+                          <span className="text-sm font-extrabold font-mono">
+                            तफावत: ₹ {Math.abs(difference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
+                          {!isDifferenceZero && (
+                            <button
+                              type="button"
+                              onClick={handleBalanceLastReceipt}
+                              className="text-[10px] font-black underline hover:no-underline text-blue-800 cursor-pointer"
+                            >
+                              शेवटची ॲडजस्ट करा
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="text-[10px] font-medium leading-snug mt-1">
+                          {isDifferenceZero ? (
+                            <span className="text-emerald-800 font-semibold flex items-center gap-1">
+                              <span>✅</span> ०.०० तफावत - सर्व पावत्या सेव्ह करण्यासाठी तयार आहेत.
+                            </span>
+                          ) : difference > 0 ? (
+                            <span className="text-amber-800 font-semibold flex items-center gap-1">
+                              <span>⚠️</span> अजून ₹ {difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })} वाटप बाकी आहे.
+                            </span>
+                          ) : (
+                            <span className="text-rose-800 font-semibold flex items-center gap-1">
+                              <span>❌</span> बेरीज ₹ {Math.abs(difference).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ने जास्त झाली आहे!
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1563,13 +2361,41 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1 rounded-sm shadow-xs text-xs font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                  >
-                    <span>💾 {entryMode === 'bulk' ? `बल्क पावत्या सेव्ह करा (${splitCount})` : 'मुदत ठेव खाते उघडा (Open FD)'}</span>
-                  </button>
+                  <div className="w-full flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      {entryMode === 'bulk' && isBulkSubmitDisabled && (
+                        <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1 rounded flex items-center gap-1.5 shadow-2xs">
+                          <span>⛔</span>
+                          {hasInvalidRow ? (
+                            <span>सर्व पावत्यांची रक्कम ० पेक्षा जास्त असणे बंधनकारक आहे.</span>
+                          ) : (
+                            <span>
+                              हिशोब तंतोतंत जुळत नाही (तफावत: ₹ {Math.abs(difference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}). CBS नियमानुसार ०.०० तफावत असल्याशिवाय सेव्ह करता येत नाही.
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || (entryMode === 'bulk' && isBulkSubmitDisabled)}
+                      className={`px-4 py-1.5 rounded-sm shadow-xs text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        entryMode === 'bulk' && isBulkSubmitDisabled
+                          ? 'bg-slate-300 text-slate-500 border border-slate-300 cursor-not-allowed opacity-80'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer active:scale-95'
+                      }`}
+                      title={
+                        entryMode === 'bulk' && isBulkSubmitDisabled
+                          ? (hasInvalidRow
+                              ? 'काही पावत्यांची रक्कम ० किंवा अमान्य आहे.'
+                              : `तफावत ₹ ${Math.abs(difference)} शिल्लक आहे. कृपया तंतोतंत शून्य करा.`)
+                          : ''
+                      }
+                    >
+                      <span>💾 {entryMode === 'bulk' ? `बल्क पावत्या सेव्ह करा (${receiptRows.length})` : 'मुदत ठेव खाते उघडा (Open FD)'}</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </form>

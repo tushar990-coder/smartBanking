@@ -252,6 +252,7 @@ namespace Bhisi.Api.Controllers
         {
             public int CommissionId { get; set; }
             public int BranchId { get; set; } = 1;
+            public DateTime? PaymentDate { get; set; }
             public string PaymentMode { get; set; } = "CASH"; // "CASH", "BANK", "AGENT_SB"
             public int? CashLedgerId { get; set; }
             public int? ExpenseLedgerId { get; set; }
@@ -300,7 +301,8 @@ namespace Bhisi.Api.Controllers
                     if (creditLedger == null) creditLedger = await _context.Ledgers.FirstOrDefaultAsync();
                 }
 
-                string todayStr = DateTime.Now.ToString("yyyyMMdd");
+                DateTime effDate = request.PaymentDate?.Date ?? DateTime.Today;
+                string todayStr = effDate.ToString("yyyyMMdd");
                 string uniqueVoucherNo = $"VCH-COMM-{branchId}-{todayStr}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
 
                 string narration = $"Pigmy Agent Commission Paid to '{commission.Agent?.AgentName}' for period {commission.PeriodStartDate:dd/MM/yyyy} to {commission.PeriodEndDate:dd/MM/yyyy} ({request.PaymentMode})";
@@ -309,7 +311,7 @@ namespace Bhisi.Api.Controllers
                 {
                     BranchID = branchId,
                     VoucherNo = uniqueVoucherNo,
-                    VoucherDate = DateTime.Today,
+                    VoucherDate = effDate,
                     VoucherType = "Payment",
                     TotalAmount = commission.CalculatedCommission,
                     Narration = narration,
@@ -338,7 +340,7 @@ namespace Bhisi.Api.Controllers
                             SavingAccountID = savingAccount.SavingAccountID,
                             CustomerID = savingAccount.CustomerID,
                             BranchID = voucher.BranchID > 0 ? voucher.BranchID : savingAccount.BranchID,
-                            TransactionDate = DateTime.Today,
+                            TransactionDate = effDate,
                             TransactionType = "Deposit",
                             PaymentMode = "Transfer",
                             Amount = commission.CalculatedCommission,

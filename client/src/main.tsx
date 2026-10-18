@@ -175,15 +175,18 @@ window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
 
 import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
+import ErrorBoundary from './components/common/ErrorBoundary'
 
 ReactDOM.render(
   <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-        <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <App />
+          <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>,
   document.getElementById('root')
 )

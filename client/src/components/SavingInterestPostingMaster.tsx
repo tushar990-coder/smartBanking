@@ -34,6 +34,9 @@ const SavingInterestPostingMaster: React.FC = () => {
     periodStart: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString().split('T')[0],
     periodEnd: new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().split('T')[0]
   });
+  const [postingDate, setPostingDate] = useState<string>(
+    new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().split('T')[0]
+  );
 
   const API_URL = '/api/SavingInterestPostings';
 
@@ -53,6 +56,9 @@ const SavingInterestPostingMaster: React.FC = () => {
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setDateRange((prev) => ({ ...prev, [name]: value }));
+    if (name === 'periodEnd') {
+      setPostingDate(value);
+    }
   };
 
   const handleCalculate = async (e: React.FormEvent) => {
@@ -85,6 +91,7 @@ const SavingInterestPostingMaster: React.FC = () => {
     try {
       const response = await axios.post(`${API_URL}/post`, {
         ...dateRange,
+        postingDate,
         postedBy: user?.userID || 1
       });
       setSuccess(response.data.message);
@@ -108,7 +115,7 @@ const SavingInterestPostingMaster: React.FC = () => {
 
       {/* Date Filter Form */}
       <div className="bg-white p-1.5 rounded-sm shadow-sm border border-gray-200 mb-3">
-        <h2 className="text-sm font-bold text-primary mb-1 border-b pb-0.5">व्याज आकारणी कालावधी निवडा (Select Calculation Period)</h2>
+        <h2 className="text-sm font-bold text-primary mb-1 border-b pb-0.5">व्याज आकारणी कालावधी व तारीख निवडा (Select Calculation Period & Posting Date)</h2>
         
         {error && (
           <div className="mb-2 bg-red-50 text-red-600 px-2 py-1 rounded-sm text-xs border border-red-100">
@@ -147,13 +154,25 @@ const SavingInterestPostingMaster: React.FC = () => {
             />
           </div>
 
-          <div className="md:col-span-2 flex gap-2">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-0.5">जमा / व्हाउचर तारीख (Posting Date) *</label>
+            <input
+              type="date"
+              name="postingDate"
+              value={postingDate}
+              onChange={(e) => setPostingDate(e.target.value)}
+              className="w-full border border-gray-300 px-2 py-0.5 rounded-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-xs font-mono"
+              required
+            />
+          </div>
+
+          <div className="flex gap-2">
             <button
               type="submit"
               disabled={loading || posting}
-              className="bg-primary hover:bg-[#004a75] text-white px-6 py-1 rounded-sm font-medium shadow-sm transition-colors text-xs disabled:opacity-50"
+              className="bg-primary hover:bg-[#004a75] text-white px-3 py-1 rounded-sm font-medium shadow-sm transition-colors text-xs disabled:opacity-50"
             >
-              {loading ? 'मोजत आहे...' : 'व्याज मोजा (Calculate Interest)'}
+              {loading ? 'मोजत आहे...' : 'व्याज मोजा (Calculate)'}
             </button>
 
             {calculationResults.length > 0 && (
@@ -161,9 +180,9 @@ const SavingInterestPostingMaster: React.FC = () => {
                 type="button"
                 onClick={handlePost}
                 disabled={posting}
-                className="bg-green-700 hover:bg-green-800 text-white px-6 py-1 rounded-sm font-medium shadow-sm transition-colors text-xs disabled:opacity-50"
+                className="bg-green-700 hover:bg-green-800 text-white px-3 py-1 rounded-sm font-medium shadow-sm transition-colors text-xs disabled:opacity-50"
               >
-                {posting ? 'जमा करत आहे...' : `व्याज जमा करा (Post ₹${totalCalculated.toFixed(2)})`}
+                {posting ? 'जमा करत आहे...' : `जमा करा (₹${totalCalculated.toFixed(2)})`}
               </button>
             )}
           </div>

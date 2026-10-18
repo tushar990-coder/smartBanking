@@ -118,6 +118,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
   const [withdrawalHistory, setWithdrawalHistory] = useState<WithdrawalHistoryItem[]>([]);
   
   // Form States
+  const [transactionDate, setTransactionDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [narration, setNarration] = useState('');
   const [managerOverride, setManagerOverride] = useState(false);
   const [message, setMessage] = useState('');
@@ -290,6 +291,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
         accountNo: withdrawalPreview.accountNo,
         amount: withdrawalPreview.requestedAmount,
         branchId: 1,
+        withdrawalDate: transactionDate,
         narration,
         managerOverrideConfirmed: managerOverride
       });
@@ -331,6 +333,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       const res = await axios.post('/api/PigmyClosure/Close', {
         accountNo: closurePreview.accountNo,
         branchId: 1,
+        closureDate: transactionDate,
         narration,
         managerOverrideConfirmed: managerOverride
       });
@@ -640,15 +643,26 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                           </p>
                         </div>
 
-                        <div>
-                          <label className="block text-[11px] font-medium text-gray-600 mb-0.5">विड्रॉल शेरा (Narration - Optional)</label>
-                          <input 
-                            type="text" 
-                            className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white" 
-                            placeholder="विड्रॉलचे कारण किंवा टिप्पणी..."
-                            value={narration} 
-                            onChange={(e) => setNarration(e.target.value)} 
-                          />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-medium text-gray-600 mb-0.5">व्यवहार तारीख (Withdrawal Date)</label>
+                            <input 
+                              type="date" 
+                              className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white font-mono" 
+                              value={transactionDate} 
+                              onChange={(e) => setTransactionDate(e.target.value)} 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-medium text-gray-600 mb-0.5">विड्रॉल शेरा (Narration - Optional)</label>
+                            <input 
+                              type="text" 
+                              className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white" 
+                              placeholder="विड्रॉलचे कारण किंवा टिप्पणी..."
+                              value={narration} 
+                              onChange={(e) => setNarration(e.target.value)} 
+                            />
+                          </div>
                         </div>
 
                         {!isPassingMode && (
@@ -742,15 +756,26 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-600 mb-0.5">कारण / शेरा (Closure Narration - Optional)</label>
-                    <input 
-                      type="text" 
-                      className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" 
-                      placeholder="खाते बंद करण्याचे कारण किंवा विशेष शेरा..."
-                      value={narration} 
-                      onChange={(e) => setNarration(e.target.value)} 
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खाते बंद तारीख (Closure Date)</label>
+                      <input 
+                        type="date" 
+                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-mono" 
+                        value={transactionDate} 
+                        onChange={(e) => setTransactionDate(e.target.value)} 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">कारण / शेरा (Closure Narration - Optional)</label>
+                      <input 
+                        type="text" 
+                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" 
+                        placeholder="खाते बंद करण्याचे कारण किंवा विशेष शेरा..."
+                        value={narration} 
+                        onChange={(e) => setNarration(e.target.value)} 
+                      />
+                    </div>
                   </div>
 
                   {!isPassingMode && (

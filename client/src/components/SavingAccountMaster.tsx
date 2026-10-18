@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
@@ -157,7 +157,19 @@ const SavingAccountMaster: React.FC = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const customerIdStr = params.get('customerId');
+    let customerIdStr = params.get('customerId') || params.get('memberId');
+    if (!customerIdStr) {
+      try {
+        const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+        if (rawBridge) {
+          sessionStorage.removeItem('cbs_active_customer_transfer');
+          const bridgeData = JSON.parse(rawBridge);
+          if (bridgeData) {
+            customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : (bridgeData.memberId ? String(bridgeData.memberId) : null);
+          }
+        }
+      } catch (e) {}
+    }
     if (customerIdStr && customers.length > 0) {
       const cId = parseInt(customerIdStr, 10);
       const matchedCustomer = customers.find(c => (c.customerID === cId || c.customerId === cId));

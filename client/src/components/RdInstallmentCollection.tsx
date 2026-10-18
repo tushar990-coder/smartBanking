@@ -78,6 +78,7 @@ export default function RdInstallmentCollection({
   const [noRdFoundAlert, setNoRdFoundAlert] = useState<string | null>(null);
 
   // Form states
+  const [collectionDate, setCollectionDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [isBulk, setIsBulk] = useState(false);
   const [count, setCount] = useState(1);
   const [penaltyAmount, setPenaltyAmount] = useState(0);
@@ -111,10 +112,6 @@ export default function RdInstallmentCollection({
 
   const fetchAccounts = async () => {
     try {
-      const res = await axios.get('/api/RdAccounts');
-      const active = (res.data || []).filter((a: any) => a.status === 'Active' || a.status === 'Matured');
-      setAccounts(active);
-
       const params = new URLSearchParams(window.location.search);
       let cifStr = params.get('cifNo') || params.get('cif');
       let customerIdStr = params.get('customerId') || params.get('customerID');
@@ -128,6 +125,7 @@ export default function RdInstallmentCollection({
         try {
           const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
           if (rawBridge) {
+            sessionStorage.removeItem('cbs_active_customer_transfer');
             const bridgeData = JSON.parse(rawBridge);
             if (bridgeData) {
               cifStr = bridgeData.cifNo || bridgeData.cif;
@@ -145,63 +143,114 @@ export default function RdInstallmentCollection({
       const getAccMemId = (a: any) => Number(a.memberID ?? a.memberId ?? a.MemberID ?? 0);
       const getAccCif = (a: any) => String(a.cifNo ?? a.CIFNo ?? a.cif ?? '').trim().toUpperCase();
 
-      if (rdAccountIdStr || entityIdStr) {
-        const accId = parseInt((rdAccountIdStr || entityIdStr)!, 10);
-        const matched = active.find((a: any) => a.rdAccountID === accId || a.memberID === accId);
-        if (matched) {
-          selectRdAccount(matched);
-          setCustomerMatchingRds([matched]);
-        }
-      } else if (cifStr || customerIdStr || memberIdStr) {
-        const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
-        const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
-        const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
-        const cleanDigits = cleanCif ? cleanCif.replace(/\D/g, '') : '';
+      const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+      const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
+      const targetAccId = rdAccountIdStr ? parseInt(rdAccountIdStr, 10) : (entityIdStr ? parseInt(entityIdStr, 10) : 0);
+      let fastTrackDone = false;
 
-        let matched: RdAccount[] = [];
-
-        // Tier 1: CIF
-        if (cleanCif) {
-          matched = active.filter((a: any) => {
-            const aCif = getAccCif(a);
-            if (!aCif) return false;
-            if (aCif === cleanCif) return true;
-            if (cleanDigits && aCif.replace(/\D/g, '') === cleanDigits) return true;
-            return false;
-          });
-        }
-
-        // Tier 2: CustomerID
-        if (matched.length === 0 && cId > 0) {
-          matched = active.filter((a: any) => getAccCustId(a) === cId);
-        }
-
-        // Tier 3: MemberID
-        if (matched.length === 0 && mId > 0) {
-          matched = active.filter((a: any) => getAccMemId(a) === mId || getAccCustId(a) === mId);
-        }
-
-        if (matched.length === 1) {
-          selectRdAccount(matched[0]);
-          setCustomerMatchingRds(matched);
-          setNoRdFoundAlert(null);
-        } else if (matched.length > 1) {
-          setCustomerMatchingRds(matched);
-          const custName = customerNameStr || matched[0].customerName || matched[0].memberName || 'खातेदार';
-          const primaryCif = cleanCif || getAccCif(matched[0]) || '-';
-          setMultiRdCustomerInfo({
-            name: custName,
-            cifNo: primaryCif,
-            customerId: cId || getAccCustId(matched[0])
-          });
-          setShowMultiRdModal(true);
-          setNoRdFoundAlert(null);
-        } else {
-          setCustomerMatchingRds([]);
-          const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
-          setNoRdFoundAlert(`निवडलेल्या खातेदाराचे (${customerNameStr || identifier}) कोणतेही सक्रिय आरडी खाते आढळले नाही.`);
+      // ⚡ FAST-TRACK 1: Direct targeted account ID lookup (~15-20ms)
+      if (targetAccId > 0) {
+        try {
+          const singleRes = await axios.get(`/api/RdAccounts/${targetAccId}`);
+          const accData = singleRes.data?.AccountDetails || singleRes.data;
+          if (accData && accData.rdAccountID) {
+            selectRdAccount(accData);
+            setAccounts([accData]);
+            setCustomerMatchingRds([accData]);
+            fastTrackDone = true;
+          }
+        } catch (err) {
+          console.warn('Fast-track targeted RD account lookup failed, falling back', err);
         }
       }
+      // ⚡ FAST-TRACK 2: Direct targeted customer / member ID lookup (~20-30ms)
+      else if (cId > 0 || mId > 0) {
+        try {
+          const queryParam = cId > 0 ? `customerId=${cId}` : `memberId=${mId}`;
+          const custRes = await axios.get(`/api/RdAccounts?${queryParam}`);
+          const custAccounts: RdAccount[] = (custRes.data || []).filter((a: any) => a.status === 'Active' || a.status === 'Matured');
+          if (custAccounts.length > 0) {
+            setAccounts(custAccounts);
+            if (custAccounts.length === 1) {
+              selectRdAccount(custAccounts[0]);
+              setCustomerMatchingRds(custAccounts);
+              setNoRdFoundAlert(null);
+            } else {
+              setCustomerMatchingRds(custAccounts);
+              const custName = customerNameStr || custAccounts[0].customerName || custAccounts[0].memberName || 'खातेदार';
+              const primaryCif = cifStr || custAccounts[0].cifNo || '-';
+              setMultiRdCustomerInfo({
+                name: custName,
+                cifNo: primaryCif,
+                customerId: cId || getAccCustId(custAccounts[0])
+              });
+              setShowMultiRdModal(true);
+              setNoRdFoundAlert(null);
+            }
+            fastTrackDone = true;
+          }
+        } catch (err) {
+          console.warn('Fast-track customer RD lookup failed, falling back', err);
+        }
+      }
+
+      // Background loading of full accounts list for dropdown searches
+      axios.get('/api/RdAccounts').then(res => {
+        const active: RdAccount[] = (res.data || []).filter((a: any) => a.status === 'Active' || a.status === 'Matured');
+        setAccounts(prev => {
+          if (prev.length > 0 && fastTrackDone) {
+            return active;
+          }
+          return active;
+        });
+
+        // If fast-track did not trigger, process in-memory
+        if (!fastTrackDone && (cifStr || customerIdStr || memberIdStr || entityIdStr || rdAccountIdStr)) {
+          const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
+          const cleanDigits = cleanCif ? cleanCif.replace(/\D/g, '') : '';
+
+          let matched: RdAccount[] = [];
+
+          if (targetAccId > 0) {
+            matched = active.filter((a: any) => a.rdAccountID === targetAccId || a.memberID === targetAccId);
+          } else if (cleanCif) {
+            matched = active.filter((a: any) => {
+              const aCif = getAccCif(a);
+              if (!aCif) return false;
+              if (aCif === cleanCif) return true;
+              if (cleanDigits && aCif.replace(/\D/g, '') === cleanDigits) return true;
+              return false;
+            });
+          } else if (cId > 0) {
+            matched = active.filter((a: any) => getAccCustId(a) === cId);
+          } else if (mId > 0) {
+            matched = active.filter((a: any) => getAccMemId(a) === mId || getAccCustId(a) === mId);
+          }
+
+          if (matched.length === 1) {
+            selectRdAccount(matched[0]);
+            setCustomerMatchingRds(matched);
+            setNoRdFoundAlert(null);
+          } else if (matched.length > 1) {
+            setCustomerMatchingRds(matched);
+            const custName = customerNameStr || matched[0].customerName || matched[0].memberName || 'खातेदार';
+            const primaryCif = cleanCif || getAccCif(matched[0]) || '-';
+            setMultiRdCustomerInfo({
+              name: custName,
+              cifNo: primaryCif,
+              customerId: cId || getAccCustId(matched[0])
+            });
+            setShowMultiRdModal(true);
+            setNoRdFoundAlert(null);
+          } else {
+            setCustomerMatchingRds([]);
+            const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
+            setNoRdFoundAlert(`निवडलेल्या खातेदाराचे (${customerNameStr || identifier}) कोणतेही सक्रिय आरडी खाते आढळले नाही.`);
+          }
+        }
+      }).catch(err => {
+        console.error('Error fetching full RD accounts list', err);
+      });
     } catch (err) {
       console.error('Error fetching RD accounts', err);
     }
@@ -362,7 +411,7 @@ export default function RdInstallmentCollection({
     setSuccess('');
     try {
       await axios.post(
-        `/api/RdAccounts/${selectedAcc.rdAccountID}/CollectInstallment?count=${count}&penaltyAmount=${penaltyAmount}&payMode=${payMode}`
+        `/api/RdAccounts/${selectedAcc.rdAccountID}/CollectInstallment?count=${count}&penaltyAmount=${penaltyAmount}&payMode=${payMode}&collectionDate=${collectionDate}`
       );
       setSuccess(`✅ आरडी हप्ता यशस्वीरीत्या जमा झाला! खाते क्रमांक: ${selectedAcc.accountNo}`);
 
@@ -397,7 +446,7 @@ export default function RdInstallmentCollection({
       for (const id of selectedIds) {
         const row = bulkRows[id];
         await axios.post(
-          `/api/RdAccounts/${id}/CollectInstallment?count=${row.count}&penaltyAmount=${row.penalty}&payMode=Cash`
+          `/api/RdAccounts/${id}/CollectInstallment?count=${row.count}&penaltyAmount=${row.penalty}&payMode=Cash&collectionDate=${collectionDate}`
         );
         successCount++;
       }
@@ -635,6 +684,28 @@ export default function RdInstallmentCollection({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
+                <label className={labelClass}>हप्ता भरणा तारीख (Collection Date) <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  name="collectionDate"
+                  value={collectionDate}
+                  onChange={(e) => setCollectionDate(e.target.value)}
+                  className={inputClass}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className={labelClass}>पेमेंट मोड (Payment Mode)</label>
+                <select value={payMode} onChange={(e) => setPayMode(e.target.value)} className={inputClass}>
+                  <option value="Cash">रोख (Cash)</option>
+                  <option value="Bank">बँक ट्रान्सफर (Bank Transfer)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
                 <label className={labelClass}>हप्ते संख्या (Quantity)</label>
                 <input
                   type="number"
@@ -658,14 +729,6 @@ export default function RdInstallmentCollection({
                   min="0"
                 />
               </div>
-            </div>
-
-            <div>
-              <label className={labelClass}>पेमेंट मोड (Payment Mode)</label>
-              <select value={payMode} onChange={(e) => setPayMode(e.target.value)} className={inputClass}>
-                <option value="Cash">रोख (Cash)</option>
-                <option value="Bank">बँक ट्रान्सफर (Bank Transfer)</option>
-              </select>
             </div>
 
             {selectedAcc && (
@@ -739,14 +802,27 @@ export default function RdInstallmentCollection({
               )}
             </div>
 
-            <button
-              onClick={handleBulkSubmit}
-              disabled={loading || selectedBulkCount === 0}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition duration-200 disabled:opacity-50 shadow-xs flex items-center gap-1.5"
-            >
-              <Save className="w-4 h-4" />
-              <span>{loading ? 'प्रक्रिया होत आहे...' : 'निवडलेले हप्ते जमा करा'}</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
+                <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">तारीख:</label>
+                <input
+                  type="date"
+                  value={collectionDate}
+                  onChange={(e) => setCollectionDate(e.target.value)}
+                  className="text-xs border border-slate-300 rounded px-2 py-0.5 focus:ring-1 focus:ring-indigo-500 focus:outline-none bg-white text-slate-900 font-medium"
+                />
+              </div>
+
+              <button
+                onClick={handleBulkSubmit}
+                disabled={loading || selectedBulkCount === 0}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition duration-200 disabled:opacity-50 shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>{loading ? 'प्रक्रिया होत आहे...' : 'निवडलेले हप्ते जमा करा'}</span>
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-slate-200">

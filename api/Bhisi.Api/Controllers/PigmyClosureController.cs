@@ -61,6 +61,7 @@ namespace Bhisi.Api.Controllers
         {
             public string AccountNo { get; set; } = string.Empty;
             public int BranchId { get; set; } = 1;
+            public DateTime? ClosureDate { get; set; }
             public string Narration { get; set; } = string.Empty;
             public bool ManagerOverrideConfirmed { get; set; } = false;
         }
@@ -96,6 +97,7 @@ namespace Bhisi.Api.Controllers
             public string AccountNo { get; set; } = string.Empty;
             public decimal Amount { get; set; }
             public int BranchId { get; set; } = 1;
+            public DateTime? WithdrawalDate { get; set; }
             public string Narration { get; set; } = string.Empty;
             public bool ManagerOverrideConfirmed { get; set; } = false;
         }
@@ -407,7 +409,8 @@ namespace Bhisi.Api.Controllers
                     ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Assets")
                     ?? await _context.Ledgers.FirstAsync();
 
-                var todayStr = DateTime.Now.ToString("yyyyMMdd");
+                DateTime effDate = request.WithdrawalDate?.Date ?? DateTime.Today;
+                var todayStr = effDate.ToString("yyyyMMdd");
                 var lastVoucher = await _context.Vouchers.OrderByDescending(v => v.VoucherID).FirstOrDefaultAsync();
                 int nextSeq = (lastVoucher?.VoucherID ?? 0) + 1;
 
@@ -477,7 +480,7 @@ namespace Bhisi.Api.Controllers
                     {
                         BranchID = homeBranchId,
                         VoucherNo = $"VCH-WDR-{todayStr}-{nextSeq:D4}",
-                        VoucherDate = DateTime.Today,
+                        VoucherDate = effDate,
                         VoucherType = "Payment",
                         TotalAmount = request.Amount + interestAmount,
                         Narration = $"पिग्मी अंशतः विड्रॉल (सायकल #{account.CurrentCycleNumber}) खाते {account.AccountNo} - {account.Customer?.FirstName}. {penaltyNotice} {request.Narration}".Trim(),
@@ -498,7 +501,7 @@ namespace Bhisi.Api.Controllers
                     {
                         BranchID = counterBranchId,
                         VoucherNo = $"PV-{counterBranchId}-{todayStr}-PIGMY-WDR-{nextSeq:D4}",
-                        VoucherDate = DateTime.Today,
+                        VoucherDate = effDate,
                         VoucherType = "Payment",
                         TotalAmount = netPaid,
                         Narration = $"[आंतर-शाखा पिग्मी विड्रॉल] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा. {penaltyNotice} {request.Narration}".Trim(),
@@ -534,7 +537,7 @@ namespace Bhisi.Api.Controllers
                     {
                         BranchID = homeBranchId,
                         VoucherNo = $"JV-PIGMY-WDR-{todayStr}-{nextSeq:D4}",
-                        VoucherDate = DateTime.Today,
+                        VoucherDate = effDate,
                         VoucherType = "Journal",
                         TotalAmount = request.Amount + interestAmount,
                         Narration = $"[आंतर-शाखा पिग्मी विड्रॉल] काऊंटर शाखा #{counterBranchId} वरून विड्रॉल अदा (सायकल #{account.CurrentCycleNumber}, खाते: {account.AccountNo}). {penaltyNotice} {request.Narration}".Trim(),
@@ -602,7 +605,7 @@ namespace Bhisi.Api.Controllers
                 var withdrawalRecord = new PigmyWithdrawal
                 {
                     PigmyAccountID = account.PigmyAccountID,
-                    WithdrawalDate = DateTime.Today,
+                    WithdrawalDate = effDate,
                     CycleNumber = account.CurrentCycleNumber,
                     CycleStartSnapshot = cycleStart,
                     ElapsedDays = elapsedDays,
@@ -625,12 +628,12 @@ namespace Bhisi.Api.Controllers
                 // Record PigmyTransaction for Passbook
                 int oldCycle = account.CurrentCycleNumber;
                 int newCycle = oldCycle + 1;
-                var txNarration = $"अंशतः विड्रॉल ₹{request.Amount:N2} (सायकल #{oldCycle} पूर्ण) | उर्वरित शिल्लक ₹{newBalance:N2} (नवीन सायकल #{newCycle} सुरू: {DateTime.Today:dd/MM/yyyy})";
+                var txNarration = $"अंशतः विड्रॉल ₹{request.Amount:N2} (सायकल #{oldCycle} पूर्ण) | उर्वरित शिल्लक ₹{newBalance:N2} (नवीन सायकल #{newCycle} सुरू: {effDate:dd/MM/yyyy})";
                 var pigmyTx = new PigmyTransaction
                 {
                     PigmyAccountID = account.PigmyAccountID,
-                    TransactionDate = DateTime.Today,
-                    ValueDate = DateTime.Today,
+                    TransactionDate = effDate,
+                    ValueDate = effDate,
                     TransactionType = "WITHDRAWAL",
                     DrAmount = request.Amount,
                     CrAmount = 0,
@@ -644,8 +647,8 @@ namespace Bhisi.Api.Controllers
                 // 🌟 Update PigmyAccount with THE DAY 1 RESET
                 account.TotalDepositedAmount = newBalance;
                 account.TotalWithdrawnAmount += request.Amount;
-                account.LastWithdrawalDate = DateTime.Today;
-                account.EffectiveStartDate = DateTime.Today; // Reset to Day 1
+                account.LastWithdrawalDate = effDate;
+                account.EffectiveStartDate = effDate; // Reset to Day 1
                 account.CurrentCycleNumber = newCycle;      // Move to next cycle
 
                 await _context.SaveChangesAsync();
@@ -762,9 +765,10 @@ namespace Bhisi.Api.Controllers
             }
 
             // 2. Compute Final Cycle Tenure & Dynamic Slab Outcome (Option B: Fixed Expiry Date)
-            bool isPremature = DateTime.Today < account.MaturityDate;
+            DateTime effClosureDate = request.ClosureDate?.Date ?? DateTime.Today;
+            bool isPremature = effClosureDate < account.MaturityDate;
             DateTime cycleStart = account.EffectiveStartDate ?? account.OpeningDate;
-            int tenureDaysInCycle = Math.Max(0, (int)(DateTime.Today - cycleStart).TotalDays);
+            int tenureDaysInCycle = Math.Max(0, (int)(effClosureDate - cycleStart).TotalDays);
             decimal tenureMonthsInCycle = Math.Round((decimal)tenureDaysInCycle / 30.416m, 2);
 
             var (appliedSlab, penaltyRate, interestRate, policyNote) = GetApplicableSlab(account.PigmyScheme, tenureDaysInCycle, isPremature);
@@ -808,7 +812,7 @@ namespace Bhisi.Api.Controllers
                     cashLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Assets") ?? await _context.Ledgers.FirstAsync();
                 }
 
-                var todayStr = DateTime.Now.ToString("yyyyMMdd");
+                var todayStr = effClosureDate.ToString("yyyyMMdd");
                 var lastVoucher = await _context.Vouchers.OrderByDescending(v => v.VoucherID).FirstOrDefaultAsync();
                 int nextSeq = (lastVoucher?.VoucherID ?? 0) + 1;
 
@@ -881,7 +885,7 @@ namespace Bhisi.Api.Controllers
                     {
                         BranchID = homeBranchId,
                         VoucherNo = $"VCH-CLO-{todayStr}-{nextSeq:D4}",
-                        VoucherDate = DateTime.Today,
+                        VoucherDate = effClosureDate,
                         VoucherType = "Payment",
                         TotalAmount = account.TotalDepositedAmount + interestAmount,
                         Narration = $"{typeLabel}Pigmy Closure for A/c {account.AccountNo} - {account.Customer?.FirstName}. (सायकल #{account.CurrentCycleNumber}, {tenureMonthsInCycle:N1}M){penaltyNotice}{interestNotice}{overrideNotice} {request.Narration}".Trim(),
@@ -903,7 +907,7 @@ namespace Bhisi.Api.Controllers
                     {
                         BranchID = counterBranchId,
                         VoucherNo = $"PV-{counterBranchId}-{todayStr}-PIGMY-CLO-{nextSeq:D4}",
-                        VoucherDate = DateTime.Today,
+                        VoucherDate = effClosureDate,
                         VoucherType = "Payment",
                         TotalAmount = netPayable,
                         Narration = $"[आंतर-शाखा पिग्मी क्लोजर] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा. {penaltyNotice}{interestNotice}{overrideNotice} {request.Narration}".Trim(),
@@ -939,7 +943,7 @@ namespace Bhisi.Api.Controllers
                     {
                         BranchID = homeBranchId,
                         VoucherNo = $"JV-PIGMY-CLO-{todayStr}-{nextSeq:D4}",
-                        VoucherDate = DateTime.Today,
+                        VoucherDate = effClosureDate,
                         VoucherType = "Journal",
                         TotalAmount = account.TotalDepositedAmount + interestAmount,
                         Narration = $"[आंतर-शाखा पिग्मी क्लोजर] काऊंटर शाखा #{counterBranchId} वरून परतावा अदा ({typeLabel}खाते: {account.AccountNo}). {penaltyNotice}{interestNotice}{overrideNotice} {request.Narration}".Trim(),
@@ -1007,8 +1011,8 @@ namespace Bhisi.Api.Controllers
                 var closureTx = new PigmyTransaction
                 {
                     PigmyAccountID = account.PigmyAccountID,
-                    TransactionDate = DateTime.Today,
-                    ValueDate = DateTime.Today,
+                    TransactionDate = effClosureDate,
+                    ValueDate = effClosureDate,
                     TransactionType = "WITHDRAWAL",
                     DrAmount = account.TotalDepositedAmount,
                     CrAmount = 0,

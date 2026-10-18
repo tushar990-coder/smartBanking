@@ -100,6 +100,7 @@ namespace Bhisi.Api.Controllers
         {
             public DateTime StartDate { get; set; }
             public DateTime EndDate { get; set; }
+            public DateTime? PostingDate { get; set; }
             public int BranchId { get; set; } = 1;
         }
 
@@ -130,7 +131,8 @@ namespace Bhisi.Api.Controllers
                 if (defaultExpenseLedger == null) defaultExpenseLedger = await _context.Ledgers.FirstAsync();
                 if (defaultLiabilityLedger == null) defaultLiabilityLedger = await _context.Ledgers.FirstAsync();
 
-                var todayStr = DateTime.Now.ToString("yyyyMMdd");
+                DateTime effPostDate = request.PostingDate?.Date ?? request.EndDate.Date;
+                var todayStr = effPostDate.ToString("yyyyMMdd");
                 var lastVoucher = await _context.Vouchers.OrderByDescending(v => v.VoucherID).FirstOrDefaultAsync();
                 int nextSeq = (lastVoucher?.VoucherID ?? 0) + 1;
 
@@ -176,7 +178,7 @@ namespace Bhisi.Api.Controllers
                 {
                     BranchID = request.BranchId,
                     VoucherNo = $"VCH-INT-{todayStr}-{nextSeq:D4}",
-                    VoucherDate = DateTime.Today,
+                    VoucherDate = effPostDate,
                     VoucherType = "Journal",
                     TotalAmount = totalInterestToPost,
                     Narration = $"Consolidated Pigmy Interest Posting for period {request.StartDate:dd/MM/yyyy} to {request.EndDate:dd/MM/yyyy}",
@@ -197,11 +199,25 @@ namespace Bhisi.Api.Controllers
                         _context.PigmyInterestLogs.Add(new PigmyInterestLog
                         {
                             PigmyAccountId = p.PigmyAccountId,
-                            CalculationDate = DateTime.Today,
+                            CalculationDate = effPostDate,
                             PeriodStartDate = request.StartDate,
                             PeriodEndDate = request.EndDate,
                             InterestAmount = p.CalculatedInterest,
                             VoucherId = voucher.VoucherID
+                        });
+
+                        _context.PigmyTransactions.Add(new PigmyTransaction
+                        {
+                            PigmyAccountID = account.PigmyAccountID,
+                            TransactionDate = effPostDate,
+                            ValueDate = effPostDate,
+                            TransactionType = "INTEREST",
+                            DrAmount = 0,
+                            CrAmount = p.CalculatedInterest,
+                            BalanceAmount = account.TotalDepositedAmount,
+                            Narration = $"पिग्मी व्याज जमा ({request.StartDate:dd/MM/yyyy} ते {request.EndDate:dd/MM/yyyy}) - {voucher.VoucherNo}",
+                            MakerId = 1,
+                            PostedOn = DateTime.Now
                         });
                     }
                 }

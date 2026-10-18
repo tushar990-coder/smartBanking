@@ -150,7 +150,8 @@ namespace Bhisi.Api.Controllers
                 decimal grandTotalInterest = 0;
                 var generatedVoucherNos = new List<string>();
                 var now = DateTime.Now;
-                var todayStr = DateTime.Now.ToString("yyyyMMdd");
+                DateTime effPostDate = request.PostingDate?.Date ?? request.PeriodEnd.Date;
+                var todayStr = effPostDate.ToString("yyyyMMdd");
 
                 var lastVoucher = await _context.Vouchers.OrderByDescending(v => v.VoucherID).FirstOrDefaultAsync();
                 int nextVchSeq = (lastVoucher?.VoucherID ?? 0) + 1;
@@ -182,7 +183,7 @@ namespace Bhisi.Api.Controllers
                                 SavingAccountID = account.SavingAccountID,
                                 CustomerID = account.CustomerID,
                                 BranchID = account.BranchID,
-                                TransactionDate = request.PeriodEnd,
+                                TransactionDate = effPostDate,
                                 TransactionType = "Interest",
                                 PaymentMode = "Transfer",
                                 Amount = interest,
@@ -206,7 +207,7 @@ namespace Bhisi.Api.Controllers
                         {
                             BranchID = branchId,
                             VoucherNo = voucherNo,
-                            VoucherDate = DateTime.Today,
+                            VoucherDate = effPostDate,
                             VoucherType = "Journal",
                             TotalAmount = branchTotalInterest,
                             Narration = $"Savings Interest Posting for branch {branchCode} ({request.PeriodStart:dd/MM/yyyy} to {request.PeriodEnd:dd/MM/yyyy})",
@@ -349,6 +350,7 @@ namespace Bhisi.Api.Controllers
     {
         public DateTime PeriodStart { get; set; }
         public DateTime PeriodEnd { get; set; }
+        public DateTime? PostingDate { get; set; }
         public int PostedBy { get; set; } = 1;
     }
 

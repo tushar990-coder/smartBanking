@@ -158,19 +158,84 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
 
   const fetchAccounts = async () => {
     try {
-      const res = await axios.get('/api/RdAccounts');
-      // Filter only active or matured accounts
-      const active = res.data.filter((a: any) => a.status === 'Active' || a.status === 'Matured');
-      setAccounts(active);
-
       const params = new URLSearchParams(window.location.search);
-      const memberIdStr = params.get('memberId');
-      if (memberIdStr && active.length > 0) {
-        const mId = parseInt(memberIdStr, 10);
-        const matchedAcc = active.find((a: any) => a.memberID === mId);
-        if (matchedAcc) {
-          setSelectedAccId(matchedAcc.rdAccountID.toString());
-          handleAccountChange(matchedAcc.rdAccountID.toString()); // Also trigger calculation
+      let cifStr = params.get('cifNo') || params.get('cif');
+      let customerIdStr = params.get('customerId') || params.get('customerID');
+      let memberIdStr = params.get('memberId') || params.get('memberID');
+      let rdAccountIdStr = params.get('rdAccountId') || params.get('accountId') || params.get('id');
+
+      // Also read universal sessionStorage transfer bridge
+      if (!cifStr && !customerIdStr && !memberIdStr && !rdAccountIdStr) {
+        try {
+          const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+          if (rawBridge) {
+            sessionStorage.removeItem('cbs_active_customer_transfer');
+            const bridgeData = JSON.parse(rawBridge);
+            if (bridgeData) {
+              cifStr = bridgeData.cifNo || bridgeData.cif;
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
+              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : null;
+              rdAccountIdStr = bridgeData.rdAccountId ? String(bridgeData.rdAccountId) : null;
+            }
+          }
+        } catch (e) {
+          console.error('Failed to read sessionStorage transfer:', e);
+        }
+      }
+
+      const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+      const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
+      const targetAccId = rdAccountIdStr ? parseInt(rdAccountIdStr, 10) : 0;
+      let fastTrackDone = false;
+
+      // ⚡ FAST-TRACK 1: Direct targeted account ID lookup (~15-20ms)
+      if (targetAccId > 0) {
+        try {
+          const singleRes = await axios.get(`/api/RdAccounts/${targetAccId}`);
+          const accDetails = singleRes.data?.AccountDetails || singleRes.data?.accountDetails || singleRes.data;
+          if (accDetails && accDetails.rdAccountID) {
+            setAccounts([accDetails]);
+            setSelectedAccId(accDetails.rdAccountID.toString());
+            handleAccountChange(accDetails.rdAccountID.toString());
+            fastTrackDone = true;
+          }
+        } catch (err) {
+          console.warn('Fast-track targeted RD account lookup failed, falling back', err);
+        }
+      }
+      // ⚡ FAST-TRACK 2: Direct targeted customer / member ID lookup (~20-30ms)
+      else if (cId > 0 || mId > 0) {
+        try {
+          const queryParam = cId > 0 ? `customerId=${cId}` : `memberId=${mId}`;
+          const custRes = await axios.get(`/api/RdAccounts?${queryParam}`);
+          const active = (custRes.data || []).filter((a: any) => a.status === 'Active' || a.status === 'Matured');
+          if (active.length > 0) {
+            setAccounts(active);
+            setSelectedAccId(active[0].rdAccountID.toString());
+            handleAccountChange(active[0].rdAccountID.toString());
+            fastTrackDone = true;
+          }
+        } catch (err) {
+          console.warn('Fast-track customer RD lookup failed, falling back', err);
+        }
+      }
+
+      // If fast-track did not trigger, fetch full list
+      if (!fastTrackDone) {
+        const res = await axios.get('/api/RdAccounts');
+        const active = (res.data || []).filter((a: any) => a.status === 'Active' || a.status === 'Matured');
+        setAccounts(active);
+
+        if (cId > 0 || mId > 0 || cifStr) {
+          const matchedAcc = active.find((a: any) => 
+            (cId > 0 && a.customerID === cId) || 
+            (mId > 0 && a.memberID === mId) ||
+            (cifStr && a.cifNo && a.cifNo.trim().toUpperCase() === cifStr.trim().toUpperCase())
+          );
+          if (matchedAcc) {
+            setSelectedAccId(matchedAcc.rdAccountID.toString());
+            handleAccountChange(matchedAcc.rdAccountID.toString());
+          }
         }
       }
     } catch (err) {
@@ -278,7 +343,7 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
     setMessage('');
     try {
       if (activeSubTab === 'matured') {
-        const res = await axios.post(`/api/RdAccounts/${selectedAcc.rdAccountID}/MaturedClose`);
+        const res = await axios.post(`/api/RdAccounts/${selectedAcc.rdAccountID}/MaturedClose?closureDate=${closureDate}`);
         setMessage(res.data);
       } else if (activeSubTab === 'premature') {
         const res = await axios.post(`/api/RdAccounts/${selectedAcc.rdAccountID}/PrematureClose?closureDate=${closureDate}`);
@@ -289,7 +354,7 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
           setLoading(false);
           return;
         }
-        const res = await axios.post(`/api/RdAccounts/${selectedAcc.rdAccountID}/Renew?targetSchemeId=${targetFdSchemeId}`);
+        const res = await axios.post(`/api/RdAccounts/${selectedAcc.rdAccountID}/Renew?targetSchemeId=${targetFdSchemeId}&closureDate=${closureDate}`);
         setMessage(`नूतनीकरण यशस्वी! नवीन एफडी खाते क्रमांक: ${res.data.fdAccountNo}`);
       }
 
@@ -463,6 +528,16 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-sm text-xs text-amber-700">
                         <strong>चेतावणी:</strong> हे खाते मुदत पूर्ण झालेले (Matured) असल्यावरच या पर्यायाचा वापर करावा.
                       </div>
+                      <div>
+                        <label className={labelClass}>मुदतपूर्ती पावती तारीख (Maturity Payout Date) <span className="text-red-500">*</span></label>
+                        <input
+                          type="date"
+                          value={closureDate}
+                          onChange={(e) => setClosureDate(e.target.value)}
+                          className={inputClass}
+                          required
+                        />
+                      </div>
                       <div className="bg-gray-50 p-4 rounded-sm border border-gray-250 flex justify-between items-center">
                         <span className="font-semibold text-gray-700 text-xs">एकूण देय पेमेंट (Net Payout):</span>
                         <span className="text-base font-black text-emerald-600">
@@ -475,7 +550,7 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
                   {activeSubTab === 'premature' && (
                     <div className="space-y-3">
                       <div>
-                        <label className={labelClass}>बंद केल्याची तारीख (Closure Date)</label>
+                        <label className={labelClass}>बंद केल्याची तारीख (Closure Date) <span className="text-red-500">*</span></label>
                         <input
                           type="date"
                           value={closureDate}
@@ -517,6 +592,16 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
 
                   {activeSubTab === 'renew' && (
                     <div className="space-y-3">
+                      <div>
+                        <label className={labelClass}>नूतनीकरण तारीख (Renewal Date) <span className="text-red-500">*</span></label>
+                        <input
+                          type="date"
+                          value={closureDate}
+                          onChange={(e) => setClosureDate(e.target.value)}
+                          className={inputClass}
+                          required
+                        />
+                      </div>
                       <div>
                         <label className={labelClass}>नूतनीकरण योजना निवडा (Select Target FD Scheme)</label>
                         <select

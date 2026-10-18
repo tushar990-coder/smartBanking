@@ -163,7 +163,6 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   useEffect(() => {
     fetchAccounts();
     fetchTransactions();
-    fetchBankLedgers();
   }, []);
 
   // Voucher Passing Mode: Fetch transaction details linked to voucher
@@ -219,37 +218,108 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     loadPassingTxn();
   }, [isPassingMode, voucherIdFromUrl]);
 
-  const fetchBankLedgers = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/Ledgers`);
-      const allLedgers: Ledger[] = Array.isArray(res.data) ? res.data : [];
-      const bLedgers = allLedgers.filter((l: any) => {
-        if (!l) return false;
-        const name = (l.ledgerName || '').toLowerCase();
-        const type = (l.accountType || '').toLowerCase();
-        const group = l.groupID || 0;
-        return (
-          type.includes('bank') ||
-          name.includes('bank') ||
-          name.includes('बँक') ||
-          group === 12 || group === 8 || group === 9
-        );
-      });
-      setBankLedgers(bLedgers.length > 0 ? bLedgers : allLedgers);
-    } catch (e) {
-      console.error('Error fetching bank ledgers', e);
-    }
+  const parseBankLedgers = (allLedgers: any[]) => {
+    const bLedgers = allLedgers.filter((l: any) => {
+      if (!l) return false;
+      const name = (l.ledgerName || '').toLowerCase();
+      const type = (l.accountType || '').toLowerCase();
+      const group = l.groupID || 0;
+      return (
+        type.includes('bank') ||
+        name.includes('bank') ||
+        name.includes('बँक') ||
+        group === 12 || group === 8 || group === 9
+      );
+    });
+    setBankLedgers(bLedgers.length > 0 ? bLedgers : allLedgers);
   };
 
   const fetchAccounts = async (preserveAccountId?: number) => {
     try {
+      const params = new URLSearchParams(window.location.search);
+      let cifStr = params.get('cifNo') || params.get('cif');
+      let customerIdStr = params.get('customerId') || params.get('customerID');
+      let memberIdStr = params.get('memberId') || params.get('memberID');
+      let accountIdStr = params.get('accountId') || params.get('savingAccountId');
+      let typeStr = params.get('type');
+      let customerNameStr = params.get('customerName');
+
+      // Also read from sessionStorage backup bridge if URL params were not provided
+      if (!cifStr && !customerIdStr && !memberIdStr && !accountIdStr) {
+        try {
+          const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+          if (rawBridge) {
+            sessionStorage.removeItem('cbs_active_customer_transfer');
+            const bridgeData = JSON.parse(rawBridge);
+            if (bridgeData) {
+              cifStr = bridgeData.cifNo || bridgeData.cif;
+              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
+              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : null;
+              typeStr = bridgeData.type || typeStr;
+              customerNameStr = bridgeData.customerName || customerNameStr;
+            }
+          }
+        } catch (e) {
+          console.error('Failed to read sessionStorage transfer:', e);
+        }
+      }
+
+      // Safe Property Getters handling camelCase, PascalCase and DB column variations
+      const getAccCustomerId = (a: any) => Number(a.customerId ?? a.customerID ?? a.CustomerID ?? 0);
+      const getAccMemberId = (a: any) => Number(a.memberId ?? a.memberID ?? a.MemberID ?? 0);
+      const getAccCif = (a: any) => String(a.cifNo ?? a.CIFNo ?? a.cif ?? '').trim().toUpperCase();
+
+      // FAST PATH: Targeted Customer/Account lookup if navigated from Member360 or URL
+      const hasSpecificTarget = Boolean(!preserveAccountId && !isPassingMode && (customerIdStr || accountIdStr));
+      if (hasSpecificTarget) {
+        try {
+          let fastRes: any = null;
+          if (accountIdStr) {
+            fastRes = await axios.get(`${API_URL}/SavingAccounts/${accountIdStr}`).catch(() => null);
+          } else if (customerIdStr) {
+            fastRes = await axios.get(`${API_URL}/SavingAccounts?customerId=${customerIdStr}`).catch(() => null);
+          }
+          if (fastRes?.data) {
+            const matchedList: SavingAccount[] = Array.isArray(fastRes.data) ? fastRes.data : [fastRes.data];
+            if (matchedList.length === 1) {
+              applySelectedAccount(matchedList[0], typeStr);
+              setCustomerMatchingAccounts(matchedList);
+              setNoAccountFoundAlert(null);
+            } else if (matchedList.length > 1) {
+              setCustomerMatchingAccounts(matchedList);
+              const primaryName = customerNameStr || matchedList[0].customerName || 'खातेदार';
+              const primaryCif = (cifStr ? cifStr.trim().toUpperCase() : '') || getAccCif(matchedList[0]) || '-';
+              setMultiAccountCustomerInfo({
+                name: primaryName,
+                cifNo: primaryCif,
+                customerId: Number(customerIdStr) || getAccCustomerId(matchedList[0])
+              });
+              if (typeStr) {
+                const finalType: string = typeStr;
+                setFormData(prev => ({ ...prev, transactionType: finalType }));
+              }
+              setShowMultiAccountModal(true);
+              setNoAccountFoundAlert(null);
+            }
+          }
+        } catch (fastErr) {
+          console.error('Fast target lookup error, falling back to full list', fastErr);
+        }
+      }
+
+      // Concurrently load full accounts, interest settings, and ledgers (single call for ledgers)
       const [accRes, interestRes, ledgersRes] = await Promise.all([
         axios.get(`${API_URL}/SavingAccounts`),
         axios.get(`${API_URL}/SavingSettings/Interest`).catch(() => ({ data: [] })),
         axios.get(`${API_URL}/Ledgers`).catch(() => ({ data: [] }))
       ]);
+
       const accData: SavingAccount[] = accRes.data || [];
       setAccounts(accData);
+
+      // Populate Bank Ledgers from the single /api/Ledgers call (eliminating duplicate request)
+      const allLedgersList: any[] = Array.isArray(ledgersRes.data) ? ledgersRes.data : [];
+      parseBankLedgers(allLedgersList);
 
       // Re-sync selectedAccount with the latest fresh balance from API
       const targetAccId = preserveAccountId || selectedAccount?.savingAccountID || formData.savingAccountID;
@@ -271,7 +341,6 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         }
       }
 
-      const allLedgersList: any[] = Array.isArray(ledgersRes.data) ? ledgersRes.data : [];
       const uniqueLedgerMap = new Map<number, string>();
 
       // 1. Prioritize schemes created in Saving Scheme Master
@@ -310,39 +379,8 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
       const ledgerList = Array.from(uniqueLedgerMap.entries()).map(([ledgerID, ledgerName]) => ({ ledgerID, ledgerName }));
       setLedgers(ledgerList);
 
-      const params = new URLSearchParams(window.location.search);
-      let cifStr = params.get('cifNo') || params.get('cif');
-      let customerIdStr = params.get('customerId') || params.get('customerID');
-      let memberIdStr = params.get('memberId') || params.get('memberID');
-      let accountIdStr = params.get('accountId') || params.get('savingAccountId');
-      let typeStr = params.get('type');
-      let customerNameStr = params.get('customerName');
-
-      // Also read from sessionStorage backup bridge if URL params were not provided
-      if (!cifStr && !customerIdStr && !memberIdStr && !accountIdStr) {
-        try {
-          const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
-          if (rawBridge) {
-            const bridgeData = JSON.parse(rawBridge);
-            if (bridgeData) {
-              cifStr = bridgeData.cifNo || bridgeData.cif;
-              customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
-              memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : null;
-              typeStr = bridgeData.type || typeStr;
-              customerNameStr = bridgeData.customerName || customerNameStr;
-            }
-          }
-        } catch (e) {
-          console.error('Failed to read sessionStorage transfer:', e);
-        }
-      }
-
-      // Safe Property Getters handling camelCase, PascalCase and DB column variations
-      const getAccCustomerId = (a: any) => Number(a.customerId ?? a.customerID ?? a.CustomerID ?? 0);
-      const getAccMemberId = (a: any) => Number(a.memberId ?? a.memberID ?? a.MemberID ?? 0);
-      const getAccCif = (a: any) => String(a.cifNo ?? a.CIFNo ?? a.cif ?? '').trim().toUpperCase();
-
-      if (!preserveAccountId && !isPassingMode) {
+      // If fast-track did not run or didn't find match, run full fallback match
+      if (!preserveAccountId && !isPassingMode && !selectedAccount) {
         if (accountIdStr) {
           const accId = parseInt(accountIdStr, 10);
           const matchedAcc = accData.find((a: any) => a.savingAccountID === accId);
@@ -370,7 +408,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             });
           }
 
-          // Tier 2: CustomerID match (handles customerId, customerID, CustomerID)
+          // Tier 2: CustomerID match
           if (matched.length === 0 && cId > 0) {
             matched = accData.filter(a => getAccCustomerId(a) === cId);
           }
@@ -381,12 +419,10 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
           }
 
           if (matched.length === 1) {
-            // Exactly 1 account: auto-select directly & focus amount input
             applySelectedAccount(matched[0], typeStr);
             setCustomerMatchingAccounts(matched);
             setNoAccountFoundAlert(null);
           } else if (matched.length > 1) {
-            // Multiple accounts: prompt interactive selection modal
             setCustomerMatchingAccounts(matched);
             const primaryName = customerNameStr || matched[0].customerName || 'खातेदार';
             const primaryCif = cleanCif || getAccCif(matched[0]) || '-';
@@ -396,12 +432,12 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
               customerId: cId || getAccCustomerId(matched[0])
             });
             if (typeStr) {
-              setFormData(prev => ({ ...prev, transactionType: typeStr }));
+              const finalType: string = typeStr;
+              setFormData(prev => ({ ...prev, transactionType: finalType }));
             }
             setShowMultiAccountModal(true);
             setNoAccountFoundAlert(null);
           } else {
-            // 0 accounts found
             setCustomerMatchingAccounts([]);
             const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
             setNoAccountFoundAlert(`निवडलेल्या खातेदाराचे (${customerNameStr || identifier}) कोणतेही बचत खाते आढळले नाही.`);
@@ -434,7 +470,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
 
   const fetchTransactions = async () => {
     try {
-      const response = await axios.get(`${API_URL}/SavingTransactions`);
+      const response = await axios.get(`${API_URL}/SavingTransactions?page=1&pageSize=30`);
       setTransactions(response.data || []);
     } catch (err) {
       console.error('Error fetching transactions', err);

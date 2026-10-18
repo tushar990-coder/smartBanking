@@ -31,6 +31,7 @@ namespace Bhisi.Api.Controllers
             [FromQuery] int? pageSize = null)
         {
             var query = _context.SavingTransactions
+                .AsNoTracking()
                 .Include(t => t.SavingAccount)
                     .ThenInclude(a => a!.Customer)
                 .AsQueryable();
@@ -47,6 +48,7 @@ namespace Bhisi.Api.Controllers
 
             var projected = query
                 .OrderByDescending(t => t.TransactionDate)
+                .ThenByDescending(t => t.TransactionID)
                 .Select(t => new {
                     t.TransactionID,
                     t.TransactionDate,
@@ -64,14 +66,11 @@ namespace Bhisi.Api.Controllers
                         : ""
                 });
 
-            if (page.HasValue || pageSize.HasValue)
-            {
-                int p = page ?? 1;
-                int ps = pageSize ?? 50;
-                if (p < 1) p = 1;
-                if (ps < 1 || ps > 500) ps = 50;
-                projected = projected.Skip((p - 1) * ps).Take(ps);
-            }
+            int p = page ?? 1;
+            int ps = pageSize ?? 50;
+            if (p < 1) p = 1;
+            if (ps < 1 || ps > 500) ps = 50;
+            projected = projected.Skip((p - 1) * ps).Take(ps);
 
             var txns = await projected.ToListAsync();
             return Ok(txns);
@@ -82,6 +81,7 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<SavingTransaction>>> GetTransactionsByAccount(int accountId)
         {
             return await _context.SavingTransactions
+                .AsNoTracking()
                 .Where(t => t.SavingAccountID == accountId)
                 .OrderBy(t => t.TransactionDate)
                 .ToListAsync();

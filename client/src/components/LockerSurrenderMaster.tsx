@@ -122,6 +122,42 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
       if (res.ok) {
         const data = await res.json();
         setAllotments(data);
+
+        // Fast-track targeted allotment preselection
+        const params = new URLSearchParams(window.location.search);
+        let customerIdStr = params.get('customerId') || params.get('customerID');
+        let memberIdStr = params.get('memberId') || params.get('memberID');
+        let allotmentIdStr = params.get('allotmentId') || params.get('id');
+
+        if (!customerIdStr && !memberIdStr && !allotmentIdStr) {
+          try {
+            const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+            if (rawBridge) {
+              sessionStorage.removeItem('cbs_active_customer_transfer');
+              const bridgeData = JSON.parse(rawBridge);
+              if (bridgeData) {
+                customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
+                memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : null;
+                allotmentIdStr = bridgeData.allotmentId ? String(bridgeData.allotmentId) : null;
+              }
+            }
+          } catch (e) {}
+        }
+
+        const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+        const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
+        const aId = allotmentIdStr ? parseInt(allotmentIdStr, 10) : 0;
+
+        if (aId > 0 || cId > 0 || mId > 0) {
+          const matched = data.find((item: any) => 
+            (aId > 0 && item.allotmentID === aId) ||
+            (cId > 0 && item.customerID === cId) ||
+            (mId > 0 && item.memberID === mId)
+          );
+          if (matched) {
+            setFormData(prev => ({ ...prev, allotmentID: matched.allotmentID.toString() }));
+          }
+        }
       }
     } catch (err) {
       console.error(err);

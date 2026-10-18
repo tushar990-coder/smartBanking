@@ -552,7 +552,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         setLoading(true);
         try {
             const bId = overrideBranchId !== undefined ? overrideBranchId : selectedBranchId;
-            const res = await axios.get(`/api/LoanCollections${bId ? `?branchId=${bId}` : ''}`);
+            const res = await axios.get(`/api/LoanCollections${bId ? `?branchId=${bId}&pageSize=50` : '?pageSize=50'}`);
             setCollections(res.data);
             
             // Calculate today's totals
@@ -616,27 +616,26 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
     const fetchAccounts = async () => {
         try {
-            const res = await axios.get('/api/LoanAccounts');
-            const activeAccs = res.data.filter((a: any) => a.status === 'Active');
-            setAccounts(activeAccs);
-
             const params = new URLSearchParams(window.location.search);
             let cifStr = params.get('cifNo') || params.get('cif');
             let customerIdStr = params.get('customerId') || params.get('customerID');
             let memberIdStr = params.get('memberId') || params.get('memberID');
             let loanAccNo = params.get('loanAccountNo');
+            let loanAccountIdStr = params.get('loanAccountId') || params.get('accountId');
             let customerNameStr = params.get('customerName');
 
             // Also check universal sessionStorage transfer bridge
-            if (!cifStr && !customerIdStr && !memberIdStr && !loanAccNo) {
+            if (!cifStr && !customerIdStr && !memberIdStr && !loanAccNo && !loanAccountIdStr) {
                 try {
                     const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
                     if (rawBridge) {
+                        sessionStorage.removeItem('cbs_active_customer_transfer');
                         const bridgeData = JSON.parse(rawBridge);
                         if (bridgeData) {
                             cifStr = bridgeData.cifNo || bridgeData.cif;
                             customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
                             memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : null;
+                            loanAccNo = bridgeData.loanAccountNo || loanAccNo;
                             customerNameStr = bridgeData.customerName || customerNameStr;
                         }
                     }
@@ -649,6 +648,66 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             const getAccCustId = (a: any) => Number(a.customerID ?? a.customerId ?? a.CustomerID ?? a.customer?.customerID ?? 0);
             const getAccMemId = (a: any) => Number(a.memberID ?? a.memberId ?? a.MemberID ?? a.member?.memberID ?? 0);
             const getAccCif = (a: any) => String(a.customer?.cifNo ?? a.cifNo ?? a.CIFNo ?? '').trim().toUpperCase();
+
+            const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+            const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
+            const targetAccId = loanAccountIdStr ? parseInt(loanAccountIdStr, 10) : 0;
+            let fastTrackDone = false;
+
+            // ⚡ FAST-TRACK 1: Direct targeted account ID lookup (~15-20ms)
+            if (targetAccId > 0) {
+                try {
+                    const singleRes = await axios.get(`/api/LoanAccounts/${targetAccId}`);
+                    if (singleRes.data && singleRes.data.loanAccountID) {
+                        const acc = singleRes.data;
+                        setAccounts([acc]);
+                        selectLoanAccountById(acc.loanAccountID, [acc]);
+                        setCustomerMatchingLoans([acc]);
+                        fastTrackDone = true;
+                    }
+                } catch (err) {
+                    console.warn('Fast-track targeted Loan lookup failed, falling back', err);
+                }
+            }
+            // ⚡ FAST-TRACK 2: Direct targeted customer / member ID lookup (~20-30ms)
+            else if (cId > 0 || mId > 0) {
+                try {
+                    const qParam = cId > 0 ? `customerId=${cId}` : `memberId=${mId}`;
+                    const custRes = await axios.get(`/api/LoanAccounts?${qParam}`);
+                    const active = (custRes.data || []).filter((a: any) => a.status === 'Active');
+                    if (active.length > 0) {
+                        setAccounts(active);
+                        if (active.length === 1) {
+                            selectLoanAccountById(active[0].loanAccountID, active);
+                            setCustomerMatchingLoans(active);
+                            setNoLoanFoundAlert(null);
+                        } else {
+                            setCustomerMatchingLoans(active);
+                            const custName = customerNameStr || (active[0].customer ? `${active[0].customer.firstName || ''} ${active[0].customer.lastName || ''}`.trim() : 'कर्जदार खातेदार');
+                            const primaryCif = cifStr || getAccCif(active[0]) || '-';
+                            setMultiLoanCustomerInfo({
+                                name: custName,
+                                cifNo: primaryCif,
+                                customerId: cId || getAccCustId(active[0])
+                            });
+                            const firstCustId = getAccCustId(active[0]);
+                            const bKey = firstCustId ? `C_${firstCustId}` : (active[0].memberID ? `M_${active[0].memberID}` : `ACC_${active[0].loanAccountID}`);
+                            setSelectedBorrowerKey(bKey);
+                            if (firstCustId) setSelectedCustomerId(firstCustId);
+                            setShowMultiLoanModal(true);
+                            setNoLoanFoundAlert(null);
+                        }
+                        fastTrackDone = true;
+                    }
+                } catch (err) {
+                    console.warn('Fast-track customer Loan lookup failed, falling back', err);
+                }
+            }
+
+            if (!fastTrackDone) {
+                const res = await axios.get('/api/LoanAccounts');
+                const activeAccs = res.data.filter((a: any) => a.status === 'Active');
+                setAccounts(activeAccs);
 
             if (loanAccNo) {
                 const matchedAcc = activeAccs.find((a: any) => a.loanAccountNo === loanAccNo);
@@ -712,9 +771,10 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                     setNoLoanFoundAlert(`निवडलेल्या खातेदाराचे (${customerNameStr || identifier}) कोणतेही सक्रिय कर्ज खाते आढळले नाही.`);
                 }
             }
-        } catch (err) {
-            console.error(err);
         }
+    } catch (err) {
+        console.error(err);
+    }
     };
 
     const fetchLedgers = async () => {

@@ -611,10 +611,6 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
   const fetchAccounts = async () => {
     try {
-      const response = await axios.get(`${API_URL}/FdAccounts`);
-      const activeList: FdAccount[] = response.data.filter((a: any) => a.status !== 'Closed');
-      setAccounts(activeList);
-
       const params = new URLSearchParams(window.location.search);
       let entityIdStr = params.get('entityId');
       let fdAccountIdStr = params.get('fdAccountId') || params.get('id');
@@ -628,6 +624,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         try {
           const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
           if (rawBridge) {
+            sessionStorage.removeItem('cbs_active_customer_transfer');
             const bridgeData = JSON.parse(rawBridge);
             if (bridgeData) {
               cifStr = bridgeData.cifNo || bridgeData.cif;
@@ -652,65 +649,116 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         fetchActiveLoans(acc.fdAccountID);
       };
 
-      if (fdAccountIdStr) {
-        const accId = parseInt(fdAccountIdStr);
-        const matched = activeList.find((a: any) => a.fdAccountID === accId);
-        if (matched) {
-          applySelectedFd(matched);
-          setCustomerMatchingFds([matched]);
-        }
-      } else if (cifStr || customerIdStr || memberIdStr || entityIdStr) {
-        const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
-        const mId = memberIdStr ? parseInt(memberIdStr, 10) : (entityIdStr ? parseInt(entityIdStr, 10) : 0);
-        const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
-        const cleanDigits = cleanCif ? cleanCif.replace(/\D/g, '') : '';
+      const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+      const targetAccId = fdAccountIdStr ? parseInt(fdAccountIdStr, 10) : (entityIdStr ? parseInt(entityIdStr, 10) : 0);
+      let fastTrackDone = false;
 
-        let matched: FdAccount[] = [];
-
-        // Tier 1: CIF
-        if (cleanCif) {
-          matched = activeList.filter((a: any) => {
-            const aCif = getAccCif(a);
-            if (!aCif) return false;
-            if (aCif === cleanCif) return true;
-            if (cleanDigits && aCif.replace(/\D/g, '') === cleanDigits) return true;
-            return false;
-          });
-        }
-
-        // Tier 2: CustomerID
-        if (matched.length === 0 && cId > 0) {
-          matched = activeList.filter((a: any) => getAccCustId(a) === cId);
-        }
-
-        // Tier 3: MemberID
-        if (matched.length === 0 && mId > 0) {
-          matched = activeList.filter((a: any) => getAccMemId(a) === mId || getAccCustId(a) === mId);
-        }
-
-        if (matched.length === 1) {
-          applySelectedFd(matched[0]);
-          setCustomerMatchingFds(matched);
-          setNoFdFoundAlert(null);
-        } else if (matched.length > 1) {
-          setCustomerMatchingFds(matched);
-          const custName = customerNameStr || matched[0].customerName || matched[0].memberName || 'खातेदार';
-          const primaryCif = cleanCif || getAccCif(matched[0]) || '-';
-          setMultiFdCustomerInfo({
-            name: custName,
-            cifNo: primaryCif,
-            customerId: cId || getAccCustId(matched[0])
-          });
-          setShowMultiFdModal(true);
-          setNoFdFoundAlert(null);
-        } else {
-          setCustomerMatchingFds([]);
-          const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
-          setNoFdFoundAlert(`निवडलेल्या खातेदाराची (${customerNameStr || identifier}) कोणतीही सक्रिय मुदत ठेव (FD) आढळली नाही.`);
+      // ⚡ FAST-TRACK 1: Direct targeted account ID lookup (~15-20ms)
+      if (targetAccId > 0) {
+        try {
+          const singleRes = await axios.get(`${API_URL}/FdAccounts/${targetAccId}`);
+          if (singleRes.data && singleRes.data.fdAccountID) {
+            const acc: FdAccount = singleRes.data;
+            applySelectedFd(acc);
+            setAccounts([acc]);
+            setCustomerMatchingFds([acc]);
+            fastTrackDone = true;
+          }
+        } catch (err) {
+          console.warn('Fast-track targeted FD account lookup failed, falling back', err);
         }
       }
+      // ⚡ FAST-TRACK 2: Direct targeted customer ID lookup (~20-30ms)
+      else if (cId > 0) {
+        try {
+          const custRes = await axios.get(`${API_URL}/FdAccounts?customerId=${cId}`);
+          const custAccounts: FdAccount[] = (custRes.data || []).filter((a: any) => a.status !== 'Closed');
+          if (custAccounts.length > 0) {
+            setAccounts(custAccounts);
+            if (custAccounts.length === 1) {
+              applySelectedFd(custAccounts[0]);
+              setCustomerMatchingFds(custAccounts);
+              setNoFdFoundAlert(null);
+            } else {
+              setCustomerMatchingFds(custAccounts);
+              const custName = customerNameStr || custAccounts[0].customerName || custAccounts[0].memberName || 'खातेदार';
+              const primaryCif = cifStr || custAccounts[0].cifNo || '-';
+              setMultiFdCustomerInfo({
+                name: custName,
+                cifNo: primaryCif,
+                customerId: cId
+              });
+              setShowMultiFdModal(true);
+              setNoFdFoundAlert(null);
+            }
+            fastTrackDone = true;
+          }
+        } catch (err) {
+          console.warn('Fast-track customer FD lookup failed, falling back', err);
+        }
+      }
+
+      // Background loading of full accounts list for dropdown searches
+      axios.get(`${API_URL}/FdAccounts`).then(response => {
+        const activeList: FdAccount[] = (response.data || []).filter((a: any) => a.status !== 'Closed');
+        setAccounts(prev => {
+          // Keep current selection intact when updating full list
+          if (prev.length > 0 && fastTrackDone) {
+            return activeList;
+          }
+          return activeList;
+        });
+
+        // If fast-track did not trigger (e.g. CIF without CustomerID), process in-memory
+        if (!fastTrackDone && (cifStr || customerIdStr || memberIdStr || entityIdStr || fdAccountIdStr)) {
+          const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
+          const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
+          const cleanDigits = cleanCif ? cleanCif.replace(/\D/g, '') : '';
+
+          let matched: FdAccount[] = [];
+
+          if (targetAccId > 0) {
+            matched = activeList.filter((a: any) => a.fdAccountID === targetAccId);
+          } else if (cleanCif) {
+            matched = activeList.filter((a: any) => {
+              const aCif = getAccCif(a);
+              if (!aCif) return false;
+              if (aCif === cleanCif) return true;
+              if (cleanDigits && aCif.replace(/\D/g, '') === cleanDigits) return true;
+              return false;
+            });
+          } else if (cId > 0) {
+            matched = activeList.filter((a: any) => getAccCustId(a) === cId);
+          } else if (mId > 0) {
+            matched = activeList.filter((a: any) => getAccMemId(a) === mId || getAccCustId(a) === mId);
+          }
+
+          if (matched.length === 1) {
+            applySelectedFd(matched[0]);
+            setCustomerMatchingFds(matched);
+            setNoFdFoundAlert(null);
+          } else if (matched.length > 1) {
+            setCustomerMatchingFds(matched);
+            const custName = customerNameStr || matched[0].customerName || matched[0].memberName || 'खातेदार';
+            const primaryCif = cleanCif || getAccCif(matched[0]) || '-';
+            setMultiFdCustomerInfo({
+              name: custName,
+              cifNo: primaryCif,
+              customerId: cId || getAccCustId(matched[0])
+            });
+            setShowMultiFdModal(true);
+            setNoFdFoundAlert(null);
+          } else {
+            setCustomerMatchingFds([]);
+            const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
+            setNoFdFoundAlert(`निवडलेल्या खातेदाराची (${customerNameStr || identifier}) कोणतीही सक्रिय मुदत ठेव (FD) आढळली नाही.`);
+          }
+        }
+      }).catch(err => {
+        console.error('Error fetching full FD accounts list', err);
+      });
     } catch (err) {
-      console.error('Error fetching accounts', err);
+      console.error('Error in fetchAccounts:', err);
     }
   };
 

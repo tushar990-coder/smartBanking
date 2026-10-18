@@ -403,7 +403,19 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const customerIdStr = params.get('customerId') || params.get('memberId');
+    let customerIdStr = params.get('customerId') || params.get('memberId');
+    if (!customerIdStr) {
+      try {
+        const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+        if (rawBridge) {
+          sessionStorage.removeItem('cbs_active_customer_transfer');
+          const bridgeData = JSON.parse(rawBridge);
+          if (bridgeData) {
+            customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : (bridgeData.memberId ? String(bridgeData.memberId) : null);
+          }
+        }
+      } catch (e) {}
+    }
     if (customerIdStr && members.length > 0) {
       const cId = parseInt(customerIdStr, 10);
       const matchedCust = members.find((m: any) => m.customerID === cId || m.id === cId);

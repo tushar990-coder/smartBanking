@@ -201,7 +201,7 @@ namespace Bhisi.Api.Controllers
             [FromQuery] string? search = null)
         {
             branchId = User.ResolveOptionalBranchId(branchId);
-            var query = _context.SavingAccountMasters.AsQueryable();
+            var query = _context.SavingAccountMasters.AsNoTracking().AsQueryable();
             if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(s => s.BranchID == branchId.Value);

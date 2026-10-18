@@ -301,8 +301,9 @@ function App() {
     'fd-customer-summary': '/fd/customer-summary',
 
     // Recurring Deposit (आवर्ती ठेव - RD)
+    'rd': '/rd/dashboard',
+    'rd-dashboard': '/rd/dashboard',
     'rd-account': '/rd/account-opening',
-    'rd': '/rd/account-opening',
     'rd-scheme': '/rd/schemes',
     'rd-migrate': '/rd/opening-balance',
     'rd-collect': '/rd/collection',
@@ -448,6 +449,7 @@ function App() {
   const [lastMemberId, setLastMemberId] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get('memberId');
   });
+  const [navKey, setNavKey] = useState<number>(0);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -476,17 +478,33 @@ function App() {
   useEffect(() => {
     const handlePopState = () => {
       setActiveTab(getTabFromURL());
-      const mId = new URLSearchParams(window.location.search).get('memberId');
-      if (mId) setLastMemberId(mId);
+      const mId = new URLSearchParams(window.location.search).get('memberId') || new URLSearchParams(window.location.search).get('customerId');
+      setLastMemberId(mId || null);
+      if (!mId) {
+        try {
+          sessionStorage.removeItem('cbs_active_customer_transfer');
+        } catch (e) {}
+      }
+      setNavKey(prev => prev + 1);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   const handleNavigate = (tab: string, params?: any) => {
-    if (params && params.memberId) {
-      setLastMemberId(String(params.memberId));
+    const hasCustomerTarget = Boolean(params && (params.memberId || params.customerId));
+    if (hasCustomerTarget) {
+      setLastMemberId(String(params.memberId || params.customerId));
+    } else {
+      setLastMemberId(null);
+      try {
+        sessionStorage.removeItem('cbs_active_customer_transfer');
+      } catch (e) {
+        console.error('Failed to clear customer transfer bridge:', e);
+      }
     }
+    setNavKey(prev => prev + 1);
+
     let targetUrl = '';
     if (tabToPathMap[tab]) {
       targetUrl = tabToPathMap[tab];
@@ -535,7 +553,12 @@ function App() {
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
         activeTab={activeTab}
-        handleNavigate={handleNavigate}
+        handleNavigate={(tab: string, params?: any) => {
+          try {
+            sessionStorage.removeItem('cbs_active_customer_transfer');
+          } catch {}
+          handleNavigate(tab, params);
+        }}
         user={user}
         logout={logout}
       />
@@ -647,9 +670,9 @@ function App() {
           </div>
         </header>
 
-        <div className="flex-1 w-full overflow-y-auto">
+        <div key={`${activeTab}-${lastMemberId || 'clean'}-${navKey}`} className="flex-1 w-full overflow-y-auto">
           {/* Quick return to Khatedar 360 Sticky Banner */}
-          {activeTab !== 'member-360' && activeTab !== 'customer-360' && activeTab !== 'khatedar-360' && (new URLSearchParams(window.location.search).get('memberId') || lastMemberId) && (
+          {activeTab !== 'member-360' && activeTab !== 'customer-360' && activeTab !== 'khatedar-360' && Boolean(new URLSearchParams(window.location.search).get('memberId') || lastMemberId) && (
             <div className="bg-primary text-white px-3.5 py-1.5 flex items-center justify-between shadow-xs border-b border-white/20 font-sans shrink-0 sticky top-0 z-30 animate-in fade-in duration-200">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>

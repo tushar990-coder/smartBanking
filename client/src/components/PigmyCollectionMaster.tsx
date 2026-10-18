@@ -285,11 +285,6 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
   const fetchAccounts = async () => {
     setFetchingAccounts(true);
     try {
-      const res = await axios.get('/api/PigmyAccounts');
-      const data: PigmyAccount[] = res.data || [];
-      const activeData = data.filter((a: any) => a.status === 'Active');
-      setAccounts(data);
-
       const params = new URLSearchParams(window.location.search);
       let cifStr = params.get('cifNo') || params.get('cif');
       let customerIdStr = params.get('customerId') || params.get('customerID');
@@ -303,6 +298,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
         try {
           const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
           if (rawBridge) {
+            sessionStorage.removeItem('cbs_active_customer_transfer');
             const bridgeData = JSON.parse(rawBridge);
             if (bridgeData) {
               cifStr = bridgeData.cifNo || bridgeData.cif;
@@ -320,65 +316,122 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       const getAccMemId = (a: any) => Number(a.memberID ?? a.memberId ?? a.MemberID ?? a.customer?.memberID ?? 0);
       const getAccCif = (a: any) => String(a.cifNo ?? a.CIFNo ?? a.customer?.cifNo ?? '').trim().toUpperCase();
 
-      if (pigmyAccountIdStr || entityIdStr) {
-        const targetId = pigmyAccountIdStr ? parseInt(pigmyAccountIdStr) : parseInt(entityIdStr!);
-        const matched = activeData.find((a: any) => a.pigmyAccountID === targetId);
-        if (matched) {
-          setActiveTab('manual');
-          setManualForm(prev => ({ ...prev, pigmyAccountId: matched.pigmyAccountID.toString() }));
-          setCustomerMatchingPigmys([matched]);
+      const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
+      const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
+      const targetAccId = pigmyAccountIdStr ? parseInt(pigmyAccountIdStr) : (entityIdStr ? parseInt(entityIdStr!) : 0);
+      let fastTrackDone = false;
+
+      // ⚡ FAST-TRACK 1: Direct targeted account ID lookup (~15-20ms)
+      if (targetAccId > 0) {
+        try {
+          const singleRes = await axios.get(`/api/PigmyAccounts/${targetAccId}`);
+          if (singleRes.data && singleRes.data.pigmyAccountID) {
+            const acc = singleRes.data;
+            setAccounts([acc]);
+            setActiveTab('manual');
+            setManualForm(prev => ({ ...prev, pigmyAccountId: acc.pigmyAccountID.toString() }));
+            setCustomerMatchingPigmys([acc]);
+            fastTrackDone = true;
+          }
+        } catch (err) {
+          console.warn('Fast-track targeted Pigmy account lookup failed, falling back', err);
         }
-      } else if (cifStr || customerIdStr || memberIdStr) {
-        const cId = customerIdStr ? parseInt(customerIdStr, 10) : 0;
-        const mId = memberIdStr ? parseInt(memberIdStr, 10) : 0;
-        const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
-        const cleanDigits = cleanCif ? cleanCif.replace(/\D/g, '') : '';
-
-        let matched: PigmyAccount[] = [];
-
-        // Tier 1: CIF Match
-        if (cleanCif) {
-          matched = activeData.filter((a: any) => {
-            const aCif = getAccCif(a);
-            if (!aCif) return false;
-            if (aCif === cleanCif) return true;
-            if (cleanDigits && aCif.replace(/\D/g, '') === cleanDigits) return true;
-            return false;
-          });
+      }
+      // ⚡ FAST-TRACK 2: Direct targeted customer / member ID lookup (~20-30ms)
+      else if (cId > 0) {
+        try {
+          const custRes = await axios.get(`/api/PigmyAccounts?customerId=${cId}`);
+          const active = (custRes.data || []).filter((a: any) => a.status === 'Active');
+          if (active.length > 0) {
+            setAccounts(active);
+            setActiveTab('manual');
+            if (active.length === 1) {
+              setManualForm(prev => ({ ...prev, pigmyAccountId: active[0].pigmyAccountID.toString() }));
+              setCustomerMatchingPigmys(active);
+              setNoPigmyFoundAlert(null);
+            } else {
+              setCustomerMatchingPigmys(active);
+              const custName = customerNameStr || getCustomerFullName(active[0].customer) || 'खातेदार';
+              const primaryCif = cifStr || getAccCif(active[0]) || '-';
+              setMultiPigmyCustomerInfo({
+                name: custName,
+                cifNo: primaryCif,
+                customerId: cId || getAccCustId(active[0])
+              });
+              setShowMultiPigmyModal(true);
+              setNoPigmyFoundAlert(null);
+            }
+            fastTrackDone = true;
+          }
+        } catch (err) {
+          console.warn('Fast-track customer Pigmy lookup failed, falling back', err);
         }
+      }
 
-        // Tier 2: CustomerID Match
-        if (matched.length === 0 && cId > 0) {
-          matched = activeData.filter((a: any) => getAccCustId(a) === cId);
-        }
+      if (!fastTrackDone) {
+        const res = await axios.get('/api/PigmyAccounts');
+        const data: PigmyAccount[] = res.data || [];
+        const activeData = data.filter((a: any) => a.status === 'Active');
+        setAccounts(data);
 
-        // Tier 3: MemberID Match
-        if (matched.length === 0 && mId > 0) {
-          matched = activeData.filter((a: any) => getAccMemId(a) === mId || getAccCustId(a) === mId);
-        }
+        if (pigmyAccountIdStr || entityIdStr) {
+          const targetId = pigmyAccountIdStr ? parseInt(pigmyAccountIdStr) : parseInt(entityIdStr!);
+          const matched = activeData.find((a: any) => a.pigmyAccountID === targetId);
+          if (matched) {
+            setActiveTab('manual');
+            setManualForm(prev => ({ ...prev, pigmyAccountId: matched.pigmyAccountID.toString() }));
+            setCustomerMatchingPigmys([matched]);
+          }
+        } else if (cifStr || customerIdStr || memberIdStr) {
+          const cleanCif = cifStr ? cifStr.trim().toUpperCase() : '';
+          const cleanDigits = cleanCif ? cleanCif.replace(/\D/g, '') : '';
 
-        if (matched.length === 1) {
-          setActiveTab('manual');
-          setManualForm(prev => ({ ...prev, pigmyAccountId: matched[0].pigmyAccountID.toString() }));
-          setCustomerMatchingPigmys(matched);
-          setNoPigmyFoundAlert(null);
-        } else if (matched.length > 1) {
-          setActiveTab('manual');
-          setCustomerMatchingPigmys(matched);
-          const custName = customerNameStr || getCustomerFullName(matched[0].customer) || 'खातेदार';
-          const primaryCif = cleanCif || getAccCif(matched[0]) || '-';
-          setMultiPigmyCustomerInfo({
-            name: custName,
-            cifNo: primaryCif,
-            customerId: cId || getAccCustId(matched[0])
-          });
-          setShowMultiPigmyModal(true);
-          setNoPigmyFoundAlert(null);
-        } else {
-          setActiveTab('manual');
-          setCustomerMatchingPigmys([]);
-          const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
-          setNoPigmyFoundAlert(`निवडलेल्या खातेदाराचे (${customerNameStr || identifier}) कोणतेही सक्रिय पिग्मी खाते आढळले नाही.`);
+          let matched: PigmyAccount[] = [];
+
+          // Tier 1: CIF Match
+          if (cleanCif) {
+            matched = activeData.filter((a: any) => {
+              const aCif = getAccCif(a);
+              if (!aCif) return false;
+              if (aCif === cleanCif) return true;
+              if (cleanDigits && aCif.replace(/\D/g, '') === cleanDigits) return true;
+              return false;
+            });
+          }
+
+          // Tier 2: CustomerID Match
+          if (matched.length === 0 && cId > 0) {
+            matched = activeData.filter((a: any) => getAccCustId(a) === cId);
+          }
+
+          // Tier 3: MemberID Match
+          if (matched.length === 0 && mId > 0) {
+            matched = activeData.filter((a: any) => getAccMemId(a) === mId || getAccCustId(a) === mId);
+          }
+
+          if (matched.length === 1) {
+            setActiveTab('manual');
+            setManualForm(prev => ({ ...prev, pigmyAccountId: matched[0].pigmyAccountID.toString() }));
+            setCustomerMatchingPigmys(matched);
+            setNoPigmyFoundAlert(null);
+          } else if (matched.length > 1) {
+            setActiveTab('manual');
+            setCustomerMatchingPigmys(matched);
+            const custName = customerNameStr || getCustomerFullName(matched[0].customer) || 'खातेदार';
+            const primaryCif = cleanCif || getAccCif(matched[0]) || '-';
+            setMultiPigmyCustomerInfo({
+              name: custName,
+              cifNo: primaryCif,
+              customerId: cId || getAccCustId(matched[0])
+            });
+            setShowMultiPigmyModal(true);
+            setNoPigmyFoundAlert(null);
+          } else {
+            setActiveTab('manual');
+            setCustomerMatchingPigmys([]);
+            const identifier = cleanCif ? `CIF: ${cleanCif}` : (cId ? `ID: ${cId}` : `Member: ${mId}`);
+            setNoPigmyFoundAlert(`निवडलेल्या खातेदाराचे (${customerNameStr || identifier}) कोणतेही सक्रिय पिग्मी खाते आढळले नाही.`);
+          }
         }
       }
     } catch (err) {
@@ -391,7 +444,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
   const fetchHistory = async () => {
     try {
-      const res = await axios.get('/api/PigmyCollections');
+      const res = await axios.get('/api/PigmyCollections?page=1&pageSize=50');
       setHistory(res.data || []);
     } catch (err) {
       console.error(err);

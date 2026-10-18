@@ -56,6 +56,7 @@ namespace Bhisi.Api.Controllers
             var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
 
             var query = _context.LoanCollections
+                .AsNoTracking()
                 .Include(c => c.Branch)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Member)
@@ -81,16 +82,13 @@ namespace Bhisi.Api.Controllers
 
             query = query.OrderByDescending(c => c.CollectionDate).ThenByDescending(c => c.LoanCollectionID);
 
-            if (page.HasValue || pageSize.HasValue)
-            {
-                int p = page ?? 1;
-                int ps = pageSize ?? 50;
-                if (p < 1) p = 1;
-                if (ps < 1 || ps > 500) ps = 50;
-                return await query.Skip((p - 1) * ps).Take(ps).ToListAsync();
-            }
+            int p = page ?? 1;
+            int ps = pageSize ?? 50;
+            if (p < 1) p = 1;
+            if (ps < 1 || ps > 500) ps = 50;
 
-            return await query.ToListAsync();
+            // Bounded pagination prevents unbounded DB scans (Pillar 2)
+            return await query.Skip((p - 1) * ps).Take(ps).ToListAsync();
         }
 
         // GET: api/LoanCollections/next-receipt-no
@@ -812,6 +810,7 @@ namespace Bhisi.Api.Controllers
             var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
 
             var collection = await _context.LoanCollections
+                .AsNoTracking()
                 .Include(c => c.Branch)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Member)
@@ -842,6 +841,7 @@ namespace Bhisi.Api.Controllers
             var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
 
             var collection = await _context.LoanCollections
+                .AsNoTracking()
                 .Include(c => c.Branch)
                 .Include(c => c.LoanAccount)
                     .ThenInclude(l => l!.Member)

@@ -1,5 +1,5 @@
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import {
   FileText,
@@ -76,6 +76,9 @@ interface SavingAccountItem {
 interface RdAccountItem {
   rdAccountID: number;
   accountNo: string;
+  formattedAccountNo?: string;
+  legacyAccountNumber?: string;
+  rdSchemeID?: number;
   memberName?: string;
   memberCode?: string;
   schemeName?: string;
@@ -351,6 +354,39 @@ export default function RdAccountOpening({
 
     const fetchData = async () => {
       try {
+        const params = new URLSearchParams(window.location.search);
+        let memberIdStr = params.get('memberId') || params.get('customerId');
+        if (!memberIdStr) {
+          try {
+            const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
+            if (rawBridge) {
+              sessionStorage.removeItem('cbs_active_customer_transfer');
+              const bridgeData = JSON.parse(rawBridge);
+              if (bridgeData) {
+                memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : (bridgeData.customerId ? String(bridgeData.customerId) : null);
+              }
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+
+        // Fast-track targeted customer load (~20ms)
+        if (memberIdStr) {
+          const mId = parseInt(memberIdStr, 10);
+          axios.get(`/api/Customers/${mId}`).then(singleRes => {
+            if (singleRes.data && isMounted) {
+              const c = singleRes.data;
+              setMembers(prev => {
+                if (prev.length <= 1) return [c];
+                return prev;
+              });
+              setFormData(prev => ({ ...prev, memberID: mId.toString() }));
+              fetchCustomerSavingAccounts(mId.toString());
+            }
+          }).catch(e => console.warn('Fast-track customer lookup error', e));
+        }
+
         const [mRes, bRes, agRes] = await axios.all([
           axios.get('/api/Customers'),
           axios.get('/api/Branches'),
@@ -371,8 +407,6 @@ export default function RdAccountOpening({
         const sList = Array.isArray(sRes.data) ? sRes.data : [];
         setSchemes(sList.filter((s: any) => s && s.isActive));
 
-        const params = new URLSearchParams(window.location.search);
-        const memberIdStr = params.get('memberId');
         if (memberIdStr && mList.length > 0) {
           const mId = parseInt(memberIdStr, 10);
           const matchedMember = mList.find((m: any) => m && ((m.customerID || m.memberID) === mId));
@@ -795,526 +829,520 @@ export default function RdAccountOpening({
             </div>
           )}
 
-          {/* Main Form Card */}
-          <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-xs border border-slate-200 divide-y divide-slate-100">
+          {/* Main Form Card - Compact 2-Column CBS Layout */}
+          <form onSubmit={handleSubmit} className="bg-white rounded-md shadow-xs border border-slate-200">
             <fieldset disabled={isPassingMode} className="contents">
-            
-            {/* Section 1: Basic Info & Operating Mode */}
-            <div className="p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded text-xs">१</span>
-                  <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                    प्राथमिक माहिती व खाते प्रकार (Basic Information & Mode)
-                  </h2>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 p-3">
+                {/* ================= LEFT COLUMN: Data Entry Fields (8 cols) ================= */}
+                <div className="lg:col-span-8 space-y-2.5">
+                  {/* Section 1: प्राथमिक व खातेदार माहिती */}
+                  <div className="bg-slate-50/70 border border-slate-200 rounded p-2.5 space-y-2">
+                    <div className="flex items-center justify-between border-b border-slate-200/80 pb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">१</span>
+                        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                          खातेदार व योजना तपशील (Customer & Scheme)
+                        </h3>
+                      </div>
+                      <div className="flex items-center gap-1 text-[11px]">
+                        <span className="text-slate-500 font-semibold">आरडी क्र.:</span>
+                        {loadingAccountNo ? (
+                          <span className="text-indigo-600 font-bold animate-pulse text-[10px]">तयार होत आहे...</span>
+                        ) : (
+                          <span className="font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded text-[11px]">
+                            {nextAccountNo || '---'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                      <div className="sm:col-span-3">
+                        <label className={labelClass}>शाखा (Branch) <span className="text-red-500">*</span></label>
+                        <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass}>
+                          {(Array.isArray(branches) ? branches : []).map((b, idx) => (
+                            <option key={`branch-${b.branchID ?? '0'}-${idx}`} value={b.branchID}>{b.branchName}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-6">
+                        <label className={labelClass}>खातेदार निवडा (Customer / CIF) <span className="text-red-500">*</span></label>
+                        <CustomerSearchSelect
+                          customers={members}
+                          value={formData.memberID ? Number(formData.memberID) : ''}
+                          onChange={(val) => handleMemberSelect(val ? String(val) : '')}
+                          placeholder="-- CIF / नाव / मोबाईलने शोधा --"
+                          isDisabled={isPassingMode}
+                        />
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <label className={labelClass}>खाते प्रकार (Mode) <span className="text-red-500">*</span></label>
+                        <select name="accountType" value={formData.accountType} onChange={handleChange} className={inputClass}>
+                          <option value="Single">वैयक्तिक (Single)</option>
+                          <option value="Joint">संयुक्त (Joint)</option>
+                          <option value="Minor">अल्पवयीन (Minor)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Conditional Joint Member Selector */}
+                    {formData.accountType === 'Joint' && (
+                      <div className="p-2 bg-indigo-50/70 border border-indigo-200 rounded text-xs space-y-1">
+                        <label className={labelClass}>संयुक्त खातेदार निवडा (Select Joint Customer) <span className="text-red-500">*</span></label>
+                        <CustomerSearchSelect
+                          customers={members.filter((m: any) => (m.customerID || m.memberID)?.toString() !== formData.memberID)}
+                          value={formData.jointMemberID ? Number(formData.jointMemberID) : ''}
+                          onChange={(val) => setFormData((prev) => ({ ...prev, jointMemberID: val ? String(val) : '' }))}
+                          placeholder="-- दुसरा खातेदार (CIF / नाव / मोबाईलने शोधा) --"
+                          isDisabled={isPassingMode}
+                        />
+                      </div>
+                    )}
+
+                    {/* Conditional Minor Guardian Fields */}
+                    {formData.accountType === 'Minor' && (
+                      <div className="p-2 bg-amber-50/80 border border-amber-200 rounded grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <label className={labelClass}>पालकाचे नाव (Guardian Name) <span className="text-red-500">*</span></label>
+                          <input
+                            type="text"
+                            name="guardianName"
+                            value={formData.guardianName}
+                            onChange={handleChange}
+                            className={inputClass}
+                            placeholder="पालकाचे नाव"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>पालकाचे नाते (Guardian Relation) <span className="text-red-500">*</span></label>
+                          <input
+                            type="text"
+                            name="guardianRelation"
+                            value={formData.guardianRelation}
+                            onChange={handleChange}
+                            className={inputClass}
+                            placeholder="उदा. वडील, आई"
+                            required
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Scheme, Duration, Rate */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-0.5">
+                      <div className="sm:col-span-6">
+                        <label className={labelClass}>आवर्ती ठेव योजना (RD Scheme) <span className="text-red-500">*</span></label>
+                        <select name="rdSchemeID" value={formData.rdSchemeID} onChange={handleSchemeChange} className={inputClass}>
+                          <option value="">--- योजना निवडा ---</option>
+                          {(Array.isArray(schemes) ? schemes : []).map((s, idx) => (
+                            <option key={`scheme-${s.rdSchemeID ?? '0'}-${idx}`} value={s.rdSchemeID}>
+                              {s.schemeName} (कोड: {s.schemeCode || s.schemeCodeNumeric || 501})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <label className={labelClass}>कालावधी (महिने)</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            name="durationMonths"
+                            value={formData.durationMonths || ''}
+                            readOnly
+                            className={`${inputClass} bg-slate-100 font-bold text-slate-800 cursor-not-allowed`}
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-semibold">महिने</span>
+                        </div>
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <label className={labelClass}>वार्षिक व्याजदर (%)</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            name="interestRate"
+                            value={formData.interestRate || ''}
+                            readOnly
+                            className={`${inputClass} bg-emerald-50 text-emerald-700 font-bold cursor-not-allowed`}
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-emerald-600 font-bold">% p.a.</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Account Number & Legacy Number Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-0.5">
+                      <div className="sm:col-span-7">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <label className={labelClass}>
+                            आरडी खाते क्रमांक (Account No) <span className="text-red-500">*</span>
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <span className={`text-[9px] font-bold px-1 py-0.2 rounded border ${
+                              isCustomAccountNo
+                                ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                : 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                            }`}>
+                              {isCustomAccountNo ? 'कस्टम' : 'ऑटो'}
+                            </span>
+                            {isCustomAccountNo && (
+                              <button
+                                type="button"
+                                onClick={handleResetAccountNo}
+                                title="ऑटो नंबरवर रिसेट करा"
+                                className="text-[9px] text-indigo-700 hover:text-indigo-900 font-bold underline cursor-pointer"
+                              >
+                                ↺ रीसेट
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <input
+                          type="text"
+                          name="accountNo"
+                          value={formData.accountNo || autoAccountNo}
+                          onChange={(e) => handleAccountNoChange(e.target.value)}
+                          placeholder="उदा. 001-501-0000001-4"
+                          disabled={isPassingMode}
+                          className={`${inputClass} font-mono font-bold ${
+                            isCustomAccountNo
+                              ? 'border-amber-400 bg-amber-50/50 text-amber-900 focus:ring-amber-400'
+                              : 'border-indigo-300 bg-indigo-50/30 text-indigo-900 focus:ring-indigo-400'
+                          }`}
+                        />
+                      </div>
+
+                      <div className="sm:col-span-5">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <label className={labelClass}>
+                            जुना आरडी क्र. (Legacy No)
+                          </label>
+                          <span className="text-[10px] text-slate-400 font-medium">पर्यायी</span>
+                        </div>
+                        <input
+                          type="text"
+                          name="legacyAccountNumber"
+                          value={formData.legacyAccountNumber}
+                          onChange={handleChange}
+                          placeholder="उदा. RD-101 / 55"
+                          disabled={isPassingMode}
+                          className={`${inputClass} font-semibold ${
+                            duplicateLegacyAccount
+                              ? 'border-red-500 bg-red-50 text-red-900 focus:ring-red-400'
+                              : 'border-slate-300 bg-white text-gray-900'
+                          }`}
+                        />
+                        {duplicateLegacyAccount && (
+                          <span className="text-[10px] text-red-600 font-bold block mt-0.5 leading-tight">
+                            ⚠️ वापरलेला नंबर: {duplicateLegacyAccount.accountNo}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 2: हप्ता व भरणा तपशील */}
+                  <div className="bg-slate-50/70 border border-slate-200 rounded p-2.5 space-y-2">
+                    <div className="flex items-center gap-1.5 border-b border-slate-200/80 pb-1.5">
+                      <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">२</span>
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                        हप्ता व भरणा तपशील (Installment & Payment Setup)
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                      <div className="sm:col-span-4">
+                        <label className={labelClass}>खाते उघडल्याची तारीख <span className="text-red-500">*</span></label>
+                        <input
+                          type="date"
+                          name="openingDate"
+                          value={formData.openingDate}
+                          onChange={handleChange}
+                          className={inputClass}
+                          required
+                        />
+                      </div>
+
+                      <div className="sm:col-span-4">
+                        <label className={labelClass}>मासिक हप्ता रक्कम (₹) <span className="text-red-500">*</span></label>
+                        <input
+                          type="number"
+                          name="installmentAmount"
+                          value={formData.installmentAmount || ''}
+                          onChange={handleChange}
+                          placeholder="उदा. 1000"
+                          className={`${inputClass} font-mono font-bold text-slate-900`}
+                          required
+                        />
+                      </div>
+
+                      <div className="sm:col-span-4">
+                        <label className={labelClass}>हप्ता भरणा मोड <span className="text-red-500">*</span></label>
+                        <select name="paymentMode" value={formData.paymentMode} onChange={handleChange} className={inputClass}>
+                          <option value="Cash">रोख (Cash)</option>
+                          <option value="AutoDebit_Saving">बचत खात्यातून ऑटो-डेबिट (Auto-Debit)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Auto-Debit Linked Saving Account / Cash Badge Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-0.5">
+                      {formData.paymentMode === 'AutoDebit_Saving' ? (
+                        <div className="sm:col-span-6">
+                          <label className={labelClass}>संलग्न बचत खाते (Linked SB Account) <span className="text-red-500">*</span></label>
+                          <select name="savingAccountID" value={formData.savingAccountID} onChange={handleChange} className={inputClass} required>
+                            <option value="">--- बचत खाते निवडा ---</option>
+                            {(Array.isArray(savingAccounts) ? savingAccounts : []).map((s, idx) => (
+                              <option key={`sav-${s.savingAccountID ?? '0'}-${idx}`} value={s.savingAccountID}>
+                                {s.accountNumber} (शिल्लक: ₹{(s.balance ?? 0).toLocaleString('en-IN')})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="sm:col-span-6 flex items-center">
+                          <CashLedgerReflectBadge 
+                            branchId={formData.branchID} 
+                            transactionType="Deposit" 
+                            customTitle="रोख खाते (Cash Ledger)"
+                          />
+                        </div>
+                      )}
+
+                      <div className="sm:col-span-6">
+                        <label className={labelClass}>मुदतपूर्ती सूचना (Maturity Instruction) <span className="text-red-500">*</span></label>
+                        <select name="maturityInstruction" value={formData.maturityInstruction} onChange={handleChange} className={inputClass}>
+                          <option value="Cash_Payout">रोख भरणा करा (Cash Payout)</option>
+                          <option value="Credit_Saving">बचत खात्यात जमा करा (Credit to Saving)</option>
+                          <option value="Transfer_FD">मुदत ठेवीत रुपांतर करा (Convert to FD)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 3: वारसदार, एजंट व पासबुक */}
+                  <div className="bg-slate-50/70 border border-slate-200 rounded p-2.5 space-y-2">
+                    <div className="flex items-center gap-1.5 border-b border-slate-200/80 pb-1.5">
+                      <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">३</span>
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                        वारसदार, एजंट व इतर (Nominee, Agent & Remarks)
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                      <div className="sm:col-span-4">
+                        <label className={labelClass}>वारसदार नाव (Nominee Name)</label>
+                        <input
+                          type="text"
+                          name="nomineeName"
+                          value={formData.nomineeName}
+                          onChange={handleChange}
+                          className={inputClass}
+                          placeholder="वारसदाराचे नाव"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <label className={labelClass}>वारस नाते (Relation)</label>
+                        <select name="nomineeRelation" value={formData.nomineeRelation} onChange={handleChange} className={inputClass}>
+                          <option value="">-- नाते निवडा --</option>
+                          <option value="स्वतः">स्वतः (Self)</option>
+                          <option value="पत्नी">पत्नी (Wife)</option>
+                          <option value="पती">पती (Husband)</option>
+                          <option value="पती/पत्नी">पती/पत्नी (Spouse)</option>
+                          <option value="मुलगा">मुलगा (Son)</option>
+                          <option value="मुलगी">मुलगी (Daughter)</option>
+                          <option value="आई">आई (Mother)</option>
+                          <option value="वडील">वडील (Father)</option>
+                          <option value="भाऊ">भाऊ (Brother)</option>
+                          <option value="बहीण">बहीण (Sister)</option>
+                          <option value="सुन">सुन (Daughter-in-law)</option>
+                          <option value="जावई">जावई (Son-in-law)</option>
+                          <option value="नातू/नात">नातू / नात (Grandchild)</option>
+                          <option value="इतर">इतर (Other)</option>
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <label className={labelClass}>हप्ता संकलन एजंट (Agent)</label>
+                        <select name="agentID" value={formData.agentID} onChange={handleChange} className={inputClass}>
+                          <option value="">-- एजंट (ऐच्छिक) --</option>
+                          {(Array.isArray(agents) ? agents : []).map((a, idx) => (
+                            <option key={`agent-${a.agentID ?? '0'}-${idx}`} value={a.agentID}>
+                              {a.agentName} ({a.agentCode})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className={labelClass}>पासबुक क्र. (PB No)</label>
+                        <input
+                          type="text"
+                          name="passbookNo"
+                          value={formData.passbookNo}
+                          onChange={handleChange}
+                          className={inputClass}
+                          placeholder="PB-101"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-0.5">
+                      <label className={labelClass}>शेरा (Remarks)</label>
+                      <input
+                        type="text"
+                        name="remarks"
+                        value={formData.remarks}
+                        onChange={handleChange}
+                        className={inputClass}
+                        placeholder="नोंद / शेरा लिहा"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 bg-indigo-50/90 border border-indigo-200 px-2.5 py-0.5 rounded text-xs shadow-2xs">
-                  <span className="font-bold text-slate-700 text-[11px]">आरडी खाते क्रमांक:</span>
-                  {loadingAccountNo ? (
-                    <span className="text-xs text-indigo-500 font-medium animate-pulse">तयार होत आहे...</span>
-                  ) : (
-                    <span className="font-mono font-bold text-indigo-700 text-xs tracking-wide">
-                      {nextAccountNo || '---'}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label className={labelClass}>शाखा (Branch) <span className="text-red-500">*</span></label>
-                  <select name="branchID" value={formData.branchID} onChange={handleChange} className={inputClass}>
-                    {(Array.isArray(branches) ? branches : []).map((b, idx) => (
-                      <option key={`branch-${b.branchID ?? '0'}-${idx}`} value={b.branchID}>{b.branchName}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={labelClass}>खातेदार निवडा (Select Customer / CIF) <span className="text-red-500">*</span></label>
-                  <CustomerSearchSelect
-                    customers={members}
-                    value={formData.memberID ? Number(formData.memberID) : ''}
-                    onChange={(val) => handleMemberSelect(val ? String(val) : '')}
-                    placeholder="-- खातेदार (CIF / नाव / मोबाईलने शोधा) --"
-                    isDisabled={isPassingMode}
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>खाते संचालन प्रकार (Account Mode) <span className="text-red-500">*</span></label>
-                  <select name="accountType" value={formData.accountType} onChange={handleChange} className={inputClass}>
-                    <option value="Single">वैयक्तिक (Single Account)</option>
-                    <option value="Joint">संयुक्त (Joint Account)</option>
-                    <option value="Minor">अल्पवयीन (Minor Account)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className={labelClass}>आवर्ती ठेव योजना (RD Scheme) <span className="text-red-500">*</span></label>
-                  <select name="rdSchemeID" value={formData.rdSchemeID} onChange={handleSchemeChange} className={inputClass}>
-                    <option value="">--- योजना निवडा ---</option>
-                    {(Array.isArray(schemes) ? schemes : []).map((s, idx) => (
-                      <option key={`scheme-${s.rdSchemeID ?? '0'}-${idx}`} value={s.rdSchemeID}>
-                        {s.schemeName} (योजना कोड: {s.schemeCode || s.schemeCodeNumeric || 501})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Account Number & Legacy Number Row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className={labelClass}>
-                      आरडी खाते क्रमांक (RD Account No) <span className="text-red-500">*</span>
-                    </label>
-                    <div className="flex items-center gap-1">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
-                        isCustomAccountNo
-                          ? 'bg-amber-100 text-amber-800 border-amber-300'
-                          : 'bg-indigo-100 text-indigo-800 border-indigo-300'
-                      }`}>
-                        {isCustomAccountNo ? 'कस्टम' : 'ऑटो'}
+                {/* ================= RIGHT COLUMN: Live Calculation Widget & Action Bar (4 cols) ================= */}
+                <div className="lg:col-span-4 flex flex-col gap-2.5">
+                  {/* Sticky Financial Summary Card */}
+                  <div className="bg-gradient-to-br from-emerald-50 to-teal-50/40 border-2 border-emerald-500/30 rounded-lg p-3 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between border-b border-emerald-200 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base">📊</span>
+                        <h3 className="font-extrabold text-xs text-emerald-950 uppercase tracking-wide">
+                          थेट मुदतपूर्ती गणना (Maturity Calculation)
+                        </h3>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-1.5 py-0.2 rounded">
+                        Live CBS
                       </span>
-                      {isCustomAccountNo && (
+                    </div>
+
+                    {/* Big Hero Maturity Amount Display */}
+                    <div className="bg-white rounded-md p-3 border border-emerald-200 text-center shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        एकूण मुदतपूर्ती रक्कम (Maturity Amount)
+                      </span>
+                      <div className="text-2xl font-black font-mono text-emerald-700 mt-0.5">
+                        ₹ {formData.maturityAmount ? formData.maturityAmount.toLocaleString('en-IN') : '0'}
+                      </div>
+                      <div className="text-[11px] text-slate-600 font-semibold mt-1 flex items-center justify-center gap-1">
+                        <Calendar className="w-3.5 h-3.5 text-emerald-600 inline" />
+                        <span>मुदत तारीख: </span>
+                        <strong className="text-slate-900 font-mono">
+                          {formData.maturityDate || '---'}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {/* Detailed Financial Breakdown Table */}
+                    <div className="bg-white rounded-md border border-emerald-100 divide-y divide-emerald-50 text-xs">
+                      <div className="flex items-center justify-between p-2">
+                        <span className="text-slate-600 text-[11px]">एकूण जमा मुद्दल:</span>
+                        <span className="font-mono font-bold text-slate-900">
+                          ₹ {totalPrincipalDeposited.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-2 text-[10px] text-slate-500 bg-slate-50/50">
+                        <span>हप्ता गणित:</span>
+                        <span>{formData.durationMonths || 12} महिने × ₹{(formData.installmentAmount || 0).toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-2">
+                        <span className="text-slate-600 text-[11px]">अंदाजित व्याज लाभ:</span>
+                        <span className="font-mono font-bold text-emerald-600">
+                          + ₹ {estimatedInterestEarned.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-2 text-[10px] text-slate-500 bg-slate-50/50">
+                        <span>व्याजदर / पद्धत:</span>
+                        <span className="font-semibold text-emerald-700">
+                          {formData.interestRate}% ({schemes.find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound'})
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-2">
+                        <span className="text-slate-600 text-[11px]">भरणा पद्धत:</span>
+                        <span className="font-semibold text-slate-800 text-[11px]">
+                          {formData.paymentMode === 'Cash' ? '💵 रोख भरणा' : '🏦 ऑटो-डेबिट (बचत)'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* View Schedule Modal Trigger Button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowSchedule(true)}
+                      className="w-full py-1.5 px-3 bg-white hover:bg-emerald-100/70 text-emerald-800 font-bold border border-emerald-300 rounded text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                    >
+                      <List className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>हप्ता व व्याज शेड्युल पहा (View Schedule)</span>
+                    </button>
+                  </div>
+
+                  {/* Action Buttons Box */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 space-y-2">
+                    {isPassingMode ? (
+                      <div className="space-y-2">
                         <button
                           type="button"
-                          onClick={handleResetAccountNo}
-                          title="ऑटो नंबरवर रिसेट करा"
-                          className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline cursor-pointer"
+                          onClick={handlePassVoucher}
+                          disabled={passingActionLoading}
+                          className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded shadow-xs text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                         >
-                          ↺ रीसेट
+                          <span>✅</span> {passingActionLoading ? 'मंजूर होत आहे...' : 'मंजूर व पास करा (Pass)'}
                         </button>
-                      )}
-                    </div>
-                  </div>
-                  <input
-                    type="text"
-                    name="accountNo"
-                    value={formData.accountNo || autoAccountNo}
-                    onChange={(e) => handleAccountNoChange(e.target.value)}
-                    placeholder="उदा. 001-501-0000001-4"
-                    disabled={isPassingMode}
-                    className={`${inputClass} font-mono font-bold ${
-                      isCustomAccountNo
-                        ? 'border-amber-400 bg-amber-50/50 text-amber-900 focus:ring-amber-400'
-                        : 'border-indigo-300 bg-indigo-50/40 text-indigo-900 focus:ring-indigo-400'
-                    }`}
-                  />
-                </div>
+                        <button
+                          type="button"
+                          onClick={() => setRejectModalOpen(true)}
+                          disabled={passingActionLoading}
+                          className="w-full py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          <span>❌</span> नामंजूर / रद्द करा
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting')}
+                          className="w-full py-1.5 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded text-xs flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <span>↩️</span> पासिंग यादीवर परत
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded shadow-xs text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <Save className="w-4 h-4" />
+                          <span>{loading ? 'जतन होत आहे...' : 'खाते उघडा (Open Account)'}</span>
+                        </button>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className={labelClass}>
-                      जुना आरडी खाते / पावती क्र. (Old/Legacy RD No)
-                    </label>
-                    <span className="text-[10px] text-amber-700 font-medium">पर्यायी</span>
-                  </div>
-                  <input
-                    type="text"
-                    name="legacyAccountNumber"
-                    value={formData.legacyAccountNumber}
-                    onChange={handleChange}
-                    placeholder="उदा. RD-101 / 55"
-                    disabled={isPassingMode}
-                    className={`${inputClass} font-semibold ${
-                      duplicateLegacyAccount
-                        ? 'border-red-500 bg-red-50 text-red-900 focus:ring-red-400'
-                        : 'border-amber-300 bg-amber-50/30 text-gray-900 focus:border-indigo-500'
-                    }`}
-                  />
-                  {duplicateLegacyAccount && (
-                    <span className="text-[10px] text-red-600 font-bold block mt-0.5 leading-tight">
-                      ⚠️ हा जुना नंबर खाते क्र. {duplicateLegacyAccount.accountNo} ला वापरला आहे!
-                    </span>
-                  )}
-                </div>
-              </div>
+                        <button
+                          type="button"
+                          onClick={() => resetForm()}
+                          className="w-full py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded text-xs transition cursor-pointer text-center"
+                        >
+                          फॉर्म रीसेट करा (Reset)
+                        </button>
 
-              {/* Conditional Joint Member Selector */}
-              {formData.accountType === 'Joint' && (
-                <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-lg space-y-2">
-                  <label className={labelClass}>संयुक्त खातेदार निवडा (Select Joint Customer) <span className="text-red-500">*</span></label>
-                  <CustomerSearchSelect
-                    customers={members.filter((m: any) => (m.customerID || m.memberID)?.toString() !== formData.memberID)}
-                    value={formData.jointMemberID ? Number(formData.jointMemberID) : ''}
-                    onChange={(val) => setFormData((prev) => ({ ...prev, jointMemberID: val ? String(val) : '' }))}
-                    placeholder="-- दुसरा खातेदार (CIF / नाव / मोबाईलने शोधा) --"
-                    isDisabled={isPassingMode}
-                  />
-                </div>
-              )}
-
-              {/* Conditional Minor Guardian Fields */}
-              {formData.accountType === 'Minor' && (
-                <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-lg grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelClass}>पालकाचे नाव (Guardian Name) <span className="text-red-500">*</span></label>
-                    <input
-                      type="text"
-                      name="guardianName"
-                      value={formData.guardianName}
-                      onChange={handleChange}
-                      className={inputClass}
-                      placeholder="पालकाचे नाव लिहा"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>पालकाचे नाते (Guardian Relation) <span className="text-red-500">*</span></label>
-                    <input
-                      type="text"
-                      name="guardianRelation"
-                      value={formData.guardianRelation}
-                      onChange={handleChange}
-                      className={inputClass}
-                      placeholder="उदा. वडील, आई"
-                      required
-                    />
+                        <div className="text-[10px] text-slate-500 flex items-start gap-1 pt-1 leading-tight">
+                          <Info className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
+                          <span>
+                            {formData.paymentMode === 'AutoDebit_Saving'
+                              ? 'पहिला हप्ता बचत खात्यातून ऑटो-डेबिट होऊन व्हाउचर तयार होईल.'
+                              : 'पहिला हप्ता रोख जमा होऊन स्वयंचलित पावती व्हाउचर पोस्ट होईल.'}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
-              )}
-
-
-            </div>
-
-            {/* Section 2: Deposit Financials & Auto Debit Setup */}
-            <div className="p-4 space-y-3">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded text-xs">२</span>
-                <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                  हप्ता व ऑटो-डेबिट तपशील (Financials & Payment Setup)
-                </h2>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label className={labelClass}>खाते उघडल्याची तारीख <span className="text-red-500">*</span></label>
-                  <input
-                    type="date"
-                    name="openingDate"
-                    value={formData.openingDate}
-                    onChange={handleChange}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>मासिक हप्ता रक्कम (Installment ₹) <span className="text-red-500">*</span></label>
-                  <input
-                    type="number"
-                    name="installmentAmount"
-                    value={formData.installmentAmount || ''}
-                    onChange={handleChange}
-                    className={inputClass}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>कालावधी (महिने)</label>
-                  <input
-                    type="number"
-                    name="durationMonths"
-                    value={formData.durationMonths || ''}
-                    readOnly
-                    className="w-full text-xs font-bold border border-slate-200 bg-slate-100 rounded-lg px-3 py-2 text-slate-700 cursor-not-allowed select-none"
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>वार्षिक व्याजदर (%)</label>
-                  <input
-                    type="number"
-                    name="interestRate"
-                    value={formData.interestRate || ''}
-                    readOnly
-                    className="w-full text-xs font-bold border border-slate-200 bg-slate-100 rounded-lg px-3 py-2 text-emerald-600 cursor-not-allowed select-none"
-                  />
-                </div>
-              </div>
-
-              {/* CBS Payment Mode & Linked Saving Account */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                <div>
-                  <label className={labelClass}>हप्ता भरणा मोड (Payment Mode) <span className="text-red-500">*</span></label>
-                  <select name="paymentMode" value={formData.paymentMode} onChange={handleChange} className={inputClass}>
-                    <option value="Cash">रोख (Cash Payment)</option>
-                    <option value="AutoDebit_Saving">बचत खात्यातून ऑटो-डेबिट (Auto-Debit from Saving)</option>
-                  </select>
-                </div>
-
-                {formData.paymentMode === 'AutoDebit_Saving' && (
-                  <div>
-                    <label className={labelClass}>संलग्न बचत खाते (Linked Saving Account) <span className="text-red-500">*</span></label>
-                    <select name="savingAccountID" value={formData.savingAccountID} onChange={handleChange} className={inputClass} required>
-                      <option value="">--- बचत खाते निवडा ---</option>
-                      {(Array.isArray(savingAccounts) ? savingAccounts : []).map((s, idx) => (
-                        <option key={`sav-${s.savingAccountID ?? '0'}-${idx}`} value={s.savingAccountID}>
-                          {s.accountNumber} (शिल्लक: ₹{(s.balance ?? 0).toLocaleString('en-IN')})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div>
-                  <label className={labelClass}>मुदतपूर्ती सूचना (Maturity Instruction) <span className="text-red-500">*</span></label>
-                  <select name="maturityInstruction" value={formData.maturityInstruction} onChange={handleChange} className={inputClass}>
-                    <option value="Cash_Payout">रोख भरणा करा (Cash Payout)</option>
-                    <option value="Credit_Saving">बचत खात्यात जमा करा (Credit to Saving SB)</option>
-                    <option value="Transfer_FD">मुदत ठेवीत रुपांतर करा (Auto-Convert to FD)</option>
-                  </select>
-                </div>
-              </div>
-
-              {formData.paymentMode === 'Cash' && (
-                <div className="mt-2">
-                  <CashLedgerReflectBadge 
-                    branchId={formData.branchID} 
-                    transactionType="Deposit" 
-                    customTitle="हप्ता जमा होणारे रोख खाते (Cash Deposit Ledger)"
-                  />
-                </div>
-              )}
-
-              {/* Light Calculation Summary Box */}
-              {formData.maturityAmount > 0 && (
-                <div className="mt-3 bg-emerald-50/80 border border-emerald-200 rounded-lg p-3 text-xs shadow-2xs">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                    <div className="bg-white p-2.5 rounded border border-emerald-100">
-                      <span className="text-slate-500 text-[10px] font-bold uppercase block">एकूण जमा मुद्दल:</span>
-                      <strong className="text-slate-800 text-xs font-bold font-mono">
-                        ₹ {totalPrincipalDeposited.toLocaleString('en-IN')}
-                      </strong>
-                      <span className="text-[10px] text-slate-400 block mt-0.5">
-                        ({formData.durationMonths} महिने × ₹{formData.installmentAmount?.toLocaleString('en-IN')})
-                      </span>
-                    </div>
-
-                    <div className="bg-white p-2.5 rounded border border-emerald-100">
-                      <span className="text-slate-500 text-[10px] font-bold uppercase block">अंदाजित व्याज लाभ:</span>
-                      <strong className="text-emerald-700 text-xs font-bold font-mono">
-                        + ₹ {estimatedInterestEarned.toLocaleString('en-IN')}
-                      </strong>
-                      <span className="text-[10px] text-emerald-600 block mt-0.5">
-                        व्याजदर {formData.interestRate}% ({schemes.find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound'})
-                      </span>
-                    </div>
-
-                    <div className="bg-white p-2.5 rounded border border-emerald-100">
-                      <span className="text-slate-500 text-[10px] font-bold uppercase block">एकूण मुदतपूर्ती रक्कम:</span>
-                      <strong className="text-indigo-700 text-sm font-bold font-mono">
-                        ₹ {formData.maturityAmount.toLocaleString('en-IN')}
-                      </strong>
-                      <span className="text-[10px] text-slate-500 block mt-0.5">
-                        मुदत तारीख: {formData.maturityDate}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Toggle Schedule Button */}
-                  <div className="border-t border-emerald-200 pt-3 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setShowSchedule(!showSchedule)}
-                      className="text-xs font-bold text-emerald-800 hover:text-emerald-600 underline flex items-center justify-center gap-1 mx-auto"
-                    >
-                      {showSchedule ? 'तक्ता लपवा (Hide Schedule)' : 'तपशीलवार हप्ता व व्याज तक्ता पहा (View Schedule)'}
-                    </button>
-                  </div>
-                  
-                  {/* Detailed Schedule Table */}
-                  {showSchedule && (
-                    <div className="mt-3 bg-white border border-emerald-200 rounded overflow-hidden max-h-80 overflow-y-auto">
-                      <table className="w-full text-[11px] text-left">
-                        <thead className="bg-emerald-100/50 sticky top-0 border-b border-emerald-200 text-emerald-900">
-                          <tr>
-                            <th className="px-2 py-1.5 font-bold">srno</th>
-                            <th className="px-2 py-1.5 font-bold">दिनांक</th>
-                            <th className="px-2 py-1.5 font-bold text-right">जमा रक्कम</th>
-                            <th className="px-2 py-1.5 font-bold text-right">नावे रक्कम</th>
-                            <th className="px-2 py-1.5 font-bold text-right">एकूण शिल्लक रक्कम</th>
-                            <th className="px-2 py-1.5 font-bold text-right">व्याज</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-emerald-50">
-                          {generateSchedule().map((row, idx) => (
-                            <tr key={idx} className="hover:bg-emerald-50/30">
-                              <td className="px-2 py-1">{row.month}</td>
-                              <td className="px-2 py-1">{row.date}</td>
-                              <td className="px-2 py-1 text-right font-mono text-slate-700">{row.deposit}</td>
-                              <td className="px-2 py-1 text-right font-mono text-slate-400">-</td>
-                              <td className="px-2 py-1 text-right font-mono font-bold text-slate-800">{row.balance}</td>
-                              <td className="px-2 py-1 text-right font-mono text-emerald-600">{row.interest.toFixed(5)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot className="bg-emerald-100/80 font-bold border-t border-emerald-300 text-emerald-900">
-                          <tr>
-                            <td colSpan={2} className="px-2 py-2 text-right">एकूण (Total):</td>
-                            <td className="px-2 py-2 text-right font-mono text-slate-800">₹{totalPrincipalDeposited.toLocaleString('en-IN')}</td>
-                            <td colSpan={2} className="px-2 py-2 text-right font-mono text-indigo-700">मुदतपूर्ती (Maturity): ₹{formData.maturityAmount.toLocaleString('en-IN')}</td>
-                            <td className="px-2 py-2 text-right font-mono text-emerald-700">₹{estimatedInterestEarned.toLocaleString('en-IN')}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Section 3: Nominee, Agent & Passbook Serial */}
-            <div className="p-4 space-y-3">
-              <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded text-xs">३</span>
-                <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                  वारसदार, एजंट व पासबुक (Nominee, Agent & Passbook)
-                </h2>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label className={labelClass}>वारसदार नाव (Nominee Name)</label>
-                  <input
-                    type="text"
-                    name="nomineeName"
-                    value={formData.nomineeName}
-                    onChange={handleChange}
-                    className={inputClass}
-                    placeholder="वारसदाराचे नाव लिहा"
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass}>वारस नाते (Nominee Relation)</label>
-                  <select name="nomineeRelation" value={formData.nomineeRelation} onChange={handleChange} className={inputClass}>
-                    <option value="">-- नाते निवडा --</option>
-                    <option value="स्वतः">स्वतः (Self)</option>
-                    <option value="पत्नी">पत्नी (Wife)</option>
-                    <option value="पती">पती (Husband)</option>
-                    <option value="पती/पत्नी">पती/पत्नी (Spouse)</option>
-                    <option value="मुलगा">मुलगा (Son)</option>
-                    <option value="मुलगी">मुलगी (Daughter)</option>
-                    <option value="आई">आई (Mother)</option>
-                    <option value="वडील">वडील (Father)</option>
-                    <option value="भाऊ">भाऊ (Brother)</option>
-                    <option value="बहीण">बहीण (Sister)</option>
-                    <option value="सुन">सुन (Daughter-in-law)</option>
-                    <option value="जावई">जावई (Son-in-law)</option>
-                    <option value="नातू/नात">नातू / नात (Grandchild)</option>
-                    <option value="इतर">इतर (Other)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className={labelClass}>हप्ता संकलन एजंट (Agent)</label>
-                  <select name="agentID" value={formData.agentID} onChange={handleChange} className={inputClass}>
-                    <option value="">--- एजंट निवडा (ऐच्छिक) ---</option>
-                    {(Array.isArray(agents) ? agents : []).map((a, idx) => (
-                      <option key={`agent-${a.agentID ?? '0'}-${idx}`} value={a.agentID}>
-                        {a.agentName} ({a.agentCode})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className={labelClass}>पासबुक / प्रमाणपत्र क्र. (Passbook No)</label>
-                  <input
-                    type="text"
-                    name="passbookNo"
-                    value={formData.passbookNo}
-                    onChange={handleChange}
-                    className={inputClass}
-                    placeholder="उदा. PB-10203"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <label className={labelClass}>शेरा (Remarks)</label>
-                <input
-                  type="text"
-                  name="remarks"
-                  value={formData.remarks}
-                  onChange={handleChange}
-                  className={inputClass}
-                />
-              </div>
-            </div>
-
             </fieldset>
-
-            {/* Bottom Footer */}
-            <div className="p-4 bg-slate-50 rounded-b-xl flex flex-col sm:flex-row items-center justify-between gap-3">
-              {isPassingMode ? (
-                <div className="w-full flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onNavigate ? onNavigate('voucher-posting') : (window.location.href = '/?tab=voucher-posting')}
-                    className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-lg shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                  >
-                    <span>↩️</span> पासिंग यादीवर परत जा
-                  </button>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setRejectModalOpen(true)}
-                      disabled={passingActionLoading}
-                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      <span>❌</span> नामंजूर / रद्द करा
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handlePassVoucher}
-                      disabled={passingActionLoading}
-                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      <span>✅</span> {passingActionLoading ? 'मंजूर होत आहे...' : 'मंजूर व पास करा (Pass)'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2 text-xs text-slate-600">
-                    <Info className="w-4 h-4 text-indigo-600 shrink-0" />
-                    <span>
-                      {formData.paymentMode === 'AutoDebit_Saving'
-                        ? 'पहिला हप्ता बचत खात्यातून ऑटो-डेबिट होऊन व्हाउचर सेव्ह होईल.'
-                        : 'पहिला हप्ता रोख जमा होऊन स्वयंचलित पावती व्हाउचर पोस्ट होईल.'}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <button
-                      type="button"
-                      onClick={() => resetForm()}
-                      className="flex-1 sm:flex-initial px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg transition text-xs"
-                    >
-                      फॉर्म रीसेट करा
-                    </button>
-
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="flex-1 sm:flex-initial px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-xs transition text-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
-                    >
-                      <Save className="w-4 h-4" />
-                      <span>{loading ? 'जतन होत आहे...' : 'खाते उघडा (Open Account)'}</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
           </form>
         </div>
       )}
@@ -1559,6 +1587,80 @@ export default function RdAccountOpening({
                   className="px-4 py-1.5 text-xs font-bold rounded bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer disabled:opacity-50"
                 >
                   {passingActionLoading ? 'रद्द होत आहे...' : 'होय, व्हाउचर रद्द करा'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Schedule Modal Popup */}
+        {showSchedule && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-2xl border border-slate-200 max-w-3xl w-full max-h-[85vh] flex flex-col animate-in fade-in zoom-in-95">
+              <div className="px-4 py-3 bg-emerald-700 text-white rounded-t-lg flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-xs flex items-center gap-1.5">
+                    <span>📅 आरडी हप्ता व व्याज शेड्युल (RD Installment Schedule)</span>
+                  </h3>
+                  <p className="text-[10px] text-emerald-100 mt-0.5">
+                    हप्ता: ₹{formData.installmentAmount?.toLocaleString('en-IN')} | कालावधी: {formData.durationMonths} महिने | व्याजदर: {formData.interestRate}% ({schemes.find(s => s.rdSchemeID === parseInt(String(formData.rdSchemeID), 10))?.interestMethod || 'Compound'})
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSchedule(false)}
+                  className="w-7 h-7 flex items-center justify-center rounded-full bg-emerald-800 hover:bg-emerald-900 text-white text-base font-bold cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-3 overflow-y-auto max-h-[60vh]">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-emerald-50 sticky top-0 border-b border-emerald-200 text-emerald-900 text-[11px]">
+                    <tr>
+                      <th className="px-2.5 py-1.5 font-bold">हप्ता क्र.</th>
+                      <th className="px-2.5 py-1.5 font-bold">दिनांक</th>
+                      <th className="px-2.5 py-1.5 font-bold text-right">जमा रक्कम (₹)</th>
+                      <th className="px-2.5 py-1.5 font-bold text-right">नावे रक्कम</th>
+                      <th className="px-2.5 py-1.5 font-bold text-right">एकूण शिल्लक (₹)</th>
+                      <th className="px-2.5 py-1.5 font-bold text-right">व्याज (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-50 text-[11px]">
+                    {generateSchedule().map((row, idx) => (
+                      <tr key={idx} className="hover:bg-emerald-50/40">
+                        <td className="px-2.5 py-1 font-semibold text-slate-700">{row.month}</td>
+                        <td className="px-2.5 py-1 text-slate-600">{row.date}</td>
+                        <td className="px-2.5 py-1 text-right font-mono text-slate-800">{row.deposit?.toLocaleString('en-IN')}</td>
+                        <td className="px-2.5 py-1 text-right font-mono text-slate-400">-</td>
+                        <td className="px-2.5 py-1 text-right font-mono font-bold text-slate-900">{row.balance?.toLocaleString('en-IN')}</td>
+                        <td className="px-2.5 py-1 text-right font-mono font-semibold text-emerald-700">{row.interest.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-emerald-100 font-bold border-t-2 border-emerald-300 text-emerald-950 text-xs">
+                    <tr>
+                      <td colSpan={2} className="px-2.5 py-2 text-right">एकूण (Total):</td>
+                      <td className="px-2.5 py-2 text-right font-mono">₹{totalPrincipalDeposited.toLocaleString('en-IN')}</td>
+                      <td colSpan={2} className="px-2.5 py-2 text-right font-mono text-emerald-900">
+                        मुदतपूर्ती (Maturity): ₹{formData.maturityAmount?.toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-2.5 py-2 text-right font-mono text-emerald-800">
+                        + ₹{estimatedInterestEarned.toLocaleString('en-IN')}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 rounded-b-lg flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSchedule(false)}
+                  className="px-4 py-1.5 text-xs font-semibold rounded bg-slate-700 hover:bg-slate-800 text-white cursor-pointer"
+                >
+                  बंद करा (Close)
                 </button>
               </div>
             </div>

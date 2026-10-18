@@ -55,7 +55,7 @@ export default function Sidebar({
   const isLoanActive = activeTab === 'loan' || activeTab.startsWith('loan') || activeTab === 'gold-loan-details' || activeTab === 'employee-bank' || activeTab === 'employer-master';
   const isSavingActive = activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing' || activeTab === 'saving-passbook';
   const isFdActive = activeTab === 'fd' || activeTab.startsWith('fd-');
-  const isRdActive = activeTab === 'rd' || activeTab === 'rd-migrate' || activeTab === 'rd-account' || activeTab === 'rd-collect' || activeTab === 'rd-withdrawal' || activeTab === 'rd-accrual' || activeTab === 'rd-reports';
+  const isRdActive = activeTab === 'rd' || activeTab === 'rd-dashboard' || activeTab === 'rd-migrate' || activeTab === 'rd-account' || activeTab === 'rd-collect' || activeTab === 'rd-withdrawal' || activeTab === 'rd-accrual' || activeTab === 'rd-reports';
   const isPigmyActive = activeTab === 'pigmy' || activeTab.startsWith('pigmy');
   const isVoucherActive = activeTab === 'voucher' || activeTab === 'voucher-posting' || activeTab === 'voucher-batch-print';
   const isCashierActive = activeTab === 'cashier-dashboard' || activeTab === 'cash-management' || activeTab === 'cash-allocation' || activeTab === 'cash-denomination';

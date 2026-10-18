@@ -20,22 +20,38 @@ namespace Bhisi.Api.Controllers
             _notificationService = notificationService;
         }
 
-        // GET: api/Notification?branchId=1&module=Loans&priority=HIGH&status=Active
+        // GET: api/Notification?branchId=1&module=Loans&priority=HIGH&status=Active&role=Manager
         [HttpGet]
         public async Task<IActionResult> GetNotifications(
             [FromQuery] int branchId = 1,
             [FromQuery] string? module = null,
             [FromQuery] string? priority = null,
-            [FromQuery] string? status = "Active")
+            [FromQuery] string? status = "Active",
+            [FromQuery] string? role = null)
         {
             try
             {
-                var notifications = await _notificationService.GetNotificationsAsync(branchId, module, priority, status);
+                var notifications = await _notificationService.GetNotificationsAsync(branchId, module, priority, status, role);
                 return Ok(notifications);
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "सूचना लोड करताना त्रुटी आली. (Error loading notifications)", detail = ex.Message });
+            }
+        }
+
+        // GET: api/Notification/stats?branchId=1
+        [HttpGet("stats")]
+        public async Task<IActionResult> GetTaskStats([FromQuery] int branchId = 1)
+        {
+            try
+            {
+                var stats = await _notificationService.GetTaskStatsAsync(branchId);
+                return Ok(stats);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "आकडेवारी लोड करताना त्रुटी आली.", detail = ex.Message });
             }
         }
 

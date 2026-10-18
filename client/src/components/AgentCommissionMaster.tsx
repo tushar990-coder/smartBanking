@@ -118,6 +118,7 @@ export default function AgentCommissionMaster() {
   const [selectedPayCommission, setSelectedPayCommission] = useState<PendingCommission | null>(null);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'BANK' | 'AGENT_SB'>('CASH');
   const [selectedAgentSbAccountId, setSelectedAgentSbAccountId] = useState<number | ''>('');
+  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [payProcessing, setPayProcessing] = useState(false);
 
   // Print Advice State
@@ -278,6 +279,7 @@ export default function AgentCommissionMaster() {
       const res = await axios.post('/api/AgentCommission/Pay', {
         commissionId: selectedPayCommission.commissionId,
         branchId: selectedBranchId > 0 ? selectedBranchId : 1,
+        paymentDate: paymentDate,
         paymentMode: paymentMode,
         agentSavingAccountId: selectedAgentSbAccountId !== '' ? Number(selectedAgentSbAccountId) : null
       });
@@ -822,6 +824,16 @@ export default function AgentCommissionMaster() {
                     🏦 बँक ट्रान्सफर
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <label className={labelClass}>पेमेंट / व्हाउचर तारीख (Payment Date)</label>
+                <input
+                  type="date"
+                  value={paymentDate}
+                  onChange={(e) => setPaymentDate(e.target.value)}
+                  className={inputClass}
+                />
               </div>
 
               {paymentMode === 'AGENT_SB' && (

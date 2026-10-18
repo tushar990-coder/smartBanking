@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -18,10 +19,12 @@ namespace Bhisi.Api.Controllers
     public class ReportsController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IMemoryCache _cache;
 
-        public ReportsController(AppDbContext context)
+        public ReportsController(AppDbContext context, IMemoryCache cache)
         {
             _context = context;
+            _cache = cache;
         }
 
         // GET: api/Reports/system-health
@@ -3324,47 +3327,54 @@ namespace Bhisi.Api.Controllers
         // GET: api/Reports/Member360/{memberId} or api/Reports/Customer360/{customerId}
         [HttpGet("Member360/{memberId}")]
         [HttpGet("Customer360/{customerId}")]
-        public async Task<ActionResult<Member360Dto>> GetMember360(int? memberId, int? customerId, [FromQuery] string? cifNo = null)
+        public async Task<ActionResult<Member360Dto>> GetMember360(int? memberId, int? customerId, [FromQuery] string? cifNo = null, [FromQuery] bool refresh = false)
         {
             try
             {
+                int lookupId = memberId ?? customerId ?? 0;
+                string cacheKey = $"customer_360_{lookupId}_{cifNo ?? ""}";
+
+                if (!refresh && _cache.TryGetValue(cacheKey, out Member360Dto? cachedDto) && cachedDto != null)
+                {
+                    return Ok(cachedDto);
+                }
+
                 Customer? customer = null;
                 Member? member = null;
 
                 if (!string.IsNullOrWhiteSpace(cifNo))
                 {
-                    customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CIFNo == cifNo.Trim());
+                    customer = await _context.Customers.AsNoTracking().Include(c => c.Branch).FirstOrDefaultAsync(c => c.CIFNo == cifNo.Trim());
                     if (customer != null)
                     {
-                        member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                        member = await _context.Members.AsNoTracking().Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
                     }
                 }
                 else if (customerId.HasValue && customerId.Value > 0)
                 {
-                    customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
+                    customer = await _context.Customers.AsNoTracking().Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == customerId.Value);
                     if (customer != null)
                     {
-                        member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                        member = await _context.Members.AsNoTracking().Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
                     }
                 }
                 else
                 {
-                    int lookupId = memberId ?? customerId ?? 0;
                     if (lookupId <= 0) return BadRequest("वैध सभासद किंवा ग्राहक आयडी आवश्यक आहे.");
 
                     // 1. Prioritize CustomerID lookup (CIF-First architecture used across all UI dropdowns)
-                    customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == lookupId);
+                    customer = await _context.Customers.AsNoTracking().Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == lookupId);
                     if (customer != null)
                     {
-                        member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
+                        member = await _context.Members.AsNoTracking().Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.CustomerID == customer.CustomerID);
                     }
                     else
                     {
                         // 2. Fallback to MemberID lookup if no customer matches lookupId
-                        member = await _context.Members.Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == lookupId);
+                        member = await _context.Members.AsNoTracking().Include(m => m.Customer).Include(m => m.Branch).FirstOrDefaultAsync(m => m.MemberID == lookupId);
                         if (member?.CustomerID != null)
                         {
-                            customer = await _context.Customers.Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == member.CustomerID.Value);
+                            customer = await _context.Customers.AsNoTracking().Include(c => c.Branch).FirstOrDefaultAsync(c => c.CustomerID == member.CustomerID.Value);
                         }
                     }
                 }
@@ -3378,23 +3388,28 @@ namespace Bhisi.Api.Controllers
                 int? targetMemId = member?.MemberID;
 
                 var savingsAccs = await _context.SavingAccountMasters
+                    .AsNoTracking()
                     .Where(s => targetCustId != null && s.CustomerID == targetCustId)
                     .ToListAsync();
 
                 var loanAccs = await _context.LoanAccounts
+                    .AsNoTracking()
                     .Include(l => l.LoanRate)
                     .Where(l => (targetCustId != null && l.CustomerID == targetCustId) || (targetMemId != null && l.MemberID == targetMemId))
                     .ToListAsync();
 
                 var fdAccs = await _context.FdAccounts
+                    .AsNoTracking()
                     .Where(f => targetCustId != null && f.CustomerID == targetCustId)
                     .ToListAsync();
 
                 var rdAccs = await _context.RdAccounts
+                    .AsNoTracking()
                     .Where(r => targetCustId != null && r.CustomerID == targetCustId)
                     .ToListAsync();
 
                 var pigmyAccs = await _context.PigmyAccounts
+                    .AsNoTracking()
                     .Where(p => targetCustId != null && p.CustomerID == targetCustId)
                     .ToListAsync();
 
@@ -3402,12 +3417,15 @@ namespace Bhisi.Api.Controllers
                 decimal shareCapital = 0;
                 if (targetMemId.HasValue)
                 {
-                    var shareAccount = await _context.ShareAccounts.FirstOrDefaultAsync(s => s.MemberId == targetMemId.Value);
+                    var shareAccount = await _context.ShareAccounts
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(s => s.MemberId == targetMemId.Value);
                     shareCapital = shareAccount?.TotalShareAmount ?? 0;
 
                     if (shareCapital == 0)
                     {
                         shareCapital = await _context.MemberOpeningBalances
+                            .AsNoTracking()
                             .Include(ob => ob.Ledger)
                             .Where(ob => ob.MemberID == targetMemId.Value && ob.Ledger != null && (
                                 ob.Ledger.AccountType == "Share Capital" || 
@@ -3425,10 +3443,12 @@ namespace Bhisi.Api.Controllers
                 var allLoanIds = loanAccs.Select(l => l.LoanAccountID).ToList();
 
                 var memberSchedules = await _context.LoanInstallmentSchedules
+                    .AsNoTracking()
                     .Where(s => activeLoanIds.Contains(s.LoanAccountID))
                     .ToListAsync();
 
                 var memberLoanCollections = await _context.LoanCollections
+                    .AsNoTracking()
                     .Where(c => allLoanIds.Contains(c.LoanAccountID))
                     .ToListAsync();
 
@@ -3462,6 +3482,7 @@ namespace Bhisi.Api.Controllers
                 {
                     var savingAccIds = savingsAccs.Select(s => s.SavingAccountID).ToList();
                     var lastSavingTx = await _context.SavingTransactions
+                        .AsNoTracking()
                         .Where(st => savingAccIds.Contains(st.SavingAccountID))
                         .OrderByDescending(st => st.TransactionDate)
                         .FirstOrDefaultAsync();
@@ -3476,6 +3497,7 @@ namespace Bhisi.Api.Controllers
                 {
                     var loanAccIds = loanAccs.Select(l => l.LoanAccountID).ToList();
                     var lastCollection = await _context.LoanCollections
+                        .AsNoTracking()
                         .Where(lc => loanAccIds.Contains(lc.LoanAccountID))
                         .OrderByDescending(lc => lc.CollectionDate)
                         .FirstOrDefaultAsync();
@@ -3486,6 +3508,7 @@ namespace Bhisi.Api.Controllers
                     else
                     {
                         var lastDisb = await _context.LoanDisbursements
+                            .AsNoTracking()
                             .Where(ld => loanAccIds.Contains(ld.LoanAccountID))
                             .OrderByDescending(ld => ld.DisbursementDate)
                             .FirstOrDefaultAsync();
@@ -3505,6 +3528,7 @@ namespace Bhisi.Api.Controllers
                 {
                     var savingAccIds = savingsAccs.Select(s => s.SavingAccountID).ToList();
                     var savingTxs = await _context.SavingTransactions
+                        .AsNoTracking()
                         .Include(st => st.SavingAccount)
                         .Where(st => savingAccIds.Contains(st.SavingAccountID))
                         .OrderByDescending(st => st.TransactionDate)
@@ -3530,6 +3554,7 @@ namespace Bhisi.Api.Controllers
                 {
                     var pigmyAccIds = pigmyAccs.Select(p => p.PigmyAccountID).ToList();
                     var pigmyCols = await _context.PigmyCollections
+                        .AsNoTracking()
                         .Where(pc => pigmyAccIds.Contains(pc.PigmyAccountId))
                         .OrderByDescending(pc => pc.CollectionDate)
                         .Take(20)
@@ -3554,6 +3579,7 @@ namespace Bhisi.Api.Controllers
                 {
                     var loanAccIds = loanAccs.Select(l => l.LoanAccountID).ToList();
                     var collections = await _context.LoanCollections
+                        .AsNoTracking()
                         .Include(lc => lc.LoanAccount)
                         .Where(lc => loanAccIds.Contains(lc.LoanAccountID))
                         .OrderByDescending(lc => lc.CollectionDate)
@@ -3574,6 +3600,7 @@ namespace Bhisi.Api.Controllers
                     }
 
                     var disbursements = await _context.LoanDisbursements
+                        .AsNoTracking()
                         .Include(ld => ld.LoanAccount)
                         .Where(ld => loanAccIds.Contains(ld.LoanAccountID))
                         .OrderByDescending(ld => ld.DisbursementDate)
@@ -3673,6 +3700,9 @@ namespace Bhisi.Api.Controllers
                     },
                     RecentTransactions = recentTxs
                 };
+
+                // Cache Member 360 result for 60 seconds
+                _cache.Set(cacheKey, dto, TimeSpan.FromSeconds(60));
 
                 return Ok(dto);
             }

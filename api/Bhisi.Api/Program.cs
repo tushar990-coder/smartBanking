@@ -50,6 +50,7 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddMemoryCache();
 
 // Global Authorization — सर्व API ला login आवश्यक (AllowAnonymous ने override करता येतो)
 builder.Services.AddAuthorization(options =>

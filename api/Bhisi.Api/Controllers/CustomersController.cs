@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
 using Bhisi.Api.Helpers;
@@ -20,10 +21,22 @@ namespace Bhisi.Api.Controllers
     public class CustomersController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IMemoryCache _cache;
 
-        public CustomersController(AppDbContext context)
+        public CustomersController(AppDbContext context, IMemoryCache cache)
         {
             _context = context;
+            _cache = cache;
+        }
+
+        private void InvalidateCustomersCache()
+        {
+            try
+            {
+                int current = _cache.GetOrCreate("customers_cache_ver", e => 1);
+                _cache.Set("customers_cache_ver", current + 1);
+            }
+            catch { }
         }
 
         private (int userId, string username, int branchId, string role, bool isHeadOfficeAdmin) GetCurrentUserContext()
@@ -80,13 +93,16 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
-                // Self-healing check: automatically fix any legacy or errant CustomerID = 0 records
-                if (await _context.Customers.AnyAsync(c => c.CustomerID == 0))
+                var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
+                int effectiveBranchId = isHeadOfficeAdmin ? (branchId ?? 0) : userBranchId;
+                int ver = _cache.GetOrCreate("customers_cache_ver", e => 1);
+                string cacheKey = $"customers_list_v{ver}_b{effectiveBranchId}_a{agentId ?? 0}_s{status ?? "all"}_srch{search ?? ""}_p{page ?? 0}_ps{pageSize ?? 0}";
+
+                if (_cache.TryGetValue(cacheKey, out List<Customer>? cached) && cached != null)
                 {
-                    await HarmonizeCifs();
+                    return cached;
                 }
 
-                var (_, _, userBranchId, _, isHeadOfficeAdmin) = GetCurrentUserContext();
                 var query = _context.Customers
                     .AsNoTracking()
                     .Include(c => c.Branch)
@@ -96,6 +112,7 @@ namespace Bhisi.Api.Controllers
                 if (agentId.HasValue && agentId.Value > 0)
                 {
                     var agentCustIds = _context.PigmyAccounts
+                        .AsNoTracking()
                         .Where(a => a.PigmyAgentID == agentId.Value)
                         .Select(a => a.CustomerID);
                     query = query.Where(c => agentCustIds.Contains(c.CustomerID));
@@ -134,11 +151,29 @@ namespace Bhisi.Api.Controllers
                     query = query.Skip((p - 1) * ps).Take(ps);
                 }
 
-                var customers = await query
-                    .Select(c => new Customer
+                // Pre-fetch active share accounts into two fast hashsets to eliminate correlated SQL subqueries per customer
+                var activeShareCustomerIds = await _context.ShareAccounts
+                    .AsNoTracking()
+                    .Where(sa => sa.TotalShareCount > 0 && sa.CustomerID > 0)
+                    .Select(sa => sa.CustomerID)
+                    .Distinct()
+                    .ToListAsync();
+
+                var activeShareMemberIds = await _context.ShareAccounts
+                    .AsNoTracking()
+                    .Where(sa => sa.TotalShareCount > 0 && sa.MemberId > 0)
+                    .Select(sa => sa.MemberId)
+                    .Distinct()
+                    .ToListAsync();
+
+                var activeShareCustSet = new HashSet<int>(activeShareCustomerIds);
+                var activeShareMemSet = new HashSet<int>(activeShareMemberIds);
+
+                var rawCustomers = await query
+                    .Select(c => new
                     {
-                        CustomerID = c.CustomerID,
-                        BranchID = c.BranchID,
+                        c.CustomerID,
+                        c.BranchID,
                         Branch = c.Branch != null ? new Branch
                         {
                             BranchID = c.Branch.BranchID,
@@ -166,22 +201,22 @@ namespace Bhisi.Api.Controllers
                         MobileNo = c.MobileNo ?? string.Empty,
                         AadhaarNo = c.AadhaarNo ?? string.Empty,
                         PANNo = c.PANNo ?? string.Empty,
-                        RegistrationDate = c.RegistrationDate,
+                        c.RegistrationDate,
                         NomineeName = c.NomineeName ?? string.Empty,
                         NomineeNameEng = c.NomineeNameEng ?? string.Empty,
                         NomineeRelation = c.NomineeRelation ?? string.Empty,
                         NomineeAddress = c.NomineeAddress ?? string.Empty,
-                        NomineeBirthDate = c.NomineeBirthDate,
-                        NomineeIsMinor = c.NomineeIsMinor,
+                        c.NomineeBirthDate,
+                        c.NomineeIsMinor,
                         NomineeGuardianName = c.NomineeGuardianName ?? string.Empty,
                         Status = c.Status ?? "Active",
                         Gender = c.Gender ?? string.Empty,
-                        BirthDate = c.BirthDate,
+                        c.BirthDate,
                         Occupation = c.Occupation ?? string.Empty,
                         CasteCategory = c.CasteCategory ?? string.Empty,
                         Caste = c.Caste ?? string.Empty,
                         Email = c.Email ?? string.Empty,
-                        IsMinor = c.IsMinor,
+                        c.IsMinor,
                         GuardianName = c.GuardianName ?? string.Empty,
                         GuardianNameEng = c.GuardianNameEng ?? string.Empty,
                         GuardianRelation = c.GuardianRelation ?? string.Empty,
@@ -189,26 +224,88 @@ namespace Bhisi.Api.Controllers
                         GuardianMobileNo = c.GuardianMobileNo ?? string.Empty,
                         GuardianAddress = c.GuardianAddress ?? string.Empty,
                         LegacyCustomerNo = c.LegacyCustomerNo ?? string.Empty,
-                        EmployerId = c.EmployerId,
-                        IsDeleted = c.IsDeleted,
-                        CreatedBy = c.CreatedBy,
-                        CreatedOn = c.CreatedOn,
-                        UpdatedBy = c.UpdatedBy,
-                        UpdatedOn = c.UpdatedOn,
-                        MemberProfile = c.MemberProfile != null ? new Member
+                        c.EmployerId,
+                        c.IsDeleted,
+                        c.CreatedBy,
+                        c.CreatedOn,
+                        c.UpdatedBy,
+                        c.UpdatedOn,
+                        MemberProfile = c.MemberProfile != null ? new
                         {
-                            MemberID = c.MemberProfile.MemberID,
-                            MemberCode = !string.IsNullOrWhiteSpace(c.MemberProfile.MemberCode) &&
-                                         _context.ShareAccounts.Any(sa => (sa.CustomerID == c.CustomerID || sa.MemberId == c.MemberProfile.MemberID) && sa.TotalShareCount > 0)
-                                ? c.MemberProfile.MemberCode
-                                : null,
-                            LegacyMemberNo = _context.ShareAccounts.Any(sa => (sa.CustomerID == c.CustomerID || sa.MemberId == c.MemberProfile.MemberID) && sa.TotalShareCount > 0)
-                                ? c.MemberProfile.LegacyMemberNo
-                                : null,
-                            MembershipType = c.MemberProfile.MembershipType
+                            c.MemberProfile.MemberID,
+                            c.MemberProfile.MemberCode,
+                            c.MemberProfile.LegacyMemberNo,
+                            c.MemberProfile.MembershipType
                         } : null
                     })
                     .ToListAsync();
+
+                var customers = rawCustomers.Select(c => new Customer
+                {
+                    CustomerID = c.CustomerID,
+                    BranchID = c.BranchID,
+                    Branch = c.Branch,
+                    CIFNo = c.CIFNo,
+                    FirstName = c.FirstName,
+                    MiddleName = c.MiddleName,
+                    LastName = c.LastName,
+                    NickName = c.NickName,
+                    FirstNameEng = c.FirstNameEng,
+                    MiddleNameEng = c.MiddleNameEng,
+                    LastNameEng = c.LastNameEng,
+                    Address = c.Address,
+                    AddressEng = c.AddressEng,
+                    Village = c.Village,
+                    Taluka = c.Taluka,
+                    District = c.District,
+                    MobileNo = c.MobileNo,
+                    AadhaarNo = c.AadhaarNo,
+                    PANNo = c.PANNo,
+                    RegistrationDate = c.RegistrationDate,
+                    NomineeName = c.NomineeName,
+                    NomineeNameEng = c.NomineeNameEng,
+                    NomineeRelation = c.NomineeRelation,
+                    NomineeAddress = c.NomineeAddress,
+                    NomineeBirthDate = c.NomineeBirthDate,
+                    NomineeIsMinor = c.NomineeIsMinor,
+                    NomineeGuardianName = c.NomineeGuardianName,
+                    Status = c.Status,
+                    Gender = c.Gender,
+                    BirthDate = c.BirthDate,
+                    Occupation = c.Occupation,
+                    CasteCategory = c.CasteCategory,
+                    Caste = c.Caste,
+                    Email = c.Email,
+                    IsMinor = c.IsMinor,
+                    GuardianName = c.GuardianName,
+                    GuardianNameEng = c.GuardianNameEng,
+                    GuardianRelation = c.GuardianRelation,
+                    GuardianAadhaarNo = c.GuardianAadhaarNo,
+                    GuardianMobileNo = c.GuardianMobileNo,
+                    GuardianAddress = c.GuardianAddress,
+                    LegacyCustomerNo = c.LegacyCustomerNo,
+                    EmployerId = c.EmployerId,
+                    IsDeleted = c.IsDeleted,
+                    CreatedBy = c.CreatedBy,
+                    CreatedOn = c.CreatedOn,
+                    UpdatedBy = c.UpdatedBy,
+                    UpdatedOn = c.UpdatedOn,
+                    MemberProfile = c.MemberProfile != null ? new Member
+                    {
+                        MemberID = c.MemberProfile.MemberID,
+                        MemberCode = !string.IsNullOrWhiteSpace(c.MemberProfile.MemberCode) &&
+                                     (activeShareCustSet.Contains(c.CustomerID) || activeShareMemSet.Contains(c.MemberProfile.MemberID))
+                            ? c.MemberProfile.MemberCode
+                            : null,
+                        LegacyMemberNo = (activeShareCustSet.Contains(c.CustomerID) || activeShareMemSet.Contains(c.MemberProfile.MemberID))
+                            ? c.MemberProfile.LegacyMemberNo
+                            : null,
+                        MembershipType = c.MemberProfile.MembershipType
+                    } : null
+                }).ToList();
+
+                // Cache for 2 minutes
+                _cache.Set(cacheKey, customers, TimeSpan.FromMinutes(2));
 
                 return customers;
             }
@@ -393,6 +490,7 @@ namespace Bhisi.Api.Controllers
                 var totalCount = await _context.Customers.CountAsync();
                 string nextCif = await GenerateUniqueCifAsync();
                 await LogAuditAsync("HARMONIZE_CIFS", "ALL", $"Harmonized {totalCount} customer CIF numbers 1-to-1 with CustomerID.");
+                InvalidateCustomersCache();
 
                 return Ok(new
                 {
@@ -504,6 +602,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 await LogAuditAsync("CUSTOMER_CREATE", customer.CustomerID.ToString(), $"नवीन ग्राहक नोंदणी: {customer.FirstName} {customer.LastName}, CIF: {customer.CIFNo}");
+                InvalidateCustomersCache();
             }
             catch (DbUpdateException ex)
             {
@@ -648,6 +747,7 @@ namespace Bhisi.Api.Controllers
             {
                 await _context.SaveChangesAsync();
                 await LogAuditAsync("CUSTOMER_UPDATE", id.ToString(), $"ग्राहक माहिती अद्ययावत केली: {existingCustomer.FirstName} {existingCustomer.LastName}, CIF: {existingCustomer.CIFNo}");
+                InvalidateCustomersCache();
             }
             catch (DbUpdateException ex)
             {
@@ -731,6 +831,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 await LogAuditAsync("CUSTOMER_DELETE", id.ToString(), $"खातेदार कायमचा डिलीट केला: {customer.FirstName} {customer.LastName}, CIF: {customer.CIFNo}");
+                InvalidateCustomersCache();
 
                 return Ok(new { message = "खातेदार यशस्वीरित्या डिलीट केला." });
             }

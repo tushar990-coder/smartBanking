@@ -79,13 +79,50 @@ interface Member360Data {
 }
 
 export default function Member360Dashboard({ onNavigate }: Member360DashboardProps) {
-    const [rawMembers, setRawMembers] = useState<any[]>([]);
+    const [rawMembers, setRawMembers] = useState<any[]>(() => {
+        try {
+            const cached = sessionStorage.getItem('cbs_customers_cache');
+            return cached ? JSON.parse(cached) : [];
+        } catch {
+            return [];
+        }
+    });
     const [selectedMemberId, setSelectedMemberId] = useState<string>(() => {
         const params = new URLSearchParams(window.location.search);
-        return params.get('memberId') || sessionStorage.getItem('last_member360_selected_id') || '';
+        const fromUrl = params.get('memberId');
+        if (fromUrl) return fromUrl;
+        const saved = sessionStorage.getItem('last_member360_selected_id');
+        if (saved) return saved;
+        try {
+            const cached = sessionStorage.getItem('cbs_customers_cache');
+            if (cached) {
+                const list = JSON.parse(cached);
+                if (list && list.length > 0) {
+                    return String(list[0].customerID || list[0].memberID);
+                }
+            }
+        } catch {}
+        return '';
     });
-    const [loading, setLoading] = useState<boolean>(false);
-    const [data, setData] = useState<Member360Data | null>(null);
+    const [loading, setLoading] = useState<boolean>(() => {
+        const params = new URLSearchParams(window.location.search);
+        const targetId = params.get('memberId') || sessionStorage.getItem('last_member360_selected_id');
+        if (targetId && sessionStorage.getItem(`cbs_customer360_cache_${targetId}`)) {
+            return false;
+        }
+        return false;
+    });
+    const [data, setData] = useState<Member360Data | null>(() => {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const targetId = params.get('memberId') || sessionStorage.getItem('last_member360_selected_id');
+            if (targetId) {
+                const cached = sessionStorage.getItem(`cbs_customer360_cache_${targetId}`);
+                if (cached) return JSON.parse(cached);
+            }
+        } catch {}
+        return null;
+    });
     const [error, setError] = useState<string>('');
     const [showTransactions, setShowTransactions] = useState<boolean>(false);
     const [activeReportModule, setActiveReportModule] = useState<'savings' | 'fd' | 'rd' | 'pigmy' | 'loans' | 'shares' | null>(null);
@@ -278,29 +315,45 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
         }
     }, [selectedMemberId]);
 
+    const isFetchingMembers = React.useRef(false);
+
     // Fetch customers on load
     const fetchMembers = async () => {
+        if (isFetchingMembers.current) return;
+        isFetchingMembers.current = true;
         try {
             setError('');
             const res = await api.get('/Customers');
-            setRawMembers(res.data || []);
+            const list = res.data || [];
+            setRawMembers(list);
+            try {
+                sessionStorage.setItem('cbs_customers_cache', JSON.stringify(list));
+            } catch (e) {}
             
-            if (res.data && res.data.length > 0) {
-                const params = new URLSearchParams(window.location.search);
-                const urlMemberId = params.get('memberId');
-                const savedMemberId = sessionStorage.getItem('last_member360_selected_id');
-                const targetId = urlMemberId || savedMemberId || selectedMemberId;
+            if (list.length > 0) {
+                setSelectedMemberId(prev => {
+                    if (prev && list.some((m: any) => String(m.customerID || m.memberID) === prev)) {
+                        return prev;
+                    }
+                    const params = new URLSearchParams(window.location.search);
+                    const urlMemberId = params.get('memberId');
+                    const savedMemberId = sessionStorage.getItem('last_member360_selected_id');
+                    const targetId = urlMemberId || savedMemberId;
 
-                if (targetId && res.data.some((m: any) => String(m.customerID || m.memberID) === targetId)) {
-                    setSelectedMemberId(targetId);
-                } else {
-                    setSelectedMemberId(String(res.data[0].customerID || res.data[0].memberID));
-                }
+                    if (targetId && list.some((m: any) => String(m.customerID || m.memberID) === targetId)) {
+                        return targetId;
+                    }
+                    return String(list[0].customerID || list[0].memberID);
+                });
             }
         } catch (err: any) {
             console.error("Failed to load customer list", err);
             const msg = err?.response?.data?.message || err?.message;
-            setError(msg ? `खातेदारांची यादी लोड करता आली नाही (${msg})` : "खातेदारांची यादी लोड करता आली नाही. सर्व्हर कनेक्शन तपासा.");
+            if (rawMembers.length === 0) {
+                setError(msg ? `खातेदारांची यादी लोड करता आली नाही (${msg})` : "खातेदारांची यादी लोड करता आली नाही. सर्व्हर कनेक्शन तपासा.");
+            }
+        } finally {
+            isFetchingMembers.current = false;
         }
     };
 
@@ -309,30 +362,47 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
     }, []);
 
     // Fetch 360 view when member selection changes
-    const fetch360Data = async () => {
-        if (!selectedMemberId) {
-            if (rawMembers.length === 0) {
-                await fetchMembers();
+    const fetch360Data = async (forceRefresh = false) => {
+        if (!selectedMemberId) return;
+
+        // Try reading from cache first if not force refresh
+        if (!forceRefresh) {
+            try {
+                const cached = sessionStorage.getItem(`cbs_customer360_cache_${selectedMemberId}`);
+                if (cached) {
+                    setData(JSON.parse(cached));
+                } else if (!data) {
+                    setLoading(true);
+                }
+            } catch {
+                if (!data) setLoading(true);
             }
-            return;
+        } else {
+            setLoading(true);
         }
-        setLoading(true);
+
         setError('');
         try {
-            const res = await api.get(`/Reports/Customer360/${selectedMemberId}`);
+            const url = `/Reports/Customer360/${selectedMemberId}${forceRefresh ? '?refresh=true' : ''}`;
+            const res = await api.get(url);
             setData(res.data);
+            try {
+                sessionStorage.setItem(`cbs_customer360_cache_${selectedMemberId}`, JSON.stringify(res.data));
+            } catch (e) {}
         } catch (err: any) {
             console.error("Failed to load 360 summary", err);
             const msg = err?.response?.data?.message || (err?.response?.status === 404 ? 'सदर खातेदाराची माहिती उपलब्ध नाही.' : err?.message);
             setError(msg && typeof msg === 'string' && msg.length < 150 ? `खातेदार ३६०° सारांश लोड करता आला नाही (${msg})` : "खातेदार ३६०° सारांश लोड करता आला नाही. सर्व्हर कनेक्शन किंवा लॉगिन तपासा.");
-            setData(null);
+            if (!data) setData(null);
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetch360Data();
+        if (selectedMemberId) {
+            fetch360Data();
+        }
     }, [selectedMemberId]);
 
     const formatDate = (dateStr?: string | null) => {
@@ -412,7 +482,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                         </div>
 
                         <button
-                            onClick={fetch360Data}
+                            onClick={() => fetch360Data(true)}
                             disabled={loading || !selectedMemberId}
                             title="रिफ्रेश करा (Refresh)"
                             className="p-2 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-600 hover:text-emerald-700 shadow-2xs transition-all cursor-pointer disabled:opacity-50"
@@ -423,7 +493,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                 </div>
 
                 {/* 2. Loading State */}
-                {loading && (
+                {loading && !data && (
                     <div className="backdrop-blur-xl bg-white/70 border border-white/80 rounded-xl p-10 shadow-xs flex flex-col items-center justify-center">
                         <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
                         <span className="text-xs text-slate-600 font-semibold mt-3">खातेदार ३६०° तपशील लोड होत आहे...</span>

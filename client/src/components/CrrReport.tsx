@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import toast, { Toaster } from 'react-hot-toast';
+import toast, { Toaster, ToastBar } from 'react-hot-toast';
 import { 
   Landmark, 
   Wallet, 
@@ -12,22 +12,23 @@ import {
   Printer, 
   FileSpreadsheet, 
   Building2, 
-  RefreshCw,
-  CheckCircle2,
-  Clock,
-  ArrowUpRight,
-  ArrowDownRight,
-  Info,
-  ChevronRight,
-  AlertTriangle,
-  SlidersHorizontal,
-  FileCheck,
-  CheckCircle,
-  HelpCircle,
-  Scale,
-  Sparkles,
-  Layers,
-  Percent
+  RefreshCw, 
+  CheckCircle2, 
+  Clock, 
+  ArrowUpRight, 
+  ArrowDownRight, 
+  Info, 
+  ChevronRight, 
+  AlertTriangle, 
+  SlidersHorizontal, 
+  FileCheck, 
+  CheckCircle, 
+  HelpCircle, 
+  Scale, 
+  Sparkles, 
+  Layers, 
+  Percent,
+  X
 } from 'lucide-react';
 
 interface CashDetail {
@@ -299,7 +300,50 @@ export default function CrrReport() {
 
   return (
     <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans print:p-0 print:bg-white text-gray-800">
-      <Toaster position="top-right" />
+      <Toaster 
+        position="top-right"
+        reverseOrder={false}
+        gutter={8}
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#ffffff',
+            color: '#1e293b',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08)',
+            border: '1px solid #cbd5e1',
+            borderRadius: '4px',
+            fontSize: '12px',
+            padding: '8px 12px',
+          },
+        }}
+      >
+        {(t) => (
+          <ToastBar toast={t}>
+            {({ icon, message }) => (
+              <div 
+                className="flex items-center gap-2 cursor-pointer select-none"
+                onClick={() => toast.dismiss(t.id)}
+              >
+                {icon}
+                <div className="text-xs font-semibold text-slate-800 pr-1">{message}</div>
+                {t.type !== 'loading' && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toast.dismiss(t.id);
+                    }}
+                    className="p-1 -mr-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-sm cursor-pointer transition-colors"
+                    title="बंद करा (Close)"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            )}
+          </ToastBar>
+        )}
+      </Toaster>
 
       {/* Print Specific CSS */}
       <style>

@@ -54,18 +54,51 @@ interface DashboardProps {
 
 export default function Dashboard({ onNavigate }: DashboardProps) {
   const { user } = useAuth();
-  const [data, setData] = useState<any>(null);
-  const [sansthaName, setSansthaName] = useState("तुमची संस्था");
-  const [sansthaInfo, setSansthaInfo] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [branches, setBranches] = useState<any[]>([]);
-
+  
   const [selectedBranchId, setSelectedBranchId] = useState<string>(() => {
     if (user && user.role !== 'Admin' && user.branchID) {
       return user.branchID.toString();
     }
     return localStorage.getItem('globalBranchId') || (user?.branchID ? user.branchID.toString() : 'all');
+  });
+
+  const [data, setData] = useState<any>(() => {
+    try {
+      const initialBranch = (user && user.role !== 'Admin' && user.branchID) 
+        ? user.branchID.toString() 
+        : (localStorage.getItem('globalBranchId') || (user?.branchID ? user.branchID.toString() : 'all'));
+      const cached = localStorage.getItem(`cbs_dashboard_cache_${initialBranch}`);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [sansthaName, setSansthaName] = useState(() => {
+    return localStorage.getItem('cbs_sanstha_name') || "तुमची संस्था";
+  });
+  const [sansthaInfo, setSansthaInfo] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem('cbs_sanstha_info');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    const initialBranch = (user && user.role !== 'Admin' && user.branchID) 
+      ? user.branchID.toString() 
+      : (localStorage.getItem('globalBranchId') || (user?.branchID ? user.branchID.toString() : 'all'));
+    return !localStorage.getItem(`cbs_dashboard_cache_${initialBranch}`);
+  });
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [branches, setBranches] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('cbs_branches_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
   });
 
   useEffect(() => {
@@ -76,16 +109,30 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   useEffect(() => {
     localStorage.setItem('globalBranchId', selectedBranchId);
+    try {
+      const cached = localStorage.getItem(`cbs_dashboard_cache_${selectedBranchId}`);
+      if (cached) {
+        setData(JSON.parse(cached));
+      }
+    } catch (e) {
+      // ignore
+    }
   }, [selectedBranchId]);
 
-  const loadData = async (isSilent = false) => {
-    if (!isSilent) setLoading(true);
+  const loadData = async (forceRefresh = false) => {
+    if (!data) setLoading(true);
     else setIsRefreshing(true);
 
     try {
-      const [sansthaRes, branchesRes] = await Promise.all([
+      const branchParam = selectedBranchId !== 'all' ? `branchId=${selectedBranchId}` : '';
+      const refreshParam = forceRefresh ? 'refresh=true' : '';
+      const queryParams = [branchParam, refreshParam].filter(Boolean).join('&');
+      const summaryUrl = `/api/Dashboard${queryParams ? `?${queryParams}` : ''}`;
+
+      const [sansthaRes, branchesRes, summaryRes] = await Promise.all([
         fetch('/api/SansthaDetails'),
-        fetch('/api/Branches')
+        fetch('/api/Branches'),
+        fetch(summaryUrl)
       ]);
 
       if (sansthaRes.ok) {
@@ -93,19 +140,20 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         if (s && s.length > 0) {
           setSansthaName(s[0].sansthaName || "तुमची संस्था");
           setSansthaInfo(s[0]);
+          localStorage.setItem('cbs_sanstha_name', s[0].sansthaName || "तुमची संस्था");
+          localStorage.setItem('cbs_sanstha_info', JSON.stringify(s[0]));
         }
       }
       if (branchesRes.ok) {
         const b = await branchesRes.json();
         setBranches(b || []);
+        localStorage.setItem('cbs_branches_cache', JSON.stringify(b || []));
       }
-
-      const branchParam = selectedBranchId !== 'all' ? `?branchId=${selectedBranchId}` : '';
-      const summaryRes = await fetch(`/api/Dashboard${branchParam}`);
 
       if (summaryRes.ok) {
         const summaryData = await summaryRes.json();
         setData(summaryData);
+        localStorage.setItem(`cbs_dashboard_cache_${selectedBranchId}`, JSON.stringify(summaryData));
       }
     } catch (e) {
       console.error('Error loading dashboard data', e);

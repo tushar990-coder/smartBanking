@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2 } from 'lucide-react';
+import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2, Award } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import LoanCollectionReceiptPrint from './LoanCollectionReceiptPrint';
 import { useAuth } from '../context/AuthContext';
@@ -48,12 +48,15 @@ interface LoanAccount {
         mobileNo?: string;
     };
     loanRate?: {
+        loanRateID?: number;
         loanType: string;
+        loanCode?: string;
         shortName?: string;
         interestRate?: number;
         interestCalculationMethod?: string;
         loanInstallmentType?: string;
         interestPostingFrequency?: string;
+        securityType?: string;
     };
     interestRate?: number;
     loanDisbursementDate?: string;
@@ -1550,9 +1553,9 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         });
                                                         setShowMultiLoanModal(true);
                                                     }}
-                                                    className="text-[10px] text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1 cursor-pointer bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors"
+                                                    className="text-[10px] text-primary hover:opacity-90 font-bold flex items-center gap-1 cursor-pointer bg-primary/10 hover:bg-primary/20 px-2 py-0.5 rounded-sm border border-primary/25 transition-colors"
                                                 >
-                                                    <Layers className="w-3 h-3 text-blue-600" />
+                                                    <Layers className="w-3 h-3 text-primary" />
                                                     <span>खातेदाराची {borrowerLoans.length} कर्ज खाती उपलब्ध (खाते निवडा ⚡)</span>
                                                 </button>
                                             )}
@@ -1577,7 +1580,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         धोरण (Policy)
                                                     </span>
                                                     <span className="text-slate-700">
-                                                        योजना: <strong className="text-primary font-bold">{selectedAccount.loanRate.loanType || selectedAccount.loanRate.shortName}</strong>
+                                                        योजना: <strong className="text-primary font-bold">{selectedAccount.loanRate.shortName || selectedAccount.loanRate.loanType}</strong>
                                                     </span>
                                                 </div>
                                                 <div className="flex flex-wrap items-center gap-2.5">
@@ -2809,24 +2812,24 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
             {/* Interactive Multi-Loan Account Selector Modal (CIF-First) */}
             {showMultiLoanModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-                    <div className="bg-white rounded-md shadow-2xl max-w-2xl w-full overflow-hidden border border-blue-300">
+                    <div className="bg-white rounded-sm shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-300">
                         {/* Modal Header */}
-                        <div className="bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 px-4 py-3 text-white flex items-center justify-between">
+                        <div className="bg-primary px-4 py-3 text-white flex items-center justify-between border-b border-primary/20 shadow-xs">
                             <div className="flex items-center gap-2.5">
-                                <div className="p-1.5 bg-white/10 rounded-sm">
+                                <div className="p-1.5 bg-white/15 rounded-sm">
                                     <Layers className="w-5 h-5 text-amber-300" />
                                 </div>
                                 <div>
                                     <div className="font-bold text-sm flex items-center gap-2">
                                         <span>कर्ज खाते निवडा (Select Loan Account)</span>
-                                        <span className="text-[10px] bg-amber-400 text-blue-950 font-black px-2 py-0.5 rounded-full">
+                                        <span className="text-[11px] bg-amber-400 text-slate-950 font-bold px-2 py-0.5 rounded-sm shadow-2xs">
                                             एकूण {customerMatchingLoans.length} कर्ज खाती
                                         </span>
                                     </div>
-                                    <p className="text-xs text-blue-200 mt-0.5">
+                                    <p className="text-xs text-white/90 mt-0.5">
                                         खातेदार: <strong className="text-white">{multiLoanCustomerInfo?.name || 'कर्जदार'}</strong>
                                         {multiLoanCustomerInfo?.cifNo && multiLoanCustomerInfo.cifNo !== '-' && (
-                                            <span className="ml-2 font-mono text-amber-200">
+                                            <span className="ml-2 font-mono text-amber-300 bg-black/20 px-1.5 py-0.5 rounded-sm text-[11px]">
                                                 [CIF: {multiLoanCustomerInfo.cifNo}]
                                             </span>
                                         )}
@@ -2836,38 +2839,44 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                             <button
                                 type="button"
                                 onClick={() => setShowMultiLoanModal(false)}
-                                className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded cursor-pointer transition-colors"
+                                className="text-white/80 hover:text-white hover:bg-white/20 p-1.5 rounded-sm cursor-pointer transition-colors"
                                 title="बंद करा"
                             >
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        {/* Modal Body: List of Loans */}
-                        <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2.5 bg-slate-50">
-                            <div className="text-xs text-slate-700 font-semibold mb-2 flex items-center justify-between">
-                                <span>कृपया वसुली जमा करण्यासाठी योग्य कर्ज खाते निवडा:</span>
-                                <span className="text-[11px] text-slate-500">क्लिक करून निवडा</span>
-                            </div>
+                        {/* Modal Sub-header Notice */}
+                        <div className="bg-slate-100/90 px-4 py-2 border-b border-slate-200 flex items-center justify-between text-xs text-slate-700">
+                            <span className="font-semibold">कृपया वसुली जमा करण्यासाठी योग्य कर्ज खाते निवडा:</span>
+                            <span className="text-[11px] text-slate-500 font-medium">खात्यावर किंवा बटनावर क्लिक करा</span>
+                        </div>
 
+                        {/* Modal Body: List of Loans */}
+                        <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2.5 bg-slate-50/70">
                             <div className="grid grid-cols-1 gap-2.5">
                                 {customerMatchingLoans.map((acc: LoanAccount) => {
                                     const isCurrent = selectedAccount?.loanAccountID === acc.loanAccountID;
                                     const displayAccNo = format14DigitDisplay(acc.loanAccountNo);
-                                    const schemeName = acc.loanRate?.loanType || acc.loanRate?.shortName || 'कर्ज योजना';
+                                    const schemeName = acc.loanRate?.shortName || acc.loanRate?.loanType || 'कर्ज योजना';
+                                    const loanCategory = (acc.loanRate?.shortName && acc.loanRate?.loanType && acc.loanRate.shortName !== acc.loanRate.loanType)
+                                        ? acc.loanRate.loanType
+                                        : (acc.loanRate?.loanType || 'विनातारणी');
+                                    const interestRate = acc.loanRate?.interestRate || acc.interestRate || 0;
+                                    const loanCode = acc.loanRate?.loanCode;
 
                                     return (
                                         <div
                                             key={acc.loanAccountID}
                                             onClick={() => handleSelectLoanFromModal(acc)}
-                                            className={`p-3 rounded border text-left cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                            className={`p-3.5 rounded-sm border text-left cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs ${
                                                 isCurrent
-                                                    ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-400 shadow-sm'
-                                                    : 'bg-white hover:bg-blue-50/40 border-slate-200 hover:border-blue-300 shadow-2xs'
+                                                    ? 'bg-primary/5 border-primary ring-2 ring-primary/40 shadow-sm'
+                                                    : 'bg-white hover:bg-slate-50/90 border-slate-200 hover:border-primary/50'
                                             }`}
                                         >
                                             <div className="flex items-start gap-3">
-                                                <div className={`p-2 rounded-sm mt-0.5 ${isCurrent ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                                                <div className={`p-2 rounded-sm mt-0.5 ${isCurrent ? 'bg-primary text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
                                                     <CreditCard className="w-4 h-4" />
                                                 </div>
                                                 <div>
@@ -2875,33 +2884,45 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         <span className="font-mono font-bold text-xs text-slate-900 tracking-wide">
                                                             {displayAccNo}
                                                         </span>
-                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm bg-emerald-100 text-emerald-800 border border-emerald-300">
                                                             Active
                                                         </span>
-                                                    </div>
-                                                    <div className="text-[11px] text-slate-600 font-semibold mt-1">
-                                                        कर्ज प्रकार: <span className="text-slate-800 font-bold">{schemeName}</span>
-                                                        {acc.loanDisbursementDate && (
-                                                            <span className="text-slate-400 font-normal ml-2">
-                                                                (वितरण: {new Date(acc.loanDisbursementDate).toLocaleDateString('en-GB')})
+                                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-sm bg-primary/10 text-primary border border-primary/25">
+                                                            <Award className="w-3.5 h-3.5 text-primary" />
+                                                            योजना: {schemeName}
+                                                        </span>
+                                                        {loanCode && (
+                                                            <span className="text-[10px] font-mono font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-sm border border-slate-200">
+                                                                कोड: {loanCode}
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div className="text-[11px] text-slate-500 mt-0.5">
-                                                        मंजूर रक्कम: <span className="font-semibold text-slate-700">₹{(acc.sanctionedAmount || 0).toLocaleString('en-IN')}</span>
+                                                    <div className="text-[11px] text-slate-600 mt-1.5 flex flex-wrap items-center gap-x-2">
+                                                        <span>कर्ज प्रकार: <strong className="text-slate-800">{loanCategory}</strong></span>
+                                                        {interestRate > 0 && (
+                                                            <span>| व्याजदर: <strong className="text-slate-800">{interestRate}%</strong></span>
+                                                        )}
+                                                        {acc.loanDisbursementDate && (
+                                                            <span>
+                                                                | वितरण: <span className="text-slate-600 font-medium">{new Date(acc.loanDisbursementDate).toLocaleDateString('en-GB')}</span>
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-[11px] text-slate-500 mt-1 flex flex-wrap items-center gap-x-2">
+                                                        <span>मंजूर रक्कम: <strong className="text-slate-800 font-semibold">₹{(acc.sanctionedAmount || 0).toLocaleString('en-IN')}</strong></span>
                                                         {acc.installmentAmount > 0 && (
-                                                            <span className="ml-2 font-medium">
-                                                                | हप्ता: ₹{(acc.installmentAmount || 0).toLocaleString('en-IN')}
+                                                            <span>
+                                                                | हप्ता: <strong className="text-emerald-700 font-semibold">₹{(acc.installmentAmount || 0).toLocaleString('en-IN')}</strong>
                                                             </span>
                                                         )}
                                                     </div>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center gap-3 sm:text-right w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+                                            <div className="flex items-center gap-3 sm:text-right w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2.5 sm:pt-0 border-slate-100">
                                                 <div>
                                                     <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">मुद्दल शिल्लक</div>
-                                                    <div className="text-sm font-black text-rose-700">
+                                                    <div className="text-base font-black text-rose-700">
                                                         ₹ {(acc.principalBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                                     </div>
                                                 </div>
@@ -2911,10 +2932,10 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         e.stopPropagation();
                                                         handleSelectLoanFromModal(acc);
                                                     }}
-                                                    className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                                                    className={`px-3 py-1.5 rounded-sm text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
                                                         isCurrent
-                                                            ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                                            : 'bg-white hover:bg-blue-600 hover:text-white text-blue-700 border border-blue-300'
+                                                            ? 'bg-primary text-white shadow-sm'
+                                                            : 'bg-white hover:bg-primary hover:text-white text-primary border border-primary/40'
                                                     }`}
                                                 >
                                                     <CheckCircle className="w-3.5 h-3.5" />
@@ -2929,13 +2950,13 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
 
                         {/* Modal Footer */}
                         <div className="bg-slate-100 px-4 py-2.5 border-t border-slate-200 flex justify-between items-center text-xs">
-                            <span className="text-slate-500 font-medium">
+                            <span className="text-slate-600 font-medium">
                                 कर्ज खाते निवडल्यावर त्याचे हप्ता व व्याज तपशील आपोआप लोड होतील.
                             </span>
                             <button
                                 type="button"
                                 onClick={() => setShowMultiLoanModal(false)}
-                                className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold cursor-pointer transition-colors"
+                                className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-sm font-bold cursor-pointer transition-colors border border-slate-300"
                             >
                                 बंद करा (Close)
                             </button>

@@ -289,7 +289,7 @@ namespace Bhisi.Api.Services
             List<LoanCollection> collections,
             DateTime targetDate)
         {
-            decimal totalInterestPaid = collections.Sum(c => c.InterestCollected);
+            decimal totalInterestPaid = collections.Sum(c => c.InterestCollected + c.ReceivableInterestCollected);
             decimal totalUnpaidInterest = 0;
             
             var sortedSchedules = schedules
@@ -324,7 +324,7 @@ namespace Bhisi.Api.Services
                 : 0;
 
             decimal totalPrincipalPaid = priorPrincipalPaid + (collections?.Sum(c => c.PrincipalCollected) ?? 0);
-            decimal totalInterestPaid = collections?.Sum(c => c.InterestCollected) ?? 0;
+            decimal totalInterestPaid = collections?.Sum(c => c.InterestCollected + c.ReceivableInterestCollected) ?? 0;
 
             var sortedSchedules = schedules.OrderBy(s => s.InstallmentNo).ToList();
             var orderedCollections = (collections ?? new List<LoanCollection>())

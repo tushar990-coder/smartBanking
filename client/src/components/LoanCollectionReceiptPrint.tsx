@@ -82,7 +82,7 @@ ${collection.isCrossBranch && homeBranchName ? `📌 *कर्ज मूळ श
 
 💵 *जमा रक्कम तपशील:*
 • मुद्दल जमा: ₹ ${collection.principalCollected?.toLocaleString('en-IN') || '0.00'}
-• व्याज जमा: ₹ ${collection.interestCollected?.toLocaleString('en-IN') || '0.00'}
+${(collection.receivableInterestCollected || 0) > 0 ? `• थकीत येणे व्याज: ₹ ${(collection.receivableInterestCollected || 0).toLocaleString('en-IN')}\n` : ''}• चालू व्याज जमा: ₹ ${collection.interestCollected?.toLocaleString('en-IN') || '0.00'}
 ${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${collection.penaltyInterestCollected?.toLocaleString('en-IN')}\n` : ''}${collection.surchargeCollected > 0 ? `• सरचार्ज: ₹ ${collection.surchargeCollected?.toLocaleString('en-IN')}\n` : ''}💰 *एकूण जमा रक्कम:* ₹ ${totalCollected?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
 💳 *पेमेंट पद्धत:* ${collection.paymentMode}
 
@@ -222,9 +222,15 @@ ${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: �
                 <td className="p-2 text-right font-semibold font-mono text-slate-900">{collection.principalCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
               </tr>
             )}
+            {(collection.receivableInterestCollected || 0) > 0 && (
+              <tr className="border-b border-slate-700 hover:bg-slate-50/50">
+                <td className="border-r border-slate-700 p-2 text-slate-700">थकीत येणे व्याज जमा (Interest Receivable Recovery)</td>
+                <td className="p-2 text-right font-semibold font-mono text-slate-900">{collection.receivableInterestCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              </tr>
+            )}
             {collection.interestCollected > 0 && (
               <tr className="border-b border-slate-700 hover:bg-slate-50/50">
-                <td className="border-r border-slate-700 p-2 text-slate-700">कर्ज व्याज जमा (Interest Recovery)</td>
+                <td className="border-r border-slate-700 p-2 text-slate-700">कर्ज चालू व्याज जमा (Current Interest Recovery)</td>
                 <td className="p-2 text-right font-semibold font-mono text-slate-900">{collection.interestCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
               </tr>
             )}

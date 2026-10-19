@@ -216,6 +216,7 @@ namespace Bhisi.Api.Models
         public string MemberName { get; set; } = string.Empty;
         public string LoanType { get; set; } = string.Empty;
         public decimal PrincipalCollected { get; set; }
+        public decimal ReceivableInterestCollected { get; set; }
         public decimal InterestCollected { get; set; }
         public decimal PenaltyInterestCollected { get; set; }
         public decimal SurchargeCollected { get; set; }

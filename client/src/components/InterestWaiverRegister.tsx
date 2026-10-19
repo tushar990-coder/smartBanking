@@ -19,6 +19,7 @@ interface WaiverRecord {
   collectionDate: string;
   totalAmountReceived: number;
   principalCollected: number;
+  receivableInterestCollected?: number;
   interestCollected: number;
   interestWaived: number;
   penaltyWaived: number;
@@ -124,7 +125,7 @@ export default function InterestWaiverRegister() {
   const totalWaivedSum = filteredRecords.reduce((sum, r) => sum + (r.interestWaived || 0) + (r.penaltyWaived || 0), 0);
   const totalReceivedSum = filteredRecords.reduce((sum, r) => sum + (r.totalAmountReceived || 0), 0);
   const totalPrincipalSum = filteredRecords.reduce((sum, r) => sum + (r.principalCollected || 0), 0);
-  const totalInterestSum = filteredRecords.reduce((sum, r) => sum + (r.interestCollected || 0), 0);
+  const totalInterestSum = filteredRecords.reduce((sum, r) => sum + (r.receivableInterestCollected || 0) + (r.interestCollected || 0), 0);
 
   const handleExportExcel = () => {
     if (filteredRecords.length === 0) {
@@ -144,7 +145,8 @@ export default function InterestWaiverRegister() {
         'कर्जदाराचे नाव': r.loanAccount?.member ? `${r.loanAccount.member.firstName} ${r.loanAccount.member.lastName}` : '-',
         'ठराव क्र.': r.resolutionNo || '-',
         'वसूल मुद्दल (₹)': r.principalCollected || 0,
-        'वसूल व्याज (₹)': r.interestCollected || 0,
+        'वसूल येणे व्याज (₹)': r.receivableInterestCollected || 0,
+        'वसूल चालू व्याज (₹)': r.interestCollected || 0,
         'सूट दिलेले व्याज (₹)': r.interestWaived || 0,
         'सूट दिलेला दंड (₹)': r.penaltyWaived || 0,
         'एकूण सूट (₹)': (r.interestWaived || 0) + (r.penaltyWaived || 0),
@@ -162,7 +164,8 @@ export default function InterestWaiverRegister() {
       'कर्जदाराचे नाव': 'एकूण बेरीज (Grand Total):',
       'ठराव क्र.': `एकूण खाती: ${filteredRecords.length}`,
       'वसूल मुद्दल (₹)': totalPrincipalSum,
-      'वसूल व्याज (₹)': totalInterestSum,
+      'वसूल येणे व्याज (₹)': filteredRecords.reduce((s, r) => s + (r.receivableInterestCollected || 0), 0),
+      'वसूल चालू व्याज (₹)': filteredRecords.reduce((s, r) => s + (r.interestCollected || 0), 0),
       'सूट दिलेले व्याज (₹)': '',
       'सूट दिलेला दंड (₹)': '',
       'एकूण सूट (₹)': totalWaivedSum,
@@ -444,8 +447,8 @@ export default function InterestWaiverRegister() {
                         <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-gray-900">
                           {fmtCurrency(row.principalCollected)}
                         </td>
-                        <td className="border border-gray-900 py-1 px-1.5 text-right font-mono text-gray-900">
-                          {fmtCurrency(row.interestCollected)}
+                        <td className="border border-gray-900 py-1 px-1.5 text-right font-mono text-gray-900" title={`येणे व्याज: ₹${(row.receivableInterestCollected || 0).toFixed(2)} | चालू व्याज: ₹${(row.interestCollected || 0).toFixed(2)}`}>
+                          {fmtCurrency((row.receivableInterestCollected || 0) + (row.interestCollected || 0))}
                         </td>
                         <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-amber-900 bg-amber-50/50">
                           {fmtCurrency(waiverAmt)}

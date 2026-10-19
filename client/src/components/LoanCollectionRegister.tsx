@@ -23,6 +23,7 @@ interface LoanCollectionRegisterDto {
   memberName: string;
   loanType: string;
   principalCollected: number;
+  receivableInterestCollected?: number;
   interestCollected: number;
   penaltyInterestCollected: number;
   surchargeCollected: number;
@@ -187,6 +188,7 @@ export default function LoanCollectionRegister() {
 
   // Grand Totals
   const totalPrincipalSum = filteredData.reduce((sum, r) => sum + (r.principalCollected || 0), 0);
+  const totalReceivableInterestSum = filteredData.reduce((sum, r) => sum + (r.receivableInterestCollected || 0), 0);
   const totalInterestSum = filteredData.reduce((sum, r) => sum + (r.interestCollected || 0), 0);
   const totalPenaltySum = filteredData.reduce((sum, r) => sum + (r.penaltyInterestCollected || 0), 0);
   const totalSurchargeSum = filteredData.reduce((sum, r) => sum + (r.surchargeCollected || 0), 0);
@@ -213,7 +215,8 @@ export default function LoanCollectionRegister() {
         'आंतर-शाखा': r.isCrossBranch ? 'होय' : 'नाही',
         'कर्ज प्रकार': r.loanType,
         'मुद्दल (₹)': r.principalCollected || 0,
-        'व्याज (₹)': r.interestCollected || 0,
+        'थकीत येणे व्याज (₹)': r.receivableInterestCollected || 0,
+        'चालू व्याज (₹)': r.interestCollected || 0,
         'दंड व्याज (₹)': r.penaltyInterestCollected || 0,
         'इतर/अधिभार (₹)': r.surchargeCollected || 0,
         'एकूण जमा रक्कम (₹)': r.totalAmountReceived || 0,
@@ -233,7 +236,8 @@ export default function LoanCollectionRegister() {
       'आंतर-शाखा': '',
       'कर्ज प्रकार': `एकूण नोंदी: ${filteredData.length}`,
       'मुद्दल (₹)': totalPrincipalSum,
-      'व्याज (₹)': totalInterestSum,
+      'थकीत येणे व्याज (₹)': totalReceivableInterestSum,
+      'चालू व्याज (₹)': totalInterestSum,
       'दंड व्याज (₹)': totalPenaltySum,
       'इतर/अधिभार (₹)': totalSurchargeSum,
       'एकूण जमा रक्कम (₹)': totalReceivedSum,
@@ -456,7 +460,7 @@ export default function LoanCollectionRegister() {
               मुद्दल जमा: <strong className="text-primary font-bold">₹ {fmtCurrency(totalPrincipalSum)}</strong>
             </span>
             <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
-              व्याज जमा: <strong className="text-amber-800 font-bold">₹ {fmtCurrency(totalInterestSum)}</strong>
+              व्याज जमा: <strong className="text-amber-800 font-bold">₹ {fmtCurrency(totalReceivableInterestSum + totalInterestSum)}</strong>
             </span>
             <span className="bg-emerald-50 px-2 py-0.5 rounded text-emerald-800 border border-emerald-200">
               एकूण वसुली: <strong className="text-emerald-700 font-bold">₹ {fmtCurrency(totalReceivedSum)}</strong>
@@ -553,7 +557,7 @@ export default function LoanCollectionRegister() {
                   Object.keys(groupedData).map((typeStr) => {
                     const rows = groupedData[typeStr];
                     const subPrincipal = rows.reduce((sum, r) => sum + (r.principalCollected || 0), 0);
-                    const subInterest = rows.reduce((sum, r) => sum + (r.interestCollected || 0), 0);
+                    const subInterest = rows.reduce((sum, r) => sum + (r.receivableInterestCollected || 0) + (r.interestCollected || 0), 0);
                     const subTotal = rows.reduce((sum, r) => sum + (r.totalAmountReceived || 0), 0);
 
                     return (
@@ -603,8 +607,8 @@ export default function LoanCollectionRegister() {
                             <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-gray-900">
                               {fmtCurrency(row.principalCollected)}
                             </td>
-                            <td className="border border-gray-900 py-1 px-1.5 text-right font-mono text-gray-900">
-                              {fmtCurrency(row.interestCollected + (row.penaltyInterestCollected || 0) + (row.surchargeCollected || 0))}
+                            <td className="border border-gray-900 py-1 px-1.5 text-right font-mono text-gray-900" title={`थकीत येणे व्याज: ₹${(row.receivableInterestCollected || 0).toFixed(2)} | चालू व्याज: ₹${(row.interestCollected || 0).toFixed(2)}`}>
+                              {fmtCurrency((row.receivableInterestCollected || 0) + row.interestCollected + (row.penaltyInterestCollected || 0) + (row.surchargeCollected || 0))}
                             </td>
                             <td className="border border-gray-900 py-1 px-2 text-right font-mono font-bold text-emerald-800">
                               {fmtCurrency(row.totalAmountReceived)}
@@ -652,7 +656,7 @@ export default function LoanCollectionRegister() {
                       ₹ {fmtCurrency(totalPrincipalSum)}
                     </td>
                     <td className="border border-gray-900 py-1.5 px-1.5 text-right font-mono font-extrabold text-gray-950">
-                      ₹ {fmtCurrency(totalInterestSum + totalPenaltySum + totalSurchargeSum)}
+                      ₹ {fmtCurrency(totalReceivableInterestSum + totalInterestSum + totalPenaltySum + totalSurchargeSum)}
                     </td>
                     <td className="border border-gray-900 py-1.5 px-2 text-right font-mono font-extrabold text-emerald-900">
                       ₹ {fmtCurrency(totalReceivedSum)}

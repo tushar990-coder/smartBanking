@@ -6234,6 +6234,17 @@ BEGIN
 END
 GO
 
+-- 7.13 LoanCollections ReceivableInterestCollected Column (v2.5.75)
+IF OBJECT_ID(N'[LoanCollections]', N'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('LoanCollections', 'ReceivableInterestCollected') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[LoanCollections] ADD [ReceivableInterestCollected] DECIMAL(18,2) NOT NULL CONSTRAINT [DF_LoanCollections_ReceivableInterestCollected] DEFAULT (0.00);
+        PRINT '  -> Added [ReceivableInterestCollected] to LoanCollections';
+    END
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

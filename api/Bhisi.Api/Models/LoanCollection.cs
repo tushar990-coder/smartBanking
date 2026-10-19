@@ -47,7 +47,10 @@ namespace Bhisi.Api.Models
         public decimal PenaltyInterestCollected { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
-        public decimal InterestCollected { get; set; }
+        public decimal ReceivableInterestCollected { get; set; } = 0; // जमा झालेले थकीत येणे व्याज (Cr. Receivable Ledger)
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal InterestCollected { get; set; } // जमा झालेले चालू व्याज (Cr. Interest Income Ledger)
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal PrincipalCollected { get; set; }

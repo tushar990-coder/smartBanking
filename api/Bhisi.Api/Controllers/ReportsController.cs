@@ -760,6 +760,42 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
+                    // Receivable Interest Collected -> Receivable Interest Ledger
+                    if (lc.ReceivableInterestCollected > 0)
+                    {
+                        int rId = lc.LoanAccount?.LoanRate?.ReceivableInterestLedgerID ?? lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedger?.LedgerID ?? 0;
+                        if (rId > 0)
+                        {
+                            string rName = ledgers.FirstOrDefault(l => l.LedgerID == rId)?.LedgerName ?? "कर्ज येणे व्याज (Loan Interest Receivable)";
+                            if (!jamaGroups.ContainsKey(rId))
+                            {
+                                jamaGroups[rId] = new DaybookGroupDto
+                                {
+                                    LedgerId = rId,
+                                    LedgerName = rName,
+                                    Entries = new List<DaybookEntryDto>()
+                                };
+                            }
+                            var group = jamaGroups[rId];
+                            var entry = new DaybookEntryDto
+                            {
+                                Narration = isCrossBranch && !memberNarration.Contains("आंतर-शाखा")
+                                    ? $"{memberNarration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
+                                    : memberNarration,
+                                VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
+                                CashAmount = isCash ? lc.ReceivableInterestCollected : 0,
+                                TransferAmount = isCash ? 0 : lc.ReceivableInterestCollected,
+                                Status = "Direct",
+                                BranchId = colBranch,
+                                IsCrossBranch = isCrossBranch,
+                                HomeBranchId = accBranch
+                            };
+                            group.TotalCash += entry.CashAmount;
+                            group.TotalTransfer += entry.TransferAmount;
+                            group.Entries.Add(entry);
+                        }
+                    }
+
                     // Interest Collected -> Interest Ledger
                     if (lc.InterestCollected + lc.PenaltyInterestCollected > 0)
                     {
@@ -1156,6 +1192,41 @@ namespace Bhisi.Api.Controllers
                                 }
                             }
 
+                            if (lc.ReceivableInterestCollected > 0)
+                            {
+                                int rId = lc.LoanAccount?.LoanRate?.ReceivableInterestLedgerID ?? lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedger?.LedgerID ?? 0;
+                                if (rId > 0)
+                                {
+                                    string rName = ledgers.FirstOrDefault(l => l.LedgerID == rId)?.LedgerName ?? "कर्ज येणे व्याज (Loan Interest Receivable)";
+                                    if (!jamaGroups.ContainsKey(rId))
+                                    {
+                                        jamaGroups[rId] = new DaybookGroupDto
+                                        {
+                                            LedgerId = rId,
+                                            LedgerName = rName,
+                                            Entries = new List<DaybookEntryDto>()
+                                        };
+                                    }
+                                    var group = jamaGroups[rId];
+                                    var entry = new DaybookEntryDto
+                                    {
+                                        Narration = isCrossBranch && !memberNarration.Contains("आंतर-शाखा")
+                                            ? $"{memberNarration} [आंतर-शाखा: मूळ शाखा #{accBranch}]"
+                                            : memberNarration,
+                                        VoucherNo = lc.ReceiptNo ?? ("REC-" + lc.LoanCollectionID),
+                                        CashAmount = isCash ? lc.ReceivableInterestCollected : 0,
+                                        TransferAmount = isCash ? 0 : lc.ReceivableInterestCollected,
+                                        Status = "Direct",
+                                        BranchId = colBranch,
+                                        IsCrossBranch = isCrossBranch,
+                                        HomeBranchId = accBranch
+                                    };
+                                    group.TotalCash += entry.CashAmount;
+                                    group.TotalTransfer += entry.TransferAmount;
+                                    group.Entries.Add(entry);
+                                }
+                            }
+
                             if (lc.InterestCollected + lc.PenaltyInterestCollected > 0)
                             {
                                 int iId = lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedger?.LedgerID ?? 0;
@@ -1458,6 +1529,32 @@ namespace Bhisi.Api.Controllers
                             var summary = ledgerSummaries[lId];
                             if (isCash) summary.ReceiptCash += lc.PrincipalCollected;
                             else summary.ReceiptTransfer += lc.PrincipalCollected;
+
+                            if (!string.IsNullOrEmpty(mStr))
+                            {
+                                if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
+                                else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
+                            }
+                        }
+                    }
+
+                    if (lc.ReceivableInterestCollected > 0)
+                    {
+                        int rId = lc.LoanAccount?.LoanRate?.ReceivableInterestLedgerID ?? lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedgerSummary?.LedgerID ?? 0;
+                        if (rId > 0)
+                        {
+                            if (!ledgerSummaries.ContainsKey(rId))
+                            {
+                                var l = ledgers.FirstOrDefault(x => x.LedgerID == rId);
+                                ledgerSummaries[rId] = new DaybookSummaryLedgerDto
+                                {
+                                    LedgerId = rId,
+                                    LedgerName = l?.LedgerName ?? "कर्ज येणे व्याज (Loan Interest Receivable)"
+                                };
+                            }
+                            var summary = ledgerSummaries[rId];
+                            if (isCash) summary.ReceiptCash += lc.ReceivableInterestCollected;
+                            else summary.ReceiptTransfer += lc.ReceivableInterestCollected;
 
                             if (!string.IsNullOrEmpty(mStr))
                             {
@@ -1792,6 +1889,32 @@ namespace Bhisi.Api.Controllers
                                     var summary = ledgerSummaries[lId];
                                     if (isCash) summary.ReceiptCash += lc.PrincipalCollected;
                                     else summary.ReceiptTransfer += lc.PrincipalCollected;
+
+                                    if (!string.IsNullOrEmpty(mStr))
+                                    {
+                                        if (string.IsNullOrEmpty(summary.MemberDetails)) summary.MemberDetails = mStr;
+                                        else if (!summary.MemberDetails.Contains(mStr)) summary.MemberDetails += ", " + mStr;
+                                    }
+                                }
+                            }
+
+                            if (lc.ReceivableInterestCollected > 0)
+                            {
+                                int rId = lc.LoanAccount?.LoanRate?.ReceivableInterestLedgerID ?? lc.LoanAccount?.LoanRate?.InterestLedgerID ?? defaultInterestLedger?.LedgerID ?? 0;
+                                if (rId > 0)
+                                {
+                                    if (!ledgerSummaries.ContainsKey(rId))
+                                    {
+                                        var l = ledgers.FirstOrDefault(x => x.LedgerID == rId);
+                                        ledgerSummaries[rId] = new DaybookSummaryLedgerDto
+                                        {
+                                            LedgerId = rId,
+                                            LedgerName = l?.LedgerName ?? "कर्ज येणे व्याज (Loan Interest Receivable)"
+                                        };
+                                    }
+                                    var summary = ledgerSummaries[rId];
+                                    if (isCash) summary.ReceiptCash += lc.ReceivableInterestCollected;
+                                    else summary.ReceiptTransfer += lc.ReceivableInterestCollected;
 
                                     if (!string.IsNullOrEmpty(mStr))
                                     {
@@ -2909,6 +3032,7 @@ namespace Bhisi.Api.Controllers
                     MemberName = mName,
                     LoanType = !string.IsNullOrWhiteSpace(acc?.LoanRate?.ShortName) ? acc.LoanRate.ShortName : (acc?.LoanRate?.LoanType ?? ""),
                     PrincipalCollected = c.PrincipalCollected,
+                    ReceivableInterestCollected = c.ReceivableInterestCollected,
                     InterestCollected = c.InterestCollected,
                     PenaltyInterestCollected = c.PenaltyInterestCollected,
                     SurchargeCollected = c.SurchargeCollected,
@@ -3055,6 +3179,7 @@ namespace Bhisi.Api.Controllers
                         ReceiptNo = c.ReceiptNo ?? "",
                         Particulars = "Loan Collection",
                         PrincipalDeposit = c.PrincipalCollected,
+                        ReceivableInterest = c.ReceivableInterestCollected,
                         Interest = c.InterestCollected,
                         PenalInterest = c.PenaltyInterestCollected,
                         Total = c.TotalAmountReceived
@@ -6161,6 +6286,7 @@ namespace Bhisi.Api.Controllers
                     {
                         LoanAccountID = g.Key,
                         TotalPrincipal = g.Sum(x => x.PrincipalCollected),
+                        TotalReceivableInterest = g.Sum(x => x.ReceivableInterestCollected),
                         TotalInterest = g.Sum(x => x.InterestCollected),
                         TotalPenalty = g.Sum(x => x.PenaltyInterestCollected)
                     })
@@ -6217,7 +6343,7 @@ namespace Bhisi.Api.Controllers
                     if (collectionsByAccount.TryGetValue(la.LoanAccountID, out var cInfo))
                     {
                         collPrincipal = cInfo.TotalPrincipal;
-                        collInterest = cInfo.TotalInterest;
+                        collInterest = cInfo.TotalInterest + cInfo.TotalReceivableInterest;
                         collPenalty = cInfo.TotalPenalty;
                     }
 

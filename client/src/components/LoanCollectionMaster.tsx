@@ -142,6 +142,7 @@ interface LoanCollection {
     totalAmountReceived: number;
     surchargeCollected: number;
     penaltyInterestCollected: number;
+    receivableInterestCollected?: number;
     interestCollected: number;
     principalCollected: number;
     interestWaived?: number;
@@ -269,6 +270,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         totalAmountReceived: 0,
         surchargeCollected: 0,
         penaltyInterestCollected: 0,
+        receivableInterestCollected: 0,
         interestCollected: 0,
         principalCollected: 0,
         fees: []
@@ -974,22 +976,27 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
              loanRate.shortName?.toLowerCase().includes("gold") ||
              loanRate.loanType?.includes("सोने"));
 
-        if (isInterestOnly) {
-            const rate = acc.loanRate?.interestRate || acc.interestRate || 0;
-            const principal = acc.principalBalance || 0;
-            const fromDateStr = getInterestStartDate(acc);
-            let accruedInterest = acc.interestBalance || 0;
-            if (fromDateStr) {
-                const diffDays = calculateElapsedDays(fromDateStr, dateStr || new Date());
-                if (diffDays > 0) {
-                    accruedInterest += Math.round((principal * rate * diffDays) / 36500);
-                }
+        const rate = acc.loanRate?.interestRate || acc.interestRate || 0;
+        const principal = acc.principalBalance || 0;
+        const fromDateStr = getInterestStartDate(acc);
+        let daysInterest = 0;
+        if (fromDateStr) {
+            const diffDays = calculateElapsedDays(fromDateStr, dateStr || new Date());
+            if (diffDays > 0) {
+                daysInterest = Math.round((principal * rate * diffDays) / 36500);
             }
-            const totalDue = (acc.overdueInterestBalance || 0) + accruedInterest;
+        }
+        const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (acc.interestBalance || 0);
+        const penal = acc.overdueInterestBalance || 0;
+
+        if (isInterestOnly) {
+            const totalDue = penal + yeneVyaj + daysInterest;
             autoApportion(totalDue, formData.fees || [], acc, dateStr);
         } else {
             const installment = acc.installmentAmount || 0;
-            autoApportion(installment, formData.fees || [], acc, dateStr);
+            // 1 regular principal installment + old receivable interest + current days interest + penalty
+            const totalDue = installment + yeneVyaj + daysInterest + penal;
+            autoApportion(totalDue, formData.fees || [], acc, dateStr);
         }
     };
 
@@ -1040,12 +1047,81 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                         totalInstDue = nextP + (nextInstallment.interestAmount || 0);
                     }
                 }
-                autoApportion(totalInstDue > 0 ? totalInstDue : (selectedAccount.installmentAmount || 0), formData.fees || [], selectedAccount);
+                const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (selectedAccount.interestBalance || 0);
+                autoApportion((totalInstDue > 0 ? totalInstDue : (selectedAccount.installmentAmount || 0)) + yeneVyaj, formData.fees || [], selectedAccount);
             } else {
                 calculateInterest(selectedAccount, formData.collectionDate || new Date().toISOString().split('T')[0]);
             }
         }
     }, [formData.collectionDate, accountDetails, selectedAccount]);
+
+    const applyQuickAmount = (type: '1_INST' | 'INTEREST_ONLY' | 'FULL_DUE') => {
+        const account = selectedAccount;
+        if (!account) return;
+        const dateStr = formData.collectionDate || new Date().toISOString().split('T')[0];
+        const feesSum = (formData.fees || []).reduce((acc, f) => acc + (f.amount || 0), 0);
+        const penal = account.overdueInterestBalance || 0;
+        const yeneVyaj = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (account.interestBalance || 0);
+
+        const loanRate = account.loanRate;
+        const isDailyReducing = loanRate && 
+            (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"));
+
+        let currentInterestDue = 0;
+        let principalDue = 0;
+
+        if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
+            const collectionDateObj = parseDateSafe(dateStr);
+            collectionDateObj.setHours(0, 0, 0, 0);
+
+            const overdueInstallments = accountDetails.schedule.filter(s => {
+                const dueDateObj = parseDateSafe(s.dueDate);
+                dueDateObj.setHours(0, 0, 0, 0);
+                if (account.isOpeningBalance && account.openingDate) {
+                    const openingDateObj = parseDateSafe(account.openingDate);
+                    openingDateObj.setHours(0, 0, 0, 0);
+                    if (dueDateObj <= openingDateObj) return false;
+                }
+                return dueDateObj <= collectionDateObj && s.status !== 'Paid';
+            });
+
+            let targetInstallments: any[] = [];
+            if (overdueInstallments.length > 0) {
+                targetInstallments = overdueInstallments;
+            } else {
+                const nextInstallment = accountDetails.schedule.find(s => s.status !== 'Paid');
+                if (nextInstallment) targetInstallments = [nextInstallment];
+            }
+
+            if (targetInstallments.length > 0) {
+                currentInterestDue = targetInstallments.reduce((sum, s) => sum + s.interestAmount, 0);
+                principalDue = targetInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
+            }
+        } else {
+            const rate = account.loanRate?.interestRate || account.interestRate || 0;
+            const principal = account.principalBalance || 0;
+            const fromDateStr = getInterestStartDate(account);
+            if (fromDateStr) {
+                const diffDays = calculateElapsedDays(fromDateStr, dateStr);
+                if (diffDays > 0) {
+                    currentInterestDue = Math.round((principal * rate * diffDays) / 36500);
+                }
+            }
+            principalDue = account.installmentAmount || 0;
+        }
+
+        if (type === 'INTEREST_ONLY') {
+            const total = penal + yeneVyaj + currentInterestDue + feesSum;
+            autoApportion(total, formData.fees || []);
+        } else if (type === '1_INST') {
+            const total = principalDue + penal + yeneVyaj + currentInterestDue + feesSum;
+            autoApportion(total, formData.fees || []);
+        } else if (type === 'FULL_DUE') {
+            const maxPrincipal = account.principalBalance || 0;
+            const total = maxPrincipal + penal + yeneVyaj + currentInterestDue + feesSum;
+            autoApportion(total, formData.fees || []);
+        }
+    };
 
     const handleTotalAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = parseFloat(e.target.value) || 0;
@@ -1071,6 +1147,14 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const loanRate = account.loanRate;
         const isDailyReducing = loanRate && 
             (loanRate.interestCalculationMethod?.includes("Daily Reducing") || loanRate.interestCalculationMethod?.includes("दैनिक घटती"));
+
+        // 3. Past Posted / Accrued Receivable Interest (येणे व्याज)
+        const receivableDue = accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (account.interestBalance || 0);
+        const receivableCollected = Math.min(remaining, receivableDue);
+        remaining -= receivableCollected;
+
+        let currentInterestDue = 0;
+        let principalDue = 0;
 
         // Check if we have schedule details loaded and is NOT daily reducing
         if (!isDailyReducing && accountDetails?.schedule && accountDetails.schedule.length > 0) {
@@ -1099,59 +1183,45 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
 
             if (targetInstallments.length > 0) {
-                const interestDue = targetInstallments.reduce((sum, s) => sum + s.interestAmount, 0);
-                const principalDue = targetInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
-
-                const interestCollected = Math.min(remaining, interestDue);
-                remaining -= interestCollected;
-
-                const principalCollected = Math.min(remaining, principalDue);
-                remaining -= principalCollected;
-
-                const maxPrincipal = account.principalBalance || 0;
-                const actualPrincipalCol = Math.min(maxPrincipal, principalCollected + remaining);
-
-                setFormData(p => ({
-                    ...p,
-                    totalAmountReceived: totalAmt,
-                    penaltyInterestCollected: penaltyCollected,
-                    interestCollected: interestCollected,
-                    principalCollected: actualPrincipalCol,
-                    surchargeCollected: 0,
-                    fees: currentFees
-                }));
-                return;
+                currentInterestDue = targetInstallments.reduce((sum, s) => sum + s.interestAmount, 0);
+                principalDue = targetInstallments.reduce((sum, s) => sum + (s.remainingPrincipal !== undefined ? s.remainingPrincipal : s.principalAmount), 0);
             }
+        } else {
+            // Dynamic daily calculation for daily reducing
+            const rate = account.loanRate?.interestRate || account.interestRate || 0;
+            const principal = account.principalBalance || 0;
+            const fromDateStr = getInterestStartDate(account);
+            if (fromDateStr) {
+                const diffDays = calculateElapsedDays(fromDateStr, dateStr);
+                if (diffDays > 0) {
+                    currentInterestDue = Math.round((principal * rate * diffDays) / 36500);
+                }
+            }
+            principalDue = account.installmentAmount || 0;
         }
 
-        // Fallback to dynamic daily calculation if no schedule exists or for daily reducing
-        const rate = account.loanRate?.interestRate || account.interestRate || 0;
-        const principal = account.principalBalance || 0;
-        const fromDateStr = getInterestStartDate(account);
-        
-        let interestDue = account.interestBalance || 0;
-        if (fromDateStr) {
-            const diffDays = calculateElapsedDays(fromDateStr, dateStr);
-            if (diffDays > 0) {
-                interestDue += Math.round((principal * rate * diffDays) / 36500);
-            }
-        }
-        
-        const interestCollected = Math.min(remaining, interestDue);
-        remaining -= interestCollected;
+        // 4. Current Period Interest (चालू व्याज)
+        const currentInterestCollected = Math.min(remaining, currentInterestDue);
+        remaining -= currentInterestCollected;
 
-        const principalCollected = Math.min(remaining, principal);
-        remaining -= principalCollected;
-        
-        const actualPrincipalCol = principalCollected + remaining; 
+        // 5. Principal
+        const maxPrincipal = account.principalBalance || 0;
+        const targetPrincipal = principalDue > 0 ? principalDue : maxPrincipal;
+        const basePrincipalCollected = Math.min(remaining, targetPrincipal);
+        remaining -= basePrincipalCollected;
+
+        // 6. Remaining to Extra Principal / Surcharge
+        const actualPrincipalCol = Math.min(maxPrincipal, basePrincipalCollected + remaining);
+        const surchargeCol = (basePrincipalCollected + remaining) > maxPrincipal ? ((basePrincipalCollected + remaining) - maxPrincipal) : 0;
 
         setFormData(p => ({
             ...p,
             totalAmountReceived: totalAmt,
             penaltyInterestCollected: penaltyCollected,
-            interestCollected: interestCollected,
+            receivableInterestCollected: receivableCollected,
+            interestCollected: currentInterestCollected,
             principalCollected: actualPrincipalCol,
-            surchargeCollected: 0,
+            surchargeCollected: surchargeCol,
             fees: currentFees
         }));
     };
@@ -1164,19 +1234,19 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             const newForm = { ...p, [name]: val };
             const feesSum = (newForm.fees || []).reduce((acc, f) => acc + (f.amount || 0), 0);
             
-            if (name === 'interestCollected' || name === 'penaltyInterestCollected' || name === 'surchargeCollected') {
+            if (name === 'interestCollected' || name === 'receivableInterestCollected' || name === 'penaltyInterestCollected' || name === 'surchargeCollected') {
                 // Keep total constant, adjust principal
-                let newPrincipal = (p.totalAmountReceived || 0) - feesSum - (newForm.interestCollected || 0) - (newForm.penaltyInterestCollected || 0) - (newForm.surchargeCollected || 0);
+                let newPrincipal = (p.totalAmountReceived || 0) - feesSum - (newForm.receivableInterestCollected || 0) - (newForm.interestCollected || 0) - (newForm.penaltyInterestCollected || 0) - (newForm.surchargeCollected || 0);
                 
                 if (newPrincipal < 0) {
                     newPrincipal = 0;
                     // If principal goes below 0, adjust total instead
-                    newForm.totalAmountReceived = feesSum + (newForm.interestCollected || 0) + (newForm.penaltyInterestCollected || 0) + (newForm.surchargeCollected || 0);
+                    newForm.totalAmountReceived = feesSum + (newForm.receivableInterestCollected || 0) + (newForm.interestCollected || 0) + (newForm.penaltyInterestCollected || 0) + (newForm.surchargeCollected || 0);
                 }
                 newForm.principalCollected = newPrincipal;
             } else if (name === 'principalCollected') {
                 // If explicitly changing principal, recalculate total
-                newForm.totalAmountReceived = (newForm.principalCollected || 0) + (newForm.interestCollected || 0) + (newForm.penaltyInterestCollected || 0) + (newForm.surchargeCollected || 0) + feesSum;
+                newForm.totalAmountReceived = (newForm.principalCollected || 0) + (newForm.receivableInterestCollected || 0) + (newForm.interestCollected || 0) + (newForm.penaltyInterestCollected || 0) + (newForm.surchargeCollected || 0) + feesSum;
             }
             
             return newForm;
@@ -1252,6 +1322,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 totalAmountReceived: 0,
                 surchargeCollected: 0,
                 penaltyInterestCollected: 0,
+                receivableInterestCollected: 0,
                 interestCollected: 0,
                 principalCollected: 0,
                 fees: []
@@ -1297,7 +1368,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
 💵 *जमा रक्कम तपशील:*
 • मुद्दल जमा: ₹ ${c.principalCollected?.toLocaleString('en-IN') || '0.00'}
-• व्याज जमा: ₹ ${c.interestCollected?.toLocaleString('en-IN') || '0.00'}
+${(c.receivableInterestCollected || 0) > 0 ? `• थकीत येणे व्याज: ₹ ${(c.receivableInterestCollected || 0).toLocaleString('en-IN')}\n` : ''}• चालू व्याज जमा: ₹ ${c.interestCollected?.toLocaleString('en-IN') || '0.00'}
 ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.penaltyInterestCollected?.toLocaleString('en-IN')}\n` : ''}${c.surchargeCollected > 0 ? `• सरचार्ज: ₹ ${c.surchargeCollected?.toLocaleString('en-IN')}\n` : ''}💰 *एकूण जमा रक्कम:* ₹ ${totalAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
 💳 *पेमेंट पद्धत:* ${c.paymentMode}
 
@@ -1487,6 +1558,36 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                         </div>
                         
                         <div className="space-y-1.5 text-[11px]">
+                            {/* Quick Selection Buttons */}
+                            {selectedAccount && !isPassingMode && (
+                                <div className="grid grid-cols-3 gap-1 mb-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => applyQuickAmount('1_INST')}
+                                        className="px-1 py-1 text-[10px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-sm transition-colors text-center cursor-pointer shadow-2xs"
+                                        title="१ हप्ता मुद्दल + सर्व व्याज व फी"
+                                    >
+                                        ⚡ १ हप्ता
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => applyQuickAmount('INTEREST_ONLY')}
+                                        className="px-1 py-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-sm transition-colors text-center cursor-pointer shadow-2xs"
+                                        title="थकीत येणे व्याज + चालू व्याज + दंड"
+                                    >
+                                        ⚡ फक्त व्याज
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => applyQuickAmount('FULL_DUE')}
+                                        className="px-1 py-1 text-[10px] font-bold bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-sm transition-colors text-center cursor-pointer shadow-2xs"
+                                        title="संपूर्ण थकबाकी (मुद्दल + सर्व व्याज + दंड)"
+                                    >
+                                        ⚡ पूर्ण नील
+                                    </button>
+                                </div>
+                            )}
+
                             <div className="flex justify-between items-center bg-primary/10 p-1.5 rounded-sm border border-primary/30 mb-2">
                                 <label className="font-bold text-primary">एकूण जमा रक्कम (Total)</label>
                                 <input type="number" name="totalAmountReceived" value={formData.totalAmountReceived || ''} onChange={handleTotalAmountChange} min="0" disabled={isPassingMode}
@@ -1498,16 +1599,39 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 <input type="number" name="principalCollected" value={formData.principalCollected !== undefined ? formData.principalCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
                                     className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
                             </div>
+
+                            <div className="flex justify-between items-center bg-emerald-50/50 p-1 rounded-sm border border-emerald-200/60 transition-colors">
+                                <div className="flex flex-col">
+                                    <label className="font-bold text-emerald-800">येणे व्याज (Past Int)</label>
+                                    {selectedAccount && (
+                                        <span className="text-[9px] text-emerald-600 font-semibold font-mono">
+                                            बाकी: ₹{(accountDetails?.currentInterestBalance !== undefined ? accountDetails.currentInterestBalance : (selectedAccount.interestBalance || 0)).toLocaleString('en-IN')}
+                                        </span>
+                                    )}
+                                </div>
+                                <input type="number" name="receivableInterestCollected" value={formData.receivableInterestCollected !== undefined ? formData.receivableInterestCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
+                                    className={`w-24 border border-emerald-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-emerald-600 text-right font-bold text-emerald-900 ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-emerald-50/60'}`} />
+                            </div>
+
                             <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
-                                <label className="font-semibold text-gray-700">मेंबर व्याज (Interest)</label>
+                                <label className="font-semibold text-gray-700">चालू व्याज (Current Int)</label>
                                 <input type="number" name="interestCollected" value={formData.interestCollected !== undefined ? formData.interestCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
                                     className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
                             </div>
+
                             <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
-                                <label className="font-semibold text-gray-700">जादा व्याज (Penal Int)</label>
+                                <div className="flex flex-col">
+                                    <label className="font-semibold text-gray-700">जादा व्याज (Penal Int)</label>
+                                    {selectedAccount && (selectedAccount.overdueInterestBalance || 0) > 0 && (
+                                        <span className="text-[9px] text-rose-600 font-semibold font-mono">
+                                            बाकी: ₹{(selectedAccount.overdueInterestBalance || 0).toLocaleString('en-IN')}
+                                        </span>
+                                    )}
+                                </div>
                                 <input type="number" name="penaltyInterestCollected" value={formData.penaltyInterestCollected !== undefined ? formData.penaltyInterestCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
                                     className={`w-24 border border-gray-300 rounded-sm px-1.5 py-0.5 h-[22px] focus:outline-none focus:border-primary text-right font-medium ${isPassingMode ? 'bg-slate-100 text-gray-700 cursor-not-allowed' : 'bg-white text-gray-800'}`} />
                             </div>
+
                             <div className="flex justify-between items-center hover:bg-gray-50 p-1 rounded-sm transition-colors">
                                 <label className="font-semibold text-gray-700">देणे सरचार्ज (Surcharge)</label>
                                 <input type="number" name="surchargeCollected" value={formData.surchargeCollected !== undefined ? formData.surchargeCollected : ''} onChange={handleSplitChange} min="0" disabled={isPassingMode}
@@ -2125,6 +2249,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         totalAmountReceived: 0,
                                         surchargeCollected: 0,
                                         penaltyInterestCollected: 0,
+                                        receivableInterestCollected: 0,
                                         interestCollected: 0,
                                         principalCollected: 0,
                                         fees: []
@@ -2658,7 +2783,9 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         {c.loanAccount?.loanAccountNo} {c.loanAccount?.customer?.cifNo ? `| CIF: ${c.loanAccount.customer.cifNo}` : (c.loanAccount?.member?.memberCode ? `| ${c.loanAccount.member.memberCode}` : '')}
                                                     </span>
                                                 </td>
-                                                <td className="p-1 border-r text-right font-bold text-green-700">₹{c.totalAmountReceived.toFixed(2)}</td>
+                                                <td className="p-1 border-r text-right font-bold text-green-700" title={`मुद्दल: ₹${c.principalCollected?.toFixed(2) || '0.00'} | थकीत येणे व्याज: ₹${(c.receivableInterestCollected || 0).toFixed(2)} | चालू व्याज: ₹${c.interestCollected?.toFixed(2) || '0.00'}`}>
+                                                    ₹{c.totalAmountReceived.toFixed(2)}
+                                                </td>
                                                 <td className="p-1 border-r">
                                                     {isEditing ? (
                                                         <select value={editData.paymentMode || 'Cash'} onChange={e => setEditData({...editData, paymentMode: e.target.value})} className="border p-0.5 text-[11px] h-[22px] w-full">

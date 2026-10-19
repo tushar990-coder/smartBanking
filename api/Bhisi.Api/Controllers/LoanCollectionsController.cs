@@ -207,7 +207,8 @@ namespace Bhisi.Api.Controllers
                     principalPaid = remaining;
 
                     collection.PenaltyInterestCollected = penaltyPaid;
-                    collection.InterestCollected = regularInterestPaid;
+                    collection.ReceivableInterestCollected = regularInterestPaid;
+                    collection.InterestCollected = 0;
                     collection.PrincipalCollected = principalPaid;
                     collection.SurchargeCollected = 0;
 
@@ -226,6 +227,9 @@ namespace Bhisi.Api.Controllers
                     // STANDARD COLLECTION WATERFALL LOGIC
                     bool isDailyReducing = loanRate != null && 
                         ((loanRate.InterestCalculationMethod?.Contains("Daily Reducing") == true) || (loanRate.InterestCalculationMethod?.Contains("दैनिक घटती") == true));
+
+                    decimal existingReceivableInterest = loanAccount.InterestBalance;
+                    decimal currentPeriodInterest = 0;
 
                     if (isDailyReducing)
                     {
@@ -257,8 +261,7 @@ namespace Bhisi.Api.Controllers
                         // Standard core banking rule: repayment date is excluded from interest computation (e.g. 31/03/2026 to 07/10/2026 => 189 days)
                         var diffDays = rawDiffDays > 0 ? rawDiffDays - 1 : 0;
                         decimal effectivePrincipal = LoanAccountsController.GetEffectiveInterestBearingPrincipal(loanAccount);
-                        decimal newInterest = diffDays > 0 ? Math.Round((effectivePrincipal * rate * diffDays) / 36500m) : 0;
-                        loanAccount.InterestBalance += newInterest;
+                        currentPeriodInterest = diffDays > 0 ? Math.Round((effectivePrincipal * rate * diffDays) / 36500m) : 0;
                     }
                     else
                     {
@@ -277,43 +280,67 @@ namespace Bhisi.Api.Controllers
                             pastCollections,
                             collection.CollectionDate);
 
-                        loanAccount.InterestBalance = unpaidScheduledInterest;
+                        currentPeriodInterest = unpaidScheduledInterest;
                     }
 
+                    decimal receivablePaid = 0;
+                    decimal surchargeCollected = 0;
                     decimal remaining = collection.TotalAmountReceived;
 
                     // A. Overdue Expenses
                     expensesPaid = Math.Min(remaining, overdueExpenses);
                     remaining -= expensesPaid;
 
-                    // B. Overdue Interest
-                    decimal interestDue = loanAccount.OverdueInterestBalance + loanAccount.InterestBalance;
-                    interestPaid = Math.Min(remaining, interestDue);
-                    remaining -= interestPaid;
+                    // Check if explicit split was passed from frontend
+                    decimal declaredTotal = collection.PrincipalCollected + collection.ReceivableInterestCollected + collection.InterestCollected + collection.PenaltyInterestCollected + collection.SurchargeCollected;
+                    bool hasExplicitSplit = declaredTotal > 0 && Math.Abs(declaredTotal - remaining) <= 0.05m;
 
-                    penaltyPaid = Math.Min(interestPaid, loanAccount.OverdueInterestBalance);
-                    regularInterestPaid = interestPaid - penaltyPaid;
-
-                    loanAccount.OverdueInterestBalance -= penaltyPaid;
-                    loanAccount.InterestBalance -= regularInterestPaid;
-
-                    // C. Principal
-                    principalPaid = Math.Min(remaining, loanAccount.PrincipalBalance);
-                    remaining -= principalPaid;
-                    loanAccount.PrincipalBalance -= principalPaid;
-
-                    // Surcharge / Extra Principal
-                    decimal surchargeCollected = 0;
-                    if (remaining > 0)
+                    if (hasExplicitSplit)
                     {
-                        if (loanAccount.PrincipalBalance > 0)
+                        penaltyPaid = Math.Min(collection.PenaltyInterestCollected, loanAccount.OverdueInterestBalance);
+                        receivablePaid = Math.Min(collection.ReceivableInterestCollected, existingReceivableInterest);
+                        regularInterestPaid = collection.InterestCollected;
+                        principalPaid = Math.Min(collection.PrincipalCollected, loanAccount.PrincipalBalance);
+                        surchargeCollected = collection.SurchargeCollected;
+
+                        loanAccount.OverdueInterestBalance = Math.Max(0, loanAccount.OverdueInterestBalance - penaltyPaid);
+                        loanAccount.InterestBalance = Math.Max(0, (existingReceivableInterest - receivablePaid) + (currentPeriodInterest - regularInterestPaid));
+                        loanAccount.PrincipalBalance = Math.Max(0, loanAccount.PrincipalBalance - principalPaid);
+                    }
+                    else
+                    {
+                        // B. Overdue / Penal Interest
+                        penaltyPaid = Math.Min(remaining, loanAccount.OverdueInterestBalance);
+                        remaining -= penaltyPaid;
+                        loanAccount.OverdueInterestBalance = Math.Max(0, loanAccount.OverdueInterestBalance - penaltyPaid);
+
+                        // C. Past Posted / Accrued Receivable Interest (येणे व्याज)
+                        receivablePaid = Math.Min(remaining, existingReceivableInterest);
+                        remaining -= receivablePaid;
+
+                        // D. Current Period Accrued Interest (चालू व्याज)
+                        regularInterestPaid = Math.Min(remaining, currentPeriodInterest);
+                        remaining -= regularInterestPaid;
+
+                        loanAccount.InterestBalance = Math.Max(0, (existingReceivableInterest - receivablePaid) + (currentPeriodInterest - regularInterestPaid));
+
+                        // E. Principal
+                        principalPaid = Math.Min(remaining, loanAccount.PrincipalBalance);
+                        remaining -= principalPaid;
+                        loanAccount.PrincipalBalance = Math.Max(0, loanAccount.PrincipalBalance - principalPaid);
+
+                        // F. Extra Principal / Surcharge
+                        if (remaining > 0)
                         {
-                            decimal extraPrincipal = Math.Min(remaining, loanAccount.PrincipalBalance);
-                            loanAccount.PrincipalBalance -= extraPrincipal;
-                            principalPaid += extraPrincipal;
-                            remaining -= extraPrincipal;
+                            if (loanAccount.PrincipalBalance > 0)
+                            {
+                                decimal extraPrincipal = Math.Min(remaining, loanAccount.PrincipalBalance);
+                                loanAccount.PrincipalBalance -= extraPrincipal;
+                                principalPaid += extraPrincipal;
+                                remaining -= extraPrincipal;
+                            }
+                            surchargeCollected = remaining;
                         }
-                        surchargeCollected = remaining;
                     }
 
                     // CBS Waterfall: Settle Capitalized Interest first, then Pure Principal
@@ -332,6 +359,8 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
+                    interestPaid = receivablePaid + regularInterestPaid;
+
                     // CBS Suspense: Release Interest Provision on actual cash interest recovery
                     if (interestPaid > 0 && loanAccount.InterestProvisionBalance > 0)
                     {
@@ -340,6 +369,7 @@ namespace Bhisi.Api.Controllers
                     }
 
                     collection.PenaltyInterestCollected = penaltyPaid;
+                    collection.ReceivableInterestCollected = receivablePaid;
                     collection.InterestCollected = regularInterestPaid;
                     collection.PrincipalCollected = principalPaid;
                     collection.SurchargeCollected = surchargeCollected;
@@ -451,6 +481,10 @@ namespace Bhisi.Api.Controllers
                 {
                     return BadRequest(new { message = $"कर्ज योजना '{loanRate?.LoanType ?? "अज्ञात"}' ला कर्ज व्याज खाते (Interest Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रक (Loan Rate Master) तपासा." });
                 }
+
+                int receivableInterestLedgerId = (loanRate?.ReceivableInterestLedgerID ?? 0) > 0 
+                    ? loanRate!.ReceivableInterestLedgerID!.Value 
+                    : interestLedgerId;
 
                 int overdueInterestLedgerId = (loanRate?.OverdueInterestLedgerID ?? 0) > 0 
                     ? loanRate!.OverdueInterestLedgerID!.Value 
@@ -576,6 +610,9 @@ namespace Bhisi.Api.Controllers
                     if (loanLedgerId > 0 && collection.PrincipalCollected > 0)
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanLedgerId, DrCr = "Cr", Amount = collection.PrincipalCollected, CustomerID = custId, MemberID = memId });
 
+                    if (receivableInterestLedgerId > 0 && collection.ReceivableInterestCollected > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = receivableInterestLedgerId, DrCr = "Cr", Amount = collection.ReceivableInterestCollected, CustomerID = custId, MemberID = memId });
+
                     if (interestLedgerId > 0 && collection.InterestCollected > 0)
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = interestLedgerId, DrCr = "Cr", Amount = collection.InterestCollected, CustomerID = custId, MemberID = memId });
 
@@ -674,6 +711,9 @@ namespace Bhisi.Api.Controllers
 
                     if (loanLedgerId > 0 && collection.PrincipalCollected > 0)
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = loanLedgerId, DrCr = "Cr", Amount = collection.PrincipalCollected, CustomerID = custId, MemberID = memId });
+
+                    if (receivableInterestLedgerId > 0 && collection.ReceivableInterestCollected > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = receivableInterestLedgerId, DrCr = "Cr", Amount = collection.ReceivableInterestCollected, CustomerID = custId, MemberID = memId });
 
                     if (interestLedgerId > 0 && collection.InterestCollected > 0)
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = interestLedgerId, DrCr = "Cr", Amount = collection.InterestCollected, CustomerID = custId, MemberID = memId });
@@ -786,6 +826,7 @@ namespace Bhisi.Api.Controllers
                         collection.CollectionDate,
                         collection.TotalAmountReceived,
                         collection.PrincipalCollected,
+                        collection.ReceivableInterestCollected,
                         collection.InterestCollected,
                         collection.PenaltyInterestCollected,
                         collection.SurchargeCollected,
@@ -942,6 +983,10 @@ namespace Bhisi.Api.Controllers
                     if (collection.PenaltyInterestCollected > 0)
                     {
                         loanAccount.OverdueInterestBalance += collection.PenaltyInterestCollected;
+                    }
+                    if (collection.ReceivableInterestCollected > 0)
+                    {
+                        loanAccount.InterestBalance += collection.ReceivableInterestCollected;
                     }
                     if (loanAccount.Status == "Closed" && loanAccount.PrincipalBalance > 0)
                     {

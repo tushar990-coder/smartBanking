@@ -6189,6 +6189,51 @@ BEGIN
 END
 GO
 
+-- 7.12 Investment Schemes & Accounts Decimal(18,2) Precision Parity (v2.5.73)
+IF OBJECT_ID(N'[InvestmentSchemes]', N'U') IS NOT NULL
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'InvestmentSchemes' AND COLUMN_NAME = 'InterestRate' AND NUMERIC_PRECISION < 18
+    )
+    BEGIN
+        ALTER TABLE [InvestmentSchemes] ALTER COLUMN [InterestRate] DECIMAL(18,2) NOT NULL;
+        PRINT '  -> Updated InvestmentSchemes.InterestRate to DECIMAL(18,2)';
+    END
+
+    IF EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'InvestmentSchemes' AND COLUMN_NAME = 'PrematureWithdrawalRate' AND NUMERIC_PRECISION < 18
+    )
+    BEGIN
+        ALTER TABLE [InvestmentSchemes] ALTER COLUMN [PrematureWithdrawalRate] DECIMAL(18,2) NOT NULL;
+        PRINT '  -> Updated InvestmentSchemes.PrematureWithdrawalRate to DECIMAL(18,2)';
+    END
+END
+GO
+
+IF OBJECT_ID(N'[InvestmentAccounts]', N'U') IS NOT NULL
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'InvestmentAccounts' AND COLUMN_NAME = 'InterestRate' AND NUMERIC_PRECISION < 18
+    )
+    BEGIN
+        ALTER TABLE [InvestmentAccounts] ALTER COLUMN [InterestRate] DECIMAL(18,2) NOT NULL;
+        PRINT '  -> Updated InvestmentAccounts.InterestRate to DECIMAL(18,2)';
+    END
+
+    IF EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'InvestmentAccounts' AND COLUMN_NAME = 'PrematureWithdrawalRate' AND NUMERIC_PRECISION < 18
+    )
+    BEGIN
+        ALTER TABLE [InvestmentAccounts] ALTER COLUMN [PrematureWithdrawalRate] DECIMAL(18,2) NOT NULL;
+        PRINT '  -> Updated InvestmentAccounts.PrematureWithdrawalRate to DECIMAL(18,2)';
+    END
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

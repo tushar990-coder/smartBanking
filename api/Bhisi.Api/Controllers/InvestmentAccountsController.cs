@@ -94,6 +94,206 @@ namespace Bhisi.Api.Controllers
             return Ok(new { nextAccountNo = nextNo });
         }
 
+        /// <summary>
+        /// 100% Dynamic CBS Sync Engine for Investment Opening Balances.
+        /// Strictly ZERO Fallbacks: All ledgers are dynamically resolved from InvestmentSchemes
+        /// (InvestmentAssetLedgerID and InterestReceivableLedgerID).
+        /// Recalculates and updates BranchLedgerOpeningBalances and Ledgers.OpeningBalance,
+        /// ensuring 100% accurate reflection in Trial Balance (तेरीज), Balance Sheet (ताळेबंद), and General Ledger (खातावणी).
+        /// </summary>
+        public async Task SyncInvestmentOpeningBalancesAsync(int? targetBranchId = null)
+        {
+            // 1. Identify active financial year
+            int activeFyId = await _context.FinancialYears
+                .Where(fy => fy.IsActive)
+                .Select(fy => fy.FinancialYearID)
+                .FirstOrDefaultAsync();
+
+            if (activeFyId == 0)
+            {
+                activeFyId = await _context.FinancialYears
+                    .OrderByDescending(fy => fy.FinancialYearID)
+                    .Select(fy => fy.FinancialYearID)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (activeFyId == 0)
+            {
+                return;
+            }
+
+            // 2. Fetch all Investment Schemes that have linked GL Ledgers
+            var schemes = await _context.InvestmentSchemes
+                .AsNoTracking()
+                .Where(s => s.InvestmentAssetLedgerID.HasValue || s.InterestReceivableLedgerID.HasValue)
+                .ToListAsync();
+
+            var allSchemeLedgerIds = schemes
+                .SelectMany(s => new[] { s.InvestmentAssetLedgerID, s.InterestReceivableLedgerID })
+                .Where(id => id.HasValue && id.Value > 0)
+                .Select(id => id.Value)
+                .Distinct()
+                .ToList();
+
+            if (!allSchemeLedgerIds.Any())
+            {
+                return;
+            }
+
+            // 3. Query all active legacy investment accounts
+            var legacyQuery = _context.InvestmentAccounts
+                .AsNoTracking()
+                .Include(a => a.InvestmentScheme)
+                .Where(a => a.IsLegacyAccount && a.Status == "Active");
+
+            if (targetBranchId.HasValue && targetBranchId.Value > 0)
+            {
+                legacyQuery = legacyQuery.Where(a => a.BranchID == targetBranchId.Value);
+            }
+
+            var legacyAccounts = await legacyQuery.ToListAsync();
+
+            // 4. Determine list of branches to sync
+            List<int> branchIdsToSync;
+            if (targetBranchId.HasValue && targetBranchId.Value > 0)
+            {
+                branchIdsToSync = new List<int> { targetBranchId.Value };
+            }
+            else
+            {
+                branchIdsToSync = await _context.Branches
+                    .Select(b => b.BranchID)
+                    .Distinct()
+                    .ToListAsync();
+                if (!branchIdsToSync.Any())
+                {
+                    branchIdsToSync = new List<int> { 1 };
+                }
+            }
+
+            // 5. Aggregate required Dr balances per (BranchID, LedgerID)
+            var targetBalances = new Dictionary<(int BranchId, int LedgerId), decimal>();
+
+            // Initialize all branch/ledger pairs to 0
+            foreach (var bId in branchIdsToSync)
+            {
+                foreach (var lId in allSchemeLedgerIds)
+                {
+                    targetBalances[(bId, lId)] = 0m;
+                }
+            }
+
+            // Sum up Principal and Accrued Interest from legacy accounts
+            foreach (var acc in legacyAccounts)
+            {
+                if (acc.InvestmentScheme == null) continue;
+
+                // A. Principal Amount -> InvestmentAssetLedgerID
+                if (acc.InvestmentScheme.InvestmentAssetLedgerID.HasValue && 
+                    acc.InvestmentScheme.InvestmentAssetLedgerID.Value > 0 &&
+                    acc.PrincipalAmount > 0)
+                {
+                    var key = (acc.BranchID, acc.InvestmentScheme.InvestmentAssetLedgerID.Value);
+                    targetBalances[key] = targetBalances.GetValueOrDefault(key, 0m) + acc.PrincipalAmount;
+                }
+
+                // B. Accrued Interest Till Migration -> InterestReceivableLedgerID
+                if (acc.AccruedInterestTillMigration > 0 && 
+                    acc.InvestmentScheme.InterestReceivableLedgerID.HasValue && 
+                    acc.InvestmentScheme.InterestReceivableLedgerID.Value > 0)
+                {
+                    var key = (acc.BranchID, acc.InvestmentScheme.InterestReceivableLedgerID.Value);
+                    targetBalances[key] = targetBalances.GetValueOrDefault(key, 0m) + acc.AccruedInterestTillMigration;
+                }
+            }
+
+            // 6. Fetch existing BranchLedgerOpeningBalances for these branches & ledgers in active FY
+            var existingRows = await _context.BranchLedgerOpeningBalances
+                .Where(b => b.FinancialYearID == activeFyId && 
+                            branchIdsToSync.Contains(b.BranchID) && 
+                            allSchemeLedgerIds.Contains(b.LedgerID))
+                .ToListAsync();
+
+            var existingMap = existingRows.ToDictionary(r => (r.BranchID, r.LedgerID), r => r);
+
+            // 7. Upsert BranchLedgerOpeningBalances
+            foreach (var kvp in targetBalances)
+            {
+                int bId = kvp.Key.BranchId;
+                int lId = kvp.Key.LedgerId;
+                decimal neededBalance = kvp.Value;
+
+                if (existingMap.TryGetValue((bId, lId), out var existing))
+                {
+                    if (neededBalance > 0 || (existing.Remarks != null && existing.Remarks.Contains("गुंतवणूक सुरुवातीची शिल्लक")))
+                    {
+                        existing.OpeningBalance = neededBalance;
+                        existing.OpeningBalanceType = "Dr";
+                        existing.Remarks = "गुंतवणूक सुरुवातीची शिल्लक सिंक (Dynamic CBS Engine)";
+                        existing.UpdatedOn = DateTime.UtcNow;
+                    }
+                }
+                else if (neededBalance > 0)
+                {
+                    var newRecord = new BranchLedgerOpeningBalance
+                    {
+                        BranchID = bId,
+                        LedgerID = lId,
+                        FinancialYearID = activeFyId,
+                        OpeningBalance = neededBalance,
+                        OpeningBalanceType = "Dr",
+                        Remarks = "गुंतवणूक सुरुवातीची शिल्लक सिंक (Dynamic CBS Engine)",
+                        CreatedOn = DateTime.UtcNow,
+                        CreatedBy = 1
+                    };
+                    _context.BranchLedgerOpeningBalances.Add(newRecord);
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            // 8. Synchronize consolidated OpeningBalance on Ledgers table
+            foreach (var ledgerId in allSchemeLedgerIds)
+            {
+                var ledger = await _context.Ledgers.FindAsync(ledgerId);
+                if (ledger != null)
+                {
+                    decimal totalDr = await _context.BranchLedgerOpeningBalances
+                        .Where(b => b.LedgerID == ledgerId && b.FinancialYearID == activeFyId && b.OpeningBalanceType == "Dr")
+                        .SumAsync(b => b.OpeningBalance);
+
+                    if (totalDr > 0 || ledger.OpeningBalance > 0)
+                    {
+                        ledger.OpeningBalance = totalDr;
+                        ledger.OpeningBalanceType = "Dr";
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
+        // POST: api/InvestmentAccounts/sync-opening-balances?branchId=1
+        [HttpPost("sync-opening-balances")]
+        public async Task<IActionResult> SyncOpeningBalances([FromQuery] int? branchId)
+        {
+            try
+            {
+                await SyncInvestmentOpeningBalancesAsync(branchId);
+                return Ok(new { 
+                    success = true, 
+                    message = "गुंतवणूक सुरुवातीची शिल्लक तेरीज, ताळेबंद व GL खात्यांशी यशस्वीरीत्या सिंक करण्यात आली." 
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { 
+                    success = false, 
+                    message = $"GL सिंक करताना त्रुटी आली: {ex.Message}" 
+                });
+            }
+        }
+
         private async Task<int> GetDefaultCashBankLedgerId(int branchId = 1)
         {
             // 1. Try branch default cash ledger
@@ -340,6 +540,26 @@ namespace Bhisi.Api.Controllers
                 return NotFound("गुंतवणूक खाते सापडले नाही.");
             }
 
+            int oldBranchId = existing.BranchID;
+            bool isLegacy = existing.IsLegacyAccount || account.IsLegacyAccount;
+
+            if (isLegacy)
+            {
+                var scheme = await _context.InvestmentSchemes.FindAsync(account.SchemeID);
+                if (scheme == null)
+                {
+                    return BadRequest("निवडलेली गुंतवणूक योजना अस्तित्वात नाही.");
+                }
+                if (!scheme.InvestmentAssetLedgerID.HasValue || scheme.InvestmentAssetLedgerID.Value <= 0)
+                {
+                    return BadRequest($"निवडलेल्या गुंतवणूक योजनेला ('{scheme.SchemeName}') Asset Ledger (खाते) जोडलेले नाही. कृपया आधी गुंतवणूक योजना मास्टरमध्ये जाऊन GL Ledger लिंक करा.");
+                }
+                if (account.AccruedInterestTillMigration > 0 && (!scheme.InterestReceivableLedgerID.HasValue || scheme.InterestReceivableLedgerID.Value <= 0))
+                {
+                    return BadRequest($"स्थलांतरित व्याजाची रक्कम नोंदवण्यासाठी गुंतवणूक योजनेला ('{scheme.SchemeName}') 'Interest Receivable Ledger' लिंक असणे आवश्यक आहे. कृपया गुंतवणूक योजना मास्टरमध्ये GL Ledger लिंक करा.");
+                }
+            }
+
             existing.BranchID = account.BranchID;
             existing.InvestmentInstitutionID = account.InvestmentInstitutionID;
             existing.SchemeID = account.SchemeID;
@@ -359,6 +579,16 @@ namespace Bhisi.Api.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+
+                if (isLegacy)
+                {
+                    await SyncInvestmentOpeningBalancesAsync(oldBranchId);
+                    if (account.BranchID != oldBranchId)
+                    {
+                        await SyncInvestmentOpeningBalancesAsync(account.BranchID);
+                    }
+                }
+
                 return Ok(new { message = "गुंतवणूक खाते माहिती यशस्वीरीत्या अद्ययावत केली!" });
             }
             catch (Exception ex)
@@ -392,9 +622,26 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("मुदतपूर्ती तारीख अवैध आहे. वर्ष 1980 ते 2150 दरम्यान असणे आवश्यक आहे.");
             }
 
-            if (account.IsLegacyAccount && string.IsNullOrWhiteSpace(account.OldInvestmentNo))
+            if (account.IsLegacyAccount)
             {
-                return BadRequest("सुरुवातीची शिल्लक स्थलांतर करताना जुना गुंतवणूक खाते क्रमांक (Old Investment No) भरणे अनिवार्य आहे.");
+                if (string.IsNullOrWhiteSpace(account.OldInvestmentNo))
+                {
+                    return BadRequest("सुरुवातीची शिल्लक स्थलांतर करताना जुना गुंतवणूक खाते क्रमांक (Old Investment No) भरणे अनिवार्य आहे.");
+                }
+
+                var schemeCheck = await _context.InvestmentSchemes.FindAsync(account.SchemeID);
+                if (schemeCheck == null)
+                {
+                    return BadRequest("निवडलेली गुंतवणूक योजना अस्तित्वात नाही.");
+                }
+                if (!schemeCheck.InvestmentAssetLedgerID.HasValue || schemeCheck.InvestmentAssetLedgerID.Value <= 0)
+                {
+                    return BadRequest($"निवडलेल्या गुंतवणूक योजनेला ('{schemeCheck.SchemeName}') Asset Ledger (खाते) जोडलेले नाही. कृपया आधी गुंतवणूक योजना मास्टरमध्ये जाऊन GL Ledger लिंक करा.");
+                }
+                if (account.AccruedInterestTillMigration > 0 && (!schemeCheck.InterestReceivableLedgerID.HasValue || schemeCheck.InterestReceivableLedgerID.Value <= 0))
+                {
+                    return BadRequest($"स्थलांतरित व्याजाची रक्कम नोंदवण्यासाठी गुंतवणूक योजनेला ('{schemeCheck.SchemeName}') 'Interest Receivable Ledger' लिंक असणे आवश्यक आहे. कृपया गुंतवणूक योजना मास्टरमध्ये GL Ledger लिंक करा.");
+                }
             }
 
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -449,7 +696,7 @@ namespace Bhisi.Api.Controllers
                 _context.InvestmentAccounts.Add(account);
                 await _context.SaveChangesAsync();
 
-                // Create voucher entry if not legacy
+                // Create voucher entry if not legacy, or sync opening balances if legacy
                 if (!account.IsLegacyAccount)
                 {
                     var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
@@ -491,6 +738,11 @@ namespace Bhisi.Api.Controllers
                         _context.VoucherDetails.Add(credDetail);
                         await _context.SaveChangesAsync();
                     }
+                }
+                else
+                {
+                    // 100% Dynamic CBS Sync to BranchLedgerOpeningBalances & Ledgers
+                    await SyncInvestmentOpeningBalancesAsync(account.BranchID);
                 }
 
                 await transaction.CommitAsync();
@@ -534,6 +786,20 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("सुरुवातीची शिल्लक स्थलांतर करताना जुना गुंतवणूक खाते क्रमांक (Old Investment No) भरणे अनिवार्य आहे.");
             }
 
+            var schemeCheck = await _context.InvestmentSchemes.FindAsync(account.SchemeID);
+            if (schemeCheck == null)
+            {
+                return BadRequest("निवडलेली गुंतवणूक योजना अस्तित्वात नाही.");
+            }
+            if (!schemeCheck.InvestmentAssetLedgerID.HasValue || schemeCheck.InvestmentAssetLedgerID.Value <= 0)
+            {
+                return BadRequest($"निवडलेल्या गुंतवणूक योजनेला ('{schemeCheck.SchemeName}') Asset Ledger (खाते) जोडलेले नाही. कृपया आधी गुंतवणूक योजना मास्टरमध्ये जाऊन GL Ledger लिंक करा.");
+            }
+            if (account.AccruedInterestTillMigration > 0 && (!schemeCheck.InterestReceivableLedgerID.HasValue || schemeCheck.InterestReceivableLedgerID.Value <= 0))
+            {
+                return BadRequest($"स्थलांतरित व्याजाची रक्कम नोंदवण्यासाठी गुंतवणूक योजनेला ('{schemeCheck.SchemeName}') 'Interest Receivable Ledger' लिंक असणे आवश्यक आहे. कृपया गुंतवणूक योजना मास्टरमध्ये GL Ledger लिंक करा.");
+            }
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -550,6 +816,9 @@ namespace Bhisi.Api.Controllers
 
                 _context.InvestmentAccounts.Add(account);
                 await _context.SaveChangesAsync();
+
+                // 100% Dynamic CBS Sync to BranchLedgerOpeningBalances & Ledgers
+                await SyncInvestmentOpeningBalancesAsync(account.BranchID);
 
                 await transaction.CommitAsync();
                 return Ok(new { message = "गुंतवणूक स्थलांतर यशस्वी!", account.InvestmentAccountID, account.InvestmentNo });
@@ -576,6 +845,9 @@ namespace Bhisi.Api.Controllers
             {
                 return BadRequest(new { message = "हे खाते डिलीट करता येणार नाही कारण याची मुदतपूर्ती (Maturity) नोंद झालेली आहे." });
             }
+
+            bool wasLegacy = account.IsLegacyAccount;
+            int branchId = account.BranchID;
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -604,6 +876,12 @@ namespace Bhisi.Api.Controllers
 
                 _context.InvestmentAccounts.Remove(account);
                 await _context.SaveChangesAsync();
+
+                if (wasLegacy)
+                {
+                    await SyncInvestmentOpeningBalancesAsync(branchId);
+                }
+
                 await transaction.CommitAsync();
 
                 return Ok(new { message = "गुंतवणूक खाते यशस्वीरीत्या डिलीट केले." });

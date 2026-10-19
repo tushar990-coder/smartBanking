@@ -1707,6 +1707,14 @@ using (var scope = app.Services.CreateScope())
                 BEGIN
                     ALTER TABLE [InvestmentSchemes] ADD [InterestReceivableLedgerID] int NULL;
                 END
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'InvestmentSchemes' AND COLUMN_NAME = 'InterestRate' AND NUMERIC_PRECISION < 18)
+                BEGIN
+                    ALTER TABLE [dbo].[InvestmentSchemes] ALTER COLUMN [InterestRate] DECIMAL(18,2) NOT NULL;
+                END
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'InvestmentSchemes' AND COLUMN_NAME = 'PrematureWithdrawalRate' AND NUMERIC_PRECISION < 18)
+                BEGIN
+                    ALTER TABLE [dbo].[InvestmentSchemes] ALTER COLUMN [PrematureWithdrawalRate] DECIMAL(18,2) NOT NULL;
+                END
             END
 
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'InvestmentAccounts')
@@ -1714,6 +1722,14 @@ using (var scope = app.Services.CreateScope())
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[InvestmentAccounts]') AND name = 'DepositReceiptNo')
                 BEGIN
                     ALTER TABLE [InvestmentAccounts] ADD [DepositReceiptNo] nvarchar(50) NULL;
+                END
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[InvestmentAccounts]') AND name = 'OldInvestmentNo')
+                BEGIN
+                    ALTER TABLE [InvestmentAccounts] ADD [OldInvestmentNo] nvarchar(50) NULL;
+                END
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'InvestmentAccounts' AND COLUMN_NAME = 'InterestRate' AND NUMERIC_PRECISION < 18)
+                BEGIN
+                    ALTER TABLE [dbo].[InvestmentAccounts] ALTER COLUMN [InterestRate] DECIMAL(18,2) NOT NULL;
                 END
             END
 

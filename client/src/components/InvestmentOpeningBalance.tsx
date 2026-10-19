@@ -40,8 +40,14 @@ interface Scheme {
   investmentType: string;
   interestRate: number;
   durationMonths: number;
+  durationDays?: number | null;
+  durationType?: string;
   interestCalculationMethod: string;
   prematureWithdrawalRate: number;
+  investmentAssetLedgerID?: number | null;
+  interestReceivableLedgerID?: number | null;
+  investmentAssetLedger?: { ledgerID: number; ledgerName: string } | null;
+  interestReceivableLedger?: { ledgerID: number; ledgerName: string } | null;
 }
 
 const isValidIsoDate = (dateStr: string): boolean => {
@@ -73,6 +79,7 @@ const InvestmentOpeningBalance: React.FC = () => {
   const [filterType, setFilterType] = useState<'All' | 'Deposit' | 'Share'>('All');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [syncingGL, setSyncingGL] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
@@ -161,7 +168,11 @@ const InvestmentOpeningBalance: React.FC = () => {
         durationMonths: Number(s.durationMonths || s.DurationMonths || 0),
         durationDays: s.durationDays != null ? Number(s.durationDays) : (s.DurationDays != null ? Number(s.DurationDays) : null),
         interestCalculationMethod: s.interestCalculationMethod || s.InterestCalculationMethod || 'Simple',
-        prematureWithdrawalRate: Number(s.prematureWithdrawalRate || s.PrematureWithdrawalRate || 0)
+        prematureWithdrawalRate: Number(s.prematureWithdrawalRate || s.PrematureWithdrawalRate || 0),
+        investmentAssetLedgerID: s.investmentAssetLedgerID || s.InvestmentAssetLedgerID || null,
+        interestReceivableLedgerID: s.interestReceivableLedgerID || s.InterestReceivableLedgerID || null,
+        investmentAssetLedger: s.investmentAssetLedger || s.InvestmentAssetLedger || null,
+        interestReceivableLedger: s.interestReceivableLedger || s.InterestReceivableLedger || null
       }));
       setSchemes(list);
     } catch {}
@@ -175,6 +186,22 @@ const InvestmentOpeningBalance: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to fetch migrated investment accounts', err);
+    }
+  };
+
+  const handleSyncToGL = async () => {
+    setSyncingGL(true);
+    setError('');
+    setSuccess('');
+    try {
+      const targetBranch = formData.branchID || initialBranchId || 1;
+      const res = await axios.post(`${API_URL}/InvestmentAccounts/sync-opening-balances?branchId=${targetBranch}`);
+      setSuccess(res.data?.message || 'गुंतवणूक सुरुवातीची शिल्लक तेरीज, ताळेबंद व GL खात्यांशी यशस्वीरीत्या सिंक करण्यात आली.');
+      await fetchMigratedAccounts();
+    } catch (err: any) {
+      setError(typeof err.response?.data?.message === 'string' ? err.response.data.message : 'GL सिंक करताना त्रुटी आली.');
+    } finally {
+      setSyncingGL(false);
     }
   };
 
@@ -573,6 +600,20 @@ const InvestmentOpeningBalance: React.FC = () => {
             <span>नवीन नोंद</span>
           </button>
 
+          {/* RE-SYNC TO GL BUTTON */}
+          <button
+            type="button"
+            disabled={syncingGL}
+            onClick={handleSyncToGL}
+            className={`px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+              syncingGL ? 'opacity-60 cursor-not-allowed' : ''
+            }`}
+            title="सर्व स्थलांतरित गुंतवणुकांचे बॅलन्स तेरीज (Trial Balance), ताळेबंद (Balance Sheet) व GL खात्यांशी सिंक करा"
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${syncingGL ? 'animate-spin' : ''}`} />
+            <span>{syncingGL ? 'सिंक होत आहे...' : '🔄 लेजर्स व ताळेबंद सिंक करा'}</span>
+          </button>
+
           {/* VIEW LIST BUTTON -> Opens Pop-up List Modal */}
           <button
             type="button"
@@ -736,6 +777,24 @@ const InvestmentOpeningBalance: React.FC = () => {
                   ]}
                   placeholder="-- योजना निवडा --"
                 />
+                {selectedScheme && (
+                  <div className="mt-1 flex flex-col gap-0.5">
+                    {selectedScheme.investmentAssetLedger?.ledgerName ? (
+                      <span className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 text-[10px]">
+                        🔗 ताळेबंद Asset GL: {selectedScheme.investmentAssetLedger.ledgerName}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 font-bold text-rose-800 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-300 text-[10px]">
+                        ⚠️ या योजनेला GL खाते जोडलेले नाही (योजना मास्टरमध्ये जोडा)
+                      </span>
+                    )}
+                    {selectedScheme.interestReceivableLedger?.ledgerName && (
+                      <span className="inline-flex items-center gap-1 font-bold text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-300 text-[10px]">
+                        🔗 संचित व्याज GL: {selectedScheme.interestReceivableLedger.ledgerName}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>

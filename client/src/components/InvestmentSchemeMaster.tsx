@@ -362,7 +362,19 @@ const InvestmentSchemeMaster: React.FC = () => {
       resetForm();
     } catch (err: any) {
       console.error('Error saving investment scheme', err);
-      setError(typeof err.response?.data === 'string' ? err.response.data : 'गुंतवणूक योजना जतन करताना त्रुटी आली.');
+      let errorMsg = 'गुंतवणूक योजना जतन करताना त्रुटी आली.';
+      if (typeof err.response?.data === 'string' && err.response.data.trim()) {
+        errorMsg = err.response.data;
+      } else if (err.response?.data?.message) {
+        errorMsg = err.response.data.message;
+      } else if (err.response?.data?.detail) {
+        errorMsg = err.response.data.detail;
+      } else if (err.response?.data?.title) {
+        errorMsg = err.response.data.title;
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      setError(errorMsg);
     } finally {
       setSaving(false);
     }

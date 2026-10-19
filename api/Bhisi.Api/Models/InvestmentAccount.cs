@@ -53,7 +53,7 @@ namespace Bhisi.Api.Models
         public decimal PrincipalAmount { get; set; }
 
         [Required]
-        [Column(TypeName = "decimal(5,2)")]
+        [Column(TypeName = "decimal(18,2)")]
         public decimal InterestRate { get; set; }
 
         [Required]

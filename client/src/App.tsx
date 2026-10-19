@@ -345,12 +345,12 @@ function App() {
     'inv-accrual': '/investment/interest-accrual',
     'inv-reports': '/investment/reports',
 
-    // Asset Management (मालमत्ता व्यवस्थापन)
-    'asset-category': '/assets/categories',
-    'assets': '/assets/categories',
-    'asset-master': '/assets/master',
-    'asset-purchase': '/assets/purchase',
-    'asset-reports': '/assets/reports',
+    // Asset Management / Deadstock (मालमत्ता व्यवस्थापन / डेडस्टॉक)
+    'asset-category': '/deadstock/categories',
+    'assets': '/deadstock/categories',
+    'asset-master': '/deadstock/master',
+    'asset-purchase': '/deadstock/purchase',
+    'asset-reports': '/deadstock/reports',
 
     // NPA Module (एन.पी.ए. विभाग)
     'npa-dashboard': '/npa/dashboard',
@@ -428,13 +428,25 @@ function App() {
     'users': '/users',
   };
 
-  const pathToTabMap: Record<string, string> = Object.entries(tabToPathMap).reduce(
-    (acc, [tab, path]) => {
-      acc[path.toLowerCase()] = tab;
-      return acc;
-    },
-    {} as Record<string, string>
-  );
+  const pathToTabMap: Record<string, string> = {
+    ...Object.entries(tabToPathMap).reduce(
+      (acc, [tab, path]) => {
+        acc[path.toLowerCase()] = tab;
+        return acc;
+      },
+      {} as Record<string, string>
+    ),
+    // Backward compatibility aliases for legacy routes
+    '/assets/categories': 'asset-category',
+    '/assets': 'asset-category',
+    '/assets/master': 'asset-master',
+    '/assets/purchase': 'asset-purchase',
+    '/assets/reports': 'asset-reports',
+    '/asset-management/categories': 'asset-category',
+    '/asset-management/master': 'asset-master',
+    '/asset-management/purchase': 'asset-purchase',
+    '/asset-management/reports': 'asset-reports',
+  };
 
   const getTabFromURL = () => {
     const pathname = window.location.pathname.toLowerCase();

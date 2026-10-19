@@ -33,7 +33,7 @@ namespace Bhisi.Api.Models
         public string SchemeName { get; set; } = string.Empty;
 
         [Required]
-        [Column(TypeName = "decimal(5,2)")]
+        [Column(TypeName = "decimal(18,2)")]
         public decimal InterestRate { get; set; }
 
         [Required]
@@ -53,7 +53,7 @@ namespace Bhisi.Api.Models
         public string InvestmentType { get; set; } = "Deposit"; // Deposit, Share
 
         [Required]
-        [Column(TypeName = "decimal(5,2)")]
+        [Column(TypeName = "decimal(18,2)")]
         public decimal PrematureWithdrawalRate { get; set; }
 
         // General Ledger (GL) Accounts Mapping

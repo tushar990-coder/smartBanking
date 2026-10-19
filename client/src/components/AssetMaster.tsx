@@ -27,6 +27,7 @@ interface Ledger {
 
 const AssetMaster: React.FC = () => {
   const { user, globalBranchId } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
   const effectiveBranchId = globalBranchId ? Number(globalBranchId) : (user?.branchID ? Number(user.branchID) : 1);
   const isHeadOfficeOrAdmin = user?.role === 'Admin' || user?.branchType === 'HeadOffice';
 
@@ -61,7 +62,7 @@ const AssetMaster: React.FC = () => {
     categoryID: 0,
     assetCode: '',
     assetName: '',
-    purchaseDate: new Date().toISOString().split('T')[0],
+    purchaseDate: activeBusinessDate,
     originalCost: 0,
     accumulatedDepreciation: 0,
     location: '',
@@ -75,15 +76,28 @@ const AssetMaster: React.FC = () => {
     department: '',
     custodianName: '',
     remarks: '',
-    allocationDate: new Date().toISOString().split('T')[0]
+    allocationDate: activeBusinessDate
   });
 
   const [transferData, setTransferData] = useState({
     toBranchID: effectiveBranchId === 1 ? 2 : 1,
     toCustodian: '',
     remarks: '',
-    transferDate: new Date().toISOString().split('T')[0]
+    transferDate: activeBusinessDate
   });
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bDate = user.businessDate.split('T')[0];
+      setOpeningData(prev => ({ ...prev, purchaseDate: bDate }));
+      setAllocateData(prev => ({ ...prev, allocationDate: bDate }));
+      setTransferData(prev => ({ ...prev, transferDate: bDate }));
+      setVerifyData(prev => ({ ...prev, verificationDate: bDate }));
+      setDisposeData(prev => ({ ...prev, disposalDate: bDate }));
+      setDepData(prev => ({ ...prev, calculationDate: bDate }));
+    }
+  }, [user?.businessDate]);
 
   useEffect(() => {
     if (!isHeadOfficeOrAdmin && effectiveBranchId) {
@@ -97,7 +111,7 @@ const AssetMaster: React.FC = () => {
     auditorName: '',
     physicalStatus: 'Found',
     remarks: '',
-    verificationDate: new Date().toISOString().split('T')[0]
+    verificationDate: activeBusinessDate
   });
 
   const [maintenanceData, setMaintenanceData] = useState({
@@ -116,7 +130,7 @@ const AssetMaster: React.FC = () => {
     saleAmount: 0,
     buyerName: '',
     remarks: '',
-    disposalDate: new Date().toISOString().split('T')[0],
+    disposalDate: activeBusinessDate,
     postVoucher: true,
     debitLedgerID: 0,
     creditLedgerID: 0,
@@ -124,7 +138,7 @@ const AssetMaster: React.FC = () => {
   });
 
   const [depData, setDepData] = useState({
-    calculationDate: new Date().toISOString().split('T')[0],
+    calculationDate: activeBusinessDate,
     depreciationAmount: 0,
     postVoucher: true,
     debitLedgerID: 0,
@@ -206,7 +220,7 @@ const AssetMaster: React.FC = () => {
     // Set single depr form default values
     const defaultDepAmount = calculateDefaultDepreciation(asset);
     setDepData({
-      calculationDate: new Date().toISOString().split('T')[0],
+      calculationDate: activeBusinessDate,
       depreciationAmount: defaultDepAmount,
       postVoucher: true,
       debitLedgerID: 0,
@@ -244,7 +258,7 @@ const AssetMaster: React.FC = () => {
         categoryID: 0,
         assetCode: '',
         assetName: '',
-        purchaseDate: new Date().toISOString().split('T')[0],
+        purchaseDate: activeBusinessDate,
         originalCost: 0,
         accumulatedDepreciation: 0,
         location: '',

@@ -3,6 +3,7 @@ import MemberSearchSelect from './common/MemberSearchSelect';
 import ShareCertificatePreview from './ShareCertificatePreview';
 import VoucherPrint from './VoucherPrint';
 import SearchableSelect from './SearchableSelect';
+import { useAuth } from '../context/AuthContext';
 import { 
   PlusCircle, 
   Users, 
@@ -147,11 +148,20 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
   const [selectedBankLedgerId, setSelectedBankLedgerId] = useState<number | ''>('');
   const [selectedCashLedgerId, setSelectedCashLedgerId] = useState<number | ''>(47);
 
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   // Form Inputs
   const [numberOfShares, setNumberOfShares] = useState<number | ''>('');
   const [faceValue, setFaceValue] = useState<number>(100);
-  const [transactionDate, setTransactionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [transactionDate, setTransactionDate] = useState<string>(activeBusinessDate);
   const [narration, setNarration] = useState('');
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setTransactionDate(user.businessDate.split('T')[0]);
+    }
+  }, [user?.businessDate]);
 
   // Live Auto-Calculations matching MemberMaster layout
   const shareCapitalAmount = (Number(numberOfShares) || 0) * (faceValue || 100);
@@ -1025,9 +1035,10 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                 <label className={labelClass}>वाटप तारीख (Date) <span className="text-red-500">*</span></label>
                 <input 
                   type="date" 
-                  className={`${inputClass} font-bold`}
+                  className={`${inputClass} font-mono font-bold bg-slate-100 text-slate-800 cursor-not-allowed select-none`}
                   value={transactionDate}
-                  onChange={(e) => setTransactionDate(e.target.value)}
+                  readOnly={true}
+                  disabled={true}
                   required
                 />
               </div>

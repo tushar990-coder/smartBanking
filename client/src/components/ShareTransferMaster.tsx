@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import { useAuth } from '../context/AuthContext';
 import { 
   ArrowRight, ArrowLeft, RefreshCw, CheckCircle, XCircle, AlertCircle, Award, FileText, UserCheck, 
   ShieldCheck, Printer, List, Trash2, X, Search, Users, CheckCircle2, RotateCcw, 
-  CheckSquare, Plus, Layers, BookOpen, CreditCard
+  CheckSquare, Plus, Layers, BookOpen, CreditCard, Calendar
 } from 'lucide-react';
 
 interface Member extends MemberOption {}
@@ -62,16 +63,29 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
   const [isListModalOpen, setIsListModalOpen] = useState(false);
   const [modalSearchTerm, setModalSearchTerm] = useState('');
 
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   // Transfer Form State
+  const [transferDate, setTransferDate] = useState<string>(activeBusinessDate);
   const [fromMemberId, setFromMemberId] = useState<string>('');
   const [toMemberId, setToMemberId] = useState<string>('');
   const [numberOfShares, setNumberOfShares] = useState<string>('');
   const [resolutionNo, setResolutionNo] = useState<string>('');
-  const [resolutionDate, setResolutionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [resolutionDate, setResolutionDate] = useState<string>(activeBusinessDate);
   const [transferFee, setTransferFee] = useState<string>('0');
   const [feePaymentMode, setFeePaymentMode] = useState<'None' | 'Cash' | 'Saving'>('None');
   const [savingAccountId, setSavingAccountId] = useState<string>('');
   const [narration, setNarration] = useState<string>('सभासद शेअर हस्तांतरण (Share Transfer)');
+
+  // Sync with CBS Business Date
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bDate = user.businessDate.split('T')[0];
+      setTransferDate(bDate);
+      setResolutionDate(bDate);
+    }
+  }, [user?.businessDate]);
 
   // Member Accounts State
   const [fromShareAccount, setFromShareAccount] = useState<ShareAccount | null>(null);
@@ -102,7 +116,11 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
         }
         if (data.numberOfShares) setNumberOfShares(data.numberOfShares.toString());
         if (data.voucher?.narration) setNarration(data.voucher.narration);
-        if (data.voucher?.voucherDate) setResolutionDate(data.voucher.voucherDate.split('T')[0]);
+        if (data.voucher?.voucherDate) {
+          const vDate = data.voucher.voucherDate.split('T')[0];
+          setTransferDate(vDate);
+          setResolutionDate(vDate);
+        }
       }
     } catch (e) {
       console.error('Failed to load passing transfer', e);
@@ -291,11 +309,12 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
   };
 
   const resetForm = () => {
+    setTransferDate(activeBusinessDate);
     setFromMemberId('');
     setToMemberId('');
     setNumberOfShares('');
     setResolutionNo('');
-    setResolutionDate(new Date().toISOString().split('T')[0]);
+    setResolutionDate(activeBusinessDate);
     setTransferFee('0');
     setFeePaymentMode('None');
     setSavingAccountId('');
@@ -351,6 +370,7 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
         toMemberId: parseInt(toMemberId),
         numberOfShares: sharesCount,
         branchId: 1,
+        transferDate: transferDate ? new Date(transferDate) : null,
         resolutionNo: resolutionNo.trim() || null,
         resolutionDate: resolutionDate ? new Date(resolutionDate) : null,
         transferFee: feeAmt,
@@ -782,7 +802,24 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+            {/* Transfer / Transaction Date */}
+            <div>
+              <label className={labelClass}>
+                हस्तांतरण / व्यवहार दिनांक <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={transferDate}
+                onChange={(e) => setTransferDate(e.target.value)}
+                className={`${inputClass} font-bold text-primary font-mono bg-blue-50/40 border-blue-300`}
+                required
+              />
+              <span className="text-[9px] text-gray-500 block mt-0.5">
+                कोअर बँकिंग व्यवहार तारीख
+              </span>
+            </div>
+
             {/* Number of Shares */}
             <div>
               <label className={labelClass}>

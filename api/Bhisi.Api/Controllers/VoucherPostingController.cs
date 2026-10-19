@@ -94,10 +94,11 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                // 2.5 Auto-heal: Ensure all historical/migrated opening vouchers are marked Approved so they never appear in pending queue
+                // 2.5 Auto-heal: Ensure all historical/migrated opening and chart import vouchers are marked Approved so they never appear in pending queue
                 var pendingMigrationVouchers = await _context.Vouchers
                     .Where(v => v.Status == "Pending" && (
                         v.VoucherNo.Contains("-OP-") ||
+                        v.VoucherNo.Contains("-IMP-") ||
                         v.VoucherNo.StartsWith("JV-FD-OP-") ||
                         v.VoucherNo.StartsWith("REC-FD-OP-") ||
                         v.VoucherNo.StartsWith("JV-RD-OP-") ||
@@ -105,7 +106,11 @@ namespace Bhisi.Api.Controllers
                         v.VoucherNo.StartsWith("JV-SH-OP-") ||
                         v.VoucherNo.StartsWith("JV-INV-OP-") ||
                         v.VoucherType == "Opening" ||
-                        (v.Narration != null && (v.Narration.Contains("आरंभिक शिल्लक") || v.Narration.Contains("Opening Balance Migration")))
+                        (v.Narration != null && (
+                            v.Narration.Contains("आरंभिक शिल्लक") || 
+                            v.Narration.Contains("Opening Balance Migration") ||
+                            v.Narration.Contains("Pigmy Chart Import") ||
+                            v.Narration.Contains("Import")))
                     ))
                     .ToListAsync();
                 if (pendingMigrationVouchers.Any())
@@ -148,6 +153,7 @@ namespace Bhisi.Api.Controllers
                         .ThenInclude(m => m!.Customer)
                 .Where(v => v.Status == "Pending" && 
                             !v.VoucherNo.Contains("-OP-") && 
+                            !v.VoucherNo.Contains("-IMP-") && 
                             !v.VoucherNo.StartsWith("JV-FD-OP-") &&
                             !v.VoucherNo.StartsWith("REC-FD-OP-") &&
                             !v.VoucherNo.StartsWith("JV-RD-OP-") &&
@@ -155,7 +161,11 @@ namespace Bhisi.Api.Controllers
                             !v.VoucherNo.StartsWith("JV-SH-OP-") &&
                             !v.VoucherNo.StartsWith("JV-INV-OP-") &&
                             v.VoucherType != "Opening" &&
-                            !(v.Narration != null && (v.Narration.Contains("आरंभिक शिल्लक") || v.Narration.Contains("Opening Balance Migration"))))
+                            !(v.Narration != null && (
+                                v.Narration.Contains("आरंभिक शिल्लक") || 
+                                v.Narration.Contains("Opening Balance Migration") ||
+                                v.Narration.Contains("Pigmy Chart Import") ||
+                                v.Narration.Contains("Import"))))
                 .OrderBy(v => v.VoucherDate)
                 .ThenBy(v => v.VoucherID)
                 .ToListAsync();

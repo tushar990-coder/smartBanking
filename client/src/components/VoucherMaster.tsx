@@ -891,10 +891,10 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                 <input 
                   type="date" 
                   value={voucherDate} 
-                  onChange={e => setVoucherDate(e.target.value)} 
-                  disabled={isPassingMode}
+                  readOnly={true}
+                  disabled={true}
                   required
-                  className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed`} 
+                  className={`${inputClass} bg-slate-100 font-mono font-bold text-slate-800 cursor-not-allowed select-none`} 
                 />
               </div>
 

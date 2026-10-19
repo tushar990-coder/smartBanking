@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { 
   LogOut, 
   RotateCcw, 
@@ -76,6 +77,9 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
 
   const [activeTab, setActiveTab] = useState<'surrender' | 'history'>('surrender');
   const [surrenders, setSurrenders] = useState<SurrenderRecord[]>([]);
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   const [allotments, setAllotments] = useState<AllotmentOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -85,7 +89,7 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
   // Form State
   const [formData, setFormData] = useState({
     allotmentID: '',
-    surrenderDate: new Date().toISOString().split('T')[0],
+    surrenderDate: activeBusinessDate,
     keyReceived: true,
     keysCondition: 'Good',
     depositAmount: 0,
@@ -95,6 +99,16 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
     refundPaymentMode: 'Cash',
     remarks: ''
   });
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      setFormData(prev => ({
+        ...prev,
+        surrenderDate: user.businessDate.split('T')[0]
+      }));
+    }
+  }, [user?.businessDate]);
 
   const showMsg = (text: string, type: 'success' | 'error' = 'success') => {
     setMessage({ text, type });
@@ -185,7 +199,7 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
         setActiveTab('surrender');
         setFormData({
           allotmentID: data.allotmentID ? String(data.allotmentID) : '',
-          surrenderDate: data.surrenderDate ? data.surrenderDate.split('T')[0] : new Date().toISOString().split('T')[0],
+          surrenderDate: data.surrenderDate ? data.surrenderDate.split('T')[0] : activeBusinessDate,
           keyReceived: data.keyReceived ?? true,
           keysCondition: data.keysCondition || 'Good',
           depositAmount: data.depositAmount || (data.voucher?.totalAmount || 0),
@@ -308,7 +322,7 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
     if (isPassing) return;
     setFormData({
       allotmentID: '',
-      surrenderDate: new Date().toISOString().split('T')[0],
+      surrenderDate: activeBusinessDate,
       keyReceived: true,
       keysCondition: 'Good',
       depositAmount: 0,

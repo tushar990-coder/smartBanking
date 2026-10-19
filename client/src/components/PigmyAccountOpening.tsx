@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import { 
@@ -62,6 +63,9 @@ export default function PigmyAccountOpening() {
   });
   const [modalMessage, setModalMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   const [formData, setFormData] = useState({
     accountNo: '',
     legacyAccountNumber: '',
@@ -69,9 +73,19 @@ export default function PigmyAccountOpening() {
     branchID: '1',
     pigmySchemeID: '',
     pigmyAgentID: '',
-    openingDate: new Date().toISOString().split('T')[0],
+    openingDate: activeBusinessDate,
     openingBalance: '0'
   });
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      setFormData(prev => ({
+        ...prev,
+        openingDate: user.businessDate.split('T')[0]
+      }));
+    }
+  }, [user?.businessDate]);
 
   const [autoAccountNo, setAutoAccountNo] = useState<string>('लोड होत आहे...');
   const [isCustomAccountNo, setIsCustomAccountNo] = useState<boolean>(false);

@@ -102,6 +102,27 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Cannot perform transaction on a closed account.");
             }
 
+            int branchId = account.BranchID > 0 ? account.BranchID : 1;
+
+            var dayStatus = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId && b.BusinessDate.Date == txn.TransactionDate.Date)
+                .FirstOrDefaultAsync();
+
+            if (dayStatus != null && dayStatus.IsDayClosed)
+            {
+                return BadRequest($"तारीख {txn.TransactionDate:dd/MM/yyyy} साठी दिवस अखेर (EOD) पूर्ण झाली आहे. बंद झालेल्या तारखेमध्ये नवीन बचत व्यवहार नोंदवता येणार नाही.");
+            }
+
+            var lastClosedCheck = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId && b.IsDayClosed)
+                .OrderByDescending(b => b.BusinessDate)
+                .FirstOrDefaultAsync();
+
+            if (lastClosedCheck != null && txn.TransactionDate.Date <= lastClosedCheck.BusinessDate.Date)
+            {
+                return BadRequest($"तारीख {txn.TransactionDate:dd/MM/yyyy} ही शेवटच्या बंद झालेल्या दिवसापेक्षा ({lastClosedCheck.BusinessDate:dd/MM/yyyy}) जुनी किंवा बंद असलेली तारीख आहे. बंद तारखेत नवीन बचत व्यवहार नोंदवता येणार नाही.");
+            }
+
             if (txn.Amount <= 0)
             {
                 return BadRequest("Amount must be greater than zero.");

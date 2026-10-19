@@ -348,7 +348,7 @@ namespace Bhisi.Api.Controllers
             existing.PrincipalAmount = account.PrincipalAmount;
             existing.InterestRate = account.InterestRate;
             existing.MaturityDate = account.MaturityDate;
-            existing.ExpectedMaturityAmount = account.ExpectedMaturityAmount;
+            existing.ExpectedMaturityAmount = Math.Round(account.ExpectedMaturityAmount, MidpointRounding.AwayFromZero);
             existing.AccruedInterestTillMigration = account.AccruedInterestTillMigration;
             existing.BookValue = account.PrincipalAmount + account.AccruedInterestTillMigration;
             existing.NomineeName = account.NomineeName;
@@ -418,7 +418,7 @@ namespace Bhisi.Api.Controllers
                         if (scheme.InterestCalculationMethod == "Simple")
                         {
                             decimal interest = account.PrincipalAmount * scheme.InterestRate * scheme.DurationMonths / (12 * 100);
-                            account.ExpectedMaturityAmount = account.PrincipalAmount + interest;
+                            account.ExpectedMaturityAmount = Math.Round(account.PrincipalAmount + interest, MidpointRounding.AwayFromZero);
                         }
                         else // Cumulative (compounding quarterly)
                         {
@@ -427,9 +427,13 @@ namespace Bhisi.Api.Controllers
                             int n = 4; // quarterly compounding
                             double t = scheme.DurationMonths / 12.0;
                             double maturityAmt = P * Math.Pow(1 + r / n, n * t);
-                            account.ExpectedMaturityAmount = Math.Round((decimal)maturityAmt, 2);
+                            account.ExpectedMaturityAmount = Math.Round((decimal)maturityAmt, MidpointRounding.AwayFromZero);
                         }
                     }
+                }
+                else
+                {
+                    account.ExpectedMaturityAmount = Math.Round(account.ExpectedMaturityAmount, MidpointRounding.AwayFromZero);
                 }
 
                 // Set BookValue
@@ -815,14 +819,14 @@ namespace Bhisi.Api.Controllers
                     if (scheme.InterestCalculationMethod == "Simple")
                     {
                         decimal interest = newAccount.PrincipalAmount * newAccount.InterestRate * scheme.DurationMonths / (12 * 100);
-                        newAccount.ExpectedMaturityAmount = newAccount.PrincipalAmount + interest;
+                        newAccount.ExpectedMaturityAmount = Math.Round(newAccount.PrincipalAmount + interest, MidpointRounding.AwayFromZero);
                     }
                     else
                     {
                         double P = (double)newAccount.PrincipalAmount;
                         double r = (double)newAccount.InterestRate / 100;
                         double t = scheme.DurationMonths / 12.0;
-                        newAccount.ExpectedMaturityAmount = Math.Round((decimal)(P * Math.Pow(1 + r / 4, 4 * t)), 2);
+                        newAccount.ExpectedMaturityAmount = Math.Round((decimal)(P * Math.Pow(1 + r / 4, 4 * t)), MidpointRounding.AwayFromZero);
                     }
                 }
 

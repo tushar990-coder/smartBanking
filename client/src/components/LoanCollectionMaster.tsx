@@ -223,6 +223,7 @@ interface LienReleasePrompt {
 
 const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate }) => {
     const { user } = useAuth();
+    const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
     const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
 
     const [branches, setBranches] = useState<any[]>([]);
@@ -262,7 +263,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [isSchedulePrintView, setIsSchedulePrintView] = useState(false);
 
     const [formData, setFormData] = useState<Partial<LoanCollection>>({
-        collectionDate: new Date().toISOString().split('T')[0],
+        collectionDate: activeBusinessDate,
         receiptNo: '',
         paymentMode: "Cash",
         totalAmountReceived: 0,
@@ -272,6 +273,12 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         principalCollected: 0,
         fees: []
     });
+
+    useEffect(() => {
+        if (user?.businessDate) {
+            setFormData(prev => ({ ...prev, collectionDate: user.businessDate.split('T')[0] }));
+        }
+    }, [user?.businessDate]);
 
     const [customerMatchingLoans, setCustomerMatchingLoans] = useState<LoanAccount[]>([]);
     const [showMultiLoanModal, setShowMultiLoanModal] = useState(false);
@@ -1239,7 +1246,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
             // Reset form
             setFormData({
-                collectionDate: new Date().toISOString().split('T')[0],
+                collectionDate: activeBusinessDate,
                 receiptNo: '',
                 paymentMode: "Cash",
                 totalAmountReceived: 0,

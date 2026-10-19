@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import { useAuth } from '../context/AuthContext';
 
 interface Member extends MemberOption {
   memberNo?: string;
@@ -101,6 +102,9 @@ export interface LockerAllotmentMasterProps {
 }
 
 const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLockerId, onNavigate, voucherId, isPassingMode }) => {
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   const queryParams = new URLSearchParams(window.location.search);
   const effectiveVoucherId = voucherId || queryParams.get('voucherId');
   const isPassing = isPassingMode || queryParams.get('passingMode') === 'true';
@@ -129,14 +133,14 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
 
   // Form State
   const [formData, setFormData] = useState({
-    branchID: 1,
+    branchID: user?.branchID || 1,
     lockerID: initialLockerId ? initialLockerId.toString() : '',
     memberID: '',
     jointMember1_ID: '',
     jointMember2_ID: '',
     operatingInstruction: 'Self',
-    allotmentDate: new Date().toISOString().split('T')[0],
-    rentStartDate: new Date().toISOString().split('T')[0],
+    allotmentDate: activeBusinessDate,
+    rentStartDate: activeBusinessDate,
     annualRent: '0',
     securityDepositAmount: '0',
     advanceRentPaid: '0',
@@ -149,6 +153,17 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
     nomineeAddress: '',
     remarks: ''
   });
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bDate = user.businessDate.split('T')[0];
+      setFormData(prev => ({
+        ...prev,
+        allotmentDate: bDate,
+        rentStartDate: prev.rentStartDate === new Date().toISOString().split('T')[0] ? bDate : (prev.rentStartDate || bDate)
+      }));
+    }
+  }, [user?.businessDate]);
 
   useEffect(() => {
     if (isPassing && effectiveVoucherId) {
@@ -370,14 +385,14 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
 
   const handleReset = () => {
     setFormData({
-      branchID: 1,
+      branchID: user?.branchID || 1,
       lockerID: '',
       memberID: '',
       jointMember1_ID: '',
       jointMember2_ID: '',
       operatingInstruction: 'Self',
-      allotmentDate: new Date().toISOString().split('T')[0],
-      rentStartDate: new Date().toISOString().split('T')[0],
+      allotmentDate: activeBusinessDate,
+      rentStartDate: activeBusinessDate,
       annualRent: '0',
       securityDepositAmount: '0',
       advanceRentPaid: '0',
@@ -609,9 +624,10 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
                     type="date"
                     name="allotmentDate"
                     value={formData.allotmentDate}
-                    onChange={handleChange}
+                    readOnly={true}
+                    disabled={true}
                     required
-                    className={inputClass}
+                    className={`${inputClass} font-mono font-bold bg-slate-100 text-slate-800 cursor-not-allowed select-none`}
                   />
                 </div>
               </div>

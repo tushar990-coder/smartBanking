@@ -208,3 +208,11 @@ export const useAuth = () => {
   }
   return context;
 };
+
+export const useBusinessDate = (): string => {
+  const context = useContext(AuthContext);
+  return context?.user?.businessDate 
+    ? context.user.businessDate.split('T')[0] 
+    : new Date().toISOString().split('T')[0];
+};
+

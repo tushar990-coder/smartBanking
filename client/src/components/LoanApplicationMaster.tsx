@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
+import { useAuth } from '../context/AuthContext';
 import {
   Landmark,
   CheckCircle2,
@@ -209,6 +210,8 @@ interface LoanApplicationMasterProps {
 }
 
 const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, editingApplicationId, isReadOnly, onNavigate, initialSuccessMessage }) => {
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
   const queryParams = new URLSearchParams(window.location.search);
   const voucherIdFromUrl = queryParams.get('voucherId');
   const isPassingMode = Boolean(isReadOnly || queryParams.get('passingMode') === 'true');
@@ -273,7 +276,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
   const initialFormState: Partial<LoanApplication> = {
     branchID: initialBranchId,
     applicationNo: "AUTO",
-    applicationDate: new Date().toISOString().split('T')[0],
+    applicationDate: activeBusinessDate,
     customerID: 0,
     coCustomerID: 0,
     coCustomer2ID: 0,
@@ -321,6 +324,12 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
       fetchNextAppNo(initialBranchId);
     }
   }, []);
+
+  useEffect(() => {
+    if (user?.businessDate && !editingApplicationId) {
+      setFormData(prev => ({ ...prev, applicationDate: user.businessDate.split('T')[0] }));
+    }
+  }, [user?.businessDate, editingApplicationId]);
 
   useEffect(() => {
     if (formData.guarantor1CustomerID) {

@@ -209,13 +209,79 @@ namespace Bhisi.Api.Controllers
             request.FinancialYearID = fy.FinancialYearID;
             request.BranchID = branch.BranchID;
 
-            // Fetch active business date from BranchDayEndStatuses
-            var activeDateRecord = await _context.BranchDayEndStatuses
+            // Validate Business Date & Day End Status
+            DateTime businessDate;
+            if (request.BusinessDate.HasValue && request.BusinessDate.Value != default)
+            {
+                var targetDate = request.BusinessDate.Value.Date;
+
+                // 1. Check if the requested date is already closed (Day End executed)
+                var closedRecord = await _context.BranchDayEndStatuses
+                    .FirstOrDefaultAsync(b => b.BranchID == request.BranchID 
+                                           && b.BusinessDate.Date == targetDate 
+                                           && b.IsDayClosed);
+                if (closedRecord != null)
+                {
+                    return BadRequest($"दिनांक {targetDate:dd/MM/yyyy} चा दिवस आधीच दिवसअखेर (Day End) करून बंद करण्यात आला आहे. बंद तारखेवर लॉगिन करता येणार नाही. कृपया चालू उघडी तारीख निवडा.");
+                }
+
+                // 2. Check if the requested date is older than the last closed date
+                var lastClosedRecord = await _context.BranchDayEndStatuses
+                    .Where(b => b.BranchID == request.BranchID && b.IsDayClosed)
+                    .OrderByDescending(b => b.BusinessDate)
+                    .FirstOrDefaultAsync();
+
+                if (lastClosedRecord != null && targetDate <= lastClosedRecord.BusinessDate.Date)
+                {
+                    return BadRequest($"दिनांक {targetDate:dd/MM/yyyy} हा शेवटच्या बंद झालेल्या दिवसापेक्षा ({lastClosedRecord.BusinessDate:dd/MM/yyyy}) जुना दिवस आहे. बंद किंवा जुन्या तारखेवर लॉगिन करता येणार नाही.");
+                }
+
+                businessDate = targetDate;
+            }
+            else
+            {
+                // Default to active open business date from BranchDayEndStatuses
+                var activeDateRecord = await _context.BranchDayEndStatuses
+                    .Where(b => b.BranchID == request.BranchID)
+                    .OrderByDescending(b => b.BusinessDate)
+                    .FirstOrDefaultAsync();
+
+                if (activeDateRecord != null && activeDateRecord.IsDayClosed)
+                {
+                    businessDate = activeDateRecord.BusinessDate.AddDays(1);
+                }
+                else if (activeDateRecord != null)
+                {
+                    businessDate = activeDateRecord.BusinessDate;
+                }
+                else
+                {
+                    businessDate = fy.StartDate;
+                }
+            }
+
+            // Synchronize active open business date record in BranchDayEndStatuses
+            var currentActiveDateRecord = await _context.BranchDayEndStatuses
                 .Where(b => b.BranchID == request.BranchID)
                 .OrderByDescending(b => b.BusinessDate)
                 .FirstOrDefaultAsync();
 
-            DateTime businessDate = activeDateRecord?.BusinessDate ?? fy.StartDate;
+            if (currentActiveDateRecord == null)
+            {
+                currentActiveDateRecord = new BranchDayEndStatus
+                {
+                    BranchID = request.BranchID,
+                    BusinessDate = businessDate.Date,
+                    IsDayClosed = false
+                };
+                _context.BranchDayEndStatuses.Add(currentActiveDateRecord);
+                await _context.SaveChangesAsync();
+            }
+            else if (!currentActiveDateRecord.IsDayClosed && request.BusinessDate.HasValue)
+            {
+                currentActiveDateRecord.BusinessDate = businessDate.Date;
+                await _context.SaveChangesAsync();
+            }
 
             // Create JWT Token
             var tokenHandler = new JwtSecurityTokenHandler();
@@ -229,7 +295,8 @@ namespace Bhisi.Api.Controllers
                     new Claim(ClaimTypes.Name, user.Username),
                     new Claim(ClaimTypes.Role, user.Role?.RoleName ?? "User"),
                     new Claim("BranchID", request.BranchID.ToString()),
-                    new Claim("FinancialYearID", request.FinancialYearID.ToString())
+                    new Claim("FinancialYearID", request.FinancialYearID.ToString()),
+                    new Claim("BusinessDate", businessDate.ToString("yyyy-MM-dd"))
                 }),
                 Expires = DateTime.Now.AddHours(8),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -258,6 +325,54 @@ namespace Bhisi.Api.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, $"लॉगिन करताना त्रुटी आली: {ex.Message}");
+            }
+        }
+
+        [HttpGet("branch-business-date/{branchId}")]
+        public async Task<IActionResult> GetBranchBusinessDate(int branchId)
+        {
+            try
+            {
+                var activeRecord = await _context.BranchDayEndStatuses
+                    .Where(b => b.BranchID == branchId)
+                    .OrderByDescending(b => b.BusinessDate)
+                    .FirstOrDefaultAsync();
+
+                var lastClosedRecord = await _context.BranchDayEndStatuses
+                    .Where(b => b.BranchID == branchId && b.IsDayClosed)
+                    .OrderByDescending(b => b.BusinessDate)
+                    .FirstOrDefaultAsync();
+
+                DateTime businessDate;
+                bool isClosed = false;
+
+                if (activeRecord == null)
+                {
+                    var activeFy = await _context.FinancialYears
+                        .FirstOrDefaultAsync(f => f.IsActive);
+                    businessDate = activeFy?.StartDate ?? new DateTime(2026, 4, 1);
+                }
+                else if (activeRecord.IsDayClosed)
+                {
+                    isClosed = true;
+                    businessDate = activeRecord.BusinessDate.AddDays(1);
+                }
+                else
+                {
+                    businessDate = activeRecord.BusinessDate;
+                }
+
+                return Ok(new
+                {
+                    branchID = branchId,
+                    businessDate = businessDate.ToString("yyyy-MM-dd"),
+                    isDayClosed = isClosed,
+                    lastClosedDate = lastClosedRecord?.BusinessDate.ToString("yyyy-MM-dd")
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
             }
         }
 
@@ -416,7 +531,7 @@ namespace Bhisi.Api.Controllers
                     .OrderByDescending(b => b.BusinessDate)
                     .FirstOrDefaultAsync();
 
-                DateTime businessDate = activeDateRecord?.BusinessDate ?? activeFy?.StartDate ?? DateTime.Today;
+                DateTime businessDate = activeDateRecord?.BusinessDate ?? DateTime.Today;
 
                 var tokenHandler = new JwtSecurityTokenHandler();
                 var keyStr = _configuration["Jwt:Key"] ?? "super_secret_key_for_bhisi_software_backend_12345!@#";

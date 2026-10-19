@@ -261,18 +261,26 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 }
             }
         } catch (e) {
-            console.error('Failed to fetch next loan account number', e);
+            console.error(e);
         }
     };
 
+    const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
     const [formData, setFormData] = useState<Partial<LoanDisbursement>>({
-        disbursementDate: new Date().toISOString().split('T')[0],
+        disbursementDate: activeBusinessDate,
         paymentMode: "Cash",
         sanctionedAmount: 0,
         disbursementAmount: 0,
         netAmountPaid: 0,
         remarks: ''
     });
+
+    useEffect(() => {
+        if (user?.businessDate) {
+            setFormData(prev => ({ ...prev, disbursementDate: user.businessDate.split('T')[0] }));
+        }
+    }, [user?.businessDate]);
 
     const [deductions, setDeductions] = useState<LoanDisbursementDeduction[]>([]);
     const [sharePercent, setSharePercent] = useState<number>(5);
@@ -1108,7 +1116,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         setErrorMessage('');
         setSuccessMessage('');
         setFormData({
-            disbursementDate: new Date().toISOString().split('T')[0],
+            disbursementDate: activeBusinessDate,
             paymentMode: "Cash",
             sanctionedAmount: 0,
             disbursementAmount: 0,

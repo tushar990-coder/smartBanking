@@ -1,6 +1,7 @@
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 import {
   FileText,
   UserCheck,
@@ -143,6 +144,9 @@ export default function RdAccountOpening({
   const [listSuccess, setListSuccess] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; accountNo: string } | null>(null);
 
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   // Schedule view state
   const [showSchedule, setShowSchedule] = useState(false);
 
@@ -157,7 +161,7 @@ export default function RdAccountOpening({
     jointMemberID: '',
     guardianName: '',
     guardianRelation: '',
-    openingDate: new Date().toISOString().split('T')[0],
+    openingDate: activeBusinessDate,
     installmentAmount: 0,
     durationMonths: 12,
     interestRate: 8.0,
@@ -174,6 +178,16 @@ export default function RdAccountOpening({
     legacyAccountNumber: '',
     remarks: 'नवीन आवर्ती ठेव खाते उघडले',
   });
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      setFormData(prev => ({
+        ...prev,
+        openingDate: user.businessDate.split('T')[0]
+      }));
+    }
+  }, [user?.businessDate]);
 
   const [autoAccountNo, setAutoAccountNo] = useState('');
   const [isCustomAccountNo, setIsCustomAccountNo] = useState(false);
@@ -583,7 +597,7 @@ export default function RdAccountOpening({
       jointMemberID: '',
       guardianName: '',
       guardianRelation: '',
-      openingDate: new Date().toISOString().split('T')[0],
+      openingDate: activeBusinessDate,
       installmentAmount: 0,
       durationMonths: 12,
       interestRate: 8.0,

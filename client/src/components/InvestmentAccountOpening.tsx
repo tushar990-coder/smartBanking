@@ -62,6 +62,7 @@ const isValidIsoDate = (dateStr: string): boolean => {
 
 const InvestmentAccountOpening: React.FC = () => {
   const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const initialBranchId = globalBranchStr && globalBranchStr !== 'all' ? parseInt(globalBranchStr, 10) : (user?.branchID || 1);
 
@@ -88,7 +89,7 @@ const InvestmentAccountOpening: React.FC = () => {
     investmentInstitutionID: 0,
     schemeID: 0,
     depositReceiptNo: '', // FDR No OR Share Certificate / Folio No
-    investmentDate: new Date().toISOString().split('T')[0],
+    investmentDate: activeBusinessDate,
     principalAmount: 0,
     // Share specific helpers
     numberOfShares: 10,
@@ -98,6 +99,16 @@ const InvestmentAccountOpening: React.FC = () => {
     nomineeRelation: '',
     remarks: '',
   });
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      setFormData(prev => ({
+        ...prev,
+        investmentDate: user.businessDate.split('T')[0]
+      }));
+    }
+  }, [user?.businessDate]);
 
   const [calcData, setCalcData] = useState({
     interestRate: 0,
@@ -268,7 +279,7 @@ const InvestmentAccountOpening: React.FC = () => {
         durationDisplay: isDays ? `${days} दिवस` : `${months} महिने`,
         interestCalculationMethod: method,
         maturityDate: matDateStr,
-        expectedMaturityAmount: Math.round(maturityAmt * 100) / 100
+        expectedMaturityAmount: Math.round(maturityAmt)
       });
     }
   }, [formData.schemeID, formData.principalAmount, formData.numberOfShares, formData.investmentDate, selectedScheme, isShareMode]);
@@ -298,7 +309,7 @@ const InvestmentAccountOpening: React.FC = () => {
       investmentInstitutionID: 0,
       schemeID: 0,
       depositReceiptNo: '',
-      investmentDate: new Date().toISOString().split('T')[0],
+      investmentDate: activeBusinessDate,
       principalAmount: 0,
       numberOfShares: 10,
       faceValuePerShare: 100,
@@ -358,7 +369,7 @@ const InvestmentAccountOpening: React.FC = () => {
         principalAmount: parseFloat(formData.principalAmount.toString()) || 0,
         interestRate: calcData.interestRate,
         maturityDate: isShareMode ? formData.investmentDate : calcData.maturityDate,
-        expectedMaturityAmount: calcData.expectedMaturityAmount || formData.principalAmount,
+        expectedMaturityAmount: Math.round(calcData.expectedMaturityAmount || formData.principalAmount),
         accruedInterestTillMigration: 0,
         bookValue: parseFloat(formData.principalAmount.toString()) || 0,
         isLegacyAccount: false,

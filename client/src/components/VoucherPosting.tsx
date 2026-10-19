@@ -1928,28 +1928,12 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              {/* Reason Input */}
-              <div>
-                <label className="block text-xs font-bold text-gray-800 mb-1">
-                  अन-पास करण्याचे कारण (Reason for Unpassing)
-                </label>
-                <textarea
-                  rows={2}
-                  value={unpassReason}
-                  onChange={(e) => {
-                    setUnpassReason(e.target.value);
-                    if (unpassError) setUnpassError('');
-                  }}
-                  placeholder="व्हाउचर अन-पास करण्याचे कारण प्रविष्ट करा..."
-                  className="w-full text-xs p-2.5 border border-gray-300 rounded-sm focus:outline-none focus:border-amber-600 focus:ring-1 focus:ring-amber-600 bg-white"
-                  autoFocus
-                />
-                <div className="flex justify-between items-center mt-1 text-[10px]">
-                  <span className="text-gray-500">सुरक्षा ऑडिट नोंद ठेवली जाईल</span>
-                  <span className="text-gray-400">
-                    वापरकर्ता: <strong>{user?.username || 'Admin'}</strong>
-                  </span>
-                </div>
+              {/* Audit Notice */}
+              <div className="flex justify-between items-center text-[10.5px] bg-slate-50 border border-gray-200 px-2.5 py-1.5 rounded-sm">
+                <span className="text-gray-600">सुरक्षा ऑडिट नोंद आपोआप ठेवली जाईल.</span>
+                <span className="text-gray-500">
+                  वापरकर्ता: <strong className="text-gray-800">{user?.username || 'Admin'}</strong>
+                </span>
               </div>
 
               {/* Error display */}
@@ -1975,6 +1959,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 type="button"
                 onClick={handleConfirmSingleUnpass}
                 disabled={actionLoading}
+                autoFocus
                 className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-sm text-xs border border-amber-700 cursor-pointer flex items-center gap-1.5 disabled:opacity-50 shadow-xs"
               >
                 {actionLoading ? (
@@ -2053,28 +2038,12 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
-              {/* Reason Input */}
-              <div>
-                <label className="block text-xs font-bold text-gray-800 mb-1">
-                  अन-पास करण्याचे कारण (Reason for Bulk Unpass)
-                </label>
-                <textarea
-                  rows={2}
-                  value={unpassReason}
-                  onChange={(e) => {
-                    setUnpassReason(e.target.value);
-                    if (unpassError) setUnpassError('');
-                  }}
-                  placeholder="सर्व निवडलेले व्हाउचर अन-पास करण्याचे कारण प्रविष्ट करा..."
-                  className="w-full text-xs p-2.5 border border-gray-300 rounded-sm focus:outline-none focus:border-amber-600 focus:ring-1 focus:ring-amber-600 bg-white"
-                  autoFocus
-                />
-                <div className="flex justify-between items-center mt-1 text-[10px]">
-                  <span className="text-gray-500">सर्व नोंदींसाठी सुरक्षा ऑडिट नोंद ठेवली जाईल</span>
-                  <span className="text-gray-400">
-                    वापरकर्ता: <strong>{user?.username || 'Admin'}</strong>
-                  </span>
-                </div>
+              {/* Audit Notice */}
+              <div className="flex justify-between items-center text-[10.5px] bg-slate-50 border border-gray-200 px-2.5 py-1.5 rounded-sm">
+                <span className="text-gray-600">सर्व नोंदींसाठी सुरक्षा ऑडिट नोंद आपोआप ठेवली जाईल.</span>
+                <span className="text-gray-500">
+                  वापरकर्ता: <strong className="text-gray-800">{user?.username || 'Admin'}</strong>
+                </span>
               </div>
 
               {/* Error display */}
@@ -2100,6 +2069,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 type="button"
                 onClick={handleConfirmBulkUnpass}
                 disabled={actionLoading}
+                autoFocus
                 className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-sm text-xs border border-amber-700 cursor-pointer flex items-center gap-1.5 disabled:opacity-50 shadow-xs"
               >
                 {actionLoading ? (

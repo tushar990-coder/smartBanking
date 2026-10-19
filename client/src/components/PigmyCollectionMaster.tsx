@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 import * as XLSX from 'xlsx';
 import { 
   PlusIcon, 
@@ -177,11 +178,23 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     }
   }, [voucherId]);
 
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   // Bulk Sheet States
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('');
-  const [collectionDate, setCollectionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [collectionDate, setCollectionDate] = useState<string>(activeBusinessDate);
   const [bulkAmounts, setBulkAmounts] = useState<{ [accountId: number]: string }>({});
   const [sheetSearchTerm, setSheetSearchTerm] = useState<string>('');
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bDate = user.businessDate.split('T')[0];
+      setCollectionDate(bDate);
+      setManualForm(prev => ({ ...prev, collectionDate: bDate }));
+    }
+  }, [user?.businessDate]);
 
   // Monthly Matrix States
   const [selectedMonthlyAgentId, setSelectedMonthlyAgentId] = useState<number | ''>('');
@@ -228,7 +241,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
   // Single Manual Form State
   const [manualForm, setManualForm] = useState({
     pigmyAccountId: '',
-    collectionDate: new Date().toISOString().split('T')[0],
+    collectionDate: activeBusinessDate,
     collectionAmount: ''
   });
 

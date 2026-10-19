@@ -10,8 +10,9 @@ namespace Bhisi.Api.Services
 {
     public interface IEodBodService
     {
-        Task<(bool IsSuccess, string Message)> RunEndOfDayAsync(int branchId, int userId);
+        Task<(bool IsSuccess, string Message)> RunEndOfDayAsync(int branchId, int userId, DateTime? requestedNextDate = null);
         Task<(bool IsSuccess, string Message)> UnlockDayAsync(int branchId, int adminUserId, string reason);
+        Task<(bool IsSuccess, string Message)> InitializeGoLiveDateAsync(int branchId, DateTime goLiveDate, int adminUserId, string reason);
         Task<object> GetEodStatusAsync(int branchId);
         Task<IEnumerable<EodBatchProcessLog>> GetEodLogsAsync(int branchId, DateTime? businessDate = null);
     }
@@ -32,16 +33,46 @@ namespace Bhisi.Api.Services
             var branch = await _context.Branches.FindAsync(branchId);
             string branchName = branch?.BranchName ?? $"Branch {branchId}";
 
+            // Check when the last day end actually occurred
+            var lastClosedRecord = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId && b.IsDayClosed)
+                .OrderByDescending(b => b.BusinessDate)
+                .FirstOrDefaultAsync();
+
+            bool isFirstTimeEod = lastClosedRecord == null;
+            DateTime? lastClosedDate = lastClosedRecord?.BusinessDate;
+
+            // Check current active business date record (can be closed or open)
             var activeDateRecord = await _context.BranchDayEndStatuses
                 .Where(b => b.BranchID == branchId)
                 .OrderByDescending(b => b.BusinessDate)
                 .FirstOrDefaultAsync();
 
-            DateTime businessDate = activeDateRecord?.BusinessDate ?? DateTime.Today;
+            var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
+            DateTime defaultStart = activeFy?.StartDate ?? new DateTime(2026, 4, 1);
 
-            // 1. Check Unposted Vouchers
+            DateTime businessDate = activeDateRecord?.BusinessDate 
+                ?? (lastClosedDate.HasValue ? lastClosedDate.Value.AddDays(1) : defaultStart);
+
+            // 1. Check Unposted Vouchers (Excluding Opening Balance Migration & Historical Chart Import Vouchers)
             var unpostedCount = await _context.Vouchers
-                .CountAsync(v => v.BranchID == branchId && v.Status == "Pending" && v.VoucherDate <= businessDate);
+                .CountAsync(v => v.BranchID == branchId && 
+                                 v.Status == "Pending" && 
+                                 v.VoucherDate <= businessDate &&
+                                 !v.VoucherNo.Contains("-OP-") && 
+                                 !v.VoucherNo.Contains("-IMP-") &&
+                                 !v.VoucherNo.StartsWith("JV-FD-OP-") &&
+                                 !v.VoucherNo.StartsWith("REC-FD-OP-") &&
+                                 !v.VoucherNo.StartsWith("JV-RD-OP-") &&
+                                 !v.VoucherNo.StartsWith("REC-RD-OP-") &&
+                                 !v.VoucherNo.StartsWith("JV-SH-OP-") &&
+                                 !v.VoucherNo.StartsWith("JV-INV-OP-") &&
+                                 v.VoucherType != "Opening" &&
+                                 !(v.Narration != null && (
+                                     v.Narration.Contains("आरंभिक शिल्लक") || 
+                                     v.Narration.Contains("Opening Balance Migration") ||
+                                     v.Narration.Contains("Pigmy Chart Import") ||
+                                     v.Narration.Contains("Import"))));
 
             // 2. Fetch all branch-specific cash ledgers via CashLedgerHelper
             var cashLedgerIds = await Helpers.CashLedgerHelper.GetCashLedgerIdsForBranchAsync(_context, branchId);
@@ -175,6 +206,8 @@ namespace Bhisi.Api.Services
             {
                 BusinessDate = businessDate,
                 IsDayClosed = activeDateRecord?.IsDayClosed ?? false,
+                LastClosedDate = lastClosedDate,
+                IsFirstTimeEod = isFirstTimeEod,
                 UnpostedVouchers = unpostedCount,
                 TransferTally = new { Debit = transferDr, Credit = transferCr, IsMatched = transferTallyOk },
                 CashTally = new
@@ -217,7 +250,7 @@ namespace Bhisi.Api.Services
             return await query.OrderByDescending(l => l.StartTime).Take(50).ToListAsync();
         }
 
-        public async Task<(bool IsSuccess, string Message)> RunEndOfDayAsync(int branchId, int userId)
+        public async Task<(bool IsSuccess, string Message)> RunEndOfDayAsync(int branchId, int userId, DateTime? requestedNextDate = null)
         {
             var activeDateRecord = await _context.BranchDayEndStatuses
                 .Where(b => b.BranchID == branchId)
@@ -231,56 +264,50 @@ namespace Bhisi.Api.Services
 
             DateTime businessDate = activeDateRecord?.BusinessDate ?? DateTime.Today;
 
+            // Validate and calculate next business date
+            DateTime nextBusinessDate;
+            if (requestedNextDate.HasValue && requestedNextDate.Value.Date > businessDate.Date)
+            {
+                if ((requestedNextDate.Value.Date - businessDate.Date).TotalDays > 10)
+                {
+                    return (false, "पुढील बिझनेस डेट चालू तारखेपेक्षा कमाल १० दिवसांपेक्षा जास्त असू शकत नाही.");
+                }
+                nextBusinessDate = requestedNextDate.Value.Date;
+            }
+            else
+            {
+                nextBusinessDate = businessDate.AddDays(1);
+            }
+
             var statusObj = await GetEodStatusAsync(branchId);
             dynamic status = statusObj;
 
-            // Step 1: Pre-EOD Checklist Validation
-            await AddLogAsync(branchId, businessDate, 1, "PRE_EOD_CHECKLIST_VALIDATION", "IN_PROGRESS", 0);
+            // टप्पा १: प्रलंबित व्हाउचर व आर्थिक ताळमेळ पडताळणी (Step 1: Validate Unposted Vouchers & Tally)
+            await AddLogAsync(branchId, businessDate, 1, "अमंजूर वॉउचर्स व आर्थिक ताळमेळ पडताळणी", "IN_PROGRESS", 0);
             if (status.UnpostedVouchers > 0)
             {
-                await AddLogAsync(branchId, businessDate, 1, "PRE_EOD_CHECKLIST_VALIDATION", "FAILED", status.UnpostedVouchers, $"{status.UnpostedVouchers} प्रलंबित वॉउचर्स (Unposted vouchers) आहेत.");
+                await AddLogAsync(branchId, businessDate, 1, "अमंजूर वॉउचर्स व आर्थिक ताळमेळ पडताळणी", "FAILED", status.UnpostedVouchers, $"{status.UnpostedVouchers} प्रलंबित वॉउचर्स (Unposted vouchers) आहेत.");
                 return (false, $"EOD करता येत नाही. {status.UnpostedVouchers} मंजूर न झालेले वॉउचर्स आहेत.");
             }
 
             if (!status.TransferTally.IsMatched)
             {
-                await AddLogAsync(branchId, businessDate, 1, "PRE_EOD_CHECKLIST_VALIDATION", "FAILED", 0, $"नावे (Debit) {status.TransferTally.Debit} व जमा (Credit) {status.TransferTally.Credit} जुळत नाही.");
+                await AddLogAsync(branchId, businessDate, 1, "अमंजूर वॉउचर्स व आर्थिक ताळमेळ पडताळणी", "FAILED", 0, $"नावे (Debit) {status.TransferTally.Debit} व जमा (Credit) {status.TransferTally.Credit} जुळत नाही.");
                 return (false, $"EOD करता येत नाही. ट्रान्सफर डेबिट ({status.TransferTally.Debit}) आणि क्रेडिट ({status.TransferTally.Credit}) जुळत नाही.");
             }
 
             if (!status.CashTally.IsPositive)
             {
-                await AddLogAsync(branchId, businessDate, 1, "PRE_EOD_CHECKLIST_VALIDATION", "FAILED", 0, $"अखेरची रोख शिल्लक वजा (Negative) आहे: ₹ {status.CashTally.Closing}");
+                await AddLogAsync(branchId, businessDate, 1, "अमंजूर वॉउचर्स व आर्थिक ताळमेळ पडताळणी", "FAILED", 0, $"अखेरची रोख शिल्लक वजा (Negative) आहे: ₹ {status.CashTally.Closing}");
                 return (false, $"EOD करता येत नाही. अखेरची रोख शिल्लक वजा ({status.CashTally.Closing}) आहे.");
             }
-            await AddLogAsync(branchId, businessDate, 1, "PRE_EOD_CHECKLIST_VALIDATION", "SUCCESS", 4);
+            await AddLogAsync(branchId, businessDate, 1, "अमंजूर वॉउचर्स व आर्थिक ताळमेळ पडताळणी", "SUCCESS", 1, "सर्व व्हाउचर्स मंजूर व रोजकीर्द संतुलित.");
 
-            // Step 2: System Session Lockout & Form Freeze
-            await AddLogAsync(branchId, businessDate, 2, "TELLER_SESSION_LOCKOUT", "SUCCESS", 1, "शाखेचे व्यवहार सेशन्स गोठवले गेले.");
-
-            // Step 3: Daily Loan Interest Calculation
-            await AddLogAsync(branchId, businessDate, 3, "DAILY_LOAN_INTEREST_CALCULATION", "SUCCESS", 0, "दैनंदिन कर्ज व्याज प्रक्रिया पूर्ण.");
-
-            // Step 4: FD Accrual Update
-            var activeFds = await _context.FdAccounts.CountAsync(f => f.BranchID == branchId && f.Status == "Active");
-            await AddLogAsync(branchId, businessDate, 4, "FD_INTEREST_ACCRUAL_UPDATE", "SUCCESS", activeFds, $"{activeFds} मुदत ठेवींचे व्याज अद्ययावत केले.");
-
-            // Step 5: RD Dues & Penalty Update
-            var activeRds = await _context.RdAccounts.CountAsync(r => r.BranchID == branchId && r.Status == "Active");
-            await AddLogAsync(branchId, businessDate, 5, "RD_DUES_AND_PENALTY_UPDATE", "SUCCESS", activeRds, $"{activeRds} आवर्ती ठेवींचे हप्ते तपासले.");
-
-            // Step 6: Pigmy Balances & Commission Update
-            var activePigmy = await _context.PigmyAccounts.CountAsync(p => p.BranchID == branchId && p.Status == "Active");
-            await AddLogAsync(branchId, businessDate, 6, "PIGMY_BALANCE_AND_COMMISSION_UPDATE", "SUCCESS", activePigmy, $"{activePigmy} पिग्मी खात्यांची शिल्लक अपडेट केली.");
-
-            // Step 7: Closing Cash Position Calculation
+            // टप्पा २: दिवसअखेर रोख शिल्लक व रोजकीर्द गोठवणे (Step 2: Closing Cash & Freeze Daybook)
             string ledgerInfo = status.CashTally.PrimaryCashLedger != null 
                 ? $"{status.CashTally.PrimaryCashLedger.LedgerName} (GL: {status.CashTally.PrimaryCashLedger.LedgerID})" 
                 : "सर्व रोख खाती";
-            await AddLogAsync(branchId, businessDate, 7, "CLOSING_CASH_POSITION_CALCULATION", "SUCCESS", 1, 
-                $"अखेरची रोख शिल्लक: ₹ {status.CashTally.Closing} | लेजर: {ledgerInfo} | जमा: ₹ {status.CashTally.TodayReceipts} | नावे: ₹ {status.CashTally.TodayPayments}");
-
-            // Step 8: Freeze Business Date D
+            
             if (activeDateRecord == null)
             {
                 activeDateRecord = new BranchDayEndStatus
@@ -295,10 +322,10 @@ namespace Bhisi.Api.Services
             {
                 activeDateRecord.IsDayClosed = true;
             }
-            await AddLogAsync(branchId, businessDate, 8, "FREEZE_BUSINESS_DATE", "SUCCESS", 1, $"तारीख {businessDate:dd/MM/yyyy} बंद केली.");
+            await AddLogAsync(branchId, businessDate, 2, "दिवसअखेर रोख शिल्लक व रोजकीर्द गोठवणे", "SUCCESS", 1, 
+                $"अखेर रोख: ₹ {status.CashTally.Closing} | तारीख {businessDate:dd/MM/yyyy} बंद केली.");
 
-            // Step 9: Advance Business Date to D+1 (BOD) & Log Audit
-            var nextBusinessDate = businessDate.AddDays(1);
+            // टप्पा ३: पुढील बिझनेस डेट उघडणे व NPA बॅच (Step 3: Advance to Next Business Date & BOD)
             var nextDayRecord = new BranchDayEndStatus
             {
                 BranchID = branchId,
@@ -330,11 +357,60 @@ namespace Bhisi.Api.Services
                 Details = $"EOD complete. Business Date advanced from {businessDate:dd/MM/yyyy} to {nextBusinessDate:dd/MM/yyyy}. Closing Cash: ₹{status.CashTally.Closing} ({ledgerInfo})"
             });
 
-            await AddLogAsync(branchId, businessDate, 9, "ADVANCE_BUSINESS_DATE_BOD", "SUCCESS", 1, $"नवीन बिझनेस डेट उघडली: {nextBusinessDate:dd/MM/yyyy}");
+            await AddLogAsync(branchId, businessDate, 3, "पुढील बिझनेस डेट उघडणे व NPA बॅच", "SUCCESS", 1, $"नवीन बिझनेस डेट उघडली: {nextBusinessDate:dd/MM/yyyy}");
 
             await _context.SaveChangesAsync();
 
             return (true, $"दिवस अखेर (EOD) प्रक्रिया यशस्वीरित्या पूर्ण झाली! नवीन बिझनेस डेट: {nextBusinessDate:dd/MM/yyyy}.");
+        }
+
+        public async Task<(bool IsSuccess, string Message)> InitializeGoLiveDateAsync(int branchId, DateTime goLiveDate, int adminUserId, string reason)
+        {
+            if (goLiveDate == default)
+            {
+                return (false, "अवैध गो-लाईव्ह तारीख. (Invalid Go-Live Date.)");
+            }
+
+            var activeDateRecord = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId)
+                .OrderByDescending(b => b.BusinessDate)
+                .FirstOrDefaultAsync();
+
+            DateTime oldDate = activeDateRecord?.BusinessDate ?? DateTime.Today;
+
+            // Remove any unclosed records to prevent competing dates
+            var unclosedRecords = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == branchId && !b.IsDayClosed)
+                .ToListAsync();
+
+            if (unclosedRecords.Any())
+            {
+                _context.BranchDayEndStatuses.RemoveRange(unclosedRecords);
+            }
+
+            var newRecord = new BranchDayEndStatus
+            {
+                BranchID = branchId,
+                BusinessDate = goLiveDate.Date,
+                IsDayClosed = false
+            };
+            _context.BranchDayEndStatuses.Add(newRecord);
+
+            // Write Audit Log for Go-Live Date Initialization
+            var userObj = await _context.Users.FindAsync(adminUserId);
+            _context.AuditLogs.Add(new AuditLog
+            {
+                UserID = adminUserId,
+                Username = userObj?.Username ?? $"Admin_{adminUserId}",
+                Action = "GOLIVE_BUSINESS_DATE_INITIALIZED",
+                EntityName = "BranchBusinessDate",
+                EntityID = branchId.ToString(),
+                Timestamp = DateTime.Now,
+                Details = $"Go-Live Date Initialized for Branch {branchId} from {oldDate:dd/MM/yyyy} to {goLiveDate:dd/MM/yyyy}. Reason: {reason}"
+            });
+
+            await _context.SaveChangesAsync();
+            return (true, $"संस्थेची गो-लाईव्ह बिझनेस डेट यशस्वीरीत्या {goLiveDate:dd/MM/yyyy} निश्चित करण्यात आली आहे!");
         }
 
         public async Task<(bool IsSuccess, string Message)> UnlockDayAsync(int branchId, int adminUserId, string reason)

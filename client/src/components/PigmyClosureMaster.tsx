@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 import { 
   ExclamationTriangleIcon, 
   ShieldExclamationIcon, 
@@ -117,9 +118,18 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
   const [withdrawalPreview, setWithdrawalPreview] = useState<WithdrawalPreview | null>(null);
   const [withdrawalHistory, setWithdrawalHistory] = useState<WithdrawalHistoryItem[]>([]);
   
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   // Form States
-  const [transactionDate, setTransactionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [transactionDate, setTransactionDate] = useState<string>(activeBusinessDate);
   const [narration, setNarration] = useState('');
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setTransactionDate(user.businessDate.split('T')[0]);
+    }
+  }, [user?.businessDate]);
   const [managerOverride, setManagerOverride] = useState(false);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -648,9 +658,10 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                             <label className="block text-[11px] font-medium text-gray-600 mb-0.5">व्यवहार तारीख (Withdrawal Date)</label>
                             <input 
                               type="date" 
-                              className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white font-mono" 
+                              className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-slate-100 font-mono font-bold text-slate-800 cursor-not-allowed select-none" 
                               value={transactionDate} 
-                              onChange={(e) => setTransactionDate(e.target.value)} 
+                              readOnly={true}
+                              disabled={true}
                             />
                           </div>
                           <div>
@@ -761,9 +772,10 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                       <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खाते बंद तारीख (Closure Date)</label>
                       <input 
                         type="date" 
-                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-mono" 
+                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-slate-100 font-mono font-bold text-slate-800 cursor-not-allowed select-none" 
                         value={transactionDate} 
-                        onChange={(e) => setTransactionDate(e.target.value)} 
+                        readOnly={true}
+                        disabled={true}
                       />
                     </div>
                     <div>

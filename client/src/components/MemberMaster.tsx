@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Users, Search, X, Edit2, Trash2, UserPlus, UserCheck, MapPin, FileText, Camera, 
   Check, Eye, RefreshCw, UserCheck2, ShieldAlert, Download, CreditCard, Sparkles, 
@@ -113,6 +113,13 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const cbsDate = useMemo(() => {
+    if (user?.businessDate) {
+      return user.businessDate.split('T')[0];
+    }
+    return new Date().toISOString().split('T')[0];
+  }, [user?.businessDate]);
+
   // Summary modal after saving new member displaying Member & Share Details
   const [newRegisteredMember, setNewRegisteredMember] = useState<{
     memberId: number;
@@ -145,7 +152,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     paymentMode: 'Cash' | 'Transfer';
     savingAccountId: number | '';
   }>({
-    allotmentDate: new Date().toISOString().split('T')[0],
+    allotmentDate: user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0],
     numberOfShares: '',
     faceValue: 100,
     admissionFee: 10,
@@ -167,10 +174,10 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
 
   // Board Approval & Resolution Details (MCS Act Compliance)
   const [resolutionData, setResolutionData] = useState({
-    applicationDate: new Date().toISOString().split('T')[0],
+    applicationDate: user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0],
     resolutionNo: '',
-    resolutionDate: new Date().toISOString().split('T')[0],
-    joiningDate: new Date().toISOString().split('T')[0],
+    resolutionDate: user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0],
+    joiningDate: user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0],
     proposerMemberID: '',
     seconderMemberID: ''
   });
@@ -247,6 +254,22 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       isMountedRef.current = false;
     };
   }, []);
+
+  // Synchronize dates with CBS Business Date
+  useEffect(() => {
+    if (cbsDate) {
+      setShareConfig(prev => ({
+        ...prev,
+        allotmentDate: cbsDate
+      }));
+      setResolutionData(prev => ({
+        ...prev,
+        applicationDate: prev.applicationDate === new Date().toISOString().split('T')[0] ? cbsDate : (prev.applicationDate || cbsDate),
+        resolutionDate: prev.resolutionDate === new Date().toISOString().split('T')[0] ? cbsDate : (prev.resolutionDate || cbsDate),
+        joiningDate: prev.joiningDate === new Date().toISOString().split('T')[0] ? cbsDate : (prev.joiningDate || cbsDate)
+      }));
+    }
+  }, [cbsDate]);
 
   const fetchNextShareConfig = async () => {
     try {
@@ -821,13 +844,21 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     setSelectedCustomerId('');
     setSelectedCustomer(null);
     setShareConfig({
-      allotmentDate: new Date().toISOString().split('T')[0],
+      allotmentDate: cbsDate,
       numberOfShares: '',
       faceValue: 100,
       admissionFee: 10,
       buildingFund: 0,
       paymentMode: 'Cash',
       savingAccountId: ''
+    });
+    setResolutionData({
+      applicationDate: cbsDate,
+      resolutionNo: '',
+      resolutionDate: cbsDate,
+      joiningDate: cbsDate,
+      proposerMemberID: '',
+      seconderMemberID: ''
     });
     setFormData({
       branchID: user?.branchID || 1,
@@ -1250,6 +1281,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 <input
                   type="date"
                   value={resolutionData.applicationDate}
+                  max={cbsDate}
                   onChange={e => handleApplicationDateChange(e.target.value)}
                   required
                   className={inputClass}
@@ -1273,6 +1305,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                   type="date"
                   value={resolutionData.resolutionDate}
                   min={resolutionData.applicationDate}
+                  max={cbsDate}
                   onChange={e => handleResolutionDateChange(e.target.value)}
                   required
                   className={inputClass}
@@ -1285,6 +1318,7 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                   type="date"
                   value={resolutionData.joiningDate}
                   min={resolutionData.resolutionDate || resolutionData.applicationDate}
+                  max={cbsDate}
                   onChange={e => setResolutionData(prev => ({ ...prev, joiningDate: e.target.value }))}
                   required
                   className={`${inputClass} font-bold text-primary`}
@@ -1309,10 +1343,10 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                 <input
                   type="date"
                   required
+                  readOnly={true}
+                  disabled={true}
                   value={shareConfig.allotmentDate}
-                  min={resolutionData.resolutionDate || resolutionData.applicationDate}
-                  onChange={e => handleAllotmentDateChange(e.target.value)}
-                  className={`${inputClass} font-bold`}
+                  className={`${inputClass} font-mono font-bold bg-slate-100 text-slate-800 cursor-not-allowed select-none`}
                 />
               </div>
 

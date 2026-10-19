@@ -128,6 +128,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState<boolean>(false);
 
   const API_URL = '/api';
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
 
   const [formData, setFormData] = useState({
     branchID: user?.branchID || 1,
@@ -137,7 +138,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     legacyAccountNumber: '',
     durationType: 'Months', // 'Days' | 'Months' | 'Years'
     durationValue: 12,
-    openingDate: new Date().toISOString().split('T')[0],
+    openingDate: activeBusinessDate,
     depositAmount: 50000,
     nomineeName: '',
     nomineeRelation: '',
@@ -151,6 +152,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   useEffect(() => {
     if (user?.branchID && user.role !== 'Admin') {
       setFormData(prev => ({ ...prev, branchID: user.branchID }));
+    }
+    if (user?.businessDate) {
+      setFormData(prev => ({ ...prev, openingDate: user.businessDate.split('T')[0] }));
     }
   }, [user]);
 

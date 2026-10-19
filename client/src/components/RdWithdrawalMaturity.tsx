@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 import SearchableSelect from './SearchableSelect';
 
 interface RdAccount {
@@ -54,8 +55,19 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
   const [fdSchemes, setFdSchemes] = useState<FdScheme[]>([]);
   const [targetFdSchemeId, setTargetFdSchemeId] = useState('');
 
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   // Form inputs
-  const [closureDate, setClosureDate] = useState(new Date().toISOString().split('T')[0]);
+  const [closureDate, setClosureDate] = useState(activeBusinessDate);
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      setClosureDate(user.businessDate.split('T')[0]);
+    }
+  }, [user?.businessDate]);
+
   const [previewData, setPreviewData] = useState<{ recalcInt: number, clawback: number, netPayout: number } | null>(null);
 
   const [activeSubTab, setActiveSubTab] = useState<'matured' | 'premature' | 'renew'>('matured');

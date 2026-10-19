@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 import { 
   BookOpen, 
   Layers, 
@@ -213,6 +214,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   isPassingMode: propIsPassingMode,
   onNavigate
 }) => {
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   const urlParams = new URLSearchParams(window.location.search);
   const voucherIdFromUrl = urlParams.get('voucherId') ? parseInt(urlParams.get('voucherId')!) : undefined;
   const isPassingModeFromUrl = urlParams.get('passingMode') === 'true';
@@ -243,9 +247,18 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [noFdFoundAlert, setNoFdFoundAlert] = useState<string | null>(null);
 
   const [actionType, setActionType] = useState<string>('MaturityClose'); // MaturityClose, PrematureClose, Renewal
-  const [closureDate, setClosureDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [closureDate, setClosureDate] = useState<string>(activeBusinessDate);
   const [renewalType, setRenewalType] = useState<string>('PrincipalPlusInterest'); // PrincipalOnly, PrincipalPlusInterest
   const [targetSchemeId, setTargetSchemeId] = useState<number>(0);
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bDate = user.businessDate.split('T')[0];
+      setClosureDate(bDate);
+      setChequeDate(bDate);
+    }
+  }, [user?.businessDate]);
 
   // Overdue interest & Renewal Effective controls
   const [applyOverdueInterest, setApplyOverdueInterest] = useState<boolean>(true);
@@ -256,7 +269,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank' | 'Transfer'>('Cash');
   const [bankAccountLedgerID, setBankAccountLedgerID] = useState<number>(0);
   const [chequeNo, setChequeNo] = useState<string>('');
-  const [chequeDate, setChequeDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [chequeDate, setChequeDate] = useState<string>(activeBusinessDate);
   const [memberSavingAccounts, setMemberSavingAccounts] = useState<SavingAccount[]>([]);
   const [selectedSavingAccountId, setSelectedSavingAccountId] = useState<number | ''>('');
   const [surplusBankLedgerID, setSurplusBankLedgerID] = useState<number>(0);
@@ -813,7 +826,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   // Maturity Date validation helper
   const checkIsMatured = () => {
     if (!selectedAccount) return false;
-    const closureDt = new Date(closureDate || new Date().toISOString().split('T')[0]);
+    const closureDt = new Date(closureDate || activeBusinessDate);
     closureDt.setHours(0, 0, 0, 0);
 
     const matDt = new Date(selectedAccount.maturityDate);
@@ -828,7 +841,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   // Synchronize Action Type with Maturity Status automatically so form is never in an invalid/error state
   useEffect(() => {
     if (!selectedAccount) return;
-    const closureDt = new Date(closureDate || new Date().toISOString().split('T')[0]);
+    const closureDt = new Date(closureDate || activeBusinessDate);
     closureDt.setHours(0, 0, 0, 0);
 
     const matDt = new Date(selectedAccount.maturityDate);
@@ -854,7 +867,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     new Date(closureDate + 'T00:00:00').getTime() < new Date(selectedAccount.openingDate.split('T')[0] + 'T00:00:00').getTime()
   );
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = activeBusinessDate;
   const isFutureDate = Boolean(closureDate && closureDate > todayStr);
 
   // Accrual Date validation helper (Prevent Backdating before Last Interest Accrual)
@@ -880,7 +893,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   // Overdue calculation helper
   const getOverdueDetails = () => {
     if (!selectedAccount) return { isOverdue: false, overdueDays: 0, overdueInterest: 0, baseAmount: 0, isAllowedByScheme: false, effectiveOverdueRate: 0 };
-    const closureDt = new Date(closureDate || new Date().toISOString().split('T')[0]);
+    const closureDt = new Date(closureDate || activeBusinessDate);
     closureDt.setHours(0, 0, 0, 0);
 
     const matDt = new Date(selectedAccount.maturityDate);

@@ -25,12 +25,35 @@ export default function LoginForm() {
     username: 'admin',
     password: '',
     branchID: '',
-    financialYearID: ''
+    financialYearID: '',
+    businessDate: ''
   });
   
+  const [branchDateInfo, setBranchDateInfo] = useState<{
+    businessDate?: string;
+    isDayClosed?: boolean;
+    lastClosedDate?: string;
+  } | null>(null);
+  const [dateWarning, setDateWarning] = useState<string>('');
+
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const fetchBranchBusinessDate = async (branchId: string) => {
+    try {
+      const res = await fetch(`/api/Auth/branch-business-date/${branchId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setBranchDateInfo(data);
+        if (data.businessDate) {
+          setFormData(prev => ({ ...prev, businessDate: data.businessDate }));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load branch business date", err);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -53,12 +76,15 @@ export default function LoginForm() {
         
         const activeFy = fyData.find((f: any) => f.isActive ?? f.IsActive) || fyData[0];
         const firstBranch = branchData[0];
+        const initialBranchId = firstBranch ? (firstBranch.branchID ?? firstBranch.branchId ?? firstBranch.BranchID ?? '1').toString() : '1';
         
         setFormData(prev => ({
           ...prev,
-          branchID: firstBranch ? (firstBranch.branchID ?? firstBranch.branchId ?? firstBranch.BranchID ?? '1').toString() : '1',
+          branchID: initialBranchId,
           financialYearID: activeFy ? (activeFy.financialYearID ?? activeFy.financialYearId ?? activeFy.FinancialYearID ?? '1').toString() : '1'
         }));
+
+        fetchBranchBusinessDate(initialBranchId);
         
       } catch (err) {
         if (isMounted) {
@@ -80,7 +106,19 @@ export default function LoginForm() {
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+
+    if (name === 'branchID') {
+      fetchBranchBusinessDate(value);
+      setDateWarning('');
+    } else if (name === 'businessDate') {
+      if (branchDateInfo?.lastClosedDate && value <= branchDateInfo.lastClosedDate) {
+        setDateWarning(`दिनांक ${new Date(value).toLocaleDateString('en-GB')} चा दिवस आधीच दिवसअखेर करून बंद करण्यात आला आहे. बंद तारखेवर लॉगिन करता येणार नाही.`);
+      } else {
+        setDateWarning('');
+      }
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,6 +126,11 @@ export default function LoginForm() {
     setError('');
     setLoading(true);
     
+    if (dateWarning) {
+      setError(dateWarning);
+      return;
+    }
+
     try {
       const response = await fetch('/api/Auth/login', {
         method: 'POST',
@@ -96,7 +139,8 @@ export default function LoginForm() {
           username: formData.username,
           password: formData.password,
           branchID: parseInt(formData.branchID || '1'),
-          financialYearID: parseInt(formData.financialYearID || '1')
+          financialYearID: parseInt(formData.financialYearID || '1'),
+          businessDate: formData.businessDate ? new Date(formData.businessDate).toISOString() : null
         })
       });
 
@@ -268,6 +312,50 @@ export default function LoginForm() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Business Date Selection Field */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-[9.5px] font-bold text-[#63545e] uppercase tracking-wider">
+                कामकाजाची तारीख (Business Date)
+              </label>
+              {branchDateInfo && (
+                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${
+                  branchDateInfo.isDayClosed 
+                    ? 'bg-rose-50 text-rose-800 border-rose-200' 
+                    : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                }`}>
+                  {branchDateInfo.isDayClosed ? '⚠️ दिवस बंद (Closed)' : '🟢 दिवस चालू (Open)'}
+                </span>
+              )}
+            </div>
+            <div className="relative group">
+              <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-[#7a6b74] group-focus-within:text-[#7e474e] transition-colors">
+                <Calendar size={12} />
+              </div>
+              <input
+                type="date"
+                name="businessDate"
+                value={formData.businessDate}
+                onChange={handleChange}
+                className={`w-full pl-7 pr-3 py-1.5 bg-white/95 border rounded-xl text-[11px] font-mono font-bold text-[#251c22] shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all focus:bg-white focus:outline-none ${
+                  dateWarning 
+                    ? 'border-rose-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20' 
+                    : 'border-[#e5dfe3] hover:border-[#cfc4cb] focus:border-[#7e474e] focus:ring-2 focus:ring-[#7e474e]/20'
+                }`}
+                required
+              />
+            </div>
+            {dateWarning ? (
+              <p className="text-[9.5px] text-rose-600 font-bold mt-1 flex items-center gap-1 leading-tight">
+                <span>⛔</span> <span>{dateWarning}</span>
+              </p>
+            ) : branchDateInfo?.lastClosedDate ? (
+              <p className="text-[9.5px] text-[#7a6b74] mt-0.5 font-medium">
+                शेवटचा बंद दिवस: <span className="font-mono font-bold text-[#251c22]">{new Date(branchDateInfo.lastClosedDate).toLocaleDateString('en-GB')}</span>
+              </p>
+            ) : null}
           </div>
 
           {/* User ID Field */}

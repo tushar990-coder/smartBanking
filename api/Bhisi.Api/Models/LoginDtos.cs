@@ -13,6 +13,8 @@ namespace Bhisi.Api.Models
         public int BranchID { get; set; }
 
         public int FinancialYearID { get; set; }
+
+        public DateTime? BusinessDate { get; set; }
     }
 
     public class LoginResponseDto

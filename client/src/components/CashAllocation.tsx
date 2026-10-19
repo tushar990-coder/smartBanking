@@ -23,6 +23,7 @@ interface CashAllocationProps {
 
 export default function CashAllocation({ onNavigate, initialToCashierId }: CashAllocationProps) {
   const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<number>(user?.branchID || 1);
@@ -35,20 +36,28 @@ export default function CashAllocation({ onNavigate, initialToCashierId }: CashA
     fromCashierId: 0,
     toCashierId: initialToCashierId || 0,
     amount: '',
-    allocationDate: new Date().toISOString().split('T')[0],
+    allocationDate: activeBusinessDate,
     remarks: ''
   });
 
-  const [filterDate, setFilterDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [filterDate, setFilterDate] = useState<string>(activeBusinessDate);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sync with global auth branch
+  // Sync with global auth branch & business date
   useEffect(() => {
     if (user?.branchID) {
       setSelectedBranchId(user.branchID);
     }
   }, [user?.branchID]);
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bDate = user.businessDate.split('T')[0];
+      setFormData(prev => ({ ...prev, allocationDate: bDate }));
+      setFilterDate(bDate);
+    }
+  }, [user?.businessDate]);
 
   const loadData = async () => {
     setLoading(true);

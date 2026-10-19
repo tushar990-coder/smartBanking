@@ -12,6 +12,17 @@ namespace Bhisi.Api.Controllers
         public string Reason { get; set; } = string.Empty;
     }
 
+    public class CloseDayRequest
+    {
+        public System.DateTime? NextBusinessDate { get; set; }
+    }
+
+    public class InitializeGoLiveDateRequest
+    {
+        public System.DateTime GoLiveDate { get; set; }
+        public string Reason { get; set; } = string.Empty;
+    }
+
     [ApiController]
     [Authorize]
     [Route("api/[controller]")]
@@ -52,7 +63,7 @@ namespace Bhisi.Api.Controllers
 
         [HttpPost("close-day/{branchId}")]
         [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager,BranchManager")]
-        public async Task<IActionResult> CloseDay(int branchId)
+        public async Task<IActionResult> CloseDay(int branchId, [FromBody] CloseDayRequest? request = null)
         {
             int userBranch = User.GetOperatingBranchId();
             if (!User.IsHeadOfficeAdmin() && userBranch != branchId)
@@ -66,7 +77,37 @@ namespace Bhisi.Api.Controllers
                 return Unauthorized(new { Message = "अवैध युझर ओळख (Invalid User Identity)." });
             }
 
-            var result = await _eodBodService.RunEndOfDayAsync(branchId, userId);
+            var result = await _eodBodService.RunEndOfDayAsync(branchId, userId, request?.NextBusinessDate);
+            if (result.IsSuccess)
+            {
+                return Ok(new { Message = result.Message });
+            }
+            else
+            {
+                return BadRequest(new { Message = result.Message });
+            }
+        }
+
+        [HttpPost("initialize-golive-date/{branchId}")]
+        [Authorize(Roles = "Admin,SuperAdmin,HeadOffice,HO_Manager")]
+        public async Task<IActionResult> InitializeGoLiveDate(int branchId, [FromBody] InitializeGoLiveDateRequest request)
+        {
+            if (request == null || request.GoLiveDate == default)
+            {
+                return BadRequest(new { Message = "कृपया वैध गो-लाईव्ह तारीख निवडा." });
+            }
+
+            int adminUserId = User.GetUserId();
+            if (adminUserId <= 0)
+            {
+                return Unauthorized(new { Message = "अवैध युझर ओळख (Invalid User Identity)." });
+            }
+
+            string reason = !string.IsNullOrWhiteSpace(request.Reason) 
+                ? request.Reason.Trim() 
+                : "नवीन संस्था गो-लाईव्ह तारीख निश्चित केली.";
+
+            var result = await _eodBodService.InitializeGoLiveDateAsync(branchId, request.GoLiveDate, adminUserId, reason);
             if (result.IsSuccess)
             {
                 return Ok(new { Message = result.Message });

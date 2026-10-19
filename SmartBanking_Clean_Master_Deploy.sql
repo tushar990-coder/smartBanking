@@ -1,4 +1,4 @@
-﻿IF OBJECT_ID(N'[__EFMigrationsHistory]') IS NULL
+IF OBJECT_ID(N'[__EFMigrationsHistory]') IS NULL
 BEGIN
     CREATE TABLE [__EFMigrationsHistory] (
         [MigrationId] nvarchar(150) NOT NULL,
@@ -5945,7 +5945,7 @@ BEGIN TRY
     IF NOT EXISTS (SELECT * FROM [BranchDayEndStatuses] WHERE [BranchID] = @BranchId)
     BEGIN
         INSERT INTO [BranchDayEndStatuses] ([BranchID], [BusinessDate], [IsDayClosed])
-        VALUES (@BranchId, '2026-04-01 00:00:00', 0);
+        VALUES (@BranchId, CAST(GETDATE() AS DATE), 0);
     END
 END TRY BEGIN CATCH END CATCH
 GO

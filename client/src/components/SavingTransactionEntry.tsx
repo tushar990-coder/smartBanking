@@ -148,17 +148,25 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
 
   const API_URL = '/api';
 
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   const [formData, setFormData] = useState({
     savingAccountID: 0,
     targetSavingAccountID: 0,
     bankLedgerID: 0,
-    transactionDate: new Date().toISOString().split('T')[0],
+    transactionDate: activeBusinessDate,
     transactionType: 'Deposit',
     paymentMode: 'Cash',
     amount: '',
     narration: '',
     checkNo: ''
   });
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setFormData(prev => ({ ...prev, transactionDate: user.businessDate.split('T')[0] }));
+    }
+  }, [user?.businessDate]);
 
   useEffect(() => {
     fetchAccounts();
@@ -1030,9 +1038,10 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
                   type="date"
                   name="transactionDate"
                   value={formData.transactionDate}
-                  onChange={handleInputChange}
+                  readOnly={true}
+                  disabled={true}
                   required
-                  className="w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium h-[30px]"
+                  className="w-full text-[11px] border border-gray-300 rounded-sm px-2.5 py-1 bg-slate-100 text-slate-800 font-mono font-bold h-[30px] cursor-not-allowed select-none"
                 />
               </div>
 

@@ -25,12 +25,20 @@ interface CashDenominationProps {
 
 export default function CashDenominationEntry({ onNavigate, initialCashierId }: CashDenominationProps) {
   const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<number>(user?.branchID || 1);
   const [cashiers, setCashiers] = useState<any[]>([]);
   const [selectedCashierId, setSelectedCashierId] = useState<number>(initialCashierId || 0);
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(activeBusinessDate);
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      setSelectedDate(user.businessDate.split('T')[0]);
+    }
+  }, [user?.businessDate]);
   const [entryType, setEntryType] = useState<string>('CLOSING');
 
   const [counts, setCounts] = useState({

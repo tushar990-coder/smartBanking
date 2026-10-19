@@ -192,6 +192,16 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"तारीख {voucher.VoucherDate:dd/MM/yyyy} साठी दिवस अखेर (EOD) पूर्ण झाली आहे. बंद झालेल्या तारखेमध्ये नवीन वॉउचर तयार करता येणार नाही.");
             }
 
+            var lastClosedVoucherCheck = await _context.BranchDayEndStatuses
+                .Where(b => b.BranchID == voucher.BranchID && b.IsDayClosed)
+                .OrderByDescending(b => b.BusinessDate)
+                .FirstOrDefaultAsync();
+
+            if (lastClosedVoucherCheck != null && voucher.VoucherDate.Date <= lastClosedVoucherCheck.BusinessDate.Date)
+            {
+                return BadRequest($"तारीख {voucher.VoucherDate:dd/MM/yyyy} ही शेवटच्या बंद झालेल्या दिवसापेक्षा ({lastClosedVoucherCheck.BusinessDate:dd/MM/yyyy}) जुनी किंवा बंद असलेली तारीख आहे. बंद तारखेत नवीन व्हाउचर तयार करता येणार नाही.");
+            }
+
             // 1.1 Cashier Role Restrictions (Cashiers only allowed Cash Receipt & Cash Payment)
             var userRole = User.GetUserRole();
             if (userRole.Equals("Cashier", StringComparison.OrdinalIgnoreCase) && 

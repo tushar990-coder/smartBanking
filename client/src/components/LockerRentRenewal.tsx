@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { 
   DollarSign, 
   Calendar, 
@@ -67,10 +68,13 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState<'All' | 'Overdue' | 'AutoDebit'>('All');
 
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   // Single Pay Modal
   const [selectedAllotment, setSelectedAllotment] = useState<PendingRenewal | null>(null);
   const [payData, setPayData] = useState({
-    paymentDate: new Date().toISOString().split('T')[0],
+    paymentDate: activeBusinessDate,
     paymentMode: 'Cash', // Cash, SavingDebit, Transfer
     rentAmount: 0,
     penaltyAmount: 0,
@@ -78,6 +82,12 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
     totalAmount: 0,
     remarks: ''
   });
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setPayData(prev => ({ ...prev, paymentDate: user.businessDate.split('T')[0] }));
+    }
+  }, [user?.businessDate]);
 
   useEffect(() => {
     if (isPassing && effectiveVoucherId) {
@@ -705,9 +715,10 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
                   <input
                     type="date"
                     value={payData.paymentDate}
-                    onChange={(e) => setPayData({ ...payData, paymentDate: e.target.value })}
+                    readOnly={true}
+                    disabled={true}
                     required
-                    className={inputClass}
+                    className={`${inputClass} bg-slate-100 font-mono font-bold text-slate-800 cursor-not-allowed select-none`}
                   />
                 </div>
                 <div>

@@ -274,7 +274,7 @@ const InvestmentOpeningBalance: React.FC = () => {
         durationDisplay: isDays ? `${days} दिवस` : `${months} महिने`,
         interestCalculationMethod: method,
         maturityDate: matDateStr,
-        expectedMaturityAmount: Math.round(maturityAmt * 100) / 100
+        expectedMaturityAmount: Math.round(maturityAmt)
       });
     }
   }, [formData.schemeID, formData.principalAmount, formData.numberOfShares, formData.investmentDate, selectedScheme, isShareMode]);
@@ -422,7 +422,7 @@ const InvestmentOpeningBalance: React.FC = () => {
       principalAmount: parseFloat(formData.principalAmount.toString()) || 0,
       interestRate: calcData.interestRate,
       maturityDate: isShareMode ? formData.investmentDate : calcData.maturityDate,
-      expectedMaturityAmount: calcData.expectedMaturityAmount || formData.principalAmount,
+      expectedMaturityAmount: Math.round(calcData.expectedMaturityAmount || formData.principalAmount),
       accruedInterestTillMigration: isShareMode ? 0 : (parseFloat(formData.accruedInterestTillMigration.toString()) || 0),
       bookValue: (parseFloat(formData.principalAmount.toString()) || 0) + (isShareMode ? 0 : (parseFloat(formData.accruedInterestTillMigration.toString()) || 0)),
       isLegacyAccount: true,

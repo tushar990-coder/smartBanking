@@ -1,6 +1,7 @@
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 import {
   CreditCard,
   User,
@@ -77,8 +78,19 @@ export default function RdInstallmentCollection({
   } | null>(null);
   const [noRdFoundAlert, setNoRdFoundAlert] = useState<string | null>(null);
 
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   // Form states
-  const [collectionDate, setCollectionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [collectionDate, setCollectionDate] = useState<string>(activeBusinessDate);
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      setCollectionDate(user.businessDate.split('T')[0]);
+    }
+  }, [user?.businessDate]);
+
   const [isBulk, setIsBulk] = useState(false);
   const [count, setCount] = useState(1);
   const [penaltyAmount, setPenaltyAmount] = useState(0);

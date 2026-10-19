@@ -42,6 +42,8 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
 
   const API_URL = '/api';
 
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   const [formData, setFormData] = useState({
     purchase: {
       institutionID: 1,
@@ -49,7 +51,7 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
       financialYearID: 1,
       supplierName: '',
       invoiceNo: '',
-      invoiceDate: new Date().toISOString().split('T')[0],
+      invoiceDate: activeBusinessDate,
       taxableAmount: 0,
       gstAmount: 0,
       totalAmount: 0,
@@ -297,7 +299,7 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
           financialYearID: 1,
           supplierName: '',
           invoiceNo: '',
-          invoiceDate: new Date().toISOString().split('T')[0],
+          invoiceDate: activeBusinessDate,
           taxableAmount: 0,
           gstAmount: 0,
           totalAmount: 0,
@@ -375,8 +377,15 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
               </div>
               <div>
                 <label className="block text-[11px] font-medium text-gray-600 mb-0.5">बिल दिनांक (Invoice Date) *</label>
-                <input type="date" name="invoiceDate" value={formData.purchase.invoiceDate} onChange={handlePurchaseChange} required
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                <input 
+                  type="date" 
+                  name="invoiceDate" 
+                  value={formData.purchase.invoiceDate} 
+                  readOnly={true}
+                  disabled={true}
+                  required
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-slate-100 font-mono font-bold text-slate-800 cursor-not-allowed select-none" 
+                />
               </div>
             </div>
 

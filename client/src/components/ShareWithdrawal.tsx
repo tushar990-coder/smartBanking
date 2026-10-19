@@ -2,6 +2,7 @@ import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import React, { useState, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, CheckCircle, XCircle, ShieldCheck } from 'lucide-react';
 
 interface Member extends MemberOption {}
@@ -35,11 +36,20 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
   const [selectedMemberId, setSelectedMemberId] = useState<string>('');
   const [shareAccount, setShareAccount] = useState<ShareAccount | null>(null);
   
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   const [formData, setFormData] = useState({
     numberOfShares: '',
     narration: 'Share Withdrawal'
   });
-  const [withdrawalDate, setWithdrawalDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [withdrawalDate, setWithdrawalDate] = useState<string>(activeBusinessDate);
+
+  useEffect(() => {
+    if (user?.businessDate) {
+      setWithdrawalDate(user.businessDate.split('T')[0]);
+    }
+  }, [user?.businessDate]);
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -70,6 +80,9 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
             numberOfShares: data.numberOfShares.toString(),
             narration: data.voucher?.narration || 'Share Withdrawal'
           });
+        }
+        if (data.voucher?.voucherDate) {
+          setWithdrawalDate(data.voucher.voucherDate.split('T')[0]);
         }
         if (data.paymentMode) {
           if (data.paymentMode === 'Transfer') setPaymentMode('Transfer');

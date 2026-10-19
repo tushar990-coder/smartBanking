@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 import {
   Landmark,
   Coins,
@@ -22,6 +23,9 @@ import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
 
 const InvestmentMaturityClaim: React.FC = () => {
+  const { user } = useAuth();
+  const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+
   const [accounts, setAccounts] = useState<any[]>([]);
   const [schemes, setSchemes] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
@@ -37,13 +41,13 @@ const InvestmentMaturityClaim: React.FC = () => {
   const API_URL = '/api';
 
   const [maturityForm, setMaturityForm] = useState({
-    maturityDate: new Date().toISOString().split('T')[0],
+    maturityDate: activeBusinessDate,
     principalReceived: 0,
     interestReceived: 0,
   });
 
   const [prematureForm, setPrematureForm] = useState({
-    withdrawalDate: new Date().toISOString().split('T')[0],
+    withdrawalDate: activeBusinessDate,
     principalPaid: 0,
     revisedInterestRate: 0,
     interestPaid: 0,
@@ -51,12 +55,20 @@ const InvestmentMaturityClaim: React.FC = () => {
   });
 
   const [renewalForm, setRenewalForm] = useState({
-    renewalDate: new Date().toISOString().split('T')[0],
+    renewalDate: activeBusinessDate,
     renewalType: 'PrincipalOnly',
     renewalAmount: 0,
     newSchemeID: 0,
     newInterestRate: 0,
   });
+
+  // Sync CBS Business Date if changed
+  useEffect(() => {
+    if (user?.businessDate) {
+      const bDate = user.businessDate.split('T')[0];
+      setPrematureForm(prev => ({ ...prev, withdrawalDate: bDate }));
+    }
+  }, [user?.businessDate]);
 
   useEffect(() => {
     fetchAccounts();
@@ -104,13 +116,13 @@ const InvestmentMaturityClaim: React.FC = () => {
       const interest = Math.max(0, expectedTotal - principal);
 
       setMaturityForm({
-        maturityDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : new Date().toISOString().split('T')[0],
+        maturityDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : activeBusinessDate,
         principalReceived: principal,
         interestReceived: Math.round(interest * 100) / 100,
       });
 
       setPrematureForm({
-        withdrawalDate: new Date().toISOString().split('T')[0],
+        withdrawalDate: activeBusinessDate,
         principalPaid: principal,
         revisedInterestRate: Math.max(0, (acc.interestRate || 0) - 1.0), // default 1% penalty reduction
         interestPaid: 0,
@@ -118,7 +130,7 @@ const InvestmentMaturityClaim: React.FC = () => {
       });
 
       setRenewalForm({
-        renewalDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : new Date().toISOString().split('T')[0],
+        renewalDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : activeBusinessDate,
         renewalType: 'PrincipalOnly',
         renewalAmount: principal,
         newSchemeID: acc.schemeID || (schemes[0]?.schemeID || 0),

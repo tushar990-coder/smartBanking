@@ -250,7 +250,9 @@ export default function LoanOutstandingReport() {
   // Selected scheme title
   const currentSchemeName = selectedLoanRateId === 'all'
     ? 'सर्व कर्ज प्रकार (एकत्रित)'
-    : loanRates.find(lr => String(lr.loanRateID) === String(selectedLoanRateId))?.loanType || 'कर्ज प्रकार';
+    : (loanRates.find(lr => String(lr.loanRateID) === String(selectedLoanRateId))?.shortName ||
+       loanRates.find(lr => String(lr.loanRateID) === String(selectedLoanRateId))?.loanType ||
+       'कर्ज प्रकार');
 
   const isMarathiDigits = digitMode === 'marathi';
 
@@ -366,7 +368,7 @@ export default function LoanOutstandingReport() {
           <option value="all">सर्व कर्ज प्रकार (एकत्रित)</option>
           {loanRates.map(rate => (
             <option key={rate.loanRateID} value={rate.loanRateID}>
-              {rate.loanType}
+              {rate.shortName || rate.loanType}
             </option>
           ))}
         </select>

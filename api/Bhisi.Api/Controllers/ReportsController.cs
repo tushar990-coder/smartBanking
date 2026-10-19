@@ -6228,9 +6228,9 @@ namespace Bhisi.Api.Controllers
                         principalPaid = Math.Max(collPrincipal, vatapRakkam - outstanding);
                     }
 
-                    var loanTypeStr = !string.IsNullOrWhiteSpace(la.LoanRate?.LoanType) 
-                        ? la.LoanRate.LoanType 
-                        : (!string.IsNullOrWhiteSpace(la.LoanRate?.ShortName) ? la.LoanRate.ShortName : "इतर कर्ज");
+                    var loanTypeStr = !string.IsNullOrWhiteSpace(la.LoanRate?.ShortName)
+                        ? la.LoanRate.ShortName.Trim()
+                        : (!string.IsNullOrWhiteSpace(la.LoanRate?.LoanType) ? la.LoanRate.LoanType.Trim() : "इतर कर्ज");
 
                     var disbDate = la.LoanDisbursementDate ?? la.OpeningDate;
 
@@ -6291,7 +6291,9 @@ namespace Bhisi.Api.Controllers
                     var selRate = await _context.LoanRates.FindAsync(loanRateId.Value);
                     if (selRate != null)
                     {
-                        selectedSchemeName = selRate.LoanType;
+                        selectedSchemeName = !string.IsNullOrWhiteSpace(selRate.ShortName)
+                            ? selRate.ShortName.Trim()
+                            : (!string.IsNullOrWhiteSpace(selRate.LoanType) ? selRate.LoanType.Trim() : "कर्ज");
                     }
                 }
 

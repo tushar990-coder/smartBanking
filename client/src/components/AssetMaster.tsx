@@ -1,6 +1,34 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import {
+  Building2,
+  Plus,
+  RefreshCw,
+  Search,
+  X,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+  UserCheck,
+  ArrowRightLeft,
+  ShieldCheck,
+  Wrench,
+  TrendingDown,
+  Trash2,
+  Clock,
+  MapPin,
+  User,
+  Layers,
+  Calendar,
+  Save,
+  DollarSign,
+  Info,
+  CheckCircle,
+  Percent,
+  CheckSquare,
+  BookOpen
+} from 'lucide-react';
 
 interface Asset {
   assetID: number;
@@ -39,12 +67,14 @@ const AssetMaster: React.FC = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [syncingGl, setSyncingGl] = useState(false);
   
   // Selection/Timeline
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [assetHistory, setAssetHistory] = useState<any[]>([]);
   
-  // Filters
+  // Filters & Search
+  const [searchQuery, setSearchQuery] = useState('');
   const [branchFilter, setBranchFilter] = useState(isHeadOfficeOrAdmin ? 'all' : String(effectiveBranchId));
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -63,6 +93,8 @@ const AssetMaster: React.FC = () => {
     assetCode: '',
     assetName: '',
     purchaseDate: activeBusinessDate,
+    quantity: 1,
+    costMode: 'perUnit' as 'perUnit' | 'total',
     originalCost: 0,
     accumulatedDepreciation: 0,
     location: '',
@@ -232,7 +264,11 @@ const AssetMaster: React.FC = () => {
     const { name, value } = e.target;
     setOpeningData(prev => ({
       ...prev,
-      [name]: name === 'branchID' || name === 'categoryID' ? parseInt(value) : name === 'originalCost' || name === 'accumulatedDepreciation' ? parseFloat(value) : value
+      [name]: name === 'branchID' || name === 'categoryID' || name === 'quantity'
+        ? parseInt(value) || 0
+        : name === 'originalCost' || name === 'accumulatedDepreciation'
+        ? parseFloat(value) || 0
+        : value
     }));
   };
 
@@ -243,13 +279,37 @@ const AssetMaster: React.FC = () => {
       setError('कृपया मालमत्ता वर्ग निवडा. (Please select asset category.)');
       return;
     }
+    const qty = Math.max(1, openingData.quantity || 1);
+    if (!openingData.assetCode || !openingData.assetName) {
+      setError('कृपया मालमत्ता कोड आणि नाव भरा. (Asset Code and Name are required.)');
+      return;
+    }
 
     try {
-      await axios.post(`${API_URL}/Assets`, {
-        ...openingData,
-        currentBookValue: openingData.originalCost - openingData.accumulatedDepreciation
+      await axios.post(`${API_URL}/Assets/opening-batch`, {
+        branchID: openingData.branchID,
+        categoryID: openingData.categoryID,
+        assetCode: openingData.assetCode,
+        assetName: openingData.assetName,
+        purchaseDate: openingData.purchaseDate,
+        quantity: qty,
+        costMode: openingData.costMode,
+        originalCost: openingData.originalCost,
+        accumulatedDepreciation: openingData.accumulatedDepreciation,
+        location: openingData.location,
+        custodian: openingData.custodian,
+        isOpeningBalance: true,
+        createdBy: user?.userID ? Number(user.userID) : 1
       });
-      setSuccess('मालमत्ता शिल्लक यशस्वीरित्या जोडली! (Opening asset added successfully!)');
+
+      // Auto-sync with Balance Sheet (GL)
+      try {
+        await axios.post(`${API_URL}/Assets/sync-opening-balances?branchId=${openingData.branchID}`);
+      } catch (syncErr) {
+        console.warn("Background GL sync note:", syncErr);
+      }
+
+      setSuccess(`एकूण ${qty} मालमत्ता शिल्लक नोंदी यशस्वीरित्या जोडल्या आणि ताळेबंदाशी सिंक केल्या!`);
       setShowAddOpening(false);
       fetchAssets();
       // Reset form
@@ -259,6 +319,8 @@ const AssetMaster: React.FC = () => {
         assetCode: '',
         assetName: '',
         purchaseDate: activeBusinessDate,
+        quantity: 1,
+        costMode: 'perUnit',
         originalCost: 0,
         accumulatedDepreciation: 0,
         location: '',
@@ -266,7 +328,22 @@ const AssetMaster: React.FC = () => {
         isOpeningBalance: true
       });
     } catch (err: any) {
-      setError(err.response?.data || 'जतन करताना त्रुटी. (Error saving asset.)');
+      setError(err.response?.data || 'जतन करताना त्रुटी. (Error saving assets.)');
+    }
+  };
+
+  // Manual GL Balance Sheet Sync
+  const handleManualGlSync = async () => {
+    setSyncingGl(true);
+    setError(''); setSuccess('');
+    try {
+      const bId = branchFilter !== 'all' ? branchFilter : (effectiveBranchId || '');
+      const res = await axios.post(`${API_URL}/Assets/sync-opening-balances${bId ? `?branchId=${bId}` : ''}`);
+      setSuccess(res.data?.message || 'डेडस्टॉक सुरुवातीची शिल्लक ताळेबंद (Balance Sheet) व खतावणीशी यशस्वीरीत्या सिंक झाली!');
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'ताळेबंद सिंक करताना त्रुटी आली.');
+    } finally {
+      setSyncingGl(false);
     }
   };
 
@@ -443,152 +520,499 @@ const AssetMaster: React.FC = () => {
     }
   };
 
-  return (
-    <div className="p-3">
-      {/* Messages */}
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-sm text-xs mb-3 font-semibold">{error}</div>}
-      {success && <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-sm text-xs mb-3 font-semibold">{success}</div>}
+  // Filtered Assets based on search query
+  const filteredAssets = useMemo(() => {
+    return assets.filter(a => {
+      const q = (searchQuery || '').trim().toLowerCase();
+      if (!q) return true;
+      return (
+        (a.assetCode && a.assetCode.toLowerCase().includes(q)) ||
+        (a.assetName && a.assetName.toLowerCase().includes(q)) ||
+        (a.custodian && a.custodian.toLowerCase().includes(q)) ||
+        (a.location && a.location.toLowerCase().includes(q)) ||
+        (a.category?.categoryName && a.category.categoryName.toLowerCase().includes(q)) ||
+        (a.branch?.branchName && a.branch.branchName.toLowerCase().includes(q))
+      );
+    });
+  }, [assets, searchQuery]);
 
-      <div className="flex flex-col xl:flex-row gap-3">
-        {/* Left pane - Assets grid & filters */}
-        <div className="flex-1 bg-white rounded shadow-sm border border-gray-200 p-3">
-          <div className="flex justify-between items-center border-b pb-2 mb-3">
-            <h2 className="text-sm font-bold text-primary">🏢 मालमत्ता यादी (Assets Management Hub)</h2>
+  // KPI Calculations
+  const totalAssetsCount = assets.length;
+  const totalOriginalCost = assets.reduce((sum, a) => sum + (a.originalCost || 0), 0);
+  const totalAccumDepr = assets.reduce((sum, a) => sum + (a.accumulatedDepreciation || 0), 0);
+  const totalBookValue = assets.reduce((sum, a) => sum + (a.currentBookValue || 0), 0);
+
+  const labelClass = 'block text-[11px] font-bold text-gray-700 mb-0.5';
+  const inputClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';
+  const selectClass = 'w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-medium transition duration-150 h-[28px]';
+
+  return (
+    <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans pb-8">
+      
+      {/* 🌟 1. TOP SLEEK CBS HEADER BANNER */}
+      <div className="bg-white px-3.5 py-2.5 rounded-sm shadow-xs border border-gray-200 border-b-2 border-primary mb-3 flex flex-wrap justify-between items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
+            <Building2 size={18} className="stroke-[2.5]" />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-gray-900 tracking-tight flex items-center gap-2">
+              <span>मालमत्ता व्यवस्थापन हब</span>
+              <span className="text-[10px] font-semibold text-primary font-mono hidden sm:inline">(Assets Management Hub)</span>
+            </h1>
+            <p className="text-[11px] text-gray-500 font-medium">
+              स्थिर मालमत्ता यादी, ओपनिंग शिल्लक नोंद, वाटप, शाखा हस्तांतरण, घसारा आकारणी व विल्हेवाट
+            </p>
+          </div>
+        </div>
+
+        {/* Action Controls */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const nextState = !showAddOpening;
+              setShowAddOpening(nextState);
+              if (nextState) {
+                setTimeout(() => {
+                  if (assetCodeInputRef.current) {
+                    assetCodeInputRef.current.focus();
+                    assetCodeInputRef.current.select();
+                  }
+                }, 120);
+              }
+            }}
+            className={`px-3 py-1.5 rounded-sm text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+              showAddOpening
+                ? 'bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100'
+                : 'bg-primary hover:opacity-90 text-white'
+            }`}
+          >
+            {showAddOpening ? <X size={14} /> : <Plus size={14} />}
+            <span>{showAddOpening ? 'फॉर्म बंद करा' : 'मालमत्ता शिल्लक (Opening Asset)'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={fetchAssets}
+            disabled={loading}
+            className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+            title="डेटा रिफ्रेश करा"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">रिफ्रेश</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleManualGlSync}
+            disabled={syncingGl || loading}
+            className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+            title="डेडस्टॉक शिल्लक ताळेबंद (Balance Sheet) व खतावणीशी (GL) सिंक करा"
+          >
+            <BookOpen size={13} className={syncingGl ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">{syncingGl ? 'सिंक होत आहे...' : 'ताळेबंद सिंक (GL)'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 📊 2. SUMMARY KPI CARDS */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
+          <div className="p-2 bg-primary/10 text-primary border border-primary/20 rounded">
+            <Building2 className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण मालमत्ता (Assets)</div>
+            <div className="text-sm font-black text-gray-900">{totalAssetsCount}</div>
+          </div>
+        </div>
+
+        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
+          <div className="p-2 bg-blue-50 text-blue-700 border border-blue-200 rounded">
+            <DollarSign className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकूण मूळ किंमत (Cost)</div>
+            <div className="text-sm font-black text-blue-900 font-mono">₹{totalOriginalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+        </div>
+
+        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
+          <div className="p-2 bg-amber-50 text-amber-700 border border-amber-200 rounded">
+            <TrendingDown className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">एकत्रित घसारा (Depr.)</div>
+            <div className="text-sm font-black text-amber-800 font-mono">₹{totalAccumDepr.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+        </div>
+
+        <div className="bg-white p-2.5 rounded-sm border border-slate-200 shadow-xs flex items-center gap-2.5">
+          <div className="p-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">चालू पुस्तकी मूल्य (WDV)</div>
+            <div className="text-sm font-black text-emerald-800 font-mono">₹{totalBookValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Messages */}
+      {error && (
+        <div className="p-2.5 rounded-sm mb-3 border font-semibold flex items-center justify-between text-xs bg-rose-50 text-rose-900 border-rose-300 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError('')} className="text-gray-500 hover:text-gray-800 text-xs px-1 font-bold cursor-pointer">✕</button>
+        </div>
+      )}
+      {success && (
+        <div className="p-2.5 rounded-sm mb-3 border font-semibold flex items-center justify-between text-xs bg-emerald-50 text-emerald-900 border-emerald-300 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{success}</span>
+          </div>
+          <button onClick={() => setSuccess('')} className="text-gray-500 hover:text-gray-800 text-xs px-1 font-bold cursor-pointer">✕</button>
+        </div>
+      )}
+
+      {/* Add Opening Balance Asset Form - Themed & Structured */}
+      {showAddOpening && (
+        <div className="bg-white rounded-sm shadow-xs border border-gray-200 border-t-2 border-primary mb-3 overflow-hidden transition-all duration-200 animate-in fade-in">
+          <div className="bg-slate-50 px-3.5 py-2 border-b border-gray-200 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <div className="p-1 bg-primary/10 text-primary rounded">
+                <Plus className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-gray-800">नवीन मालमत्ता शिल्लक नोंद (Asset Opening Balance Entry)</h3>
+                <p className="text-[10px] text-gray-500">प्रारंभिक शिल्लक (Opening Balance) मालमत्तेची माहिती, खरेदी किंमत व घसारा नोंदवा</p>
+              </div>
+            </div>
             <button 
-              onClick={() => {
-                const nextState = !showAddOpening;
-                setShowAddOpening(nextState);
-                if (nextState) {
-                  setTimeout(() => {
-                    if (assetCodeInputRef.current) {
-                      assetCodeInputRef.current.focus();
-                      assetCodeInputRef.current.select();
-                    }
-                  }, 120);
-                }
-              }} 
-              className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-sm text-xs font-semibold cursor-pointer"
+              type="button" 
+              onClick={() => setShowAddOpening(false)} 
+              className="text-gray-400 hover:text-gray-700 text-xs font-bold cursor-pointer p-1"
+              title="फॉर्म बंद करा"
             >
-              {showAddOpening ? '❌ रद्द' : '➕ मालमत्ता शिल्लक (Opening Asset)'}
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Add Opening Balance Asset Form */}
-          {showAddOpening && (
-            <form onSubmit={handleAddOpeningSubmit} className="bg-gray-50 border border-gray-200 rounded-sm p-3 mb-4 space-y-2">
-              <h3 className="text-xs font-bold text-gray-700 border-b pb-1">➕ नवीन मालमत्ता (ओपनिंग शिल्लक)</h3>
-              <div className="grid grid-cols-4 gap-2">
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600">शाखा (Branch)</label>
-                  <select name="branchID" value={openingData.branchID} onChange={handleOpeningChange}
-                    className="w-full border border-gray-300 rounded-sm px-2 py-0.5 text-xs bg-white">
-                    {branches.map((b: any) => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600">मालमत्ता वर्ग (Category) *</label>
-                  <select name="categoryID" value={openingData.categoryID} onChange={handleOpeningChange} required
-                    className="w-full border border-gray-300 rounded-sm px-2 py-0.5 text-xs bg-white">
-                    <option value={0}>-- निवडा --</option>
-                    {categories.map((c: any) => <option key={c.categoryID} value={c.categoryID}>{c.categoryName}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600">मालमत्ता कोड (Asset Code) *</label>
-                  <input 
-                    ref={assetCodeInputRef}
-                    type="text" 
-                    name="assetCode" 
-                    value={openingData.assetCode} 
-                    onChange={handleOpeningChange} 
-                    required
-                    className="w-full border border-gray-300 rounded-sm px-2 py-0.5 text-xs focus:ring-1 focus:ring-primary focus:border-primary font-bold text-blue-900" 
-                    placeholder="उदा. COMP-HQ-01" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600">मालमत्ता नाव (Asset Name) *</label>
-                  <input type="text" name="assetName" value={openingData.assetName} onChange={handleOpeningChange} required
-                    className="w-full border border-gray-300 rounded-sm px-2 py-0.5 text-xs" placeholder="उदा. Lenovo ThinkCentre" />
-                </div>
-              </div>
+          {(() => {
+            const safeQty = Math.max(1, openingData.quantity || 1);
+            const isPerUnit = openingData.costMode === 'perUnit';
+            const unitCost = isPerUnit ? openingData.originalCost : (openingData.originalCost / safeQty);
+            const unitDepr = isPerUnit ? openingData.accumulatedDepreciation : (openingData.accumulatedDepreciation / safeQty);
+            const unitWdv = Math.max(0, unitCost - unitDepr);
 
-              <div className="grid grid-cols-4 gap-2">
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600">खरेदी तारीख (Purchase Date) *</label>
-                  <input type="date" name="purchaseDate" value={openingData.purchaseDate} onChange={handleOpeningChange} required
-                    className="w-full border border-gray-300 rounded-sm px-2 py-0.5 text-xs" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600">मूळ किंमत (Cost Price) *</label>
-                  <input type="number" name="originalCost" value={openingData.originalCost} onChange={handleOpeningChange} required min="0" step="0.01"
-                    className="w-full border border-gray-300 rounded-sm px-2 py-0.5 text-xs" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600">एकत्रित घसारा (Accum. Depr.)</label>
-                  <input type="number" name="accumulatedDepreciation" value={openingData.accumulatedDepreciation} onChange={handleOpeningChange} min="0" step="0.01"
-                    className="w-full border border-gray-300 rounded-sm px-2 py-0.5 text-xs" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600">चालू पुस्तकी मूल्य (Current Value)</label>
-                  <input type="number" value={(openingData.originalCost - openingData.accumulatedDepreciation).toFixed(2)} readOnly
-                    className="w-full border border-gray-200 bg-gray-100 rounded-sm px-2 py-0.5 text-xs font-bold text-gray-600 cursor-not-allowed" />
-                </div>
-              </div>
+            const totalCostCalc = isPerUnit ? (openingData.originalCost * safeQty) : openingData.originalCost;
+            const totalDeprCalc = isPerUnit ? (openingData.accumulatedDepreciation * safeQty) : openingData.accumulatedDepreciation;
+            const totalWdvCalc = Math.max(0, totalCostCalc - totalDeprCalc);
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600">स्थान (Location)</label>
-                  <input type="text" name="location" value={openingData.location} onChange={handleOpeningChange}
-                    className="w-full border border-gray-300 rounded-sm px-2 py-0.5 text-xs" placeholder="उदा. Office 1st Floor" />
+            return (
+              <form onSubmit={handleAddOpeningSubmit} className="p-3.5 space-y-3">
+                {/* Row 1: Branch, Category, Code, Name */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                  <div>
+                    <label className={labelClass}>शाखा (Branch) *</label>
+                    <select 
+                      name="branchID" 
+                      value={openingData.branchID} 
+                      onChange={handleOpeningChange}
+                      className={selectClass}
+                    >
+                      {branches.map((b: any) => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>मालमत्ता वर्ग (Category) *</label>
+                    <select 
+                      name="categoryID" 
+                      value={openingData.categoryID} 
+                      onChange={handleOpeningChange} 
+                      required
+                      className={selectClass}
+                    >
+                      <option value={0}>-- वर्ग निवडा --</option>
+                      {categories.map((c: any) => <option key={c.categoryID} value={c.categoryID}>{c.categoryName}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>
+                      {safeQty > 1 ? 'मालमत्ता कोड प्रिफिक्स (Asset Code Prefix) *' : 'मालमत्ता कोड (Asset Code) *'}
+                    </label>
+                    <input 
+                      ref={assetCodeInputRef}
+                      type="text" 
+                      name="assetCode" 
+                      value={openingData.assetCode} 
+                      onChange={handleOpeningChange} 
+                      required
+                      className={`${inputClass} font-mono font-bold text-primary`} 
+                      placeholder={safeQty > 1 ? "उदा. COMP-HQ किंवा FURN" : "उदा. COMP-HQ-01"} 
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>मालमत्ता नाव (Asset Name) *</label>
+                    <input 
+                      type="text" 
+                      name="assetName" 
+                      value={openingData.assetName} 
+                      onChange={handleOpeningChange} 
+                      required
+                      className={inputClass} 
+                      placeholder="उदा. Lenovo ThinkCentre / Executive Chair" 
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-600">ताबाधारक (Custodian)</label>
-                  <input type="text" name="custodian" value={openingData.custodian} onChange={handleOpeningChange}
-                    className="w-full border border-gray-300 rounded-sm px-2 py-0.5 text-xs" placeholder="उदा. Clerk / Rajesh Patel" />
+
+                {/* Row 2: Purchase Date, Quantity, Calculation Mode, Cost */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                  <div>
+                    <label className={labelClass}>खरेदी तारीख (Purchase Date) *</label>
+                    <input 
+                      type="date" 
+                      name="purchaseDate" 
+                      value={openingData.purchaseDate} 
+                      onChange={handleOpeningChange} 
+                      required
+                      className={inputClass} 
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>
+                      <span className="text-primary font-bold">नग / संख्या (Quantity) *</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      name="quantity" 
+                      value={openingData.quantity || ''} 
+                      onChange={handleOpeningChange} 
+                      required 
+                      min="1" 
+                      step="1"
+                      className={`${inputClass} font-bold text-primary bg-primary/5 border-primary/30`} 
+                      placeholder="1"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>किंमत पद्धत (Calculation Mode)</label>
+                    <select 
+                      name="costMode" 
+                      value={openingData.costMode} 
+                      onChange={handleOpeningChange}
+                      className={selectClass}
+                    >
+                      <option value="perUnit">प्रति नग किंमत (Per Item Cost)</option>
+                      <option value="total">एकूण एकत्रित किंमत (Total Lump-sum)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>
+                      {openingData.costMode === 'perUnit' ? 'प्रति नग मूळ किंमत (Cost / Unit ₹) *' : 'सर्व नगांची एकूण किंमत (Total Cost ₹) *'}
+                    </label>
+                    <input 
+                      type="number" 
+                      name="originalCost" 
+                      value={openingData.originalCost || ''} 
+                      onChange={handleOpeningChange} 
+                      required 
+                      min="0" 
+                      step="0.01"
+                      className={inputClass} 
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex gap-2 pt-2 border-t mt-2">
-                <button type="submit" className="bg-primary hover:bg-[#004a75] text-white px-4 py-1.5 rounded-sm text-xs font-semibold">💾 शिल्लक सेव्ह करा</button>
-                <button type="button" onClick={() => setShowAddOpening(false)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-1.5 rounded-sm text-xs font-semibold">रद्द</button>
-              </div>
-            </form>
-          )}
+                {/* Row 3: Accumulated Depr, Unit WDV, Location, Custodian */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                  <div>
+                    <label className={labelClass}>
+                      {openingData.costMode === 'perUnit' ? 'प्रति नग घसारा (Depr / Unit ₹)' : 'एकूण एकत्रित घसारा (Total Depr ₹)'}
+                    </label>
+                    <input 
+                      type="number" 
+                      name="accumulatedDepreciation" 
+                      value={openingData.accumulatedDepreciation || ''} 
+                      onChange={handleOpeningChange} 
+                      min="0" 
+                      step="0.01"
+                      className={inputClass} 
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>प्रति नग WDV (Unit Book Value ₹)</label>
+                    <input 
+                      type="text" 
+                      value={unitWdv.toFixed(2)} 
+                      readOnly
+                      className={`${inputClass} bg-slate-100 font-mono font-bold text-slate-700 cursor-not-allowed`} 
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>स्थान (Location)</label>
+                    <input 
+                      type="text" 
+                      name="location" 
+                      value={openingData.location} 
+                      onChange={handleOpeningChange}
+                      className={inputClass} 
+                      placeholder="उदा. 1st Floor / IT Room / Hall" 
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>ताबाधारक (Custodian)</label>
+                    <input 
+                      type="text" 
+                      name="custodian" 
+                      value={openingData.custodian} 
+                      onChange={handleOpeningChange}
+                      className={inputClass} 
+                      placeholder="उदा. Head Cashier / Clerk / Rajesh Patel" 
+                    />
+                  </div>
+                </div>
 
-          {/* Filters */}
-          <div className="flex gap-2 mb-3 bg-gray-50 border border-gray-200 rounded p-2">
-            <div>
-              <label className="block text-[10px] font-bold text-gray-500 uppercase">शाखा (Branch)</label>
-              <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} className="border rounded px-2 py-1 text-xs bg-white mt-0.5">
-                <option value="all">सर्व शाखा (All Branches)</option>
-                {branches.map(b => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
-              </select>
+                {/* Batch Helper / Live Preview Box when Quantity > 1 */}
+                {safeQty > 1 && (
+                  <div className="bg-primary/5 border border-primary/20 rounded p-2.5 text-xs space-y-1.5 animate-in fade-in">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/10 pb-1.5">
+                      <div className="font-bold text-primary flex items-center gap-1.5">
+                        <Layers size={14} />
+                        <span>एकाधिक मालमत्ता निर्मिती बॅच (Batch Creation: {safeQty} Items)</span>
+                      </div>
+                      <div className="text-[10px] text-gray-500 font-medium">
+                        कोड सिक्वेन्स प्रिव्ह्यू: <span className="font-mono font-bold text-primary">{openingData.assetCode.trim() || 'ASSET'}-001</span> ते <span className="font-mono font-bold text-primary">{openingData.assetCode.trim() || 'ASSET'}-{String(safeQty).padStart(3, '0')}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center pt-0.5">
+                      <div className="bg-white p-1.5 rounded border border-primary/10">
+                        <div className="text-[10px] text-gray-500 font-bold uppercase">एकूण मूळ खर्च (Total Cost)</div>
+                        <div className="text-xs font-black text-gray-900 font-mono">₹{totalCostCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                      </div>
+                      <div className="bg-white p-1.5 rounded border border-primary/10">
+                        <div className="text-[10px] text-gray-500 font-bold uppercase">एकूण घसारा (Total Depr)</div>
+                        <div className="text-xs font-black text-amber-700 font-mono">₹{totalDeprCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                      </div>
+                      <div className="bg-white p-1.5 rounded border border-primary/10">
+                        <div className="text-[10px] text-gray-500 font-bold uppercase">एकूण निव्वळ WDV मूल्य</div>
+                        <div className="text-xs font-black text-emerald-700 font-mono">₹{totalWdvCalc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                  <button 
+                    type="submit" 
+                    className="bg-primary hover:opacity-90 text-white px-4 py-1.5 rounded-sm text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                  >
+                    <Save size={13} />
+                    <span>{safeQty > 1 ? `सर्व ${safeQty} शिल्लक मालमत्ता सेव्ह करा` : 'शिल्लक सेव्ह करा (Save Asset)'}</span>
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowAddOpening(false)} 
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-sm text-xs font-bold cursor-pointer transition-all"
+                  >
+                    रद्द करा
+                  </button>
+                </div>
+              </form>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Main Two-Column Hub Layout */}
+      <div className="flex flex-col xl:flex-row gap-3">
+        {/* Left pane - Assets grid & filters */}
+        <div className="flex-1 bg-white rounded-sm shadow-xs border border-gray-200 p-3">
+          
+          {/* Header Title inside Hub */}
+          <div className="flex justify-between items-center border-b border-gray-200 pb-2 mb-3">
+            <h2 className="text-xs font-bold text-primary flex items-center gap-1.5">
+              <Building2 className="w-4 h-4 text-primary" />
+              <span>मालमत्ता यादी (Assets List & Register)</span>
+            </h2>
+            <div className="text-[11px] text-gray-500 font-medium">
+              नोंदी: <span className="font-bold text-primary font-mono">{filteredAssets.length}</span> / {assets.length}
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-gray-500 uppercase">वर्ग (Category)</label>
-              <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="border rounded px-2 py-1 text-xs bg-white mt-0.5">
-                <option value="all">सर्व वर्ग (All Categories)</option>
-                {categories.map(c => <option key={c.categoryID} value={c.categoryID}>{c.categoryName}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-gray-500 uppercase">स्थिती (Status)</label>
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border rounded px-2 py-1 text-xs bg-white mt-0.5">
-                <option value="all">सर्व स्थिती (All Status)</option>
-                <option value="Active">Active (सक्रिय)</option>
-                <option value="Suspended">Suspended (स्थगित)</option>
-                <option value="Damaged">Damaged (खराब)</option>
-                <option value="Disposed">Disposed (विल्हेवाट लावलेली)</option>
-              </select>
+          </div>
+
+          {/* Filters & Search Toolbar */}
+          <div className="bg-slate-50 border border-gray-200 rounded-sm p-2 mb-2.5 flex flex-wrap gap-2 items-center justify-between">
+            <div className="flex flex-wrap items-center gap-2 flex-1">
+              {/* Quick Search */}
+              <div className="relative min-w-[180px] flex-1 max-w-xs">
+                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2 top-2" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="कोड, नाव, ताबाधारक शोधा..."
+                  className="w-full text-[11px] border border-gray-300 rounded-sm pl-7 pr-6 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white h-[28px]"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 text-xs">
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Branch Filter */}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-bold text-gray-500 uppercase">शाखा:</span>
+                <select 
+                  value={branchFilter} 
+                  onChange={e => setBranchFilter(e.target.value)} 
+                  className="border border-gray-300 rounded-sm px-2 py-0.5 text-[11px] bg-white h-[28px] focus:ring-1 focus:ring-primary focus:border-primary"
+                >
+                  <option value="all">सर्व शाखा (All)</option>
+                  {branches.map(b => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
+                </select>
+              </div>
+
+              {/* Category Filter */}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-bold text-gray-500 uppercase">वर्ग:</span>
+                <select 
+                  value={categoryFilter} 
+                  onChange={e => setCategoryFilter(e.target.value)} 
+                  className="border border-gray-300 rounded-sm px-2 py-0.5 text-[11px] bg-white h-[28px] focus:ring-1 focus:ring-primary focus:border-primary"
+                >
+                  <option value="all">सर्व वर्ग (All)</option>
+                  {categories.map(c => <option key={c.categoryID} value={c.categoryID}>{c.categoryName}</option>)}
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-bold text-gray-500 uppercase">स्थिती:</span>
+                <select 
+                  value={statusFilter} 
+                  onChange={e => setStatusFilter(e.target.value)} 
+                  className="border border-gray-300 rounded-sm px-2 py-0.5 text-[11px] bg-white h-[28px] focus:ring-1 focus:ring-primary focus:border-primary"
+                >
+                  <option value="all">सर्व स्थिती (All)</option>
+                  <option value="Active">Active (सक्रिय)</option>
+                  <option value="Suspended">Suspended (स्थगित)</option>
+                  <option value="Damaged">Damaged (खराब)</option>
+                  <option value="Disposed">Disposed (विल्हेवाट)</option>
+                </select>
+              </div>
             </div>
           </div>
 
           {/* Assets Grid */}
-          <div className="overflow-x-auto border border-gray-200 rounded-sm">
-            <table className="w-full text-[11px]">
+          <div className="overflow-x-auto border border-gray-200 rounded-sm shadow-2xs">
+            <table className="w-full text-[11px] border-collapse">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-semibold text-left">
+                <tr className="bg-slate-100 text-primary border-b-2 border-primary font-bold text-left">
                   <th className="px-2.5 py-2">#</th>
                   <th className="px-2.5 py-2">शाखा (Branch)</th>
                   <th className="px-2.5 py-2">कोड (Code)</th>
@@ -600,63 +1024,142 @@ const AssetMaster: React.FC = () => {
                   <th className="px-2.5 py-2 text-center">स्थिती</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-gray-100">
                 {loading ? (
-                  <tr><td colSpan={9} className="text-center py-4 text-gray-400">लोड होत आहे...</td></tr>
-                ) : assets.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-4 text-gray-400">कोणतीही मालमत्ता सापडली नाही.</td></tr>
-                ) : assets.map((a, idx) => (
-                  <tr 
-                    key={a.assetID} 
-                    onClick={() => selectAsset(a)}
-                    className={`hover:bg-blue-50 border-b border-gray-100 transition-colors cursor-pointer ${selectedAsset?.assetID === a.assetID ? 'bg-blue-50/85 font-medium' : ''}`}
-                  >
-                    <td className="px-2.5 py-2">{idx + 1}</td>
-                    <td className="px-2.5 py-2">
-                      <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-semibold">
-                        {a.branch?.branchName || `शाखा ${a.branchID}`}
-                      </span>
-                    </td>
-                    <td className="px-2.5 py-2 font-mono font-medium text-blue-700">{a.assetCode}</td>
-                    <td className="px-2.5 py-2">{a.assetName}</td>
-                    <td className="px-2.5 py-2">{a.category?.categoryName}</td>
-                    <td className="px-2.5 py-2">{new Date(a.purchaseDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
-                    <td className="px-2.5 py-2 text-right">₹{a.originalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2.5 py-2 text-right font-bold text-gray-800">₹{a.currentBookValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-2.5 py-2 text-center">
-                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold 
-                        ${a.status === 'Active' ? 'bg-green-50 text-green-700' : 
-                          a.status === 'Suspended' ? 'bg-yellow-50 text-yellow-700' : 
-                          a.status === 'Damaged' ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-700'}`}>
-                        {a.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                  <tr><td colSpan={9} className="text-center py-6 text-gray-400">लोड होत आहे...</td></tr>
+                ) : filteredAssets.length === 0 ? (
+                  <tr><td colSpan={9} className="text-center py-6 text-gray-400">कोणतीही मालमत्ता सापडली नाही.</td></tr>
+                ) : (
+                  filteredAssets.map((a, idx) => {
+                    const isSelected = selectedAsset?.assetID === a.assetID;
+                    return (
+                      <tr 
+                        key={a.assetID} 
+                        onClick={() => selectAsset(a)}
+                        className={`cursor-pointer transition-colors duration-150 ${
+                          isSelected 
+                            ? 'bg-primary/10 border-l-4 border-primary text-gray-900 font-semibold' 
+                            : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <td className="px-2.5 py-2 text-gray-500">{idx + 1}</td>
+                        <td className="px-2.5 py-2">
+                          <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-slate-200">
+                            {a.branch?.branchName || `शाखा ${a.branchID}`}
+                          </span>
+                        </td>
+                        <td className="px-2.5 py-2 font-mono font-bold text-primary">{a.assetCode}</td>
+                        <td className="px-2.5 py-2 font-medium">{a.assetName}</td>
+                        <td className="px-2.5 py-2 text-gray-600">{a.category?.categoryName || '-'}</td>
+                        <td className="px-2.5 py-2 text-gray-600">{new Date(a.purchaseDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
+                        <td className="px-2.5 py-2 text-right font-mono text-gray-700">₹{a.originalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="px-2.5 py-2 text-right font-mono font-bold text-slate-900">₹{a.currentBookValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="px-2.5 py-2 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${
+                            a.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
+                            a.status === 'Suspended' ? 'bg-amber-50 text-amber-700 border-amber-200' : 
+                            a.status === 'Damaged' ? 'bg-rose-50 text-rose-700 border-rose-200' : 
+                            'bg-slate-100 text-slate-700 border-slate-300'
+                          }`}>
+                            {a.status === 'Active' ? 'सक्रिय' : a.status === 'Suspended' ? 'स्थगित' : a.status === 'Damaged' ? 'खराब' : 'विल्हेवाट'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
         {/* Right pane - Action Forms and History Timeline */}
-        {selectedAsset && (
-          <div className="w-full xl:w-96 bg-white rounded shadow-sm border border-gray-200 p-3 flex flex-col self-start">
-            <div className="border-b pb-2 mb-3">
-              <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Selected Asset Details</h3>
-              <h2 className="text-sm font-bold text-blue-700 mt-0.5">{selectedAsset.assetName} ({selectedAsset.assetCode})</h2>
+        {selectedAsset ? (
+          <div className="w-full xl:w-96 bg-white rounded-sm shadow-xs border border-gray-200 p-3 flex flex-col self-start">
+            {/* Selected Header */}
+            <div className="border-b border-gray-200 pb-2 mb-2.5 flex justify-between items-start">
+              <div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">निवडलेली मालमत्ता (Selected Asset)</div>
+                <h2 className="text-xs font-bold text-primary mt-0.5">{selectedAsset.assetName}</h2>
+              </div>
+              <span className="font-mono text-[10px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded font-bold">
+                {selectedAsset.assetCode}
+              </span>
             </div>
 
             {/* Action Navigation Tabs */}
-            <div className="flex flex-wrap border-b border-gray-200 mb-3 gap-0.5 text-[10px] font-bold">
-              <button onClick={() => setActiveActionTab('details')} className={`px-2 py-1 rounded-t-sm transition-colors ${activeActionTab === 'details' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>📊 माहिती & इतिहास</button>
+            <div className="flex flex-wrap border-b border-gray-200 mb-3 gap-1 text-[10px] font-bold pb-2">
+              <button 
+                onClick={() => setActiveActionTab('details')} 
+                className={`px-2 py-1 rounded-sm transition-all flex items-center gap-1 cursor-pointer ${
+                  activeActionTab === 'details' ? 'bg-primary text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Info size={12} />
+                <span>माहिती व इतिहास</span>
+              </button>
+
               {selectedAsset.status === 'Active' && (
                 <>
-                  <button onClick={() => setActiveActionTab('allocate')} className={`px-2 py-1 rounded-t-sm transition-colors ${activeActionTab === 'allocate' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>👤 वाटप</button>
-                  <button onClick={() => setActiveActionTab('transfer')} className={`px-2 py-1 rounded-t-sm transition-colors ${activeActionTab === 'transfer' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>➡️ हस्तांतरण</button>
-                  <button onClick={() => setActiveActionTab('verify')} className={`px-2 py-1 rounded-t-sm transition-colors ${activeActionTab === 'verify' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>✔️ तपासणी</button>
-                  <button onClick={() => setActiveActionTab('maintenance')} className={`px-2 py-1 rounded-t-sm transition-colors ${activeActionTab === 'maintenance' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>🛠️ देखभाल</button>
-                  <button onClick={() => setActiveActionTab('depreciation')} className={`px-2 py-1 rounded-t-sm transition-colors ${activeActionTab === 'depreciation' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>⚡ घसारा</button>
-                  <button onClick={() => setActiveActionTab('dispose')} className={`px-2 py-1 rounded-t-sm transition-colors ${activeActionTab === 'dispose' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>⚠️ विल्हेवाट</button>
+                  <button 
+                    onClick={() => setActiveActionTab('allocate')} 
+                    className={`px-2 py-1 rounded-sm transition-all flex items-center gap-1 cursor-pointer ${
+                      activeActionTab === 'allocate' ? 'bg-primary text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <UserCheck size={12} />
+                    <span>वाटप</span>
+                  </button>
+
+                  <button 
+                    onClick={() => setActiveActionTab('transfer')} 
+                    className={`px-2 py-1 rounded-sm transition-all flex items-center gap-1 cursor-pointer ${
+                      activeActionTab === 'transfer' ? 'bg-primary text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <ArrowRightLeft size={12} />
+                    <span>हस्तांतरण</span>
+                  </button>
+
+                  <button 
+                    onClick={() => setActiveActionTab('verify')} 
+                    className={`px-2 py-1 rounded-sm transition-all flex items-center gap-1 cursor-pointer ${
+                      activeActionTab === 'verify' ? 'bg-primary text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <ShieldCheck size={12} />
+                    <span>तपासणी</span>
+                  </button>
+
+                  <button 
+                    onClick={() => setActiveActionTab('maintenance')} 
+                    className={`px-2 py-1 rounded-sm transition-all flex items-center gap-1 cursor-pointer ${
+                      activeActionTab === 'maintenance' ? 'bg-primary text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <Wrench size={12} />
+                    <span>देखभाल</span>
+                  </button>
+
+                  <button 
+                    onClick={() => setActiveActionTab('depreciation')} 
+                    className={`px-2 py-1 rounded-sm transition-all flex items-center gap-1 cursor-pointer ${
+                      activeActionTab === 'depreciation' ? 'bg-primary text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <Percent size={12} />
+                    <span>घसारा</span>
+                  </button>
+
+                  <button 
+                    onClick={() => setActiveActionTab('dispose')} 
+                    className={`px-2 py-1 rounded-sm transition-all flex items-center gap-1 cursor-pointer ${
+                      activeActionTab === 'dispose' ? 'bg-rose-600 text-white shadow-xs' : 'bg-slate-100 text-rose-700 hover:bg-rose-50'
+                    }`}
+                  >
+                    <Trash2 size={12} />
+                    <span>विल्हेवाट</span>
+                  </button>
                 </>
               )}
             </div>
@@ -664,30 +1167,33 @@ const AssetMaster: React.FC = () => {
             {/* TAB CONTENT: Details & History Timeline */}
             {activeActionTab === 'details' && (
               <div className="space-y-3 flex-1 overflow-y-auto">
-                <div className="bg-gray-50 border border-gray-100 rounded-sm p-2 text-xs space-y-1">
-                  <div className="flex justify-between border-b pb-0.5"><span className="text-gray-500">शाखा (Branch):</span> <span className="font-semibold text-gray-700">{selectedAsset.branch?.branchName}</span></div>
-                  <div className="flex justify-between border-b pb-0.5"><span className="text-gray-500">वर्ग (Category):</span> <span className="font-semibold text-gray-700">{selectedAsset.category?.categoryName}</span></div>
-                  <div className="flex justify-between border-b pb-0.5"><span className="text-gray-500">खरेदी किंमत:</span> <span className="font-semibold text-gray-700">₹{selectedAsset.originalCost.toFixed(2)}</span></div>
-                  <div className="flex justify-between border-b pb-0.5"><span className="text-gray-500">एकत्रित घसारा:</span> <span className="font-semibold text-red-600">₹{selectedAsset.accumulatedDepreciation.toFixed(2)}</span></div>
-                  <div className="flex justify-between border-b pb-0.5"><span className="text-gray-500">पुस्तकी मूल्य (WDV):</span> <span className="font-bold text-green-700">₹{selectedAsset.currentBookValue.toFixed(2)}</span></div>
-                  <div className="flex justify-between border-b pb-0.5"><span className="text-gray-500">स्थान (Location):</span> <span className="font-semibold text-gray-700">{selectedAsset.location || '-'}</span></div>
-                  <div className="flex justify-between border-b pb-0.5"><span className="text-gray-500">ताबाधारक (Custodian):</span> <span className="font-semibold text-gray-700">{selectedAsset.custodian || '-'}</span></div>
-                  <div className="flex justify-between border-b pb-0.5"><span className="text-gray-500">घसारा पद्धत/दर:</span> <span className="font-semibold text-gray-700">{selectedAsset.category?.depreciationMethod} ({selectedAsset.category?.depreciationRate}%)</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">ओपनिंग बॅलन्स?:</span> <span className="font-semibold text-gray-700">{selectedAsset.isOpeningBalance ? 'होय (Yes)' : 'नाही (No)'}</span></div>
+                <div className="bg-slate-50 border border-slate-200 rounded-sm p-2 text-xs divide-y divide-gray-200/70">
+                  <div className="flex justify-between py-1"><span className="text-gray-500">शाखा (Branch):</span> <span className="font-semibold text-gray-800">{selectedAsset.branch?.branchName}</span></div>
+                  <div className="flex justify-between py-1"><span className="text-gray-500">वर्ग (Category):</span> <span className="font-semibold text-gray-800">{selectedAsset.category?.categoryName}</span></div>
+                  <div className="flex justify-between py-1"><span className="text-gray-500">खरेदी किंमत:</span> <span className="font-semibold text-gray-800 font-mono">₹{selectedAsset.originalCost.toFixed(2)}</span></div>
+                  <div className="flex justify-between py-1"><span className="text-gray-500">एकत्रित घसारा:</span> <span className="font-semibold text-amber-700 font-mono">₹{selectedAsset.accumulatedDepreciation.toFixed(2)}</span></div>
+                  <div className="flex justify-between py-1"><span className="text-gray-500">पुस्तकी मूल्य (WDV):</span> <span className="font-bold text-emerald-700 font-mono">₹{selectedAsset.currentBookValue.toFixed(2)}</span></div>
+                  <div className="flex justify-between py-1"><span className="text-gray-500">स्थान (Location):</span> <span className="font-semibold text-gray-800">{selectedAsset.location || '-'}</span></div>
+                  <div className="flex justify-between py-1"><span className="text-gray-500">ताबाधारक (Custodian):</span> <span className="font-semibold text-gray-800">{selectedAsset.custodian || '-'}</span></div>
+                  <div className="flex justify-between py-1"><span className="text-gray-500">घसारा पद्धत/दर:</span> <span className="font-semibold text-gray-800">{selectedAsset.category?.depreciationMethod} ({selectedAsset.category?.depreciationRate}%)</span></div>
+                  <div className="flex justify-between py-1"><span className="text-gray-500">ओपनिंग शिल्लक?:</span> <span className="font-semibold text-gray-800">{selectedAsset.isOpeningBalance ? 'होय (Yes)' : 'नाही (No)'}</span></div>
                 </div>
 
-                <div className="border-t pt-2">
-                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">व्यवहार इतिहास (Transaction Timeline)</h4>
+                <div className="border-t border-gray-200 pt-2.5">
+                  <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Clock size={12} className="text-primary" />
+                    <span>व्यवहार इतिहास (Transaction Timeline)</span>
+                  </h4>
                   {historyLoading ? (
                     <div className="text-center py-4 text-xs text-gray-400">इतिहास लोड होत आहे...</div>
                   ) : assetHistory.length === 0 ? (
                     <div className="text-center py-4 text-xs text-gray-400">या मालमत्तेचा कोणताही इतिहास नाही.</div>
                   ) : (
-                    <div className="relative border-l-2 border-blue-200 ml-2.5 pl-4 space-y-3">
+                    <div className="relative border-l-2 border-primary/30 ml-2.5 pl-3.5 space-y-3">
                       {assetHistory.map((item, idx) => (
                         <div key={idx} className="relative text-xs">
                           {/* Dot indicator */}
-                          <div className={`absolute -left-[21px] w-2.5 h-2.5 rounded-full border-2 border-white 
+                          <div className={`absolute -left-[19px] top-0.5 w-2.5 h-2.5 rounded-full border-2 border-white 
                             ${item.type === 'Allocation' ? 'bg-indigo-500' :
                               item.type === 'Transfer' ? 'bg-blue-500' :
                               item.type === 'Verification' ? 'bg-emerald-500' :
@@ -695,9 +1201,9 @@ const AssetMaster: React.FC = () => {
                               item.type === 'Depreciation' ? 'bg-purple-500' : 'bg-red-500'}`} />
                           
                           <p className="text-[10px] font-semibold text-gray-400">{new Date(item.date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
-                          <p className="font-bold text-gray-700 mt-0.5">{item.type}</p>
+                          <p className="font-bold text-gray-800 mt-0.5">{item.type}</p>
                           <p className="text-[11px] text-gray-600">{item.description}</p>
-                          {item.remarks && <p className="text-[10px] italic text-gray-500 mt-0.5">Note: {item.remarks}</p>}
+                          {item.remarks && <p className="text-[10px] italic text-gray-500 mt-0.5">टीप: {item.remarks}</p>}
                         </div>
                       ))}
                     </div>
@@ -709,164 +1215,295 @@ const AssetMaster: React.FC = () => {
             {/* TAB CONTENT: Allocate */}
             {activeActionTab === 'allocate' && (
               <form onSubmit={handleAllocate} className="space-y-2.5 text-xs flex-1">
-                <h4 className="font-bold text-gray-700 border-b pb-1">👤 नवीन वाटप (Asset Allocation)</h4>
+                <div className="font-bold text-gray-800 border-b border-gray-200 pb-1 flex items-center gap-1.5">
+                  <UserCheck size={14} className="text-primary" />
+                  <span>नवीन वाटप (Asset Allocation)</span>
+                </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">शाखा (Branch)</label>
-                  <select value={allocateData.allocatedBranchID} onChange={e => setAllocateData({ ...allocateData, allocatedBranchID: parseInt(e.target.value) })}
-                    className="w-full border rounded-sm px-2 py-1 bg-white">
+                  <label className={labelClass}>शाखा (Branch)</label>
+                  <select 
+                    value={allocateData.allocatedBranchID} 
+                    onChange={e => setAllocateData({ ...allocateData, allocatedBranchID: parseInt(e.target.value) })}
+                    className={selectClass}
+                  >
                     {branches.map((b: any) => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">विभाग (Department) *</label>
-                  <input type="text" value={allocateData.department} onChange={e => setAllocateData({ ...allocateData, department: e.target.value })} required
-                    className="w-full border rounded-sm px-2 py-1" placeholder="उदा. लोन विभाग / कॅश विभाग" />
+                  <label className={labelClass}>विभाग (Department) *</label>
+                  <input 
+                    type="text" 
+                    value={allocateData.department} 
+                    onChange={e => setAllocateData({ ...allocateData, department: e.target.value })} 
+                    required
+                    className={inputClass} 
+                    placeholder="उदा. कर्ज विभाग / कॅश विभाग" 
+                  />
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">ताबाधारक (Custodian Name) *</label>
-                  <input type="text" value={allocateData.custodianName} onChange={e => setAllocateData({ ...allocateData, custodianName: e.target.value })} required
-                    className="w-full border rounded-sm px-2 py-1" placeholder="उदा. रमेश कुमार / संजीव शर्मा" />
+                  <label className={labelClass}>ताबाधारक (Custodian Name) *</label>
+                  <input 
+                    type="text" 
+                    value={allocateData.custodianName} 
+                    onChange={e => setAllocateData({ ...allocateData, custodianName: e.target.value })} 
+                    required
+                    className={inputClass} 
+                    placeholder="उदा. रमेश कुमार / संजीव शर्मा" 
+                  />
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">वाटप तारीख (Date)</label>
-                  <input type="date" value={allocateData.allocationDate} onChange={e => setAllocateData({ ...allocateData, allocationDate: e.target.value })} required
-                    className="w-full border rounded-sm px-2 py-1" />
+                  <label className={labelClass}>वाटप तारीख (Date)</label>
+                  <input 
+                    type="date" 
+                    value={allocateData.allocationDate} 
+                    onChange={e => setAllocateData({ ...allocateData, allocationDate: e.target.value })} 
+                    required
+                    className={inputClass} 
+                  />
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">तपशील (Remarks)</label>
-                  <textarea value={allocateData.remarks} onChange={e => setAllocateData({ ...allocateData, remarks: e.target.value })}
-                    className="w-full border rounded-sm px-2 py-1" rows={2} placeholder="अधिक माहिती..." />
+                  <label className={labelClass}>तपशील (Remarks)</label>
+                  <textarea 
+                    value={allocateData.remarks} 
+                    onChange={e => setAllocateData({ ...allocateData, remarks: e.target.value })}
+                    className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900" 
+                    rows={2} 
+                    placeholder="अधिक माहिती..." 
+                  />
                 </div>
-                <button type="submit" className="w-full bg-primary hover:bg-[#004a75] text-white py-1.5 rounded-sm font-semibold mt-1">जतन करा</button>
+                <button 
+                  type="submit" 
+                  className="w-full bg-primary hover:opacity-90 text-white py-1.5 rounded-sm font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer mt-1"
+                >
+                  <Save size={13} />
+                  <span>वाटप जतन करा</span>
+                </button>
               </form>
             )}
 
             {/* TAB CONTENT: Transfer */}
             {activeActionTab === 'transfer' && (
               <form onSubmit={handleTransfer} className="space-y-2.5 text-xs flex-1">
-                <h4 className="font-bold text-gray-700 border-b pb-1">➡️ शाखा हस्तांतरण (Asset Branch Transfer)</h4>
-                <div className="bg-orange-50 border border-orange-200 text-orange-800 p-2 rounded-sm text-[10px] font-semibold">
-                  वर्तमान शाखा: {selectedAsset.branch?.branchName}<br/>
-                  वर्तमान ताबाधारक: {selectedAsset.custodian || 'None'}
+                <div className="font-bold text-gray-800 border-b border-gray-200 pb-1 flex items-center gap-1.5">
+                  <ArrowRightLeft size={14} className="text-primary" />
+                  <span>शाखा हस्तांतरण (Asset Branch Transfer)</span>
+                </div>
+                <div className="bg-amber-50/70 border border-amber-200 text-amber-900 p-2 rounded-sm text-[10px] font-semibold space-y-0.5">
+                  <div>वर्तमान शाखा: <span className="font-bold">{selectedAsset.branch?.branchName}</span></div>
+                  <div>वर्तमान ताबाधारक: <span className="font-bold">{selectedAsset.custodian || 'उपलब्ध नाही'}</span></div>
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">कोणत्या शाखेत हस्तांतरित करायचे? (To Branch) *</label>
-                  <select value={transferData.toBranchID} onChange={e => setTransferData({ ...transferData, toBranchID: parseInt(e.target.value) })}
-                    className="w-full border rounded-sm px-2 py-1 bg-white">
+                  <label className={labelClass}>कोणत्या शाखेत हस्तांतरित करायचे? (To Branch) *</label>
+                  <select 
+                    value={transferData.toBranchID} 
+                    onChange={e => setTransferData({ ...transferData, toBranchID: parseInt(e.target.value) })}
+                    className={selectClass}
+                  >
                     {branches.filter(b => b.branchID !== selectedAsset.branchID).map((b: any) => <option key={b.branchID} value={b.branchID}>{b.branchName}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">नवीन ताबाधारक (To Custodian) *</label>
-                  <input type="text" value={transferData.toCustodian} onChange={e => setTransferData({ ...transferData, toCustodian: e.target.value })} required
-                    className="w-full border rounded-sm px-2 py-1" placeholder="नवीन जबाबदार व्यक्तीचे नाव..." />
+                  <label className={labelClass}>नवीन ताबाधारक (To Custodian) *</label>
+                  <input 
+                    type="text" 
+                    value={transferData.toCustodian} 
+                    onChange={e => setTransferData({ ...transferData, toCustodian: e.target.value })} 
+                    required
+                    className={inputClass} 
+                    placeholder="नवीन जबाबदार व्यक्तीचे नाव..." 
+                  />
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">हस्तांतरण तारीख (Transfer Date)</label>
-                  <input type="date" value={transferData.transferDate} onChange={e => setTransferData({ ...transferData, transferDate: e.target.value })} required
-                    className="w-full border rounded-sm px-2 py-1" />
+                  <label className={labelClass}>हस्तांतरण तारीख (Transfer Date)</label>
+                  <input 
+                    type="date" 
+                    value={transferData.transferDate} 
+                    onChange={e => setTransferData({ ...transferData, transferDate: e.target.value })} 
+                    required
+                    className={inputClass} 
+                  />
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">तपशील (Remarks)</label>
-                  <textarea value={transferData.remarks} onChange={e => setTransferData({ ...transferData, remarks: e.target.value })}
-                    className="w-full border rounded-sm px-2 py-1" rows={2} placeholder="स्थानांतरणाचे कारण..." />
+                  <label className={labelClass}>तपशील (Remarks)</label>
+                  <textarea 
+                    value={transferData.remarks} 
+                    onChange={e => setTransferData({ ...transferData, remarks: e.target.value })}
+                    className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900" 
+                    rows={2} 
+                    placeholder="स्थानांतरणाचे कारण..." 
+                  />
                 </div>
-                <button type="submit" className="w-full bg-primary hover:bg-[#004a75] text-white py-1.5 rounded-sm font-semibold mt-1">हस्तांतरित करा</button>
+                <button 
+                  type="submit" 
+                  className="w-full bg-primary hover:opacity-90 text-white py-1.5 rounded-sm font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer mt-1"
+                >
+                  <ArrowRightLeft size={13} />
+                  <span>हस्तांतरित करा</span>
+                </button>
               </form>
             )}
 
             {/* TAB CONTENT: Verify */}
             {activeActionTab === 'verify' && (
               <form onSubmit={handleVerify} className="space-y-2.5 text-xs flex-1">
-                <h4 className="font-bold text-gray-700 border-b pb-1">✔️ भौतिक तपासणी (Physical Verification Audit)</h4>
-                <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">तपासणी अधिकारी / ऑडिटर (Auditor Name) *</label>
-                  <input type="text" value={verifyData.auditorName} onChange={e => setVerifyData({ ...verifyData, auditorName: e.target.value })} required
-                    className="w-full border rounded-sm px-2 py-1" placeholder="उदा. CA Shrikant Gokhale" />
+                <div className="font-bold text-gray-800 border-b border-gray-200 pb-1 flex items-center gap-1.5">
+                  <ShieldCheck size={14} className="text-primary" />
+                  <span>भौतिक तपासणी (Physical Verification Audit)</span>
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">भौतिक स्थिती (Physical Status) *</label>
-                  <select value={verifyData.physicalStatus} onChange={e => setVerifyData({ ...verifyData, physicalStatus: e.target.value })}
-                    className="w-full border rounded-sm px-2 py-1 bg-white">
+                  <label className={labelClass}>तपासणी अधिकारी / ऑडिटर (Auditor Name) *</label>
+                  <input 
+                    type="text" 
+                    value={verifyData.auditorName} 
+                    onChange={e => setVerifyData({ ...verifyData, auditorName: e.target.value })} 
+                    required
+                    className={inputClass} 
+                    placeholder="उदा. CA Shrikant Gokhale" 
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>भौतिक स्थिती (Physical Status) *</label>
+                  <select 
+                    value={verifyData.physicalStatus} 
+                    onChange={e => setVerifyData({ ...verifyData, physicalStatus: e.target.value })}
+                    className={selectClass}
+                  >
                     <option value="Found">व्यवस्थित सापडली (Found - Active)</option>
                     <option value="Missing">सापडत नाही (Missing - Suspended)</option>
                     <option value="Damaged">खराब झाली (Damaged - Damaged)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">तपासणी तारीख (Audit Date)</label>
-                  <input type="date" value={verifyData.verificationDate} onChange={e => setVerifyData({ ...verifyData, verificationDate: e.target.value })} required
-                    className="w-full border rounded-sm px-2 py-1" />
+                  <label className={labelClass}>तपासणी तारीख (Audit Date)</label>
+                  <input 
+                    type="date" 
+                    value={verifyData.verificationDate} 
+                    onChange={e => setVerifyData({ ...verifyData, verificationDate: e.target.value })} 
+                    required
+                    className={inputClass} 
+                  />
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">तपशील (Remarks)</label>
-                  <textarea value={verifyData.remarks} onChange={e => setVerifyData({ ...verifyData, remarks: e.target.value })}
-                    className="w-full border rounded-sm px-2 py-1" rows={2} placeholder="भौतिक पडताळणी संबंधित टिप्पणी..." />
+                  <label className={labelClass}>तपशील (Remarks)</label>
+                  <textarea 
+                    value={verifyData.remarks} 
+                    onChange={e => setVerifyData({ ...verifyData, remarks: e.target.value })}
+                    className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900" 
+                    rows={2} 
+                    placeholder="भौतिक पडताळणी संबंधित टिप्पणी..." 
+                  />
                 </div>
-                <button type="submit" className="w-full bg-primary hover:bg-[#004a75] text-white py-1.5 rounded-sm font-semibold mt-1">तपासणी नोंद जतन करा</button>
+                <button 
+                  type="submit" 
+                  className="w-full bg-primary hover:opacity-90 text-white py-1.5 rounded-sm font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer mt-1"
+                >
+                  <CheckCircle size={13} />
+                  <span>तपासणी नोंद जतन करा</span>
+                </button>
               </form>
             )}
 
             {/* TAB CONTENT: Maintenance */}
             {activeActionTab === 'maintenance' && (
               <form onSubmit={handleMaintenanceSubmit} className="space-y-2 text-xs flex-1">
-                <h4 className="font-bold text-gray-700 border-b pb-1">🛠️ देखभाल नोंद (Asset Maintenance log)</h4>
+                <div className="font-bold text-gray-800 border-b border-gray-200 pb-1 flex items-center gap-1.5">
+                  <Wrench size={14} className="text-primary" />
+                  <span>देखभाल नोंद (Asset Maintenance Log)</span>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block font-medium text-gray-600 mb-0.5">देखभाल प्रकार *</label>
-                    <select value={maintenanceData.maintenanceType} onChange={e => setMaintenanceData({ ...maintenanceData, maintenanceType: e.target.value })}
-                      className="w-full border rounded-sm px-2 py-1 bg-white">
+                    <label className={labelClass}>देखभाल प्रकार *</label>
+                    <select 
+                      value={maintenanceData.maintenanceType} 
+                      onChange={e => setMaintenanceData({ ...maintenanceData, maintenanceType: e.target.value })}
+                      className={selectClass}
+                    >
                       <option value="Repair">दुरुस्ती (Repair)</option>
                       <option value="AMC">करार (AMC)</option>
                       <option value="Routine">नियमित सर्व्हिस (Routine)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block font-medium text-gray-600 mb-0.5">सर्व्हिस प्रोव्हाइडर *</label>
-                    <input type="text" value={maintenanceData.serviceProvider} onChange={e => setMaintenanceData({ ...maintenanceData, serviceProvider: e.target.value })} required
-                      className="w-full border rounded-sm px-2 py-1" placeholder="उदा. Dell Care / Local Agency" />
+                    <label className={labelClass}>सर्व्हिस प्रोव्हाइडर *</label>
+                    <input 
+                      type="text" 
+                      value={maintenanceData.serviceProvider} 
+                      onChange={e => setMaintenanceData({ ...maintenanceData, serviceProvider: e.target.value })} 
+                      required
+                      className={inputClass} 
+                      placeholder="उदा. Dell Care / Vendor" 
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block font-medium text-gray-600 mb-0.5">खर्च (Cost ₹) *</label>
-                    <input type="number" value={maintenanceData.cost} onChange={e => setMaintenanceData({ ...maintenanceData, cost: parseFloat(e.target.value) })} required min="0" step="0.01"
-                      className="w-full border rounded-sm px-2 py-1" />
+                    <label className={labelClass}>खर्च (Cost ₹) *</label>
+                    <input 
+                      type="number" 
+                      value={maintenanceData.cost || ''} 
+                      onChange={e => setMaintenanceData({ ...maintenanceData, cost: parseFloat(e.target.value) })} 
+                      required 
+                      min="0" 
+                      step="0.01"
+                      className={inputClass} 
+                    />
                   </div>
                   <div>
-                    <label className="block font-medium text-gray-600 mb-0.5">पुढील सर्व्हिस तारीख</label>
-                    <input type="date" value={maintenanceData.nextServiceDate} onChange={e => setMaintenanceData({ ...maintenanceData, nextServiceDate: e.target.value })}
-                      className="w-full border rounded-sm px-2 py-1" />
+                    <label className={labelClass}>पुढील सर्व्हिस तारीख</label>
+                    <input 
+                      type="date" 
+                      value={maintenanceData.nextServiceDate} 
+                      onChange={e => setMaintenanceData({ ...maintenanceData, nextServiceDate: e.target.value })}
+                      className={inputClass} 
+                    />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">तपशील (Remarks)</label>
-                  <textarea value={maintenanceData.remarks} onChange={e => setMaintenanceData({ ...maintenanceData, remarks: e.target.value })}
-                    className="w-full border rounded-sm px-2 py-1" rows={1.5} placeholder="देखभालीचे सविस्तर वर्णन..." />
+                  <label className={labelClass}>तपशील (Remarks)</label>
+                  <textarea 
+                    value={maintenanceData.remarks} 
+                    onChange={e => setMaintenanceData({ ...maintenanceData, remarks: e.target.value })}
+                    className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900" 
+                    rows={1.5} 
+                    placeholder="देखभालीचे सविस्तर वर्णन..." 
+                  />
                 </div>
 
                 {/* Accounting Voucher fields */}
-                <div className="bg-gray-50 border border-gray-200 rounded p-2 mt-1.5 space-y-1.5">
+                <div className="bg-slate-50 border border-slate-200 rounded-sm p-2 mt-1.5 space-y-1.5">
                   <label className="flex items-center gap-1.5 font-bold text-gray-700 cursor-pointer">
-                    <input type="checkbox" checked={maintenanceData.postVoucher} onChange={e => setMaintenanceData({ ...maintenanceData, postVoucher: e.target.checked })} className="rounded" />
-                    हिशोब वही मध्ये व्हाउचर पोस्ट करा (Post Voucher)
+                    <input 
+                      type="checkbox" 
+                      checked={maintenanceData.postVoucher} 
+                      onChange={e => setMaintenanceData({ ...maintenanceData, postVoucher: e.target.checked })} 
+                      className="rounded accent-primary" 
+                    />
+                    <span>हिशोब वही मध्ये व्हाउचर पोस्ट करा (Post Voucher)</span>
                   </label>
 
                   {maintenanceData.postVoucher && (
-                    <div className="grid grid-cols-1 gap-1.5 text-[10px]">
+                    <div className="grid grid-cols-1 gap-1.5 text-[10px] pt-1 border-t border-slate-200">
                       <div>
-                        <label className="block font-bold text-gray-600 mb-0.5">नाव खाते (Debit Ledger) *</label>
-                        <select value={maintenanceData.debitLedgerID} onChange={e => setMaintenanceData({ ...maintenanceData, debitLedgerID: parseInt(e.target.value) })} required
-                          className="w-full border rounded px-1.5 py-0.5 bg-white text-[11px]">
+                        <label className={labelClass}>नाव खाते (Debit Ledger - Expense) *</label>
+                        <select 
+                          value={maintenanceData.debitLedgerID} 
+                          onChange={e => setMaintenanceData({ ...maintenanceData, debitLedgerID: parseInt(e.target.value) })} 
+                          required
+                          className={selectClass}
+                        >
                           <option value={0}>-- खर्च खाते निवडा --</option>
                           {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="block font-bold text-gray-600 mb-0.5">जमा खाते (Credit Ledger - Cash/Bank) *</label>
-                        <select value={maintenanceData.creditLedgerID} onChange={e => setMaintenanceData({ ...maintenanceData, creditLedgerID: parseInt(e.target.value) })} required
-                          className="w-full border rounded px-1.5 py-0.5 bg-white text-[11px]">
+                        <label className={labelClass}>जमा खाते (Credit Ledger - Cash/Bank) *</label>
+                        <select 
+                          value={maintenanceData.creditLedgerID} 
+                          onChange={e => setMaintenanceData({ ...maintenanceData, creditLedgerID: parseInt(e.target.value) })} 
+                          required
+                          className={selectClass}
+                        >
                           <option value={0}>-- बँक / रोख खाते निवडा --</option>
                           {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
                         </select>
@@ -875,55 +1512,88 @@ const AssetMaster: React.FC = () => {
                   )}
                 </div>
 
-                <button type="submit" className="w-full bg-primary hover:bg-[#004a75] text-white py-1.5 rounded-sm font-semibold mt-1">💾 देखभाल नोंदवा & व्हाउचर पोस्ट करा</button>
+                <button 
+                  type="submit" 
+                  className="w-full bg-primary hover:opacity-90 text-white py-1.5 rounded-sm font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer mt-1"
+                >
+                  <Save size={13} />
+                  <span>नोंदवा व व्हाउचर पोस्ट करा</span>
+                </button>
               </form>
             )}
 
             {/* TAB CONTENT: Depreciation */}
             {activeActionTab === 'depreciation' && (
               <form onSubmit={handleSingleDepreciationSubmit} className="space-y-2 text-xs flex-1">
-                <h4 className="font-bold text-blue-700 border-b pb-1">⚡ मालमत्ता घसारा आकारणी (Asset Depreciation Run)</h4>
+                <div className="font-bold text-gray-800 border-b border-gray-200 pb-1 flex items-center gap-1.5">
+                  <Percent size={14} className="text-primary" />
+                  <span>मालमत्ता घसारा आकारणी (Asset Depreciation Run)</span>
+                </div>
                 
-                <div className="bg-blue-50 border border-blue-200 text-blue-800 p-2 rounded-sm text-[10px] font-semibold space-y-1">
-                  <div>घसारा पद्धत (Method): {selectedAsset.category?.depreciationMethod}</div>
-                  <div>घसारा दर (Rate): {selectedAsset.category?.depreciationRate}%</div>
-                  <div>मूळ किंमत (Cost): ₹{selectedAsset.originalCost.toFixed(2)}</div>
-                  <div>चालू पुस्तकी मूल्य (WDV): ₹{selectedAsset.currentBookValue.toFixed(2)}</div>
+                <div className="bg-primary/5 border border-primary/20 text-slate-800 p-2 rounded-sm text-[10px] font-semibold space-y-0.5">
+                  <div>पद्धत (Method): <span className="font-bold text-primary">{selectedAsset.category?.depreciationMethod}</span> ({selectedAsset.category?.depreciationRate}%)</div>
+                  <div>मूळ खरेदी किंमत (Cost): <span className="font-bold font-mono">₹{selectedAsset.originalCost.toFixed(2)}</span></div>
+                  <div>चालू पुस्तकी मूल्य (WDV): <span className="font-bold text-emerald-800 font-mono">₹{selectedAsset.currentBookValue.toFixed(2)}</span></div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block font-medium text-gray-600 mb-0.5">गणना तारीख *</label>
-                    <input type="date" value={depData.calculationDate} onChange={e => setDepData({ ...depData, calculationDate: e.target.value })} required
-                      className="w-full border rounded-sm px-2 py-1" />
+                    <label className={labelClass}>गणना तारीख *</label>
+                    <input 
+                      type="date" 
+                      value={depData.calculationDate} 
+                      onChange={e => setDepData({ ...depData, calculationDate: e.target.value })} 
+                      required
+                      className={inputClass} 
+                    />
                   </div>
                   <div>
-                    <label className="block font-medium text-gray-600 mb-0.5">घसारा रक्कम (₹) *</label>
-                    <input type="number" value={depData.depreciationAmount} onChange={e => setDepData({ ...depData, depreciationAmount: parseFloat(e.target.value) })} required min="0" step="0.01"
-                      className="w-full border rounded-sm px-2 py-1" />
+                    <label className={labelClass}>घसारा रक्कम (₹) *</label>
+                    <input 
+                      type="number" 
+                      value={depData.depreciationAmount || ''} 
+                      onChange={e => setDepData({ ...depData, depreciationAmount: parseFloat(e.target.value) })} 
+                      required 
+                      min="0" 
+                      step="0.01"
+                      className={inputClass} 
+                    />
                   </div>
                 </div>
 
-                <div className="bg-gray-50 border border-gray-200 rounded p-2 mt-1.5 space-y-1.5">
+                <div className="bg-slate-50 border border-slate-200 rounded-sm p-2 mt-1.5 space-y-1.5">
                   <label className="flex items-center gap-1.5 font-bold text-gray-700 cursor-pointer">
-                    <input type="checkbox" checked={depData.postVoucher} onChange={e => setDepData({ ...depData, postVoucher: e.target.checked })} className="rounded" />
-                    हिशोब वही मध्ये जनरल व्हाउचर पोस्ट करा (Post Voucher)
+                    <input 
+                      type="checkbox" 
+                      checked={depData.postVoucher} 
+                      onChange={e => setDepData({ ...depData, postVoucher: e.target.checked })} 
+                      className="rounded accent-primary" 
+                    />
+                    <span>हिशोब वही मध्ये जनरल व्हाउचर पोस्ट करा</span>
                   </label>
 
                   {depData.postVoucher && (
-                    <div className="grid grid-cols-1 gap-1.5 text-[10px]">
+                    <div className="grid grid-cols-1 gap-1.5 text-[10px] pt-1 border-t border-slate-200">
                       <div>
-                        <label className="block font-bold text-gray-600 mb-0.5">नाव खाते (Debit Depreciation Expense) *</label>
-                        <select value={depData.debitLedgerID} onChange={e => setDepData({ ...depData, debitLedgerID: parseInt(e.target.value) })} required
-                          className="w-full border rounded px-1.5 py-0.5 bg-white text-[11px]">
+                        <label className={labelClass}>नाव खाते (Debit Depreciation Expense) *</label>
+                        <select 
+                          value={depData.debitLedgerID} 
+                          onChange={e => setDepData({ ...depData, debitLedgerID: parseInt(e.target.value) })} 
+                          required
+                          className={selectClass}
+                        >
                           <option value={0}>-- घसारा खर्च खाते निवडा --</option>
                           {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="block font-bold text-gray-600 mb-0.5">जमा खाते (Credit Accum Depr / Asset) *</label>
-                        <select value={depData.creditLedgerID} onChange={e => setDepData({ ...depData, creditLedgerID: parseInt(e.target.value) })} required
-                          className="w-full border rounded px-1.5 py-0.5 bg-white text-[11px]">
+                        <label className={labelClass}>जमा खाते (Credit Accum Depr / Asset) *</label>
+                        <select 
+                          value={depData.creditLedgerID} 
+                          onChange={e => setDepData({ ...depData, creditLedgerID: parseInt(e.target.value) })} 
+                          required
+                          className={selectClass}
+                        >
                           <option value={0}>-- जमा मालमत्ता खाते निवडा --</option>
                           {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
                         </select>
@@ -932,85 +1602,135 @@ const AssetMaster: React.FC = () => {
                   )}
                 </div>
 
-                <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-1.5 rounded-sm font-semibold mt-1">💾 घसारा प्रक्रिया जतन करा</button>
+                <button 
+                  type="submit" 
+                  className="w-full bg-primary hover:opacity-90 text-white py-1.5 rounded-sm font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer mt-1"
+                >
+                  <Save size={13} />
+                  <span>घसारा प्रक्रिया जतन करा</span>
+                </button>
               </form>
             )}
 
             {/* TAB CONTENT: Dispose */}
             {activeActionTab === 'dispose' && (
               <form onSubmit={handleDisposeSubmit} className="space-y-2 text-xs flex-1">
-                <h4 className="font-bold text-red-700 border-b pb-1">⚠️ मालमत्ता विल्हेवाट (Asset Disposal Entry)</h4>
-                <div className="bg-red-50 border border-red-200 text-red-800 p-2 rounded-sm text-[10px] font-semibold">
-                  चालू पुस्तकी मूल्य (Current Book Value): ₹{selectedAsset.currentBookValue.toFixed(2)}
+                <div className="font-bold text-rose-700 border-b border-gray-200 pb-1 flex items-center gap-1.5">
+                  <Trash2 size={14} className="text-rose-600" />
+                  <span>मालमत्ता विल्हेवाट (Asset Disposal Entry)</span>
+                </div>
+                <div className="bg-rose-50 border border-rose-200 text-rose-900 p-2 rounded-sm text-[10px] font-semibold">
+                  चालू पुस्तकी मूल्य (Current Book Value): <span className="font-mono font-bold">₹{selectedAsset.currentBookValue.toFixed(2)}</span>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block font-medium text-gray-600 mb-0.5">विल्हेवाट प्रकार *</label>
-                    <select value={disposeData.disposalType} onChange={e => setDisposeData({ ...disposeData, disposalType: e.target.value })}
-                      className="w-full border rounded-sm px-2 py-1 bg-white">
+                    <label className={labelClass}>विल्हेवाट प्रकार *</label>
+                    <select 
+                      value={disposeData.disposalType} 
+                      onChange={e => setDisposeData({ ...disposeData, disposalType: e.target.value })}
+                      className={selectClass}
+                    >
                       <option value="Scrap">स्क्रॅप (Scrap)</option>
                       <option value="Sale">विक्री (Sale)</option>
                       <option value="Write-Off">राईट ऑफ (Write-Off)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block font-medium text-gray-600 mb-0.5">विक्री रक्कम (Sale Price ₹)</label>
-                    <input type="number" value={disposeData.saleAmount} onChange={e => setDisposeData({ ...disposeData, saleAmount: parseFloat(e.target.value) })} min="0" step="0.01"
-                      className="w-full border rounded-sm px-2 py-1" />
+                    <label className={labelClass}>विक्री रक्कम (Sale Price ₹)</label>
+                    <input 
+                      type="number" 
+                      value={disposeData.saleAmount || ''} 
+                      onChange={e => setDisposeData({ ...disposeData, saleAmount: parseFloat(e.target.value) })} 
+                      min="0" 
+                      step="0.01"
+                      className={inputClass} 
+                    />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block font-medium text-gray-600 mb-0.5">खरेदीदार (Buyer Name)</label>
-                    <input type="text" value={disposeData.buyerName} onChange={e => setDisposeData({ ...disposeData, buyerName: e.target.value })}
-                      className="w-full border rounded-sm px-2 py-1" placeholder="खरेदीदाराचे नाव..." />
+                    <label className={labelClass}>खरेदीदार (Buyer Name)</label>
+                    <input 
+                      type="text" 
+                      value={disposeData.buyerName} 
+                      onChange={e => setDisposeData({ ...disposeData, buyerName: e.target.value })}
+                      className={inputClass} 
+                      placeholder="खरेदीदाराचे नाव..." 
+                    />
                   </div>
                   <div>
-                    <label className="block font-medium text-gray-600 mb-0.5">विल्हेवाट तारीख *</label>
-                    <input type="date" value={disposeData.disposalDate} onChange={e => setDisposeData({ ...disposeData, disposalDate: e.target.value })} required
-                      className="w-full border rounded-sm px-2 py-1" />
+                    <label className={labelClass}>विल्हेवाट तारीख *</label>
+                    <input 
+                      type="date" 
+                      value={disposeData.disposalDate} 
+                      onChange={e => setDisposeData({ ...disposeData, disposalDate: e.target.value })} 
+                      required
+                      className={inputClass} 
+                    />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block font-medium text-gray-600 mb-0.5">तपशील (Remarks)</label>
-                  <textarea value={disposeData.remarks} onChange={e => setDisposeData({ ...disposeData, remarks: e.target.value })}
-                    className="w-full border rounded-sm px-2 py-1" rows={1.5} placeholder="अधिक माहिती..." />
+                  <label className={labelClass}>तपशील (Remarks)</label>
+                  <textarea 
+                    value={disposeData.remarks} 
+                    onChange={e => setDisposeData({ ...disposeData, remarks: e.target.value })}
+                    className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900" 
+                    rows={1.5} 
+                    placeholder="अधिक माहिती..." 
+                  />
                 </div>
 
                 {/* Accounting Voucher fields */}
-                <div className="bg-gray-50 border border-gray-200 rounded p-2 mt-1.5 space-y-1.5">
+                <div className="bg-slate-50 border border-slate-200 rounded-sm p-2 mt-1.5 space-y-1.5">
                   <label className="flex items-center gap-1.5 font-bold text-gray-700 cursor-pointer">
-                    <input type="checkbox" checked={disposeData.postVoucher} onChange={e => setDisposeData({ ...disposeData, postVoucher: e.target.checked })} className="rounded" />
-                    हिशोब वही मध्ये व्हाउचर पोस्ट करा (Post Voucher)
+                    <input 
+                      type="checkbox" 
+                      checked={disposeData.postVoucher} 
+                      onChange={e => setDisposeData({ ...disposeData, postVoucher: e.target.checked })} 
+                      className="rounded accent-primary" 
+                    />
+                    <span>हिशोब वही मध्ये व्हाउचर पोस्ट करा (Post Voucher)</span>
                   </label>
 
                   {disposeData.postVoucher && (
-                    <div className="grid grid-cols-1 gap-1.5 text-[10px]">
+                    <div className="grid grid-cols-1 gap-1.5 text-[10px] pt-1 border-t border-slate-200">
                       {disposeData.saleAmount > 0 && (
                         <div>
-                          <label className="block font-bold text-gray-600 mb-0.5">नावे खाते (Debit Cash/Bank Ledger) *</label>
-                          <select value={disposeData.debitLedgerID} onChange={e => setDisposeData({ ...disposeData, debitLedgerID: parseInt(e.target.value) })} required
-                            className="w-full border rounded px-1.5 py-0.5 bg-white text-[11px]">
+                          <label className={labelClass}>नावे खाते (Debit Cash/Bank Ledger) *</label>
+                          <select 
+                            value={disposeData.debitLedgerID} 
+                            onChange={e => setDisposeData({ ...disposeData, debitLedgerID: parseInt(e.target.value) })} 
+                            required
+                            className={selectClass}
+                          >
                             <option value={0}>-- कॅश / बँक खाते निवडा --</option>
                             {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
                           </select>
                         </div>
                       )}
                       <div>
-                        <label className="block font-bold text-gray-600 mb-0.5">जमा खाते (Credit Asset Ledger) *</label>
-                        <select value={disposeData.creditLedgerID} onChange={e => setDisposeData({ ...disposeData, creditLedgerID: parseInt(e.target.value) })} required
-                          className="w-full border rounded px-1.5 py-0.5 bg-white text-[11px]">
+                        <label className={labelClass}>जमा खाते (Credit Asset Ledger) *</label>
+                        <select 
+                          value={disposeData.creditLedgerID} 
+                          onChange={e => setDisposeData({ ...disposeData, creditLedgerID: parseInt(e.target.value) })} 
+                          required
+                          className={selectClass}
+                        >
                           <option value={0}>-- मालमत्ता खाते निवडा --</option>
                           {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className="block font-bold text-gray-600 mb-0.5">नफा/तोटा खाते (Profit/Loss Ledger) *</label>
-                        <select value={disposeData.profitLossLedgerID} onChange={e => setDisposeData({ ...disposeData, profitLossLedgerID: parseInt(e.target.value) })} required
-                          className="w-full border rounded px-1.5 py-0.5 bg-white text-[11px]">
+                        <label className={labelClass}>नफा/तोटा खाते (Profit/Loss Ledger) *</label>
+                        <select 
+                          value={disposeData.profitLossLedgerID} 
+                          onChange={e => setDisposeData({ ...disposeData, profitLossLedgerID: parseInt(e.target.value) })} 
+                          required
+                          className={selectClass}
+                        >
                           <option value={0}>-- मालमत्ता विक्री नफा/तोटा खाते निवडा --</option>
                           {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
                         </select>
@@ -1019,9 +1739,25 @@ const AssetMaster: React.FC = () => {
                   )}
                 </div>
 
-                <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white py-1.5 rounded-sm font-semibold mt-1">⚠️ मालमत्ता विल्हेवाट लावा & जतन करा</button>
+                <button 
+                  type="submit" 
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white py-1.5 rounded-sm font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer mt-1"
+                >
+                  <Trash2 size={13} />
+                  <span>मालमत्ता विल्हेवाट लावा & जतन करा</span>
+                </button>
               </form>
             )}
+          </div>
+        ) : (
+          <div className="w-full xl:w-96 bg-white rounded-sm shadow-xs border border-gray-200 p-6 flex flex-col items-center justify-center text-center self-start min-h-[300px]">
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-2 border border-slate-200">
+              <Building2 size={24} />
+            </div>
+            <h3 className="text-xs font-bold text-gray-700">कोणतीही मालमत्ता निवडलेली नाही</h3>
+            <p className="text-[11px] text-gray-500 mt-1 max-w-[220px]">
+              तपशील पाहण्यासाठी, वाटप, हस्तांतरण, घसारा किंवा विल्हेवाट लावण्यासाठी डाव्या बाजूच्या यादीतून कोणत्याही मालमत्तेवर क्लिक करा.
+            </p>
           </div>
         )}
       </div>

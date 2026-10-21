@@ -245,6 +245,8 @@ namespace Bhisi.Api.Controllers
         [HttpGet("TrialBalance")]
         public async Task<ActionResult<IEnumerable<ReportNodeDto>>> GetTrialBalance([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
         {
+            try { await Helpers.DeadstockLedgerHelper.SyncDeadstockOpeningBalancesAsync(_context, branchId); } catch { }
+
             var groups = await _context.AccountGroups.ToListAsync();
             var ledgers = await _context.Ledgers.ToListAsync();
             
@@ -2292,6 +2294,8 @@ namespace Bhisi.Api.Controllers
         [HttpGet("BalanceSheet")]
         public async Task<ActionResult<BalanceSheetDto>> GetBalanceSheet([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int? branchId)
         {
+            try { await Helpers.DeadstockLedgerHelper.SyncDeadstockOpeningBalancesAsync(_context, branchId); } catch { }
+
             var dto = new BalanceSheetDto();
             
             dto.Liabilities = await BuildReportNodes("Liabilities", fromDate, toDate, branchId);

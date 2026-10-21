@@ -97,7 +97,130 @@ namespace Bhisi.Api.Controllers
             _context.Assets.Add(asset);
             await _context.SaveChangesAsync();
 
+            if (asset.IsOpeningBalance)
+            {
+                try { await Helpers.DeadstockLedgerHelper.SyncDeadstockOpeningBalancesAsync(_context, asset.BranchID); } catch { }
+            }
+
             return CreatedAtAction("GetAsset", new { id = asset.AssetID }, asset);
+        }
+
+        // POST: api/Assets/opening-batch
+        [HttpPost("opening-batch")]
+        public async Task<ActionResult<IEnumerable<Asset>>> PostOpeningBatch([FromBody] AssetOpeningBatchDto request)
+        {
+            if (request == null)
+            {
+                return BadRequest("अवैध विनंती डेटा. (Invalid request data.)");
+            }
+
+            var category = await _context.AssetCategories.FindAsync(request.CategoryID);
+            if (category == null)
+            {
+                return BadRequest("मालमत्ता वर्ग सापडला नाही. (Asset Category not found.)");
+            }
+
+            int qty = request.Quantity > 0 ? request.Quantity : 1;
+            decimal costPerUnit = request.CostMode == "total" 
+                ? Math.Round(request.OriginalCost / qty, 2) 
+                : Math.Round(request.OriginalCost, 2);
+
+            decimal deprPerUnit = request.CostMode == "total" 
+                ? Math.Round(request.AccumulatedDepreciation / qty, 2) 
+                : Math.Round(request.AccumulatedDepreciation, 2);
+
+            decimal bookValuePerUnit = costPerUnit - deprPerUnit;
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var createdAssets = new List<Asset>();
+                string baseCode = request.AssetCode?.Trim() ?? "ASSET";
+                string baseName = request.AssetName?.Trim() ?? "Asset";
+
+                if (qty == 1)
+                {
+                    if (await _context.Assets.AnyAsync(a => a.AssetCode == baseCode))
+                    {
+                        return BadRequest($"मालमत्ता कोड '{baseCode}' आधीच अस्तित्वात आहे. कृपया दुसरा कोड वापरा.");
+                    }
+
+                    var singleAsset = new Asset
+                    {
+                        InstitutionID = 1,
+                        BranchID = request.BranchID,
+                        FinancialYearID = 1,
+                        CategoryID = request.CategoryID,
+                        AssetCode = baseCode,
+                        AssetName = baseName,
+                        PurchaseDate = request.PurchaseDate,
+                        OriginalCost = costPerUnit,
+                        AccumulatedDepreciation = deprPerUnit,
+                        CurrentBookValue = bookValuePerUnit,
+                        Status = "Active",
+                        Location = request.Location,
+                        Custodian = request.Custodian,
+                        IsOpeningBalance = true,
+                        CreatedBy = request.CreatedBy,
+                        CreatedOn = DateTime.Now
+                    };
+
+                    _context.Assets.Add(singleAsset);
+                    createdAssets.Add(singleAsset);
+                }
+                else
+                {
+                    int existingCount = await _context.Assets.CountAsync(a => a.AssetCode.StartsWith(baseCode));
+
+                    for (int i = 1; i <= qty; i++)
+                    {
+                        int seq = existingCount + i;
+                        string finalCode = $"{baseCode}-{seq:D3}";
+                        while (await _context.Assets.AnyAsync(a => a.AssetCode == finalCode))
+                        {
+                            seq++;
+                            finalCode = $"{baseCode}-{seq:D3}";
+                        }
+
+                        string finalName = $"{baseName} - {i}";
+
+                        var batchAsset = new Asset
+                        {
+                            InstitutionID = 1,
+                            BranchID = request.BranchID,
+                            FinancialYearID = 1,
+                            CategoryID = request.CategoryID,
+                            AssetCode = finalCode,
+                            AssetName = finalName,
+                            PurchaseDate = request.PurchaseDate,
+                            OriginalCost = costPerUnit,
+                            AccumulatedDepreciation = deprPerUnit,
+                            CurrentBookValue = bookValuePerUnit,
+                            Status = "Active",
+                            Location = request.Location,
+                            Custodian = request.Custodian,
+                            IsOpeningBalance = true,
+                            CreatedBy = request.CreatedBy,
+                            CreatedOn = DateTime.Now
+                        };
+
+                        _context.Assets.Add(batchAsset);
+                        createdAssets.Add(batchAsset);
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                try { await Helpers.DeadstockLedgerHelper.SyncDeadstockOpeningBalancesAsync(_context, request.BranchID); } catch { }
+
+                return Ok(createdAssets);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, $"ओपनिंग शिल्लक जतन करताना त्रुटी आली: {ex.Message}");
+            }
         }
 
         // PUT: api/Assets/5
@@ -134,6 +257,7 @@ namespace Bhisi.Api.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                try { await Helpers.DeadstockLedgerHelper.SyncDeadstockOpeningBalancesAsync(_context, existing.BranchID); } catch { }
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -175,6 +299,8 @@ namespace Bhisi.Api.Controllers
 
             _context.Assets.Remove(asset);
             await _context.SaveChangesAsync();
+
+            try { await Helpers.DeadstockLedgerHelper.SyncDeadstockOpeningBalancesAsync(_context, asset.BranchID); } catch { }
 
             return NoContent();
         }
@@ -266,9 +392,50 @@ namespace Bhisi.Api.Controllers
             return Ok(sortedHistory);
         }
 
+        // POST: api/Assets/sync-opening-balances?branchId=1
+        [HttpPost("sync-opening-balances")]
+        public async Task<IActionResult> SyncOpeningBalances([FromQuery] int? branchId)
+        {
+            try
+            {
+                await Helpers.DeadstockLedgerHelper.SyncDeadstockOpeningBalancesAsync(_context, branchId);
+                return Ok(new
+                {
+                    success = true,
+                    message = "डेडस्टॉक सुरुवातीची शिल्लक तेरीज, ताळेबंद व GL खात्यांशी यशस्वीरीत्या सिंक करण्यात आली."
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = $"डेडस्टॉक सिंक करताना त्रुटी आली: {ex.Message}"
+                });
+            }
+        }
+
         private bool AssetExists(int id)
         {
             return _context.Assets.Any(e => e.AssetID == id);
         }
     }
+
+    public class AssetOpeningBatchDto
+    {
+        public int BranchID { get; set; } = 1;
+        public int CategoryID { get; set; }
+        public string AssetCode { get; set; } = string.Empty;
+        public string AssetName { get; set; } = string.Empty;
+        public DateTime PurchaseDate { get; set; }
+        public int Quantity { get; set; } = 1;
+        public string CostMode { get; set; } = "perUnit"; // "perUnit" or "total"
+        public decimal OriginalCost { get; set; }
+        public decimal AccumulatedDepreciation { get; set; }
+        public string? Location { get; set; }
+        public string? Custodian { get; set; }
+        public bool IsOpeningBalance { get; set; } = true;
+        public int CreatedBy { get; set; } = 1;
+    }
 }
+

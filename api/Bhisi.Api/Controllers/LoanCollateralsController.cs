@@ -41,6 +41,7 @@ namespace Bhisi.Api.Controllers
             public string DepositType { get; set; } = string.Empty; // FixedDeposit, PigmyDeposit, RecurringDeposit, SavingDeposit
             public int DepositAccountID { get; set; }
             public string AccountNo { get; set; } = string.Empty;
+            public string? LegacyAccountNumber { get; set; }
             public decimal DepositAmount { get; set; }
             public decimal CurrentBalance { get; set; }
             public decimal InterestRate { get; set; }
@@ -83,6 +84,7 @@ namespace Bhisi.Api.Controllers
                         DepositType = "FixedDeposit",
                         DepositAccountID = fd.FdAccountID,
                         AccountNo = fd.AccountNo,
+                        LegacyAccountNumber = fd.LegacyAccountNumber,
                         DepositAmount = fd.DepositAmount,
                         CurrentBalance = fd.DepositAmount,
                         InterestRate = fd.InterestRate,
@@ -113,6 +115,7 @@ namespace Bhisi.Api.Controllers
                         DepositType = "PigmyDeposit",
                         DepositAccountID = pg.PigmyAccountID,
                         AccountNo = pg.AccountNo,
+                        LegacyAccountNumber = pg.LegacyAccountNumber ?? pg.OldAccountNo ?? pg.PreviousAccountNo,
                         DepositAmount = pg.TotalDepositedAmount,
                         CurrentBalance = netBalance,
                         InterestRate = pg.InterestRate,
@@ -142,6 +145,7 @@ namespace Bhisi.Api.Controllers
                         DepositType = "RecurringDeposit",
                         DepositAccountID = rd.RdAccountID,
                         AccountNo = rd.AccountNo,
+                        LegacyAccountNumber = rd.LegacyAccountNumber,
                         DepositAmount = rd.TotalDepositedAmount,
                         CurrentBalance = rd.TotalDepositedAmount,
                         InterestRate = rd.InterestRate,
@@ -170,6 +174,7 @@ namespace Bhisi.Api.Controllers
                         DepositType = "SavingDeposit",
                         DepositAccountID = s.SavingAccountID,
                         AccountNo = s.AccountNo,
+                        LegacyAccountNumber = s.LegacyAccountNumber ?? s.OldAccountNo ?? s.PreviousAccountNo,
                         DepositAmount = s.CurrentBalance,
                         CurrentBalance = s.CurrentBalance,
                         InterestRate = s.InterestRate,

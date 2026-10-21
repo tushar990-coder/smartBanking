@@ -10,13 +10,17 @@ import {
   Landmark, 
   Calendar,
   Lock,
-  IndianRupee
+  IndianRupee,
+  Search,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
 export interface EligibleDeposit {
   depositType: string;
   depositAccountID: number;
   accountNo: string;
+  legacyAccountNumber?: string;
   depositAmount: number;
   currentBalance: number;
   interestRate: number;
@@ -40,6 +44,10 @@ interface Props {
   alreadySelectedIds?: number[];
 }
 
+export const getDepositId = (dep: any): number => {
+  return Number(dep?.depositAccountID ?? dep?.depositAccountId ?? dep?.fdAccountID ?? dep?.pigmyAccountID ?? dep?.rdAccountID ?? dep?.savingAccountID ?? dep?.id ?? 0);
+};
+
 const DepositCollateralSelectorModal: React.FC<Props> = ({
   isOpen,
   onClose,
@@ -54,14 +62,17 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [deposits, setDeposits] = useState<EligibleDeposit[]>([]);
   const [selectedMap, setSelectedMap] = useState<{ [id: number]: boolean }>({});
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     if (isOpen && customerID && Number(customerID) > 0) {
+      setSearchTerm('');
       fetchDeposits();
     } else {
       setDeposits([]);
       setSelectedMap({});
       setError(null);
+      setSearchTerm('');
     }
   }, [isOpen, customerID, collateralCategory, maxLtv]);
 
@@ -76,13 +87,14 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
           maxLtv: maxLtv || 85
         }
       });
-      setDeposits(res.data || []);
+      const data: EligibleDeposit[] = res.data || [];
+      setDeposits(data);
 
       // Pre-select if previously selected
       const initMap: { [id: number]: boolean } = {};
       if (alreadySelectedIds && alreadySelectedIds.length > 0) {
         alreadySelectedIds.forEach(id => {
-          initMap[id] = true;
+          if (id) initMap[Number(id)] = true;
         });
       }
       setSelectedMap(initMap);
@@ -98,13 +110,46 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
 
   const toggleSelect = (dep: EligibleDeposit) => {
     if (dep.isLienMarked) return; // Cannot select already lien-marked deposit
+    const depId = getDepositId(dep);
+    if (!depId) return;
+
     setSelectedMap(prev => ({
       ...prev,
-      [dep.depositAccountID]: !prev[dep.depositAccountID]
+      [depId]: !prev[depId]
     }));
   };
 
-  const selectedDeposits = deposits.filter(d => selectedMap[d.depositAccountID]);
+  const selectableDeposits = deposits.filter(d => !d.isLienMarked);
+  const isAllSelectableChosen = 
+    selectableDeposits.length > 0 && 
+    selectableDeposits.every(d => Boolean(selectedMap[getDepositId(d)]));
+
+  const toggleSelectAll = () => {
+    if (isAllSelectableChosen) {
+      // Unselect all
+      setSelectedMap({});
+    } else {
+      // Select all unencumbered
+      const newMap: { [id: number]: boolean } = {};
+      selectableDeposits.forEach(d => {
+        const id = getDepositId(d);
+        if (id) newMap[id] = true;
+      });
+      setSelectedMap(newMap);
+    }
+  };
+
+  const filteredDeposits = deposits.filter(dep => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase().trim();
+    return (
+      (dep.accountNo && dep.accountNo.toLowerCase().includes(term)) ||
+      (dep.legacyAccountNumber && dep.legacyAccountNumber.toLowerCase().includes(term)) ||
+      (dep.schemeName && dep.schemeName.toLowerCase().includes(term))
+    );
+  });
+
+  const selectedDeposits = deposits.filter(d => selectedMap[getDepositId(d)]);
   const totalCollateralValue = selectedDeposits.reduce((sum, d) => sum + (d.currentBalance || d.depositAmount || 0), 0);
   const totalMaxLoanLimit = selectedDeposits.reduce((sum, d) => sum + (d.maxEligibleLoan || 0), 0);
 
@@ -122,7 +167,10 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
           ? 'आवर्ती ठेव (RD)'
           : 'बचत ठेव';
 
-    const accountList = selectedDeposits.map(d => d.accountNo).join(', ');
+    const accountList = selectedDeposits.map(d => {
+      return d.legacyAccountNumber ? `${d.accountNo} (जुना क्र. ${d.legacyAccountNumber})` : d.accountNo;
+    }).join(', ');
+
     const summary = `${typeLabel} तारण: ${selectedDeposits.length} खाते (${accountList}), एकूण तारण मूल्य: ₹${totalCollateralValue.toLocaleString('en-IN')}, कमाल पात्र कर्ज मर्यादा (${maxLtv}%): ₹${totalMaxLoanLimit.toLocaleString('en-IN')}`;
 
     onApply(selectedDeposits, totalCollateralValue, summary);
@@ -141,7 +189,7 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3">
-      <div className="bg-white rounded-lg shadow-2xl border border-primary/20 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150">
+      <div className="bg-white rounded-lg shadow-2xl border border-primary/20 w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150">
         
         {/* Header */}
         <div className="bg-primary text-white px-4 py-3 flex items-center justify-between">
@@ -165,23 +213,37 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
           </button>
         </div>
 
-        {/* Info Banner */}
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-center justify-between text-xs text-amber-900">
+        {/* Info Banner & Search Bar */}
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-amber-900">
           <div className="flex items-center space-x-2">
             <Landmark className="w-4 h-4 text-amber-700 shrink-0" />
             <span>
               योजनेनुसार कमाल कर्ज-तारण प्रमाण (Max LTV): <strong className="text-amber-950 font-bold">{maxLtv}%</strong> (ठेव शिलकीच्या {maxLtv}% पर्यंत कर्ज मंजूर करता येईल)
             </span>
           </div>
-          <button 
-            type="button" 
-            onClick={fetchDeposits} 
-            disabled={loading}
-            className="flex items-center space-x-1 text-primary hover:underline font-semibold"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>रिफ्रेश</span>
-          </button>
+
+          <div className="flex items-center space-x-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="खाते क्र. किंवा जुना क्र. शोधा..."
+                className="w-full pl-7 pr-2 py-1 bg-white border border-amber-300 rounded text-xs text-gray-900 focus:outline-hidden focus:ring-1 focus:ring-primary focus:border-primary"
+              />
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2 top-2" />
+            </div>
+
+            <button 
+              type="button" 
+              onClick={fetchDeposits} 
+              disabled={loading}
+              className="flex items-center space-x-1 text-primary hover:underline font-semibold shrink-0 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span>रिफ्रेश</span>
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -226,10 +288,22 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
           ) : (
             <div className="overflow-x-auto border border-gray-200 rounded-sm">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 text-gray-800 font-bold border-b border-gray-200">
+                <thead className="bg-slate-100 text-gray-800 font-bold border-b border-gray-200 select-none">
                   <tr>
-                    <th className="p-2.5 text-center w-10">निवड</th>
+                    <th className="p-2.5 text-center w-12">
+                      <div className="flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={isAllSelectableChosen}
+                          onChange={toggleSelectAll}
+                          disabled={selectableDeposits.length === 0}
+                          title="सर्व उपलब्ध ठेवी निवडा / रद्द करा"
+                          className="rounded text-primary focus:ring-primary h-4 w-4 cursor-pointer disabled:cursor-not-allowed"
+                        />
+                      </div>
+                    </th>
                     <th className="p-2.5">खाते / पावती क्र.</th>
+                    <th className="p-2.5 text-center w-32">जुना ठेव क्र. (Old No.)</th>
                     <th className="p-2.5">योजना</th>
                     <th className="p-2.5 text-right">ठेव रक्कम / शिल्लक (₹)</th>
                     <th className="p-2.5 text-center">व्याजदर</th>
@@ -239,13 +313,14 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {deposits.map((dep) => {
-                    const isSelected = Boolean(selectedMap[dep.depositAccountID]);
+                  {filteredDeposits.map((dep) => {
+                    const depId = getDepositId(dep);
+                    const isSelected = Boolean(selectedMap[depId]);
                     const isLocked = dep.isLienMarked;
 
                     return (
                       <tr 
-                        key={dep.depositAccountID} 
+                        key={depId} 
                         onClick={() => toggleSelect(dep)}
                         className={`transition-colors cursor-pointer ${
                           isLocked 
@@ -255,33 +330,66 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
                               : 'hover:bg-slate-50'
                         }`}
                       >
-                        <td className="p-2.5 text-center">
+                        {/* Checkbox column - stop propagation so clicking directly on checkbox toggles exactly once */}
+                        <td 
+                          className="p-2.5 text-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <input 
                             type="checkbox" 
                             checked={isSelected} 
                             disabled={isLocked}
-                            onChange={() => toggleSelect(dep)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              toggleSelect(dep);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
                             className="rounded text-primary focus:ring-primary h-4 w-4 cursor-pointer disabled:cursor-not-allowed" 
                           />
                         </td>
+
+                        {/* CBS Account No */}
                         <td className="p-2.5 font-mono font-bold text-gray-900">
                           {dep.accountNo}
                         </td>
+
+                        {/* Old / Legacy Account No */}
+                        <td className="p-2.5 text-center">
+                          {dep.legacyAccountNumber ? (
+                            <span className="inline-block px-2 py-0.5 font-mono font-bold text-xs bg-amber-100 text-amber-900 border border-amber-300 rounded shadow-2xs">
+                              {dep.legacyAccountNumber}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 font-mono text-[11px]">-</span>
+                          )}
+                        </td>
+
+                        {/* Scheme Name */}
                         <td className="p-2.5 text-gray-700">
                           {dep.schemeName}
                         </td>
+
+                        {/* Deposit Amount / Balance */}
                         <td className="p-2.5 text-right font-mono font-bold text-gray-900">
                           ₹ {(dep.currentBalance || dep.depositAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
+
+                        {/* Interest Rate */}
                         <td className="p-2.5 text-center font-mono font-semibold text-emerald-700">
                           {dep.interestRate}%
                         </td>
+
+                        {/* Maturity Date */}
                         <td className="p-2.5 text-center text-gray-600 font-mono">
                           {dep.maturityDate ? new Date(dep.maturityDate).toLocaleDateString('en-GB') : '-'}
                         </td>
+
+                        {/* Eligible Loan Limit */}
                         <td className="p-2.5 text-right font-mono font-bold text-blue-800 bg-blue-50/40">
                           ₹ {dep.maxEligibleLoan.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
+
+                        {/* Lien Status */}
                         <td className="p-2.5 text-center">
                           {isLocked ? (
                             <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
@@ -306,7 +414,7 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
 
         {/* Footer Summary & Action */}
         <div className="bg-slate-100 border-t border-gray-200 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center space-x-4 text-xs">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
             <div>
               <span className="text-gray-500">निवडलेल्या ठेवी:</span>{' '}
               <strong className="text-gray-900 font-bold">{selectedDeposits.length}</strong>
@@ -325,7 +433,7 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 shrink-0">
             <button
               type="button"
               onClick={onClose}
@@ -337,7 +445,7 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 border border-gray-300 rounded-sm text-xs font-semibold text-gray-700 hover:bg-gray-200 transition-colors"
+              className="px-3 py-1.5 border border-gray-300 rounded-sm text-xs font-semibold text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer"
             >
               रद्द करा
             </button>
@@ -345,7 +453,7 @@ const DepositCollateralSelectorModal: React.FC<Props> = ({
               type="button"
               onClick={handleConfirm}
               disabled={selectedDeposits.length === 0}
-              className="px-4 py-1.5 bg-primary text-white rounded-sm text-xs font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1.5 shadow-sm transition-all"
+              className="px-4 py-1.5 bg-primary text-white rounded-sm text-xs font-bold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1.5 shadow-sm transition-all cursor-pointer"
             >
               <CheckCircle className="w-4 h-4" />
               <span>तारण जोडा (Apply Collateral)</span>

@@ -11,6 +11,7 @@ import { transliterateMarathi } from '../utils/transliterateMarathi';
 import { isValidAadhaar, isValidPAN, maskAadhaar } from '../utils/kycValidation';
 import DeceasedClaimSettlementModal from './DeceasedClaimSettlementModal';
 import CustomerBulkEntry from './CustomerBulkEntry';
+import DoorstepPermissionsModal from './DoorstepPermissionsModal';
 
 interface Customer {
   customerID: number;
@@ -111,6 +112,13 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
     isOpen: false,
     requestId: null,
     reason: ''
+  });
+
+  // Doorstep Multi-Product & Privacy Permissions Modal State
+  const [doorstepModal, setDoorstepModal] = useState<{ isOpen: boolean; customerId: number; customerName: string }>({
+    isOpen: false,
+    customerId: 0,
+    customerName: ''
   });
 
   // KYC Compulsory Toggles
@@ -2542,6 +2550,13 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
                       <td className="p-2 text-center sticky right-0 bg-white shadow-l">
                         <div className="flex items-center justify-center gap-1">
                           <button
+                            onClick={() => setDoorstepModal({ isOpen: true, customerId: c.customerID, customerName: `${c.firstName} ${c.lastName}` })}
+                            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded transition cursor-pointer"
+                            title="डोअरस्टेप वसुली व गोपनीयता परवानग्या (Doorstep Privacy & Collection Settings)"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                          </button>
+                          <button
                             onClick={() => handleEdit(c)}
                             className="p-1 text-primary hover:bg-primary/10 rounded transition cursor-pointer"
                             title="एडिट करा"
@@ -2641,6 +2656,19 @@ export default function CustomerMaster({ onNavigate }: { onNavigate?: (tab: stri
           onSettled={() => {
             setIsDeceasedModalOpen(false);
             fetchCustomers();
+          }}
+        />
+      )}
+
+      {/* DOORSTEP PRIVACY & MULTI-PRODUCT PERMISSIONS MODAL */}
+      {doorstepModal.isOpen && (
+        <DoorstepPermissionsModal
+          isOpen={doorstepModal.isOpen}
+          customerId={doorstepModal.customerId}
+          customerName={doorstepModal.customerName}
+          onClose={() => setDoorstepModal({ isOpen: false, customerId: 0, customerName: '' })}
+          onUpdated={() => {
+            // Optional refresh
           }}
         />
       )}

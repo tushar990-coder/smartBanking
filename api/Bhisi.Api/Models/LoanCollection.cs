@@ -99,5 +99,20 @@ namespace Bhisi.Api.Models
 
         [StringLength(200)]
         public string? Remarks { get; set; }
+
+        // Agent Doorstep Collection Provisioning
+        public int? AgentID { get; set; }
+
+        [ForeignKey("AgentID")]
+        public virtual PigmyAgent? Agent { get; set; }
+
+        [StringLength(20)]
+        public string CollectionSource { get; set; } = "COUNTER";
+
+        [StringLength(100)]
+        public string? TransactionId { get; set; }
+
+        [StringLength(100)]
+        public string? SyncReferenceId { get; set; }
     }
 }

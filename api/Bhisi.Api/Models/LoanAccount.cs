@@ -128,5 +128,13 @@ namespace Bhisi.Api.Models
 
         public virtual ICollection<LoanInstallmentSchedule> LoanInstallmentSchedules { get; set; } = new List<LoanInstallmentSchedule>();
         public virtual ICollection<LoanDisbursement> LoanDisbursements { get; set; } = new List<LoanDisbursement>();
+
+        // Agent Doorstep Collection Provisioning
+        public bool IsAgentCollectionAllowed { get; set; } = false;
+
+        public int? AssignedAgentID { get; set; }
+
+        [ForeignKey("AssignedAgentID")]
+        public virtual PigmyAgent? AssignedAgent { get; set; }
     }
 }

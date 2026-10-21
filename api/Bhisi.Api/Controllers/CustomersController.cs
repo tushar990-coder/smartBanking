@@ -941,5 +941,259 @@ namespace Bhisi.Api.Controllers
                 path = fileUrl
             });
         }
+
+        // =========================================================================
+        // DOORSTEP BANKING AGENT COLLECTION & PRIVACY PERMISSIONS
+        // =========================================================================
+
+        public class CustomerDoorstepPermissionsDto
+        {
+            public int CustomerID { get; set; }
+            public string CustomerName { get; set; } = string.Empty;
+            public string CIFNo { get; set; } = string.Empty;
+            public string MobileNo { get; set; } = string.Empty;
+            public List<DoorstepAccountItemDto> PigmyAccounts { get; set; } = new();
+            public List<DoorstepAccountItemDto> LoanAccounts { get; set; } = new();
+            public List<DoorstepAccountItemDto> SavingAccounts { get; set; } = new();
+            public List<DoorstepAccountItemDto> RdAccounts { get; set; } = new();
+            public List<DoorstepAgentOptionDto> AvailableAgents { get; set; } = new();
+        }
+
+        public class DoorstepAccountItemDto
+        {
+            public int AccountID { get; set; }
+            public string AccountNo { get; set; } = string.Empty;
+            public string SchemeOrType { get; set; } = string.Empty;
+            public decimal CurrentBalance { get; set; }
+            public decimal? TargetOrEmiAmount { get; set; }
+            public bool IsAgentCollectionAllowed { get; set; }
+            public int? AssignedAgentID { get; set; }
+            public string? AssignedAgentName { get; set; }
+            public string Status { get; set; } = "Active";
+        }
+
+        public class DoorstepAgentOptionDto
+        {
+            public int AgentID { get; set; }
+            public string AgentName { get; set; } = string.Empty;
+            public string? AgentCode { get; set; }
+            public string? MobileNo { get; set; }
+        }
+
+        public class UpdateDoorstepPermissionsRequest
+        {
+            public List<UpdateAccountPermissionItem> LoanAccounts { get; set; } = new();
+            public List<UpdateAccountPermissionItem> SavingAccounts { get; set; } = new();
+            public List<UpdateAccountPermissionItem> RdAccounts { get; set; } = new();
+            public List<UpdateAccountPermissionItem> PigmyAccounts { get; set; } = new();
+        }
+
+        public class UpdateAccountPermissionItem
+        {
+            public int AccountID { get; set; }
+            public bool IsAgentCollectionAllowed { get; set; }
+            public int? AssignedAgentID { get; set; }
+        }
+
+        // GET: api/Customers/{id}/doorstep-permissions
+        [HttpGet("{id}/doorstep-permissions")]
+        public async Task<ActionResult<CustomerDoorstepPermissionsDto>> GetCustomerDoorstepPermissions(int id)
+        {
+            var customer = await _context.Customers.FindAsync(id);
+            if (customer == null)
+            {
+                return NotFound("ग्राहक सापडला नाही (Customer not found).");
+            }
+
+            var branchId = customer.BranchID;
+
+            // 1. Available active agents in this branch
+            var agents = await _context.PigmyAgents
+                .Where(a => a.Status == "Active" && (a.BranchID == null || a.BranchID == branchId || a.BranchID == 1))
+                .OrderBy(a => a.AgentName)
+                .Select(a => new DoorstepAgentOptionDto
+                {
+                    AgentID = a.PigmyAgentID,
+                    AgentName = a.AgentName,
+                    AgentCode = a.Username,
+                    MobileNo = a.Customer != null ? a.Customer.MobileNo : ""
+                })
+                .ToListAsync();
+
+            // 2. Pigmy Accounts
+            var pigmyList = await _context.PigmyAccounts
+                .Include(p => p.PigmyScheme)
+                .Include(p => p.PigmyAgent)
+                .Where(p => p.CustomerID == id && p.Status == "Active")
+                .Select(p => new DoorstepAccountItemDto
+                {
+                    AccountID = p.PigmyAccountID,
+                    AccountNo = p.AccountNo,
+                    SchemeOrType = p.PigmyScheme != null ? p.PigmyScheme.SchemeName : "दैनिक ठेव",
+                    CurrentBalance = p.TotalDepositedAmount,
+                    TargetOrEmiAmount = p.DailyDepositAmount,
+                    IsAgentCollectionAllowed = true,
+                    AssignedAgentID = p.PigmyAgentID > 0 ? p.PigmyAgentID : (int?)null,
+                    AssignedAgentName = p.PigmyAgent != null ? p.PigmyAgent.AgentName : null,
+                    Status = p.Status
+                })
+                .ToListAsync();
+
+            // 3. Loan Accounts
+            var loanList = await _context.LoanAccounts
+                .Include(l => l.LoanRate)
+                .Include(l => l.AssignedAgent)
+                .Where(l => l.CustomerID == id && l.Status == "Active")
+                .Select(l => new DoorstepAccountItemDto
+                {
+                    AccountID = l.LoanAccountID,
+                    AccountNo = l.LoanAccountNo ?? $"LN-{l.LoanAccountID}",
+                    SchemeOrType = l.LoanRate != null ? l.LoanRate.LoanType : "कर्ज खाते",
+                    CurrentBalance = l.PrincipalBalance,
+                    TargetOrEmiAmount = l.InstallmentAmount,
+                    IsAgentCollectionAllowed = l.IsAgentCollectionAllowed,
+                    AssignedAgentID = l.AssignedAgentID,
+                    AssignedAgentName = l.AssignedAgent != null ? l.AssignedAgent.AgentName : null,
+                    Status = l.Status
+                })
+                .ToListAsync();
+
+            // 4. Saving Accounts
+            var savingList = await _context.SavingAccountMasters
+                .Include(s => s.AssignedAgent)
+                .Where(s => s.CustomerID == id && s.Status == "Active")
+                .Select(s => new DoorstepAccountItemDto
+                {
+                    AccountID = s.SavingAccountID,
+                    AccountNo = s.AccountNo,
+                    SchemeOrType = "बचत ठेव",
+                    CurrentBalance = s.CurrentBalance,
+                    TargetOrEmiAmount = 0m,
+                    IsAgentCollectionAllowed = s.IsAgentCollectionAllowed,
+                    AssignedAgentID = s.AssignedAgentID,
+                    AssignedAgentName = s.AssignedAgent != null ? s.AssignedAgent.AgentName : null,
+                    Status = s.Status
+                })
+                .ToListAsync();
+
+            // 5. RD Accounts
+            var rdList = await _context.RdAccounts
+                .Include(r => r.AssignedAgent)
+                .Include(r => r.RdScheme)
+                .Where(r => r.CustomerID == id && r.Status == "Active")
+                .Select(r => new DoorstepAccountItemDto
+                {
+                    AccountID = r.RdAccountID,
+                    AccountNo = r.AccountNo,
+                    SchemeOrType = r.RdScheme != null ? r.RdScheme.SchemeName : "आवर्ती ठेव (RD)",
+                    CurrentBalance = r.TotalDepositedAmount,
+                    TargetOrEmiAmount = r.InstallmentAmount,
+                    IsAgentCollectionAllowed = r.IsAgentCollectionAllowed,
+                    AssignedAgentID = r.AssignedAgentID,
+                    AssignedAgentName = r.AssignedAgent != null ? r.AssignedAgent.AgentName : null,
+                    Status = r.Status
+                })
+                .ToListAsync();
+
+            var fullName = $"{customer.FirstName} {customer.MiddleName} {customer.LastName}".Replace("  ", " ").Trim();
+
+            return Ok(new CustomerDoorstepPermissionsDto
+            {
+                CustomerID = customer.CustomerID,
+                CustomerName = fullName,
+                CIFNo = customer.CIFNo ?? "",
+                MobileNo = customer.MobileNo ?? "",
+                PigmyAccounts = pigmyList,
+                LoanAccounts = loanList,
+                SavingAccounts = savingList,
+                RdAccounts = rdList,
+                AvailableAgents = agents
+            });
+        }
+
+        // PUT: api/Customers/{id}/doorstep-permissions
+        [HttpPut("{id}/doorstep-permissions")]
+        public async Task<IActionResult> UpdateCustomerDoorstepPermissions(int id, [FromBody] UpdateDoorstepPermissionsRequest request)
+        {
+            var customer = await _context.Customers.FindAsync(id);
+            if (customer == null)
+            {
+                return NotFound("ग्राहक सापडला नाही.");
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // 1. Update Loan Accounts
+                if (request.LoanAccounts != null)
+                {
+                    foreach (var item in request.LoanAccounts)
+                    {
+                        var loan = await _context.LoanAccounts.FirstOrDefaultAsync(l => l.LoanAccountID == item.AccountID && l.CustomerID == id);
+                        if (loan != null)
+                        {
+                            loan.IsAgentCollectionAllowed = item.IsAgentCollectionAllowed;
+                            loan.AssignedAgentID = item.IsAgentCollectionAllowed ? item.AssignedAgentID : null;
+                        }
+                    }
+                }
+
+                // 2. Update Saving Accounts
+                if (request.SavingAccounts != null)
+                {
+                    foreach (var item in request.SavingAccounts)
+                    {
+                        var saving = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == item.AccountID && s.CustomerID == id);
+                        if (saving != null)
+                        {
+                            saving.IsAgentCollectionAllowed = item.IsAgentCollectionAllowed;
+                            saving.AssignedAgentID = item.IsAgentCollectionAllowed ? item.AssignedAgentID : null;
+                        }
+                    }
+                }
+
+                // 3. Update RD Accounts
+                if (request.RdAccounts != null)
+                {
+                    foreach (var item in request.RdAccounts)
+                    {
+                        var rd = await _context.RdAccounts.FirstOrDefaultAsync(r => r.RdAccountID == item.AccountID && r.CustomerID == id);
+                        if (rd != null)
+                        {
+                            rd.IsAgentCollectionAllowed = item.IsAgentCollectionAllowed;
+                            rd.AssignedAgentID = item.IsAgentCollectionAllowed ? item.AssignedAgentID : null;
+                        }
+                    }
+                }
+
+                // 4. Update Pigmy Accounts
+                if (request.PigmyAccounts != null)
+                {
+                    foreach (var item in request.PigmyAccounts)
+                    {
+                        var pigmy = await _context.PigmyAccounts.FirstOrDefaultAsync(p => p.PigmyAccountID == item.AccountID && p.CustomerID == id);
+                        if (pigmy != null)
+                        {
+                            if (item.IsAgentCollectionAllowed && item.AssignedAgentID.HasValue && item.AssignedAgentID.Value > 0)
+                            {
+                                pigmy.PigmyAgentID = item.AssignedAgentID.Value;
+                            }
+                        }
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                await LogAuditAsync("UPDATE_DOORSTEP_PERMISSIONS", id.ToString(), $"Customer {customer.CIFNo} Doorstep permissions updated.");
+
+                return Ok(new { success = true, message = "ग्राहकाच्या डोअरस्टेप वसुली परवानग्या यशस्वीरीत्या अद्ययावत झाल्या!" });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, $"परवानग्या जतन करताना त्रुटी आली: {ex.Message}");
+            }
+        }
     }
 }

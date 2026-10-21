@@ -877,5 +877,578 @@ namespace Bhisi.Api.Controllers
 
             return Ok(response);
         }
+
+        // ==========================================
+        // 11. DOORSTEP MULTI-PRODUCT PROFILE & PRIVACY
+        // GET /api/PigmyApp/customers/{customerId}/doorstep-profile
+        // ==========================================
+        [AllowAnonymous]
+        [HttpGet("api/PigmyApp/customers/{customerId}/doorstep-profile")]
+        public async Task<IActionResult> GetDoorstepCustomerProfile(int customerId, [FromQuery] int? agentId)
+        {
+            int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
+            if (targetAgentId <= 0)
+            {
+                return BadRequest(new { message = "Agent ID is required (?agentId=... or X-Agent-Id header)." });
+            }
+
+            var customer = await _context.Customers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.CustomerID == customerId);
+
+            if (customer == null)
+            {
+                return NotFound(new { message = "ग्राहक सापडला नाही (Customer not found)." });
+            }
+
+            // 1. Pigmy Accounts assigned to this agent (By default allowed)
+            var pigmyAccounts = await _context.PigmyAccounts
+                .AsNoTracking()
+                .Include(p => p.PigmyScheme)
+                .Where(p => p.CustomerID == customerId && p.PigmyAgentID == targetAgentId && (p.Status == "Active" || p.Status == null))
+                .Select(p => new
+                {
+                    accountId = p.PigmyAccountID,
+                    accountNo = p.AccountNo,
+                    productType = "PIGMY",
+                    productTitle = "दैनिक ठेव (Pigmy)",
+                    schemeName = p.PigmyScheme != null ? p.PigmyScheme.SchemeName : "दैनिक ठेव",
+                    currentBalance = p.TotalDepositedAmount,
+                    targetAmount = p.DailyDepositAmount > 0 ? p.DailyDepositAmount : 100m,
+                    openingDate = p.OpeningDate.ToString("yyyy-MM-dd"),
+                    maturityDate = p.MaturityDate.ToString("yyyy-MM-dd"),
+                    isAgentAllowed = true,
+                    status = p.Status ?? "Active"
+                })
+                .ToListAsync();
+
+            // 2. Loan Accounts: STRICT PRIVACY FILTER (Only allowed & assigned to this agent)
+            var loanAccounts = await _context.LoanAccounts
+                .AsNoTracking()
+                .Include(l => l.LoanRate)
+                .Where(l => l.CustomerID == customerId && l.IsAgentCollectionAllowed && l.AssignedAgentID == targetAgentId && (l.Status == "Active" || l.Status == "Disbursed"))
+                .Select(l => new
+                {
+                    accountId = l.LoanAccountID,
+                    accountNo = l.LoanAccountNo ?? $"LN-{l.LoanAccountID}",
+                    productType = "LOAN",
+                    productTitle = "कर्ज खाते (Loan EMI)",
+                    schemeName = l.LoanRate != null ? l.LoanRate.LoanType : "कर्ज योजना",
+                    currentBalance = l.PrincipalBalance,
+                    targetAmount = l.InstallmentAmount,
+                    interestRate = l.InterestRate,
+                    lastPaidDate = l.LastInstallmentPaidDate.HasValue ? l.LastInstallmentPaidDate.Value.ToString("yyyy-MM-dd") : null,
+                    isAgentAllowed = true,
+                    status = l.Status
+                })
+                .ToListAsync();
+
+            // 3. Saving Accounts: STRICT PRIVACY FILTER (Only allowed & assigned to this agent)
+            var savingAccounts = await _context.SavingAccountMasters
+                .AsNoTracking()
+                .Where(s => s.CustomerID == customerId && s.IsAgentCollectionAllowed && s.AssignedAgentID == targetAgentId && s.Status == "Active")
+                .Select(s => new
+                {
+                    accountId = s.SavingAccountID,
+                    accountNo = s.AccountNo,
+                    productType = "SAVING",
+                    productTitle = "बचत ठेव (Saving)",
+                    schemeName = "बचत ठेव खाते",
+                    currentBalance = s.CurrentBalance,
+                    targetAmount = 0m,
+                    isAgentAllowed = true,
+                    status = s.Status
+                })
+                .ToListAsync();
+
+            // 4. RD Accounts: STRICT PRIVACY FILTER (Only allowed & assigned to this agent)
+            var rdAccounts = await _context.RdAccounts
+                .AsNoTracking()
+                .Include(r => r.RdScheme)
+                .Where(r => r.CustomerID == customerId && r.IsAgentCollectionAllowed && r.AssignedAgentID == targetAgentId && r.Status == "Active")
+                .Select(r => new
+                {
+                    accountId = r.RdAccountID,
+                    accountNo = r.AccountNo,
+                    productType = "RD",
+                    productTitle = "आवर्ती ठेव (RD)",
+                    schemeName = r.RdScheme != null ? r.RdScheme.SchemeName : "आरडी योजना",
+                    currentBalance = r.TotalDepositedAmount,
+                    targetAmount = r.InstallmentAmount,
+                    paidInstallments = r.TotalPaidInstallments,
+                    totalDurationMonths = r.DurationMonths,
+                    maturityDate = r.MaturityDate.ToString("yyyy-MM-dd"),
+                    isAgentAllowed = true,
+                    status = r.Status
+                })
+                .ToListAsync();
+
+            var fullName = $"{customer.FirstName} {(string.IsNullOrWhiteSpace(customer.MiddleName) ? "" : customer.MiddleName + " ")}{customer.LastName}".Trim();
+
+            return Ok(new
+            {
+                customerId = customer.CustomerID,
+                cifNo = customer.CIFNo ?? "",
+                customerName = fullName,
+                mobileNo = customer.MobileNo ?? "",
+                photoPath = customer.PhotoPath ?? "",
+                address = customer.Address ?? "",
+                agentId = targetAgentId,
+                pigmyAccounts,
+                loanAccounts,
+                savingAccounts,
+                rdAccounts,
+                totalPermittedAccounts = pigmyAccounts.Count + loanAccounts.Count + savingAccounts.Count + rdAccounts.Count
+            });
+        }
+
+        // ==========================================
+        // 12. DOORSTEP LOAN EMI COLLECTION
+        // POST /api/PigmyApp/collect-loan-emi
+        // ==========================================
+        public class CollectLoanEmiRequestDto
+        {
+            public int? AgentId { get; set; }
+            [Required]
+            public int LoanAccountId { get; set; }
+            [Required]
+            [Range(1, 10000000)]
+            public decimal Amount { get; set; }
+            public string? PaymentMode { get; set; } = "CASH";
+            public DateTime? CollectionDate { get; set; }
+            public string? SyncReferenceId { get; set; }
+            public string? Latitude { get; set; }
+            public string? Longitude { get; set; }
+            public string? Remarks { get; set; }
+        }
+
+        [AllowAnonymous]
+        [HttpPost("api/PigmyApp/collect-loan-emi")]
+        public async Task<IActionResult> CollectLoanEmi([FromBody] CollectLoanEmiRequestDto request)
+        {
+            if (request == null || request.Amount <= 0)
+            {
+                return BadRequest(new { message = "अवैध रक्कम (Invalid collection amount)." });
+            }
+
+            int targetAgentId = request.AgentId.HasValue && request.AgentId.Value > 0 ? request.AgentId.Value : GetCurrentAgentId();
+            if (targetAgentId <= 0)
+            {
+                return BadRequest(new { message = "Agent ID is required." });
+            }
+
+            // 1. Agent Lock Check
+            var (isAllowed, lockError) = await _lockService.ValidateCollectionAllowedAsync(targetAgentId, request.Amount, request.PaymentMode ?? "CASH");
+            if (!isAllowed)
+            {
+                return BadRequest(new { message = lockError ?? "एजंट लॉक आहे. कृपया शाखेत कॅश जमा करा." });
+            }
+
+            // 2. Check duplicate sync reference
+            if (!string.IsNullOrWhiteSpace(request.SyncReferenceId))
+            {
+                var existing = await _context.LoanCollections
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.SyncReferenceId == request.SyncReferenceId);
+                if (existing != null)
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        isDuplicate = true,
+                        message = "पावती आधीच यशस्वीपणे जमा झाली आहे.",
+                        receiptNo = existing.ReceiptNo,
+                        collectionId = existing.LoanCollectionID,
+                        amount = existing.TotalAmountReceived,
+                        collectedDate = existing.CollectionDate.ToString("yyyy-MM-dd")
+                    });
+                }
+            }
+
+            var agent = await _context.PigmyAgents.FindAsync(targetAgentId);
+            var loan = await _context.LoanAccounts
+                .Include(l => l.Customer)
+                .Include(l => l.LoanRate)
+                .FirstOrDefaultAsync(l => l.LoanAccountID == request.LoanAccountId);
+
+            if (loan == null)
+            {
+                return NotFound(new { message = "कर्ज खाते सापडले नाही." });
+            }
+
+            // 3. Privacy & Permission Check
+            if (!loan.IsAgentCollectionAllowed || loan.AssignedAgentID != targetAgentId)
+            {
+                return StatusCode(403, new { message = "या कर्ज खात्यावर एजंट वसुलीची परवानगी नाही किंवा खाते गोपनीय ठेवले आहे." });
+            }
+
+            if (loan.Status == "Closed")
+            {
+                return BadRequest(new { message = "कर्ज खाते आधीच बंद झाले आहे." });
+            }
+
+            using var dbTx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                DateTime collDate = request.CollectionDate ?? DateTime.Today;
+
+                // Waterfall Application: Overdue/Interest -> Principal
+                decimal remaining = request.Amount;
+                decimal overduePaid = 0m;
+                decimal interestPaid = 0m;
+                decimal principalPaid = 0m;
+
+                if (loan.OverdueInterestBalance > 0)
+                {
+                    overduePaid = Math.Min(remaining, loan.OverdueInterestBalance);
+                    loan.OverdueInterestBalance -= overduePaid;
+                    remaining -= overduePaid;
+                }
+
+                if (remaining > 0 && loan.InterestBalance > 0)
+                {
+                    interestPaid = Math.Min(remaining, loan.InterestBalance);
+                    loan.InterestBalance -= interestPaid;
+                    remaining -= interestPaid;
+                }
+
+                if (remaining > 0)
+                {
+                    principalPaid = Math.Min(remaining, loan.PrincipalBalance);
+                    loan.PrincipalBalance = Math.Max(0, loan.PrincipalBalance - principalPaid);
+                    if (loan.PurePrincipalBalance > 0)
+                    {
+                        loan.PurePrincipalBalance = Math.Max(0, loan.PurePrincipalBalance - principalPaid);
+                    }
+                    remaining -= principalPaid;
+                }
+
+                loan.LastInstallmentPaidDate = collDate;
+                if (loan.PrincipalBalance <= 0)
+                {
+                    loan.Status = "Closed";
+                }
+
+                string receiptNo = $"LN-AGT-{targetAgentId}-{DateTime.Now:yyyyMMddHHmmss}-{new Random().Next(100, 999)}";
+
+                var loanCollection = new LoanCollection
+                {
+                    LoanAccountID = loan.LoanAccountID,
+                    AgentID = targetAgentId,
+                    CollectionSource = "AGENT_MOBILE",
+                    SyncReferenceId = request.SyncReferenceId,
+                    TransactionId = Guid.NewGuid().ToString("N"),
+                    ReceiptNo = receiptNo,
+                    CollectionDate = collDate,
+                    PaymentMode = request.PaymentMode ?? "CASH",
+                    TotalAmountReceived = request.Amount,
+                    PrincipalCollected = principalPaid,
+                    InterestCollected = interestPaid,
+                    PenaltyInterestCollected = overduePaid,
+                    Remarks = $"डोअरस्टेप एजंट वसुली: {agent?.AgentName ?? targetAgentId.ToString()}" + 
+                              (string.IsNullOrWhiteSpace(request.Remarks) ? "" : $" - {request.Remarks}"),
+                    BranchID = loan.BranchID > 0 ? loan.BranchID : 1
+                };
+
+                _context.LoanCollections.Add(loanCollection);
+                await _context.SaveChangesAsync();
+                await dbTx.CommitAsync();
+
+                return Ok(new
+                {
+                    success = true,
+                    receiptNo,
+                    collectionId = loanCollection.LoanCollectionID,
+                    customerName = loan.Customer != null ? $"{loan.Customer.FirstName} {loan.Customer.LastName}".Trim() : "",
+                    loanAccountNo = loan.LoanAccountNo ?? $"LN-{loan.LoanAccountID}",
+                    amount = request.Amount,
+                    principalPaid,
+                    interestPaid,
+                    newPrincipalBalance = loan.PrincipalBalance,
+                    collectionDate = collDate.ToString("yyyy-MM-dd"),
+                    message = "कर्ज EMI यशस्वीरीत्या गोळा करण्यात आला आहे."
+                });
+            }
+            catch (Exception ex)
+            {
+                await dbTx.RollbackAsync();
+                return StatusCode(500, new { message = $"कर्ज हप्ता नोंदवताना त्रुटी: {ex.Message}" });
+            }
+        }
+
+        // ==========================================
+        // 13. DOORSTEP SAVING DEPOSIT COLLECTION
+        // POST /api/PigmyApp/collect-saving
+        // ==========================================
+        public class CollectSavingDepositRequestDto
+        {
+            public int? AgentId { get; set; }
+            [Required]
+            public int SavingAccountId { get; set; }
+            [Required]
+            [Range(1, 10000000)]
+            public decimal Amount { get; set; }
+            public string? PaymentMode { get; set; } = "CASH";
+            public DateTime? CollectionDate { get; set; }
+            public string? SyncReferenceId { get; set; }
+            public string? Remarks { get; set; }
+        }
+
+        [AllowAnonymous]
+        [HttpPost("api/PigmyApp/collect-saving")]
+        public async Task<IActionResult> CollectSavingDeposit([FromBody] CollectSavingDepositRequestDto request)
+        {
+            if (request == null || request.Amount <= 0)
+            {
+                return BadRequest(new { message = "अवैध रक्कम (Invalid deposit amount)." });
+            }
+
+            int targetAgentId = request.AgentId.HasValue && request.AgentId.Value > 0 ? request.AgentId.Value : GetCurrentAgentId();
+            if (targetAgentId <= 0)
+            {
+                return BadRequest(new { message = "Agent ID is required." });
+            }
+
+            // 1. Agent Lock Check
+            var (isAllowed, lockError) = await _lockService.ValidateCollectionAllowedAsync(targetAgentId, request.Amount, request.PaymentMode ?? "CASH");
+            if (!isAllowed)
+            {
+                return BadRequest(new { message = lockError ?? "एजंट लॉक आहे. कृपया शाखेत कॅश जमा करा." });
+            }
+
+            // 2. Check duplicate sync reference
+            if (!string.IsNullOrWhiteSpace(request.SyncReferenceId))
+            {
+                var existing = await _context.SavingTransactions
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(t => t.SyncReferenceId == request.SyncReferenceId);
+                if (existing != null)
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        isDuplicate = true,
+                        message = "बचत ठेव आधीच जमा झाली आहे.",
+                        voucherNo = existing.VoucherNo,
+                        transactionId = existing.TransactionID,
+                        amount = existing.Amount
+                    });
+                }
+            }
+
+            var agent = await _context.PigmyAgents.FindAsync(targetAgentId);
+            var saving = await _context.SavingAccountMasters
+                .Include(s => s.Customer)
+                .FirstOrDefaultAsync(s => s.SavingAccountID == request.SavingAccountId);
+
+            if (saving == null)
+            {
+                return NotFound(new { message = "बचत खाते सापडले नाही." });
+            }
+
+            // 3. Privacy & Permission Check
+            if (!saving.IsAgentCollectionAllowed || saving.AssignedAgentID != targetAgentId)
+            {
+                return StatusCode(403, new { message = "या बचत खात्यावर एजंट ठेव स्वीकारण्याची परवानगी नाही किंवा खाते गोपनीय ठेवले आहे." });
+            }
+
+            if (saving.Status == "Closed")
+            {
+                return BadRequest(new { message = "बचत खाते बंद आहे." });
+            }
+
+            using var dbTx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                DateTime collDate = request.CollectionDate ?? DateTime.Today;
+                saving.CurrentBalance += request.Amount;
+
+                string voucherNo = $"SB-AGT-{targetAgentId}-{DateTime.Now:yyyyMMddHHmmss}";
+
+                var savingTx = new SavingTransaction
+                {
+                    SavingAccountID = saving.SavingAccountID,
+                    CustomerID = saving.CustomerID,
+                    BranchID = saving.BranchID > 0 ? saving.BranchID : 1,
+                    TransactionDate = collDate,
+                    TransactionType = "Deposit",
+                    PaymentMode = request.PaymentMode ?? "Cash",
+                    Amount = request.Amount,
+                    BalanceAfterTxn = saving.CurrentBalance,
+                    Narration = $"डोअरस्टेप एजंट ठेव: {agent?.AgentName ?? targetAgentId.ToString()}" +
+                                (string.IsNullOrWhiteSpace(request.Remarks) ? "" : $" - {request.Remarks}"),
+                    VoucherNo = voucherNo,
+                    AgentID = targetAgentId,
+                    CollectionSource = "AGENT_MOBILE",
+                    SyncReferenceId = request.SyncReferenceId,
+                    CreatedBy = 1,
+                    CreatedOn = DateTime.UtcNow
+                };
+
+                _context.SavingTransactions.Add(savingTx);
+                await _context.SaveChangesAsync();
+                await dbTx.CommitAsync();
+
+                return Ok(new
+                {
+                    success = true,
+                    voucherNo,
+                    transactionId = savingTx.TransactionID,
+                    accountNo = saving.AccountNo,
+                    customerName = saving.Customer != null ? $"{saving.Customer.FirstName} {saving.Customer.LastName}".Trim() : "",
+                    amount = request.Amount,
+                    newBalance = saving.CurrentBalance,
+                    message = "बचत ठेव यशस्वीरीत्या खात्यात जमा झाली."
+                });
+            }
+            catch (Exception ex)
+            {
+                await dbTx.RollbackAsync();
+                return StatusCode(500, new { message = $"बचत ठेव नोंदवताना त्रुटी: {ex.Message}" });
+            }
+        }
+
+        // ==========================================
+        // 14. DOORSTEP RD INSTALLMENT COLLECTION
+        // POST /api/PigmyApp/collect-rd
+        // ==========================================
+        public class CollectRdInstallmentRequestDto
+        {
+            public int? AgentId { get; set; }
+            [Required]
+            public int RdAccountId { get; set; }
+            [Required]
+            [Range(1, 10000000)]
+            public decimal Amount { get; set; }
+            public string? PaymentMode { get; set; } = "CASH";
+            public DateTime? CollectionDate { get; set; }
+            public string? SyncReferenceId { get; set; }
+            public string? Remarks { get; set; }
+        }
+
+        [AllowAnonymous]
+        [HttpPost("api/PigmyApp/collect-rd")]
+        public async Task<IActionResult> CollectRdInstallment([FromBody] CollectRdInstallmentRequestDto request)
+        {
+            if (request == null || request.Amount <= 0)
+            {
+                return BadRequest(new { message = "अवैध रक्कम (Invalid RD amount)." });
+            }
+
+            int targetAgentId = request.AgentId.HasValue && request.AgentId.Value > 0 ? request.AgentId.Value : GetCurrentAgentId();
+            if (targetAgentId <= 0)
+            {
+                return BadRequest(new { message = "Agent ID is required." });
+            }
+
+            // 1. Agent Lock Check
+            var (isAllowed, lockError) = await _lockService.ValidateCollectionAllowedAsync(targetAgentId, request.Amount, request.PaymentMode ?? "CASH");
+            if (!isAllowed)
+            {
+                return BadRequest(new { message = lockError ?? "एजंट लॉक आहे. कृपया शाखेत कॅश जमा करा." });
+            }
+
+            // 2. Check duplicate sync reference
+            if (!string.IsNullOrWhiteSpace(request.SyncReferenceId))
+            {
+                var existing = await _context.RdTransactions
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(t => t.SyncReferenceId == request.SyncReferenceId);
+                if (existing != null)
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        isDuplicate = true,
+                        message = "आरडी हप्ता आधीच जमा झाला आहे.",
+                        transactionId = existing.RdTransactionID,
+                        amount = existing.PrincipalAmount
+                    });
+                }
+            }
+
+            var agent = await _context.PigmyAgents.FindAsync(targetAgentId);
+            var rd = await _context.RdAccounts
+                .Include(r => r.Customer)
+                .Include(r => r.RdScheme)
+                .FirstOrDefaultAsync(r => r.RdAccountID == request.RdAccountId);
+
+            if (rd == null)
+            {
+                return NotFound(new { message = "आरडी खाते सापडले नाही." });
+            }
+
+            // 3. Privacy & Permission Check
+            if (!rd.IsAgentCollectionAllowed || rd.AssignedAgentID != targetAgentId)
+            {
+                return StatusCode(403, new { message = "या आरडी खात्यावर एजंट वसुलीची परवानगी नाही किंवा खाते गोपनीय ठेवले आहे." });
+            }
+
+            if (rd.Status == "Closed")
+            {
+                return BadRequest(new { message = "आरडी खाते बंद आहे." });
+            }
+
+            using var dbTx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                DateTime collDate = request.CollectionDate ?? DateTime.Today;
+                rd.TotalDepositedAmount += request.Amount;
+
+                int installments = rd.InstallmentAmount > 0 ? (int)Math.Max(1, Math.Floor(request.Amount / rd.InstallmentAmount)) : 1;
+                rd.TotalPaidInstallments += installments;
+
+                if (rd.TotalPaidInstallments >= rd.DurationMonths)
+                {
+                    rd.Status = "Matured";
+                }
+
+                var rdTx = new RdTransaction
+                {
+                    InstitutionID = rd.InstitutionID > 0 ? rd.InstitutionID : 1,
+                    BranchID = rd.BranchID > 0 ? rd.BranchID : 1,
+                    FinancialYearID = rd.FinancialYearID > 0 ? rd.FinancialYearID : 1,
+                    RdAccountID = rd.RdAccountID,
+                    VoucherID = 1,
+                    TransactionDate = collDate,
+                    TransactionType = "Installment",
+                    InstallmentNo = rd.TotalPaidInstallments,
+                    DebitCredit = "Cr",
+                    PrincipalAmount = request.Amount,
+                    PenaltyAmount = 0m,
+                    InterestAmount = 0m,
+                    BalanceAfterTxn = rd.TotalDepositedAmount,
+                    Narration = $"डोअरस्टेप एजंट आरडी हप्ता: {agent?.AgentName ?? targetAgentId.ToString()}" +
+                                (string.IsNullOrWhiteSpace(request.Remarks) ? "" : $" - {request.Remarks}"),
+                    AgentID = targetAgentId,
+                    CollectionSource = "AGENT_MOBILE",
+                    SyncReferenceId = request.SyncReferenceId,
+                    CreatedBy = 1,
+                    CreatedDate = DateTime.UtcNow
+                };
+
+                _context.RdTransactions.Add(rdTx);
+                await _context.SaveChangesAsync();
+                await dbTx.CommitAsync();
+
+                return Ok(new
+                {
+                    success = true,
+                    transactionId = rdTx.RdTransactionID,
+                    accountNo = rd.AccountNo,
+                    customerName = rd.Customer != null ? $"{rd.Customer.FirstName} {rd.Customer.LastName}".Trim() : "",
+                    amount = request.Amount,
+                    paidInstallments = rd.TotalPaidInstallments,
+                    totalDurationMonths = rd.DurationMonths,
+                    totalDeposited = rd.TotalDepositedAmount,
+                    message = "आरडी हप्ता यशस्वीरीत्या जमा झाला आहे."
+                });
+            }
+            catch (Exception ex)
+            {
+                await dbTx.RollbackAsync();
+                return StatusCode(500, new { message = $"आरडी हप्ता नोंदवताना त्रुटी: {ex.Message}" });
+            }
+        }
     }
 }

@@ -106,5 +106,13 @@ namespace Bhisi.Api.Models
         public DateTime CreatedOn { get; set; } = DateTime.UtcNow;
         public int? UpdatedBy { get; set; }
         public DateTime? UpdatedOn { get; set; }
+
+        // Agent Doorstep Collection Provisioning
+        public bool IsAgentCollectionAllowed { get; set; } = false;
+
+        public int? AssignedAgentID { get; set; }
+
+        [ForeignKey("AssignedAgentID")]
+        public virtual PigmyAgent? AssignedAgent { get; set; }
     }
 }

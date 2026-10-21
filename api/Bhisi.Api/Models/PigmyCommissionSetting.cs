@@ -31,5 +31,8 @@ namespace Bhisi.Api.Models
         public DateTime? EffectiveTo { get; set; }
 
         public bool IsActive { get; set; } = true;
+
+        [MaxLength(20)]
+        public string ProductType { get; set; } = "PIGMY"; // PIGMY, LOAN, RD, SAVING
     }
 }

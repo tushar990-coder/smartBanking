@@ -1517,6 +1517,80 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
+            -- Doorstep Multi-Product Collection & Privacy Control Self-Healing
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanAccounts')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'IsAgentCollectionAllowed')
+                    ALTER TABLE [LoanAccounts] ADD [IsAgentCollectionAllowed] bit NOT NULL DEFAULT 0;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanAccounts]') AND name = 'AssignedAgentID')
+                    ALTER TABLE [LoanAccounts] ADD [AssignedAgentID] int NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingAccountMasters')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingAccountMasters]') AND name = 'IsAgentCollectionAllowed')
+                    ALTER TABLE [SavingAccountMasters] ADD [IsAgentCollectionAllowed] bit NOT NULL DEFAULT 0;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingAccountMasters]') AND name = 'AssignedAgentID')
+                    ALTER TABLE [SavingAccountMasters] ADD [AssignedAgentID] int NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'RdAccounts')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[RdAccounts]') AND name = 'IsAgentCollectionAllowed')
+                    ALTER TABLE [RdAccounts] ADD [IsAgentCollectionAllowed] bit NOT NULL DEFAULT 0;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[RdAccounts]') AND name = 'AssignedAgentID')
+                    ALTER TABLE [RdAccounts] ADD [AssignedAgentID] int NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollections')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanCollections]') AND name = 'AgentID')
+                    ALTER TABLE [LoanCollections] ADD [AgentID] int NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanCollections]') AND name = 'CollectionSource')
+                    ALTER TABLE [LoanCollections] ADD [CollectionSource] varchar(20) NOT NULL DEFAULT 'COUNTER';
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanCollections]') AND name = 'SyncReferenceId')
+                    ALTER TABLE [LoanCollections] ADD [SyncReferenceId] varchar(100) NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[LoanCollections]') AND name = 'TransactionId')
+                    ALTER TABLE [LoanCollections] ADD [TransactionId] varchar(100) NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'SavingTransactions')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingTransactions]') AND name = 'AgentID')
+                    ALTER TABLE [SavingTransactions] ADD [AgentID] int NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingTransactions]') AND name = 'CollectionSource')
+                    ALTER TABLE [SavingTransactions] ADD [CollectionSource] varchar(20) NOT NULL DEFAULT 'COUNTER';
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingTransactions]') AND name = 'SyncReferenceId')
+                    ALTER TABLE [SavingTransactions] ADD [SyncReferenceId] varchar(100) NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[SavingTransactions]') AND name = 'TransactionId')
+                    ALTER TABLE [SavingTransactions] ADD [TransactionId] varchar(100) NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'RdTransactions')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[RdTransactions]') AND name = 'AgentID')
+                    ALTER TABLE [RdTransactions] ADD [AgentID] int NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[RdTransactions]') AND name = 'CollectionSource')
+                    ALTER TABLE [RdTransactions] ADD [CollectionSource] varchar(20) NOT NULL DEFAULT 'COUNTER';
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[RdTransactions]') AND name = 'SyncReferenceId')
+                    ALTER TABLE [RdTransactions] ADD [SyncReferenceId] varchar(100) NULL;
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[RdTransactions]') AND name = 'TransactionId')
+                    ALTER TABLE [RdTransactions] ADD [TransactionId] varchar(100) NULL;
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyCommissionSettings')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyCommissionSettings]') AND name = 'ProductType')
+                    ALTER TABLE [PigmyCommissionSettings] ADD [ProductType] varchar(20) NOT NULL DEFAULT 'PIGMY';
+            END
+
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgentCommissions')
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[PigmyAgentCommissions]') AND name = 'ProductType')
+                    ALTER TABLE [PigmyAgentCommissions] ADD [ProductType] varchar(20) NOT NULL DEFAULT 'PIGMY';
+            END
+
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'AgentCustomerRequests')
             BEGIN
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[AgentCustomerRequests]') AND name = 'OldAccountNo')

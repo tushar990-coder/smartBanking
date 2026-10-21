@@ -40,5 +40,8 @@ namespace Bhisi.Api.Models
         public virtual Voucher? Voucher { get; set; }
 
         public DateTime CalculatedOn { get; set; } = DateTime.UtcNow;
+
+        [MaxLength(20)]
+        public string ProductType { get; set; } = "PIGMY"; // PIGMY, LOAN, RD, SAVING
     }
 }

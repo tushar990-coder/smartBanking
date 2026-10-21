@@ -61,5 +61,17 @@ namespace Bhisi.Api.Models
 
         public int CreatedBy { get; set; } = 1;
         public DateTime CreatedOn { get; set; } = DateTime.UtcNow;
+
+        // Agent Doorstep Collection Provisioning
+        public int? AgentID { get; set; }
+
+        [ForeignKey("AgentID")]
+        public virtual PigmyAgent? Agent { get; set; }
+
+        [MaxLength(20)]
+        public string CollectionSource { get; set; } = "COUNTER";
+
+        [MaxLength(100)]
+        public string? SyncReferenceId { get; set; }
     }
 }

@@ -36,9 +36,15 @@ namespace Bhisi.Api.Controllers
         {
             if (setting == null) return BadRequest("वैध माहिती पुरवा.");
 
-            // Deactivate any existing active setting for the same agent / frequency
+            string prod = string.IsNullOrWhiteSpace(setting.ProductType) ? "PIGMY" : setting.ProductType.ToUpper();
+            setting.ProductType = prod;
+
+            // Deactivate any existing active setting for the same agent / frequency / productType
             var existing = await _context.PigmyCommissionSettings
-                .Where(s => s.AgentId == setting.AgentId && s.CalculationFrequency == setting.CalculationFrequency && s.IsActive)
+                .Where(s => s.AgentId == setting.AgentId && 
+                            s.CalculationFrequency == setting.CalculationFrequency && 
+                            (s.ProductType == prod || (prod == "PIGMY" && s.ProductType == null)) && 
+                            s.IsActive)
                 .ToListAsync();
 
             foreach (var ex in existing)
@@ -71,7 +77,8 @@ namespace Bhisi.Api.Controllers
         [HttpGet("Pending")]
         public async Task<ActionResult<IEnumerable<PigmyAgentCommission>>> GetPendingCommissions(
             [FromQuery] int? branchId,
-            [FromQuery] int? agentId)
+            [FromQuery] int? agentId,
+            [FromQuery] string? productType)
         {
             var query = _context.PigmyAgentCommissions
                 .Include(c => c.Agent)
@@ -88,6 +95,11 @@ namespace Bhisi.Api.Controllers
                 query = query.Where(c => c.Agent != null && c.Agent.BranchID == branchId.Value);
             }
 
+            if (!string.IsNullOrWhiteSpace(productType) && productType != "ALL")
+            {
+                query = query.Where(c => c.ProductType == productType || (productType == "PIGMY" && c.ProductType == null));
+            }
+
             return await query.OrderByDescending(c => c.PeriodStartDate).ToListAsync();
         }
 
@@ -97,7 +109,8 @@ namespace Bhisi.Api.Controllers
             [FromQuery] int? branchId,
             [FromQuery] int? agentId,
             [FromQuery] DateTime? fromDate,
-            [FromQuery] DateTime? toDate)
+            [FromQuery] DateTime? toDate,
+            [FromQuery] string? productType)
         {
             var query = _context.PigmyAgentCommissions
                 .Include(c => c.Agent)
@@ -113,6 +126,11 @@ namespace Bhisi.Api.Controllers
             if (branchId.HasValue && branchId.Value > 0)
             {
                 query = query.Where(c => c.Agent != null && c.Agent.BranchID == branchId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(productType) && productType != "ALL")
+            {
+                query = query.Where(c => c.ProductType == productType || (productType == "PIGMY" && c.ProductType == null));
             }
 
             if (fromDate.HasValue)
@@ -135,6 +153,7 @@ namespace Bhisi.Api.Controllers
                     c.CommissionId,
                     c.AgentId,
                     AgentName = c.Agent != null ? c.Agent.AgentName : "",
+                    ProductType = c.ProductType ?? "PIGMY",
                     c.CalculationFrequency,
                     c.PeriodStartDate,
                     c.PeriodEndDate,
@@ -157,6 +176,7 @@ namespace Bhisi.Api.Controllers
             public DateTime Date { get; set; } = DateTime.Today;
             public string Frequency { get; set; } = "DAILY"; // "DAILY", "MONTHLY", or "CUSTOM"
             public int? AgentId { get; set; }
+            public string? ProductType { get; set; } = "ALL"; // "ALL", "PIGMY", "LOAN", "SAVING", "RD"
         }
 
         // POST: api/AgentCommission/Calculate
@@ -175,74 +195,113 @@ namespace Bhisi.Api.Controllers
             int calculatedCount = 0;
             decimal totalCalculatedAmount = 0;
 
+            var targetProducts = !string.IsNullOrWhiteSpace(request.ProductType) && request.ProductType != "ALL"
+                ? new[] { request.ProductType.ToUpper() }
+                : new[] { "PIGMY", "LOAN", "RD", "SAVING" };
+
+            DateTime startDate = request.FromDate?.Date ?? request.Date.Date;
+            DateTime endDate = request.ToDate?.Date ?? request.Date.Date;
+
+            if (request.Frequency == "MONTHLY" && !request.FromDate.HasValue)
+            {
+                startDate = new DateTime(request.Date.Year, request.Date.Month, 1);
+                endDate = startDate.AddMonths(1).AddDays(-1);
+            }
+
+            DateTime queryNextDate = endDate.AddDays(1);
+
             foreach (var agent in agents)
             {
-                var setting = settings.FirstOrDefault(s => s.AgentId == agent.PigmyAgentID && s.CalculationFrequency == request.Frequency) 
-                           ?? settings.FirstOrDefault(s => s.AgentId == agent.PigmyAgentID)
-                           ?? settings.FirstOrDefault(s => s.AgentId == null && s.CalculationFrequency == request.Frequency)
-                           ?? settings.FirstOrDefault(s => s.AgentId == null);
-
-                if (setting == null) continue;
-
-                DateTime startDate = request.FromDate?.Date ?? request.Date.Date;
-                DateTime endDate = request.ToDate?.Date ?? request.Date.Date;
-
-                if (request.Frequency == "MONTHLY" && !request.FromDate.HasValue)
+                foreach (var product in targetProducts)
                 {
-                    startDate = new DateTime(request.Date.Year, request.Date.Month, 1);
-                    endDate = startDate.AddMonths(1).AddDays(-1);
-                }
+                    // Find most specific setting for this agent + product + frequency
+                    var setting = settings.FirstOrDefault(s => s.AgentId == agent.PigmyAgentID && s.ProductType == product && s.CalculationFrequency == request.Frequency)
+                               ?? settings.FirstOrDefault(s => s.AgentId == agent.PigmyAgentID && s.ProductType == product)
+                               ?? settings.FirstOrDefault(s => s.AgentId == null && s.ProductType == product && s.CalculationFrequency == request.Frequency)
+                               ?? settings.FirstOrDefault(s => s.AgentId == null && s.ProductType == product);
 
-                DateTime queryNextDate = endDate.AddDays(1);
-
-                // Check if already calculated for this exact period
-                var existing = await _context.PigmyAgentCommissions.FirstOrDefaultAsync(c => 
-                    c.AgentId == agent.PigmyAgentID && 
-                    c.PeriodStartDate == startDate && 
-                    c.PeriodEndDate == endDate &&
-                    c.CalculationFrequency == request.Frequency);
-
-                if (existing != null) continue;
-
-                // Index-safe EF Core LINQ query
-                var totalCollection = await _context.PigmyCollections
-                    .Where(c => c.AgentId == agent.PigmyAgentID && c.CollectionDate >= startDate && c.CollectionDate < queryNextDate)
-                    .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
-
-                if (totalCollection <= 0 && setting.CommissionType == "PERCENTAGE") continue;
-
-                decimal calculatedAmount = 0;
-                if (setting.CommissionType == "PERCENTAGE")
-                {
-                    calculatedAmount = Math.Round((totalCollection * setting.CommissionValue) / 100m, 2);
-                }
-                else if (setting.CommissionType == "FIXED")
-                {
-                    if (totalCollection > 0) calculatedAmount = setting.CommissionValue;
-                }
-
-                if (calculatedAmount > 0)
-                {
-                    _context.PigmyAgentCommissions.Add(new PigmyAgentCommission
+                    // If no product-specific setting for PIGMY, fallback to legacy null product type
+                    if (setting == null && product == "PIGMY")
                     {
-                        AgentId = agent.PigmyAgentID,
-                        CalculationFrequency = request.Frequency,
-                        PeriodStartDate = startDate,
-                        PeriodEndDate = endDate,
-                        TotalCollectionAmount = totalCollection,
-                        CalculatedCommission = calculatedAmount,
-                        Status = "PENDING",
-                        CalculatedOn = DateTime.Now
-                    });
+                        setting = settings.FirstOrDefault(s => s.AgentId == agent.PigmyAgentID && (s.ProductType == null || s.ProductType == "PIGMY"))
+                               ?? settings.FirstOrDefault(s => s.AgentId == null && (s.ProductType == null || s.ProductType == "PIGMY"));
+                    }
 
-                    calculatedCount++;
-                    totalCalculatedAmount += calculatedAmount;
+                    if (setting == null) continue;
+
+                    // Check if already calculated for this exact period and product
+                    var existing = await _context.PigmyAgentCommissions.FirstOrDefaultAsync(c =>
+                        c.AgentId == agent.PigmyAgentID &&
+                        (c.ProductType == product || (product == "PIGMY" && c.ProductType == null)) &&
+                        c.PeriodStartDate == startDate &&
+                        c.PeriodEndDate == endDate &&
+                        c.CalculationFrequency == request.Frequency);
+
+                    if (existing != null) continue;
+
+                    decimal totalCollection = 0m;
+                    if (product == "PIGMY")
+                    {
+                        totalCollection = await _context.PigmyCollections
+                            .Where(c => c.AgentId == agent.PigmyAgentID && c.CollectionDate >= startDate && c.CollectionDate < queryNextDate)
+                            .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+                    }
+                    else if (product == "LOAN")
+                    {
+                        totalCollection = await _context.LoanCollections
+                            .Where(c => c.AgentID == agent.PigmyAgentID && c.CollectionSource == "AGENT_MOBILE" && c.CollectionDate >= startDate && c.CollectionDate < queryNextDate)
+                            .SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
+                    }
+                    else if (product == "SAVING")
+                    {
+                        totalCollection = await _context.SavingTransactions
+                            .Where(t => t.AgentID == agent.PigmyAgentID && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit" && t.TransactionDate >= startDate && t.TransactionDate < queryNextDate)
+                            .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+                    }
+                    else if (product == "RD")
+                    {
+                        totalCollection = await _context.RdTransactions
+                            .Where(t => t.AgentID == agent.PigmyAgentID && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment" && t.TransactionDate >= startDate && t.TransactionDate < queryNextDate)
+                            .SumAsync(t => (decimal?)t.PrincipalAmount) ?? 0m;
+                    }
+
+                    if (totalCollection <= 0 && setting.CommissionType == "PERCENTAGE") continue;
+
+                    decimal calculatedAmount = 0m;
+                    if (setting.CommissionType == "PERCENTAGE")
+                    {
+                        calculatedAmount = Math.Round((totalCollection * setting.CommissionValue) / 100m, 2);
+                    }
+                    else if (setting.CommissionType == "FIXED")
+                    {
+                        if (totalCollection > 0) calculatedAmount = setting.CommissionValue;
+                    }
+
+                    if (calculatedAmount > 0)
+                    {
+                        _context.PigmyAgentCommissions.Add(new PigmyAgentCommission
+                        {
+                            AgentId = agent.PigmyAgentID,
+                            ProductType = product,
+                            CalculationFrequency = request.Frequency,
+                            PeriodStartDate = startDate,
+                            PeriodEndDate = endDate,
+                            TotalCollectionAmount = totalCollection,
+                            CalculatedCommission = calculatedAmount,
+                            Status = "PENDING",
+                            CalculatedOn = DateTime.Now
+                        });
+
+                        calculatedCount++;
+                        totalCalculatedAmount += calculatedAmount;
+                    }
                 }
             }
 
             await _context.SaveChangesAsync();
-            return Ok(new { 
-                message = $"एकूण {calculatedCount} एजंट्ससाठी ₹{totalCalculatedAmount:N2} चे कमिशन कॅल्क्युलेट झाले आहे.", 
+            return Ok(new
+            {
+                message = $"एकूण {calculatedCount} कमिशन नोंदी (रक्कम ₹{totalCalculatedAmount:N2}) यशस्वीपणे तयार झाल्या.",
                 calculatedCount,
                 totalCalculatedAmount
             });

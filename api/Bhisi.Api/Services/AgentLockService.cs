@@ -45,10 +45,24 @@ namespace Bhisi.Api.Services
 
             decimal maxLimit = agent.MaxCashLimit > 0 ? agent.MaxCashLimit : 20000.00m;
 
-            // 1. Total CASH collections by Agent (UPI payments do not count towards agent cash in hand)
-            var totalCashCollected = await _context.PigmyCollections
+            // 1. Total CASH collections by Agent across ALL products (Pigmy, Loan, Saving, RD)
+            var totalPigmyCash = await _context.PigmyCollections
                 .Where(c => c.AgentId == agentId && (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
                 .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+
+            var totalLoanCash = await _context.LoanCollections
+                .Where(c => c.AgentID == agentId && c.CollectionSource == "AGENT_MOBILE" && (c.PaymentMode == null || c.PaymentMode == "" || c.PaymentMode.ToUpper() == "CASH"))
+                .SumAsync(c => (decimal?)c.TotalAmountReceived) ?? 0m;
+
+            var totalSavingCash = await _context.SavingTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Deposit")
+                .SumAsync(t => (decimal?)t.Amount) ?? 0m;
+
+            var totalRdCash = await _context.RdTransactions
+                .Where(t => t.AgentID == agentId && t.CollectionSource == "AGENT_MOBILE" && t.TransactionType == "Installment")
+                .SumAsync(t => (decimal?)t.PrincipalAmount) ?? 0m;
+
+            decimal totalCashCollected = totalPigmyCash + totalLoanCash + totalSavingCash + totalRdCash;
 
             // 2. Total Cash remitted to branch by Agent
             var totalCashRemitted = await _context.PigmyAgentCashDeposits

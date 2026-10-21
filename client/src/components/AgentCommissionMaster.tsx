@@ -37,6 +37,7 @@ interface Setting {
   settingId: number;
   agentId?: number;
   agent?: { agentName: string; agentCode?: string };
+  productType?: string;
   commissionType: string;
   commissionValue: number;
   calculationFrequency: string;
@@ -47,6 +48,7 @@ interface PendingCommission {
   commissionId: number;
   agentId: number;
   agent?: { agentName: string; agentCode?: string };
+  productType?: string;
   calculationFrequency: string;
   periodStartDate: string;
   periodEndDate: string;
@@ -60,6 +62,7 @@ interface PaidHistoryRow {
   agentId: number;
   agentName: string;
   agentCode: string;
+  productType?: string;
   calculationFrequency: string;
   periodStartDate: string;
   periodEndDate: string;
@@ -104,12 +107,14 @@ export default function AgentCommissionMaster() {
 
   const [selectedBranchId, setSelectedBranchId] = useState<number>(initialBranchId);
   const [selectedAgentId, setSelectedAgentId] = useState<number | 'ALL'>('ALL');
+  const [selectedProductType, setSelectedProductType] = useState<string>('ALL');
   const [fromDate, setFromDate] = useState<string>(firstDayOfMonth);
   const [toDate, setToDate] = useState<string>(todayStr);
   const [calcFreq, setCalcFreq] = useState<string>('DAILY');
 
   // New Setting Form State
   const [formAgentId, setFormAgentId] = useState<number | ''>('');
+  const [formProductType, setFormProductType] = useState<string>('PIGMY');
   const [formCommissionType, setFormCommissionType] = useState<string>('PERCENTAGE');
   const [formCommissionValue, setFormCommissionValue] = useState<number>(2.5);
   const [formFrequency, setFormFrequency] = useState<string>('DAILY');
@@ -195,6 +200,7 @@ export default function AgentCommissionMaster() {
       let url = `/api/AgentCommission/Pending?`;
       if (selectedBranchId > 0) url += `branchId=${selectedBranchId}&`;
       if (selectedAgentId !== 'ALL') url += `agentId=${selectedAgentId}&`;
+      if (selectedProductType !== 'ALL') url += `productType=${selectedProductType}&`;
 
       const res = await axios.get(url);
       setPending(res.data || []);
@@ -208,6 +214,7 @@ export default function AgentCommissionMaster() {
       let url = `/api/AgentCommission/History?fromDate=${fromDate}&toDate=${toDate}&`;
       if (selectedBranchId > 0) url += `branchId=${selectedBranchId}&`;
       if (selectedAgentId !== 'ALL') url += `agentId=${selectedAgentId}&`;
+      if (selectedProductType !== 'ALL') url += `productType=${selectedProductType}&`;
 
       const res = await axios.get(url);
       setHistoryList(res.data || []);
@@ -221,6 +228,7 @@ export default function AgentCommissionMaster() {
     try {
       await axios.post('/api/AgentCommission/Settings', {
         agentId: formAgentId !== '' ? Number(formAgentId) : null,
+        productType: formProductType,
         commissionType: formCommissionType,
         commissionValue: formCommissionValue,
         calculationFrequency: formFrequency
@@ -254,7 +262,8 @@ export default function AgentCommissionMaster() {
         fromDate: fromDate,
         toDate: toDate,
         frequency: calcFreq,
-        agentId: selectedAgentId !== 'ALL' ? Number(selectedAgentId) : null
+        agentId: selectedAgentId !== 'ALL' ? Number(selectedAgentId) : null,
+        productType: selectedProductType
       });
 
       setMessage({ text: res.data.message || 'कमिशन गणना पूर्ण झाली!', type: 'success' });
@@ -381,7 +390,7 @@ export default function AgentCommissionMaster() {
         <div className="space-y-4">
           
           {/* Controls & Filter Bar */}
-          <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs grid grid-cols-1 md:grid-cols-6 gap-3 print:hidden">
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs grid grid-cols-1 md:grid-cols-7 gap-3 print:hidden">
             <div>
               <label className={labelClass}>शाखा (Branch)</label>
               <select value={selectedBranchId} onChange={(e) => setSelectedBranchId(Number(e.target.value))} className={inputClass}>
@@ -401,6 +410,17 @@ export default function AgentCommissionMaster() {
                   .map(a => (
                     <option key={a.pigmyAgentID} value={a.pigmyAgentID}>{a.agentName}</option>
                   ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>प्रॉडक्ट (Product)</label>
+              <select value={selectedProductType} onChange={(e) => setSelectedProductType(e.target.value)} className={inputClass}>
+                <option value="ALL">सर्व प्रॉडक्ट्स (All)</option>
+                <option value="PIGMY">🪙 दैनिक ठेव (Pigmy)</option>
+                <option value="LOAN">🏛️ कर्ज EMI (Loan)</option>
+                <option value="RD">💵 आरडी (RD)</option>
+                <option value="SAVING">💼 बचत ठेव (Saving)</option>
               </select>
             </div>
 
@@ -452,9 +472,10 @@ export default function AgentCommissionMaster() {
                 <thead>
                   <tr className="border-b border-gray-200 text-gray-700 text-[11px] font-extrabold uppercase tracking-wider bg-gray-100/80">
                     <th className="py-2.5 px-3">एजंट नाव व कोड (Agent)</th>
+                    <th className="py-2.5 px-3">प्रॉडक्ट (Product)</th>
                     <th className="py-2.5 px-3 text-center">कालावधी (Collection Period)</th>
                     <th className="py-2.5 px-3 text-center">वारंवारता</th>
-                    <th className="py-2.5 px-3 text-right">एकूण संकलित पिग्मी (Total Collection ₹)</th>
+                    <th className="py-2.5 px-3 text-right">एकूण संकलन (Collection ₹)</th>
                     <th className="py-2.5 px-3 text-right">गणित केलेले कमिशन (Commission ₹)</th>
                     <th className="py-2.5 px-3 text-center">स्थिती (Status)</th>
                     <th className="py-2.5 px-3 text-center">कृती (Action)</th>
@@ -463,7 +484,7 @@ export default function AgentCommissionMaster() {
                 <tbody className="divide-y divide-gray-100 text-xs">
                   {pending.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-10 text-center text-gray-500 font-bold">
+                      <td colSpan={8} className="py-10 text-center text-gray-500 font-bold">
                         कोणतेही कमिशन पेमेंट प्रलंबित नाही (No Pending Commission Payouts).
                       </td>
                     </tr>
@@ -473,6 +494,19 @@ export default function AgentCommissionMaster() {
                         <td className="py-2.5 px-3 font-bold text-gray-900">
                           {p.agent?.agentName || `Agent ID: ${p.agentId}`}
                           {p.agent?.agentCode && <span className="text-[10px] text-gray-500 block font-mono">({p.agent.agentCode})</span>}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            p.productType === 'LOAN' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                            p.productType === 'RD' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                            p.productType === 'SAVING' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                            'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}>
+                            {p.productType === 'LOAN' ? '🏛️ कर्ज (Loan)' :
+                             p.productType === 'RD' ? '💵 आरडी (RD)' :
+                             p.productType === 'SAVING' ? '💼 बचत (Saving)' :
+                             '🪙 पिग्मी (Pigmy)'}
+                          </span>
                         </td>
                         <td className="py-2.5 px-3 text-center font-mono">
                           {new Date(p.periodStartDate).toLocaleDateString('en-GB')} ते {new Date(p.periodEndDate).toLocaleDateString('en-GB')}
@@ -534,10 +568,20 @@ export default function AgentCommissionMaster() {
               </div>
 
               <div>
+                <label className={labelClass}>प्रॉडक्ट / उत्पादन निवडा (Product Type)</label>
+                <select value={formProductType} onChange={(e) => setFormProductType(e.target.value)} className={inputClass}>
+                  <option value="PIGMY">🪙 दैनिक ठेव (Pigmy Deposit)</option>
+                  <option value="LOAN">🏛️ कर्ज वसुली (Loan EMI Collection)</option>
+                  <option value="RD">💵 आवर्ती ठेव (RD Installment)</option>
+                  <option value="SAVING">💼 बचत ठेव (Saving Deposit)</option>
+                </select>
+              </div>
+
+              <div>
                 <label className={labelClass}>कमिशन प्रकार (Commission Type)</label>
                 <select value={formCommissionType} onChange={(e) => setFormCommissionType(e.target.value)} className={inputClass}>
-                  <option value="PERCENTAGE">टक्केवारी (% Percentage on Remittance)</option>
-                  <option value="FIXED">ठराविक रक्कम (Fixed Slab Amount ₹)</option>
+                  <option value="PERCENTAGE">टक्केवारी (% Percentage on Collection)</option>
+                  <option value="FIXED">ठराविक रक्कम (Fixed Amount ₹)</option>
                 </select>
               </div>
 
@@ -583,6 +627,7 @@ export default function AgentCommissionMaster() {
                 <thead>
                   <tr className="border-b border-gray-200 text-gray-700 text-[11px] font-extrabold uppercase tracking-wider bg-gray-100/80">
                     <th className="py-2.5 px-3">लागू एजंट (Agent)</th>
+                    <th className="py-2.5 px-3">प्रॉडक्ट (Product)</th>
                     <th className="py-2.5 px-3 text-center">प्रकार (Type)</th>
                     <th className="py-2.5 px-3 text-right">दर मूल्य (Commission Rate)</th>
                     <th className="py-2.5 px-3 text-center">वारंवारता (Frequency)</th>
@@ -592,7 +637,7 @@ export default function AgentCommissionMaster() {
                 <tbody className="divide-y divide-gray-100 text-xs">
                   {settings.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-gray-500 font-bold">
+                      <td colSpan={6} className="py-8 text-center text-gray-500 font-bold">
                         कोणतीही सक्रिय कमिशन सेटिंग आढळली नाही.
                       </td>
                     </tr>
@@ -600,24 +645,42 @@ export default function AgentCommissionMaster() {
                     settings.map((s) => (
                       <tr key={s.settingId} className="hover:bg-blue-50/40 transition">
                         <td className="py-2.5 px-3 font-bold text-gray-900">
-                          {s.agent ? `${s.agent.agentName} (${s.agent.agentCode || ''})` : 'ग्लोबल (सर्व एजंट्ससाठी Default)'}
+                          {s.agent ? `${s.agent.agentName} (${s.agent.agentCode || `#${s.agentId}`})` : 'सर्व एजंट्स (Default)'}
                         </td>
-                        <td className="py-2.5 px-3 text-center font-semibold text-gray-700">
-                          {s.commissionType === 'PERCENTAGE' ? 'टक्केवारी (%)' : 'ठराविक रक्कम (₹)'}
+                        <td className="py-2.5 px-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            s.productType === 'LOAN' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                            s.productType === 'RD' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                            s.productType === 'SAVING' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                            'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}>
+                            {s.productType === 'LOAN' ? '🏛️ कर्ज (Loan)' :
+                             s.productType === 'RD' ? '💵 आरडी (RD)' :
+                             s.productType === 'SAVING' ? '💼 बचत (Saving)' :
+                             '🪙 पिग्मी (Pigmy)'}
+                          </span>
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-extrabold text-emerald-700 text-sm">
-                          {s.commissionValue} {s.commissionType === 'PERCENTAGE' ? '%' : '₹'}
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            s.commissionType === 'PERCENTAGE' ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {s.commissionType === 'PERCENTAGE' ? 'टक्केवारी' : 'ठराविक'}
+                          </span>
                         </td>
-                        <td className="py-2.5 px-3 text-center font-semibold text-gray-600">
-                          {s.calculationFrequency === 'DAILY' ? 'रोज (Daily)' : 'मासिक (Monthly)'}
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-800">
+                          {s.commissionType === 'PERCENTAGE' ? `${s.commissionValue}%` : `₹ ${s.commissionValue.toLocaleString('en-IN')}`}
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-bold text-gray-600">
+                          {s.calculationFrequency}
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           <button
+                            type="button"
                             onClick={() => handleDeleteSetting(s.settingId)}
-                            className="p-1 text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                            title="हटवा"
+                            className="p-1 text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
+                            title="सेटिंग हटवा"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </td>
                       </tr>
@@ -698,8 +761,9 @@ export default function AgentCommissionMaster() {
                   <tr className="border-b border-gray-200 text-gray-700 text-[11px] font-extrabold uppercase tracking-wider bg-gray-100/80">
                     <th className="py-2.5 px-3">व्हाउचर क्र. (Voucher No)</th>
                     <th className="py-2.5 px-3">एजंट नाव (Agent Name)</th>
+                    <th className="py-2.5 px-3">प्रॉडक्ट (Product)</th>
                     <th className="py-2.5 px-3 text-center">कालावधी (Period)</th>
-                    <th className="py-2.5 px-3 text-right">एकूण पिग्मी जमा (Total Collection ₹)</th>
+                    <th className="py-2.5 px-3 text-right">एकूण संकलन (Collection ₹)</th>
                     <th className="py-2.5 px-3 text-right">अदा कमिशन (Paid Commission ₹)</th>
                     <th className="py-2.5 px-3 text-center">स्थिती (Status)</th>
                     <th className="py-2.5 px-3 text-center">पावती (Print)</th>
@@ -708,7 +772,7 @@ export default function AgentCommissionMaster() {
                 <tbody className="divide-y divide-gray-100 text-xs">
                   {historyList.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-10 text-center text-gray-500 font-bold">
+                      <td colSpan={8} className="py-10 text-center text-gray-500 font-bold">
                         निवडलेल्या कालावधीत कोणतेही अदा केलेले कमिशन आढळले नाही.
                       </td>
                     </tr>
@@ -718,6 +782,19 @@ export default function AgentCommissionMaster() {
                         <td className="py-2.5 px-3 font-mono font-extrabold text-gray-900">{h.voucherNo || '-'}</td>
                         <td className="py-2.5 px-3 font-bold text-gray-900">
                           {h.agentName} {h.agentCode && <span className="text-[10px] text-gray-500 font-mono">({h.agentCode})</span>}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            h.productType === 'LOAN' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                            h.productType === 'RD' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                            h.productType === 'SAVING' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                            'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}>
+                            {h.productType === 'LOAN' ? '🏛️ कर्ज' :
+                             h.productType === 'RD' ? '💵 आरडी' :
+                             h.productType === 'SAVING' ? '💼 बचत' :
+                             '🪙 पिग्मी'}
+                          </span>
                         </td>
                         <td className="py-2.5 px-3 text-center font-mono">
                           {new Date(h.periodStartDate).toLocaleDateString('en-GB')} ते {new Date(h.periodEndDate).toLocaleDateString('en-GB')}

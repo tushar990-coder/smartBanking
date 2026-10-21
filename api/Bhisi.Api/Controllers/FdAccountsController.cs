@@ -243,10 +243,65 @@ namespace Bhisi.Api.Controllers
             return Ok(new { isDuplicate = false });
         }
 
+        // 🛡️ Self-healing: Check for any orphan renewed accounts whose JV-FD-REN voucher was deleted in the past
+        private async Task HealOrphanedRenewalsInternalAsync()
+        {
+            try
+            {
+                var renewedAccounts = await _context.FdAccounts
+                    .Where(f => f.Remarks != null && f.Remarks.Contains("नूतनीकरण खाते"))
+                    .ToListAsync();
+
+                if (!renewedAccounts.Any()) return;
+
+                bool modified = false;
+                foreach (var newAcc in renewedAccounts)
+                {
+                    string expectedVoucherNo = $"JV-FD-REN-{newAcc.AccountNo}";
+                    bool voucherExists = await _context.Vouchers.AnyAsync(v => v.VoucherNo == expectedVoucherNo);
+                    if (!voucherExists)
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(newAcc.Remarks ?? "", @"(?:Renewed from|नूतनीकरण खाते(?:\s*\(Renewed from\))?):\s*([A-Za-z0-9]+-[0-9]+-FD-[0-9]+)");
+                        if (match.Success)
+                        {
+                            string oldAccNo = match.Groups[1].Value.Trim();
+                            var oldAcc = await _context.FdAccounts.FirstOrDefaultAsync(f => f.AccountNo == oldAccNo);
+                            if (oldAcc != null && oldAcc.Status == "Closed")
+                            {
+                                oldAcc.Status = "Active";
+                                if (!string.IsNullOrEmpty(oldAcc.Remarks))
+                                {
+                                    var idx = oldAcc.Remarks.IndexOf(" | नूतनीकरण दिनांक:");
+                                    if (idx >= 0) oldAcc.Remarks = oldAcc.Remarks.Substring(0, idx).Trim();
+                                }
+                            }
+                        }
+
+                        var newTxs = await _context.FdTransactions.Where(t => t.FdAccountID == newAcc.FdAccountID).ToListAsync();
+                        if (newTxs.Any()) _context.FdTransactions.RemoveRange(newTxs);
+
+                        var newAccruals = await _context.FdInterestAccruals.Where(a => a.FdAccountID == newAcc.FdAccountID).ToListAsync();
+                        if (newAccruals.Any()) _context.FdInterestAccruals.RemoveRange(newAccruals);
+
+                        _context.FdAccounts.Remove(newAcc);
+                        modified = true;
+                    }
+                }
+
+                if (modified)
+                {
+                    await _context.SaveChangesAsync();
+                }
+            }
+            catch { }
+        }
+
         // GET: api/FdAccounts
         [HttpGet]
         public async Task<ActionResult<IEnumerable<object>>> GetFdAccounts([FromQuery] int? branchId, [FromQuery] int? customerId = null, [FromQuery] string? status = null)
         {
+            await HealOrphanedRenewalsInternalAsync();
+
             var query = _context.FdAccounts
                 .AsNoTracking()
                 .Include(f => f.Customer)
@@ -4191,7 +4246,25 @@ namespace Bhisi.Api.Controllers
 
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
-                    return Ok(new { Message = "FD Renewed successfully", NewAccountNo = newAccount.AccountNo, NewDeposit = newDepositAmount, OverdueInterest = overdueInterest });
+
+                    return Ok(new { 
+                        Message = "FD Renewed successfully", 
+                        NewAccountNo = newAccount.AccountNo, 
+                        NewDeposit = newDepositAmount, 
+                        OverdueInterest = overdueInterest,
+                        NewFdAccountId = newAccount.FdAccountID,
+                        MaturityAmount = newAccount.MaturityAmount,
+                        MaturityDate = newAccount.MaturityDate,
+                        OpeningDate = newAccount.OpeningDate,
+                        InterestRate = newAccount.InterestRate,
+                        DurationInDays = newAccount.DurationInDays,
+                        DurationValue = newAccount.DurationValue,
+                        DurationType = newAccount.DurationType,
+                        SchemeName = scheme?.SchemeName ?? "",
+                        SchemeCode = scheme?.SchemeCode ?? "",
+                        CustomerName = customer != null ? $"{customer.FirstName} {customer.LastName}".Trim() : "",
+                        CifNo = customer?.CIFNo ?? ""
+                    });
                 }
                 catch (Exception ex)
                 {

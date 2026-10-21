@@ -126,13 +126,6 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const [unpassReason, setUnpassReason] = useState('माहिती सुधारण्यासाठी मंजुरी रद्द केली (Reverted to Pending for correction)');
   const [unpassError, setUnpassError] = useState('');
 
-  // Deletion Modal States
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [targetVoucherToDelete, setTargetVoucherToDelete] = useState<Voucher | null>(null);
-  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
-  const [deleteReason, setDeleteReason] = useState('');
-  const [deleteError, setDeleteError] = useState('');
-
   useEffect(() => {
     fetchUnpostedVouchers();
     fetchApprovedVouchers();
@@ -293,30 +286,6 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     setTargetVoucherToUnpass(null);
     setUnpassReason('माहिती सुधारण्यासाठी मंजुरी रद्द केली (Reverted to Pending for correction)');
     setUnpassError('');
-  };
-
-  // Open Single Delete Modal
-  const openSingleDeleteModal = (voucher: Voucher) => {
-    setTargetVoucherToDelete(voucher);
-    setDeleteReason('');
-    setDeleteError('');
-    setDeleteModalOpen(true);
-  };
-
-  // Open Bulk Delete Modal
-  const openBulkDeleteModal = () => {
-    if (selectedVouchers.size === 0) return;
-    setDeleteReason('');
-    setDeleteError('');
-    setBulkDeleteModalOpen(true);
-  };
-
-  const closeDeleteModals = () => {
-    setDeleteModalOpen(false);
-    setBulkDeleteModalOpen(false);
-    setTargetVoucherToDelete(null);
-    setDeleteReason('');
-    setDeleteError('');
   };
 
   // Open the entry in its original entry form in Passing Mode (Intelligent CBS Multi-Module Dispatcher)
@@ -581,18 +550,21 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     }
   };
 
-  // Execute Single Delete with optional Reason & Audit Log
-  const handleConfirmSingleDelete = async () => {
-    if (!targetVoucherToDelete) return;
+  // Direct Single Delete (थेट डिलीट - कारण विचारणे बंद)
+  const handleDirectSingleDelete = async (voucher: Voucher) => {
+    if (!voucher) return;
+    const confirmMsg = `व्हाउचर क्र. ${voucher.voucherNo} (${voucher.voucherType} - ₹${voucher.totalAmount.toLocaleString('en-IN')}) खरोखर रद्द व डिलीट करायचे आहे का?`;
+    if (!window.confirm(confirmMsg)) return;
 
     setActionLoading(true);
-    setDeleteError('');
+    setError('');
+    setMessage('');
     try {
-      const res = await fetch(`/api/VoucherPosting/${targetVoucherToDelete.voucherID}`, {
+      const res = await fetch(`/api/VoucherPosting/${voucher.voucherID}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          reason: deleteReason.trim() || 'नोंद थेट रद्द / डिलीट (Direct Deleted from Database)',
+          reason: 'नोंद थेट रद्द / डिलीट (Direct Deleted from Database)',
           userId: user?.userID || 1,
           username: user?.username || 'Admin',
           userRole: user?.roleName || user?.role || 'Admin',
@@ -602,33 +574,34 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
       const resData = await res.json().catch(() => null);
 
       if (res.ok) {
-        setMessage(resData?.message || `व्हाउचर क्र. ${targetVoucherToDelete.voucherNo} यशस्वीरीत्या रद्द व हटवले गेले.`);
-        closeDeleteModals();
+        setMessage(resData?.message || `व्हाउचर क्र. ${voucher.voucherNo} यशस्वीरीत्या रद्द व हटवले गेले.`);
         setSelectedVouchers(new Set());
         refreshAll();
       } else {
-        setDeleteError(resData?.message || resData || 'व्हाउचर हटवताना त्रुटी आली.');
+        setError(resData?.message || resData || 'व्हाउचर हटवताना त्रुटी आली.');
       }
     } catch (err) {
-      setDeleteError('सर्व्हरशी संपर्क साधता आला नाही. कृपया पुन्हा प्रयत्न करा.');
+      setError('सर्व्हरशी संपर्क साधता आला नाही. कृपया पुन्हा प्रयत्न करा.');
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Execute Bulk Delete with optional Reason & Audit Log
-  const handleConfirmBulkDelete = async () => {
+  // Direct Bulk Delete (निवडलेले व्हाउचर थेट डिलीट करणे)
+  const handleDirectBulkDelete = async () => {
     if (selectedVouchers.size === 0) return;
+    if (!window.confirm(`तुम्हाला खात्री आहे का की तुम्ही निवडलेले ${selectedVouchers.size} व्हाउचर्स थेट रद्द व डिलीट करू इच्छिता?`)) return;
 
     setActionLoading(true);
-    setDeleteError('');
+    setError('');
+    setMessage('');
     try {
       const res = await fetch('/api/VoucherPosting/BulkReject', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           voucherIds: Array.from(selectedVouchers),
-          reason: deleteReason.trim() || 'नोंद थेट रद्द / डिलीट (Direct Deleted from Database)',
+          reason: 'नोंद थेट रद्द / डिलीट (Direct Deleted from Database)',
           userId: user?.userID || 1,
           username: user?.username || 'Admin',
           userRole: user?.roleName || user?.role || 'Admin',
@@ -639,14 +612,13 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
       if (res.ok) {
         setMessage(resData?.message || `${selectedVouchers.size} व्हाउचर्स यशस्वीरीत्या रद्द व हटवले गेले.`);
-        closeDeleteModals();
         setSelectedVouchers(new Set());
         refreshAll();
       } else {
-        setDeleteError(resData?.message || resData || 'एकत्रित व्हाउचर्स हटवताना त्रुटी आली.');
+        setError(resData?.message || resData || 'एकत्रित व्हाउचर्स हटवताना त्रुटी आली.');
       }
     } catch (err) {
-      setDeleteError('सर्व्हरशी संपर्क साधता आला नाही. कृपया पुन्हा प्रयत्न करा.');
+      setError('सर्व्हरशी संपर्क साधता आला नाही. कृपया पुन्हा प्रयत्न करा.');
     } finally {
       setActionLoading(false);
     }
@@ -860,13 +832,14 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
                 {/* Bulk Reject Button */}
                 <button
-                  onClick={openBulkDeleteModal}
+                  onClick={handleDirectBulkDelete}
                   disabled={selectedVouchers.size === 0 || actionLoading}
                   className={`px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                     selectedVouchers.size > 0
                       ? 'bg-rose-700 text-white hover:bg-rose-800 shadow-sm border border-rose-600'
                       : 'bg-white/10 text-white/40 cursor-not-allowed border border-white/10'
                   }`}
+                  title="निवडलेले सर्व व्हाउचर थेट रद्द व डिलीट करा"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>निवडलेले रद्द करा ({selectedVouchers.size})</span>
@@ -1399,9 +1372,9 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                 {activeTab === 'PENDING' ? (
                                   <button
                                     type="button"
-                                    onClick={() => openSingleDeleteModal(v)}
+                                    onClick={() => handleDirectSingleDelete(v)}
                                     className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 px-2 py-0.5 rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1"
-                                    title="व्हाउचर कायमचे रद्द व हटवा"
+                                    title="व्हाउचर थेट रद्द व डिलीट करा"
                                   >
                                     <Trash2 className="w-3 h-3 text-rose-600" />
                                     <span>रद्द / हटवा</span>
@@ -1595,256 +1568,6 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* SINGLE VOUCHER DELETE CONFIRMATION MODAL */}
-      {deleteModalOpen && targetVoucherToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3">
-          <div className="bg-white rounded-md shadow-2xl border border-rose-300 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in duration-150">
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-rose-700 to-rose-900 text-white px-4 py-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-rose-200" />
-                <h3 className="text-xs font-bold tracking-wide">
-                  व्हाउचर रद्द व डिलीट प्रक्रिया (Core Banking Voucher Deletion)
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={closeDeleteModals}
-                className="text-rose-200 hover:text-white transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 space-y-3">
-              {/* Voucher Detail Summary Card */}
-              <div className="bg-rose-50/70 border border-rose-200 rounded-sm p-3 space-y-1.5 text-xs text-gray-800">
-                <div className="flex justify-between items-center font-bold">
-                  <span className="text-rose-900 font-mono text-sm">
-                    {targetVoucherToDelete.voucherNo}
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] bg-white border border-rose-200 text-rose-800">
-                    {targetVoucherToDelete.voucherType}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600">
-                  <div>
-                    तारीख: <strong>{new Date(targetVoucherToDelete.voucherDate).toLocaleDateString('en-GB')}</strong>
-                  </div>
-                  <div>
-                    रक्कम: <strong className="text-rose-700 font-mono">₹{targetVoucherToDelete.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-                  </div>
-                </div>
-                {targetVoucherToDelete.narration && (
-                  <div className="text-[11px] text-gray-600 border-t border-rose-200 pt-1 mt-1">
-                    तपशील: <span className="italic">{targetVoucherToDelete.narration}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Core Banking Rule Notice */}
-              <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-sm text-[11px] text-amber-900 flex items-start gap-2">
-                <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">कोअर बँकिंग सुरक्षा व ऑडिट नियम:</p>
-                  <p className="text-[10px] text-amber-800 mt-0.5 leading-relaxed">
-                    हे व्हाउचर हटवल्यास मूळ व्यवहार (Pigmy / Loan / Share / Savings) चे व्हाऊचर लिंकेज पूर्ववत होईल. संपूर्ण व्हाउचर तपशील व तुमचे कारण <strong>सुरक्षा ऑडिट ट्रेल (Audit Log)</strong> मध्ये नोंदवले जाईल.
-                  </p>
-                </div>
-              </div>
-
-              {/* Optional Reason Input */}
-              <div>
-                <label className="block text-xs font-bold text-gray-800 mb-1">
-                  रद्द / डिलीट करण्याचे कारण (Reason - पर्यायी / Optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={deleteReason}
-                  onChange={(e) => {
-                    setDeleteReason(e.target.value);
-                    if (deleteError) setDeleteError('');
-                  }}
-                  placeholder="व्हाउचर थेट रद्द करण्याचे कारण लिहा (नसल्यास थेट डिलीट होईल)..."
-                  className="w-full text-xs p-2.5 border border-gray-300 rounded-sm focus:outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-600 bg-white"
-                  autoFocus
-                />
-                <div className="flex justify-between items-center mt-1 text-[10px]">
-                  <span className="text-gray-500">
-                    थेट डिलीट: कारण लिहिणे ऐच्छिक (Optional) आहे
-                  </span>
-                  <span className="text-gray-400">
-                    वापरकर्ता: <strong>{user?.username || 'Admin'}</strong>
-                  </span>
-                </div>
-              </div>
-
-              {/* Error in modal */}
-              {deleteError && (
-                <div className="p-2 bg-rose-50 text-rose-800 border border-rose-200 text-xs rounded-sm font-bold flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{deleteError}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-gray-100 px-4 py-2.5 border-t border-gray-200 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeDeleteModals}
-                disabled={actionLoading}
-                className="px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 font-bold rounded-sm text-xs border border-gray-300 cursor-pointer disabled:opacity-50"
-              >
-                मागे जा (Cancel)
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmSingleDelete}
-                disabled={actionLoading}
-                className="px-4 py-1.5 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-sm text-xs border border-rose-800 cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
-              >
-                {actionLoading ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>हटवत आहे...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>व्हाउचर कायमचे रद्द करा (Confirm Delete)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* BULK VOUCHERS DELETE CONFIRMATION MODAL */}
-      {bulkDeleteModalOpen && selectedVouchers.size > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3">
-          <div className="bg-white rounded-md shadow-2xl border border-rose-300 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in duration-150">
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-rose-800 to-rose-950 text-white px-4 py-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-rose-300" />
-                <h3 className="text-xs font-bold tracking-wide">
-                  एकत्रित व्हाउचर्स रद्द व डिलीट करणे (Bulk Voucher Rejection)
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={closeDeleteModals}
-                className="text-rose-200 hover:text-white transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 space-y-3">
-              {/* Bulk Summary Card */}
-              <div className="bg-rose-50/80 border border-rose-200 rounded-sm p-3 space-y-2 text-xs text-gray-800">
-                <div className="flex justify-between items-center font-bold">
-                  <span className="text-rose-900">
-                    एकूण निवडलेले व्हाउचर्स: <strong>{selectedVouchers.size}</strong>
-                  </span>
-                  <span className="text-rose-900 font-mono font-bold">
-                    एकूण रक्कम: ₹{selectedTotalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-
-                <div className="max-h-24 overflow-y-auto bg-white p-1.5 border border-rose-200 rounded-sm text-[10px] space-y-1">
-                  {selectedVouchersList.map((v) => (
-                    <div key={v.voucherID} className="flex justify-between border-b border-gray-100 last:border-0 pb-0.5">
-                      <span className="font-mono font-bold">{v.voucherNo}</span>
-                      <span className="text-gray-500">{v.voucherType}</span>
-                      <span className="font-mono">₹{v.totalAmount.toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Core Banking Rule Notice */}
-              <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-sm text-[11px] text-amber-900 flex items-start gap-2">
-                <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">कोअर बँकिंग सुरक्षा ऑडिट नोंद:</p>
-                  <p className="text-[10px] text-amber-800 mt-0.5 leading-relaxed">
-                    हे सर्व <strong>{selectedVouchers.size}</strong> प्रलंबित व्हाउचर्स कायमस्वरूपी रद्द केले जातील. प्रत्येक व्हाउचरचा सुरक्षा ऑडिट स्नॅपशॉट जतन केला जाईल.
-                  </p>
-                </div>
-              </div>
-
-              {/* Optional Reason Input */}
-              <div>
-                <label className="block text-xs font-bold text-gray-800 mb-1">
-                  एकत्रित रद्द / डिलीट करण्याचे कारण (Reason - पर्यायी / Optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={deleteReason}
-                  onChange={(e) => {
-                    setDeleteReason(e.target.value);
-                    if (deleteError) setDeleteError('');
-                  }}
-                  placeholder="सर्व निवडलेले व्हाउचर थेट रद्द करण्याचे कारण लिहा (नसल्यास थेट डिलीट होतील)..."
-                  className="w-full text-xs p-2.5 border border-gray-300 rounded-sm focus:outline-none focus:border-rose-600 focus:ring-1 focus:ring-rose-600 bg-white"
-                  autoFocus
-                />
-                <div className="flex justify-between items-center mt-1 text-[10px]">
-                  <span className="text-gray-500">
-                    थेट डिलीट: कारण लिहिणे ऐच्छिक (Optional) आहे
-                  </span>
-                  <span className="text-gray-400">
-                    मंजूर/रद्दकर्ता: <strong>{user?.username || 'Admin'}</strong>
-                  </span>
-                </div>
-              </div>
-
-              {/* Error in modal */}
-              {deleteError && (
-                <div className="p-2 bg-rose-50 text-rose-800 border border-rose-200 text-xs rounded-sm font-bold flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{deleteError}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-gray-100 px-4 py-2.5 border-t border-gray-200 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeDeleteModals}
-                disabled={actionLoading}
-                className="px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 font-bold rounded-sm text-xs border border-gray-300 cursor-pointer disabled:opacity-50"
-              >
-                मागे जा (Cancel)
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmBulkDelete}
-                disabled={actionLoading}
-                className="px-4 py-1.5 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-sm text-xs border border-rose-800 cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
-              >
-                {actionLoading ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>हटवत आहे...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>सर्व {selectedVouchers.size} व्हाउचर्स रद्द करा (Confirm Bulk Rejection)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ========================================================
           SINGLE UNPASS CONFIRMATION MODAL

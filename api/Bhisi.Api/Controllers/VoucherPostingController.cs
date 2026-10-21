@@ -639,19 +639,151 @@ namespace Bhisi.Api.Controllers
             // 5. Fixed Deposit & Recurring Deposit Module Handling (Opening vs Withdrawal / Closure)
             try
             {
-                bool isFdWithdrawal = voucher.VoucherNo.StartsWith("JV-FD-CLOSE-") || 
-                                     voucher.VoucherNo.StartsWith("JV-FD-PRECLOSE-") || 
-                                     (voucher.Narration != null && (voucher.Narration.Contains("FD Maturity Payout") || 
-                                                                    voucher.Narration.Contains("मुदत ठेव पूर्ण क्लोजर") || 
-                                                                    voucher.Narration.Contains("FD Premature") || 
-                                                                    voucher.Narration.Contains("मुदतपूर्व परतावा")));
+                bool isFdRenewal = voucher.VoucherNo.StartsWith("JV-FD-REN-") || 
+                                   (voucher.Narration != null && (voucher.Narration.Contains("FD Renewal") || 
+                                                                  voucher.Narration.Contains("मुदत ठेव नूतनीकरण")));
 
-                bool isFdOpening = voucher.VoucherNo.StartsWith("REC-FD-OP-") || 
+                bool isFdWithdrawal = !isFdRenewal && (voucher.VoucherNo.StartsWith("JV-FD-CLOSE-") || 
+                                      voucher.VoucherNo.StartsWith("JV-FD-PRECLOSE-") || 
+                                      (voucher.Narration != null && (voucher.Narration.Contains("FD Maturity Payout") || 
+                                                                     voucher.Narration.Contains("मुदत ठेव पूर्ण क्लोजर") || 
+                                                                     voucher.Narration.Contains("FD Premature") || 
+                                                                     voucher.Narration.Contains("मुदतपूर्व परतावा"))));
+
+                bool isFdOpening = !isFdRenewal && (voucher.VoucherNo.StartsWith("REC-FD-OP-") || 
                                    voucher.VoucherNo.StartsWith("JV-FD-OP-") || 
                                    (voucher.Narration != null && (voucher.Narration.Contains("मुदत ठेव रक्कम जमा") || 
-                                                                  voucher.Narration.Contains("नवीन मुदत ठेव खाते")));
+                                                                  voucher.Narration.Contains("नवीन मुदत ठेव खाते"))));
 
-                if (isFdWithdrawal)
+                if (isFdRenewal)
+                {
+                    // === CASE 0: FD RENEWAL ROLLBACK / DELETION ===
+                    string newAccNo = "";
+                    if (voucher.VoucherNo.StartsWith("JV-FD-REN-"))
+                    {
+                        newAccNo = voucher.VoucherNo.Substring("JV-FD-REN-".Length).Trim();
+                    }
+                    else
+                    {
+                        var matches = System.Text.RegularExpressions.Regex.Matches(voucher.Narration ?? "", @"[A-Za-z0-9]+-[0-9]+-FD-[0-9]+");
+                        if (matches.Count >= 2)
+                            newAccNo = matches[1].Value;
+                        else if (matches.Count == 1)
+                            newAccNo = matches[0].Value;
+                    }
+
+                    FdAccount? newAccount = null;
+                    if (!string.IsNullOrEmpty(newAccNo))
+                    {
+                        newAccount = await _context.FdAccounts.FirstOrDefaultAsync(f => f.AccountNo == newAccNo);
+                    }
+
+                    string oldAccNo = "";
+                    if (newAccount != null && !string.IsNullOrWhiteSpace(newAccount.Remarks))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(newAccount.Remarks, @"(?:Renewed from|नूतनीकरण खाते(?:\s*\(Renewed from\))?):\s*([A-Za-z0-9]+-[0-9]+-FD-[0-9]+)");
+                        if (match.Success)
+                            oldAccNo = match.Groups[1].Value.Trim();
+                    }
+                    if (string.IsNullOrEmpty(oldAccNo))
+                    {
+                        var match = System.Text.RegularExpressions.Regex.Match(voucher.Narration ?? "", @"[A-Za-z0-9]+-[0-9]+-FD-[0-9]+");
+                        if (match.Success)
+                            oldAccNo = match.Value;
+                    }
+
+                    FdAccount? oldAccount = null;
+                    if (!string.IsNullOrEmpty(oldAccNo))
+                    {
+                        oldAccount = await _context.FdAccounts.FirstOrDefaultAsync(f => f.AccountNo == oldAccNo);
+                    }
+
+                    // 1. Rollback old account status to Active and clean up renewal remarks
+                    if (oldAccount != null)
+                    {
+                        oldAccount.Status = "Active";
+                        if (!string.IsNullOrEmpty(oldAccount.Remarks))
+                        {
+                            var idx = oldAccount.Remarks.IndexOf(" | नूतनीकरण दिनांक:");
+                            if (idx >= 0)
+                            {
+                                oldAccount.Remarks = oldAccount.Remarks.Substring(0, idx).Trim();
+                            }
+                        }
+                    }
+
+                    // 2. Reverse Savings Interest Payout transaction if any
+                    var sbTxs = await _context.SavingTransactions
+                        .Where(st => st.VoucherNo == voucher.VoucherNo || (!string.IsNullOrEmpty(newAccNo) && st.Narration != null && st.Narration.Contains(newAccNo)))
+                        .ToListAsync();
+                    foreach (var sbTx in sbTxs)
+                    {
+                        var sbAcc = await _context.SavingAccountMasters.FindAsync(sbTx.SavingAccountID);
+                        if (sbAcc != null)
+                        {
+                            sbAcc.CurrentBalance -= sbTx.Amount;
+                        }
+                        _context.SavingTransactions.Remove(sbTx);
+                    }
+
+                    // 3. Remove FdTransactions for both accounts linked to this voucher/new account
+                    var renFdTxs = await _context.FdTransactions
+                        .Where(ft => ft.VoucherID == id || (newAccount != null && ft.FdAccountID == newAccount.FdAccountID))
+                        .ToListAsync();
+                    if (renFdTxs.Any()) _context.FdTransactions.RemoveRange(renFdTxs);
+
+                    // 4. Delete newAccount if exists
+                    if (newAccount != null)
+                    {
+                        int branchId = newAccount.BranchID;
+                        var newAccruals = await _context.FdInterestAccruals
+                            .Where(a => a.FdAccountID == newAccount.FdAccountID)
+                            .ToListAsync();
+                        if (newAccruals.Any()) _context.FdInterestAccruals.RemoveRange(newAccruals);
+
+                        _context.FdAccounts.Remove(newAccount);
+                        await _context.SaveChangesAsync();
+
+                        // Rollback branch sequence if this was the latest sequence
+                        var branchSeq = await _context.FdAccountSequences
+                            .FirstOrDefaultAsync(s => s.BranchID == branchId && s.ProductType == "FD");
+                        if (branchSeq != null)
+                        {
+                            int remainingMaxSeq = 0;
+                            var remainingAccounts = await _context.FdAccounts
+                                .Where(f => f.BranchID == branchId)
+                                .Select(f => f.AccountNo)
+                                .ToListAsync();
+
+                            foreach (var accStr in remainingAccounts)
+                            {
+                                var lastDash = accStr.LastIndexOf('-');
+                                if (lastDash >= 0 && lastDash < accStr.Length - 1)
+                                {
+                                    if (int.TryParse(accStr.Substring(lastDash + 1), out int parsedSeq))
+                                    {
+                                        if (parsedSeq > remainingMaxSeq) remainingMaxSeq = parsedSeq;
+                                    }
+                                }
+                            }
+                            branchSeq.CurrentValue = remainingMaxSeq;
+                            await _context.SaveChangesAsync();
+                        }
+                    }
+
+                    _context.AuditLogs.Add(new AuditLog
+                    {
+                        UserID = userId > 0 ? userId : null,
+                        Username = !string.IsNullOrWhiteSpace(username) ? username : $"User-{userId}",
+                        Action = "FD_RENEWAL_VOUCHER_DELETED",
+                        EntityName = "FdAccount",
+                        EntityID = oldAccNo ?? newAccNo ?? voucher.VoucherNo,
+                        Details = $"मुदत ठेव नूतनीकरण व्हाउचर {voucher.VoucherNo} (नवीन खाते: {newAccNo}, मूळ खाते: {oldAccNo}) थेट रद्द केले. नवीन खाते हटवले व मूळ खाते पुन्हा सक्रिय (Active) केले. कारण: {reason}",
+                        Timestamp = DateTime.Now,
+                        Status = "Success"
+                    });
+                }
+                else if (isFdWithdrawal)
                 {
                     // === CASE 1: WITHDRAWAL / CLOSURE DELETE ===
                     // 🛡️ Statutory Safeguard: If this closure voucher adjusted proceeds against a Loan Account,

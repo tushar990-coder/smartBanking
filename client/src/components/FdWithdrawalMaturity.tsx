@@ -21,12 +21,14 @@ import {
   Edit3,
   RotateCcw,
   Lock,
-  X
+  X,
+  Printer
 } from 'lucide-react';
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import SearchableSelect from './SearchableSelect';
 import { FdInterestScheduleModal, FdScheduleOverdueInfo } from './FdInterestScheduleModal';
 import { generateFdInterestSchedule, FdScheduleSummary } from '../utils/fdInterestSchedule';
+import FdReceiptPrintModal from './FdReceiptPrintModal';
 
 interface Ledger {
   ledgerID: number;
@@ -250,6 +252,22 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [closureDate, setClosureDate] = useState<string>(activeBusinessDate);
   const [renewalType, setRenewalType] = useState<string>('PrincipalPlusInterest'); // PrincipalOnly, PrincipalPlusInterest
   const [targetSchemeId, setTargetSchemeId] = useState<number>(0);
+  const [renewalDurationValue, setRenewalDurationValue] = useState<number>(12);
+  const [renewalDurationType, setRenewalDurationType] = useState<'Days' | 'Months' | 'Years'>('Months');
+  const [renewedSuccessData, setRenewedSuccessData] = useState<any | null>(null);
+  const [showReceiptPrintModal, setShowReceiptPrintModal] = useState<boolean>(false);
+  const [printAccountData, setPrintAccountData] = useState<any | null>(null);
+
+  // Synchronize duration fields when selected target scheme changes
+  useEffect(() => {
+    if (targetSchemeId > 0 && schemes.length > 0) {
+      const sch = schemes.find(s => s.fdSchemeID === targetSchemeId);
+      if (sch) {
+        setRenewalDurationValue(sch.durationMonths > 0 ? sch.durationMonths : 12);
+        setRenewalDurationType((sch.durationType as any) || 'Months');
+      }
+    }
+  }, [targetSchemeId, schemes]);
 
   // Sync CBS Business Date if changed
   useEffect(() => {
@@ -782,6 +800,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       setSchemes(list);
       if (list.length > 0) {
         setTargetSchemeId(list[0].fdSchemeID);
+        setRenewalDurationValue(list[0].durationMonths > 0 ? list[0].durationMonths : 12);
+        setRenewalDurationType((list[0].durationType as any) || 'Months');
       }
     } catch (err) {
       console.error('Error fetching schemes', err);
@@ -958,6 +978,139 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     effectiveOverdueRate,
     baseAmount: overdueBaseAmount
   } : undefined;
+
+  // 🔄 Live Renewal Simulation & Maturity Calculator
+  const renewalSimulation = React.useMemo(() => {
+    if (actionType !== 'Renewal' || !selectedAccount || targetSchemeId <= 0) return null;
+    const targetScheme = schemes.find(s => s.fdSchemeID === targetSchemeId);
+    if (!targetScheme) return null;
+
+    const principal = selectedAccount.depositAmount;
+    const totalMaturity = selectedAccount.maturityAmount && selectedAccount.maturityAmount > selectedAccount.depositAmount
+      ? selectedAccount.maturityAmount
+      : (selectedAccount.depositAmount + (selectedAccount.legacyAccruedInt || 0));
+    const systemAccruedInt = Math.max(0, totalMaturity - principal);
+    const systemOverdueInt = (isOverdue && renewalEffectiveFrom === 'ClosureDate') ? overdueInterest : 0;
+
+    const effAccrued = isManualOverride && customAccruedInterest !== ''
+      ? Math.max(0, parseFloat(customAccruedInterest) || 0)
+      : systemAccruedInt;
+    const effOverdue = isManualOverride && customOverdueInterest !== ''
+      ? Math.max(0, parseFloat(customOverdueInterest) || 0)
+      : systemOverdueInt;
+
+    const totalAvailable = principal + effAccrued + effOverdue;
+    const newDepositAmount = renewalType === 'PrincipalPlusInterest' ? totalAvailable : principal;
+    const interestPayoutAmount = renewalType === 'PrincipalOnly' ? (effAccrued + effOverdue) : 0;
+
+    // Simulation effective start date
+    const isRetroactive = isOverdue && renewalEffectiveFrom === 'MaturityDate';
+    const effectiveStartDateStr = isRetroactive ? selectedAccount.maturityDate.split('T')[0] : closureDate;
+    const simOpeningDate = new Date(effectiveStartDateStr + 'T00:00:00');
+
+    // Compute duration in days and new maturity date
+    const durVal = renewalDurationValue > 0 ? renewalDurationValue : 12;
+    const durType = renewalDurationType || 'Months';
+    const simMaturityDate = new Date(simOpeningDate);
+    let totalDays = 0;
+
+    if (durType === 'Days') {
+      totalDays = durVal;
+      simMaturityDate.setDate(simMaturityDate.getDate() + totalDays);
+    } else if (durType === 'Years') {
+      simMaturityDate.setFullYear(simMaturityDate.getFullYear() + durVal);
+      totalDays = Math.max(1, Math.round((simMaturityDate.getTime() - simOpeningDate.getTime()) / (1000 * 60 * 60 * 24)));
+    } else {
+      // Months
+      simMaturityDate.setMonth(simMaturityDate.getMonth() + durVal);
+      totalDays = Math.max(1, Math.round((simMaturityDate.getTime() - simOpeningDate.getTime()) / (1000 * 60 * 60 * 24)));
+    }
+
+    // Senior citizen eligibility check
+    const isSenior = Boolean(selectedAccount.isSeniorCitizen);
+
+    // Resolve rate
+    let appliedRate = targetScheme.interestRate;
+    let matchedSlab: FdSchemeInterestSlab | null = null;
+
+    if (targetScheme.schemeDurationModel === 'Slab' && targetScheme.slabs && targetScheme.slabs.length > 0) {
+      const activeSlabs = targetScheme.slabs.filter(s => s.isActive !== false);
+      const matched = activeSlabs.find(s => totalDays >= Number(s.fromDays) && totalDays <= Number(s.toDays));
+      if (matched) {
+        matchedSlab = matched;
+        appliedRate = isSenior && Number(matched.seniorCitizenRate) > 0 ? Number(matched.seniorCitizenRate) : Number(matched.interestRate);
+      } else {
+        const sorted = [...activeSlabs].sort((a, b) => Number(b.toDays) - Number(a.toDays));
+        if (sorted.length > 0 && totalDays > Number(sorted[0].toDays)) {
+          matchedSlab = sorted[0];
+          appliedRate = isSenior && Number(sorted[0].seniorCitizenRate) > 0 ? Number(sorted[0].seniorCitizenRate) : Number(sorted[0].interestRate);
+        }
+      }
+    } else {
+      appliedRate = isSenior && Number(targetScheme.seniorCitizenInterestRate) > 0 ? Number(targetScheme.seniorCitizenInterestRate) : Number(targetScheme.interestRate);
+    }
+
+    // Maturity Amount Calculation (Exact CBS 365-day basis)
+    const p = newDepositAmount;
+    const r = appliedRate;
+    let simMaturityAmount = 0;
+
+    if (targetScheme.interestType === 'Cumulative') {
+      let n = 4; // Quarterly
+      const freq = (targetScheme as any).interestCompoundingFrequency || 'Quarterly';
+      if (freq === 'Half-Yearly') n = 2;
+      if (freq === 'Yearly') n = 1;
+      if (freq === 'Monthly') n = 12;
+
+      const baseVal = 1.0 + (r / (n * 100.0));
+      const exponent = n * (totalDays / 365.0);
+      simMaturityAmount = Math.round(p * Math.pow(baseVal, exponent));
+    } else if (targetScheme.interestType === 'MIS' || targetScheme.interestType === 'Monthly Interest') {
+      simMaturityAmount = p;
+    } else {
+      // Simple Interest
+      simMaturityAmount = Math.round(p * (1.0 + (r * totalDays) / (36500.0)));
+    }
+
+    const estimatedInterest = Math.max(0, simMaturityAmount - newDepositAmount);
+    const monthlyPayout = (targetScheme.interestType === 'MIS' || targetScheme.interestType === 'Monthly Interest')
+      ? Math.round((p * r) / 1200.0)
+      : 0;
+
+    return {
+      targetScheme,
+      newDepositAmount,
+      interestPayoutAmount,
+      effectiveStartDateStr,
+      simOpeningDate,
+      simMaturityDate,
+      simMaturityDateStr: `${String(simMaturityDate.getDate()).padStart(2, '0')}/${String(simMaturityDate.getMonth() + 1).padStart(2, '0')}/${simMaturityDate.getFullYear()}`,
+      durVal,
+      durType,
+      totalDays,
+      appliedRate,
+      isSenior,
+      matchedSlab,
+      simMaturityAmount,
+      estimatedInterest,
+      monthlyPayout
+    };
+  }, [
+    actionType,
+    selectedAccount,
+    targetSchemeId,
+    schemes,
+    renewalType,
+    renewalEffectiveFrom,
+    isOverdue,
+    overdueInterest,
+    isManualOverride,
+    customAccruedInterest,
+    customOverdueInterest,
+    closureDate,
+    renewalDurationValue,
+    renewalDurationType
+  ]);
 
   // Helper to resolve mapped ledgers for selected account scheme
   const getSchemeLedgers = () => {
@@ -1164,8 +1317,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           targetSchemeID: targetSchemeId,
           renewalType: renewalType,
           closureDate: closureDate,
-          durationType: targetScheme?.durationType || 'Months',
-          durationValue: targetScheme?.durationMonths || 12,
+          durationType: renewalDurationType || targetScheme?.durationType || 'Months',
+          durationValue: renewalDurationValue > 0 ? renewalDurationValue : (targetScheme?.durationMonths || 12),
           paymentMode: renewalType === 'PrincipalOnly' ? paymentMode : 'BookTransfer',
           bankAccountLedgerID: renewalType === 'PrincipalOnly' && paymentMode === 'Bank' ? bankAccountLedgerID : null,
           chequeNo: renewalType === 'PrincipalOnly' && paymentMode === 'Bank' ? chequeNo : null,
@@ -1188,6 +1341,26 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         );
         const resData = response.data;
         setSuccess(`✅ ${resData.message} (नवीन पावती क्र: ${resData.newAccountNo})${resData.overdueInterest > 0 ? ` [समाविष्ट Overdue व्याज: ₹${resData.overdueInterest.toLocaleString()}]` : ''}`);
+
+        // Set rich post-renewal data for instant review and printing
+        const sim = renewalSimulation;
+        setRenewedSuccessData({
+          oldAccountNo: selectedAccount.accountNo,
+          newAccountNo: resData.newAccountNo,
+          depositAmount: resData.newDeposit || sim?.newDepositAmount || 0,
+          schemeName: resData.schemeName || targetScheme?.schemeName || '',
+          schemeCode: resData.schemeCode || targetScheme?.schemeCode || '',
+          interestRate: resData.interestRate || sim?.appliedRate || 0,
+          duration: `${renewalDurationValue} ${renewalDurationType === 'Days' ? 'दिवस' : renewalDurationType === 'Years' ? 'वर्षे' : 'महिने'} (${sim?.totalDays || 0} दिवस)`,
+          openingDate: resData.openingDate ? resData.openingDate.split('T')[0].split('-').reverse().join('/') : (sim?.effectiveStartDateStr?.split('-').reverse().join('/') || ''),
+          maturityDate: resData.maturityDate ? resData.maturityDate.split('T')[0].split('-').reverse().join('/') : (sim?.simMaturityDateStr || ''),
+          maturityAmount: resData.maturityAmount || sim?.simMaturityAmount || 0,
+          customerName: resData.customerName || selectedAccount.customerName || '',
+          cifNo: resData.cifNo || selectedAccount.cifNo || '',
+          fdAccountID: resData.newFdAccountId || 0,
+          interestType: targetScheme?.interestType || 'Simple',
+          monthlyInterestAmount: sim?.monthlyPayout || 0
+        });
       }
 
       // Refresh list & Reset
@@ -1536,6 +1709,103 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           <button type="button" onClick={() => setNoFdFoundAlert(null)} className="text-amber-700 hover:text-black cursor-pointer" title="बंद करा">
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* Post-Renewal Confirmation & Receipt Printing Card */}
+      {renewedSuccessData && (
+        <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white rounded-md p-4 shadow-lg border-2 border-emerald-400 space-y-3 animate-in fade-in">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-700/60 pb-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-emerald-500/20 rounded-full border border-emerald-400">
+                <CheckCircle className="w-5 h-5 text-emerald-300" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white">
+                  मुदत ठेव नूतनीकरण यशस्वीरीत्या पूर्ण झाले! (FD Renewal Completed)
+                </h3>
+                <p className="text-[11px] text-emerald-200">
+                  नवीन मुदत ठेव पावती सिस्टीममध्ये जनरेट झाली असून नवीन खाते क्रमांक वाटप करण्यात आला आहे.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPrintAccountData({
+                    fdAccountID: renewedSuccessData.fdAccountID || 0,
+                    accountNo: renewedSuccessData.newAccountNo,
+                    customerName: renewedSuccessData.customerName,
+                    cifNo: renewedSuccessData.cifNo,
+                    schemeName: renewedSuccessData.schemeName,
+                    schemeCode: renewedSuccessData.schemeCode,
+                    depositAmount: renewedSuccessData.depositAmount,
+                    interestRate: renewedSuccessData.interestRate,
+                    openingDate: renewedSuccessData.openingDate,
+                    maturityDate: renewedSuccessData.maturityDate,
+                    maturityAmount: renewedSuccessData.maturityAmount,
+                    status: 'Active',
+                    interestType: renewedSuccessData.interestType,
+                    monthlyInterestAmount: renewedSuccessData.monthlyInterestAmount
+                  });
+                  setShowReceiptPrintModal(true);
+                }}
+                className="bg-amber-400 hover:bg-amber-300 text-amber-950 font-bold px-3.5 py-1.5 rounded-sm text-xs shadow-md flex items-center gap-1.5 cursor-pointer transition-all border border-amber-300"
+              >
+                <Printer className="w-4 h-4 text-amber-900" />
+                <span>नवीन ठेव पावती प्रिंट करा (Print Receipt)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRenewedSuccessData(null);
+                  setSelectedAccount(null);
+                  setSelectedAccId(0);
+                  setSuccess('');
+                  fetchAccounts();
+                }}
+                className="bg-white/10 hover:bg-white/20 text-white font-bold px-3 py-1.5 rounded-sm text-xs cursor-pointer border border-white/20 transition-all"
+              >
+                नवीन व्यवहार करा (New Entry)
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-black/20 p-3 rounded-sm border border-emerald-600/40 text-[11.5px]">
+            <div>
+              <span className="text-emerald-300 block text-[10px]">मूळ खाते (Old FD):</span>
+              <strong className="font-mono text-white">{renewedSuccessData.oldAccountNo}</strong>
+            </div>
+            <div>
+              <span className="text-emerald-300 block text-[10px]">नवीन खाते क्र. (New FD):</span>
+              <strong className="font-mono text-amber-300 text-xs font-black">{renewedSuccessData.newAccountNo}</strong>
+            </div>
+            <div>
+              <span className="text-emerald-300 block text-[10px]">नवीन योजना (Scheme):</span>
+              <span className="text-white font-bold">{renewedSuccessData.schemeName} ({renewedSuccessData.interestRate}%)</span>
+            </div>
+            <div>
+              <span className="text-emerald-300 block text-[10px]">नूतनीकरण कालावधी (Tenor):</span>
+              <span className="text-white font-bold">{renewedSuccessData.duration}</span>
+            </div>
+            <div>
+              <span className="text-emerald-300 block text-[10px]">नवीन ठेव मुद्दल (New Deposit):</span>
+              <strong className="font-mono text-white text-xs">₹{renewedSuccessData.depositAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+            </div>
+            <div>
+              <span className="text-emerald-300 block text-[10px]">नूतनीकरण दिनांक (Opening Date):</span>
+              <span className="text-white font-bold">{renewedSuccessData.openingDate}</span>
+            </div>
+            <div>
+              <span className="text-emerald-300 block text-[10px]">नवीन मुदतपूर्ती दिनांक (Maturity Date):</span>
+              <span className="text-amber-200 font-bold">{renewedSuccessData.maturityDate}</span>
+            </div>
+            <div>
+              <span className="text-emerald-300 block text-[10px]">नवीन मुदतपूर्ती रक्कम (Maturity Amount):</span>
+              <strong className="font-mono text-emerald-200 text-xs font-black">₹{renewedSuccessData.maturityAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1926,11 +2196,159 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   >
                                     {schemes.map(s => (
                                       <option key={s.fdSchemeID} value={s.fdSchemeID}>
-                                        {s.schemeName} ({s.interestRate}%, {s.durationMonths} महिने)
+                                        {s.schemeName} ({s.interestRate}%, {s.durationMonths} {s.durationType === 'Days' ? 'दिवस' : s.durationType === 'Years' ? 'वर्षे' : 'महिने'}{s.schemeDurationModel === 'Slab' ? ' - स्लॅब' : ''})
                                       </option>
                                     ))}
                                   </select>
                                 </FormRow>
+
+                                {renewalSimulation?.targetScheme && (
+                                  <div className="bg-slate-50 border border-slate-300 rounded-sm p-3 space-y-2.5 shadow-2xs mt-1">
+                                    {/* Scheme Header Badge */}
+                                    <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-200 pb-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-bold text-slate-800 text-xs">
+                                          {renewalSimulation.targetScheme.schemeName}
+                                        </span>
+                                        {renewalSimulation.targetScheme.schemeCode && (
+                                          <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded font-mono font-bold">
+                                            {renewalSimulation.targetScheme.schemeCode}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 text-[10.5px]">
+                                        <span className={`px-2 py-0.5 rounded font-bold border ${
+                                          renewalSimulation.targetScheme.interestType === 'Cumulative'
+                                            ? 'bg-purple-50 text-purple-800 border-purple-300'
+                                            : renewalSimulation.targetScheme.interestType === 'MIS' || renewalSimulation.targetScheme.interestType === 'Monthly Interest'
+                                            ? 'bg-blue-50 text-blue-800 border-blue-300'
+                                            : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                        }`}>
+                                          {renewalSimulation.targetScheme.interestType === 'Cumulative'
+                                            ? 'चक्रवाढ व्याज (Cumulative)'
+                                            : renewalSimulation.targetScheme.interestType === 'MIS' || renewalSimulation.targetScheme.interestType === 'Monthly Interest'
+                                            ? 'मासिक व्याज (Monthly Interest / MIS)'
+                                            : 'सरळ व्याज (Simple Interest)'}
+                                        </span>
+                                        <span className="px-2 py-0.5 rounded font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                                          {renewalSimulation.targetScheme.schemeDurationModel === 'Slab' ? 'कालावधी स्लॅब (Slab-based)' : 'फिक्स्ड कालावधी (Fixed)'}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {/* Key Rates and Features */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                                      <div className="bg-white p-2 rounded border border-slate-200">
+                                        <span className="text-gray-500 block text-[10px]">सामान्य व्याजदर (General):</span>
+                                        <span className="font-bold text-slate-900 font-mono text-xs">
+                                          {renewalSimulation.targetScheme.interestRate}%
+                                        </span>
+                                      </div>
+                                      <div className="bg-white p-2 rounded border border-slate-200">
+                                        <span className="text-gray-500 block text-[10px]">ज्येष्ठ नागरिक दर (Senior):</span>
+                                        <span className="font-bold text-emerald-700 font-mono text-xs">
+                                          {renewalSimulation.targetScheme.seniorCitizenInterestRate || renewalSimulation.targetScheme.interestRate}%
+                                        </span>
+                                      </div>
+                                      <div className="bg-white p-2 rounded border border-slate-200">
+                                        <span className="text-gray-500 block text-[10px]">मूळ कालावधी (Default Tenor):</span>
+                                        <span className="font-bold text-slate-900">
+                                          {renewalSimulation.targetScheme.durationMonths} {renewalSimulation.targetScheme.durationType === 'Days' ? 'दिवस' : renewalSimulation.targetScheme.durationType === 'Years' ? 'वर्षे' : 'महिने'}
+                                        </span>
+                                      </div>
+                                      <div className="bg-white p-2 rounded border border-slate-200">
+                                        <span className="text-gray-500 block text-[10px]">व्याज आकारणी वारंवारता:</span>
+                                        <span className="font-bold text-slate-800">
+                                          {(renewalSimulation.targetScheme as any).interestCompoundingFrequency || 'वार्षिक / मुदतीअखेर'}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {/* Senior Citizen Indicator if applicable */}
+                                    {renewalSimulation.isSenior && (
+                                      <div className="bg-emerald-50 border border-emerald-300 rounded p-1.5 text-[11px] text-emerald-900 font-bold flex items-center gap-1.5">
+                                        <span>👴</span>
+                                        <span>खातेदार ज्येष्ठ नागरिक (Senior Citizen 60+) असल्याने सवलत दर {renewalSimulation.appliedRate}% लागू केला आहे.</span>
+                                      </div>
+                                    )}
+
+                                    {/* Slabs breakdown if Slab model */}
+                                    {renewalSimulation.targetScheme.schemeDurationModel === 'Slab' && renewalSimulation.targetScheme.slabs && renewalSimulation.targetScheme.slabs.length > 0 && (
+                                      <div className="space-y-1">
+                                        <span className="text-[10.5px] font-bold text-slate-700 block">
+                                          योजना कालावधी स्लॅब दर तक्ता (Tenor Slabs):
+                                        </span>
+                                        <div className="overflow-x-auto max-h-32 border border-slate-200 rounded bg-white">
+                                          <table className="w-full text-left text-[10.5px] border-collapse">
+                                            <thead className="bg-slate-100 text-slate-700 sticky top-0 border-b border-slate-200 font-bold">
+                                              <tr>
+                                                <th className="p-1.5 border-r border-slate-200">कालावधी (दिवस)</th>
+                                                <th className="p-1.5 border-r border-slate-200 text-right">सामान्य दर (%)</th>
+                                                <th className="p-1.5 border-r border-slate-200 text-right">ज्येष्ठ नागरिक (%)</th>
+                                                <th className="p-1.5 text-center">स्थिती</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {renewalSimulation.targetScheme.slabs.filter(s => s.isActive !== false).map((slab, idx) => {
+                                                const isMatched = renewalSimulation.matchedSlab === slab;
+                                                return (
+                                                  <tr key={idx} className={`border-b border-slate-100 last:border-0 ${isMatched ? 'bg-emerald-100/70 font-bold text-emerald-950' : 'text-slate-700'}`}>
+                                                    <td className="p-1.5 border-r border-slate-200">
+                                                      {slab.fromDays} ते {slab.toDays} दिवस
+                                                    </td>
+                                                    <td className="p-1.5 border-r border-slate-200 text-right font-mono">
+                                                      {slab.interestRate}%
+                                                    </td>
+                                                    <td className="p-1.5 border-r border-slate-200 text-right font-mono text-emerald-700">
+                                                      {slab.seniorCitizenRate}%
+                                                    </td>
+                                                    <td className="p-1.5 text-center">
+                                                      {isMatched ? (
+                                                        <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded font-black">
+                                                          ✓ लागू स्लॅब
+                                                        </span>
+                                                      ) : (
+                                                        <span className="text-gray-400 text-[10px]">-</span>
+                                                      )}
+                                                    </td>
+                                                  </tr>
+                                                );
+                                              })}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Custom Tenor / Duration Inputs */}
+                                <FormRow label="नूतनीकरण कालावधी (Tenor)" required>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="3650"
+                                      value={renewalDurationValue}
+                                      onChange={(e) => setRenewalDurationValue(Math.max(1, parseInt(e.target.value) || 1))}
+                                      className={`${ctrl} w-24 font-bold text-center`}
+                                      required
+                                    />
+                                    <select
+                                      value={renewalDurationType}
+                                      onChange={(e) => setRenewalDurationType(e.target.value as 'Days' | 'Months' | 'Years')}
+                                      className={`${ctrl} w-32 font-semibold cursor-pointer`}
+                                    >
+                                      <option value="Months">महिने (Months)</option>
+                                      <option value="Days">दिवस (Days)</option>
+                                      <option value="Years">वर्षे (Years)</option>
+                                    </select>
+                                    <span className="text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded border border-primary/20 whitespace-nowrap">
+                                      एकूण ~{renewalSimulation?.totalDays || 0} दिवस
+                                    </span>
+                                  </div>
+                                </FormRow>
+
                                 {isOverdue && (
                                   <FormRow label="प्रभावी दिनांक (Effective)">
                                     <select
@@ -1938,10 +2356,71 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                       onChange={(e) => setRenewalEffectiveFrom(e.target.value as 'ClosureDate' | 'MaturityDate')}
                                       className={`${ctrl} font-semibold cursor-pointer`}
                                     >
-                                      <option value="ClosureDate">आजपासून (Closure Date)</option>
-                                      <option value="MaturityDate">मुदतपूर्तीपासून (Retroactive)</option>
+                                      <option value="ClosureDate">आजपासून (Closure Date) - ओव्हरड्यू व्याज जोडून</option>
+                                      <option value="MaturityDate">मुदतपूर्तीपासून (Retroactive) - मुदतपूर्ती तारखेपासून थेट</option>
                                     </select>
                                   </FormRow>
+                                )}
+
+                                {/* Live Renewal Simulation & Maturity Calculator Card */}
+                                {renewalSimulation && (
+                                  <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-emerald-50 border-2 border-indigo-200 rounded-sm p-3 space-y-2 text-xs shadow-2xs mt-2">
+                                    <div className="flex items-center justify-between border-b border-indigo-200/80 pb-1.5 font-bold text-indigo-950">
+                                      <div className="flex items-center gap-1.5">
+                                        <Scale className="w-4 h-4 text-indigo-700" />
+                                        <span>📊 नूतनीकरण मुदतपूर्ती अंदाजपत्रक (Live Renewal Calculation Preview)</span>
+                                      </div>
+                                      <span className="text-[10px] bg-indigo-200/80 text-indigo-900 px-2 py-0.5 rounded font-black">
+                                        लागू दर: {renewalSimulation.appliedRate}%
+                                      </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-[11px]">
+                                      <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                        <span className="text-gray-500 block text-[10px]">नवीन ठेव मुद्दल (New Deposit):</span>
+                                        <strong className="text-slate-900 font-mono text-xs">
+                                          ₹{renewalSimulation.newDepositAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </strong>
+                                      </div>
+
+                                      <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                        <span className="text-gray-500 block text-[10px]">नूतनीकरण सुरुवात दिनांक:</span>
+                                        <span className="font-bold text-slate-800">
+                                          {formatDateDisplay(renewalSimulation.effectiveStartDateStr)}
+                                        </span>
+                                      </div>
+
+                                      <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                        <span className="text-gray-500 block text-[10px]">नवीन मुदतपूर्ती दिनांक:</span>
+                                        <span className="font-bold text-amber-800 font-mono">
+                                          {renewalSimulation.simMaturityDateStr}
+                                        </span>
+                                      </div>
+
+                                      <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                        <span className="text-gray-500 block text-[10px]">नवीन मुदतपूर्ती रक्कम (Maturity Amount):</span>
+                                        <strong className="text-emerald-700 font-mono text-xs font-black">
+                                          ₹{renewalSimulation.simMaturityAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </strong>
+                                      </div>
+
+                                      <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                        <span className="text-gray-500 block text-[10px]">अपेक्षित एकूण परतावा / व्याज:</span>
+                                        <strong className="text-primary font-mono text-xs">
+                                          ₹{renewalSimulation.estimatedInterest.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </strong>
+                                      </div>
+
+                                      {renewalSimulation.monthlyPayout > 0 && (
+                                        <div className="bg-white p-2 rounded border border-indigo-100 shadow-2xs">
+                                          <span className="text-gray-500 block text-[10px]">मासिक व्याज परतावा (Monthly Payout):</span>
+                                          <strong className="text-blue-700 font-mono text-xs">
+                                            ₹{renewalSimulation.monthlyPayout.toLocaleString('en-IN', { minimumFractionDigits: 2 })} / महिना
+                                          </strong>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
                                 )}
                               </>
                             )}
@@ -2670,6 +3149,14 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Direct FD Receipt Print Modal */}
+      {showReceiptPrintModal && printAccountData && (
+        <FdReceiptPrintModal
+          account={printAccountData}
+          onClose={() => setShowReceiptPrintModal(false)}
+        />
       )}
     </div>
   );

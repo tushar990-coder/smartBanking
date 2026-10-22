@@ -23,6 +23,7 @@ import SearchableSelect from './SearchableSelect';
 interface RdAccount {
   rdAccountID: number;
   accountNo: string;
+  legacyAccountNumber?: string;
   memberCode: string;
   memberName: string;
   schemeName: string;
@@ -624,10 +625,13 @@ export default function RdInstallmentCollection({
                 )}
               </div>
               <SearchableSelect
-                options={accounts.map((a) => ({
-                  value: a.rdAccountID,
-                  label: `${a.accountNo} - ${a.memberName} (${a.schemeName})`,
-                }))}
+                options={accounts.map((a) => {
+                  const legBadge = a.legacyAccountNumber ? ` [🏷️ जुने आरडी: ${a.legacyAccountNumber}]` : '';
+                  return {
+                    value: a.rdAccountID,
+                    label: `${a.accountNo}${legBadge} - ${a.memberName} (${a.schemeName})`,
+                  };
+                })}
                 value={selectedAccId}
                 onChange={handleAccountChange}
                 placeholder="नाव किंवा खाते क्रमांकाने शोधा..."
@@ -646,8 +650,15 @@ export default function RdInstallmentCollection({
             {selectedAcc && (
               <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3.5 space-y-2.5 text-xs text-slate-700 shadow-2xs">
                 <div className="flex justify-between items-center border-b border-indigo-100 pb-2">
-                  <span className="text-slate-500 text-[11px] font-semibold">खातेदार नाव:</span>
-                  <span className="font-bold text-slate-900 text-xs">{selectedAcc.memberName}</span>
+                  <div>
+                    <span className="text-slate-500 text-[11px] font-semibold">खातेदार नाव: </span>
+                    <span className="font-bold text-slate-900 text-xs">{selectedAcc.memberName}</span>
+                  </div>
+                  {selectedAcc.legacyAccountNumber && (
+                    <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded font-mono font-bold text-[9.5px]">
+                      🏷️ जुने आरडी: {selectedAcc.legacyAccountNumber}
+                    </span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -879,7 +890,14 @@ export default function RdInstallmentCollection({
                           />
                         </td>
                         <td className="py-2.5 px-3 font-semibold text-slate-800">
-                          <div className="font-mono font-bold text-indigo-700">{acc.accountNo}</div>
+                          <div className="font-mono font-bold text-indigo-700 flex items-center gap-1.5">
+                            <span>{acc.accountNo}</span>
+                            {acc.legacyAccountNumber && (
+                              <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold text-[9px]">
+                                🏷️ {acc.legacyAccountNumber}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[10px] text-slate-500 font-normal">
                             {acc.memberName} ({acc.schemeName})
                           </div>
@@ -1038,6 +1056,11 @@ export default function RdInstallmentCollection({
                             <span className="font-mono font-bold text-xs text-slate-900 tracking-wide">
                               {acc.accountNo}
                             </span>
+                            {acc.legacyAccountNumber && (
+                              <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded font-mono font-bold text-[9.5px]">
+                                🏷️ जुने आरडी: {acc.legacyAccountNumber}
+                              </span>
+                            )}
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
                               {acc.status || 'Active'}
                             </span>

@@ -10,6 +10,7 @@ interface Member extends MemberOption {}
 interface ShareAccount {
   shareAccountId: number;
   accountNo: string;
+  legacyAccountNumber?: string;
   totalShareAmount: number;
   totalShareCount: number;
   certificates: any[];
@@ -425,9 +426,16 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
               {shareAccount ? (
                 <div className="flex-1 flex flex-col justify-between">
                   <div>
-                    <p className="text-gray-700 mb-1 font-bold text-xs">
-                      खाते क्र. (Account No): <span className="text-primary font-extrabold text-sm">{shareAccount.accountNo}</span>
-                    </p>
+                    <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                      <p className="text-gray-700 font-bold text-xs flex items-center gap-2">
+                        खाते क्र. (Account No): <span className="text-primary font-extrabold text-sm">{shareAccount.accountNo}</span>
+                      </p>
+                      {shareAccount.legacyAccountNumber && (
+                        <span className="bg-purple-100 text-purple-950 border border-purple-300 px-2 py-0.5 rounded text-[11px] font-mono font-bold">
+                          🏷️ जुने शेअर खाते क्र.: {shareAccount.legacyAccountNumber}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex justify-between items-center bg-blue-50/80 border border-blue-200 p-3 rounded-sm mt-2 shadow-xs">
                       <div>
                         <p className="text-[10px] text-gray-600 font-bold uppercase tracking-wide">उपलब्ध शेअर्स (Available Shares)</p>

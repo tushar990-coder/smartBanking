@@ -29,6 +29,8 @@ interface PendingRenewal {
   typeName: string;
   memberID: number;
   memberNo: string;
+  legacyMemberNo?: string;
+  legacyCustomerNo?: string;
   memberName: string;
   memberPhone: string;
   expiryDate: string;
@@ -355,7 +357,10 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
     const matchesSearch = !term ||
       (r.lockerAccountNo && r.lockerAccountNo.toLowerCase().includes(term)) ||
       (r.lockerNo && r.lockerNo.toLowerCase().includes(term)) ||
-      (r.memberName && r.memberName.toLowerCase().includes(term));
+      (r.memberName && r.memberName.toLowerCase().includes(term)) ||
+      (r.memberNo && r.memberNo.toLowerCase().includes(term)) ||
+      (r.legacyMemberNo && r.legacyMemberNo.toLowerCase().includes(term)) ||
+      (r.legacyCustomerNo && r.legacyCustomerNo.toLowerCase().includes(term));
 
     return matchesFilter && matchesSearch;
   });
@@ -641,7 +646,19 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
                     <td className="py-2 px-3 font-bold text-slate-800">{r.cabinetNo} - {r.lockerNo}</td>
                     <td className="py-2 px-3">
                       <span className="font-bold text-slate-800 block">{r.memberName}</span>
-                      <span className="text-[10px] text-slate-500">{r.memberPhone || '-'}</span>
+                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                        <span className="text-[10px] text-slate-500">{r.memberPhone || '-'}</span>
+                        {r.legacyMemberNo && (
+                          <span className="text-[9.5px] bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold">
+                            जुना सभासद: {r.legacyMemberNo}
+                          </span>
+                        )}
+                        {r.legacyCustomerNo && !r.legacyMemberNo && (
+                          <span className="text-[9.5px] bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold">
+                            जुना CIF: {r.legacyCustomerNo}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-2 px-3">
                       <span className={`font-bold ${r.isOverdue ? 'text-rose-600' : 'text-slate-800'}`}>

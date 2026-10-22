@@ -23,6 +23,7 @@ import CbsReportLayout, { formatDisplayDate, CbsPaperSize } from './common/CbsRe
 interface LoanDetail {
     loanAccountID?: number;
     loanAccountNo?: string;
+    legacyAccountNumber?: string;
     loanApplicationID?: number;
     applicationNo?: string;
     borrowerName: string;
@@ -195,6 +196,7 @@ const GuarantorReport: React.FC = () => {
         const mobileMatch = Boolean(g.mobileNo && g.mobileNo.includes(term));
         const loanMatch = g.activeLoans && g.activeLoans.some(l => 
             (l.loanAccountNo && l.loanAccountNo.toLowerCase().includes(term)) ||
+            (l.legacyAccountNumber && l.legacyAccountNumber.toLowerCase().includes(term)) ||
             (l.borrowerName && l.borrowerName.toLowerCase().includes(term)) ||
             (l.borrowerCode && l.borrowerCode.toLowerCase().includes(term))
         );
@@ -212,10 +214,13 @@ const GuarantorReport: React.FC = () => {
     const defaulterGuarantorsCount = displayGuarantors.filter(g => g.hasOverdueOwnLoan).length;
     const ownLoanGuarantorsCount = displayGuarantors.filter(g => (g.ownLoansCount || 0) > 0).length;
 
-    const memberOptions = members.map(m => ({
-        value: m.memberID,
-        label: `${m.firstName} ${m.middleName || ''} ${m.lastName} (${m.memberCode}) [CIF: ${m.cifNo || 'N/A'}]`
-    }));
+    const memberOptions = members.map(m => {
+        const legacyBadge = m.legacyMemberNo ? ` [🏷️ जुना: ${m.legacyMemberNo}]` : '';
+        return {
+            value: m.memberID,
+            label: `${m.firstName} ${m.middleName || ''} ${m.lastName} (${m.memberCode})${legacyBadge} [CIF: ${m.cifNo || 'N/A'}]`
+        };
+    });
 
     const isAllExpanded = displayGuarantors.length > 0 && expandedMemberIds.length === displayGuarantors.length;
 
@@ -265,7 +270,7 @@ const GuarantorReport: React.FC = () => {
                         "बचत ठेवी (₹)": lIdx === 0 ? (g.guarantorSavings || 0) : "",
                         "स्वतःचे कर्ज बाकी (₹)": lIdx === 0 ? (g.ownLoansBalance || 0) : "",
                         "मुख्य कर्जदाराचे नाव": `${l.borrowerName} (${l.borrowerCode || '-'})`,
-                        "कर्ज खाते क्र.": l.loanAccountNo || "-",
+                        "कर्ज खाते क्र.": l.legacyAccountNumber ? `${l.loanAccountNo} (जुना: ${l.legacyAccountNumber})` : (l.loanAccountNo || "-"),
                         "कर्ज योजना": l.loanType || "-",
                         "वाटप दिनांक": l.disbursementDateDisplay || formatDisplayDate(l.disbursementDate),
                         "मंजूर कर्ज रक्कम (₹)": l.sanctionedAmount || 0,
@@ -632,7 +637,12 @@ const GuarantorReport: React.FC = () => {
 
                                                     {/* Loan Account No */}
                                                     <td className="border border-slate-900 py-1 px-1.5 text-center font-mono font-bold text-primary">
-                                                        {l.loanAccountNo}
+                                                        <div>{l.loanAccountNo}</div>
+                                                        {l.legacyAccountNumber && (
+                                                            <span className="inline-block mt-0.5 bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold text-[9px]">
+                                                                🏷️ जुने: {l.legacyAccountNumber}
+                                                            </span>
+                                                        )}
                                                     </td>
 
                                                     {/* Loan Type / Scheme */}

@@ -53,6 +53,7 @@ interface LoanLedgerReportDto {
   sansthaInfo?: SansthaDetail;
   loanType: string;
   loanAccountNo: string;
+  legacyAccountNumber?: string;
   status: string;
   sanctionedAmount: number;
   memberName: string;
@@ -80,6 +81,7 @@ interface LoanRate {
 interface LoanAccount {
   loanAccountID: number;
   loanAccountNo: string;
+  legacyAccountNumber?: string;
   loanRateID: number;
   memberID?: number;
   customerID?: number;
@@ -160,9 +162,10 @@ const LoanLedgerReport: React.FC = () => {
                 ? `${a.customer.firstName || ''} ${a.customer.middleName ? a.customer.middleName + ' ' : ''}${a.customer.lastName || ''}`.trim()
                 : `${a.member?.firstName || ''} ${a.member?.lastName || ''}`.trim();
               const code = a.customer?.cifNo ? `(CIF: ${a.customer.cifNo})` : (a.member?.memberCode ? `(सभासद: ${a.member.memberCode})` : '');
+              const legBadge = a.legacyAccountNumber ? ` [🏷️ जुना: ${a.legacyAccountNumber}]` : '';
               return {
                 value: a.loanAccountID,
-                label: `${a.loanAccountNo} - ${name} ${code}`.trim()
+                label: `${a.loanAccountNo}${legBadge} - ${name} ${code}`.trim()
               };
             });
 
@@ -401,7 +404,12 @@ const LoanLedgerReport: React.FC = () => {
 
     // Header Account Details
     excelRows.push({ "तपशील": "कर्ज प्रकार", "माहिती": reportData.loanType });
-    excelRows.push({ "तपशील": "कर्ज खाते नं", "माहिती": reportData.loanAccountNo });
+    excelRows.push({ 
+      "तपशील": "कर्ज खाते नं", 
+      "माहिती": reportData.legacyAccountNumber 
+        ? `${reportData.loanAccountNo} (जुना: ${reportData.legacyAccountNumber})` 
+        : reportData.loanAccountNo 
+    });
     excelRows.push({ "तपशील": "कर्जदाराचे नाव", "माहिती": reportData.memberName });
     excelRows.push({ "तपशील": "मंजूर रक्कम", "माहिती": reportData.sanctionedAmount });
     excelRows.push({ "तपशील": "व्याजदर", "माहिती": `${reportData.interestRate}%` });
@@ -458,9 +466,10 @@ const LoanLedgerReport: React.FC = () => {
       ? `${la.customer.firstName || ''} ${la.customer.middleName ? la.customer.middleName + ' ' : ''}${la.customer.lastName || ''}`.trim()
       : `${la.member?.firstName || ''} ${la.member?.lastName || ''}`.trim();
     const code = la.customer?.cifNo ? `(CIF: ${la.customer.cifNo})` : (la.member?.memberCode ? `(सभासद: ${la.member.memberCode})` : '');
+    const legBadge = la.legacyAccountNumber ? ` [🏷️ जुना: ${la.legacyAccountNumber}]` : '';
     return {
       value: la.loanAccountID,
-      label: `${la.loanAccountNo} - ${name} ${code}`.trim()
+      label: `${la.loanAccountNo}${legBadge} - ${name} ${code}`.trim()
     };
   });
 
@@ -771,7 +780,14 @@ const LoanLedgerReport: React.FC = () => {
                 </div>
                 <div className="flex justify-between border-b border-gray-200 pb-0.5">
                   <span className="font-bold text-gray-700">कर्ज खाते नं:</span>
-                  <span className="font-extrabold text-primary">{reportData.loanAccountNo}</span>
+                  <span className="font-extrabold text-primary flex items-center gap-1">
+                    <span>{reportData.loanAccountNo}</span>
+                    {reportData.legacyAccountNumber && (
+                      <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold text-[9.5px]">
+                        🏷️ जुने: {reportData.legacyAccountNumber}
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between border-b border-gray-200 pb-0.5">
                   <span className="font-bold text-gray-700">कर्ज मंजूर रक्कम:</span>

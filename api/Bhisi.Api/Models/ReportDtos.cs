@@ -368,6 +368,7 @@ namespace Bhisi.Api.Models
         public SansthaDetail? SansthaInfo { get; set; }
         public string LoanType { get; set; } = string.Empty;
         public string LoanAccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
         public string Status { get; set; } = string.Empty;
         public decimal SanctionedAmount { get; set; }
         public string MemberName { get; set; } = string.Empty;

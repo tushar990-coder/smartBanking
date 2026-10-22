@@ -7,6 +7,8 @@ import { useAuth } from '../context/AuthContext';
 interface SavingAccount {
   savingAccountID: number;
   accountNo: string;
+  legacyAccountNumber?: string;
+  oldAccountNo?: string;
   cifNo?: string;
   customerID?: number;
   customerName?: string;
@@ -262,9 +264,11 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
   const accountOptions = activeAccounts.map(a => {
     const cifPart = a.cifNo ? ` [CIF: ${a.cifNo}]` : '';
     const namePart = a.customerName || 'अज्ञात';
+    const legNum = a.oldAccountNo || a.legacyAccountNumber;
+    const legPart = legNum ? ` [🏷️ जुना: ${legNum}]` : '';
     return {
       value: a.savingAccountID,
-      label: `${a.accountNo}${cifPart} - ${namePart} (शिल्लक: ₹${a.currentBalance.toFixed(2)})`
+      label: `${a.accountNo}${legPart}${cifPart} - ${namePart} (शिल्लक: ₹${a.currentBalance.toFixed(2)})`
     };
   });
 
@@ -531,7 +535,14 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
                 </div>
                 <div>
                   <span className="font-semibold text-gray-500">खाते क्र.:</span>
-                  <p className="font-bold">{selectedAccount.accountNo}</p>
+                  <p className="font-bold flex items-center gap-1">
+                    <span>{selectedAccount.accountNo}</span>
+                    {(selectedAccount.oldAccountNo || selectedAccount.legacyAccountNumber) && (
+                      <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded font-mono font-bold text-[9.5px]">
+                        🏷️ जुना: {selectedAccount.oldAccountNo || selectedAccount.legacyAccountNumber}
+                      </span>
+                    )}
+                  </p>
                 </div>
                 <div>
                   <span className="font-semibold text-gray-500">किमान शिल्लक मर्यादा:</span>

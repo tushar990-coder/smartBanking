@@ -30,6 +30,8 @@ interface AllotmentOption {
   keyNo: string;
   memberName: string;
   memberNo: string;
+  legacyMemberNo?: string;
+  legacyCustomerNo?: string;
   securityDepositAmount: number;
   annualRent: number;
   expiryDate: string;
@@ -390,10 +392,13 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
     }
   ] : [
     { value: '', label: '-- सक्रिय लॉकर खाते निवडा --' },
-    ...safeAllotments.map(a => ({
-      value: a.allotmentID.toString(),
-      label: `${a.lockerAccountNo} | लॉकर: ${a.cabinetNo}-${a.lockerNo} (चावी: ${a.keyNo}) | ${a.memberName} (डिपॉझिट ₹${a.securityDepositAmount})`
-    }))
+    ...safeAllotments.map(a => {
+      const legPart = a.legacyMemberNo ? ` [जुना सभासद: ${a.legacyMemberNo}]` : (a.legacyCustomerNo ? ` [जुना CIF: ${a.legacyCustomerNo}]` : '');
+      return {
+        value: a.allotmentID.toString(),
+        label: `${a.lockerAccountNo}${legPart} | लॉकर: ${a.cabinetNo}-${a.lockerNo} (चावी: ${a.keyNo}) | ${a.memberName} (डिपॉझिट ₹${a.securityDepositAmount})`
+      };
+    })
   ];
 
   const selectedAllotment = isPassing && passingVoucherData ? {
@@ -559,6 +564,11 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase">सभासद</span>
                     <p className="font-bold text-slate-800">{selectedAllotment.memberName}</p>
+                    {((selectedAllotment as any).legacyMemberNo || (selectedAllotment as any).legacyCustomerNo) && (
+                      <span className="text-[9.5px] bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold mt-0.5 inline-block">
+                        🏷️ {(selectedAllotment as any).legacyMemberNo ? `जुना सभासद: ${(selectedAllotment as any).legacyMemberNo}` : `जुना CIF: ${(selectedAllotment as any).legacyCustomerNo}`}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase">कपाट व लॉकर</span>

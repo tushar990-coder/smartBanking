@@ -75,6 +75,8 @@ namespace Bhisi.Api.Controllers
                     a.MemberID,
                     CIFNo = a.Customer != null ? a.Customer.CIFNo : (a.Member != null && a.Member.Customer != null ? a.Member.Customer.CIFNo : ""),
                     MemberNo = a.Member != null ? (a.Member.MemberCode ?? a.Member.MemberID.ToString()) : "",
+                    LegacyMemberNo = a.Member != null ? (a.Member.LegacyMemberNo ?? "") : "",
+                    LegacyCustomerNo = a.Customer != null ? (a.Customer.LegacyCustomerNo ?? "") : (a.Member != null && a.Member.Customer != null ? (a.Member.Customer.LegacyCustomerNo ?? "") : ""),
                     MemberName = a.Customer != null ? $"{a.Customer.FirstName} {a.Customer.LastName}" : (a.Member != null && a.Member.Customer != null ? $"{a.Member.Customer.FirstName} {a.Member.Customer.LastName}" : ""),
                     MemberPhone = a.Customer != null ? a.Customer.MobileNo : (a.Member != null && a.Member.Customer != null ? a.Member.Customer.MobileNo : ""),
                     MemberAddress = a.Customer != null ? a.Customer.Address : (a.Member != null && a.Member.Customer != null ? a.Member.Customer.Address : ""),

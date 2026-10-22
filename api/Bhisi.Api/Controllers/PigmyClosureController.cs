@@ -35,6 +35,7 @@ namespace Bhisi.Api.Controllers
         {
             public int PigmyAccountId { get; set; }
             public string AccountNo { get; set; } = string.Empty;
+            public string? LegacyAccountNumber { get; set; }
             public string MemberName { get; set; } = string.Empty;
             public string CIFNo { get; set; } = string.Empty;
             public DateTime OpeningDate { get; set; }
@@ -70,6 +71,7 @@ namespace Bhisi.Api.Controllers
         {
             public int PigmyAccountId { get; set; }
             public string AccountNo { get; set; } = string.Empty;
+            public string? LegacyAccountNumber { get; set; }
             public string MemberName { get; set; } = string.Empty;
             public string CIFNo { get; set; } = string.Empty;
             public decimal CurrentBalance { get; set; }
@@ -151,7 +153,7 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.Customer)
                 .Include(a => a.PigmyScheme)
                     .ThenInclude(s => s!.Slabs)
-                .FirstOrDefaultAsync(a => a.AccountNo == accountNo);
+                .FirstOrDefaultAsync(a => a.AccountNo == accountNo || a.LegacyAccountNumber == accountNo || a.OldAccountNo == accountNo);
 
             if (account == null) return NotFound("Account not found.");
             if (account.Status == "Closed") return BadRequest("Account is already closed.");
@@ -195,6 +197,7 @@ namespace Bhisi.Api.Controllers
             {
                 PigmyAccountId = account.PigmyAccountID,
                 AccountNo = account.AccountNo,
+                LegacyAccountNumber = account.LegacyAccountNumber ?? account.OldAccountNo,
                 MemberName = account.Customer != null ? (account.Customer.FirstName + " " + (account.Customer.LastName ?? "")).Trim() : "",
                 CIFNo = account.Customer?.CIFNo ?? "",
                 OpeningDate = account.OpeningDate,
@@ -231,7 +234,7 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.Customer)
                 .Include(a => a.PigmyScheme)
                     .ThenInclude(s => s!.Slabs)
-                .FirstOrDefaultAsync(a => a.AccountNo == accountNo);
+                .FirstOrDefaultAsync(a => a.AccountNo == accountNo || a.LegacyAccountNumber == accountNo || a.OldAccountNo == accountNo);
 
             if (account == null) return NotFound("Account not found.");
             if (account.Status == "Closed") return BadRequest("Account is already closed.");
@@ -280,6 +283,7 @@ namespace Bhisi.Api.Controllers
             {
                 PigmyAccountId = account.PigmyAccountID,
                 AccountNo = account.AccountNo,
+                LegacyAccountNumber = account.LegacyAccountNumber ?? account.OldAccountNo,
                 MemberName = account.Customer != null ? (account.Customer.FirstName + " " + (account.Customer.LastName ?? "")).Trim() : "",
                 CIFNo = account.Customer?.CIFNo ?? "",
                 CurrentBalance = account.TotalDepositedAmount,
@@ -316,7 +320,7 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.Customer)
                 .Include(a => a.PigmyScheme)
                     .ThenInclude(s => s!.Slabs)
-                .FirstOrDefaultAsync(a => a.AccountNo == request.AccountNo);
+                .FirstOrDefaultAsync(a => a.AccountNo == request.AccountNo || a.LegacyAccountNumber == request.AccountNo || a.OldAccountNo == request.AccountNo);
 
             if (account == null) return NotFound("Account not found.");
             if (account.Status == "Closed") return BadRequest("Account is already closed.");
@@ -679,7 +683,7 @@ namespace Bhisi.Api.Controllers
         [HttpGet("WithdrawalsHistory/{accountNo}")]
         public async Task<ActionResult<IEnumerable<object>>> GetWithdrawalsHistory(string accountNo)
         {
-            var account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.AccountNo == accountNo);
+            var account = await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.AccountNo == accountNo || a.LegacyAccountNumber == accountNo || a.OldAccountNo == accountNo);
             if (account == null) return NotFound("Account not found.");
 
             var history = await _context.PigmyWithdrawals
@@ -718,7 +722,7 @@ namespace Bhisi.Api.Controllers
                 .Include(a => a.Customer)
                 .Include(a => a.PigmyScheme)
                     .ThenInclude(s => s!.Slabs)
-                .FirstOrDefaultAsync(a => a.AccountNo == request.AccountNo);
+                .FirstOrDefaultAsync(a => a.AccountNo == request.AccountNo || a.LegacyAccountNumber == request.AccountNo || a.OldAccountNo == request.AccountNo);
 
             if (account == null) return NotFound("Account not found.");
             if (account.Status == "Closed") return BadRequest("Account is already closed.");

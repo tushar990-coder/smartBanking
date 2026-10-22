@@ -25,6 +25,7 @@ interface ActiveLoan {
 interface ClosurePreview {
   pigmyAccountId: number;
   accountNo: string;
+  legacyAccountNumber?: string;
   customerName?: string;
   memberName?: string;
   cifNo?: string;
@@ -468,7 +469,7 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                 <input 
                   type="text" 
                   className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-blue-900" 
-                  placeholder="उदा. PG-1234 किंवा 1001"
+                  placeholder="उदा. PG-1234 किंवा जुना खाते क्र. 105"
                   value={accountNo} 
                   onChange={(e) => setAccountNo(e.target.value)} 
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -513,7 +514,14 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                 </div>
                 <div>
                   <p className="text-[10px] text-gray-500 font-bold uppercase">खाते क्र. (Account No)</p>
-                  <p className="font-mono font-bold text-xs text-blue-900">{closurePreview.accountNo}</p>
+                  <p className="font-mono font-bold text-xs text-blue-900 flex items-center gap-1">
+                    <span>{closurePreview.accountNo}</span>
+                    {closurePreview.legacyAccountNumber && (
+                      <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded font-mono font-bold text-[9.5px]">
+                        🏷️ जुना: {closurePreview.legacyAccountNumber}
+                      </span>
+                    )}
+                  </p>
                 </div>
                 <div>
                   <p className="text-[10px] text-gray-500 font-bold uppercase">चालू जमा शिल्लक (Balance)</p>

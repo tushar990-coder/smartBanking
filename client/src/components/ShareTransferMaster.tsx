@@ -12,6 +12,7 @@ interface Member extends MemberOption {}
 interface ShareAccount {
   shareAccountId: number;
   accountNo: string;
+  legacyAccountNumber?: string;
   totalShareAmount: number;
   totalShareCount: number;
 }
@@ -699,7 +700,14 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
                 <div className="bg-white border border-slate-200 p-2 rounded-sm space-y-1.5 shadow-2xs">
                   <div className="flex justify-between items-center text-[11px]">
                     <span className="text-gray-600 font-semibold">शेअर खाते क्र.:</span>
-                    <span className="font-bold text-primary font-mono">{fromShareAccount.accountNo}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-primary font-mono">{fromShareAccount.accountNo}</span>
+                      {fromShareAccount.legacyAccountNumber && (
+                        <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold">
+                          🏷️ जुने क्र: {fromShareAccount.legacyAccountNumber}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex justify-between items-center bg-slate-50 p-1.5 rounded-sm border border-gray-200">
                     <div>
@@ -757,9 +765,16 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
                 <div className="bg-white border border-slate-200 p-2 rounded-sm space-y-1.5 shadow-2xs">
                   <div className="flex justify-between items-center text-[11px]">
                     <span className="text-gray-600 font-semibold">शेअर खाते क्र.:</span>
-                    <span className="font-bold text-primary font-mono">
-                      {toShareAccount ? toShareAccount.accountNo : 'नवीन खाते तयार होईल (Auto-create)'}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-primary font-mono">
+                        {toShareAccount ? toShareAccount.accountNo : 'नवीन खाते तयार होईल (Auto-create)'}
+                      </span>
+                      {toShareAccount?.legacyAccountNumber && (
+                        <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold">
+                          🏷️ जुने क्र: {toShareAccount.legacyAccountNumber}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex justify-between items-center bg-slate-50 p-1.5 rounded-sm border border-gray-200">
                     <div>

@@ -43,6 +43,7 @@ export interface LoanOutstandingReportRow {
   loanRateID: number;
   loanType: string;
   loanAccountNo: string;
+  legacyAccountNumber?: string;
   borrowerName: string;
   memberCode: string;
   disbursementDate: string | null;
@@ -204,6 +205,7 @@ export default function LoanOutstandingReport() {
     const term = searchTerm.toLowerCase().trim();
     return (
       (r.loanAccountNo || '').toLowerCase().includes(term) ||
+      (r.legacyAccountNumber || '').toLowerCase().includes(term) ||
       (r.borrowerName || '').toLowerCase().includes(term) ||
       (r.loanType || '').toLowerCase().includes(term) ||
       (r.memberCode || '').toLowerCase().includes(term)
@@ -219,6 +221,7 @@ export default function LoanOutstandingReport() {
         const term = searchTerm.toLowerCase().trim();
         return (
           (r.loanAccountNo || '').toLowerCase().includes(term) ||
+          (r.legacyAccountNumber || '').toLowerCase().includes(term) ||
           (r.borrowerName || '').toLowerCase().includes(term) ||
           (r.loanType || '').toLowerCase().includes(term) ||
           (r.memberCode || '').toLowerCase().includes(term)
@@ -270,7 +273,7 @@ export default function LoanOutstandingReport() {
         rowsForExport.push({
           'अनु.क्र.': idx + 1,
           'कर्ज प्रकार': r.loanType,
-          'कर्ज खाते नं.': r.loanAccountNo,
+          'कर्ज खाते नं.': r.legacyAccountNumber ? `${r.loanAccountNo} (जुना: ${r.legacyAccountNumber})` : r.loanAccountNo,
           'कर्जदाराचे नाव': r.borrowerName,
           'कर्ज दिनांक': r.disbursementDateDisplay || formatDisplayDate(r.disbursementDate),
           'कर्ज रक्कम': r.sanctionedAmount,
@@ -300,7 +303,7 @@ export default function LoanOutstandingReport() {
         rowsForExport.push({
           'अनु. क्र.': idx + 1,
           'कर्ज प्रकार': r.loanType,
-          'कर्ज नं.': r.loanAccountNo,
+          'कर्ज नं.': r.legacyAccountNumber ? `${r.loanAccountNo} (जुना: ${r.legacyAccountNumber})` : r.loanAccountNo,
           'कर्जदाराचे नाव': r.borrowerName,
           'कर्ज दिनांक': r.disbursementDateDisplay || formatDisplayDate(r.disbursementDate),
           'कर्ज रक्कम (वाटप)': r.sanctionedAmount,
@@ -654,7 +657,12 @@ export default function LoanOutstandingReport() {
                           {row.loanType}
                         </td>
                         <td className="border border-slate-900 py-1 px-1 text-center font-mono font-bold">
-                          {accNoText}
+                          <div>{accNoText}</div>
+                          {row.legacyAccountNumber && (
+                            <span className="inline-block mt-0.5 bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold text-[9px]">
+                              🏷️ {isMarathiDigits ? toMarathiDigits(row.legacyAccountNumber) : row.legacyAccountNumber}
+                            </span>
+                          )}
                         </td>
                         <td className="border border-slate-900 py-1 px-2 text-left font-medium">
                           {row.borrowerName}
@@ -724,7 +732,12 @@ export default function LoanOutstandingReport() {
                       {row.loanType}
                     </td>
                     <td className="border border-slate-900 py-1 px-1 text-center font-mono font-bold">
-                      {accNoText}
+                      <div>{accNoText}</div>
+                      {row.legacyAccountNumber && (
+                        <span className="inline-block mt-0.5 bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold text-[9px]">
+                          🏷️ {isMarathiDigits ? toMarathiDigits(row.legacyAccountNumber) : row.legacyAccountNumber}
+                        </span>
+                      )}
                     </td>
                     <td className="border border-slate-900 py-1 px-2 text-left font-medium">
                       {row.borrowerName}
@@ -828,7 +841,12 @@ export default function LoanOutstandingReport() {
                           {row.loanType}
                         </td>
                         <td className="border border-slate-900 py-1 px-1 text-center font-mono font-bold">
-                          {accNoText}
+                          <div>{accNoText}</div>
+                          {row.legacyAccountNumber && (
+                            <span className="inline-block mt-0.5 bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold text-[9px]">
+                              🏷️ {isMarathiDigits ? toMarathiDigits(row.legacyAccountNumber) : row.legacyAccountNumber}
+                            </span>
+                          )}
                         </td>
                         <td className="border border-slate-900 py-1 px-3 font-medium">
                           {row.borrowerName}
@@ -880,7 +898,12 @@ export default function LoanOutstandingReport() {
                       {row.loanType}
                     </td>
                     <td className="border border-slate-900 py-1 px-1 text-center font-mono font-bold">
-                      {accNoText}
+                      <div>{accNoText}</div>
+                      {row.legacyAccountNumber && (
+                        <span className="inline-block mt-0.5 bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold text-[9px]">
+                          🏷️ {isMarathiDigits ? toMarathiDigits(row.legacyAccountNumber) : row.legacyAccountNumber}
+                        </span>
+                      )}
                     </td>
                     <td className="border border-slate-900 py-1 px-3 font-medium">
                       {row.borrowerName}

@@ -215,6 +215,16 @@ export default function MemberSearchSelect({
               {memCode}
             </span>
           )}
+          {!isCustomerMode && m.legacyMemberNo && (
+            <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-purple-100 text-purple-950 border border-purple-300">
+              [जुना: {m.legacyMemberNo}]
+            </span>
+          )}
+          {isCustomerMode && m.legacyCustomerNo && (
+            <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-purple-100 text-purple-950 border border-purple-300">
+              [जुना CIF: {m.legacyCustomerNo}]
+            </span>
+          )}
           <span className="font-bold text-slate-900 truncate text-xs ml-1">
             {fullName}
           </span>
@@ -236,6 +246,16 @@ export default function MemberSearchSelect({
           {!isCustomerMode && memCode && (
             <span className="px-2 py-0.5 rounded font-mono font-bold text-[11px] shrink-0 bg-emerald-100 text-emerald-950 border border-emerald-300">
               {memCode}
+            </span>
+          )}
+          {!isCustomerMode && m.legacyMemberNo && (
+            <span className="px-2 py-0.5 rounded font-mono font-bold text-[11px] shrink-0 bg-purple-100 text-purple-950 border border-purple-300">
+              🏷️ जुना सभासद: {m.legacyMemberNo}
+            </span>
+          )}
+          {isCustomerMode && m.legacyCustomerNo && (
+            <span className="px-2 py-0.5 rounded font-mono font-bold text-[11px] shrink-0 bg-purple-100 text-purple-950 border border-purple-300">
+              🏷️ जुना CIF: {m.legacyCustomerNo}
             </span>
           )}
           <span className="font-bold text-slate-900 text-xs sm:text-sm leading-tight truncate">

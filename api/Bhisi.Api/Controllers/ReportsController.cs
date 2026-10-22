@@ -3085,6 +3085,7 @@ namespace Bhisi.Api.Controllers
                     SansthaInfo = sanstha,
                     LoanType = !string.IsNullOrWhiteSpace(loanAccount.LoanRate?.ShortName) ? loanAccount.LoanRate.ShortName : (loanAccount.LoanRate?.LoanType ?? ""),
                     LoanAccountNo = loanAccount.LoanAccountNo ?? "",
+                    LegacyAccountNumber = loanAccount.LegacyAccountNumber,
                     Status = loanAccount.Status,
                     SanctionedAmount = loanAccount.SanctionedAmount,
                     MemberName = bName,
@@ -4645,6 +4646,7 @@ namespace Bhisi.Api.Controllers
                     {
                         loanAccountID = l.LoanAccountID,
                         loanAccountNo = l.LoanAccountNo,
+                        legacyAccountNumber = l.LegacyAccountNumber,
                         borrowerName = l.Customer != null 
                             ? $"{l.Customer.FirstName} {l.Customer.MiddleName} {l.Customer.LastName}".Trim() 
                             : (l.Member?.Customer != null ? $"{l.Member.Customer.FirstName} {l.Member.Customer.MiddleName} {l.Member.Customer.LastName}".Trim() : ""),
@@ -6815,6 +6817,7 @@ namespace Bhisi.Api.Controllers
                         LoanRateID = la.LoanRateID,
                         LoanType = loanTypeStr,
                         LoanAccountNo = la.LoanAccountNo ?? "",
+                        LegacyAccountNumber = la.LegacyAccountNumber,
                         BorrowerName = bName,
                         MemberCode = mem?.MemberCode ?? "",
                         DisbursementDate = disbDate,
@@ -7698,6 +7701,7 @@ namespace Bhisi.Api.Controllers
         public int LoanRateID { get; set; }
         public string LoanType { get; set; } = string.Empty;
         public string LoanAccountNo { get; set; } = string.Empty;
+        public string? LegacyAccountNumber { get; set; }
         public string BorrowerName { get; set; } = string.Empty;
         public string MemberCode { get; set; } = string.Empty;
         public DateTime? DisbursementDate { get; set; }

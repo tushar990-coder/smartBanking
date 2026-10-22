@@ -399,12 +399,15 @@ const InvestmentMaturityClaim: React.FC = () => {
               onChange={(e) => handleSelectAccount(Number(e.target.value))}
               options={[
                 { value: 0, label: '-- मुदत ठेव खाते निवडा --' },
-                ...accounts.map((a: any) => ({
-                  value: a.investmentAccountID,
-                  label: `${a.investmentNo} | पावती क्र: ${a.depositReceiptNo || '-'} | ${a.institutionName} | ₹${formatCurrency(a.principalAmount)} (${a.interestRate}%) | मुदतपूर्ती: ${formatDate(a.maturityDate)}`
-                }))
+                ...accounts.map((a: any) => {
+                  const oldPart = a.oldInvestmentNo ? ` [जुना क्र: ${a.oldInvestmentNo}]` : '';
+                  return {
+                    value: a.investmentAccountID,
+                    label: `${a.investmentNo}${oldPart} | पावती क्र: ${a.depositReceiptNo || '-'} | ${a.institutionName} | ₹${formatCurrency(a.principalAmount)} (${a.interestRate}%) | मुदतपूर्ती: ${formatDate(a.maturityDate)}`
+                  };
+                })
               ]}
-              placeholder="-- खाते किंवा पावती क्र. ने शोधा --"
+              placeholder="-- खाते, जुना क्र. किंवा पावती क्र. ने शोधा --"
             />
           </div>
 
@@ -412,9 +415,14 @@ const InvestmentMaturityClaim: React.FC = () => {
           {selectedAccount && (
             <div className="bg-slate-50 border border-slate-200 rounded-sm p-3 mt-2 animate-in fade-in duration-150">
               <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 mb-2">
-                <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                <span className="font-bold text-gray-800 text-xs flex flex-wrap items-center gap-1.5">
                   <Landmark className="w-4 h-4 text-primary" />
                   <span>खाते तपशील: <span className="font-mono text-primary">{selectedAccount.investmentNo}</span></span>
+                  {selectedAccount.oldInvestmentNo && (
+                    <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded text-[10.5px] font-mono font-bold">
+                      🏷️ जुना गुंतवणूक क्र.: {selectedAccount.oldInvestmentNo}
+                    </span>
+                  )}
                 </span>
                 <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded border border-primary/20">
                   पावती क्र: {selectedAccount.depositReceiptNo || '-'}

@@ -6,6 +6,7 @@ import SearchableSelect from './SearchableSelect';
 interface RdAccount {
   rdAccountID: number;
   accountNo: string;
+  legacyAccountNumber?: string;
   memberCode: string;
   memberName: string;
   schemeName: string;
@@ -444,10 +445,13 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
             </h2>
             <div>
               <SearchableSelect
-                options={accounts.map((a) => ({
-                  value: a.rdAccountID,
-                  label: `${a.accountNo} - ${a.memberName}`,
-                }))}
+                options={accounts.map((a) => {
+                  const legBadge = a.legacyAccountNumber ? ` [🏷️ जुने: ${a.legacyAccountNumber}]` : '';
+                  return {
+                    value: a.rdAccountID,
+                    label: `${a.accountNo}${legBadge} - ${a.memberName}`,
+                  };
+                })}
                 value={selectedAccId}
                 onChange={handleAccountChange}
                 placeholder="नाव किंवा खाते क्रमांकाने शोधा..."
@@ -457,9 +461,16 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
 
             {selectedAcc && (
               <div className="border-t border-gray-200 pt-3 space-y-2.5 text-xs text-gray-700">
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span>खातेदार नाव:</span>
-                  <span className="font-bold text-gray-900">{selectedAcc.memberName}</span>
+                  <div className="text-right">
+                    <span className="font-bold text-gray-900">{selectedAcc.memberName}</span>
+                    {selectedAcc.legacyAccountNumber && (
+                      <span className="block text-[9.5px] font-mono font-bold text-purple-950 bg-purple-100 border border-purple-300 px-1 py-0.2 rounded mt-0.5">
+                        🏷️ जुने आरडी: {selectedAcc.legacyAccountNumber}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-between">
                   <span>मासिक हप्ता:</span>

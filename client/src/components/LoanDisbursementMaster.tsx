@@ -75,6 +75,7 @@ interface LoanApplication {
 interface LoanAccount {
     loanAccountID: number;
     loanAccountNo: string;
+    legacyAccountNumber?: string;
     customerID?: number | null;
     memberID?: number | null;
     loanApplicationID?: number;
@@ -1210,6 +1211,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     let selectedName = "";
     let selectedCif = "";
     let selectedAccountNo = "";
+    let selectedLegacyLoanNo = "";
     let selectedLoanType = "";
     let selectedGuarantor1 = "-";
     let selectedGuarantor2 = "-";
@@ -1247,6 +1249,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (acc.customerID ? `ग्राहक #${acc.customerID}` : 'खातेदार');
             selectedCif = acc.customer?.cifNo || '';
             selectedAccountNo = acc.loanAccountNo || '';
+            selectedLegacyLoanNo = acc.legacyAccountNumber || '';
             selectedLoanType = acc.loanRate?.loanType || '';
             const g1 = acc.guarantor1Customer;
             selectedGuarantor1 = g1 ? `${g1.firstName || ''} ${g1.lastName || ''}`.trim() : '-';
@@ -1462,8 +1465,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                     )}
                                 </div>
 
-                                {/* Row 1: Date, Type & Branch */}
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                {/* Row 1: Date & Branch (Option B: 2-column layout) */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
                                     <div>
                                         <label className={labelClass}>वितरण दिनांक (Date) <span className="text-red-500">*</span></label>
                                         <input 
@@ -1481,26 +1484,6 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                     </div>
 
                                     <div>
-                                        <label className={labelClass}>वितरण प्रकार (Type) <span className="text-red-500">*</span></label>
-                                        <select 
-                                            value={sourceType} 
-                                            onChange={(e) => {
-                                                setSourceType(e.target.value as any);
-                                                setSelectedSourceId('');
-                                                setAlreadyDisbursedAmount(0);
-                                                setPendingSanctionedLimit(0);
-                                                setCurrentTrancheNo(1);
-                                            }} 
-                                            disabled={!!editingId}
-                                            className={inputClass}
-                                        >
-                                            <option value="Application">मंजूर अर्जावरून (Sanctioned App)</option>
-                                            <option value="Draft">नवीन मसुदा (New Draft)</option>
-                                            <option value="ExistingAccount">विद्यमान खात्यात (Existing A/c)</option>
-                                        </select>
-                                    </div>
-
-                                    <div>
                                         <label className={labelClass}>शाखा (Branch) <span className="text-red-500">*</span></label>
                                         <select 
                                             value={selectedBranchId} 
@@ -1512,7 +1495,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                 if (sourceType === 'Application' || sourceType === 'Draft') {
                                                     fetchNextLoanAccountNo(newBid, newAccountData.loanRateID);
                                                 }
-                                            }}
+                                            }} 
                                             disabled={sourceType === 'ExistingAccount' || hasGlobalBranch || (user?.role !== 'Admin' && user?.role !== 'HO_Manager')}
                                             className={inputClass}
                                         >
@@ -1523,11 +1506,37 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                     </div>
                                 </div>
 
-                                {/* Row 2: Account or Application Search Selector (Full Width) */}
+                                {/* Row 2: Account or Application Search Selector with Tranche Checkbox */}
                                 <div>
-                                    <label className={labelClass}>
-                                        {sourceType === 'Application' ? 'मंजूर कर्ज अर्ज निवडा' : 'कर्ज खाते निवडा'} <span className="text-red-500">*</span>
-                                    </label>
+                                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                                        <label className={labelClass}>
+                                            {sourceType === 'ExistingAccount' 
+                                                ? 'विद्यमान कर्ज खाते निवडा (पुढील टप्पा वाटप) ' 
+                                                : (sourceType === 'Draft' ? 'नवीन मसुदा अर्ज ' : 'मंजूर कर्ज अर्ज निवडा ')}
+                                            <span className="text-red-500">*</span>
+                                        </label>
+
+                                        {!editingId && !draftApplication && (
+                                            <label className="flex items-center gap-1.5 cursor-pointer select-none text-[11px] font-semibold text-gray-700 hover:text-primary transition">
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={sourceType === 'ExistingAccount'}
+                                                    onChange={(e) => {
+                                                        const isExisting = e.target.checked;
+                                                        setSourceType(isExisting ? 'ExistingAccount' : 'Application');
+                                                        setSelectedSourceId('');
+                                                        setAlreadyDisbursedAmount(0);
+                                                        setPendingSanctionedLimit(0);
+                                                        setCurrentTrancheNo(1);
+                                                    }}
+                                                    className="rounded-sm border-gray-300 text-primary focus:ring-primary w-3.5 h-3.5 cursor-pointer"
+                                                />
+                                                <span className={sourceType === 'ExistingAccount' ? 'font-bold text-primary' : 'text-gray-600'}>
+                                                    विद्यमान खात्यात पुढील टप्पा वाटप (Subsequent Tranche)
+                                                </span>
+                                            </label>
+                                        )}
+                                    </div>
                                     {sourceType === 'Draft' ? (
                                         <input 
                                             type="text" 
@@ -1554,11 +1563,12 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                     const borrower = a.customer;
                                                     const name = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (a.customerID ? `ग्राहक #${a.customerID}` : 'खातेदार');
                                                     const cif = a.customer?.cifNo ? ` [CIF: ${a.customer.cifNo}]` : '';
+                                                    const legPart = a.legacyAccountNumber ? ` [जुने कर्ज: ${a.legacyAccountNumber}]` : '';
                                                     const accDisbursed = disbursements.filter(d => d.loanAccountID === a.loanAccountID).reduce((s, d) => s + (d.disbursementAmount || 0), 0);
                                                     const pending = Math.max(0, (a.sanctionedAmount || 0) - accDisbursed);
                                                     return { 
                                                         value: a.loanAccountID.toString(), 
-                                                        label: `${name} (${format14DigitDisplay(a.loanAccountNo)}) - ${a.loanRate?.shortName || a.loanRate?.loanType || ''} - मंजूर: ₹${(a.sanctionedAmount || 0).toLocaleString('en-IN')} | शिल्लक: ₹${pending.toLocaleString('en-IN')}${cif}` 
+                                                        label: `${name} (${format14DigitDisplay(a.loanAccountNo)})${legPart} - ${a.loanRate?.shortName || a.loanRate?.loanType || ''} - मंजूर: ₹${(a.sanctionedAmount || 0).toLocaleString('en-IN')} | शिल्लक: ₹${pending.toLocaleString('en-IN')}${cif}` 
                                                     };
                                                 })
                                             }
@@ -1575,7 +1585,15 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                     <div className="p-2 bg-primary/5 border border-primary/20 rounded text-[10px] space-y-1 text-gray-800 font-medium shadow-2xs">
                                         <div className="flex flex-wrap justify-between items-center gap-1 border-b border-primary/10 pb-1">
                                             <span><b>CIF No:</b> <span className="font-mono">{selectedCif || '-'}</span></span>
-                                            <span><b>खाते / अर्ज क्र.:</b> <span className="font-mono font-bold text-gray-900">{selectedAccountNo}</span></span>
+                                            <span className="flex items-center gap-1">
+                                                <b>खाते / अर्ज क्र.:</b> 
+                                                <span className="font-mono font-bold text-gray-900">{selectedAccountNo}</span>
+                                                {selectedLegacyLoanNo && (
+                                                    <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded font-mono font-bold text-[9.5px]">
+                                                        🏷️ जुने कर्ज: {selectedLegacyLoanNo}
+                                                    </span>
+                                                )}
+                                            </span>
                                             <span><b>कर्ज योजना:</b> <span className="font-bold text-primary">{selectedLoanType}</span></span>
                                         </div>
                                         <div className="text-center pt-0.5 text-xs font-bold text-gray-900">

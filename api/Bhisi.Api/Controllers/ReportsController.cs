@@ -5001,6 +5001,451 @@ namespace Bhisi.Api.Controllers
             return Ok(report);
         }
 
+        // GET: api/Reports/RdKhatavani/{accountId}
+        [HttpGet("RdKhatavani/{accountId}")]
+        public async Task<ActionResult<RdKhatavaniReportDto>> GetRdKhatavani(int accountId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        {
+            var account = await _context.RdAccounts
+                .Include(a => a.Customer)
+                    .ThenInclude(c => c!.MemberProfile)
+                .Include(a => a.JointCustomer)
+                .Include(a => a.RdScheme)
+                .Include(a => a.Branch)
+                .FirstOrDefaultAsync(a => a.RdAccountID == accountId);
+
+            if (account == null)
+                return NotFound(new { message = "आरडी खाते सापडले नाही (RD Account not found)" });
+
+            var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
+
+            var allTransactions = await _context.RdTransactions
+                .Include(t => t.Voucher)
+                .Include(t => t.Agent)
+                .Where(t => t.RdAccountID == accountId)
+                .OrderBy(t => t.TransactionDate)
+                .ThenBy(t => t.RdTransactionID)
+                .ToListAsync();
+
+            var schedules = await _context.RDInstallmentSchedules
+                .Include(s => s.Voucher)
+                .Where(s => s.RdAccountID == accountId)
+                .OrderBy(s => s.InstallmentNo)
+                .ToListAsync();
+
+            var scheduleDtos = schedules.Select(s => new RdKhatavaniScheduleDto
+            {
+                InstallmentNo = s.InstallmentNo,
+                DueDate = s.DueDate,
+                ExpectedAmount = s.ExpectedAmount,
+                PaidDate = s.PaidDate,
+                PaidAmount = s.PaidAmount,
+                OverdueDays = s.OverdueDays,
+                PenaltyCharged = s.PenaltyCharged,
+                PenaltyWaived = s.PenaltyWaived,
+                Status = s.Status,
+                VoucherNo = s.Voucher?.VoucherNo
+            }).ToList();
+
+            // Calculate Period Running Balance
+            decimal runningBalance = 0;
+            var responseTxns = new List<RdKhatavaniTransactionDto>();
+            int srCounter = 1;
+
+            // 1. Transactions before fromDate
+            if (fromDate.HasValue)
+            {
+                var beforeFromDate = allTransactions.Where(t => t.TransactionDate.Date < fromDate.Value.Date).ToList();
+                foreach (var t in beforeFromDate)
+                {
+                    decimal amt = t.PrincipalAmount > 0 ? t.PrincipalAmount : t.InterestAmount;
+                    if (t.DebitCredit == "Cr")
+                        runningBalance += amt;
+                    else
+                        runningBalance -= amt;
+                }
+
+                if (beforeFromDate.Count > 0 || runningBalance > 0)
+                {
+                    responseTxns.Add(new RdKhatavaniTransactionDto
+                    {
+                        SrNo = srCounter++,
+                        Date = fromDate.Value.AddDays(-1),
+                        Particulars = "मागील शिल्लक (Opening Balance)",
+                        TransactionType = "Opening",
+                        Debit = 0,
+                        Credit = 0,
+                        InterestAmount = 0,
+                        PenaltyAmount = 0,
+                        Balance = runningBalance
+                    });
+                }
+            }
+
+            decimal periodOpeningBal = runningBalance;
+
+            // 2. Filter transactions within date range
+            var periodTxns = allTransactions.AsEnumerable();
+            if (fromDate.HasValue)
+                periodTxns = periodTxns.Where(t => t.TransactionDate.Date >= fromDate.Value.Date);
+            if (toDate.HasValue)
+                periodTxns = periodTxns.Where(t => t.TransactionDate.Date <= toDate.Value.Date);
+
+            decimal periodTotalDr = 0;
+            decimal periodTotalCr = 0;
+            decimal periodTotalInterest = 0;
+            decimal periodTotalPenalty = 0;
+
+            foreach (var t in periodTxns)
+            {
+                decimal dr = 0;
+                decimal cr = 0;
+
+                if (t.DebitCredit == "Cr")
+                {
+                    cr = t.PrincipalAmount > 0 ? t.PrincipalAmount : t.InterestAmount;
+                    runningBalance += cr;
+                    periodTotalCr += cr;
+                }
+                else
+                {
+                    dr = t.PrincipalAmount > 0 ? t.PrincipalAmount : t.InterestAmount;
+                    runningBalance -= dr;
+                    periodTotalDr += dr;
+                }
+
+                periodTotalInterest += t.InterestAmount;
+                periodTotalPenalty += t.PenaltyAmount;
+
+                string typeLabel = t.TransactionType switch
+                {
+                    "Installment" => t.InstallmentNo.HasValue ? $"हप्ता जमा (हप्ता क्र. {t.InstallmentNo})" : "हप्ता जमा (Installment)",
+                    "Accrual" => "चक्रवाढ व्याज जमा (Interest Accrual)",
+                    "Penalty" => "दंड आकारणी/वसुली (Penalty)",
+                    "Payout" => "मुदतपूर्ती परतावा (Maturity Payout)",
+                    "Premature_Close" => "मुदतपूर्व बंद परतावा (Premature Payout)",
+                    "Renewal" => "मुदत ठेव नूतनीकरण (Renewal)",
+                    _ => t.TransactionType
+                };
+
+                string particulars = typeLabel;
+                if (!string.IsNullOrEmpty(t.Narration))
+                {
+                    if (!particulars.Contains(t.Narration))
+                        particulars += $" - {t.Narration}";
+                }
+
+                string agentName = t.Agent != null 
+                    ? (!string.IsNullOrEmpty(t.Agent.Username) ? $"{t.Agent.AgentName} ({t.Agent.Username})" : t.Agent.AgentName)
+                    : "";
+
+                responseTxns.Add(new RdKhatavaniTransactionDto
+                {
+                    SrNo = srCounter++,
+                    Date = t.TransactionDate,
+                    VoucherNo = t.Voucher?.VoucherNo ?? "",
+                    InstallmentNo = t.InstallmentNo,
+                    TransactionType = t.TransactionType,
+                    Particulars = particulars,
+                    PaymentMode = !string.IsNullOrEmpty(t.CollectionSource) && t.CollectionSource != "COUNTER" ? t.CollectionSource : "रोख (Cash)",
+                    CollectionSource = t.CollectionSource,
+                    AgentName = agentName,
+                    Debit = dr,
+                    Credit = cr,
+                    InterestAmount = t.InterestAmount,
+                    PenaltyAmount = t.PenaltyAmount,
+                    Balance = runningBalance
+                });
+            }
+
+            // Fallback if no transactions exist but account has deposited amount (e.g. initial setup)
+            if (responseTxns.Count == 0 && account.TotalDepositedAmount > 0)
+            {
+                runningBalance = account.TotalDepositedAmount;
+                periodTotalCr = account.TotalDepositedAmount;
+                responseTxns.Add(new RdKhatavaniTransactionDto
+                {
+                    SrNo = srCounter++,
+                    Date = account.OpeningDate,
+                    Particulars = "आरंभीची शिल्लक (Opening Deposit)",
+                    TransactionType = "Opening",
+                    Debit = 0,
+                    Credit = account.TotalDepositedAmount,
+                    InterestAmount = account.LegacyAccruedInt,
+                    PenaltyAmount = 0,
+                    Balance = runningBalance
+                });
+            }
+
+            string holderName = account.Customer != null
+                ? $"{account.Customer.FirstName} {account.Customer.MiddleName} {account.Customer.LastName}".Trim()
+                : "";
+
+            string jointHolderName = account.JointCustomer != null
+                ? $"{account.JointCustomer.FirstName} {account.JointCustomer.MiddleName} {account.JointCustomer.LastName}".Trim()
+                : "";
+
+            string memberCode = account.Customer?.MemberProfile?.MemberCode ?? "";
+            string cifNo = account.Customer?.CIFNo ?? "";
+            string mobileNo = account.Customer?.MobileNo ?? "";
+
+            var report = new RdKhatavaniReportDto
+            {
+                SansthaDetail = sanstha,
+                RdAccountID = account.RdAccountID,
+                AccountNo = account.AccountNo,
+                OldAccountNo = account.LegacyAccountNumber ?? account.LegacyAccountId?.ToString(),
+                LegacyAccountNumber = account.LegacyAccountNumber,
+                IsLegacyAccount = account.IsLegacyAccount,
+                MemberCode = memberCode,
+                CIFNo = cifNo,
+                CustomerName = holderName,
+                MobileNo = mobileNo,
+                JointCustomerName = jointHolderName,
+                NomineeName = account.NomineeName,
+                NomineeRelation = account.NomineeRelation,
+                PassbookNo = account.PassbookNo,
+                AccountType = account.AccountType,
+                SchemeName = account.RdScheme?.SchemeName ?? "आवर्ती ठेव (RD)",
+                SchemeCode = account.RdScheme?.SchemeCode ?? "",
+                InterestRate = account.InterestRate,
+                InterestMethod = account.RdScheme?.InterestMethod ?? "Flat",
+                DurationMonths = account.DurationMonths,
+                InstallmentAmount = account.InstallmentAmount,
+                OpeningDate = account.OpeningDate,
+                MaturityDate = account.MaturityDate,
+                MaturityAmount = account.MaturityAmount,
+                Status = account.Status,
+                TotalPaidInstallments = account.TotalPaidInstallments,
+                TotalDepositedAmount = account.TotalDepositedAmount,
+                CumulativeInterestAccrued = account.CumulativeInterestAccrued,
+                LegacyAccruedInt = account.LegacyAccruedInt,
+                CurrentTotalBalance = account.TotalDepositedAmount + account.CumulativeInterestAccrued + account.LegacyAccruedInt,
+                PeriodOpeningBalance = periodOpeningBal,
+                PeriodTotalDebit = periodTotalDr,
+                PeriodTotalCredit = periodTotalCr,
+                PeriodTotalInterest = periodTotalInterest,
+                PeriodTotalPenalty = periodTotalPenalty,
+                ClosingBalance = runningBalance,
+                Transactions = responseTxns,
+                Schedules = scheduleDtos
+            };
+
+            return Ok(report);
+        }
+
+        // GET: api/Reports/PigmyKhatavani/{accountId}
+        [HttpGet("PigmyKhatavani/{accountId}")]
+        public async Task<ActionResult<PigmyKhatavaniReportDto>> GetPigmyKhatavani(int accountId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        {
+            var account = await _context.PigmyAccounts
+                .Include(a => a.Customer)
+                    .ThenInclude(c => c!.MemberProfile)
+                .Include(a => a.PigmyScheme)
+                .Include(a => a.PigmyAgent)
+                .Include(a => a.Branch)
+                .FirstOrDefaultAsync(a => a.PigmyAccountID == accountId);
+
+            if (account == null)
+                return NotFound(new { message = "पिग्मी खाते सापडले नाही (Pigmy Account not found)" });
+
+            var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
+
+            var allTransactions = await _context.PigmyTransactions
+                .Where(t => t.PigmyAccountID == accountId)
+                .OrderBy(t => t.TransactionDate)
+                .ThenBy(t => t.PigmyTransactionID)
+                .ToListAsync();
+
+            decimal totalPostedInterest = allTransactions
+                .Where(t => t.TransactionType == "INTEREST" || (!string.IsNullOrEmpty(t.Narration) && t.Narration.Contains("व्याज जमा")))
+                .Sum(t => t.CrAmount);
+
+            decimal runningBalance = 0;
+            var responseTxns = new List<PigmyKhatavaniTransactionDto>();
+            int srCounter = 1;
+
+            // 1. Transactions before fromDate (computed based on collection/effective date)
+            if (fromDate.HasValue)
+            {
+                var beforeFromDate = allTransactions.Where(t => {
+                    var effDate = t.ValueDate != default ? t.ValueDate.Date : t.TransactionDate.Date;
+                    return effDate < fromDate.Value.Date;
+                }).ToList();
+
+                foreach (var t in beforeFromDate)
+                {
+                    runningBalance += (t.CrAmount - t.DrAmount);
+                }
+
+                if (beforeFromDate.Count > 0 || runningBalance > 0)
+                {
+                    responseTxns.Add(new PigmyKhatavaniTransactionDto
+                    {
+                        SrNo = srCounter++,
+                        Date = fromDate.Value.AddDays(-1),
+                        TransactionDate = fromDate.Value.AddDays(-1),
+                        ValueDate = fromDate.Value.AddDays(-1),
+                        SystemPostedOn = fromDate.Value.AddDays(-1),
+                        DelayDays = 0,
+                        IsDelayedPosting = false,
+                        Particulars = "मागील शिल्लक (Opening Balance)",
+                        TransactionType = "OPENING_BALANCE",
+                        Debit = 0,
+                        Credit = 0,
+                        InterestAmount = 0,
+                        IsInterest = false,
+                        Balance = runningBalance
+                    });
+                }
+            }
+
+            decimal periodOpeningBal = runningBalance;
+
+            // 2. Filter transactions within date range (based on collection/effective date)
+            var periodTxns = allTransactions.AsEnumerable();
+            if (fromDate.HasValue)
+                periodTxns = periodTxns.Where(t => (t.ValueDate != default ? t.ValueDate.Date : t.TransactionDate.Date) >= fromDate.Value.Date);
+            if (toDate.HasValue)
+                periodTxns = periodTxns.Where(t => (t.ValueDate != default ? t.ValueDate.Date : t.TransactionDate.Date) <= toDate.Value.Date);
+
+            decimal periodTotalDr = 0;
+            decimal periodTotalCr = 0;
+            decimal periodPostedInterest = 0;
+
+            foreach (var t in periodTxns)
+            {
+                runningBalance += (t.CrAmount - t.DrAmount);
+                periodTotalDr += t.DrAmount;
+                periodTotalCr += t.CrAmount;
+
+                bool isInterestTxn = t.TransactionType == "INTEREST" || (!string.IsNullOrEmpty(t.Narration) && t.Narration.Contains("व्याज जमा"));
+                decimal interestAmt = isInterestTxn ? t.CrAmount : 0;
+                if (isInterestTxn)
+                {
+                    periodPostedInterest += interestAmt;
+                }
+
+                DateTime valDate = t.ValueDate != default ? t.ValueDate.Date : t.TransactionDate.Date;
+                DateTime postDate = t.PostedOn != default ? t.PostedOn : t.TransactionDate;
+                int delayDays = (postDate.Date > valDate.Date && t.TransactionType != "OPENING_BALANCE")
+                    ? (int)(postDate.Date - valDate.Date).TotalDays
+                    : 0;
+                bool isDelayed = delayDays >= 1;
+
+                string typeLabel = t.TransactionType switch
+                {
+                    "OPENING_BALANCE" => "आरंभीची शिल्लक (Opening Balance)",
+                    "DEPOSIT" => "पिग्मी ठेव जमा (Pigmy Deposit)",
+                    "WITHDRAWAL" => "रक्कम उचल/नावे (Withdrawal)",
+                    "INTEREST" => "पिग्मी व्याज जमा (Interest Credit)",
+                    "CLOSURE" => "खाते बंद/परतावा (Closure Payout)",
+                    _ => t.TransactionType
+                };
+
+                string particulars = typeLabel;
+                if (!string.IsNullOrWhiteSpace(t.Narration))
+                {
+                    if (!particulars.Contains(t.Narration))
+                        particulars += $" - {t.Narration}";
+                }
+
+                responseTxns.Add(new PigmyKhatavaniTransactionDto
+                {
+                    SrNo = srCounter++,
+                    Date = valDate,
+                    TransactionDate = postDate.Date,
+                    ValueDate = valDate,
+                    SystemPostedOn = postDate,
+                    DelayDays = delayDays,
+                    IsDelayedPosting = isDelayed,
+                    ReferenceId = t.ReferenceId ?? "",
+                    TransactionType = t.TransactionType,
+                    Particulars = particulars,
+                    Debit = t.DrAmount,
+                    Credit = t.CrAmount,
+                    InterestAmount = interestAmt,
+                    IsInterest = isInterestTxn,
+                    Balance = runningBalance
+                });
+            }
+
+            // Fallback if no transactions exist but account has deposited amount
+            if (responseTxns.Count == 0 && account.TotalDepositedAmount > 0)
+            {
+                runningBalance = account.TotalDepositedAmount - account.TotalWithdrawnAmount;
+                periodTotalCr = account.TotalDepositedAmount;
+                periodTotalDr = account.TotalWithdrawnAmount;
+                responseTxns.Add(new PigmyKhatavaniTransactionDto
+                {
+                    SrNo = srCounter++,
+                    Date = account.OpeningDate,
+                    TransactionDate = account.OpeningDate,
+                    ValueDate = account.OpeningDate,
+                    SystemPostedOn = account.OpeningDate,
+                    DelayDays = 0,
+                    IsDelayedPosting = false,
+                    Particulars = "आरंभीची ठेव (Opening Balance)",
+                    TransactionType = "OPENING_BALANCE",
+                    Debit = 0,
+                    Credit = account.TotalDepositedAmount,
+                    InterestAmount = 0,
+                    IsInterest = false,
+                    Balance = runningBalance
+                });
+            }
+
+            string holderName = account.Customer != null
+                ? $"{account.Customer.FirstName} {account.Customer.MiddleName} {account.Customer.LastName}".Trim()
+                : "";
+
+            string memberCode = account.Customer?.MemberProfile?.MemberCode ?? "";
+            string cifNo = account.Customer?.CIFNo ?? "";
+            string mobileNo = account.Customer?.MobileNo ?? "";
+
+            string agentName = account.PigmyAgent?.AgentName ?? "";
+            string agentCode = account.PigmyAgent?.Username ?? "";
+
+            int delayedTxCount = responseTxns.Count(x => x.IsDelayedPosting);
+            int maxDelay = responseTxns.Any() ? responseTxns.Max(x => x.DelayDays) : 0;
+
+            var report = new PigmyKhatavaniReportDto
+            {
+                SansthaDetail = sanstha,
+                PigmyAccountID = account.PigmyAccountID,
+                AccountNo = account.AccountNo,
+                OldAccountNo = account.OldAccountNo ?? account.LegacyAccountNumber ?? account.LegacyAccountId?.ToString(),
+                LegacyAccountNumber = account.LegacyAccountNumber,
+                MemberCode = memberCode,
+                CIFNo = cifNo,
+                CustomerName = holderName,
+                MobileNo = mobileNo,
+                BranchName = account.Branch?.BranchName ?? "मुख्य शाखा",
+                PigmyAgentID = account.PigmyAgentID,
+                AgentName = agentName,
+                AgentCode = agentCode,
+                SchemeName = account.PigmyScheme?.SchemeName ?? "दैनिक पिग्मी ठेव योजना",
+                InterestRate = account.InterestRate,
+                DailyDepositAmount = account.DailyDepositAmount,
+                OpeningDate = account.OpeningDate,
+                MaturityDate = account.MaturityDate,
+                TotalDepositedAmount = account.TotalDepositedAmount,
+                TotalWithdrawnAmount = account.TotalWithdrawnAmount,
+                CurrentBalance = Math.Max(0, account.TotalDepositedAmount - account.TotalWithdrawnAmount),
+                Status = account.Status,
+                TotalPostedInterest = totalPostedInterest,
+                PeriodPostedInterest = periodPostedInterest,
+                DelayedTransactionsCount = delayedTxCount,
+                MaxDelayDays = maxDelay,
+                PeriodOpeningBalance = periodOpeningBal,
+                PeriodTotalDebit = periodTotalDr,
+                PeriodTotalCredit = periodTotalCr,
+                ClosingBalance = runningBalance,
+                Transactions = responseTxns
+            };
+
+            return Ok(report);
+        }
+
         // GET: api/Reports/GoldJewelryReport
         [HttpGet("GoldJewelryReport")]
         public async Task<ActionResult<GoldJewelryReportResponseDto>> GetGoldJewelryReport(

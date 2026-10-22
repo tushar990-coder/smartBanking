@@ -103,6 +103,7 @@ interface FdAccount {
   isSeniorCitizen?: boolean;
   legacyAccountNumber?: string | null;
   isLegacyAccount?: boolean;
+  alreadyPostedInterest?: number;
 }
 
 // प्रभावी स्थिती: API status + मुदतपूर्ती तारीख यावरून (Matured / Active / इतर)
@@ -1409,6 +1410,10 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         ? Math.max(0, parseFloat(customOverdueInterest) || 0)
         : systemOverdueInt;
 
+      const alreadyPosted = Number(selectedAccount.alreadyPostedInterest ?? selectedAccount.legacyAccruedInt ?? 0);
+      const payableAmount = Math.min(accruedInt, alreadyPosted);
+      const expenseAmount = Math.max(0, accruedInt - payableAmount);
+
       const totalPayout = principal + accruedInt + effOverdueInt;
 
       entries.push({
@@ -1419,23 +1424,29 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         isLockedPrincipal: true
       });
 
-      if (accruedInt > 0 || isManualOverride) {
+      if (payableAmount > 0) {
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestPayable,
-          note: 'करारानुसार साचलेले देय व्याज चुकता करणे (Contracted Matured Interest Payable)' + (isManualOverride && customAccruedInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
-          amount: accruedInt,
-          isEditable: isManualOverride,
-          editKey: 'accrued'
+          note: 'पूर्वी तरतूद झालेले देणे व्याज चुकता करणे (Provisioned Interest Payable Cleared)',
+          amount: payableAmount
         });
       }
 
-      if (effOverdueInt > 0 || (isManualOverride && isOverdue)) {
+      const totalExpense = expenseAmount + effOverdueInt;
+      if (totalExpense > 0 || isManualOverride) {
+        const noteParts: string[] = [];
+        if (expenseAmount > 0) {
+          noteParts.push('चालू कालावधीतील मुदत ठेव व्याज खर्च');
+        }
+        if (effOverdueInt > 0) {
+          noteParts.push(`ओव्हरड्यू व्याज (@ ${effectiveOverdueRate}%)`);
+        }
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestExpense,
-          note: `मुदत संपल्यापासूनच्या (${overdueDays} दिवस) कालावधीचे ओव्हरड्यू व्याज खर्च (Overdue Interest Expense @ ${effectiveOverdueRate}%)` + (isManualOverride && customOverdueInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
-          amount: effOverdueInt,
+          note: (noteParts.join(' + ') || 'मुदत ठेव व्याज खर्च (Interest Expense)') + (isManualOverride && (customAccruedInterest !== '' || customOverdueInterest !== '') ? ' [✍️ मॅन्युअल संपादन]' : ''),
+          amount: totalExpense,
           isEditable: isManualOverride,
           editKey: 'overdue'
         });
@@ -1462,7 +1473,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         ? Math.max(0, parseFloat(customPrematureInterest) || 0)
         : systemRecalcInt;
 
-      const alreadyAccruedInt = prematurePreview?.alreadyAccruedInterest ?? (selectedAccount.legacyAccruedInt || 0);
+      const alreadyAccruedInt = prematurePreview?.alreadyAccruedInterest ?? Number(selectedAccount.alreadyPostedInterest ?? selectedAccount.legacyAccruedInt ?? 0);
       const isPeriodicPayout = ledgers.scheme?.interestType === 'MIS' || ledgers.scheme?.interestType === 'Monthly Interest';
       
       let clawback = 0;
@@ -1549,6 +1560,10 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         ? Math.max(0, parseFloat(customOverdueInterest) || 0)
         : systemOverdueInt;
 
+      const alreadyPosted = Number(selectedAccount.alreadyPostedInterest ?? selectedAccount.legacyAccruedInt ?? 0);
+      const payableAmount = Math.min(accruedInt, alreadyPosted);
+      const expenseAmount = Math.max(0, accruedInt - payableAmount);
+
       const totalVal = principal + accruedInt + effOverdueInt;
 
       const newDepositAmount = renewalType === 'PrincipalPlusInterest' ? totalVal : principal;
@@ -1562,25 +1577,33 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
         isLockedPrincipal: true
       });
 
-      if (accruedInt > 0 || isManualOverride) {
+      if (payableAmount > 0) {
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestPayable,
           note: (renewalType === 'PrincipalPlusInterest'
-            ? 'करारानुसार साचलेले देय व्याज मुद्दलात पुनर्गठित करणे (Contracted Interest Capitalized to New FD)'
-            : 'करारानुसार साचलेले देय व्याज चुकता करणे (Contracted Matured Interest Payable)') + (isManualOverride && customAccruedInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
-          amount: accruedInt,
-          isEditable: isManualOverride,
-          editKey: 'accrued'
+            ? 'पूर्वी तरतूद झालेले देणे व्याज मुद्दलात पुनर्गठित करणे (Provisioned Interest Capitalized to New FD)'
+            : 'पूर्वी तरतूद झालेले देणे व्याज चुकता करणे (Provisioned Interest Payable Cleared)'),
+          amount: payableAmount
         });
       }
 
-      if (effOverdueInt > 0 || (isManualOverride && isOverdue)) {
+      const totalExpense = expenseAmount + effOverdueInt;
+      if (totalExpense > 0 || isManualOverride) {
+        const noteParts: string[] = [];
+        if (expenseAmount > 0) {
+          noteParts.push(renewalType === 'PrincipalPlusInterest'
+            ? 'चालू कालावधीतील व्याज खर्च नवीन मुद्दलात पुनर्गठित'
+            : 'चालू कालावधीतील व्याज खर्च');
+        }
+        if (effOverdueInt > 0) {
+          noteParts.push(`ओव्हरड्यू व्याज (@ ${effectiveOverdueRate}%)`);
+        }
         entries.push({
           drCr: 'Dr',
           ledgerName: ledgers.interestExpense,
-          note: `मुदत संपल्यापासूनच्या (${overdueDays} दिवस) कालावधीचे ओव्हरड्यू व्याज (Overdue Interest Expense @ ${effectiveOverdueRate}%)` + (isManualOverride && customOverdueInterest !== '' ? ' [✍️ मॅन्युअल संपादन]' : ''),
-          amount: effOverdueInt,
+          note: (noteParts.join(' + ') || 'मुदत ठेव व्याज खर्च (Interest Expense)') + (isManualOverride && (customAccruedInterest !== '' || customOverdueInterest !== '') ? ' [✍️ मॅन्युअल संपादन]' : ''),
+          amount: totalExpense,
           isEditable: isManualOverride,
           editKey: 'overdue'
         });
@@ -2609,60 +2632,129 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                             <dd className="font-mono font-semibold text-slate-900">{fmt(principal)}</dd>
                           </div>
 
-                          {/* Row 2: Editable Interest */}
-                          <div className="py-1.5 flex items-center justify-between gap-2">
-                            <dt className="text-slate-700 font-medium">
-                              {actionType === 'PrematureClose' ? 'सवलतीचे देय व्याज:' : 'करारानुसार साचलेले व्याज:'}
-                            </dt>
-                            <dd className="flex items-center gap-1.5">
-                              <span className="text-slate-500 font-mono text-xs">+ ₹</span>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={
-                                  actionType === 'PrematureClose'
-                                    ? (customPrematureInterest !== '' ? customPrematureInterest : systemRecalcInt)
-                                    : (customAccruedInterest !== '' ? customAccruedInterest : systemAccruedInt)
-                                }
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setIsManualOverride(true);
-                                  setManualOverrideReason('थेट सेटलमेंट संपादन');
-                                  if (actionType === 'PrematureClose') {
-                                    setCustomPrematureInterest(val);
-                                  } else {
-                                    setCustomAccruedInterest(val);
-                                  }
-                                }}
-                                className="w-28 h-7 text-right font-mono font-bold text-xs bg-amber-50/70 border border-amber-300 rounded-sm px-2 text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white focus:ring-1 focus:ring-amber-400"
-                                title="व्याज रक्कम थेट येथे बदला"
-                              />
-                              {(actionType === 'PrematureClose' ? customPrematureInterest !== '' : customAccruedInterest !== '') && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (actionType === 'PrematureClose') {
-                                      setCustomPrematureInterest('');
-                                    } else {
-                                      setCustomAccruedInterest('');
-                                    }
-                                    if (
-                                      (actionType === 'PrematureClose' || customAccruedInterest === '') &&
-                                      customOverdueInterest === ''
-                                    ) {
-                                      setIsManualOverride(false);
-                                      setManualOverrideReason('');
-                                    }
-                                  }}
-                                  className="p-1 text-slate-400 hover:text-amber-700 hover:bg-amber-100 rounded cursor-pointer transition"
-                                  title="सिस्टीम गणनेनुसार पूर्ववत करा"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                </button>
-                              )}
-                            </dd>
-                          </div>
+                          {/* Row 2: Editable Interest with Posting Audit Split */}
+                          {(() => {
+                            const alreadyPosted = Number(acc.alreadyPostedInterest ?? acc.legacyAccruedInt ?? 0);
+                            const currentInt = actionType === 'PrematureClose'
+                              ? (customPrematureInterest !== '' ? (parseFloat(customPrematureInterest) || 0) : systemRecalcInt)
+                              : (customAccruedInterest !== '' ? (parseFloat(customAccruedInterest) || 0) : systemAccruedInt);
+                            const payablePortion = Math.min(currentInt, alreadyPosted);
+                            const expensePortion = Math.max(0, currentInt - payablePortion);
+
+                            let rowLabel = 'करारानुसार साचलेले व्याज:';
+                            let badgeContent = null;
+
+                            if (actionType === 'PrematureClose') {
+                              if (alreadyPosted === 0) {
+                                rowLabel = 'ठेवीवरील सवलतीचे व्याज (चालू खर्च):';
+                                badgeContent = (
+                                  <div className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-0.5">
+                                    व्याज तरतूद (Posting) झालेली नाही • थेट नफा-तोटा खात्यात खर्च (Interest Expense)
+                                  </div>
+                                );
+                              } else if (alreadyPosted >= currentInt) {
+                                rowLabel = 'देणे व्याज (साचलेली तरतूद):';
+                                badgeContent = (
+                                  <div className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 mt-0.5">
+                                    पूर्वी तरतूद झालेले देणे व्याज • ताळेबंद देणे व्याज कमी होईल (Interest Payable Cleared)
+                                  </div>
+                                );
+                              } else {
+                                rowLabel = 'पुनर्गणना सवलतीचे व्याज:';
+                                badgeContent = (
+                                  <div className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 mt-0.5 flex flex-wrap gap-x-2">
+                                    <span>देणे व्याज: ₹{fmt(payablePortion)} (दायित्व कमी)</span>
+                                    <span>•</span>
+                                    <span>चालू खर्च: ₹{fmt(expensePortion)} (नफा-तोटा)</span>
+                                  </div>
+                                );
+                              }
+                            } else {
+                              if (alreadyPosted === 0) {
+                                rowLabel = 'ठेवीवरील व्याज (चालू खर्च):';
+                                badgeContent = (
+                                  <div className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-0.5">
+                                    व्याज तरतूद (Posting) झालेली नाही • थेट नफा-तोटा खात्यात खर्च (Interest Expense)
+                                  </div>
+                                );
+                              } else if (alreadyPosted >= currentInt && currentInt > 0) {
+                                rowLabel = 'देणे व्याज (साचलेली तरतूद):';
+                                badgeContent = (
+                                  <div className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 mt-0.5">
+                                    पूर्वी तरतूद झालेले देणे व्याज • ताळेबंद देणे व्याज कमी होईल (Interest Payable Cleared)
+                                  </div>
+                                );
+                              } else if (alreadyPosted > 0 && expensePortion > 0) {
+                                rowLabel = 'करारानुसार एकूण व्याज:';
+                                badgeContent = (
+                                  <div className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 mt-0.5 flex flex-wrap gap-x-2">
+                                    <span>देणे व्याज: ₹{fmt(payablePortion)} (दायित्व कमी)</span>
+                                    <span>•</span>
+                                    <span>चालू खर्च: ₹{fmt(expensePortion)} (नफा-तोटा खर्च)</span>
+                                  </div>
+                                );
+                              }
+                            }
+
+                            return (
+                              <div className="py-1.5">
+                                <div className="flex items-center justify-between gap-2">
+                                  <dt className="text-slate-700 font-medium">
+                                    {rowLabel}
+                                  </dt>
+                                  <dd className="flex items-center gap-1.5">
+                                    <span className="text-slate-500 font-mono text-xs">+ ₹</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={
+                                        actionType === 'PrematureClose'
+                                          ? (customPrematureInterest !== '' ? customPrematureInterest : systemRecalcInt)
+                                          : (customAccruedInterest !== '' ? customAccruedInterest : systemAccruedInt)
+                                      }
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setIsManualOverride(true);
+                                        setManualOverrideReason('थेट सेटलमेंट संपादन');
+                                        if (actionType === 'PrematureClose') {
+                                          setCustomPrematureInterest(val);
+                                        } else {
+                                          setCustomAccruedInterest(val);
+                                        }
+                                      }}
+                                      className="w-28 h-7 text-right font-mono font-bold text-xs bg-amber-50/70 border border-amber-300 rounded-sm px-2 text-slate-900 focus:outline-none focus:border-amber-500 focus:bg-white focus:ring-1 focus:ring-amber-400"
+                                      title="व्याज रक्कम थेट येथे बदला"
+                                    />
+                                    {(actionType === 'PrematureClose' ? customPrematureInterest !== '' : customAccruedInterest !== '') && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (actionType === 'PrematureClose') {
+                                            setCustomPrematureInterest('');
+                                          } else {
+                                            setCustomAccruedInterest('');
+                                          }
+                                          if (
+                                            (actionType === 'PrematureClose' || customAccruedInterest === '') &&
+                                            customOverdueInterest === ''
+                                          ) {
+                                            setIsManualOverride(false);
+                                            setManualOverrideReason('');
+                                          }
+                                        }}
+                                        className="p-1 text-slate-400 hover:text-amber-700 hover:bg-amber-100 rounded cursor-pointer transition"
+                                        title="सिस्टीम गणनेनुसार पूर्ववत करा"
+                                      >
+                                        <RotateCcw className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </dd>
+                                </div>
+                                {badgeContent}
+                              </div>
+                            );
+                          })()}
 
                           {/* Row 3: Clawback (Premature only) */}
                           {actionType === 'PrematureClose' && clawback > 0 && (

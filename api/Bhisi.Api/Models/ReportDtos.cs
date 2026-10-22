@@ -528,6 +528,139 @@ namespace Bhisi.Api.Models
         public decimal Balance { get; set; }
     }
 
+    public class RdKhatavaniReportDto
+    {
+        public SansthaDetail? SansthaDetail { get; set; }
+        public int RdAccountID { get; set; }
+        public string AccountNo { get; set; } = string.Empty;
+        public string? OldAccountNo { get; set; }
+        public string? LegacyAccountNumber { get; set; }
+        public bool IsLegacyAccount { get; set; }
+        public string MemberCode { get; set; } = string.Empty;
+        public string CIFNo { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
+        public string? MobileNo { get; set; }
+        public string? JointCustomerName { get; set; }
+        public string? NomineeName { get; set; }
+        public string? NomineeRelation { get; set; }
+        public string? PassbookNo { get; set; }
+        public string AccountType { get; set; } = string.Empty;
+        public string SchemeName { get; set; } = string.Empty;
+        public string SchemeCode { get; set; } = string.Empty;
+        public decimal InterestRate { get; set; }
+        public string InterestMethod { get; set; } = string.Empty;
+        public int DurationMonths { get; set; }
+        public decimal InstallmentAmount { get; set; }
+        public DateTime OpeningDate { get; set; }
+        public DateTime MaturityDate { get; set; }
+        public decimal MaturityAmount { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public int TotalPaidInstallments { get; set; }
+        public decimal TotalDepositedAmount { get; set; }
+        public decimal CumulativeInterestAccrued { get; set; }
+        public decimal LegacyAccruedInt { get; set; }
+        public decimal CurrentTotalBalance { get; set; }
+
+        public decimal PeriodOpeningBalance { get; set; }
+        public decimal PeriodTotalDebit { get; set; }
+        public decimal PeriodTotalCredit { get; set; }
+        public decimal PeriodTotalInterest { get; set; }
+        public decimal PeriodTotalPenalty { get; set; }
+        public decimal ClosingBalance { get; set; }
+
+        public List<RdKhatavaniTransactionDto> Transactions { get; set; } = new();
+        public List<RdKhatavaniScheduleDto> Schedules { get; set; } = new();
+    }
+
+    public class RdKhatavaniTransactionDto
+    {
+        public int SrNo { get; set; }
+        public DateTime Date { get; set; }
+        public string VoucherNo { get; set; } = string.Empty;
+        public int? InstallmentNo { get; set; }
+        public string TransactionType { get; set; } = string.Empty;
+        public string Particulars { get; set; } = string.Empty;
+        public string PaymentMode { get; set; } = string.Empty;
+        public string CollectionSource { get; set; } = string.Empty;
+        public string? AgentName { get; set; }
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
+        public decimal InterestAmount { get; set; }
+        public decimal PenaltyAmount { get; set; }
+        public decimal Balance { get; set; }
+    }
+
+    public class RdKhatavaniScheduleDto
+    {
+        public int InstallmentNo { get; set; }
+        public DateTime DueDate { get; set; }
+        public decimal ExpectedAmount { get; set; }
+        public DateTime? PaidDate { get; set; }
+        public decimal PaidAmount { get; set; }
+        public int OverdueDays { get; set; }
+        public decimal PenaltyCharged { get; set; }
+        public decimal PenaltyWaived { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? VoucherNo { get; set; }
+    }
+
+    public class PigmyKhatavaniReportDto
+    {
+        public SansthaDetail? SansthaDetail { get; set; }
+        public int PigmyAccountID { get; set; }
+        public string AccountNo { get; set; } = string.Empty;
+        public string? OldAccountNo { get; set; }
+        public string? LegacyAccountNumber { get; set; }
+        public string MemberCode { get; set; } = string.Empty;
+        public string CIFNo { get; set; } = string.Empty;
+        public string CustomerName { get; set; } = string.Empty;
+        public string? MobileNo { get; set; }
+        public string BranchName { get; set; } = string.Empty;
+        public int? PigmyAgentID { get; set; }
+        public string AgentName { get; set; } = string.Empty;
+        public string AgentCode { get; set; } = string.Empty;
+        public string SchemeName { get; set; } = string.Empty;
+        public decimal InterestRate { get; set; }
+        public decimal DailyDepositAmount { get; set; }
+        public DateTime OpeningDate { get; set; }
+        public DateTime MaturityDate { get; set; }
+        public decimal TotalDepositedAmount { get; set; }
+        public decimal TotalWithdrawnAmount { get; set; }
+        public decimal CurrentBalance { get; set; }
+        public string Status { get; set; } = string.Empty;
+
+        public decimal TotalPostedInterest { get; set; }
+        public decimal PeriodPostedInterest { get; set; }
+        public int DelayedTransactionsCount { get; set; }
+        public int MaxDelayDays { get; set; }
+
+        public decimal PeriodOpeningBalance { get; set; }
+        public decimal PeriodTotalDebit { get; set; }
+        public decimal PeriodTotalCredit { get; set; }
+        public decimal ClosingBalance { get; set; }
+
+        public List<PigmyKhatavaniTransactionDto> Transactions { get; set; } = new();
+    }
+
+    public class PigmyKhatavaniTransactionDto
+    {
+        public int SrNo { get; set; }
+        public DateTime Date { get; set; }
+        public DateTime TransactionDate { get; set; }
+        public DateTime ValueDate { get; set; }
+        public DateTime? SystemPostedOn { get; set; }
+        public int DelayDays { get; set; }
+        public bool IsDelayedPosting { get; set; }
+        public string ReferenceId { get; set; } = string.Empty;
+        public string TransactionType { get; set; } = string.Empty;
+        public string Particulars { get; set; } = string.Empty;
+        public decimal Debit { get; set; }
+        public decimal Credit { get; set; }
+        public decimal InterestAmount { get; set; }
+        public bool IsInterest { get; set; }
+        public decimal Balance { get; set; }
+    }
+
     public class GoldJewelryReportItemDto
     {
         public int SrNo { get; set; }

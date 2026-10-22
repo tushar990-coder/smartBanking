@@ -55,7 +55,7 @@ export default function Sidebar({
   const isLoanActive = activeTab === 'loan' || activeTab.startsWith('loan') || activeTab === 'gold-loan-details' || activeTab === 'employee-bank' || activeTab === 'employer-master';
   const isSavingActive = activeTab === 'saving' || activeTab === 'saving-account' || activeTab === 'saving-transaction' || activeTab === 'saving-setting' || activeTab === 'saving-posting' || activeTab === 'saving-closing' || activeTab === 'saving-passbook';
   const isFdActive = activeTab === 'fd' || activeTab.startsWith('fd-');
-  const isRdActive = activeTab === 'rd' || activeTab === 'rd-dashboard' || activeTab === 'rd-migrate' || activeTab === 'rd-account' || activeTab === 'rd-collect' || activeTab === 'rd-withdrawal' || activeTab === 'rd-accrual' || activeTab === 'rd-reports';
+  const isRdActive = activeTab === 'rd' || activeTab === 'rd-dashboard' || activeTab === 'rd-migrate' || activeTab === 'rd-account' || activeTab === 'rd-collect' || activeTab === 'rd-withdrawal' || activeTab === 'rd-accrual' || activeTab === 'rd-reports' || activeTab === 'rd-khatavani-report';
   const isPigmyActive = activeTab === 'pigmy' || activeTab.startsWith('pigmy');
   const isVoucherActive = activeTab === 'voucher' || activeTab === 'voucher-posting' || activeTab === 'voucher-batch-print';
   const isCashierActive = activeTab === 'cashier-dashboard' || activeTab === 'cash-management' || activeTab === 'cash-allocation' || activeTab === 'cash-denomination';
@@ -64,7 +64,7 @@ export default function Sidebar({
   const isLockerActive = activeTab === 'locker' || activeTab.startsWith('locker-');
   const isNpaActive = activeTab === 'npa-dashboard' || activeTab === 'npa-statement' || activeTab === 'collateral-compliance' || activeTab === 'npa-defaulters';
   const isLegalActive = activeTab === 'legal-recovery' || activeTab.startsWith('sec101-');
-  const isReportsActive = activeTab === 'reports' || activeTab === 'crr-report' || activeTab === 'regulatory-mis-report' || activeTab === 'swanidhi-report' || activeTab === 'trial-balance' || activeTab === 'trial-balance-namuna-n' || activeTab === 'daybook' || activeTab === 'daybook-summary' || activeTab === 'profit-loss' || activeTab === 'balance-sheet' || activeTab === 'balance-sheet-form-n' || activeTab === 'general-ledger' || activeTab === 'member-balance-report' || activeTab === 'loan-disbursement-register' || activeTab === 'loan-collection-register' || activeTab === 'loan-ledger-report' || activeTab === 'loan-outstanding-report' || activeTab === 'loan-overdue-report' || activeTab === 'saving-account-list-report' || activeTab === 'saving-khatavani-report' || activeTab === 'npa-register' || activeTab === 'loan-rate' || activeTab === 'sabhasad-labhansh-report' || activeTab === 'shares-khatavani-report';
+  const isReportsActive = activeTab === 'reports' || activeTab === 'crr-report' || activeTab === 'regulatory-mis-report' || activeTab === 'swanidhi-report' || activeTab === 'trial-balance' || activeTab === 'trial-balance-namuna-n' || activeTab === 'daybook' || activeTab === 'daybook-summary' || activeTab === 'profit-loss' || activeTab === 'balance-sheet' || activeTab === 'balance-sheet-form-n' || activeTab === 'general-ledger' || activeTab === 'member-balance-report' || activeTab === 'loan-disbursement-register' || activeTab === 'loan-collection-register' || activeTab === 'loan-ledger-report' || activeTab === 'loan-outstanding-report' || activeTab === 'loan-overdue-report' || activeTab === 'saving-account-list-report' || activeTab === 'saving-khatavani-report' || activeTab === 'rd-khatavani-report' || activeTab === 'pigmy-khatavani-report' || activeTab === 'npa-register' || activeTab === 'loan-rate' || activeTab === 'sabhasad-labhansh-report' || activeTab === 'shares-khatavani-report';
 
   const getItemClass = (isActive: boolean) => `
     w-full flex items-center ${isSidebarOpen ? 'px-2.5 justify-start' : 'px-0 justify-center'} py-1.5 rounded-lg text-[11px] transition-all duration-150 select-none group ${
@@ -352,6 +352,9 @@ export default function Sidebar({
             <li className={getSubItemClass(activeTab === 'fd-accrual')} onClick={() => handleNavigate('fd-accrual')}>
               <span className="truncate">&rsaquo; मुदत ठेव व्याज तरतूद</span>
             </li>
+            <li className={getSubItemClass(activeTab === 'fd-mis-payout')} onClick={() => handleNavigate('fd-mis-payout')}>
+              <span className="truncate font-semibold text-emerald-700">&rsaquo; मासिक व्याज ट्रान्सफर (MIS)</span>
+            </li>
             <li className={getSubItemClass(activeTab === 'fd-reports')} onClick={() => handleNavigate('fd-reports')}>
               <span className="truncate">&rsaquo; मुदत ठेव अहवाल</span>
             </li>
@@ -394,6 +397,9 @@ export default function Sidebar({
             </li>
             <li className={getSubItemClass(activeTab === 'rd-reports')} onClick={() => handleNavigate('rd-reports')}>
               <span className="truncate">&rsaquo; आरडी अहवाल</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'rd-khatavani-report')} onClick={() => handleNavigate('rd-khatavani-report')}>
+              <span className="truncate">&rsaquo; आरडी खतावणी (Ledger)</span>
             </li>
           </ul>
         )}
@@ -440,6 +446,9 @@ export default function Sidebar({
             </li>
             <li className={getSubItemClass(activeTab.startsWith('pigmy-reports'))} onClick={() => handleNavigate('pigmy-reports')}>
               <span className="truncate">&rsaquo; पिग्मी अहवाल</span>
+            </li>
+            <li className={getSubItemClass(activeTab === 'pigmy-khatavani-report')} onClick={() => handleNavigate('pigmy-khatavani-report')}>
+              <span className="truncate">&rsaquo; पिग्मी खतावणी (Ledger)</span>
             </li>
           </ul>
         )}

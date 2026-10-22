@@ -76,6 +76,7 @@ namespace Bhisi.Api.Data
         public DbSet<FdInterestAccrual> FdInterestAccruals { get; set; }
         public DbSet<FdAccountSequence> FdAccountSequences { get; set; }
         public DbSet<FdAutoRenewalLog> FdAutoRenewalLogs { get; set; }
+        public DbSet<FdMisPayout> FdMisPayouts { get; set; }
 
         // Recurring Deposit Module DbSets
         public DbSet<RdScheme> RdSchemes { get; set; }

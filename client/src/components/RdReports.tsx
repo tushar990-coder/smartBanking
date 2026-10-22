@@ -389,7 +389,14 @@ export default function RdReports() {
             <div className="w-44 sm:w-50">
               <select
                 value={reportType}
-                onChange={(e) => setReportType(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === 'khatavani') {
+                    window.history.pushState({}, '', '?tab=rd-khatavani-report');
+                    window.dispatchEvent(new Event('popstate'));
+                    return;
+                  }
+                  setReportType(e.target.value);
+                }}
                 className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-bold bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-full text-primary"
               >
                 <option value="register">१. आरडी नोंदवही (RD Register)</option>
@@ -397,8 +404,23 @@ export default function RdReports() {
                 <option value="defaulters">३. थकीत खातेदार (Defaulters)</option>
                 <option value="maturity">४. मुदतपूर्ती देय (Maturity Due)</option>
                 <option value="closed">५. खाते बंद अहवाल (Closure Report)</option>
+                <option value="khatavani">📖 ६. आरडी खतावणी (RD Khatavani)</option>
               </select>
             </div>
+
+            <a
+              href="?tab=rd-khatavani-report"
+              onClick={(e) => {
+                e.preventDefault();
+                window.history.pushState({}, '', '?tab=rd-khatavani-report');
+                window.dispatchEvent(new Event('popstate'));
+              }}
+              className="h-6 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 px-2 rounded-sm text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+              title="आरडी खतावणी उघडा"
+            >
+              <span>📖</span>
+              <span className="hidden sm:inline">आरडी खतावणी</span>
+            </a>
 
             {/* Dates */}
             <div className="flex items-center gap-1">

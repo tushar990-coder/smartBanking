@@ -225,11 +225,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     const [memberShareBalance, setMemberShareBalance] = useState(0);
     const [nextShareConfig, setNextShareConfig] = useState<{ nextCertificateNo: string; nextFromShareNo: number; nextMemberCode?: string }>({ nextCertificateNo: 'CERT-2026-00001', nextFromShareNo: 1, nextMemberCode: '' });
 
-    // Editable Loan Account Number and Legacy Number state
+    // Automatic System-Generated Loan Account Number and Legacy Number state
     const [autoLoanAccountNo, setAutoLoanAccountNo] = useState<string>('');
-    const [customLoanAccountNo, setCustomLoanAccountNo] = useState<string>('');
     const [legacyLoanAccountNo, setLegacyLoanAccountNo] = useState<string>('');
-    const [isCustomLoanAccountNo, setIsCustomLoanAccountNo] = useState<boolean>(false);
 
     const formContainerRef = useRef<HTMLDivElement>(null);
 
@@ -254,11 +252,12 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 params: { branchId: bId, loanRateId: rateId || 1 }
             });
             if (res.data) {
-                const nextNo = res.data.accountNo || res.data.nextAccountNo || '';
+                const nextNo = res.data.formattedAccountNo || res.data.displayAccountNo || res.data.accountNo || res.data.nextAccountNo || '';
                 setAutoLoanAccountNo(nextNo);
-                if (!isCustomLoanAccountNo) {
-                    setCustomLoanAccountNo(nextNo);
-                }
+                setNewAccountData(prev => ({
+                    ...prev,
+                    loanAccountNo: nextNo
+                }));
             }
         } catch (e) {
             console.error(e);
@@ -339,8 +338,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     firstInstallmentDate: draftApplication.firstInstallmentDate,
                     maturityDate: draftApplication.maturityDate,
                     status: "Active",
-                    loanAccountNo: `L-${new Date().getFullYear()}-${Math.floor(Math.random()*1000)}`
+                    loanAccountNo: 'AUTO'
                 });
+                fetchNextLoanAccountNo(draftApplication.branchID || initialBranchId, draftApplication.loanRateID);
             } else if (editingDisbursement && draftApplication && (!editingId || editingId === editingDisbursement.loanDisbursementID)) {
                 setEditingId(editingDisbursement.loanDisbursementID);
                 setSourceType('Draft');
@@ -388,8 +388,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     firstInstallmentDate: draftApplication.firstInstallmentDate,
                     maturityDate: draftApplication.maturityDate,
                     status: "Active",
-                    loanAccountNo: editingDisbursement.loanAccount?.loanAccountNo || `L-${new Date().getFullYear()}-${Math.floor(Math.random()*1000)}`
+                    loanAccountNo: editingDisbursement.loanAccount?.loanAccountNo || 'AUTO'
                 });
+                if (editingDisbursement.loanAccount?.loanAccountNo) {
+                    setAutoLoanAccountNo(editingDisbursement.loanAccount.loanAccountNo);
+                }
             }
         });
     }, [draftApplication, editingDisbursement]);
@@ -1110,9 +1113,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         setScheduleData([]);
         setShowSchedule(false);
         setAutoLoanAccountNo('');
-        setCustomLoanAccountNo('');
         setLegacyLoanAccountNo('');
-        setIsCustomLoanAccountNo(false);
         setErrorMessage('');
         setSuccessMessage('');
         setFormData({
@@ -1165,7 +1166,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 payload.loanAccount = {
                     ...newAccountData,
                     branchID: selectedBranchId,
-                    loanAccountNo: (customLoanAccountNo || autoLoanAccountNo || newAccountData.loanAccountNo || '').trim(),
+                    loanAccountNo: (autoLoanAccountNo || newAccountData.loanAccountNo || 'AUTO').trim(),
                     legacyAccountNumber: (legacyLoanAccountNo || '').trim() || null,
                     openingDate: formData.disbursementDate,
                     loanDisbursementDate: formData.disbursementDate,
@@ -1508,6 +1509,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                 setSelectedBranchId(newBid);
                                                 fetchData(newBid);
                                                 fetchDropdowns(newBid);
+                                                if (sourceType === 'Application' || sourceType === 'Draft') {
+                                                    fetchNextLoanAccountNo(newBid, newAccountData.loanRateID);
+                                                }
                                             }}
                                             disabled={sourceType === 'ExistingAccount' || hasGlobalBranch || (user?.role !== 'Admin' && user?.role !== 'HO_Manager')}
                                             className={inputClass}
@@ -1593,41 +1597,29 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 bg-blue-50/60 border border-blue-200 rounded">
                                         <div>
                                             <div className="flex items-center justify-between mb-0.5">
-                                                <label className="text-[11px] font-bold text-blue-950">
+                                                <label className="text-[11px] font-bold text-blue-950 flex items-center gap-1">
                                                     नवीन कर्ज खाते क्र. (Loan A/c No) *
                                                 </label>
-                                                <div className="flex items-center gap-1">
-                                                    <span className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded border ${
-                                                        isCustomLoanAccountNo
-                                                            ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                                            : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                                    }`}>
-                                                        {isCustomLoanAccountNo ? 'कस्टम' : 'ऑटो'}
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[9.5px] font-bold px-1.5 py-0.2 rounded border bg-emerald-100 text-emerald-800 border-emerald-300">
+                                                        ⚡ सिस्टीम जनरेटेड
                                                     </span>
-                                                    {isCustomLoanAccountNo && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setIsCustomLoanAccountNo(false);
-                                                                setCustomLoanAccountNo(autoLoanAccountNo);
-                                                            }}
-                                                            title="ऑटो नंबरवर रिसेट करा"
-                                                            className="text-[9.5px] text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
-                                                        >
-                                                            ↺ रीसेट
-                                                        </button>
-                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => fetchNextLoanAccountNo(selectedBranchId, newAccountData.loanRateID)}
+                                                        title="नवीन खाते क्रमांक रिफ्रेश करा"
+                                                        className="text-[9.5px] text-blue-700 hover:text-blue-900 font-bold underline cursor-pointer"
+                                                    >
+                                                        ↺ रिफ्रेश
+                                                    </button>
                                                 </div>
                                             </div>
                                             <input 
                                                 type="text"
-                                                value={customLoanAccountNo || autoLoanAccountNo}
-                                                onChange={(e) => {
-                                                    setIsCustomLoanAccountNo(true);
-                                                    setCustomLoanAccountNo(e.target.value);
-                                                }}
+                                                value={autoLoanAccountNo || newAccountData.loanAccountNo || 'क्रमांक लोड होत आहे...'}
+                                                readOnly
                                                 placeholder="उदा. 001-201-0000001-4"
-                                                className="w-full text-[11px] border border-blue-300 bg-white rounded-sm px-2 py-1 font-mono font-bold text-blue-950 focus:ring-1 focus:ring-blue-500 h-[28px]"
+                                                className="w-full text-[11px] border border-gray-300 bg-slate-100 rounded-sm px-2.5 py-1 font-mono font-bold text-primary select-all cursor-not-allowed h-[30px]"
                                             />
                                         </div>
 
@@ -1643,7 +1635,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                 value={legacyLoanAccountNo}
                                                 onChange={(e) => setLegacyLoanAccountNo(e.target.value)}
                                                 placeholder="उदा. LN-101 / 45"
-                                                className="w-full text-[11px] border border-amber-300 bg-amber-50/30 rounded-sm px-2 py-1 font-semibold text-gray-900 focus:ring-1 focus:ring-blue-500 h-[28px]"
+                                                className="w-full text-[11px] border border-amber-300 bg-amber-50/30 rounded-sm px-2 py-1 font-semibold text-gray-900 focus:ring-1 focus:ring-blue-500 h-[30px]"
                                             />
                                         </div>
                                     </div>

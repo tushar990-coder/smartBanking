@@ -93,7 +93,8 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
         { id: 'pigmy-reports&reportType=register', name: '१. पिग्मी ठेव नोंदवही (Pigmy Register)' },
         { id: 'pigmy-reports&reportType=settlement', name: '२. एजंट रोख ताळमेळ (Daily Settlement)' },
         { id: 'pigmy-reports&reportType=commission', name: '३. एजंट कमिशन विवरणपत्रक (Commission Statement)' },
-        { id: 'pigmy-reports&reportType=ledger', name: '४. पिग्मी खाते लेजर (Account Ledger)' }
+        { id: 'pigmy-reports&reportType=ledger', name: '४. पिग्मी खाते लेजर (Account Ledger)' },
+        { id: 'pigmy-khatavani-report', name: '५. पिग्मी ठेव खतावणी (Pigmy Khatavani / CBS Ledger)' }
       ]
     },
     {
@@ -107,7 +108,8 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
         { id: 'rd-reports&reportType=outstanding', name: '२. आरडी बाकी अहवाल (Outstanding)' },
         { id: 'rd-reports&reportType=defaulters', name: '३. थकीत खातेदार (Defaulters)' },
         { id: 'rd-reports&reportType=maturity', name: '४. मुदतपूर्ती देय (Maturity Due)' },
-        { id: 'rd-reports&reportType=closed', name: '५. खाते बंद अहवाल (Closure Report)' }
+        { id: 'rd-reports&reportType=closed', name: '५. खाते बंद अहवाल (Closure Report)' },
+        { id: 'rd-khatavani-report', name: '६. आरडी खतावणी (RD Khatavani / Ledger)' }
       ]
     },
     {

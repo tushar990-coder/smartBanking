@@ -409,13 +409,35 @@ export default function PigmyReports() {
             <div className="w-44 sm:w-52">
               <select
                 value={reportType}
-                onChange={(e) => setReportType(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === 'khatavani') {
+                    window.history.pushState({}, '', '?tab=pigmy-khatavani-report');
+                    window.dispatchEvent(new Event('popstate'));
+                    return;
+                  }
+                  setReportType(e.target.value);
+                }}
                 className="h-6 border border-gray-300 rounded-sm px-1.5 text-[11px] font-bold bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-full text-primary"
               >
                 <option value="collection-register">१. दैनंदिन जमा नोंदवही (Collection)</option>
                 <option value="account-register">२. पिग्मी खाती नोंदवही (Accounts)</option>
+                <option value="khatavani">📖 ३. पिग्मी खतावणी (Pigmy Khatavani)</option>
               </select>
             </div>
+
+            <a
+              href="?tab=pigmy-khatavani-report"
+              onClick={(e) => {
+                e.preventDefault();
+                window.history.pushState({}, '', '?tab=pigmy-khatavani-report');
+                window.dispatchEvent(new Event('popstate'));
+              }}
+              className="h-6 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 rounded-sm text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+              title="पिग्मी खतावणी उघडा"
+            >
+              <span>📖</span>
+              <span className="hidden sm:inline">पिग्मी खतावणी</span>
+            </a>
 
             {/* Branch */}
             <div className="flex items-center gap-1">

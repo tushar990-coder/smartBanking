@@ -230,11 +230,12 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                 { id: 'rd-reports&reportType=maturity', name: '४. मुदतपूर्ती देय रिपोर्ट (Maturity Due)' },
                 { id: 'rd-reports&reportType=closed', name: '५. खाते बंद अहवाल (Closure Report)' },
                 { id: 'rd-accrual', name: '६. आरडी व्याज तरतूद अहवाल (Accrual Posting)' },
+                { id: 'rd-khatavani-report', name: '७. आरडी खतावणी (RD Khatavani / Ledger)' },
             ]
         },
         pigmy: {
             title: 'पिग्मी ठेव (PIGMY) अहवाल',
-            countLabel: '५ अहवाल उपलब्ध',
+            countLabel: '६ अहवाल उपलब्ध',
             borderColor: 'border-emerald-600',
             headerBg: 'bg-emerald-50/90',
             headerBorder: 'border-emerald-200',
@@ -251,6 +252,7 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                 { id: 'pigmy-reports&reportType=commission', name: '३. एजंट कमिशन विवरणपत्रक (Commission Statement)' },
                 { id: 'pigmy-reports&reportType=ledger', name: '४. पिग्मी खाते लेजर (Account Ledger)' },
                 { id: 'pigmy-reports&reportType=collection-register', name: '५. दैनिक वसुली रजिस्टर (Daily Collection Register)' },
+                { id: 'pigmy-khatavani-report', name: '६. पिग्मी ठेव खतावणी (Pigmy Khatavani / CBS Ledger)' },
             ]
         },
         loans: {
@@ -862,6 +864,10 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                                             <span className="truncate group-hover/btn:text-amber-900">थकीत खातेदार यादी</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
+                                                        <button onClick={() => onNavigate('rd-khatavani-report', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-amber-50/60 border border-slate-200/90 hover:border-amber-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                            <span className="truncate group-hover/btn:text-amber-900 font-bold text-amber-800">📖 आरडी खतावणी (Ledger)</span> 
+                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-amber-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                        </button>
                                                     </>
                                                 )}
                                             </div>
@@ -937,6 +943,10 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                                         </button>
                                                         <button onClick={() => handleReportNavigate('pigmy-reports&reportType=ledger')} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-emerald-50/60 border border-slate-200/90 hover:border-emerald-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
                                                             <span className="truncate group-hover/btn:text-emerald-900">पिग्मी खाते लेजर</span> 
+                                                            <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-emerald-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
+                                                        </button>
+                                                        <button onClick={() => onNavigate('pigmy-khatavani-report', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-emerald-50/60 border border-slate-200/90 hover:border-emerald-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                            <span className="truncate group-hover/btn:text-emerald-900 font-bold text-emerald-800">📖 पिग्मी खतावणी (Ledger)</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-emerald-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
                                                     </>

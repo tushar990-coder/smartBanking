@@ -93,6 +93,8 @@ import SabhasadLabhanshReport from './components/SabhasadLabhanshReport';
 import SharesKhatavaniReport from './components/SharesKhatavaniReport';
 import CbsSampleReport from './components/CbsSampleReport';
 import SavingKhatavaniReport from './components/SavingKhatavaniReport';
+import RdKhatavaniReport from './components/RdKhatavaniReport';
+import PigmyKhatavaniReport from './components/PigmyKhatavaniReport';
 import FdCustomerSummaryReport from './components/FdCustomerSummaryReport';
 import INamunaReport from './components/INamunaReport';
 import VoterListReport from './components/VoterListReport';
@@ -135,6 +137,7 @@ import FdOpeningBalanceMigration from './components/FdOpeningBalanceMigration';
 import FdAccountOpening from './components/FdAccountOpening';
 import FdWithdrawalMaturity from './components/FdWithdrawalMaturity';
 import FdAccrualPosting from './components/FdAccrualPosting';
+import FdMisInterestPayout from './components/FdMisInterestPayout';
 import FdReports from './components/FdReports';
 
 // Recurring Deposit Module Imports
@@ -297,6 +300,7 @@ function App() {
     'fd-migrate': '/fd/opening-balance',
     'fd-withdrawal': '/fd/withdrawal-maturity',
     'fd-accrual': '/fd/interest-accrual',
+    'fd-mis-payout': '/fd/mis-payout',
     'fd-reports': '/fd/reports',
     'fd-customer-summary': '/fd/customer-summary',
 
@@ -311,6 +315,7 @@ function App() {
     'rd-withdrawal': '/rd/withdrawal-maturity',
     'rd-accrual': '/rd/interest-accrual',
     'rd-reports': '/rd/reports',
+    'rd-khatavani-report': '/rd/khatavani',
 
     // Pigmy Deposit (पिग्मी ठेव)
     'pigmy': '/pigmy/dashboard',
@@ -323,6 +328,7 @@ function App() {
     'pigmy-interest': '/pigmy/interest-posting',
     'pigmy-closure': '/pigmy/account-closure',
     'pigmy-reports': '/pigmy/reports',
+    'pigmy-khatavani-report': '/pigmy/khatavani',
 
     // Voucher & Accounting (व्हाऊचर व्यवस्थापन)
     'vouchers': '/vouchers/dashboard',
@@ -777,6 +783,7 @@ function App() {
         {activeTab === 'fd-account' && <FdAccountOpening onNavigate={handleNavigate} />}
         {activeTab === 'fd-withdrawal' && <FdWithdrawalMaturity onNavigate={handleNavigate} />}
         {activeTab === 'fd-accrual' && <FdAccrualPosting />}
+        {activeTab === 'fd-mis-payout' && <FdMisInterestPayout />}
         {activeTab === 'fd-reports' && <FdReports onNavigate={handleNavigate} />}
         {activeTab === 'fd-customer-summary' && <FdCustomerSummaryReport onNavigate={handleNavigate} />}
 
@@ -791,6 +798,7 @@ function App() {
         {activeTab === 'pigmy-interest' && <PigmyInterestPosting />}
         {activeTab === 'pigmy-closure' && <PigmyClosureMaster onNavigate={handleNavigate} />}
         {activeTab.startsWith('pigmy-reports') && <PigmyReports />}
+        {activeTab === 'pigmy-khatavani-report' && <PigmyKhatavaniReport />}
 
         {/* Recurring Deposit Module */}
         {(activeTab === 'rd' || activeTab === 'rd-dashboard') && <RdDashboard onNavigate={handleNavigate} />}
@@ -801,6 +809,7 @@ function App() {
         {activeTab === 'rd-withdrawal' && <RdWithdrawalMaturity onNavigate={handleNavigate} />}
         {activeTab === 'rd-accrual' && <RdAccrualPosting />}
         {activeTab === 'rd-reports' && <RdReports />}
+        {activeTab === 'rd-khatavani-report' && <RdKhatavaniReport />}
 
         {/* Investment Module */}
         {(activeTab === 'investment' || activeTab === 'inv-institution') && <InvestmentInstitutionMaster />}

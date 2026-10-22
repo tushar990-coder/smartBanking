@@ -6245,6 +6245,50 @@ BEGIN
 END
 GO
 
+-- 7.14 FD MIS Monthly Payouts Table & Unique Idempotency Lock (v2.5.79)
+IF OBJECT_ID(N'[FdMisPayouts]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[FdMisPayouts] (
+        [PayoutID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+        [InstitutionID] INT NOT NULL DEFAULT 1,
+        [BranchID] INT NOT NULL DEFAULT 1,
+        [FinancialYearID] INT NOT NULL DEFAULT 1,
+        [FdAccountID] INT NOT NULL,
+        [PayoutYear] INT NOT NULL,
+        [PayoutMonth] INT NOT NULL,
+        [PayoutDate] DATETIME2 NOT NULL,
+        [PeriodFromDate] DATETIME2 NULL,
+        [PeriodToDate] DATETIME2 NULL,
+        [ElapsedDays] INT NOT NULL DEFAULT 0,
+        [DepositPrincipal] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [InterestRate] DECIMAL(5,2) NOT NULL DEFAULT 0,
+        [GrossInterest] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [TdsAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [LoanAdjustedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [NetDisbursedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0,
+        [DisbursementMode] NVARCHAR(30) NOT NULL DEFAULT 'SavingTransfer',
+        [TargetSavingAccountID] INT NULL,
+        [TargetLoanAccountID] INT NULL,
+        [VoucherID] INT NULL,
+        [Status] NVARCHAR(20) NOT NULL DEFAULT 'Success',
+        [CreatedBy] INT NOT NULL DEFAULT 1,
+        [CreatedDate] DATETIME2 NOT NULL DEFAULT GETDATE(),
+        [Remarks] NVARCHAR(250) NULL,
+        CONSTRAINT [FK_FdMisPayouts_FdAccounts] FOREIGN KEY ([FdAccountID]) REFERENCES [dbo].[FdAccounts]([FdAccountID]) ON DELETE CASCADE
+    );
+    PRINT '  -> Created Table [FdMisPayouts]';
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_FdMisPayouts_Account_Year_Month')
+BEGIN
+    CREATE UNIQUE INDEX [IX_FdMisPayouts_Account_Year_Month] 
+    ON [dbo].[FdMisPayouts] ([FdAccountID], [PayoutYear], [PayoutMonth])
+    WHERE [Status] = 'Success';
+    PRINT '  -> Created unique filtered index [IX_FdMisPayouts_Account_Year_Month] on [FdMisPayouts]';
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

@@ -77,7 +77,7 @@ export default function LoanCollectionReceiptPrint({ collectionId, onBack }: Loa
 📄 *पावती क्रमांक:* ${collection.receiptNo}
 🗓️ *जमा दिनांक:* ${new Date(collection.collectionDate).toLocaleDateString('en-GB')}
 🏛️ *वसुल शाखा:* ${collectingBranchName || 'मुख्य शाखा'}
-${collection.isCrossBranch && homeBranchName ? `📌 *कर्ज मूळ शाखा:* ${homeBranchName}\n` : ''}👤 *कर्ज खाते क्र.:* ${collection.loanAccount?.loanAccountNo}
+${collection.isCrossBranch && homeBranchName ? `📌 *कर्ज मूळ शाखा:* ${homeBranchName}\n` : ''}👤 *कर्ज खाते क्र.:* ${collection.loanAccount?.loanAccountNo}${collection.loanAccount?.legacyAccountNumber ? ` (जुने खाते क्र.: ${collection.loanAccount.legacyAccountNumber})` : ''}
 📊 *कर्ज प्रकार:* ${collection.loanAccount?.loanRate?.shortName || collection.loanAccount?.loanRate?.loanType || '-'}
 
 💵 *जमा रक्कम तपशील:*
@@ -166,7 +166,15 @@ ${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: �
               {collection.loanAccount?.customer ? `${collection.loanAccount.customer.firstName || ''} ${collection.loanAccount.customer.lastName || ''}`.trim() : 'खातेदार'}
               {collection.loanAccount?.customer?.cifNo ? ` (CIF: ${collection.loanAccount.customer.cifNo})` : ''}
             </p>
-            <p className="text-gray-600 mt-1">कर्ज खाते क्र. (Loan Account No): <span className="font-bold text-slate-900 ml-1">{collection.loanAccount?.loanAccountNo}</span></p>
+            <p className="text-gray-600 mt-1">
+              कर्ज खाते क्र. (Loan Account No): 
+              <span className="font-bold text-slate-900 ml-1">{collection.loanAccount?.loanAccountNo}</span>
+              {collection.loanAccount?.legacyAccountNumber && (
+                <span className="ml-2 font-mono font-bold text-purple-900 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200 text-xs">
+                  (जुने खाते क्र.: {collection.loanAccount.legacyAccountNumber})
+                </span>
+              )}
+            </p>
             <p className="text-gray-600">कर्ज प्रकार (Loan Type): <span className="font-bold text-slate-900 ml-1">{collection.loanAccount?.loanRate?.shortName || collection.loanAccount?.loanRate?.loanType || 'N/A'}</span></p>
             {accountDetails && (
               <div className="flex justify-between pt-1 border-t border-dashed border-slate-300 text-[11px]">

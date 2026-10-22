@@ -9,6 +9,8 @@ export interface CustomerOption {
   lastName: string;
   fullName?: string;
   legacyCustomerNo?: string;
+  legacyLoanAccountNo?: string;
+  loanAccountNo?: string;
   mobileNo?: string;
   aadhaarNo?: string;
   status?: string;
@@ -43,6 +45,8 @@ export default function CustomerSearchSelect({
       const cId = Number(c.customerID || c.customerId || c.CustomerID || 0);
       const cif = (c.cifNo || c.cif || c.CIFNo || '').trim();
       const legacyCust = (c.legacyCustomerNo || c.LegacyCustomerNo || '').trim();
+      const legacyLoan = (c.legacyLoanAccountNo || c.LegacyLoanAccountNo || c.legacyLoanNo || '').trim();
+      const loanNo = (c.loanAccountNo || c.LoanAccountNo || '').trim();
       const mobile = (c.mobileNo || c.mobile || c.MobileNo || '').trim();
       const aadhaar = (c.aadhaarNo || c.aadhaar || c.AadhaarNo || '').trim();
 
@@ -52,6 +56,7 @@ export default function CustomerSearchSelect({
       const fullName = [fName, mName, lName].filter(Boolean).join(' ').trim();
 
       let codeParts: string[] = [];
+      if (legacyLoan) codeParts.push(`जुने कर्ज क्र: ${legacyLoan}`);
       if (cif) codeParts.push(`CIF: ${cif}`);
       if (legacyCust) codeParts.push(`जुना CIF: ${legacyCust}`);
       if (mobile) codeParts.push(`मो.: ${mobile}`);
@@ -67,6 +72,8 @@ export default function CustomerSearchSelect({
           customerID: cId,
           cifNo: cif,
           legacyCustomerNo: legacyCust,
+          legacyLoanAccountNo: legacyLoan,
+          loanAccountNo: loanNo,
           mobileNo: mobile,
           aadhaarNo: aadhaar,
           firstName: fName,
@@ -98,6 +105,8 @@ export default function CustomerSearchSelect({
       ${customer.fullName} 
       ${customer.cifNo || ''} 
       ${customer.legacyCustomerNo || ''} 
+      ${customer.legacyLoanAccountNo || ''} 
+      ${customer.loanAccountNo || ''} 
       ${customer.mobileNo || ''} 
       ${customer.aadhaarNo || ''}
     `.toLowerCase();
@@ -123,14 +132,19 @@ export default function CustomerSearchSelect({
           if (context === 'value') {
             const cifDisplay = cust.cifNo || (cust.legacyCustomerNo ? `जुना:${cust.legacyCustomerNo}` : `ID:${cust.customerID}`);
             return (
-              <div className="flex items-center gap-1.5 overflow-hidden text-[11px] py-0 w-full" title={`${cust.fullName} (${cifDisplay})`}>
+              <div className="flex items-center gap-1.5 overflow-hidden text-[11px] py-0 w-full" title={`${cust.fullName} (${cifDisplay})${cust.legacyLoanAccountNo ? ` [जुने कर्ज: ${cust.legacyLoanAccountNo}]` : ''}`}>
+                {cust.legacyLoanAccountNo && (
+                  <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-300 leading-none shadow-2xs">
+                    जुने कर्ज: {cust.legacyLoanAccountNo}
+                  </span>
+                )}
                 <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-900 border border-blue-300 leading-none">
                   {cifDisplay}
                 </span>
                 <span className="font-bold text-slate-900 truncate text-[11px]">
                   {cust.fullName}
                 </span>
-                {cust.legacyCustomerNo && cust.cifNo && (
+                {cust.legacyCustomerNo && cust.cifNo && !cust.legacyLoanAccountNo && (
                   <span className="text-[10px] text-slate-500 font-medium shrink-0 hidden xl:inline">
                     (जुना: {cust.legacyCustomerNo})
                   </span>
@@ -150,6 +164,11 @@ export default function CustomerSearchSelect({
                 <span className="font-bold text-slate-900 text-xs truncate max-w-[220px] sm:max-w-[280px]">
                   {cust.fullName}
                 </span>
+                {cust.legacyLoanAccountNo && (
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-300 shrink-0 whitespace-nowrap shadow-2xs">
+                    🏷️ जुने कर्ज क्र: {cust.legacyLoanAccountNo}
+                  </span>
+                )}
                 {cust.cifNo && (
                   <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 shrink-0 whitespace-nowrap">
                     CIF: {cust.cifNo}

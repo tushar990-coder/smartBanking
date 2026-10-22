@@ -344,51 +344,72 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const map = new Map<number, any>();
         filteredAccountsForBorrowers.forEach((a: any) => {
             const custId = Number(a.customerID || a.customer?.customerID || a.memberID || 0);
-            if (custId > 0 && !map.has(custId)) {
+            if (custId <= 0) return;
+
+            const legacyAccNo = (a.legacyAccountNumber || '').trim();
+            const currentAccNo = (a.loanAccountNo || '').trim();
+
+            if (!map.has(custId)) {
+                let fName = '';
+                let mName = '';
+                let lName = '';
+                let fullName = '';
+                let cif = '';
+                let legacyCust = '';
+                let mobile = '';
+
                 if (a.customer) {
-                    const fName = a.customer.firstName || '';
-                    const mName = a.customer.middleName || '';
-                    const lName = a.customer.lastName || '';
-                    const fullName = [fName, mName, lName].filter(Boolean).join(' ').trim();
-                    map.set(custId, {
-                        customerID: custId,
-                        cifNo: a.customer.cifNo || '',
-                        legacyCustomerNo: a.customer.legacyCustomerNo || '',
-                        firstName: fName,
-                        middleName: mName,
-                        lastName: lName,
-                        fullName: fullName || `खातेदार #${custId}`,
-                        mobileNo: a.customer.mobileNo || ''
-                    });
+                    fName = a.customer.firstName || '';
+                    mName = a.customer.middleName || '';
+                    lName = a.customer.lastName || '';
+                    fullName = [fName, mName, lName].filter(Boolean).join(' ').trim();
+                    cif = a.customer.cifNo || '';
+                    legacyCust = a.customer.legacyCustomerNo || '';
+                    mobile = a.customer.mobileNo || '';
                 } else if (a.member) {
-                    const fName = a.member.firstName || '';
-                    const mName = a.member.middleName || '';
-                    const lName = a.member.lastName || '';
-                    const fullName = [fName, mName, lName].filter(Boolean).join(' ').trim();
-                    map.set(custId, {
-                        customerID: custId,
-                        cifNo: a.member.memberCode || '',
-                        legacyCustomerNo: '',
-                        firstName: fName,
-                        middleName: mName,
-                        lastName: lName,
-                        fullName: fullName || `सभासद #${custId}`,
-                        mobileNo: ''
-                    });
+                    fName = a.member.firstName || '';
+                    mName = a.member.middleName || '';
+                    lName = a.member.lastName || '';
+                    fullName = [fName, mName, lName].filter(Boolean).join(' ').trim();
+                    cif = a.member.memberCode || '';
                 } else {
-                    map.set(custId, {
-                        customerID: custId,
-                        cifNo: a.loanAccountNo || '',
-                        legacyCustomerNo: a.legacyAccountNumber || '',
-                        firstName: 'खातेदार',
-                        lastName: `#${custId}`,
-                        fullName: `खातेदार #${custId}`,
-                        mobileNo: ''
-                    });
+                    fName = 'खातेदार';
+                    lName = `#${custId}`;
+                    fullName = `खातेदार #${custId}`;
+                    cif = a.loanAccountNo || '';
+                    legacyCust = a.legacyAccountNumber || '';
+                }
+
+                map.set(custId, {
+                    customerID: custId,
+                    cifNo: cif,
+                    legacyCustomerNo: legacyCust,
+                    legacyLoanAccountNos: legacyAccNo ? [legacyAccNo] : [],
+                    loanAccountNos: currentAccNo ? [currentAccNo] : [],
+                    firstName: fName,
+                    middleName: mName,
+                    lastName: lName,
+                    fullName: fullName || `खातेदार #${custId}`,
+                    mobileNo: mobile
+                });
+            } else {
+                const existing = map.get(custId);
+                if (legacyAccNo && !existing.legacyLoanAccountNos.includes(legacyAccNo)) {
+                    existing.legacyLoanAccountNos.push(legacyAccNo);
+                }
+                if (currentAccNo && !existing.loanAccountNos.includes(currentAccNo)) {
+                    existing.loanAccountNos.push(currentAccNo);
                 }
             }
         });
-        return Array.from(map.values()).sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+
+        const result = Array.from(map.values()).map(item => ({
+            ...item,
+            legacyLoanAccountNo: item.legacyLoanAccountNos.join(', '),
+            loanAccountNo: item.loanAccountNos.join(', ')
+        }));
+
+        return result.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
     }, [filteredAccountsForBorrowers, selectedSchemeId]);
 
     // Backward-compat alias
@@ -695,9 +716,10 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             let loanAccNo = params.get('loanAccountNo');
             let loanAccountIdStr = params.get('loanAccountId') || params.get('accountId');
             let customerNameStr = params.get('customerName');
+            let legacyLoanNo = params.get('legacyLoanAccountNo') || params.get('legacyAccNo') || params.get('oldLoanAccountNo') || params.get('oldAccNo');
 
             // Also check universal sessionStorage transfer bridge
-            if (!cifStr && !customerIdStr && !memberIdStr && !loanAccNo && !loanAccountIdStr) {
+            if (!cifStr && !customerIdStr && !memberIdStr && !loanAccNo && !loanAccountIdStr && !legacyLoanNo) {
                 try {
                     const rawBridge = sessionStorage.getItem('cbs_active_customer_transfer');
                     if (rawBridge) {
@@ -708,6 +730,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                             customerIdStr = bridgeData.customerId ? String(bridgeData.customerId) : null;
                             memberIdStr = bridgeData.memberId ? String(bridgeData.memberId) : null;
                             loanAccNo = bridgeData.loanAccountNo || loanAccNo;
+                            legacyLoanNo = bridgeData.legacyLoanAccountNo || bridgeData.legacyAccountNumber || legacyLoanNo;
                             customerNameStr = bridgeData.customerName || customerNameStr;
                         }
                     }
@@ -781,8 +804,12 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 const activeAccs = res.data.filter((a: any) => a.status === 'Active');
                 setAccounts(activeAccs);
 
-            if (loanAccNo) {
-                const matchedAcc = activeAccs.find((a: any) => a.loanAccountNo === loanAccNo);
+            if (loanAccNo || legacyLoanNo) {
+                const cleanLegacy = legacyLoanNo ? legacyLoanNo.trim().toLowerCase() : '';
+                const matchedAcc = activeAccs.find((a: any) => 
+                    (loanAccNo && a.loanAccountNo === loanAccNo) ||
+                    (cleanLegacy && a.legacyAccountNumber && String(a.legacyAccountNumber).trim().toLowerCase() === cleanLegacy)
+                );
                 if (matchedAcc) {
                     selectLoanAccountById(matchedAcc.loanAccountID, activeAccs);
                     setCustomerMatchingLoans([matchedAcc]);
@@ -1896,10 +1923,40 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             value={selectedCustomerId || ''} 
                                             onChange={handleCustomerSelect} 
                                             isDisabled={isPassingMode || !selectedSchemeId}
-                                            placeholder={!selectedSchemeId ? "-- आधी कर्ज प्रकार निवडा --" : "-- कर्जदार खातेदार निवडा (CIF / नाव / जुना क्र. / मोबाईलने शोधा) --"} 
+                                            placeholder={!selectedSchemeId ? "-- आधी कर्ज प्रकार निवडा --" : "-- कर्जदार खातेदार निवडा (नाव / जुने कर्ज क्र. / CIF / मोबाईलने शोधा) --"} 
                                         />
                                     </div>
                                 </div>
+
+                                {/* Active Selected Loan Account Card with Legacy Account Number */}
+                                {selectedAccount && (
+                                    <div className="mt-2 p-2 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/90 border border-blue-200/90 rounded-sm shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-slate-600 font-semibold">सक्रिय कर्ज खाते:</span>
+                                            <span className="font-mono font-bold text-gray-900 bg-white px-2 py-0.5 rounded border border-blue-300">
+                                                {format14DigitDisplay(selectedAccount.loanAccountNo)}
+                                            </span>
+                                            {selectedAccount.legacyAccountNumber && (
+                                                <span className="font-mono font-bold text-purple-900 bg-purple-100 px-2 py-0.5 rounded border border-purple-300 text-[11px] flex items-center gap-1 shadow-2xs">
+                                                    🏷️ जुने कर्ज खाते क्र.: <strong className="text-purple-950 font-black">{selectedAccount.legacyAccountNumber}</strong>
+                                                </span>
+                                            )}
+                                            {borrowerLoans.length === 1 && (
+                                                <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300">
+                                                    ✓ एकमेव खाते
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-3 text-[11px]">
+                                            <span>मंजूर रक्कम: <strong className="text-slate-800">₹{(selectedAccount.sanctionedAmount || 0).toLocaleString('en-IN')}</strong></span>
+                                            <span>मुद्दल बाकी: <strong className="text-rose-700 font-bold">₹{(selectedAccount.principalBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                                            <span>थकीत/चालू व्याज: <strong className="text-amber-800 font-bold">₹{(selectedAccount.interestBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                                            {selectedAccount.installmentAmount > 0 && (
+                                                <span>नियमित हप्ता: <strong className="text-emerald-700 font-bold">₹{(selectedAccount.installmentAmount || 0).toLocaleString('en-IN')}</strong></span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Multi-Loan Selection Inline Grid */}
                                 {borrowerLoans.length > 1 && (
@@ -1914,6 +1971,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                             {selectedAccount && (
                                                 <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-sm border border-emerald-300 flex items-center gap-1">
                                                     <CheckCircle size={12} /> चालू निवड: #{format14DigitDisplay(selectedAccount.loanAccountNo)}
+                                                    {selectedAccount.legacyAccountNumber && ` (जुना क्र: ${selectedAccount.legacyAccountNumber})`}
                                                 </span>
                                             )}
                                         </div>
@@ -1957,8 +2015,8 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                                 <td className="py-2 px-3 font-mono font-bold text-gray-900">
                                                                     {format14DigitDisplay(acc.loanAccountNo)}
                                                                     {acc.legacyAccountNumber && (
-                                                                        <span className="block text-[10px] text-gray-500 font-normal">
-                                                                            जुना क्र: {acc.legacyAccountNumber}
+                                                                        <span className="inline-block ml-1.5 font-mono text-[10px] font-bold text-purple-900 bg-purple-100 px-1.5 py-0.5 rounded border border-purple-200 shadow-2xs">
+                                                                            🏷️ जुना क्र: {acc.legacyAccountNumber}
                                                                         </span>
                                                                     )}
                                                                 </td>
@@ -3009,7 +3067,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                 <td className="p-1 border-r">
                                                     <div>{c.loanAccount?.customer ? `${c.loanAccount.customer.firstName || ''} ${c.loanAccount.customer.lastName || ''}`.trim() : `${c.loanAccount?.member?.firstName || ''} ${c.loanAccount?.member?.lastName || ''}`.trim()}</div>
                                                     <span className="text-[10px] text-gray-500 font-mono block">
-                                                        {c.loanAccount?.loanAccountNo} {c.loanAccount?.customer?.cifNo ? `| CIF: ${c.loanAccount.customer.cifNo}` : (c.loanAccount?.member?.memberCode ? `| ${c.loanAccount.member.memberCode}` : '')}
+                                                        {c.loanAccount?.loanAccountNo} {c.loanAccount?.legacyAccountNumber ? `| जुना क्र: ${c.loanAccount.legacyAccountNumber}` : ''} {c.loanAccount?.customer?.cifNo ? `| CIF: ${c.loanAccount.customer.cifNo}` : (c.loanAccount?.member?.memberCode ? `| ${c.loanAccount.member.memberCode}` : '')}
                                                     </span>
                                                 </td>
                                                 <td className="p-1 border-r text-right font-bold text-green-700" title={`मुद्दल: ₹${c.principalCollected?.toFixed(2) || '0.00'} | थकीत येणे व्याज: ₹${(c.receivableInterestCollected || 0).toFixed(2)} | चालू व्याज: ₹${c.interestCollected?.toFixed(2) || '0.00'}`}>
@@ -3310,6 +3368,11 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm bg-emerald-100 text-emerald-800 border border-emerald-300">
                                                             Active
                                                         </span>
+                                                        {acc.legacyAccountNumber && (
+                                                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-sm bg-purple-100 text-purple-900 border border-purple-300 shadow-2xs">
+                                                                🏷️ जुने कर्ज क्र: {acc.legacyAccountNumber}
+                                                            </span>
+                                                        )}
                                                         <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-sm bg-primary/10 text-primary border border-primary/25">
                                                             <Award className="w-3.5 h-3.5 text-primary" />
                                                             योजना: {schemeName}

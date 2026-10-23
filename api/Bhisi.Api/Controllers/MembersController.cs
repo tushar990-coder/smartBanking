@@ -882,6 +882,12 @@ namespace Bhisi.Api.Controllers
                 IsDeleted = false
             };
 
+            string? generatedVoucherNo = null;
+            int savedNumShares = 0;
+            decimal savedTotalAmount = 0;
+            string? savedCertNo = null;
+            int? savedVoucherId = null;
+
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -895,6 +901,9 @@ namespace Bhisi.Api.Controllers
                 decimal admissionFee = req.AdmissionFee.HasValue && req.AdmissionFee.Value > 0 ? req.AdmissionFee.Value : 0;
                 decimal buildingFund = req.BuildingFund.HasValue && req.BuildingFund.Value > 0 ? req.BuildingFund.Value : 0;
                 decimal totalAmount = shareCapitalAmount + admissionFee + buildingFund;
+
+                savedNumShares = numShares;
+                savedTotalAmount = totalAmount;
 
                 DateTime allotDate = req.AllotmentDate?.Date ?? member.JoiningDate.Date;
                 if (allotDate == default) allotDate = DateTime.Today;
@@ -935,12 +944,13 @@ namespace Bhisi.Api.Controllers
                         ToShareNo = endShareNo,
                         NumberOfShares = numShares,
                         FaceValue = faceVal,
-                        Status = "Active",
+                        Status = "PendingApproval", // 🌟 CBS Maker-Checker: Becomes Active on Voucher Passing!
                         IssueDate = allotDate,
                         CreatedDate = DateTime.Now
                     };
                     _context.ShareCertificates.Add(shareCert);
                     await _context.SaveChangesAsync();
+                    savedCertNo = certNo;
 
                     // 3. Create ShareTransaction
                     shareTxn = new ShareTransaction
@@ -956,8 +966,6 @@ namespace Bhisi.Api.Controllers
                     _context.ShareTransactions.Add(shareTxn);
                     await _context.SaveChangesAsync();
                 }
-
-                string? generatedVoucherNo = null;
 
                 if (totalAmount > 0)
                 {
@@ -1078,10 +1086,6 @@ namespace Bhisi.Api.Controllers
                     }
 
                     int vchCount = await _context.Vouchers.CountAsync() + 1;
-                    int maxScroll = await _context.Vouchers
-                        .Where(v => v.BranchID == member.BranchID && v.VoucherDate.Date == allotDate.Date && v.ScrollNo != null)
-                        .Select(v => (int?)v.ScrollNo)
-                        .MaxAsync() ?? 0;
 
                     string vchPrefix = numShares > 0 ? "VCH-SHR" : "VCH-ADM";
                     string vchNarration = numShares > 0
@@ -1093,12 +1097,14 @@ namespace Bhisi.Api.Controllers
                         BranchID = member.BranchID,
                         VoucherNo = $"{vchPrefix}-{allotDate:yyyyMMdd}-{vchCount:D4}",
                         VoucherDate = allotDate,
-                        ScrollNo = maxScroll + 1,
+                        ScrollNo = null, // 🌟 CBS Maker-Checker: Scroll is only assigned upon Checker passing!
                         VoucherType = pMode.Equals("Transfer", StringComparison.OrdinalIgnoreCase) ? "Journal" : "Receipt",
                         TotalAmount = totalAmount,
                         Narration = vchNarration,
-                        Status = "Approved",
+                        Status = "Pending", // 🌟 CBS Maker-Checker: Pending Voucher Passing Queue
                         CreatedBy = userId,
+                        ApprovedBy = null,
+                        ApprovedOn = null,
                         VoucherDetails = voucherDetailsList
                     };
                     _context.Vouchers.Add(voucher);
@@ -1110,12 +1116,13 @@ namespace Bhisi.Api.Controllers
                     }
 
                     generatedVoucherNo = voucher.VoucherNo;
+                    savedVoucherId = voucher.VoucherID;
                 }
 
                 await dbTransaction.CommitAsync();
 
                 member.Customer = customer;
-                await LogAuditAsync("MEMBER_CREATE", member.MemberID.ToString(), $"नवीन सभासद नोंदणी: {customer.FirstName} {customer.LastName}, CIF: {customer.CIFNo}" + (!string.IsNullOrEmpty(generatedVoucherNo) ? $", पावती व्हाऊचर: {generatedVoucherNo}" : ""));
+                await LogAuditAsync("MEMBER_CREATE", member.MemberID.ToString(), $"नवीन सभासद नोंदणी: {customer.FirstName} {customer.LastName}, CIF: {customer.CIFNo}" + (!string.IsNullOrEmpty(generatedVoucherNo) ? $", पावती व्हाऊचर (Pending): {generatedVoucherNo}" : ""));
             }
             catch (DbUpdateException ex)
             {
@@ -1137,7 +1144,15 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(500, new { message = "सभासद नोंदणी करताना अनपेक्षित त्रुटी आली: " + (ex.InnerException?.Message ?? ex.Message) });
             }
 
-            return CreatedAtAction("GetMember", new { id = member.MemberID }, MemberResponseDto.FromMember(member));
+            var responseDto = MemberResponseDto.FromMember(member);
+            responseDto.GeneratedVoucherNo = generatedVoucherNo;
+            responseDto.GeneratedVoucherId = savedVoucherId;
+            responseDto.VoucherStatus = "Pending";
+            responseDto.TotalAmountPaid = savedTotalAmount;
+            responseDto.NumberOfSharesAllotted = savedNumShares;
+            responseDto.CertificateNo = savedCertNo;
+
+            return CreatedAtAction("GetMember", new { id = member.MemberID }, responseDto);
         }
 
         // DELETE: api/Members/5

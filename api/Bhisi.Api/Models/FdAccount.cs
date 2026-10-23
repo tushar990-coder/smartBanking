@@ -66,6 +66,9 @@ namespace Bhisi.Api.Models
 
         public bool IsLegacyAccount { get; set; } = false;
 
+        [NotMapped]
+        public bool IsOpeningBalance { get; set; } = false;
+
         [Column(TypeName = "decimal(18,2)")]
         public decimal LegacyAccruedInt { get; set; } = 0;
 

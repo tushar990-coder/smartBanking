@@ -7,7 +7,7 @@ import {
     IndianRupee, Edit2, Trash2, FileSpreadsheet, Plus, Layers, 
     CheckCircle, XCircle, Save, Calculator, UserPlus, Clock, 
     Sparkles, Eye, FileText, Banknote, RefreshCw, CreditCard, 
-    Wallet, Receipt, ArrowRight, ChevronRight, Lock, Printer
+    Wallet, Receipt, ArrowRight, ChevronRight, Lock, Unlock, Printer
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 import LoanDistributionListModal from './LoanDistributionListModal';
@@ -266,6 +266,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     };
 
     const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+    const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+    const [allowDateOverride, setAllowDateOverride] = useState(false);
 
     const [formData, setFormData] = useState<Partial<LoanDisbursement>>({
         disbursementDate: activeBusinessDate,
@@ -1117,6 +1119,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         setLegacyLoanAccountNo('');
         setErrorMessage('');
         setSuccessMessage('');
+        setAllowDateOverride(false);
         setFormData({
             disbursementDate: activeBusinessDate,
             paymentMode: "Cash",
@@ -1468,19 +1471,55 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                 {/* Row 1: Date & Branch (Option B: 2-column layout) */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
                                     <div>
-                                        <label className={labelClass}>वितरण दिनांक (Date) <span className="text-red-500">*</span></label>
+                                        <div className="flex items-center justify-between !mb-0.5">
+                                            <label className={labelClass}>वितरण दिनांक (Date) <span className="text-red-500">*</span></label>
+                                            {!allowDateOverride && (
+                                                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                                                    <Lock size={9} /> लॉक
+                                                </span>
+                                            )}
+                                        </div>
                                         <input 
                                             type="date" 
                                             name="disbursementDate" 
-                                            value={formData.disbursementDate || ''} 
+                                            value={formData.disbursementDate || activeBusinessDate} 
                                             onChange={(e) => {
                                                 const newDate = e.target.value;
                                                 setFormData(p => ({ ...p, disbursementDate: newDate }));
                                                 setNewAccountData(a => ({ ...a, openingDate: newDate }));
                                             }} 
                                             required 
-                                            className={inputClass} 
+                                            disabled={!allowDateOverride}
+                                            readOnly={!allowDateOverride}
+                                            className={`${inputClass} ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none font-semibold text-slate-800' : 'bg-white border-amber-400 font-bold'}`} 
                                         />
+                                        {isHOUser && (
+                                            <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal mt-0.5 select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={allowDateOverride}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setAllowDateOverride(checked);
+                                                        if (!checked) {
+                                                            setFormData(p => ({ ...p, disbursementDate: activeBusinessDate }));
+                                                            setNewAccountData(a => ({ ...a, openingDate: activeBusinessDate }));
+                                                        }
+                                                    }}
+                                                    className="w-3 h-3 text-primary rounded"
+                                                />
+                                                <span className="flex items-center gap-0.5">
+                                                    {allowDateOverride ? <Unlock size={10} className="text-amber-600" /> : <Lock size={10} className="text-gray-400" />}
+                                                    तारीख बदला (Override)
+                                                </span>
+                                            </label>
+                                        )}
+                                        {allowDateOverride && formData.disbursementDate !== activeBusinessDate && (
+                                            <div className="text-[9px] text-amber-800 bg-amber-50 border border-amber-300 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1 leading-tight">
+                                                <AlertCircle size={10} className="shrink-0 text-amber-600" />
+                                                <span>लॉगिन तारीख {activeBusinessDate} व्यतिरिक्त इतर तारीख निवडली आहे.</span>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div>

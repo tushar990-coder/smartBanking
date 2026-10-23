@@ -177,6 +177,21 @@ namespace Bhisi.Api.Controllers
 
                 disbursement.BranchID = targetBranchId;
 
+                // Core Banking Date Safeguards: Prevent future dating and transactions in closed financial years
+                if (disbursement.DisbursementDate.Date > DateTime.Today)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { message = "कर्ज वाटपाची दिनांक भविष्यातील (Future Date) असू शकत नाही." });
+                }
+
+                var closedFy = await _context.FinancialYears
+                    .FirstOrDefaultAsync(fy => fy.IsClosed && disbursement.DisbursementDate.Date >= fy.StartDate.Date && disbursement.DisbursementDate.Date <= fy.EndDate.Date);
+                if (closedFy != null)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { message = $"निवडलेली तारीख बंद झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडत असल्याने या तारखेवर कर्ज वाटप करता येत नाही." });
+                }
+
                 decimal sanctionedLimit = 0;
                 if (existingLoanAcc != null && existingLoanAcc.SanctionedAmount > 0)
                 {

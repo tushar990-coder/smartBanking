@@ -16,7 +16,10 @@ import {
   Save,
   Info,
   CheckSquare,
-  Square
+  Square,
+  Lock,
+  Unlock,
+  AlertCircle
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 
@@ -81,6 +84,8 @@ export default function RdInstallmentCollection({
 
   const { user } = useAuth();
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const [allowDateOverride, setAllowDateOverride] = useState(false);
 
   // Form states
   const [collectionDate, setCollectionDate] = useState<string>(activeBusinessDate);
@@ -707,15 +712,50 @@ export default function RdInstallmentCollection({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelClass}>हप्ता भरणा तारीख (Collection Date) <span className="text-red-500">*</span></label>
+                <div className="flex items-center justify-between !mb-0.5">
+                  <label className={labelClass}>हप्ता भरणा तारीख (Collection Date) <span className="text-red-500">*</span></label>
+                  {!allowDateOverride && (
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                      <Lock size={9} /> लॉक
+                    </span>
+                  )}
+                </div>
                 <input
                   type="date"
                   name="collectionDate"
-                  value={collectionDate}
+                  value={collectionDate || activeBusinessDate}
                   onChange={(e) => setCollectionDate(e.target.value)}
-                  className={inputClass}
+                  className={`${inputClass} ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none font-semibold text-slate-800' : 'bg-white border-amber-400 font-bold'}`}
                   required
+                  disabled={!allowDateOverride}
+                  readOnly={!allowDateOverride}
                 />
+                {isHOUser && (
+                  <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal mt-0.5 select-none">
+                    <input
+                      type="checkbox"
+                      checked={allowDateOverride}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setAllowDateOverride(checked);
+                        if (!checked) {
+                          setCollectionDate(activeBusinessDate);
+                        }
+                      }}
+                      className="w-3 h-3 text-primary rounded"
+                    />
+                    <span className="flex items-center gap-0.5">
+                      {allowDateOverride ? <Unlock size={10} className="text-amber-600" /> : <Lock size={10} className="text-gray-400" />}
+                      तारीख बदला (Override)
+                    </span>
+                  </label>
+                )}
+                {allowDateOverride && collectionDate !== activeBusinessDate && (
+                  <div className="text-[9px] text-amber-800 bg-amber-50 border border-amber-300 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1 leading-tight">
+                    <AlertCircle size={10} className="shrink-0 text-amber-600" />
+                    <span>लॉगिन तारीख {activeBusinessDate} व्यतिरिक्त इतर तारीख निवडली आहे.</span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -831,10 +871,17 @@ export default function RdInstallmentCollection({
                 <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">तारीख:</label>
                 <input
                   type="date"
-                  value={collectionDate}
+                  value={collectionDate || activeBusinessDate}
                   onChange={(e) => setCollectionDate(e.target.value)}
-                  className="text-xs border border-slate-300 rounded px-2 py-0.5 focus:ring-1 focus:ring-indigo-500 focus:outline-none bg-white text-slate-900 font-medium"
+                  className={`text-xs border border-slate-300 rounded px-2 py-0.5 focus:ring-1 focus:ring-indigo-500 focus:outline-none font-medium ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed text-slate-800 select-none' : 'bg-white text-slate-900'}`}
+                  disabled={!allowDateOverride}
+                  readOnly={!allowDateOverride}
                 />
+                {!allowDateOverride && (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                    <Lock size={9} /> लॉक
+                  </span>
+                )}
               </div>
 
               <button

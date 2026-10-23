@@ -225,6 +225,19 @@ namespace Bhisi.Api.Controllers
         {
             if (dto.CollectionAmount <= 0) return BadRequest("जमा रक्कम ० पेक्षा जास्त असणे आवश्यक आहे.");
 
+            // Core Banking Date Safeguards: Prevent future dating and transactions in closed financial years
+            if (dto.CollectionDate.Date > DateTime.Today)
+            {
+                return BadRequest("पिग्मी वसुलीची दिनांक भविष्यातील (Future Date) असू शकत नाही.");
+            }
+
+            var closedFyManual = await _context.FinancialYears
+                .FirstOrDefaultAsync(fy => fy.IsClosed && dto.CollectionDate.Date >= fy.StartDate.Date && dto.CollectionDate.Date <= fy.EndDate.Date);
+            if (closedFyManual != null)
+            {
+                return BadRequest($"निवडलेली तारीख बंद झालेल्या आर्थिक वर्षात ({closedFyManual.YearCode}) मोडत असल्याने या तारखेवर पिग्मी वसुली करता येत नाही.");
+            }
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -477,6 +490,19 @@ namespace Bhisi.Api.Controllers
             if (request == null || request.Items == null || !request.Items.Any(i => i.CollectionAmount > 0))
             {
                 return BadRequest("कृपया किमान एका खात्याची वैध जमा रक्कम (Collection Amount > 0) प्रविष्ट करा.");
+            }
+
+            // Core Banking Date Safeguards: Prevent future dating and transactions in closed financial years
+            if (request.CollectionDate.Date > DateTime.Today)
+            {
+                return BadRequest("पिग्मी वसुलीची दिनांक भविष्यातील (Future Date) असू शकत नाही.");
+            }
+
+            var closedFyBulk = await _context.FinancialYears
+                .FirstOrDefaultAsync(fy => fy.IsClosed && request.CollectionDate.Date >= fy.StartDate.Date && request.CollectionDate.Date <= fy.EndDate.Date);
+            if (closedFyBulk != null)
+            {
+                return BadRequest($"निवडलेली तारीख बंद झालेल्या आर्थिक वर्षात ({closedFyBulk.YearCode}) मोडत असल्याने या तारखेवर पिग्मी वसुली करता येत नाही.");
             }
 
             var validItems = request.Items.Where(i => i.CollectionAmount > 0).ToList();

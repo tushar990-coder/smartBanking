@@ -1014,6 +1014,19 @@ namespace Bhisi.Api.Controllers
 
             DateTime effDate = collectionDate?.Date ?? DateTime.Today;
 
+            // Core Banking Date Safeguards: Prevent future dating and transactions in closed financial years
+            if (effDate.Date > DateTime.Today)
+            {
+                return BadRequest("आरडी हप्ता भरण्याची दिनांक भविष्यातील (Future Date) असू शकत नाही.");
+            }
+
+            var closedFy = await _context.FinancialYears
+                .FirstOrDefaultAsync(fy => fy.IsClosed && effDate.Date >= fy.StartDate.Date && effDate.Date <= fy.EndDate.Date);
+            if (closedFy != null)
+            {
+                return BadRequest($"निवडलेली तारीख बंद झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडत असल्याने या तारखेवर हप्ता भरता येत नाही.");
+            }
+
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try

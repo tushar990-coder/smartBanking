@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2, Award } from 'lucide-react';
+import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2, Award, Lock, Unlock } from 'lucide-react';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import LoanCollectionReceiptPrint from './LoanCollectionReceiptPrint';
 import { useAuth } from '../context/AuthContext';
@@ -237,6 +237,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [ledgers, setLedgers] = useState<Ledger[]>([]);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [allowDateOverride, setAllowDateOverride] = useState(false);
 
     // Passing Mode State (व्हाउचर तपासणी व मंजुरी मोड)
     const [isPassingMode, setIsPassingMode] = useState(false);
@@ -494,7 +495,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             setPassingVoucher((col as any).voucher || null);
             setFormData({
                 ...col,
-                collectionDate: col.collectionDate ? col.collectionDate.split('T')[0] : new Date().toISOString().split('T')[0],
+                collectionDate: col.collectionDate ? col.collectionDate.split('T')[0] : activeBusinessDate,
                 fees: col.fees || []
             });
             setLastSavedCollectionId(col.loanCollectionID);
@@ -1491,6 +1492,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
                 principalCollected: 0,
                 fees: []
             });
+            setAllowDateOverride(false);
             setSelectedBorrowerKey(null);
             setSelectedCustomerId(null);
             setSelectedAccount(null);
@@ -1861,9 +1863,50 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                             {/* Row 1: Date, 1. Loan Scheme, Payment Mode */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2">
                                 <div>
-                                    <label className={labelClass}>दिनांक (Date)</label>
-                                    <input type="date" name="collectionDate" value={formData.collectionDate} onChange={(e) => setFormData(p => ({ ...p, collectionDate: e.target.value }))} required disabled={isPassingMode}
-                                        className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} />
+                                    <div className="flex items-center justify-between !mb-0.5">
+                                        <label className={labelClass}>दिनांक (Date)</label>
+                                        {!allowDateOverride && (
+                                            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                                                <Lock size={9} /> लॉक
+                                            </span>
+                                        )}
+                                    </div>
+                                    <input 
+                                        type="date" 
+                                        name="collectionDate" 
+                                        value={formData.collectionDate || activeBusinessDate} 
+                                        onChange={(e) => setFormData(p => ({ ...p, collectionDate: e.target.value }))} 
+                                        required 
+                                        disabled={isPassingMode || !allowDateOverride}
+                                        readOnly={!allowDateOverride}
+                                        className={`${inputClass} ${(!allowDateOverride || isPassingMode) ? 'bg-slate-100 cursor-not-allowed select-none font-semibold text-slate-800' : 'bg-white border-amber-400 font-bold'}`} 
+                                    />
+                                    {isHOUser && !isPassingMode && (
+                                        <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal mt-0.5 select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={allowDateOverride}
+                                                onChange={(e) => {
+                                                    const checked = e.target.checked;
+                                                    setAllowDateOverride(checked);
+                                                    if (!checked) {
+                                                        setFormData(p => ({ ...p, collectionDate: activeBusinessDate }));
+                                                    }
+                                                }}
+                                                className="w-3 h-3 text-primary rounded"
+                                            />
+                                            <span className="flex items-center gap-0.5">
+                                                {allowDateOverride ? <Unlock size={10} className="text-amber-600" /> : <Lock size={10} className="text-gray-400" />}
+                                                तारीख बदला (Override)
+                                            </span>
+                                        </label>
+                                    )}
+                                    {allowDateOverride && formData.collectionDate !== activeBusinessDate && (
+                                        <div className="text-[9px] text-amber-800 bg-amber-50 border border-amber-300 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1 leading-tight">
+                                            <AlertCircle size={10} className="shrink-0 text-amber-600" />
+                                            <span>लॉगिन तारीख {activeBusinessDate} व्यतिरिक्त इतर तारीख निवडली आहे.</span>
+                                        </div>
+                                    )}
                                 </div>
                                 
                                 <div className="md:col-span-2">
@@ -2530,7 +2573,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 </button>
                                 <button type="button" onClick={() => {
                                     setFormData({
-                                        collectionDate: new Date().toISOString().split('T')[0],
+                                        collectionDate: activeBusinessDate,
                                         receiptNo: '',
                                         paymentMode: "Cash",
                                         totalAmountReceived: 0,
@@ -2541,6 +2584,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         principalCollected: 0,
                                         fees: []
                                     });
+                                    setAllowDateOverride(false);
                                     setSelectedCustomerId(null);
                                     setSelectedBorrowerKey(null);
                                     setSelectedAccount(null);

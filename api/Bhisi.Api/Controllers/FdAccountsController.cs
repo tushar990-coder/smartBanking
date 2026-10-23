@@ -523,6 +523,22 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Invalid FD Scheme.");
             }
 
+            // Core Banking Date Safeguards for fresh FD opening (excludes opening balance migrations)
+            if (!account.IsLegacyAccount && !account.IsOpeningBalance)
+            {
+                if (account.OpeningDate.Date > DateTime.Today)
+                {
+                    return BadRequest("मुदत ठेव उघडण्याची दिनांक भविष्यातील (Future Date) असू शकत नाही.");
+                }
+
+                var closedFy = await _context.FinancialYears
+                    .FirstOrDefaultAsync(fy => fy.IsClosed && account.OpeningDate.Date >= fy.StartDate.Date && account.OpeningDate.Date <= fy.EndDate.Date);
+                if (closedFy != null)
+                {
+                    return BadRequest($"निवडलेली तारीख बंद झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडत असल्याने या तारखेवर नवीन ठेव उघडता येत नाही.");
+                }
+            }
+
             if (scheme.BranchID.HasValue && scheme.BranchID.Value != account.BranchID)
             {
                 return BadRequest($"निवडलेली मुदत ठेव योजना फक्त विशिष्ट शाखेसाठी (शाखा क्र. {scheme.BranchID.Value}) मर्यादित आहे. चालू शाखेतून ({account.BranchID}) या योजनेखाली खाते उघडता येत नाही.");
@@ -1814,6 +1830,39 @@ namespace Bhisi.Api.Controllers
                     CreatedOn = DateTime.Now
                 };
                 _context.Vouchers.Add(dummyVoucher);
+                await _context.SaveChangesAsync();
+
+                // Populate balanced VoucherDetails (Dr Ledger 412 Opening Balance Migration, Cr FD Scheme Liability)
+                var migrationLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
+                    l.AccountType == "Migration" || 
+                    (l.LedgerName != null && l.LedgerName.Contains("आरंभिक शिल्लक स्थलांतर")) || 
+                    l.LedgerID == 412);
+                int migrationLedgerId = migrationLedger?.LedgerID ?? 412;
+
+                Ledger? fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(scheme);
+                int liabilityLedgerId = fdLiabilityLedger?.LedgerID ?? (scheme.FdLiabilityLedgerID ?? 48);
+
+                var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
+
+                _context.VoucherDetails.Add(new VoucherDetail
+                {
+                    VoucherID = dummyVoucher.VoucherID,
+                    LedgerID = migrationLedgerId,
+                    DrCr = "Dr",
+                    Amount = account.DepositAmount,
+                    CustomerID = null,
+                    MemberID = null
+                });
+
+                _context.VoucherDetails.Add(new VoucherDetail
+                {
+                    VoucherID = dummyVoucher.VoucherID,
+                    LedgerID = liabilityLedgerId,
+                    DrCr = "Cr",
+                    Amount = account.DepositAmount,
+                    CustomerID = account.CustomerID,
+                    MemberID = linkedMember?.MemberID
+                });
                 await _context.SaveChangesAsync();
             }
             else if (dummyVoucher.Status == "Pending")

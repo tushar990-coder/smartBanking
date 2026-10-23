@@ -215,7 +215,19 @@ namespace Bhisi.Api.Controllers
             {
                 var targetDate = request.BusinessDate.Value.Date;
 
-                // 1. Check if the requested date is already closed (Day End executed)
+                // 1. Year Range Validation (2000 to 2099) - Prevents corrupted formats like 0026
+                if (targetDate.Year < 2000 || targetDate.Year > 2099)
+                {
+                    return BadRequest($"अवैध तारीख! वर्ष {targetDate.Year} स्वीकारले जाणार नाही. कृपया योग्य वर्ष (2000 ते 2099 दरम्यान) प्रविष्ट करा.");
+                }
+
+                // 2. Financial Year Boundary Validation
+                if (targetDate < fy.StartDate.Date || targetDate > fy.EndDate.Date)
+                {
+                    return BadRequest($"कामकाजाची तारीख ({targetDate:dd/MM/yyyy}) निवडलेल्या आर्थिक वर्षाच्या ({fy.YearCode}: {fy.StartDate:dd/MM/yyyy} ते {fy.EndDate:dd/MM/yyyy}) मर्यादेत असणे आवश्यक आहे.");
+                }
+
+                // 3. Check if the requested date is already closed (Day End executed)
                 var closedRecord = await _context.BranchDayEndStatuses
                     .FirstOrDefaultAsync(b => b.BranchID == request.BranchID 
                                            && b.BusinessDate.Date == targetDate 
@@ -225,9 +237,9 @@ namespace Bhisi.Api.Controllers
                     return BadRequest($"दिनांक {targetDate:dd/MM/yyyy} चा दिवस आधीच दिवसअखेर (Day End) करून बंद करण्यात आला आहे. बंद तारखेवर लॉगिन करता येणार नाही. कृपया चालू उघडी तारीख निवडा.");
                 }
 
-                // 2. Check if the requested date is older than the last closed date
+                // 4. Check if the requested date is older than the last closed date
                 var lastClosedRecord = await _context.BranchDayEndStatuses
-                    .Where(b => b.BranchID == request.BranchID && b.IsDayClosed)
+                    .Where(b => b.BranchID == request.BranchID && b.IsDayClosed && b.BusinessDate.Year >= 2000)
                     .OrderByDescending(b => b.BusinessDate)
                     .FirstOrDefaultAsync();
 
@@ -262,7 +274,7 @@ namespace Bhisi.Api.Controllers
 
             // Synchronize active open business date record in BranchDayEndStatuses
             var currentActiveDateRecord = await _context.BranchDayEndStatuses
-                .Where(b => b.BranchID == request.BranchID)
+                .Where(b => b.BranchID == request.BranchID && b.BusinessDate.Year >= 2000)
                 .OrderByDescending(b => b.BusinessDate)
                 .FirstOrDefaultAsync();
 
@@ -333,13 +345,23 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
+                // Self-healing: Cleanup any corrupt records with Year < 2000
+                var corruptRecords = await _context.BranchDayEndStatuses
+                    .Where(b => b.BranchID == branchId && b.BusinessDate.Year < 2000)
+                    .ToListAsync();
+                if (corruptRecords.Any())
+                {
+                    _context.BranchDayEndStatuses.RemoveRange(corruptRecords);
+                    await _context.SaveChangesAsync();
+                }
+
                 var activeRecord = await _context.BranchDayEndStatuses
-                    .Where(b => b.BranchID == branchId)
+                    .Where(b => b.BranchID == branchId && b.BusinessDate.Year >= 2000)
                     .OrderByDescending(b => b.BusinessDate)
                     .FirstOrDefaultAsync();
 
                 var lastClosedRecord = await _context.BranchDayEndStatuses
-                    .Where(b => b.BranchID == branchId && b.IsDayClosed)
+                    .Where(b => b.BranchID == branchId && b.IsDayClosed && b.BusinessDate.Year >= 2000)
                     .OrderByDescending(b => b.BusinessDate)
                     .FirstOrDefaultAsync();
 

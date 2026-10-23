@@ -8,6 +8,7 @@ import { MemberOption } from './common/MemberSearchSelect';
 import FdReceiptPrintModal from './FdReceiptPrintModal';
 import { FdInterestScheduleModal } from './FdInterestScheduleModal';
 import { generateFdInterestSchedule } from '../utils/fdInterestSchedule';
+import { Lock, Unlock, AlertCircle } from 'lucide-react';
 
 interface Member extends MemberOption {}
 
@@ -95,9 +96,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   // Entry Mode: 'single' | 'bulk'
   const [entryMode, setEntryMode] = useState<'single' | 'bulk'>('single');
-  const [totalDepositAmount, setTotalDepositAmount] = useState<number | ''>(1000000);
-  const [splitCount, setSplitCount] = useState<number | ''>(5);
-  const [amountPerReceipt, setAmountPerReceipt] = useState<number | ''>(200000);
+  const [totalDepositAmount, setTotalDepositAmount] = useState<number | ''>('');
+  const [splitCount, setSplitCount] = useState<number | ''>('');
+  const [amountPerReceipt, setAmountPerReceipt] = useState<number | ''>('');
   const [receiptRows, setReceiptRows] = useState<BulkReceiptRow[]>([]);
 
   // Payment Mode & Customer SB Accounts State
@@ -129,6 +130,8 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   const API_URL = '/api';
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const [allowDateOverride, setAllowDateOverride] = useState(false);
 
   const [formData, setFormData] = useState({
     branchID: user?.branchID || 1,
@@ -139,7 +142,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     durationType: 'Months', // 'Days' | 'Months' | 'Years'
     durationValue: 12,
     openingDate: activeBusinessDate,
-    depositAmount: 50000,
+    depositAmount: '' as any,
     nomineeName: '',
     nomineeRelation: '',
     remarks: 'नवीन मुदत ठेव खाते उघडले (New FD Opened)',
@@ -543,8 +546,20 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   // Synchronize Bulk Split Amount Calculations
   const handleTotalAmountChange = (val: number | '') => {
     setTotalDepositAmount(val);
-    const count = Number(splitCount) > 0 ? Number(splitCount) : 5;
-    if (val !== '') {
+    const count = Number(splitCount) > 0 ? Number(splitCount) : (receiptRows.length > 0 ? receiptRows.length : 0);
+    if (val === '' || Number(val) <= 0) {
+      setAmountPerReceipt('');
+      if (receiptRows.length > 0) {
+        setReceiptRows(prev => prev.map(r => ({
+          ...r,
+          depositAmount: '' as any,
+          maturityAmount: 0
+        })));
+      }
+      return;
+    }
+
+    if (count > 0) {
       setAmountPerReceipt(Math.round((Number(val) / count) * 100) / 100);
       setReceiptRows(generateReceiptRows(
         count,
@@ -561,12 +576,28 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   const handleSplitCountChange = (val: number | '') => {
     setSplitCount(val);
+    if (val === '' || Number(val) <= 0) {
+      setAmountPerReceipt('');
+      return;
+    }
+    const count = Number(val);
     const total = Number(totalDepositAmount) > 0 ? Number(totalDepositAmount) : 0;
-    if (val !== '' && Number(val) > 0) {
-      setAmountPerReceipt(Math.round((total / Number(val)) * 100) / 100);
+    if (total > 0) {
+      setAmountPerReceipt(Math.round((total / count) * 100) / 100);
       setReceiptRows(generateReceiptRows(
-        Number(val),
+        count,
         total,
+        selectedScheme,
+        formData.durationType,
+        formData.durationValue,
+        formData.openingDate,
+        formData.isSeniorCitizen,
+        receiptRows
+      ));
+    } else {
+      setReceiptRows(generateReceiptRows(
+        count,
+        0,
         selectedScheme,
         formData.durationType,
         formData.durationValue,
@@ -579,7 +610,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
 
   const handleAmountPerReceiptChange = (val: number | '') => {
     setAmountPerReceipt(val);
-    if (val !== '' && totalDepositAmount !== '' && Number(val) > 0) {
+    if (val !== '' && totalDepositAmount !== '' && Number(val) > 0 && Number(totalDepositAmount) > 0) {
       const calculatedCount = Math.max(1, Math.round(Number(totalDepositAmount) / Number(val)));
       setSplitCount(calculatedCount);
       setReceiptRows(generateReceiptRows(
@@ -690,8 +721,16 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   };
 
   const handleDistributeEqually = () => {
-    const count = receiptRows.length > 0 ? receiptRows.length : (Number(splitCount) > 0 ? Number(splitCount) : 5);
+    const count = receiptRows.length > 0 ? receiptRows.length : (Number(splitCount) > 0 ? Number(splitCount) : 0);
     const total = Number(totalDepositAmount) || 0;
+    if (count <= 0) {
+      alert('कृपया प्रथम पावत्यांची संख्या प्रविष्ट करा किंवा पावती जोडा.');
+      return;
+    }
+    if (total <= 0) {
+      alert('कृपया एकूण लक्ष्य ठेव रक्कम प्रविष्ट करा.');
+      return;
+    }
     const newRows = generateReceiptRows(
       count,
       total,
@@ -716,8 +755,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     const baseAcc = (receiptRows.length > 0 && receiptRows[0].accountNo && receiptRows[0].accountNo !== 'AUTO' ? receiptRows[0].accountNo : '') || nextAccountNo || suggestedAccountNo || '';
     const accNo = predictSequentialAccountNo(baseAcc, newIndex);
 
+    const initialAmt = rem > 0 ? rem : ('' as any);
+
     const calcs = calculateRowDetails(
-      rem,
+      Number(initialAmt) || 0,
       durType,
       durVal,
       selectedScheme,
@@ -729,7 +770,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
       id: `receipt-${Date.now()}-${newIndex + 1}-${Math.random().toString(36).substring(2, 7)}`,
       accountNo: accNo,
       legacyAccountNumber: '',
-      depositAmount: rem,
+      depositAmount: initialAmt,
       durationType: durType,
       durationValue: durVal,
       durationInDays: calcs.durationInDays,
@@ -744,13 +785,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   };
 
   const handleDeleteReceiptRow = (index: number) => {
-    if (receiptRows.length <= 1) {
-      alert('कमीत कमी १ पावती असणे आवश्यक आहे.');
-      return;
-    }
     const nextRows = receiptRows.filter((_, idx) => idx !== index);
     setReceiptRows(nextRows);
-    setSplitCount(nextRows.length);
+    setSplitCount(nextRows.length > 0 ? nextRows.length : '');
   };
 
   // Reconcile and Financial Balance Metrics
@@ -770,20 +807,22 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   const hasInvalidRow = receiptRows.length === 0 || receiptRows.some(r => Number(r.depositAmount) <= 0);
   const isBulkSubmitDisabled = entryMode === 'bulk' && (!isDifferenceZero || hasInvalidRow);
 
-  // Initialize receiptRows when entering bulk mode
+  // Initialize receiptRows when entering bulk mode (only if user provided amount and count)
   useEffect(() => {
     if (entryMode === 'bulk' && receiptRows.length === 0) {
-      const count = Number(splitCount) > 0 ? Number(splitCount) : 5;
-      const total = Number(totalDepositAmount) > 0 ? Number(totalDepositAmount) : 500000;
-      setReceiptRows(generateReceiptRows(
-        count,
-        total,
-        selectedScheme,
-        formData.durationType,
-        formData.durationValue,
-        formData.openingDate,
-        formData.isSeniorCitizen
-      ));
+      const count = Number(splitCount) > 0 ? Number(splitCount) : 0;
+      const total = Number(totalDepositAmount) > 0 ? Number(totalDepositAmount) : 0;
+      if (count > 0 && total > 0) {
+        setReceiptRows(generateReceiptRows(
+          count,
+          total,
+          selectedScheme,
+          formData.durationType,
+          formData.durationValue,
+          formData.openingDate,
+          formData.isSeniorCitizen
+        ));
+      }
     }
   }, [entryMode, selectedScheme]);
 
@@ -1291,14 +1330,20 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
         }
       }
 
+      setAllowDateOverride(false);
       setFormData((prev) => ({
         ...prev,
-        depositAmount: 50000,
+        openingDate: activeBusinessDate,
+        depositAmount: '' as any,
         legacyAccountNumber: '',
         nomineeName: '',
         nomineeRelation: '',
         remarks: 'नवीन मुदत ठेव खाते उघडले (New FD Opened)',
       }));
+      setTotalDepositAmount('');
+      setSplitCount('');
+      setAmountPerReceipt('');
+      setReceiptRows([]);
       setChequeNo('');
       setChequeDate('');
       setIsManualAccountNo(false);
@@ -1614,14 +1659,56 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                 {entryMode === 'single' && (
                   <div className="grid grid-cols-1 md:grid-cols-6 gap-2.5">
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खाते उघडल्याची तारीख *</label>
-                      <input type="date" name="openingDate" value={formData.openingDate} onChange={handleChange} required
-                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white" />
+                      <div className="flex items-center justify-between !mb-0.5">
+                        <label className="block text-[11px] font-medium text-gray-600">खाते उघडल्याची तारीख *</label>
+                        {!allowDateOverride && (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                            <Lock size={9} /> लॉक
+                          </span>
+                        )}
+                      </div>
+                      <input 
+                        type="date" 
+                        name="openingDate" 
+                        value={formData.openingDate || activeBusinessDate} 
+                        onChange={handleChange} 
+                        required
+                        disabled={!allowDateOverride}
+                        readOnly={!allowDateOverride}
+                        className={`w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none font-semibold text-slate-800' : 'bg-white border-amber-400 font-bold'}`} 
+                      />
+                      {isHOUser && (
+                        <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal mt-0.5 select-none">
+                          <input
+                            type="checkbox"
+                            checked={allowDateOverride}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setAllowDateOverride(checked);
+                              if (!checked) {
+                                setFormData(p => ({ ...p, openingDate: activeBusinessDate }));
+                              }
+                            }}
+                            className="w-3 h-3 text-primary rounded"
+                          />
+                          <span className="flex items-center gap-0.5">
+                            {allowDateOverride ? <Unlock size={10} className="text-amber-600" /> : <Lock size={10} className="text-gray-400" />}
+                            तारीख बदला (Override)
+                          </span>
+                        </label>
+                      )}
+                      {allowDateOverride && formData.openingDate !== activeBusinessDate && (
+                        <div className="text-[9px] text-amber-800 bg-amber-50 border border-amber-300 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1 leading-tight">
+                          <AlertCircle size={10} className="shrink-0 text-amber-600" />
+                          <span>लॉगिन तारीख {activeBusinessDate} व्यतिरिक्त इतर तारीख निवडली आहे.</span>
+                        </div>
+                      )}
                     </div>
 
                     <div>
                       <label className="block text-[11px] font-medium text-gray-600 mb-0.5">ठेव रक्कम (Deposit ₹) *</label>
                       <input type="number" name="depositAmount" value={formData.depositAmount} onChange={handleChange} onFocus={(e) => e.target.select()} required
+                        placeholder="उदा. 50,000"
                         className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-blue-900" />
                     </div>
 
@@ -1715,6 +1802,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           type="number"
                           value={totalDepositAmount}
                           onChange={(e) => handleTotalAmountChange(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                          placeholder="उदा. 1,00,000"
                           required
                           className="w-full border border-blue-400 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/50 font-black text-blue-950 font-mono"
                         />
@@ -1728,6 +1816,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           type="number"
                           value={splitCount}
                           onChange={(e) => handleSplitCountChange(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                          placeholder="उदा. 5"
                           required
                           min="1"
                           max="50"
@@ -1868,92 +1957,107 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {receiptRows.map((row, idx) => (
-                            <tr key={row.id} className="hover:bg-blue-50/30 transition-colors">
-                              <td className="py-1 px-2 text-center font-bold text-slate-500 bg-slate-50/50">
-                                {idx + 1}
-                              </td>
-                              <td className="py-1 px-2">
-                                <input
-                                  type="text"
-                                  value={row.accountNo}
-                                  onChange={(e) => handleRowAccountNoChange(idx, e.target.value)}
-                                  placeholder={predictSequentialAccountNo(nextAccountNo, idx)}
-                                  className="w-full border border-blue-200 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-blue-950 bg-blue-50/20 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
-                                />
-                              </td>
-                              <td className="py-1 px-2">
-                                <input
-                                  type="text"
-                                  value={row.legacyAccountNumber}
-                                  onChange={(e) => handleRowLegacyNoChange(idx, e.target.value)}
-                                  placeholder="उदा. 45"
-                                  className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
-                                />
-                              </td>
-                              <td className="py-1 px-2 text-right">
-                                <input
-                                  type="number"
-                                  value={row.depositAmount}
-                                  onChange={(e) => handleRowAmountChange(idx, e.target.value === '' ? '' : parseFloat(e.target.value))}
-                                  onFocus={(e) => e.target.select()}
-                                  min="1"
-                                  step="1"
-                                  placeholder="0"
-                                  className={`w-full border rounded px-2 py-0.5 text-xs text-right font-black focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                                    Number(row.depositAmount) <= 0
-                                      ? 'border-red-400 bg-red-50 text-red-700'
-                                      : 'border-blue-300 bg-blue-50/20 text-blue-950 font-mono'
-                                  }`}
-                                />
-                              </td>
-                              <td className="py-1 px-2">
-                                <div className="flex gap-1 items-center">
-                                  <input
-                                    type="number"
-                                    value={row.durationValue}
-                                    onChange={(e) => handleRowDurationChange(idx, row.durationType, parseInt(e.target.value, 10) || 1)}
-                                    onFocus={(e) => e.target.select()}
-                                    min="1"
-                                    className="w-14 border border-slate-200 rounded px-1 py-0.5 text-xs text-center font-bold bg-white"
-                                  />
-                                  <select
-                                    value={row.durationType}
-                                    onChange={(e) => handleRowDurationChange(idx, e.target.value as any, row.durationValue)}
-                                    className="border border-slate-200 rounded px-1 py-0.5 text-[10px] bg-white text-slate-700"
-                                  >
-                                    <option value="Days">दिवस</option>
-                                    <option value="Months">महिने</option>
-                                    <option value="Years">वर्षे</option>
-                                  </select>
+                          {receiptRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={9} className="text-center py-8 text-slate-500 bg-slate-50/60">
+                                <div className="flex flex-col items-center justify-center gap-1.5 py-2">
+                                  <span className="text-3xl text-slate-400">📋</span>
+                                  <p className="text-xs font-bold text-slate-700">
+                                    सध्या कोणतीही पावती तयार केलेली नाही.
+                                  </p>
+                                  <p className="text-[11px] text-slate-500 max-w-md">
+                                    कृपया वरील <strong className="text-blue-700">'एकूण लक्ष्य ठेव'</strong> व <strong className="text-blue-700">'पावत्यांची संख्या'</strong> प्रविष्ट करा म्हणजे वाटप आपोआप होईल, किंवा थेट <strong className="text-emerald-700">'+ पावती जोडा'</strong> बटणावर क्लिक करा.
+                                  </p>
                                 </div>
                               </td>
-                              <td className="py-1 px-2 text-center">
-                                <span className="inline-block px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded font-bold font-mono text-[11px]">
-                                  {row.interestRate} %
-                                </span>
-                              </td>
-                              <td className="py-1 px-2 text-center font-mono text-slate-700 text-xs">
-                                {row.maturityDate ? new Date(row.maturityDate).toLocaleDateString('en-GB') : '-'}
-                              </td>
-                              <td className="py-1 px-2 text-right">
-                                <span className="font-extrabold text-emerald-900 font-mono text-xs">
-                                  ₹ {Number(row.maturityAmount || 0).toLocaleString('en-IN')}
-                                </span>
-                              </td>
-                              <td className="py-1 px-2 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteReceiptRow(idx)}
-                                  disabled={receiptRows.length <= 1}
-                                  className="text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:hover:text-slate-400 p-0.5 transition-colors cursor-pointer"
-                                  title={receiptRows.length <= 1 ? 'किमान १ पावती आवश्यक आहे' : 'ही पावती काढून टाका'}
-                                >
-                                  ❌
-                                </button>
-                              </td>
                             </tr>
-                          ))}
+                          ) : (
+                            receiptRows.map((row, idx) => (
+                              <tr key={row.id} className="hover:bg-blue-50/30 transition-colors">
+                                <td className="py-1 px-2 text-center font-bold text-slate-500 bg-slate-50/50">
+                                  {idx + 1}
+                                </td>
+                                <td className="py-1 px-2">
+                                  <input
+                                    type="text"
+                                    value={row.accountNo}
+                                    onChange={(e) => handleRowAccountNoChange(idx, e.target.value)}
+                                    placeholder={predictSequentialAccountNo(nextAccountNo, idx)}
+                                    className="w-full border border-blue-200 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-blue-950 bg-blue-50/20 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                                  />
+                                </td>
+                                <td className="py-1 px-2">
+                                  <input
+                                    type="text"
+                                    value={row.legacyAccountNumber}
+                                    onChange={(e) => handleRowLegacyNoChange(idx, e.target.value)}
+                                    placeholder="उदा. 45"
+                                    className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                  />
+                                </td>
+                                <td className="py-1 px-2 text-right">
+                                  <input
+                                    type="number"
+                                    value={row.depositAmount}
+                                    onChange={(e) => handleRowAmountChange(idx, e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                    onFocus={(e) => e.target.select()}
+                                    min="1"
+                                    step="1"
+                                    placeholder="0"
+                                    className={`w-full border rounded px-2 py-0.5 text-xs text-right font-black focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                                      Number(row.depositAmount) <= 0
+                                        ? 'border-red-400 bg-red-50 text-red-700'
+                                        : 'border-blue-300 bg-blue-50/20 text-blue-950 font-mono'
+                                    }`}
+                                  />
+                                </td>
+                                <td className="py-1 px-2">
+                                  <div className="flex gap-1 items-center">
+                                    <input
+                                      type="number"
+                                      value={row.durationValue}
+                                      onChange={(e) => handleRowDurationChange(idx, row.durationType, parseInt(e.target.value, 10) || 1)}
+                                      onFocus={(e) => e.target.select()}
+                                      min="1"
+                                      className="w-14 border border-slate-200 rounded px-1 py-0.5 text-xs text-center font-bold bg-white"
+                                    />
+                                    <select
+                                      value={row.durationType}
+                                      onChange={(e) => handleRowDurationChange(idx, e.target.value as any, row.durationValue)}
+                                      className="border border-slate-200 rounded px-1 py-0.5 text-[10px] bg-white text-slate-700"
+                                    >
+                                      <option value="Days">दिवस</option>
+                                      <option value="Months">महिने</option>
+                                      <option value="Years">वर्षे</option>
+                                    </select>
+                                  </div>
+                                </td>
+                                <td className="py-1 px-2 text-center">
+                                  <span className="inline-block px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded font-bold font-mono text-[11px]">
+                                    {row.interestRate} %
+                                  </span>
+                                </td>
+                                <td className="py-1 px-2 text-center font-mono text-slate-700 text-xs">
+                                  {row.maturityDate ? new Date(row.maturityDate).toLocaleDateString('en-GB') : '-'}
+                                </td>
+                                <td className="py-1 px-2 text-right">
+                                  <span className="font-extrabold text-emerald-900 font-mono text-xs">
+                                    ₹ {Number(row.maturityAmount || 0).toLocaleString('en-IN')}
+                                  </span>
+                                </td>
+                                <td className="py-1 px-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteReceiptRow(idx)}
+                                    className="text-slate-400 hover:text-rose-600 p-0.5 transition-colors cursor-pointer"
+                                    title="ही पावती काढून टाका"
+                                  >
+                                    ❌
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                         <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-300 text-slate-800">
                           <tr>
@@ -2006,7 +2110,9 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                       {/* Reconciliation Variance Card */}
                       <div
                         className={`rounded p-2 border flex flex-col justify-between transition-colors ${
-                          isDifferenceZero
+                          targetTotal === 0 && roundedGridTotal === 0
+                            ? 'bg-slate-50 border-slate-300 text-slate-700'
+                            : isDifferenceZero
                             ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
                             : difference > 0
                             ? 'bg-amber-50 border-amber-300 text-amber-950'
@@ -2019,14 +2125,16 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           </span>
                           <span
                             className={`text-[10px] font-black px-1.5 py-0.2 rounded border ${
-                              isDifferenceZero
+                              targetTotal === 0 && roundedGridTotal === 0
+                                ? 'bg-slate-200 text-slate-700 border-slate-300'
+                                : isDifferenceZero
                                 ? 'bg-emerald-200 text-emerald-900 border-emerald-400'
                                 : difference > 0
                                 ? 'bg-amber-200 text-amber-950 border-amber-400'
                                 : 'bg-rose-200 text-rose-950 border-rose-400'
                             }`}
                           >
-                            {isDifferenceZero ? 'तंतोतंत जुळले' : 'तफावत'}
+                            {targetTotal === 0 && roundedGridTotal === 0 ? 'प्रतीक्षेत' : isDifferenceZero ? 'तंतोतंत जुळले' : 'तफावत'}
                           </span>
                         </div>
 
@@ -2034,7 +2142,7 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                           <span className="text-sm font-extrabold font-mono">
                             तफावत: ₹ {Math.abs(difference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
-                          {!isDifferenceZero && (
+                          {!isDifferenceZero && targetTotal > 0 && (
                             <button
                               type="button"
                               onClick={handleBalanceLastReceipt}
@@ -2046,7 +2154,11 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                         </div>
 
                         <div className="text-[10px] font-medium leading-snug mt-1">
-                          {isDifferenceZero ? (
+                          {targetTotal === 0 && roundedGridTotal === 0 ? (
+                            <span className="text-slate-600 font-medium flex items-center gap-1">
+                              <span>ℹ️</span> कृपया एकूण लक्ष्य ठेव व पावत्यांची संख्या प्रविष्ट करा.
+                            </span>
+                          ) : isDifferenceZero ? (
                             <span className="text-emerald-800 font-semibold flex items-center gap-1">
                               <span>✅</span> ०.०० तफावत - सर्व पावत्या सेव्ह करण्यासाठी तयार आहेत.
                             </span>

@@ -19,8 +19,11 @@ import {
   ArrowUpRight,
   Info,
   RotateCcw,
-  Clock
+  Clock,
+  Printer,
+  Eye
 } from 'lucide-react';
+import VoucherPrint from './VoucherPrint';
 
 interface VoucherDetail {
   voucherDetailID: number;
@@ -83,6 +86,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [expandedVoucherId, setExpandedVoucherId] = useState<number | null>(null);
+  const [printingVoucherId, setPrintingVoucherId] = useState<number | null>(null);
 
   // Date Filtering States
   const todayStr = useMemo(() => {
@@ -264,6 +268,50 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     }
   };
 
+  // Direct Single Pass (एका क्लिकवर स्वतंत्र व्हाउचर मंजूर व पोस्ट करणे)
+  const handleSinglePass = async (voucher: Voucher) => {
+    if (!voucher) return;
+    if (voucher.status === 'Approved') {
+      alert(`व्हाउचर क्र. ${voucher.voucherNo} आधीच मंजूर आहे (स्क्रॉल क्र. #${voucher.scrollNo || 'उपलब्ध'}).`);
+      return;
+    }
+
+    const confirmMsg = `व्हाउचर क्र. ${voucher.voucherNo} (${voucher.voucherType} - ₹${voucher.totalAmount.toLocaleString('en-IN')}) मंजूर व पास करायचे आहे का?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setActionLoading(true);
+    setMessage('');
+    setError('');
+    try {
+      const res = await fetch('/api/VoucherPosting/Post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voucherIds: [voucher.voucherID],
+          approvedBy: user?.userID || 1,
+        }),
+      });
+
+      if (res.ok) {
+        const resData = await res.json();
+        let successText = `व्हाउचर क्र. ${voucher.voucherNo} यशस्वीरीत्या पास व पोस्ट झाले.`;
+        if (resData.vouchers && Array.isArray(resData.vouchers) && resData.vouchers.length > 0) {
+          const scrollInfo = resData.vouchers[0].scrollNo ? ` (वाटप केलेला स्क्रॉल क्र. #${resData.vouchers[0].scrollNo})` : '';
+          successText += scrollInfo;
+        }
+        setMessage(successText);
+        await refreshAll();
+      } else {
+        const errText = await res.text();
+        setError(`मंजुरी त्रुटी: ${errText}`);
+      }
+    } catch (err) {
+      setError('पासिंग करताना नेटवर्क त्रुटी आली. कृपया पुन्हा प्रयत्न करा.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Open Single Unpass Modal
   const openSingleUnpassModal = (voucher: Voucher) => {
     setTargetVoucherToUnpass(voucher);
@@ -383,17 +431,23 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     // 9. Share Capital & Members
     const isShareTransfer =
       vNo.startsWith('JV-SH-TRF-') ||
+      vNo.startsWith('VCH-SHR-TRF-') ||
       v.narration?.includes('भाग हस्तांतरण') ||
       narr.includes('share transfer');
 
     const isShareWithdrawal =
       vNo.startsWith('PAY-SH-') ||
+      vNo.startsWith('VCH-SHR-WD-') ||
       v.narration?.includes('भाग परतावा') ||
       narr.includes('share withdrawal');
 
     const isShareMaster =
       vNo.startsWith('REC-SH-') ||
+      vNo.startsWith('VCH-SHR-') ||
+      vNo.startsWith('VCH-ADM-') ||
       v.narration?.includes('भाग भांडवल') ||
+      v.narration?.includes('भाग वाटप') ||
+      v.narration?.includes('सभासद नोंदणी') ||
       narr.includes('share capital') ||
       narr.includes('share purchase') ||
       v.narration?.includes('नवीन भाग खरेदी');
@@ -585,6 +639,20 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  // Guarded Action Delete (मंजूर व्हाउचरसाठी सुरक्षा तपासणीसह डिलीट)
+  const handleActionDelete = async (voucher: Voucher) => {
+    if (!voucher) return;
+    if (voucher.status === 'Approved' || activeTab === 'APPROVED') {
+      alert(
+        `सुरक्षा चेतावणी: व्हाउचर क्र. ${voucher.voucherNo} आधीच मंजूर (Approved) झालेले आहे.\n\n` +
+        `कोअर बँकिंग नियमांनुसार मंजूर व्हाउचर थेट डिलीट करता येत नाही.\n` +
+        `कृपया प्रथम 'अन-पास (Unpass)' बटण दाबून व्हाउचर प्रलंबित करा, त्यानंतरच डिलीट करा.`
+      );
+      return;
+    }
+    await handleDirectSingleDelete(voucher);
   };
 
   // Direct Bulk Delete (निवडलेले व्हाउचर थेट डिलीट करणे)
@@ -784,31 +852,31 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
   return (
     <div className="p-2 sm:p-3 max-w-full min-h-full flex flex-col bg-gray-50 text-[11px] font-sans relative pb-28">
       {/* Outer Container */}
-      <div className="bg-white rounded-md shadow-sm border border-gray-300 flex flex-col">
-        {/* Hero Header Banner */}
-        <div className="bg-gradient-to-r from-slate-900 via-[#0E8A5A] to-emerald-950 text-white px-3 py-2 flex flex-wrap items-center justify-between gap-2 shadow-sm">
-          <div className="flex items-center gap-2">
-            <div className="p-1 bg-white/10 rounded-sm">
-              <FileText className="w-4 h-4 text-emerald-300" />
+      <div className="bg-white rounded-md shadow-sm border border-gray-200 flex flex-col">
+        {/* Clean, Light Header Banner */}
+        <div className="bg-white border-b border-gray-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3 rounded-t-md">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-200 shadow-2xs">
+              <FileText className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
-              <h2 className="text-xs font-bold tracking-wide flex items-center gap-1.5">
-                <span>📋 व्हाउचर पासिंग, मंजुरी व व्यवस्थापन (Voucher Passing & Approval Master)</span>
+              <h2 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-1.5">
+                <span>व्हाउचर पासिंग, मंजुरी व व्यवस्थापन (Voucher Passing & Approval)</span>
               </h2>
-              <p className="text-[10px] text-emerald-200/90 font-normal">
-                कोअर बँकिंग दुहेरी नियंत्रण (Maker-Checker Approval & Secure Deletion Audit System)
+              <p className="text-[11px] text-slate-500 font-normal">
+                कोअर बँकिंग दुहेरी नियंत्रण (Maker-Checker Approval & Audit System)
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={refreshAll}
               disabled={loading || loadingApproved || actionLoading}
-              className="bg-white/10 hover:bg-white/20 text-white px-2.5 py-1 rounded text-xs font-medium border border-white/20 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              className="bg-white hover:bg-slate-50 text-slate-700 px-2.5 py-1.5 rounded text-xs font-semibold border border-slate-300 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
-              <RefreshCw className={`w-3 h-3 ${loading || loadingApproved ? 'animate-spin' : ''}`} />
-              <span>रीफ्रेश (Refresh)</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${loading || loadingApproved ? 'animate-spin' : ''}`} />
+              <span>रीफ्रेश</span>
             </button>
 
             {activeTab === 'PENDING' ? (
@@ -823,8 +891,8 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                       window.location.href = '/reports/draft-daybook';
                     }
                   }}
-                  className="bg-amber-400 hover:bg-amber-300 text-amber-950 px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-sm border border-amber-500"
-                  title="व्हाउचर पासिंग करण्यापूर्वी कच्ची रोजकीर्द तपासा (Verify Pre-Posting Draft Daybook)"
+                  className="bg-amber-50 hover:bg-amber-100 text-amber-900 px-2.5 py-1.5 rounded text-xs font-semibold border border-amber-300 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="व्हाउचर पासिंग करण्यापूर्वी कच्ची रोजकीर्द तपासा (Draft Daybook)"
                 >
                   <span>📖</span>
                   <span>कच्ची रोजकीर्द (Draft Daybook)</span>
@@ -834,10 +902,10 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 <button
                   onClick={handleDirectBulkDelete}
                   disabled={selectedVouchers.size === 0 || actionLoading}
-                  className={`px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-2.5 py-1.5 rounded text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer border ${
                     selectedVouchers.size > 0
-                      ? 'bg-rose-700 text-white hover:bg-rose-800 shadow-sm border border-rose-600'
-                      : 'bg-white/10 text-white/40 cursor-not-allowed border border-white/10'
+                      ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300 shadow-2xs'
+                      : 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed shadow-none'
                   }`}
                   title="निवडलेले सर्व व्हाउचर थेट रद्द व डिलीट करा"
                 >
@@ -849,13 +917,13 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 <button
                   onClick={handlePostSelected}
                   disabled={selectedVouchers.size === 0 || actionLoading}
-                  className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
                     selectedVouchers.size > 0
-                      ? 'bg-white text-emerald-950 shadow-sm hover:bg-emerald-50'
-                      : 'bg-white/20 text-white/50 cursor-not-allowed border border-white/10'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed shadow-none'
                   }`}
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                  <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>निवडलेले पास करा ({selectedVouchers.size})</span>
                 </button>
               </>
@@ -871,8 +939,8 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                       window.location.href = '/reports/daybook';
                     }
                   }}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-sm border border-emerald-400"
-                  title="मंजूर व्हाउचर्सची अधिकृत पक्की रोजकीर्द तपासा (Official Daybook)"
+                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-900 px-2.5 py-1.5 rounded text-xs font-semibold border border-emerald-300 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="मंजूर व्हाउचर्सची अधिकृत पक्की रोजकीर्द तपासा (Daybook)"
                 >
                   <span>📘</span>
                   <span>पक्की रोजकीर्द (Daybook)</span>
@@ -882,10 +950,10 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 <button
                   onClick={openBulkUnpassModal}
                   disabled={selectedVouchers.size === 0 || actionLoading}
-                  className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
                     selectedVouchers.size > 0
-                      ? 'bg-amber-400 text-amber-950 hover:bg-amber-300 shadow-sm border border-amber-500'
-                      : 'bg-white/10 text-white/40 cursor-not-allowed border border-white/10'
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                      : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed shadow-none'
                   }`}
                   title="निवडलेले मंजूर व्हाउचर्स पुन्हा प्रलंबित स्थितीत पाठवा (Revert to Pending)"
                 >
@@ -898,7 +966,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
         </div>
 
         {/* Dual Tab Strip: Pending vs Approved */}
-        <div className="flex border-b border-gray-300 bg-slate-100/90 px-3 pt-2 gap-2">
+        <div className="flex border-b border-gray-200 bg-slate-50/70 px-4 pt-2 gap-2">
           <button
             type="button"
             onClick={() => {
@@ -907,19 +975,19 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
               setMessage('');
               setError('');
             }}
-            className={`px-3.5 py-2 font-bold text-xs rounded-t-md transition-all flex items-center gap-2 cursor-pointer border-t border-l border-r ${
+            className={`px-4 py-2 font-bold text-xs rounded-t-md transition-all flex items-center gap-2 cursor-pointer border-t border-l border-r ${
               activeTab === 'PENDING'
-                ? 'bg-white text-emerald-950 border-gray-300 border-b-transparent shadow-xs -mb-px z-10'
-                : 'bg-slate-200/70 text-gray-600 hover:bg-slate-200 hover:text-gray-900 border-transparent'
+                ? 'bg-white text-emerald-800 border-t-2 border-t-emerald-600 border-x-gray-200 border-b-transparent shadow-xs -mb-px z-10'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'
             }`}
           >
-            <Clock className={`w-3.5 h-3.5 ${activeTab === 'PENDING' ? 'text-amber-600' : 'text-gray-500'}`} />
-            <span>⏳ प्रलंबित व्हाउचर्स (Pending Vouchers)</span>
+            <Clock className={`w-3.5 h-3.5 ${activeTab === 'PENDING' ? 'text-amber-600' : 'text-slate-400'}`} />
+            <span>प्रलंबित व्हाउचर्स (Pending)</span>
             <span
-              className={`px-2 py-0.2 rounded-full text-[10px] font-black ${
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                 activeTab === 'PENDING'
                   ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                  : 'bg-gray-300 text-gray-700'
+                  : 'bg-slate-200 text-slate-700'
               }`}
             >
               {vouchers.length}
@@ -934,19 +1002,19 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
               setMessage('');
               setError('');
             }}
-            className={`px-3.5 py-2 font-bold text-xs rounded-t-md transition-all flex items-center gap-2 cursor-pointer border-t border-l border-r ${
+            className={`px-4 py-2 font-bold text-xs rounded-t-md transition-all flex items-center gap-2 cursor-pointer border-t border-l border-r ${
               activeTab === 'APPROVED'
-                ? 'bg-white text-emerald-950 border-gray-300 border-b-transparent shadow-xs -mb-px z-10'
-                : 'bg-slate-200/70 text-gray-600 hover:bg-slate-200 hover:text-gray-900 border-transparent'
+                ? 'bg-white text-emerald-800 border-t-2 border-t-emerald-600 border-x-gray-200 border-b-transparent shadow-xs -mb-px z-10'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-transparent'
             }`}
           >
-            <CheckCircle2 className={`w-3.5 h-3.5 ${activeTab === 'APPROVED' ? 'text-emerald-600' : 'text-gray-500'}`} />
-            <span>✅ मंजूर व्हाउचर्स / अन-पास सुविधा (Approved Vouchers)</span>
+            <CheckCircle2 className={`w-3.5 h-3.5 ${activeTab === 'APPROVED' ? 'text-emerald-600' : 'text-slate-400'}`} />
+            <span>मंजूर व्हाउचर्स (Approved)</span>
             <span
-              className={`px-2 py-0.2 rounded-full text-[10px] font-black ${
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                 activeTab === 'APPROVED'
                   ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                  : 'bg-gray-300 text-gray-700'
+                  : 'bg-slate-200 text-slate-700'
               }`}
             >
               {approvedVouchers.length}
@@ -954,13 +1022,13 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
           </button>
         </div>
 
-        <div className="p-3 space-y-3">
+        <div className="p-3 space-y-2.5">
           {/* CBS Date Selector & Backlog Management Toolbar */}
-          <div className="bg-gradient-to-r from-emerald-50 via-slate-50 to-blue-50 p-2.5 rounded-sm border border-emerald-300 shadow-2xs flex flex-wrap items-center justify-between gap-2.5">
+          <div className="bg-slate-50/70 p-2 rounded-md border border-gray-200 shadow-2xs flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5 bg-emerald-800 text-white px-2.5 py-1 rounded-sm shadow-2xs font-bold text-xs">
-                <Calendar className="w-3.5 h-3.5 text-emerald-200" />
-                <span>व्हाउचर तारीख (Voucher Date):</span>
+              <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
+                <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                <span>तारीख:</span>
               </div>
 
               {/* Date Input */}
@@ -973,12 +1041,12 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                   }
                 }}
                 disabled={isAllDates}
-                className={`border px-2.5 py-1 rounded-sm text-xs font-bold transition-all focus:outline-none focus:ring-1 focus:ring-emerald-600 ${
+                className={`border px-2 py-1 rounded text-xs font-semibold transition-all focus:outline-none focus:border-emerald-600 ${
                   isAllDates
-                    ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
-                    : 'bg-white text-gray-900 border-emerald-500 shadow-2xs'
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-gray-900 border-gray-300 shadow-2xs'
                 }`}
-                title="ज्या तारखेचे व्हाउचर पाहायचे आहेत ती तारीख प्रविष्ट करा (Select Voucher Date)"
+                title="व्हाउचर तारीख निवडा"
               />
 
               {/* Quick Date Buttons */}
@@ -986,50 +1054,65 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 <button
                   type="button"
                   onClick={handleSetToday}
-                  className={`px-2.5 py-1 rounded-sm text-[11px] font-bold transition-all cursor-pointer border ${
+                  className={`px-2 py-1 rounded text-[11px] font-medium transition-all cursor-pointer border ${
                     !isAllDates && selectedDate === (user?.businessDate ? user.businessDate.split('T')[0] : todayStr)
-                      ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
-                      : 'bg-white text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 border-gray-300'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs font-bold'
+                      : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
                   }`}
                   title="आजच्या तारखेचे व्हाउचर दाखवा"
                 >
-                  आज (Today)
+                  आज
                 </button>
 
                 <button
                   type="button"
                   onClick={handleSetYesterday}
-                  className={`px-2.5 py-1 rounded-sm text-[11px] font-bold transition-all cursor-pointer border ${
+                  className={`px-2 py-1 rounded text-[11px] font-medium transition-all cursor-pointer border ${
                     !isAllDates && selectedDate === yesterdayStr
-                      ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
-                      : 'bg-white text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 border-gray-300'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs font-bold'
+                      : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
                   }`}
                   title="कालच्या तारखेचे व्हाउचर दाखवा"
                 >
-                  काल (Yesterday)
+                  काल
                 </button>
 
                 <button
                   type="button"
                   onClick={handleToggleAllDates}
-                  className={`px-2.5 py-1 rounded-sm text-[11px] font-bold transition-all cursor-pointer border ${
+                  className={`px-2 py-1 rounded text-[11px] font-medium transition-all cursor-pointer border ${
                     isAllDates
-                      ? 'bg-blue-700 text-white border-blue-800 shadow-2xs'
-                      : 'bg-white text-gray-700 hover:bg-blue-50 hover:text-blue-800 border-gray-300'
+                      ? 'bg-slate-700 text-white border-slate-700 shadow-2xs font-bold'
+                      : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
                   }`}
                   title="सर्व तारखांचे एकत्रित व्हाउचर पाहण्यासाठी टॉगल करा"
                 >
-                  {isAllDates ? '✓ सर्व तारखा (All Dates Active)' : 'सर्व तारखा (All Dates)'}
+                  {isAllDates ? '✓ सर्व तारखा' : 'सर्व तारखा'}
                 </button>
               </div>
+
+              {/* Integrated Compact Backlog Notice (Eliminates the bulky yellow box) */}
+              {!isAllDates && otherDatesCount > 0 && (
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>
+                    इतर तारखांचे <strong>{otherDatesCount}</strong> व्हाउचर {activeTab === 'PENDING' ? 'प्रलंबित' : 'उपलब्ध'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleToggleAllDates}
+                    className="text-amber-800 font-bold underline hover:text-amber-950 cursor-pointer ml-0.5"
+                  >
+                    सर्व पहा
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Backlog Date Jump Pills */}
             {uniqueActiveDates.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                <span className="text-gray-600 font-bold flex items-center gap-1">
-                  <span>{activeTab === 'PENDING' ? 'प्रलंबित तारखा:' : 'मंजूर व्हाउचर्स तारखा:'}</span>
-                </span>
+              <div className="flex flex-wrap items-center gap-1 text-[11px]">
+                <span className="text-gray-400 text-[10.5px]">तारखा:</span>
                 {uniqueActiveDates.map(([dStr, count]) => {
                   const isCurrent = !isAllDates && selectedDate === dStr;
                   const displayDate = dStr.split('-').reverse().join('/');
@@ -1038,22 +1121,16 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                       key={dStr}
                       type="button"
                       onClick={() => handleDateChange(dStr)}
-                      className={`px-2 py-0.5 rounded text-[10.5px] font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition-all cursor-pointer flex items-center gap-1 border ${
                         isCurrent
-                          ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
-                          : activeTab === 'PENDING'
-                            ? 'bg-amber-100 text-amber-950 border-amber-300 hover:bg-amber-200'
-                            : 'bg-emerald-50 text-emerald-950 border-emerald-300 hover:bg-emerald-100'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                          : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
                       }`}
-                      title={`या तारखेचे ${count} व्हाउचर पाहण्यासाठी क्लिक करा`}
+                      title={`${displayDate} चे ${count} व्हाउचर`}
                     >
                       <span>{displayDate}</span>
-                      <span className={`px-1.5 py-0.2 rounded-full text-[9px] ${
-                        isCurrent
-                          ? 'bg-white/20 text-white'
-                          : activeTab === 'PENDING'
-                            ? 'bg-amber-300 text-amber-950 font-black'
-                            : 'bg-emerald-200 text-emerald-950 font-black'
+                      <span className={`px-1 rounded-full text-[9px] ${
+                        isCurrent ? 'bg-white/30 text-white font-bold' : 'bg-slate-100 text-slate-600 font-bold'
                       }`}>
                         {count}
                       </span>
@@ -1064,89 +1141,53 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
             )}
           </div>
 
-          {/* Backlog Warning Banner */}
-          {!isAllDates && otherDatesCount > 0 && (
-            <div className={`p-2 border-l-4 rounded-sm text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs ${
-              activeTab === 'PENDING'
-                ? 'bg-amber-50 border-amber-500 text-amber-950'
-                : 'bg-blue-50 border-blue-500 text-blue-950'
-            }`}>
-              <div className="flex items-center gap-2">
-                {activeTab === 'PENDING' ? (
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                ) : (
-                  <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                )}
-                <div>
-                  <span className="font-bold">
-                    {activeTab === 'PENDING' ? 'बॅकलॉग सूचना (Backlog Alert):' : 'तारीख सूचना (Date Filter Notice):'}
-                  </span>{' '}
-                  <span>
-                    निवडलेली तारीख (<strong>{selectedDate.split('-').reverse().join('/')}</strong>) सोडून इतर तारखांचे एकूण <strong>{otherDatesCount}</strong> व्हाउचर {activeTab === 'PENDING' ? 'मंजुरीसाठी प्रलंबित आहेत' : 'उपलब्ध आहेत'}.
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleToggleAllDates}
-                className={`text-[10px] font-bold px-2.5 py-0.5 rounded border cursor-pointer shadow-2xs whitespace-nowrap ${
-                  activeTab === 'PENDING'
-                    ? 'bg-amber-200 hover:bg-amber-300 text-amber-950 border-amber-400'
-                    : 'bg-blue-200 hover:bg-blue-300 text-blue-950 border-blue-400'
-                }`}
-              >
-                सर्व तारखा पहा (View All)
-              </button>
-            </div>
-          )}
-
-          {/* Summary Stat Cards */}
+          {/* Clean Summary Stat Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <div className="bg-white p-2.5 rounded-sm border-l-4 border-slate-700 shadow-2xs flex items-center justify-between border border-gray-200">
+            <div className="bg-white p-2.5 rounded-md border border-gray-200 shadow-2xs flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                   {activeTab === 'PENDING'
-                    ? (!isAllDates ? 'निवडलेल्या तारखेचे प्रलंबित व्हाउचर्स' : 'एकूण प्रलंबित व्हाउचर्स')
-                    : (!isAllDates ? 'निवडलेल्या तारखेचे मंजूर व्हाउचर्स' : 'एकूण मंजूर व्हाउचर्स')}
+                    ? (!isAllDates ? 'निवडलेली तारीख प्रलंबित' : 'एकूण प्रलंबित व्हाउचर्स')
+                    : (!isAllDates ? 'निवडलेली तारीख मंजूर' : 'एकूण मंजूर व्हाउचर्स')}
                 </p>
-                <div className="flex items-baseline gap-1.5">
-                  <p className="text-base font-black text-slate-800">{totalCount}</p>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <p className="text-base font-bold text-slate-800 font-mono">{totalCount}</p>
                   {!isAllDates && currentDataset.length > 0 && (
-                    <span className="text-[9.5px] text-gray-500 font-semibold">
-                      (एकूण सर्व: {currentDataset.length})
+                    <span className="text-[10px] text-gray-400 font-medium">
+                      (एकूण: {currentDataset.length})
                     </span>
                   )}
                 </div>
               </div>
-              <span className="text-xl">{activeTab === 'PENDING' ? '📚' : '✅'}</span>
+              <span className="p-1.5 bg-slate-50 text-slate-600 rounded text-sm">{activeTab === 'PENDING' ? '⏳' : '✅'}</span>
             </div>
 
-            <div className="bg-white p-2.5 rounded-sm border-l-4 border-emerald-600 shadow-2xs flex items-center justify-between border border-gray-200">
+            <div className="bg-white p-2.5 rounded-md border border-gray-200 shadow-2xs flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">रिसिप्ट्स (Receipts)</p>
-                <p className="text-base font-black text-emerald-700">{receiptsCount}</p>
+                <p className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wider">रिसिप्ट्स (Receipts)</p>
+                <p className="text-base font-bold text-emerald-700 font-mono mt-0.5">{receiptsCount}</p>
               </div>
-              <span className="text-xl">📥</span>
+              <span className="p-1.5 bg-emerald-50 rounded text-sm">📥</span>
             </div>
 
-            <div className="bg-white p-2.5 rounded-sm border-l-4 border-rose-600 shadow-2xs flex items-center justify-between border border-gray-200">
+            <div className="bg-white p-2.5 rounded-md border border-gray-200 shadow-2xs flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">पेमेंट्स (Payments)</p>
-                <p className="text-base font-black text-rose-700">{paymentsCount}</p>
+                <p className="text-[10px] font-semibold text-rose-700 uppercase tracking-wider">पेमेंट्स (Payments)</p>
+                <p className="text-base font-bold text-rose-700 font-mono mt-0.5">{paymentsCount}</p>
               </div>
-              <span className="text-xl">📤</span>
+              <span className="p-1.5 bg-rose-50 rounded text-sm">📤</span>
             </div>
 
-            <div className="bg-white p-2.5 rounded-sm border-l-4 border-amber-500 shadow-2xs flex items-center justify-between border border-gray-200">
+            <div className="bg-white p-2.5 rounded-md border border-gray-200 shadow-2xs flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                  {activeTab === 'PENDING' ? 'प्रलंबित रक्कम (Amount)' : 'मंजूर रक्कम (Amount)'}
+                <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">
+                  {activeTab === 'PENDING' ? 'प्रलंबित रक्कम' : 'मंजूर रक्कम'}
                 </p>
-                <p className="text-base font-black text-amber-700">
+                <p className="text-base font-extrabold text-slate-900 font-mono mt-0.5">
                   ₹{totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </p>
               </div>
-              <span className="text-xl">💰</span>
+              <span className="p-1.5 bg-amber-50 rounded text-sm">💰</span>
             </div>
           </div>
 
@@ -1226,17 +1267,17 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
             {/* Master Table Body */}
             <div className="overflow-x-auto min-h-[350px]">
               <table className="min-w-full divide-y divide-gray-200 text-xs text-center border-collapse">
-                <thead className="bg-slate-800 text-white sticky top-0 z-10 shadow-xs">
+                <thead className="bg-slate-50 text-slate-700 sticky top-0 z-10 border-b border-gray-200 shadow-2xs font-bold">
                   <tr>
-                    <th className="px-2 py-2 border-r border-slate-700 font-semibold w-10 text-center">#</th>
-                    <th className="px-2.5 py-2 border-r border-slate-700 font-semibold w-28 text-left">तारीख (Date)</th>
-                    <th className="px-2.5 py-2 border-r border-slate-700 font-semibold w-36 text-left">व्हाउचर नंबर (No)</th>
-                    <th className="px-2 py-2 border-r border-slate-700 font-semibold w-24 text-center">स्क्रॉल क्र. (Scroll)</th>
-                    <th className="px-2.5 py-2 border-r border-slate-700 font-semibold w-24 text-left">प्रकार (Type)</th>
-                    <th className="px-2.5 py-2 border-r border-slate-700 font-semibold text-left">तपशील (Narration)</th>
-                    <th className="px-2.5 py-2 border-r border-slate-700 font-semibold w-32 text-right">रक्कम (Amount ₹)</th>
-                    <th className="px-2 py-2 border-r border-slate-700 font-semibold w-20 text-center">खाती</th>
-                    <th className="px-2 py-2 font-semibold w-24 text-center">कृती (Action)</th>
+                    <th className="px-2 py-2 border-r border-gray-200 font-bold w-10 text-center text-slate-700">#</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold w-24 text-left text-slate-700">तारीख</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold w-36 text-left text-slate-700">व्हाउचर क्र.</th>
+                    <th className="px-2 py-2 border-r border-gray-200 font-bold w-20 text-center text-slate-700">स्क्रॉल</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold w-20 text-left text-slate-700">प्रकार</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold text-left text-slate-700">तपशील</th>
+                    <th className="px-2.5 py-2 border-r border-gray-200 font-bold w-28 text-right text-slate-700">रक्कम (₹)</th>
+                    <th className="px-2 py-2 border-r border-gray-200 font-bold w-16 text-center text-slate-700">खाती</th>
+                    <th className="px-2 py-2 font-bold w-44 text-center text-slate-700">कृती (Action)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white text-gray-800">
@@ -1293,34 +1334,34 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                       const isSelected = selectedVouchers.has(v.voucherID);
                       const isExpanded = expandedVoucherId === v.voucherID;
 
-                      let typeBadgeStyle = 'bg-blue-100 text-blue-800 border-blue-200';
+                      let typeBadgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
                       if (v.voucherType === 'Receipt') {
-                        typeBadgeStyle = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                        typeBadgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200';
                       } else if (v.voucherType === 'Payment') {
-                        typeBadgeStyle = 'bg-rose-100 text-rose-800 border-rose-200';
+                        typeBadgeStyle = 'bg-rose-50 text-rose-700 border-rose-200';
                       } else if (v.voucherType === 'Journal') {
-                        typeBadgeStyle = 'bg-purple-100 text-purple-800 border-purple-200';
+                        typeBadgeStyle = 'bg-purple-50 text-purple-700 border-purple-200';
                       } else if (v.voucherType === 'Contra') {
-                        typeBadgeStyle = 'bg-amber-100 text-amber-800 border-amber-200';
+                        typeBadgeStyle = 'bg-amber-50 text-amber-700 border-amber-200';
                       }
 
                       return (
                         <React.Fragment key={v.voucherID}>
                           <tr
                             onClick={() => setExpandedVoucherId(isExpanded ? null : v.voucherID)}
-                            className={`hover:bg-blue-50/60 transition-colors cursor-pointer ${
-                              isSelected ? 'bg-blue-50/90 font-medium' : ''
+                            className={`hover:bg-slate-50/80 transition-colors cursor-pointer ${
+                              isSelected ? 'bg-emerald-50/40 font-medium' : ''
                             }`}
                           >
                             <td className="px-2 py-1.5 border-r border-gray-200 text-center" onClick={(e) => e.stopPropagation()}>
                               <input
                                 type="checkbox"
-                                className="w-4 h-4 text-primary rounded-sm border-gray-400 focus:ring-primary cursor-pointer"
+                                className="w-4 h-4 text-emerald-600 rounded-sm border-gray-300 focus:ring-emerald-500 cursor-pointer"
                                 checked={isSelected}
                                 onChange={() => toggleSelection(v.voucherID)}
                               />
                             </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-200 text-left font-medium whitespace-nowrap text-gray-900">
+                            <td className="px-2.5 py-1.5 border-r border-gray-200 text-left font-medium whitespace-nowrap text-gray-800">
                               <span className="mr-1 text-gray-400 text-[10px] inline-block">{isExpanded ? '▼' : '▶'}</span>
                               {new Date(v.voucherDate).toLocaleDateString('en-GB', {
                                 day: '2-digit',
@@ -1328,12 +1369,12 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                 year: 'numeric',
                               })}
                             </td>
-                            <td className="px-2.5 py-1.5 border-r border-gray-200 text-left font-black text-gray-900 whitespace-nowrap font-mono">
+                            <td className="px-2.5 py-1.5 border-r border-gray-200 text-left font-bold text-gray-900 whitespace-nowrap font-mono">
                               {v.voucherNo}
                             </td>
                             <td className="px-2 py-1.5 border-r border-gray-200 text-center font-bold whitespace-nowrap">
                               {v.scrollNo ? (
-                                <span className="px-2 py-0.5 inline-flex text-[10px] font-black bg-amber-100 text-amber-900 rounded-sm border border-amber-300">
+                                <span className="px-2 py-0.5 inline-flex text-[10px] font-bold bg-amber-50 text-amber-800 rounded-sm border border-amber-200">
                                   #{v.scrollNo}
                                 </span>
                               ) : (
@@ -1341,7 +1382,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                               )}
                             </td>
                             <td className="px-2.5 py-1.5 border-r border-gray-200 text-left whitespace-nowrap">
-                              <span className={`px-2 py-0.5 inline-flex text-[10px] leading-3 font-bold rounded-sm border ${typeBadgeStyle}`}>
+                              <span className={`px-2 py-0.5 inline-flex text-[10px] leading-3 font-semibold rounded-sm border ${typeBadgeStyle}`}>
                                 {v.voucherType}
                               </span>
                             </td>
@@ -1359,37 +1400,67 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                               {v.voucherDetails?.length || 0} खाती
                             </td>
                             <td className="px-2 py-1.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-center gap-1.5">
+                              <div className="inline-flex items-center justify-center gap-1">
+                                {/* 1. मूळ फॉर्म (View Form) */}
                                 <button
                                   type="button"
                                   onClick={() => handleOpenFormView(v)}
-                                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 hover:border-emerald-400 px-2 py-0.5 rounded-sm font-bold text-[10px] transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
-                                  title="मूळ फॉर्ममध्ये एन्ट्री पहा (Open in Original Entry Form)"
+                                  className="bg-white hover:bg-slate-100 text-slate-700 border border-gray-300 px-1.5 py-0.5 rounded text-[10.5px] font-medium transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  title="मूळ फॉर्ममध्ये नोंद पाहा (View Original Form)"
                                 >
-                                  <FileText className="w-3 h-3 text-emerald-700" />
-                                  <span>फॉर्म व्ह्यू (Form View)</span>
+                                  <Eye className="w-3 h-3 text-slate-600" />
+                                  <span>फॉर्म</span>
                                 </button>
-                                {activeTab === 'PENDING' ? (
+
+                                {/* 2. व्हाउचर पावती (Voucher Print Slip) */}
+                                <button
+                                  type="button"
+                                  onClick={() => setPrintingVoucherId(v.voucherID)}
+                                  className="bg-white hover:bg-slate-100 text-slate-700 border border-gray-300 px-1.5 py-0.5 rounded text-[10.5px] font-medium transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  title="व्हाउचर पावती पाहा व प्रिंट करा (Print Slip)"
+                                >
+                                  <Printer className="w-3 h-3 text-slate-600" />
+                                  <span>व्हाउचर</span>
+                                </button>
+
+                                {/* 3. पास (फक्त प्रलंबित टॅबमध्ये) */}
+                                {activeTab === 'PENDING' && (
                                   <button
                                     type="button"
-                                    onClick={() => handleDirectSingleDelete(v)}
-                                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 px-2 py-0.5 rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1"
-                                    title="व्हाउचर थेट रद्द व डिलीट करा"
+                                    onClick={() => handleSinglePass(v)}
+                                    disabled={actionLoading}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded text-[10.5px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                                    title="हे व्हाउचर थेट पास व मंजूर करा"
                                   >
-                                    <Trash2 className="w-3 h-3 text-rose-600" />
-                                    <span>रद्द / हटवा</span>
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>पास</span>
                                   </button>
-                                ) : (
+                                )}
+
+                                {/* 4. अन-पास (फक्त मंजूर टॅबमध्ये) */}
+                                {activeTab === 'APPROVED' && (
                                   <button
                                     type="button"
                                     onClick={() => openSingleUnpassModal(v)}
-                                    className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 hover:border-amber-400 px-2 py-0.5 rounded-sm font-bold text-[10px] transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-                                    title="मंजूर व्हाउचर अन-पास करून प्रलंबित स्थितीत पाठवा (Revert to Pending)"
+                                    disabled={actionLoading}
+                                    className="bg-amber-600 hover:bg-amber-700 text-white px-2 py-0.5 rounded text-[10.5px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                                    title="मंजूर व्हाउचर अन-पास करा"
                                   >
-                                    <RotateCcw className="w-3 h-3 text-amber-700" />
-                                    <span>अन-पास (Unpass)</span>
+                                    <RotateCcw className="w-3 h-3" />
+                                    <span>अन-पास</span>
                                   </button>
                                 )}
+
+                                {/* 5. हटवा / डिलीट */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleActionDelete(v)}
+                                  disabled={actionLoading}
+                                  className="bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-gray-300 hover:border-rose-300 p-1 rounded text-[10.5px] transition-colors cursor-pointer flex items-center justify-center shadow-2xs"
+                                  title={activeTab === 'PENDING' ? "व्हाउचर थेट रद्द व डिलीट करा" : "मंजूर व्हाउचर डिलीट करण्यासाठी प्रथम अन-पास करा"}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -1404,17 +1475,17 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                   }, 60);
                                 }
                               }}
-                              className="bg-slate-50 border-b-2 border-primary/30"
+                              className="bg-slate-50 border-b-2 border-emerald-500/30"
                             >
                               <td colSpan={9} className="p-2.5 sm:p-3 text-left">
-                                <div className="bg-white p-3 rounded-md border-2 border-primary/20 shadow-md space-y-2">
+                                <div className="bg-white p-3 rounded-md border border-gray-200 shadow-xs space-y-2">
                                   <div className="flex flex-wrap justify-between items-center border-b border-gray-200 pb-2 gap-2">
                                     <div className="flex items-center gap-2">
-                                      <div className="p-1 bg-primary/10 rounded text-primary">
-                                        <Layers className="w-4 h-4" />
+                                      <div className="p-1 bg-slate-100 rounded text-slate-700">
+                                        <Layers className="w-4 h-4 text-emerald-700" />
                                       </div>
                                       <div>
-                                        <h4 className="font-extrabold text-primary text-xs flex items-center gap-1.5">
+                                        <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
                                           <span>खाती तपशील (Ledger Breakdown for {v.voucherNo})</span>
                                         </h4>
                                         <p className="text-[10px] text-gray-500">
@@ -1424,21 +1495,53 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                         </p>
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {/* 1. मूळ फॉर्म (View Form) */}
                                       <button
                                         type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           handleOpenFormView(v);
                                         }}
-                                        className="bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1 rounded text-[10.5px] font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1 border border-emerald-800"
-                                        title={activeTab === 'PENDING' ? "या नोंदीचा मूळ फॉर्म उघडा व थेट पास करा (Open Original Form to Pass)" : "या नोंदीचा मूळ फॉर्म उघडा (Open Original Form)"}
+                                        className="bg-white hover:bg-slate-50 text-slate-700 border border-gray-300 px-2.5 py-1 rounded text-[10.5px] font-semibold shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+                                        title="या नोंदीचा मूळ फॉर्म उघडा (Open Form View)"
                                       >
-                                        <FileText className="w-3.5 h-3.5" />
-                                        <span>
-                                          {activeTab === 'PENDING' ? 'मूळ फॉर्ममध्ये उघडा व पास करा (Open Form View)' : 'मूळ फॉर्ममध्ये उघडा (Open Form View)'}
-                                        </span>
+                                        <Eye className="w-3.5 h-3.5 text-slate-600" />
+                                        <span>मूळ फॉर्म (View Form)</span>
                                       </button>
+
+                                      {/* 2. व्हाउचर पावती (Print Slip) */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setPrintingVoucherId(v.voucherID);
+                                        }}
+                                        className="bg-white hover:bg-slate-50 text-slate-700 border border-gray-300 px-2.5 py-1 rounded text-[10.5px] font-semibold shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+                                        title="अधिकृत व्हाउचर पावती पाहा व प्रिंट करा (Print Slip)"
+                                      >
+                                        <Printer className="w-3.5 h-3.5 text-slate-600" />
+                                        <span>व्हाउचर पावती (Print Slip)</span>
+                                      </button>
+
+                                      {/* 3. पास (Pending मध्ये) */}
+                                      {activeTab === 'PENDING' && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSinglePass(v);
+                                          }}
+                                          disabled={actionLoading}
+                                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded text-[10.5px] font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                                          title="हे व्हाउचर थेट मंजूर व पास करा (Approve & Pass)"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                          <span>व्हाउचर पास करा</span>
+                                        </button>
+                                      )}
+
+                                      {/* 4. अन-पास (Approved मध्ये) */}
                                       {activeTab === 'APPROVED' && (
                                         <button
                                           type="button"
@@ -1446,15 +1549,32 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                             e.stopPropagation();
                                             openSingleUnpassModal(v);
                                           }}
-                                          className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded text-[10.5px] font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1 border border-amber-700"
-                                          title="मंजुरी मागे घ्या व प्रलंबित करा (Unpass)"
+                                          disabled={actionLoading}
+                                          className="bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded text-[10.5px] font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                                          title="मंजूरी मागे घ्या व प्रलंबित करा (Unpass)"
                                         >
                                           <RotateCcw className="w-3.5 h-3.5" />
-                                          <span>अन-पास करा (Unpass)</span>
+                                          <span>अन-पास करा</span>
                                         </button>
                                       )}
-                                      <span className="text-[11px] font-black bg-emerald-50 text-emerald-800 px-2.5 py-0.5 rounded border border-emerald-300">
-                                        एकूण रक्कम: ₹{v.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+
+                                      {/* 5. डिलीट (Delete) */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleActionDelete(v);
+                                        }}
+                                        disabled={actionLoading}
+                                        className="bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 px-2.5 py-1 rounded text-[10.5px] font-semibold shadow-2xs transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                                        title={activeTab === 'PENDING' ? "व्हाउचर थेट रद्द व डिलीट करा" : "मंजूर व्हाउचर डिलीट करण्यासाठी प्रथम अन-पास करा"}
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span>हटवा</span>
+                                      </button>
+
+                                      <span className="text-[11px] font-bold bg-slate-100 text-slate-800 px-2.5 py-0.5 rounded border border-gray-300 ml-1">
+                                        एकूण: ₹{v.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                       </span>
                                       <button
                                         type="button"
@@ -1462,7 +1582,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                                           e.stopPropagation();
                                           setExpandedVoucherId(null);
                                         }}
-                                        className="text-gray-400 hover:text-rose-600 px-2 py-1 rounded text-[10px] font-bold border border-gray-200 hover:border-rose-300 hover:bg-rose-50 transition-colors cursor-pointer flex items-center gap-1"
+                                        className="text-gray-400 hover:text-rose-600 px-2 py-1 rounded text-[10px] font-bold border border-gray-200 hover:border-rose-300 hover:bg-rose-50 transition-colors cursor-pointer flex items-center gap-1 ml-auto"
                                         title="तपशील बंद करा"
                                       >
                                         <X className="w-3 h-3" />
@@ -1473,11 +1593,11 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
 
                                   <div className="overflow-x-auto border border-gray-200 rounded-sm">
                                     <table className="min-w-full divide-y divide-gray-200 text-[11px]">
-                                      <thead className="bg-slate-800 text-white font-semibold">
+                                      <thead className="bg-slate-100 text-slate-700 font-bold border-b border-gray-300">
                                         <tr>
-                                          <th className="px-3 py-1.5 text-left border-r border-slate-700">खाते (Ledger Name)</th>
-                                          <th className="px-3 py-1.5 text-left border-r border-slate-700 w-52">सीआयएफ क्र. / खातेदार (CIF ID)</th>
-                                          <th className="px-3 py-1.5 text-right border-r border-slate-700 w-36">नावे (Debit Dr ₹)</th>
+                                          <th className="px-3 py-1.5 text-left border-r border-gray-200">खाते (Ledger Name)</th>
+                                          <th className="px-3 py-1.5 text-left border-r border-gray-200 w-52">सीआयएफ क्र. / खातेदार (CIF ID)</th>
+                                          <th className="px-3 py-1.5 text-right border-r border-gray-200 w-36">नावे (Debit Dr ₹)</th>
                                           <th className="px-3 py-1.5 text-right w-36">जमा (Credit Cr ₹)</th>
                                         </tr>
                                       </thead>
@@ -1573,12 +1693,12 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
           SINGLE UNPASS CONFIRMATION MODAL
           ======================================================== */}
       {unpassModalOpen && targetVoucherToUnpass && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3">
-          <div className="bg-white rounded-md shadow-2xl border-2 border-amber-400 w-full max-w-lg overflow-hidden animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3">
+          <div className="bg-white rounded-md shadow-xl border border-amber-300 w-full max-w-lg overflow-hidden animate-in fade-in duration-200">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-amber-700 via-amber-800 to-amber-900 text-white px-4 py-2.5 flex items-center justify-between">
+            <div className="bg-amber-600 text-white px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <RotateCcw className="w-4 h-4 text-amber-200" />
+                <RotateCcw className="w-4 h-4 text-white" />
                 <h3 className="font-bold text-xs">
                   मंजूर व्हाउचर अन-पास करा (Revert Voucher Approval to Pending)
                 </h3>
@@ -1586,7 +1706,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
               <button
                 type="button"
                 onClick={closeUnpassModals}
-                className="text-amber-200 hover:text-white transition-colors cursor-pointer"
+                className="text-amber-100 hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1706,12 +1826,12 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
           BULK UNPASS CONFIRMATION MODAL
           ======================================================== */}
       {bulkUnpassModalOpen && selectedVouchers.size > 0 && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3">
-          <div className="bg-white rounded-md shadow-2xl border-2 border-amber-400 w-full max-w-lg overflow-hidden animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3">
+          <div className="bg-white rounded-md shadow-xl border border-amber-300 w-full max-w-lg overflow-hidden animate-in fade-in duration-200">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-amber-700 via-amber-800 to-amber-900 text-white px-4 py-2.5 flex items-center justify-between">
+            <div className="bg-amber-600 text-white px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <RotateCcw className="w-4 h-4 text-amber-200" />
+                <RotateCcw className="w-4 h-4 text-white" />
                 <h3 className="font-bold text-xs">
                   एकत्रित मंजूर व्हाउचर्स अन-पास करा (Bulk Unpass Vouchers)
                 </h3>
@@ -1719,7 +1839,7 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
               <button
                 type="button"
                 onClick={closeUnpassModals}
-                className="text-amber-200 hover:text-white transition-colors cursor-pointer"
+                className="text-amber-100 hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1808,6 +1928,17 @@ const VoucherPosting: React.FC<VoucherPostingProps> = ({ onNavigate }) => {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          OFFICIAL VOUCHER PRINT SLIP MODAL
+          ======================================================== */}
+      {printingVoucherId && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white rounded-md max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-2xl border border-gray-300 relative">
+            <VoucherPrint voucherId={printingVoucherId} onBack={() => setPrintingVoucherId(null)} />
           </div>
         </div>
       )}

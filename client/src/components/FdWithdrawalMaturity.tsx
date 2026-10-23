@@ -21,6 +21,7 @@ import {
   Edit3,
   RotateCcw,
   Lock,
+  Unlock,
   X,
   Printer
 } from 'lucide-react';
@@ -219,6 +220,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 }) => {
   const { user } = useAuth();
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const [allowDateOverride, setAllowDateOverride] = useState(false);
 
   const urlParams = new URLSearchParams(window.location.search);
   const voucherIdFromUrl = urlParams.get('voucherId') ? parseInt(urlParams.get('voucherId')!) : undefined;
@@ -1951,14 +1954,40 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                           <div className="flex flex-wrap items-center gap-2">
                             <input
                               type="date"
-                              value={closureDate}
+                              value={closureDate || activeBusinessDate}
                               min={effectiveMinDate}
                               max={todayStr}
                               onChange={(e) => setClosureDate(e.target.value)}
-                              className={`${ctrl} !w-[170px] font-semibold ${hasDateError ? '!border-red-500 !bg-red-50 !text-red-900' : ''}`}
+                              className={`${ctrl} !w-[170px] font-semibold ${hasDateError ? '!border-red-500 !bg-red-50 !text-red-900' : ''} ${(!allowDateOverride || isPassingMode) ? '!bg-slate-100 !text-slate-800 cursor-not-allowed select-none' : 'bg-white border-amber-400'}`}
                               required
-                              disabled={isPassingMode}
+                              disabled={isPassingMode || !allowDateOverride}
+                              readOnly={!allowDateOverride}
                             />
+                            {!allowDateOverride && (
+                              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
+                                <Lock size={9} /> लॉक
+                              </span>
+                            )}
+                            {isHOUser && !isPassingMode && (
+                              <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={allowDateOverride}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setAllowDateOverride(checked);
+                                    if (!checked) {
+                                      setClosureDate(activeBusinessDate);
+                                    }
+                                  }}
+                                  className="w-3 h-3 text-primary rounded"
+                                />
+                                <span className="flex items-center gap-0.5">
+                                  {allowDateOverride ? <Unlock size={10} className="text-amber-600" /> : <Lock size={10} className="text-gray-400" />}
+                                  तारीख बदला (Override)
+                                </span>
+                              </label>
+                            )}
                             {isOverdue && acc && (
                               <span className="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-sm border border-amber-200">
                                 मुदतपूर्तीनंतर {overdueDays} दिवस

@@ -154,6 +154,19 @@ namespace Bhisi.Api.Controllers
                 collection.CollectingCashierID = userId;
                 collection.CreatedByUserID = userId;
 
+                // Core Banking Date Safeguards: Prevent future dating and transactions in closed financial years
+                if (collection.CollectionDate.Date > DateTime.Today)
+                {
+                    return BadRequest("पावतीची दिनांक भविष्यातील (Future Date) असू शकत नाही.");
+                }
+
+                var closedFy = await _context.FinancialYears
+                    .FirstOrDefaultAsync(fy => fy.IsClosed && collection.CollectionDate.Date >= fy.StartDate.Date && collection.CollectionDate.Date <= fy.EndDate.Date);
+                if (closedFy != null)
+                {
+                    return BadRequest($"निवडलेली तारीख बंद झालेल्या आर्थिक वर्षात ({closedFy.YearCode}) मोडत असल्याने या तारखेवर पावती करता येत नाही.");
+                }
+
                 if (collection.PrincipalCollected > loanAccount.PrincipalBalance + 0.01m)
                 {
                     return BadRequest($"जमा मुद्दल रक्कम (₹{collection.PrincipalCollected:N2}) ही शिल्लक मुद्दल रक्कमेपेक्षा (₹{loanAccount.PrincipalBalance:N2}) जास्त असू शकत नाही.");

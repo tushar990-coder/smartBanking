@@ -468,7 +468,7 @@ namespace Bhisi.Api.Controllers
                     VoucherType = request.PaymentMode == "Transfer" ? "Journal" : "Payment",
                     TotalAmount = totalAmount,
                     Narration = $"शेअर प्रमाणपत्र रद्दीकरण (Share Certificate Cancellation: {certificate.CertificateNo}) - {memberNameStr} ({certificate.NumberOfShares} शेअर्स). कारण: {request.Reason}",
-                    Status = "Approved",
+                    Status = "Pending", // 🌟 CBS Maker-Checker: Pending Passing
                     CreatedBy = actionUserId,
                     VoucherDetails = new List<VoucherDetail>
                     {

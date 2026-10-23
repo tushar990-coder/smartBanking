@@ -44,6 +44,8 @@ interface Member {
   firstName: string;
   middleName?: string;
   lastName: string;
+  fullName?: string;
+  customerName?: string;
   memberCode: string;
   cifNo?: string;
   legacyMemberNo?: string;
@@ -180,6 +182,26 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
   // Modals for Actions
   const [previewCertificate, setPreviewCertificate] = useState<CertificateData | null>(null);
   const [printingVoucherId, setPrintingVoucherId] = useState<number | null>(null);
+  
+  // 🌟 CBS Interactive Success Confirmation Modal State
+  const [successModalData, setSuccessModalData] = useState<{
+    open: boolean;
+    memberId: number;
+    memberCode: string;
+    memberName: string;
+    accountNo?: string;
+    voucherNo: string;
+    voucherId?: number;
+    amount: number;
+    numberOfShares: number;
+    fromShareNo?: number | string;
+    toShareNo?: number | string;
+    certificateNo?: string;
+    paymentMode: string;
+    status: string;
+    branchId?: number;
+  } | null>(null);
+
   const [editTxnModal, setEditTxnModal] = useState<{ open: boolean; txn: ShareTransactionData | null }>({ open: false, txn: null });
   const [editTxnDate, setEditTxnDate] = useState('');
   const [editTxnNarration, setEditTxnNarration] = useState('');
@@ -611,8 +633,28 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
 
       const data = await res.json();
       if (res.ok) {
+        const mem = members.find(m => m.memberID === selectedMemberId);
+        const memberFullName = mem?.fullName || [mem?.firstName, mem?.middleName, mem?.lastName].filter(Boolean).join(' ').trim() || mem?.customerName || 'सभासद';
+        setSuccessModalData({
+          open: true,
+          memberId: selectedMemberId as number,
+          memberCode: mem?.memberCode || '',
+          memberName: memberFullName,
+          accountNo: data.accountNo,
+          voucherNo: data.voucherNo || '',
+          voucherId: data.voucherId,
+          amount: data.amount || shareCapitalAmount,
+          numberOfShares: Number(numberOfShares),
+          fromShareNo: autoFromShareNo,
+          toShareNo: autoToShareNo,
+          certificateNo: data.certificateNo || autoCertificateNo,
+          paymentMode: paymentMode,
+          status: data.status || 'Pending',
+          branchId: data.branchId
+        });
+
         setMessage({ 
-          text: `✅ ${data.message || 'शेअर्स वाटप यशस्वी झाले!'} (व्हाउचर क्र.: ${data.voucherNo || 'तयार झाले'}, प्रमाणपत्र: ${data.certificateNo || 'तयार झाले'})`, 
+          text: `✅ ${data.message || 'शेअर्स वाटप अर्ज यशस्वीरित्या जतन झाला!'} (व्हाउचर क्र.: ${data.voucherNo || 'तयार झाले'}, प्रमाणपत्र: ${data.certificateNo || 'तयार झाले'})`, 
           type: 'success' 
         });
         setNumberOfShares('');
@@ -2061,6 +2103,151 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                 {actionLoading ? 'प्रक्रिया सुरू आहे...' : 'नामंजूर करा (Reject)'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 CBS SHARE ALLOTMENT SUCCESS CONFIRMATION MODAL */}
+      {successModalData && successModalData.open && (
+        <div className="fixed inset-0 bg-slate-950/75 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-2xl max-w-xl w-full overflow-hidden border border-slate-300 animate-in zoom-in-95 duration-200 my-8">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-600 via-teal-700 to-emerald-800 text-white px-5 py-4 flex justify-between items-center shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-full backdrop-blur-xs shadow-inner">
+                  <CheckCircle className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base tracking-wide">भाग वाटप अर्ज यशस्वी! (Share Allotment Successful)</h3>
+                  <p className="text-xs text-emerald-100 font-medium">नोंद प्रणालीमध्ये जतन झाली असून व्हाउचर मंजुरी रांगेत दाखल झाले आहे</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSuccessModalData(null)}
+                className="text-white/80 hover:text-white cursor-pointer font-bold p-1 rounded hover:bg-white/10 transition-colors"
+                title="बंद करा"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 space-y-4">
+              
+              {/* ⚠️ CBS Maker-Checker Pending Passing Callout Banner */}
+              <div className="bg-gradient-to-r from-amber-50 to-amber-100/60 border-2 border-amber-300 rounded-md p-3.5 flex items-start gap-3 shadow-xs">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-950 leading-relaxed">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-amber-900">व्हाउचर सद्यस्थिती (Voucher Status):</span>
+                    <span className="px-2.5 py-0.5 bg-amber-200 text-amber-950 rounded-full font-black text-[11px] uppercase tracking-wider border border-amber-400">
+                      🟡 व्यवस्थापक मंजुरीसाठी प्रलंबित (Pending for Passing)
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-amber-800 font-medium">
+                    कोअर बँकिंग मानकांनुसार हे व्हाउचर जोपर्यंत शाखा व्यवस्थापक/चेकर मंजूर (Pass) करत नाहीत, तोपर्यंत ते अंतिम रोजकीर्दीला (Day Book) पोस्ट होणार नाही व भाग दाखला अधिकृत होणार नाही.
+                  </div>
+                </div>
+              </div>
+
+              {/* Core Information Grid */}
+              <div className="bg-slate-50 border border-slate-200 rounded-md divide-y divide-slate-200 text-xs">
+                
+                <div className="grid grid-cols-2 divide-x divide-slate-200">
+                  <div className="p-2.5">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase block">सभासद कोड (Member Code)</span>
+                    <strong className="text-primary font-black text-base font-mono">{successModalData.memberCode}</strong>
+                  </div>
+                  <div className="p-2.5">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase block">भाग खाते क्र. (Share Account)</span>
+                    <strong className="text-slate-800 font-bold font-mono">{successModalData.accountNo || '-'}</strong>
+                  </div>
+                </div>
+
+                <div className="p-2.5 flex justify-between items-center">
+                  <span className="text-slate-500 font-bold">सभासदाचे नाव (Member Name):</span>
+                  <span className="font-black text-slate-900 text-xs">{successModalData.memberName}</span>
+                </div>
+
+                <div className="p-2.5 flex justify-between items-center bg-white/70">
+                  <span className="text-slate-500 font-bold">वाटप शेअर्स (Shares Allotted):</span>
+                  <span className="font-black text-emerald-800">
+                    {successModalData.numberOfShares} शेअर्स (दाखला क्र: {successModalData.certificateNo})
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 divide-x divide-slate-200 bg-white/70">
+                  <div className="p-2.5">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase block">शेअर्स नंबर श्रेणी (Share Numbers)</span>
+                    <span className="font-mono font-bold text-slate-800">{successModalData.fromShareNo} ते {successModalData.toShareNo}</span>
+                  </div>
+                  <div className="p-2.5">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase block">पेमेंट पद्धत (Payment Mode)</span>
+                    <span className="font-bold text-slate-800">{successModalData.paymentMode}</span>
+                  </div>
+                </div>
+
+                {successModalData.voucherNo && (
+                  <div className="p-2.5 bg-emerald-50/80 flex flex-wrap items-center justify-between gap-1 border-t border-emerald-200">
+                    <div>
+                      <span className="text-[10px] text-emerald-700 font-bold uppercase block">व्हाउचर क्रमांक (Voucher No)</span>
+                      <span className="font-mono font-bold text-emerald-900 text-xs">{successModalData.voucherNo}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-emerald-700 font-bold uppercase block">एकूण भांडवल रक्कम</span>
+                      <strong className="text-emerald-900 text-sm font-black">
+                        ₹{successModalData.amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </strong>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Actions Footer */}
+            <div className="bg-slate-100 p-3.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              
+              <div className="flex items-center gap-2">
+                {successModalData.voucherId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const vId = successModalData.voucherId || null;
+                      setSuccessModalData(null);
+                      setPrintingVoucherId(vId);
+                    }}
+                    className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4 text-slate-600" />
+                    <span>पावती प्रिंट (Print Slip)</span>
+                  </button>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuccessModalData(null);
+                    window.location.href = `/?tab=voucher-posting&filterDate=${new Date().toISOString().split('T')[0]}`;
+                  }}
+                  className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>व्हाउचर पासिंगकडे जा</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSuccessModalData(null)}
+                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-bold text-xs cursor-pointer shadow-xs transition-colors"
+              >
+                पुढील वाटप करा (Done)
+              </button>
+
+            </div>
+
           </div>
         </div>
       )}

@@ -22,7 +22,10 @@ import {
   TrendingUp,
   User,
   Edit2,
-  Trash2
+  Trash2,
+  Lock,
+  Unlock,
+  AlertCircle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
@@ -63,6 +66,8 @@ const isValidIsoDate = (dateStr: string): boolean => {
 const InvestmentAccountOpening: React.FC = () => {
   const { user } = useAuth();
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const [allowDateOverride, setAllowDateOverride] = useState(false);
   const globalBranchStr = localStorage.getItem('globalBranchId');
   const initialBranchId = globalBranchStr && globalBranchStr !== 'all' ? parseInt(globalBranchStr, 10) : (user?.branchID || 1);
 
@@ -687,19 +692,48 @@ const InvestmentAccountOpening: React.FC = () => {
               </div>
 
               <div>
-                <label className={labelClass}>
-                  गुंतवणूक / पावती तारीख <span className="text-red-500">*</span>
-                </label>
+                <div className="flex items-center justify-between !mb-0.5">
+                  <label className={labelClass}>
+                    गुंतवणूक / पावती तारीख <span className="text-red-500">*</span>
+                  </label>
+                  {!allowDateOverride && (
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                      <Lock size={9} /> लॉक
+                    </span>
+                  )}
+                </div>
                 <input 
                   type="date" 
                   name="investmentDate" 
-                  value={formData.investmentDate} 
+                  value={formData.investmentDate || activeBusinessDate} 
                   onChange={handleChange} 
                   min="1980-01-01"
                   max="2099-12-31"
                   required
-                  className={inputClass} 
+                  disabled={!allowDateOverride}
+                  readOnly={!allowDateOverride}
+                  className={`${inputClass} ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none text-slate-800 font-bold' : 'bg-white border-amber-400 font-bold'}`} 
                 />
+                {isHOUser && (
+                  <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal mt-0.5 select-none">
+                    <input
+                      type="checkbox"
+                      checked={allowDateOverride}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setAllowDateOverride(checked);
+                        if (!checked) {
+                          setFormData(p => ({ ...p, investmentDate: activeBusinessDate }));
+                        }
+                      }}
+                      className="w-3 h-3 text-primary rounded"
+                    />
+                    <span className="flex items-center gap-0.5">
+                      {allowDateOverride ? <Unlock size={10} className="text-amber-600" /> : <Lock size={10} className="text-gray-400" />}
+                      तारीख बदला (Override)
+                    </span>
+                  </label>
+                )}
                 <div className="flex items-center justify-between text-[10px] text-gray-500 mt-0.5">
                   <span className="text-gray-400">📅 कॅलेंडर आयकॉनवरून निवडा</span>
                   {isValidIsoDate(formData.investmentDate) ? (

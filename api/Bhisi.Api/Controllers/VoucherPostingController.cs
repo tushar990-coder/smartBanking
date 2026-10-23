@@ -293,6 +293,20 @@ namespace Bhisi.Api.Controllers
                         voucher.ApprovedBy = request.ApprovedBy;
                         voucher.ApprovedOn = DateTime.Now;
 
+                        // 🌟 Synchronize Share Certificate Status upon Voucher Passing
+                        var linkedShareTxns = await _context.ShareTransactions
+                            .Where(st => st.VoucherId == voucher.VoucherID)
+                            .ToListAsync();
+                        foreach (var st in linkedShareTxns)
+                        {
+                            var cert = await _context.ShareCertificates
+                                .FirstOrDefaultAsync(c => c.ShareAccountId == st.ShareAccountId && c.Status == "PendingApproval");
+                            if (cert != null)
+                            {
+                                cert.Status = "Active";
+                            }
+                        }
+
                         postedVoucherDetails.Add(new
                         {
                             voucherId = voucher.VoucherID,
@@ -398,6 +412,20 @@ namespace Bhisi.Api.Controllers
                     voucher.ScrollNo = null;
                     voucher.ApprovedBy = null;
                     voucher.ApprovedOn = null;
+
+                    // 🌟 Revert linked ShareCertificate Status to PendingApproval
+                    var linkedUnpassShareTxns = await _context.ShareTransactions
+                        .Where(st => st.VoucherId == voucher.VoucherID)
+                        .ToListAsync();
+                    foreach (var st in linkedUnpassShareTxns)
+                    {
+                        var cert = await _context.ShareCertificates
+                            .FirstOrDefaultAsync(c => c.ShareAccountId == st.ShareAccountId && c.Status == "Active");
+                        if (cert != null)
+                        {
+                            cert.Status = "PendingApproval";
+                        }
+                    }
 
                     // 3. Record in AuditLogs
                     _context.AuditLogs.Add(new AuditLog
@@ -595,7 +623,17 @@ namespace Bhisi.Api.Controllers
             try
             {
                 var shareTxs = await _context.ShareTransactions.Where(st => st.VoucherId == id).ToListAsync();
-                foreach (var st in shareTxs) st.VoucherId = null;
+                foreach (var st in shareTxs)
+                {
+                    var pendingCerts = await _context.ShareCertificates
+                        .Where(c => c.ShareAccountId == st.ShareAccountId && c.Status == "PendingApproval")
+                        .ToListAsync();
+                    foreach (var pc in pendingCerts)
+                    {
+                        pc.Status = "Cancelled";
+                    }
+                    st.VoucherId = null;
+                }
 
                 var dividendDists = await _context.DividendDistributions.Where(d => d.VoucherId == id).ToListAsync();
                 foreach (var d in dividendDists) d.VoucherId = null;

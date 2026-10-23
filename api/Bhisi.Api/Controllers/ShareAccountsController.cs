@@ -321,7 +321,7 @@ namespace Bhisi.Api.Controllers
                     ToShareNo = endShareNo,
                     NumberOfShares = request.NumberOfShares,
                     FaceValue = faceValue,
-                    Status = "Active",
+                    Status = "PendingApproval", // 🌟 CBS Maker-Checker: Becomes Active on Voucher Passing!
                     CreatedBy = actionUserId,
                     CreatedDate = DateTime.Now
                 };
@@ -461,15 +461,15 @@ namespace Bhisi.Api.Controllers
                 {
                     BranchID = targetBranch,
                     VoucherNo = $"VCH-SHR-{voucherDate:yyyyMMdd}-{vchCount:D4}",
-                    ScrollNo = maxScroll + 1,
+                    ScrollNo = null, // 🌟 CBS Maker-Checker: Scroll is only assigned upon Checker passing!
                     VoucherDate = voucherDate,
                     VoucherType = (request.PaymentMode == "Transfer" || request.PaymentMode == "LedgerTransfer") ? "Journal" : "Receipt",
                     TotalAmount = totalAmount,
                     Narration = $"Share Allotment ({request.PaymentMode}) for {(member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "")}. Cert: {certNo}. {request.Narration}",
-                    Status = "Approved",
+                    Status = "Pending", // 🌟 CBS Maker-Checker: Pending Voucher Passing Queue
                     CreatedBy = actionUserId,
-                    ApprovedBy = actionUserId,
-                    ApprovedOn = DateTime.Now,
+                    ApprovedBy = null,
+                    ApprovedOn = null,
                     VoucherDetails = voucherDetailsList
                 };
                 _context.Vouchers.Add(voucher);
@@ -498,10 +498,15 @@ namespace Bhisi.Api.Controllers
 
                 return Ok(new 
                 { 
-                    message = "Shares successfully allotted.", 
+                    message = "भाग वाटप अर्ज जतन झाला! व्हाउचर व्यवस्थापक मंजुरीसाठी पाठवले आहे.", 
                     certificateNo = certNo,
                     accountNo = account.AccountNo,
-                    voucherNo = voucher.VoucherNo
+                    voucherNo = voucher.VoucherNo,
+                    voucherId = voucher.VoucherID,
+                    status = "Pending",
+                    amount = totalAmount,
+                    sharesCount = request.NumberOfShares,
+                    branchId = targetBranch
                 });
             }
             catch (Exception ex)
@@ -662,15 +667,15 @@ namespace Bhisi.Api.Controllers
                 {
                     BranchID = targetBranch,
                     VoucherNo = $"VCH-SHR-WD-{voucherDate:yyyyMMdd}-{vchCount:D4}",
-                    ScrollNo = maxScroll + 1,
+                    ScrollNo = null, // 🌟 CBS Maker-Checker: Scroll is only assigned upon Checker passing!
                     VoucherDate = voucherDate,
                     VoucherType = (request.PaymentMode == "Transfer" || request.PaymentMode == "LedgerTransfer") ? "Journal" : "Payment",
                     TotalAmount = totalAmount,
                     Narration = $"Share Withdrawal ({request.PaymentMode}) for {(member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "")}. {request.Narration}",
-                    Status = "Approved",
+                    Status = "Pending", // 🌟 CBS Maker-Checker: Pending Passing
                     CreatedBy = actionUserId,
-                    ApprovedBy = actionUserId,
-                    ApprovedOn = DateTime.Now,
+                    ApprovedBy = null,
+                    ApprovedOn = null,
                     VoucherDetails = new List<VoucherDetail>
                     {
                         // Share Capital decreases -> Debit
@@ -2593,7 +2598,7 @@ namespace Bhisi.Api.Controllers
                     VoucherType = "Journal",
                     TotalAmount = totalAmount,
                     Narration = $"Share Transfer of {request.NumberOfShares} shares from {fromMemberName} ({fromMember.MemberCode}) to {toMemberName} ({toMember.MemberCode}). ठराव क्र: {request.ResolutionNo ?? "-"} दि. {request.ResolutionDate?.ToString("dd/MM/yyyy") ?? "-"}. {request.Narration}".Trim(),
-                    Status = "Approved",
+                    Status = "Pending", // 🌟 CBS Maker-Checker: Pending Passing
                     CreatedBy = actionUserId,
                     VoucherDetails = new List<VoucherDetail>
                     {
@@ -2658,7 +2663,7 @@ namespace Bhisi.Api.Controllers
                         VoucherType = request.FeePaymentMode == "Cash" ? "Receipt" : "Journal",
                         TotalAmount = request.TransferFee,
                         Narration = $"Share Transfer Fee for transfer of {request.NumberOfShares} shares from {fromMemberName} to {toMemberName}",
-                        Status = "Approved",
+                        Status = "Pending", // 🌟 CBS Maker-Checker: Pending Passing
                         CreatedBy = actionUserId,
                         VoucherDetails = new List<VoucherDetail>
                         {

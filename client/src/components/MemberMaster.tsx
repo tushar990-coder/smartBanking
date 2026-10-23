@@ -5,12 +5,13 @@ import {
   Inbox, CheckCircle2, Clock, XCircle, AlertCircle, Plus, Phone, Calendar, 
   Layers, UploadCloud, Maximize2, ShieldCheck, FileBadge, Award, Coins, IndianRupee,
   Scale, BookOpen, Printer, Building2, CheckSquare, Filter, Landmark, RotateCcw,
-  CheckCircle, Percent
+  CheckCircle, Percent, ArrowRight, ExternalLink
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
 import DeceasedClaimSettlementModal from './DeceasedClaimSettlementModal';
 import ShareCertificatePreview from './ShareCertificatePreview';
+import VoucherPrint from './VoucherPrint';
 
 interface Customer extends CustomerOption {
   customerID: number;
@@ -120,19 +121,28 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     return new Date().toISOString().split('T')[0];
   }, [user?.businessDate]);
 
-  // Summary modal after saving new member displaying Member & Share Details
+  // 🌟 CBS Summary modal after saving new member displaying Member & Share Details
   const [newRegisteredMember, setNewRegisteredMember] = useState<{
     memberId: number;
     memberCode: string;
     memberName: string;
+    cifNo?: string;
+    branchName?: string;
     voucherNo?: string;
+    voucherId?: number;
     feeAmount?: number;
     sharesCount?: number;
     shareAmount?: number;
+    admissionFee?: number;
+    buildingFund?: number;
+    paymentMode?: string;
     fromShareNo?: number | string;
     toShareNo?: number | string;
     certNo?: string;
+    status?: string;
   } | null>(null);
+
+  const [printingVoucherId, setPrintingVoucherId] = useState<number | null>(null);
 
   // List Modal Filter States
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('All');
@@ -702,28 +712,35 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         }
         const targetMemberId = (editingId !== null) ? editingId : savedMember.memberID;
         const targetMemberCode = savedMember.memberCode || formData.memberCode;
-        const vchNo = savedMember.generatedVoucherNo;
+        const vchNo = savedMember.generatedVoucherNo || savedMember.voucherNo || '';
+        const vchId = savedMember.generatedVoucherId || savedMember.voucherId;
+        const vchStatus = savedMember.voucherStatus || 'Pending';
+        const branchObj = branches.find(b => b.branchID === Number(formData.branchID));
+        const branchDisplayName = branchObj ? `${branchObj.branchName} (${branchObj.branchCode})` : (savedMember.branchName || `शाखा क्र. ${formData.branchID}`);
 
         if (editingId === null) {
+          // 🌟 OPEN STATE-OF-THE-ART CONFIRMATION POPUP MODAL!
           setNewRegisteredMember({
             memberId: targetMemberId,
             memberCode: targetMemberCode,
-            memberName: `${formData.firstName} ${formData.lastName}`,
+            memberName: `${formData.firstName} ${formData.lastName}`.trim(),
+            cifNo: selectedCustomer?.cifNo || formData.cifNo || '',
+            branchName: branchDisplayName,
             voucherNo: vchNo,
+            voucherId: vchId,
             feeAmount: totalPayable,
             sharesCount: Number(shareConfig.numberOfShares) || 0,
             shareAmount: shareCapitalAmount,
+            admissionFee: shareConfig.admissionFee || 0,
+            buildingFund: shareConfig.buildingFund || 0,
+            paymentMode: shareConfig.paymentMode || 'Cash',
             fromShareNo: autoFromShareNo,
             toShareNo: autoToShareNo,
-            certNo: autoCertificateNo
+            certNo: autoCertificateNo,
+            status: vchStatus
           });
-          if (shareConfig.numberOfShares > 0 && vchNo) {
-            setSuccess(`नवीन सभासद नोंदणी व भाग वाटप (${shareConfig.numberOfShares} शेअर्स) यशस्वी! पावती व्हाऊचर क्र. ${vchNo} (रक्कम: ₹${totalPayable.toLocaleString('en-IN')}) रोजकीर्द (Day Book) ला जमा झाले आहे.`);
-          } else if (vchNo) {
-            setSuccess(`नवीन सभासद नोंदणी अर्ज यशस्वी! पावती व्हाऊचर क्र. ${vchNo} (रक्कम: ₹${totalPayable.toLocaleString('en-IN')}) रोजकीर्द (Day Book) ला जमा झाले आहे.`);
-          } else {
-            setSuccess("नवीन सभासद नोंदणी अर्ज यशस्वीरित्या जतन झाला!");
-          }
+
+          setSuccess(`नवीन सभासद नोंदणी व भाग वाटप यशस्वी! पावती व्हाउचर क्र. ${vchNo || 'तयार झाले'} (रक्कम: ₹${totalPayable.toLocaleString('en-IN')}) व्यवस्थापक मंजुरीसाठी (Voucher Passing) प्रलंबित आहे.`);
         } else {
           setSuccess("सभासद माहिती यशस्वीरित्या अद्ययावत केली!");
         }
@@ -1875,96 +1892,185 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         />
       )}
 
-      {/* 🌟 NEW MEMBER REGISTRATION & SHARE ALLOTMENT SUCCESS MODAL */}
+      {/* 🌟 STATE-OF-THE-ART CBS MEMBER REGISTRATION & SHARE ALLOTMENT SUCCESS CONFIRMATION MODAL */}
       {newRegisteredMember && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-md shadow-2xl max-w-lg w-full overflow-hidden border border-slate-300 animate-in fade-in zoom-in-95 duration-150">
-            <div className="bg-primary text-white px-4 py-3 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-300" />
-                <span className="font-bold text-sm">सभासद व शेअर्स वाटप माहिती (Member & Share Details)</span>
+        <div className="fixed inset-0 bg-slate-950/75 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-2xl max-w-xl w-full overflow-hidden border border-slate-300 animate-in zoom-in-95 duration-200 my-8">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-600 via-teal-700 to-emerald-800 text-white px-5 py-4 flex justify-between items-center shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-full backdrop-blur-xs shadow-inner">
+                  <CheckCircle2 className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base tracking-wide">सभासद नोंदणी अर्ज यशस्वी! (Registration Successful)</h3>
+                  <p className="text-xs text-emerald-100 font-medium">नोंद प्रणालीमध्ये जतन झाली असून व्हाउचर मंजुरी रांगेत दाखल झाले आहे</p>
+                </div>
               </div>
               <button
                 onClick={() => setNewRegisteredMember(null)}
-                className="text-white/80 hover:text-white cursor-pointer font-bold text-base"
+                className="text-white/80 hover:text-white cursor-pointer font-bold p-1 rounded hover:bg-white/10 transition-colors"
+                title="बंद करा"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 space-y-3.5">
-              <div className="bg-emerald-50 border border-emerald-200 rounded p-3 text-xs space-y-2.5 text-emerald-950">
-                <div className="flex items-center gap-1.5 font-bold text-emerald-900 text-xs pb-1.5 border-b border-emerald-200">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>नवीन सभासद नोंदणी व भाग भांडवल वाटप यशस्वीरित्या पूर्ण झाले आहे!</span>
+            <div className="p-4 sm:p-5 space-y-4">
+              
+              {/* Branch & Multi-Branch Badge */}
+              {newRegisteredMember.branchName && (
+                <div className="flex items-center justify-between bg-slate-100 px-3 py-1.5 rounded text-xs border border-slate-200 text-slate-700">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-primary" />
+                    <span>शाखा (Branch):</span>
+                  </span>
+                  <span className="font-black text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-300">
+                    {newRegisteredMember.branchName}
+                  </span>
                 </div>
+              )}
 
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-white/80 p-2 rounded border border-emerald-200">
-                    <span className="text-[10px] text-slate-500 font-medium block">सभासद कोड (Member Code)</span>
-                    <strong className="text-primary font-bold text-sm">{newRegisteredMember.memberCode}</strong>
+              {/* ⚠️ CBS Maker-Checker Pending Passing Callout Banner */}
+              <div className="bg-gradient-to-r from-amber-50 to-amber-100/60 border-2 border-amber-300 rounded-md p-3.5 flex items-start gap-3 shadow-xs">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-950 leading-relaxed">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-amber-900">व्हाउचर सद्यस्थिती (Voucher Status):</span>
+                    <span className="px-2.5 py-0.5 bg-amber-200 text-amber-950 rounded-full font-black text-[11px] uppercase tracking-wider border border-amber-400">
+                      🟡 व्यवस्थापक मंजुरीसाठी प्रलंबित (Pending for Passing)
+                    </span>
                   </div>
-                  <div className="bg-white/80 p-2 rounded border border-emerald-200">
-                    <span className="text-[10px] text-slate-500 font-medium block">सभासद क्रमांक (Member ID)</span>
-                    <strong className="text-slate-800 font-bold text-sm">#{newRegisteredMember.memberId}</strong>
+                  <div className="mt-1 text-[11px] text-amber-800 font-medium">
+                    कोअर बँकिंग मानकांनुसार हे व्हाउचर जोपर्यंत शाखा व्यवस्थापक/चेकर मंजूर (Pass) करत नाहीत, तोपर्यंत ते अंतिम रोजकीर्दीला (Day Book) पोस्ट होणार नाही व भाग दाखला अधिकृत होणार नाही.
                   </div>
-                  <div className="col-span-2 bg-white/80 p-2 rounded border border-emerald-200">
-                    <span className="text-[10px] text-slate-500 font-medium block">सभासदाचे नाव (Member Name)</span>
-                    <strong className="text-slate-900 font-bold">{newRegisteredMember.memberName}</strong>
-                  </div>
-
-                  {newRegisteredMember.sharesCount && newRegisteredMember.sharesCount > 0 ? (
-                    <>
-                      <div className="bg-white/80 p-2 rounded border border-emerald-200">
-                        <span className="text-[10px] text-slate-500 font-medium block">वाटप शेअर्स (Shares Allotted)</span>
-                        <strong className="text-emerald-800 font-bold">
-                          {newRegisteredMember.sharesCount} शेअर्स (₹{newRegisteredMember.shareAmount?.toLocaleString('en-IN')})
-                        </strong>
-                      </div>
-                      <div className="bg-white/80 p-2 rounded border border-emerald-200">
-                        <span className="text-[10px] text-slate-500 font-medium block">शेअर्स नंबर श्रेणी (Share Numbers)</span>
-                        <strong className="font-mono text-slate-800 font-bold">
-                          {newRegisteredMember.fromShareNo} ते {newRegisteredMember.toShareNo}
-                        </strong>
-                      </div>
-                      <div className="col-span-2 bg-white/80 p-2 rounded border border-emerald-200">
-                        <span className="text-[10px] text-slate-500 font-medium block">भाग दाखला क्रमांक (Certificate No)</span>
-                        <strong className="font-mono text-primary font-bold">{newRegisteredMember.certNo}</strong>
-                      </div>
-                    </>
-                  ) : null}
-
-                  {newRegisteredMember.voucherNo && (
-                    <div className="col-span-2 bg-emerald-100/90 border border-emerald-300 rounded p-2 text-xs text-emerald-950 font-bold flex items-center justify-between">
-                      <span>🧾 पावती क्र.: <strong className="font-mono text-primary">{newRegisteredMember.voucherNo}</strong></span>
-                      <span className="text-emerald-800">एकूण रक्कम: ₹{newRegisteredMember.feeAmount?.toLocaleString('en-IN')} (Day Book जमा ✅)</span>
-                    </div>
-                  )}
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+              {/* Core Information Grid */}
+              <div className="bg-slate-50 border border-slate-200 rounded-md divide-y divide-slate-200 text-xs">
+                
+                <div className="grid grid-cols-2 divide-x divide-slate-200">
+                  <div className="p-2.5">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase block">सभासद कोड (Member Code)</span>
+                    <strong className="text-primary font-black text-base font-mono">{newRegisteredMember.memberCode}</strong>
+                  </div>
+                  <div className="p-2.5">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase block">खातेदार CIF / ID</span>
+                    <strong className="text-slate-800 font-bold font-mono">{newRegisteredMember.cifNo || `ID #${newRegisteredMember.memberId}`}</strong>
+                  </div>
+                </div>
+
+                <div className="p-2.5 flex justify-between items-center">
+                  <span className="text-slate-500 font-bold">सभासदाचे नाव (Member Name):</span>
+                  <span className="font-black text-slate-900 text-xs">{newRegisteredMember.memberName}</span>
+                </div>
+
+                {newRegisteredMember.sharesCount && newRegisteredMember.sharesCount > 0 ? (
+                  <>
+                    <div className="p-2.5 flex justify-between items-center bg-white/70">
+                      <span className="text-slate-500 font-bold">वाटप शेअर्स (Shares Allotted):</span>
+                      <span className="font-black text-emerald-800">
+                        {newRegisteredMember.sharesCount} शेअर्स (₹{newRegisteredMember.shareAmount?.toLocaleString('en-IN')})
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 divide-x divide-slate-200 bg-white/70">
+                      <div className="p-2.5">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase block">शेअर्स नंबर श्रेणी (Share Numbers)</span>
+                        <span className="font-mono font-bold text-slate-800">{newRegisteredMember.fromShareNo} ते {newRegisteredMember.toShareNo}</span>
+                      </div>
+                      <div className="p-2.5">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase block">भाग दाखला क्र. (Certificate No)</span>
+                        <span className="font-mono font-bold text-primary">{newRegisteredMember.certNo}</span>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+
+                {newRegisteredMember.voucherNo && (
+                  <div className="p-2.5 bg-emerald-50/80 flex flex-wrap items-center justify-between gap-1 border-t border-emerald-200">
+                    <div>
+                      <span className="text-[10px] text-emerald-700 font-bold uppercase block">व्हाउचर क्रमांक (Voucher No)</span>
+                      <span className="font-mono font-bold text-emerald-900 text-xs">{newRegisteredMember.voucherNo}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-emerald-700 font-bold uppercase block">एकूण भरलेली रक्कम ({newRegisteredMember.paymentMode || 'Cash'})</span>
+                      <strong className="text-emerald-900 text-sm font-black">
+                        ₹{newRegisteredMember.feeAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </strong>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            {/* Actions Footer */}
+            <div className="bg-slate-100 p-3.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              
+              <div className="flex items-center gap-2">
+                {newRegisteredMember.voucherId ? (
+                  <button
+                    type="button"
+                    onClick={() => setPrintingVoucherId(newRegisteredMember.voucherId || null)}
+                    className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4 text-slate-600" />
+                    <span>पावती प्रिंट (Print Voucher)</span>
+                  </button>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewRegisteredMember(null);
+                    window.location.href = `/?tab=voucher-posting&filterDate=${new Date().toISOString().split('T')[0]}`;
+                  }}
+                  className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>व्हाउचर पासिंगकडे जा</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setNewRegisteredMember(null);
                     setIsListModalOpen(true);
                   }}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs border border-slate-300 cursor-pointer shadow-2xs flex items-center gap-1.5"
+                  className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-bold text-xs transition-colors cursor-pointer"
                 >
-                  <Users className="w-4 h-4 text-slate-600" />
-                  <span>नोंदणीकृत सभासद यादी पहा</span>
+                  यादी पहा
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setNewRegisteredMember(null)}
-                  className="px-5 py-2 bg-primary hover:opacity-95 text-white rounded font-bold text-xs cursor-pointer shadow-xs"
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-bold text-xs cursor-pointer shadow-xs transition-colors"
                 >
-                  नवीन अर्ज भरा (New Application)
+                  नवीन अर्ज भरा (New Form)
                 </button>
               </div>
+
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 VOUCHER PRINT MODAL */}
+      {printingVoucherId && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white rounded-md max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-2xl border border-gray-300">
+            <VoucherPrint 
+              voucherId={printingVoucherId} 
+              onBack={() => setPrintingVoucherId(null)} 
+            />
           </div>
         </div>
       )}

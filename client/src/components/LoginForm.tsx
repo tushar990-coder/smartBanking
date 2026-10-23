@@ -105,6 +105,72 @@ export default function LoginForm() {
     };
   }, []);
 
+  const validateBusinessDate = (dateVal: string, fy: any, lastClosed?: string): string => {
+    if (!dateVal) {
+      return 'कृपया कामकाजाची तारीख प्रविष्ट करा.';
+    }
+
+    const parts = dateVal.split('-');
+    if (parts.length !== 3) {
+      return 'अवैध तारीख स्वरूप. कृपया योग्य तारीख प्रविष्ट करा.';
+    }
+
+    const year = parseInt(parts[0], 10);
+    if (isNaN(year) || year < 2000 || year > 2099 || parts[0].length !== 4) {
+      return `अवैध वर्ष (${parts[0]})! वर्ष 2000 ते 2099 दरम्यान ४ अंकी असणे आवश्यक आहे (उदा. 2026).`;
+    }
+
+    // Check Financial Year boundaries
+    if (fy) {
+      const fStart = (fy.startDate || fy.StartDate)?.split('T')[0];
+      const fEnd = (fy.endDate || fy.EndDate)?.split('T')[0];
+      const fCode = fy.yearCode || fy.YearCode || 'निवडलेल्या आर्थिक वर्षात';
+
+      if (fStart && dateVal < fStart) {
+        return `कामकाजाची तारीख ${fCode} या आर्थिक वर्षाच्या सुरुवातीपेक्षा (${new Date(fStart).toLocaleDateString('en-GB')}) जुनी असू शकत नाही.`;
+      }
+      if (fEnd && dateVal > fEnd) {
+        return `कामकाजाची तारीख ${fCode} या आर्थिक वर्षाच्या अखेरपेक्षा (${new Date(fEnd).toLocaleDateString('en-GB')}) पुढील असू शकत नाही.`;
+      }
+    }
+
+    // Check closed date
+    if (lastClosed && dateVal <= lastClosed) {
+      return `दिनांक ${new Date(dateVal).toLocaleDateString('en-GB')} चा दिवस आधीच दिवसअखेर करून बंद करण्यात आला आहे. बंद तारखेवर लॉगिन करता येणार नाही.`;
+    }
+
+    return '';
+  };
+
+  const handleDateBlur = () => {
+    if (!formData.businessDate) return;
+    const parts = formData.businessDate.split('-');
+    if (parts.length === 3) {
+      let year = parseInt(parts[0], 10);
+      const month = parts[1];
+      const day = parts[2];
+
+      // Auto-correct 2-digit or short year (e.g. 26 or 0026 -> 2026)
+      if (year > 0 && year < 100) {
+        year = 2000 + year;
+        const corrected = `${year.toString().padStart(4, '0')}-${month}-${day}`;
+        setFormData(prev => ({ ...prev, businessDate: corrected }));
+        const currentFy = financialYears.find(f => 
+          (f.financialYearID ?? f.financialYearId ?? f.FinancialYearID)?.toString() === formData.financialYearID
+        );
+        const err = validateBusinessDate(corrected, currentFy, branchDateInfo?.lastClosedDate);
+        setDateWarning(err);
+        return;
+      }
+    }
+
+    const currentFy = financialYears.find(f => 
+      (f.financialYearID ?? f.financialYearId ?? f.FinancialYearID)?.toString() === formData.financialYearID
+    );
+    const err = validateBusinessDate(formData.businessDate, currentFy, branchDateInfo?.lastClosedDate);
+    setDateWarning(err);
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -112,24 +178,44 @@ export default function LoginForm() {
     if (name === 'branchID') {
       fetchBranchBusinessDate(value);
       setDateWarning('');
-    } else if (name === 'businessDate') {
-      if (branchDateInfo?.lastClosedDate && value <= branchDateInfo.lastClosedDate) {
-        setDateWarning(`दिनांक ${new Date(value).toLocaleDateString('en-GB')} चा दिवस आधीच दिवसअखेर करून बंद करण्यात आला आहे. बंद तारखेवर लॉगिन करता येणार नाही.`);
-      } else {
-        setDateWarning('');
+    } else if (name === 'financialYearID') {
+      const nextFy = financialYears.find(f => 
+        (f.financialYearID ?? f.financialYearId ?? f.FinancialYearID)?.toString() === value
+      );
+      if (formData.businessDate) {
+        const warn = validateBusinessDate(formData.businessDate, nextFy, branchDateInfo?.lastClosedDate);
+        setDateWarning(warn);
       }
+    } else if (name === 'businessDate') {
+      const currentFy = financialYears.find(f => 
+        (f.financialYearID ?? f.financialYearId ?? f.FinancialYearID)?.toString() === formData.financialYearID
+      );
+      const warn = validateBusinessDate(value, currentFy, branchDateInfo?.lastClosedDate);
+      setDateWarning(warn);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
     
+    // Strict Validation Gate
+    const currentFy = financialYears.find(f => 
+      (f.financialYearID ?? f.financialYearId ?? f.FinancialYearID)?.toString() === formData.financialYearID
+    );
+    const dateErr = validateBusinessDate(formData.businessDate, currentFy, branchDateInfo?.lastClosedDate);
+    if (dateErr) {
+      setError(dateErr);
+      setDateWarning(dateErr);
+      return;
+    }
+
     if (dateWarning) {
       setError(dateWarning);
       return;
     }
+
+    setLoading(true);
 
     try {
       const response = await fetch('/api/Auth/login', {
@@ -334,18 +420,30 @@ export default function LoginForm() {
               <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-[#7a6b74] group-focus-within:text-[#7e474e] transition-colors">
                 <Calendar size={12} />
               </div>
-              <input
-                type="date"
-                name="businessDate"
-                value={formData.businessDate}
-                onChange={handleChange}
-                className={`w-full pl-7 pr-3 py-1.5 bg-white/95 border rounded-xl text-[11px] font-mono font-bold text-[#251c22] shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all focus:bg-white focus:outline-none ${
-                  dateWarning 
-                    ? 'border-rose-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20' 
-                    : 'border-[#e5dfe3] hover:border-[#cfc4cb] focus:border-[#7e474e] focus:ring-2 focus:ring-[#7e474e]/20'
-                }`}
-                required
-              />
+              {(() => {
+                const currentFy = financialYears.find(f => 
+                  (f.financialYearID ?? f.financialYearId ?? f.FinancialYearID)?.toString() === formData.financialYearID
+                );
+                const fyMin = (currentFy?.startDate || currentFy?.StartDate)?.split('T')[0] || '2000-01-01';
+                const fyMax = (currentFy?.endDate || currentFy?.EndDate)?.split('T')[0] || '2099-12-31';
+                return (
+                  <input
+                    type="date"
+                    name="businessDate"
+                    value={formData.businessDate}
+                    onChange={handleChange}
+                    onBlur={handleDateBlur}
+                    min={fyMin}
+                    max={fyMax}
+                    className={`w-full pl-7 pr-3 py-1.5 bg-white/95 border rounded-xl text-[11px] font-mono font-bold text-[#251c22] shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all focus:bg-white focus:outline-none ${
+                      dateWarning 
+                        ? 'border-rose-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20' 
+                        : 'border-[#e5dfe3] hover:border-[#cfc4cb] focus:border-[#7e474e] focus:ring-2 focus:ring-[#7e474e]/20'
+                    }`}
+                    required
+                  />
+                );
+              })()}
             </div>
             {dateWarning ? (
               <p className="text-[9.5px] text-rose-600 font-bold mt-1 flex items-center gap-1 leading-tight">

@@ -23,6 +23,7 @@ import {
   XMarkIcon,
   CreditCardIcon
 } from '@heroicons/react/24/outline';
+import { Lock, Unlock, AlertCircle } from 'lucide-react';
 
 interface Customer {
   customerID: number;
@@ -180,6 +181,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
   const { user } = useAuth();
   const activeBusinessDate = user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0];
+  const isHOUser = user?.role === 'Admin' || user?.role === 'SuperAdmin' || user?.role === 'HeadOffice' || user?.role === 'HO_Manager';
+  const [allowDateOverride, setAllowDateOverride] = useState(false);
 
   // Bulk Sheet States
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('');
@@ -1430,15 +1433,45 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
 
             {/* COLLECTION DATE */}
             <div>
-              <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
-                २. जमा तारीख (Collection Date) *
-              </label>
+              <div className="flex items-center justify-between !mb-0.5">
+                <label className="block text-[11px] font-bold text-gray-700">
+                  २. जमा तारीख (Collection Date) *
+                </label>
+                {!allowDateOverride && (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                    <Lock size={9} /> लॉक
+                  </span>
+                )}
+              </div>
               <input
                 type="date"
-                value={collectionDate}
+                value={collectionDate || activeBusinessDate}
                 onChange={(e) => setCollectionDate(e.target.value)}
-                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className={`w-full border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-400 ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none text-slate-800' : 'bg-white text-gray-900 border-amber-400'}`}
+                disabled={!allowDateOverride}
+                readOnly={!allowDateOverride}
               />
+              {isHOUser && (
+                <label className="text-[10px] text-gray-500 hover:text-gray-700 flex items-center gap-1 cursor-pointer font-normal mt-0.5 select-none">
+                  <input
+                    type="checkbox"
+                    checked={allowDateOverride}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setAllowDateOverride(checked);
+                      if (!checked) {
+                        setCollectionDate(activeBusinessDate);
+                        setManualForm(p => ({ ...p, collectionDate: activeBusinessDate }));
+                      }
+                    }}
+                    className="w-3 h-3 text-primary rounded"
+                  />
+                  <span className="flex items-center gap-0.5">
+                    {allowDateOverride ? <Unlock size={10} className="text-amber-600" /> : <Lock size={10} className="text-gray-400" />}
+                    तारीख बदला (Override)
+                  </span>
+                </label>
+              )}
             </div>
 
             {/* SEARCH CUSTOMER SHEET FILTER */}
@@ -2186,13 +2219,22 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               )}
 
               <div>
-                <label className="text-[11px] font-medium text-gray-600 mb-0.5 block">जमा तारीख (Collection Date) *</label>
+                <div className="flex items-center justify-between !mb-0.5">
+                  <label className="text-[11px] font-medium text-gray-600 block">जमा तारीख (Collection Date) *</label>
+                  {!allowDateOverride && (
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                      <Lock size={9} /> लॉक
+                    </span>
+                  )}
+                </div>
                 <input 
                   type="date" 
-                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  value={manualForm.collectionDate}
+                  className={`w-full border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-400 ${!allowDateOverride ? 'bg-slate-100 cursor-not-allowed select-none text-slate-800' : 'bg-white border-amber-400'}`}
+                  value={manualForm.collectionDate || activeBusinessDate}
                   onChange={(e) => setManualForm({...manualForm, collectionDate: e.target.value})}
                   required
+                  disabled={!allowDateOverride}
+                  readOnly={!allowDateOverride}
                 />
               </div>
 

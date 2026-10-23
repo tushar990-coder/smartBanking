@@ -59,6 +59,15 @@ namespace Bhisi.Api.Models
         public string PanDocPath { get; set; } = string.Empty;
         public int? EmployerId { get; set; }
 
+        // 🌟 CBS Maker-Checker & Voucher Passing Extensions
+        public string? GeneratedVoucherNo { get; set; }
+        public int? GeneratedVoucherId { get; set; }
+        public string VoucherStatus { get; set; } = "Pending";
+        public decimal TotalAmountPaid { get; set; } = 0;
+        public int NumberOfSharesAllotted { get; set; } = 0;
+        public string? CertificateNo { get; set; }
+        public string? BranchName { get; set; }
+
         public virtual Customer? Customer { get; set; }
         public virtual Branch? Branch { get; set; }
 
@@ -119,6 +128,7 @@ namespace Bhisi.Api.Models
                 AadhaarDocPath = cust?.AadhaarDocPath ?? string.Empty,
                 PanDocPath = cust?.PanDocPath ?? string.Empty,
                 EmployerId = cust?.EmployerId,
+                BranchName = m.Branch?.BranchName ?? string.Empty,
 
                 Customer = m.Customer,
                 Branch = m.Branch

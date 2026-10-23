@@ -20,6 +20,12 @@ namespace FinExMigrator
 
             try
             {
+                if (args.Length > 0 && args[0] == "--migrate-savings-remote")
+                {
+                    MigrateSavingsToRemote();
+                    return;
+                }
+
                 if (args.Length > 0 && (args[0] == "--dry-run" || args[0] == "--fix-db"))
                 {
                     using var fixConn = new SqlConnection(targetConnStr);
@@ -546,6 +552,323 @@ namespace FinExMigrator
             return (custMap, memMap);
         }
 
+        static void MigrateSavingsToRemote()
+        {
+            string remoteTargetConnStr = "Server=tcp:43.239.93.47,15050;Database=SmartBanking_vidyasagarkavathesar;User Id=sa;Password=Mindspace2026;Encrypt=true;TrustServerCertificate=True;Connection Timeout=30;";
+            string localSrcConnStr = "Server=.;Database=FinEx;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True;";
+
+            Console.WriteLine("\n==========================================================");
+            Console.WriteLine("  MIGRATING SAVING MODULE TO REMOTE VPS (Option A)        ");
+            Console.WriteLine("==========================================================");
+
+            using var src = new SqlConnection(localSrcConnStr);
+            using var tgt = new SqlConnection(remoteTargetConnStr);
+            src.Open();
+            tgt.Open();
+
+            // 1. Load Relation Map from FinEx
+            var relMap = new Dictionary<int, string>
+            {
+                { 1, "स्वतः" },
+                { 2, "वडील" },
+                { 3, "भाऊ" },
+                { 4, "बहीण" },
+                { 5, "आई" },
+                { 6, "पत्नी" },
+                { 10, "मुलगा" },
+                { 11, "मुलगी" },
+                { 12, "पती" }
+            };
+
+            // 2. Load Closed Accounts details from SAVING_ACC_CLOSE
+            var closeMap = new Dictionary<int, ClosedAccDto>();
+            using (var cmdClose = new SqlCommand("SELECT Saving_acc_id, Acc_close_date, Reason FROM SAVING_ACC_CLOSE", src))
+            using (var rClose = cmdClose.ExecuteReader())
+            {
+                while (rClose.Read())
+                {
+                    int aid = Convert.ToInt32(rClose["Saving_acc_id"]);
+                    DateTime cd = rClose["Acc_close_date"] != DBNull.Value ? Convert.ToDateTime(rClose["Acc_close_date"]) : DateTime.Today;
+                    string rsn = rClose["Reason"]?.ToString() ?? "";
+                    rsn = MarathiUnicodeEngine.ConvertFromRawIsm(rsn);
+                    closeMap[aid] = new ClosedAccDto { CloseDate = cd, Reason = rsn };
+                }
+            }
+            Console.WriteLine($"  ✓ Loaded {closeMap.Count} closed accounts metadata.");
+
+            // 3. Load all accounts from SAVING_ACCOUNT
+            var accounts = new List<SavingAccDto>();
+            using (var cmdSrc = new SqlCommand(@"
+                SELECT Acc_id, Cust_id, Acc_no, Acc_open_date, Opn_bal, Nm_name, Nm_add, Nm_relation_id, Status
+                FROM SAVING_ACCOUNT
+                ORDER BY CASE WHEN ISNUMERIC(Acc_no) = 1 THEN CAST(Acc_no AS INT) ELSE 999999 END ASC, Acc_id ASC", src))
+            using (var r = cmdSrc.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    int aid = Convert.ToInt32(r["Acc_id"]);
+                    int cid = Convert.ToInt32(r["Cust_id"]);
+                    string rawAccNo = r["Acc_no"]?.ToString()?.Trim() ?? "";
+                    int seq = int.TryParse(rawAccNo, out int sVal) ? sVal : aid;
+                    DateTime openDate = r["Acc_open_date"] != DBNull.Value ? Convert.ToDateTime(r["Acc_open_date"]) : DateTime.Today;
+                    decimal opnBal = r["Opn_bal"] != DBNull.Value ? Convert.ToDecimal(r["Opn_bal"]) : 0m;
+                    string statusRaw = r["Status"]?.ToString()?.Trim() ?? "1";
+                    bool isClosed = statusRaw == "0" || closeMap.ContainsKey(aid);
+
+                    // Clean nominee name
+                    string rawNm = r["Nm_name"]?.ToString()?.Trim() ?? "";
+                    string nomineeName = "";
+                    if (!string.IsNullOrEmpty(rawNm) && rawNm != "." && rawNm != "0" && rawNm != "†" && rawNm != "3" && rawNm != "2." && rawNm != "..")
+                    {
+                        nomineeName = MarathiUnicodeEngine.ConvertFromRawIsm(rawNm);
+                    }
+
+                    // Clean nominee address
+                    string rawAdd = r["Nm_add"]?.ToString()?.Trim() ?? "";
+                    string nomineeAddress = "";
+                    if (!string.IsNullOrEmpty(rawAdd) && rawAdd != "." && rawAdd != "0" && rawAdd != "3" && rawAdd != "03")
+                    {
+                        nomineeAddress = MarathiUnicodeEngine.ConvertFromRawIsm(rawAdd);
+                    }
+
+                    // Relation
+                    int relId = r["Nm_relation_id"] != DBNull.Value ? Convert.ToInt32(r["Nm_relation_id"]) : 1;
+                    string nomineeRelation = relMap.ContainsKey(relId) ? relMap[relId] : "स्वतः";
+
+                    accounts.Add(new SavingAccDto
+                    {
+                        AccId = aid,
+                        CustId = cid,
+                        LegacyAccNo = rawAccNo,
+                        Sequence = seq,
+                        OpenDate = openDate,
+                        OpnBal = opnBal,
+                        IsClosed = isClosed,
+                        NomineeName = nomineeName,
+                        NomineeAddress = nomineeAddress,
+                        NomineeRelation = nomineeRelation
+                    });
+                }
+            }
+            Console.WriteLine($"  ✓ Loaded {accounts.Count} saving accounts from FinEx.");
+
+            // 4. Begin Transaction on Remote Target VPS
+            using var trans = tgt.BeginTransaction();
+            try
+            {
+                // Ensure target table is clean of saving accounts
+                using (var cleanCmd = new SqlCommand(@"
+                    DELETE FROM SavingPassbooks;
+                    DELETE FROM SavingTransactions;
+                    DELETE FROM SavingAccountClosings;
+                    DELETE FROM SavingAccountJointHolders;
+                    DELETE FROM CustomerOpeningBalances WHERE SourceModule = 'Saving' OR LedgerID = 46;
+                    DELETE FROM SavingAccountMasters;", tgt, trans))
+                {
+                    cleanCmd.ExecuteNonQuery();
+                }
+                Console.WriteLine("  ✓ Cleaned previous saving records in target database.");
+
+                // Set IDENTITY_INSERT ON
+                using (var idCmd = new SqlCommand("SET IDENTITY_INSERT SavingAccountMasters ON;", tgt, trans))
+                {
+                    idCmd.ExecuteNonQuery();
+                }
+
+                int maxSeq = 0;
+                int maxAccId = 0;
+                decimal totalBalance = 0m;
+                int activeCount = 0;
+                int closedCount = 0;
+                int txnCount = 0;
+
+                string insertAccSql = @"
+                    INSERT INTO SavingAccountMasters (
+                        SavingAccountID, BranchID, AccountNo, AccountType, OpeningDate, IsLegacyAccount, LedgerID,
+                        OpeningBalance, CurrentBalance, InterestRate, MinimumBalance, Status, ClosingDate,
+                        NomineeName, NomineeRelation, NomineeAddress, CreatedBy, CreatedOn,
+                        LegacyAccountId, LegacyAccountNumber, OldAccountNo, LienAmount, CustomerID, SavingSchemeID,
+                        IsAgentCollectionAllowed
+                    ) VALUES (
+                        @aid, 1, @accNo, 'Personal', @openDate, 1, 46,
+                        @opnBal, @curBal, 3.00, 0.00, @status, @closingDate,
+                        @nomName, @nomRel, @nomAdd, 1, GETDATE(),
+                        @aid, @legAccNo, @legAccNo, 0.00, @cid, 1,
+                        0
+                    );";
+
+                string insertTxnSql = @"
+                    INSERT INTO SavingTransactions (
+                        SavingAccountID, CustomerID, BranchID, TransactionDate, TransactionType, PaymentMode,
+                        Amount, BalanceAfterTxn, Narration, IsPrintedOnPassbook, CreatedBy, CreatedOn, CollectionSource
+                    ) VALUES (
+                        @aid, @cid, 1, @txnDate, 'Deposit', 'Cash',
+                        @amt, @amt, N'आरंभी शिल्लक (Opening Balance)', 0, 1, GETDATE(), 'System'
+                    );";
+
+                string insertCustObSql = @"
+                    INSERT INTO CustomerOpeningBalances (
+                        CustomerID, LedgerID, Amount, BalanceType, CreatedBy, CreatedOn, SourceModule
+                    ) VALUES (
+                        @cid, 46, @amt, 'Cr', 1, GETDATE(), 'Saving'
+                    );";
+
+                string insertClosingSql = @"
+                    INSERT INTO SavingAccountClosings (
+                        SavingAccountID, CustomerID, ClosureDate, GrossBalance, ClosingCharges, NetPayable, PaymentMode, CreatedBy, CreatedOn
+                    ) VALUES (
+                        @aid, @cid, @closeDate, @bal, 0.00, @bal, 'Cash', 1, GETDATE()
+                    );";
+
+                foreach (var a in accounts)
+                {
+                    if (a.Sequence > maxSeq) maxSeq = a.Sequence;
+                    if (a.AccId > maxAccId) maxAccId = a.AccId;
+                    totalBalance += a.OpnBal;
+
+                    // Option A CBS 14-digit Account Number:
+                    string standard14 = AccountNumberHelper.Format14Digit(AccountNumberHelper.Generate14DigitAccountNo(1, 101, a.Sequence));
+                    string status = a.IsClosed ? "Closed" : "Active";
+                    decimal curBal = a.IsClosed ? 0m : a.OpnBal;
+                    DateTime? closeDate = null;
+                    if (a.IsClosed && closeMap.ContainsKey(a.AccId))
+                    {
+                        closeDate = closeMap[a.AccId].CloseDate;
+                        closedCount++;
+                    }
+                    else
+                    {
+                        activeCount++;
+                    }
+
+                    using (var cmd = new SqlCommand(insertAccSql, tgt, trans))
+                    {
+                        cmd.Parameters.AddWithValue("@aid", a.AccId);
+                        cmd.Parameters.AddWithValue("@accNo", standard14);
+                        cmd.Parameters.AddWithValue("@openDate", a.OpenDate);
+                        cmd.Parameters.AddWithValue("@opnBal", a.OpnBal);
+                        cmd.Parameters.AddWithValue("@curBal", curBal);
+                        cmd.Parameters.AddWithValue("@status", status);
+                        cmd.Parameters.AddWithValue("@closingDate", (object?)closeDate ?? DBNull.Value);
+                        cmd.Parameters.AddWithValue("@nomName", string.IsNullOrWhiteSpace(a.NomineeName) ? (object)DBNull.Value : a.NomineeName);
+                        cmd.Parameters.AddWithValue("@nomRel", string.IsNullOrWhiteSpace(a.NomineeRelation) ? (object)DBNull.Value : a.NomineeRelation);
+                        cmd.Parameters.AddWithValue("@nomAdd", string.IsNullOrWhiteSpace(a.NomineeAddress) ? (object)DBNull.Value : a.NomineeAddress);
+                        cmd.Parameters.AddWithValue("@legAccNo", a.LegacyAccNo);
+                        cmd.Parameters.AddWithValue("@cid", a.CustId);
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // For accounts with opening balance > 0 and Active status, insert Initial Saving Transaction
+                    if (!a.IsClosed && a.OpnBal > 0m)
+                    {
+                        using (var cmdTxn = new SqlCommand(insertTxnSql, tgt, trans))
+                        {
+                            cmdTxn.Parameters.AddWithValue("@aid", a.AccId);
+                            cmdTxn.Parameters.AddWithValue("@cid", a.CustId);
+                            cmdTxn.Parameters.AddWithValue("@txnDate", a.OpenDate);
+                            cmdTxn.Parameters.AddWithValue("@amt", a.OpnBal);
+                            cmdTxn.ExecuteNonQuery();
+                            txnCount++;
+                        }
+                    }
+
+                    // Insert CustomerOpeningBalances for audit
+                    if (a.OpnBal > 0m)
+                    {
+                        using (var cmdOb = new SqlCommand(insertCustObSql, tgt, trans))
+                        {
+                            cmdOb.Parameters.AddWithValue("@cid", a.CustId);
+                            cmdOb.Parameters.AddWithValue("@amt", a.OpnBal);
+                            cmdOb.ExecuteNonQuery();
+                        }
+                    }
+
+                    // If closed account, also record in SavingAccountClosings
+                    if (a.IsClosed && closeDate.HasValue)
+                    {
+                        using (var cmdCl = new SqlCommand(insertClosingSql, tgt, trans))
+                        {
+                            cmdCl.Parameters.AddWithValue("@aid", a.AccId);
+                            cmdCl.Parameters.AddWithValue("@cid", a.CustId);
+                            cmdCl.Parameters.AddWithValue("@closeDate", closeDate.Value);
+                            cmdCl.Parameters.AddWithValue("@bal", a.OpnBal);
+                            cmdCl.ExecuteNonQuery();
+                        }
+                    }
+                }
+
+                // Turn off IDENTITY_INSERT
+                using (var idOff = new SqlCommand("SET IDENTITY_INSERT SavingAccountMasters OFF;", tgt, trans))
+                {
+                    idOff.ExecuteNonQuery();
+                }
+
+                // Reseed IDENTITY
+                using (var reseedCmd = new SqlCommand($"DBCC CHECKIDENT ('SavingAccountMasters', RESEED, {maxAccId});", tgt, trans))
+                {
+                    reseedCmd.ExecuteNonQuery();
+                }
+                Console.WriteLine($"  ✓ Reseeded SavingAccountMasters identity to {maxAccId}.");
+
+                // Update SavingAccountSequences to maxSeq (701)
+                using (var seqCmd = new SqlCommand(@"
+                    IF EXISTS (SELECT 1 FROM SavingAccountSequences WHERE BranchID = 1 AND SchemeCodeNumeric = 101)
+                        UPDATE SavingAccountSequences SET LastSequenceNumber = @seq, UpdatedOn = GETDATE() WHERE BranchID = 1 AND SchemeCodeNumeric = 101;
+                    ELSE
+                        INSERT INTO SavingAccountSequences (BranchID, SchemeCodeNumeric, LastSequenceNumber, UpdatedOn) VALUES (1, 101, @seq, GETDATE());", tgt, trans))
+                {
+                    seqCmd.Parameters.AddWithValue("@seq", maxSeq);
+                    seqCmd.ExecuteNonQuery();
+                }
+                Console.WriteLine($"  ✓ Set SavingAccountSequences (Branch 1, Scheme 101) LastSequenceNumber = {maxSeq}.");
+
+                // Update Ledgers (LedgerID = 46)
+                using (var ledCmd = new SqlCommand(@"
+                    UPDATE Ledgers 
+                    SET OpeningBalance = @totBal, OpeningBalanceType = 'Cr' 
+                    WHERE LedgerID = 46;", tgt, trans))
+                {
+                    ledCmd.Parameters.AddWithValue("@totBal", totalBalance);
+                    ledCmd.ExecuteNonQuery();
+                }
+
+                // Update BranchLedgerOpeningBalances
+                using (var bloCmd = new SqlCommand(@"
+                    IF EXISTS (SELECT 1 FROM BranchLedgerOpeningBalances WHERE LedgerID = 46 AND BranchID = 1 AND FinancialYearID = 1)
+                        UPDATE BranchLedgerOpeningBalances 
+                        SET OpeningBalance = @totBal, OpeningBalanceType = 'Cr', UpdatedOn = GETDATE() 
+                        WHERE LedgerID = 46 AND BranchID = 1 AND FinancialYearID = 1;
+                    ELSE
+                        INSERT INTO BranchLedgerOpeningBalances (
+                            LedgerID, BranchID, FinancialYearID, OpeningBalance, OpeningBalanceType, Remarks, CreatedBy, CreatedOn
+                        ) VALUES (
+                            46, 1, 1, @totBal, 'Cr', N'FinEx बचत खाते स्थलांतरित आरंभी शिल्लक', 1, GETDATE()
+                        );", tgt, trans))
+                {
+                    bloCmd.Parameters.AddWithValue("@totBal", totalBalance);
+                    bloCmd.ExecuteNonQuery();
+                }
+                Console.WriteLine($"  ✓ Synchronized GL Ledger 46 OpeningBalance = ₹ {totalBalance:N2} Cr.");
+
+                trans.Commit();
+                Console.WriteLine("\n==========================================================");
+                Console.WriteLine("  SAVINGS MODULE MIGRATION SUCCESSFUL! (COMMITTED)        ");
+                Console.WriteLine($"  Total Accounts Imported   : {accounts.Count}");
+                Console.WriteLine($"  Active Accounts           : {activeCount}");
+                Console.WriteLine($"  Closed Accounts           : {closedCount}");
+                Console.WriteLine($"  Total Opening Balance     : ₹ {totalBalance:N2}");
+                Console.WriteLine($"  Opening Deposit Txns      : {txnCount}");
+                Console.WriteLine($"  Sequence Counter Reseeded : {maxSeq}");
+                Console.WriteLine("==========================================================\n");
+            }
+            catch (Exception ex)
+            {
+                trans.Rollback();
+                Console.WriteLine($"\n[ERROR] Migration failed and was rolled back: {ex.Message}");
+                throw;
+            }
+        }
+
         static int MigrateSavingsAccounts(SqlConnection src, SqlConnection tgt, Dictionary<int, int> custMap)
         {
             // Default Saving Ledger
@@ -1070,5 +1393,25 @@ namespace FinExMigrator
             }
             return accountNo;
         }
+    }
+
+    public class SavingAccDto
+    {
+        public int AccId { get; set; }
+        public int CustId { get; set; }
+        public string LegacyAccNo { get; set; } = "";
+        public int Sequence { get; set; }
+        public DateTime OpenDate { get; set; }
+        public decimal OpnBal { get; set; }
+        public bool IsClosed { get; set; }
+        public string NomineeName { get; set; } = "";
+        public string NomineeAddress { get; set; } = "";
+        public string NomineeRelation { get; set; } = "";
+    }
+
+    public class ClosedAccDto
+    {
+        public DateTime CloseDate { get; set; }
+        public string Reason { get; set; } = "";
     }
 }

@@ -352,45 +352,7 @@ namespace Bhisi.Api.Controllers
         [NonAction]
         public async Task<string> GenerateUniqueCifAsync()
         {
-            try
-            {
-                var maxCustomerId = await _context.Customers
-                    .AsNoTracking()
-                    .MaxAsync(c => (int?)c.CustomerID) ?? 0;
-
-                var allCifsInDb = await _context.Customers
-                    .AsNoTracking()
-                    .Where(c => c.CIFNo != null && c.CIFNo != "")
-                    .Select(c => c.CIFNo!)
-                    .ToListAsync();
-
-                int maxNumericCif = 0;
-                foreach (var cif in allCifsInDb)
-                {
-                    if (cif.StartsWith("CIF", StringComparison.OrdinalIgnoreCase) &&
-                        int.TryParse(cif.Substring(3), out int parsed) && parsed > maxNumericCif)
-                    {
-                        maxNumericCif = parsed;
-                    }
-                }
-
-                int candidateNum = Math.Max(maxCustomerId, maxNumericCif) + 1;
-                if (candidateNum < 1) candidateNum = 1;
-                string candidateCif = $"CIF{candidateNum:D6}";
-
-                var cifSet = new HashSet<string>(allCifsInDb, StringComparer.OrdinalIgnoreCase);
-                while (cifSet.Contains(candidateCif))
-                {
-                    candidateNum++;
-                    candidateCif = $"CIF{candidateNum:D6}";
-                }
-
-                return candidateCif;
-            }
-            catch
-            {
-                return $"CIF{DateTime.Now.Ticks % 1000000:D6}";
-            }
+            return await Bhisi.Api.Helpers.AccountNumberHelper.GenerateUniqueCifAsync(_context);
         }
 
         // GET: api/Customers/next-cif
@@ -810,6 +772,13 @@ namespace Bhisi.Api.Controllers
                     }
 
                     _context.Members.Remove(linkedMember!);
+                }
+
+                // Unlink any AgentCustomerRequests referencing this customer to avoid FK constraint error
+                var linkedRequests = await _context.AgentCustomerRequests.Where(r => r.CreatedCustomerID == id).ToListAsync();
+                foreach (var req in linkedRequests)
+                {
+                    req.CreatedCustomerID = null;
                 }
 
                 _context.Customers.Remove(customer);

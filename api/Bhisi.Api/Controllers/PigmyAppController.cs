@@ -223,17 +223,21 @@ namespace Bhisi.Api.Controllers
                 _context.Customers.Add(customer);
                 await _context.SaveChangesAsync();
 
-                // Assign CIF
-                customer.CIFNo = $"CIF-{branchId:D2}-{customer.CustomerID:D6}";
+                // Assign Standard CBS CIF (e.g. CIF000123)
+                customer.CIFNo = await Bhisi.Api.Helpers.AccountNumberHelper.GenerateUniqueCifAsync(_context);
                 await _context.SaveChangesAsync();
 
                 // Get Default Pigmy Scheme
                 var scheme = await _context.PigmySchemes.FirstOrDefaultAsync() 
                     ?? new PigmyScheme { PigmySchemeID = 1 };
 
-                // Generate Account Number
-                var todayStr = DateTime.Now.ToString("yyyyMMdd");
-                var accountNo = $"PGM-{branchId}-{todayStr}-{customer.CustomerID:D4}";
+                // Generate CBS Standard 14-digit Account Number
+                var accountNo = await Bhisi.Api.Helpers.AccountNumberHelper.GenerateNextPigmyAccountNo(
+                    _context, 
+                    branchId, 
+                    scheme.PigmySchemeID, 
+                    incrementSequence: true
+                );
 
                 // Create Pigmy Account
                 var pigmyAccount = new PigmyAccount

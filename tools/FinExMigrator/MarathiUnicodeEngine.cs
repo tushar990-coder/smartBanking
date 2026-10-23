@@ -59,11 +59,36 @@ namespace FinExMigrator
             t = t.Replace("Ù", "{{REPH_VEL}}");
             t = t.Replace("×", "{{VEL}}");
 
+            // Anuswar on aa-matra (उदा. कांबळे, फरांडे, तांबवे)
+            t = t.Replace("ÖÓ", "ां");
+            t = t.Replace("Öò", "ां");
+            t = t.Replace("ÖÖÓ", "ां");
+
             // ë and ¦ ligatures (राजेंद्र, भुजगोंडा)
             t = t.Replace("ë¦ü", "ेंद्र");
             t = t.Replace("ë¦", "ेंद्र");
             t = t.Replace("¦ü", "द्र");
             t = t.Replace("¦", "द्र");
+
+            // DVB / Shree-Lipi compound consonants: consonant + Ö is FULL consonant, consonant + ÖÖ is consonant + ा
+            var compounds = new (string Code, string Base)[]
+            {
+                ("Ûú", "क"), ("Üú", "ख"), ("Ý", "ग"), ("‘", "घ"), ("“", "च"), ("•", "ज"), ("—", "झ"),
+                ("Þ", "ण"), ("Ÿ", "त"), ("£", "थ"), ("¬", "ध"), ("®", "न"), ("¯", "प"), ("²", "ब"),
+                ("³", "भ"), ("´", "म"), ("µ", "य"), ("»", "ल"), ("¾", "व"), ("¿", "श"), ("Â", "ष"),
+                ("Ã", "स"), ("õ", "क्ष"), ("–", "ज्ञ")
+            };
+
+            foreach (var (k, b) in compounds)
+            {
+                t = t.Replace(k + "ÖÖê", b + "ो");
+                t = t.Replace(k + "Öê", b + "ो");
+                t = t.Replace(k + "Öî", b + "ौ");
+                t = t.Replace(k + "ÖÖ", b + "ा");
+                t = t.Replace(k + "Öã", b + "ु");
+                t = t.Replace(k + "Öæ", b + "ू");
+                t = t.Replace(k + "Ö", b);
+            }
 
             var map = new Dictionary<string, string>
             {
@@ -128,6 +153,22 @@ namespace FinExMigrator
             // 2. Split matras normalization
             t = t.Replace("\u093E\u0947", "\u094B"); // ा + े -> ो
             t = t.Replace("\u093E\u0948", "\u094C"); // ा + ै -> ौ
+            t = t.Replace("ाा", "ा");
+            t = t.Replace("ाो", "ो");
+            t = t.Replace("ाौ", "ौ");
+            t = t.Replace("ाे", "े");
+            t = t.Replace("ाै", "ै");
+            t = t.Replace("ाी", "ी");
+            t = t.Replace("ाु", "ु");
+            t = t.Replace("ाू", "ू");
+            t = t.Replace("मार्", "र्मा");
+            t = t.Replace("नार्", "र्ना");
+            t = t.Replace("तार्", "र्ता");
+            t = t.Replace("वार्", "र्वा");
+            t = t.Replace("यार्", "र्या");
+            t = t.Replace("कार्", "र्का");
+            t = t.Replace("शार्", "र्शा");
+            t = t.Replace("धार्म", "धर्मा");
 
             // 3. Known legacy mojibake mappings
             // Complex name combos first

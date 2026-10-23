@@ -232,8 +232,8 @@ namespace Bhisi.Api.Controllers
                 _context.Customers.Add(customer);
                 await _context.SaveChangesAsync();
 
-                // Generate CIF
-                customer.CIFNo = $"CIF-{customer.BranchID:D2}-{customer.CustomerID:D6}";
+                // Generate Unified Standard CBS CIF (e.g. CIF000123)
+                customer.CIFNo = await Bhisi.Api.Helpers.AccountNumberHelper.GenerateUniqueCifAsync(_context);
                 await _context.SaveChangesAsync();
 
                 PigmyAccount createdPigmyAccount = null;
@@ -244,8 +244,13 @@ namespace Bhisi.Api.Controllers
                     var scheme = await _context.PigmySchemes.FindAsync(dto.PigmyData.PigmySchemeID.Value);
                     if (scheme != null)
                     {
-                        var dateStr = DateTime.Now.ToString("yyyyMMdd");
-                        var accountNo = $"PGM-{customer.BranchID}-{dateStr}-{customer.CustomerID:D4}";
+                        // Generate CBS Standard 14-digit Account Number
+                        var accountNo = await Bhisi.Api.Helpers.AccountNumberHelper.GenerateNextPigmyAccountNo(
+                            _context, 
+                            customer.BranchID, 
+                            scheme.PigmySchemeID, 
+                            incrementSequence: true
+                        );
 
                         createdPigmyAccount = new PigmyAccount
                         {
@@ -267,6 +272,60 @@ namespace Bhisi.Api.Controllers
                         };
                         _context.PigmyAccounts.Add(createdPigmyAccount);
                         await _context.SaveChangesAsync();
+
+                        if (dto.PigmyData.OpeningBalance > 0)
+                        {
+                            var initialTx = new PigmyTransaction
+                            {
+                                PigmyAccountID = createdPigmyAccount.PigmyAccountID,
+                                TransactionDate = DateTime.Today,
+                                ValueDate = DateTime.Today,
+                                TransactionType = "DEPOSIT",
+                                DrAmount = 0,
+                                CrAmount = dto.PigmyData.OpeningBalance,
+                                BalanceAmount = dto.PigmyData.OpeningBalance,
+                                Narration = $"Initial Opening Deposit for A/C {createdPigmyAccount.AccountNo} (प्रारंभिक जमा रक्कम)",
+                                MakerId = dto.ApprovedByUserID ?? 1,
+                                PostedOn = DateTime.Now
+                            };
+                            _context.PigmyTransactions.Add(initialTx);
+
+                            // Create GL Accounting Voucher for Opening Deposit
+                            int cashLedgerId = await Bhisi.Api.Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, customer.BranchID, "PIGMY");
+                            int liabilityLedgerId = (scheme.PigmyLiabilityLedgerID.HasValue && scheme.PigmyLiabilityLedgerID > 0)
+                                ? scheme.PigmyLiabilityLedgerID.Value
+                                : (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
+
+                            string uniqueVoucherNo = $"PV-{customer.BranchID}-{DateTime.Today:yyyyMMdd}-OPN-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+                            var voucher = new Voucher
+                            {
+                                BranchID = customer.BranchID,
+                                VoucherNo = uniqueVoucherNo,
+                                VoucherDate = DateTime.Today,
+                                VoucherType = "Receipt",
+                                Status = "Approved",
+                                Narration = $"Pigmy Initial Opening Deposit for A/C {createdPigmyAccount.AccountNo} - {customer.FirstName} {customer.LastName}",
+                                TotalAmount = dto.PigmyData.OpeningBalance
+                            };
+
+                            voucher.VoucherDetails.Add(new VoucherDetail
+                            {
+                                LedgerID = cashLedgerId,
+                                CustomerID = customer.CustomerID,
+                                DrCr = "Dr",
+                                Amount = dto.PigmyData.OpeningBalance
+                            });
+
+                            voucher.VoucherDetails.Add(new VoucherDetail
+                            {
+                                LedgerID = liabilityLedgerId,
+                                CustomerID = customer.CustomerID,
+                                DrCr = "Cr",
+                                Amount = dto.PigmyData.OpeningBalance
+                            });
+
+                            _context.Vouchers.Add(voucher);
+                        }
                     }
                 }
 

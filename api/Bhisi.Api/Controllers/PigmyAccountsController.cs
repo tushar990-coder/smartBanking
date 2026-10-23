@@ -119,101 +119,7 @@ namespace Bhisi.Api.Controllers
         // CBS Standard 14-digit Account Generator: [3-digit Branch] + [3-digit Scheme (301, 302...)] + [7-digit Sequence] + [1-digit Checksum]
         private async Task<string> GenerateNextPigmyAccountNo(int branchId, int? schemeId = null, bool incrementSequence = false)
         {
-            var branch = await _context.Branches.FindAsync(branchId);
-            
-            // 1. Branch Code: 3 numeric digits (e.g. 001, 002)
-            string branchCode3 = branchId.ToString("D3");
-            if (branch != null && !string.IsNullOrWhiteSpace(branch.BranchCode))
-            {
-                var digitsOnly = new string(branch.BranchCode.Where(char.IsDigit).ToArray());
-                if (!string.IsNullOrEmpty(digitsOnly) && int.TryParse(digitsOnly, out int parsed) && parsed > 0)
-                {
-                    branchCode3 = parsed.ToString("D3");
-                }
-            }
-
-            // 2. Scheme Code: 3 numeric digits (e.g. 301, 302)
-            int schemeCodeNum = 301;
-            if (schemeId.HasValue && schemeId.Value > 0)
-            {
-                var scheme = await _context.PigmySchemes.FindAsync(schemeId.Value);
-                if (scheme != null && !string.IsNullOrWhiteSpace(scheme.SchemeCode))
-                {
-                    var sDigits = new string(scheme.SchemeCode.Where(char.IsDigit).ToArray());
-                    if (!string.IsNullOrEmpty(sDigits) && int.TryParse(sDigits, out int parsedScheme) && parsedScheme > 0)
-                    {
-                        schemeCodeNum = parsedScheme;
-                    }
-                }
-            }
-            string schemeCode3 = schemeCodeNum.ToString("D3");
-
-            // 3. Scan existing PigmyAccounts in this branch for collision prevention and max sequence derivation
-            var existingPigmyAccs = await _context.PigmyAccounts
-                .Where(p => p.BranchID == branchId && p.AccountNo != null)
-                .Select(p => p.AccountNo!)
-                .ToListAsync();
-
-            var existingSet = new HashSet<string>(existingPigmyAccs, StringComparer.OrdinalIgnoreCase);
-
-            int maxSeq = 0;
-            foreach (var accNo in existingPigmyAccs)
-            {
-                var d = new string(accNo.Where(char.IsDigit).ToArray());
-                if (d.Length == 14)
-                {
-                    string seqPart = d.Substring(6, 7);
-                    if (int.TryParse(seqPart, out int sVal) && sVal > maxSeq)
-                    {
-                        maxSeq = sVal;
-                    }
-                }
-            }
-
-            // 4. Sequence: Atomic sequence per (BranchID, SchemeCodeNumeric)
-            var seq = await _context.PigmyAccountSequences
-                .FirstOrDefaultAsync(s => s.BranchID == branchId && s.SchemeCodeNumeric == schemeCodeNum);
-
-            if (seq == null)
-            {
-                seq = new PigmyAccountSequence
-                {
-                    BranchID = branchId,
-                    SchemeCodeNumeric = schemeCodeNum,
-                    LastSequenceNumber = maxSeq,
-                    UpdatedOn = DateTime.UtcNow
-                };
-                _context.PigmyAccountSequences.Add(seq);
-                await _context.SaveChangesAsync();
-            }
-            else if (maxSeq > seq.LastSequenceNumber)
-            {
-                seq.LastSequenceNumber = maxSeq;
-                seq.UpdatedOn = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-            }
-
-            int nextSeqNumber = seq.LastSequenceNumber + 1;
-            string thirteenDigits = $"{branchCode3}{schemeCode3}{nextSeqNumber:D7}";
-            int checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
-            string candidate = $"{thirteenDigits}{checkDigit}";
-
-            while (existingSet.Contains(candidate))
-            {
-                nextSeqNumber++;
-                thirteenDigits = $"{branchCode3}{schemeCode3}{nextSeqNumber:D7}";
-                checkDigit = LuhnHelper.CalculateCheckDigit(thirteenDigits);
-                candidate = $"{thirteenDigits}{checkDigit}";
-            }
-
-            if (incrementSequence)
-            {
-                seq.LastSequenceNumber = nextSeqNumber;
-                seq.UpdatedOn = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-            }
-
-            return candidate;
+            return await Bhisi.Api.Helpers.AccountNumberHelper.GenerateNextPigmyAccountNo(_context, branchId, schemeId, incrementSequence);
         }
 
         // GET: api/PigmyAccounts/next-account-no?branchId=1&schemeId=1
@@ -1001,6 +907,31 @@ namespace Bhisi.Api.Controllers
 
                 var interestLogs = await _context.PigmyInterestLogs.Where(i => i.PigmyAccountId == id).ToListAsync();
                 if (interestLogs.Any()) _context.PigmyInterestLogs.RemoveRange(interestLogs);
+
+                // Cascade delete withdrawals
+                var withdrawals = await _context.PigmyWithdrawals.Where(w => w.PigmyAccountID == id).ToListAsync();
+                if (withdrawals.Any()) _context.PigmyWithdrawals.RemoveRange(withdrawals);
+
+                // Cascade delete agent transfers
+                var transfers = await _context.PigmyAgentAccountTransfers.Where(t => t.PigmyAccountID == id).ToListAsync();
+                if (transfers.Any()) _context.PigmyAgentAccountTransfers.RemoveRange(transfers);
+
+                // Unlink referencing AgentCustomerRequests to avoid foreign key or orphaned reference issues
+                var linkedRequests = await _context.AgentCustomerRequests.Where(r => r.CreatedPigmyAccountID == id).ToListAsync();
+                foreach (var r in linkedRequests)
+                {
+                    r.CreatedPigmyAccountID = null;
+                }
+
+                // Clean up related Opening Vouchers
+                if (!string.IsNullOrWhiteSpace(pigmyAccount.AccountNo))
+                {
+                    var opVouchers = await _context.Vouchers
+                        .Include(v => v.VoucherDetails)
+                        .Where(v => v.Narration != null && v.Narration.Contains($"A/C {pigmyAccount.AccountNo}"))
+                        .ToListAsync();
+                    if (opVouchers.Any()) _context.Vouchers.RemoveRange(opVouchers);
+                }
 
                 var scheme = await _context.PigmySchemes.FindAsync(pigmyAccount.PigmySchemeID);
                 int schemeCodeNum = 301;

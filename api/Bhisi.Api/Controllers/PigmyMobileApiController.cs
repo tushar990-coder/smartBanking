@@ -389,9 +389,10 @@ namespace Bhisi.Api.Controllers
         }
 
         // ==========================================
-        // 4. POST /api/collections (Single Sync)
+        // 4. POST /api/collections (Single Sync) & POST /api/PigmyApp/collect
         // ==========================================
         [HttpPost("api/collections")]
+        [HttpPost("api/PigmyApp/collect")]
         public async Task<IActionResult> ProcessSingleCollection([FromBody] SingleCollectionRequestDto dto)
         {
             int agentId = GetCurrentAgentId(dto.AgentId);
@@ -884,7 +885,12 @@ namespace Bhisi.Api.Controllers
         // ==========================================
         [AllowAnonymous]
         [HttpGet("api/PigmyApp/customers/{customerId}/doorstep-profile")]
-        public async Task<IActionResult> GetDoorstepCustomerProfile(int customerId, [FromQuery] int? agentId)
+        [HttpGet("api/PigmyApp/accounts/{pigmyAccountId}/doorstep-profile")]
+        public async Task<IActionResult> GetDoorstepCustomerProfile(
+            [FromRoute] int? customerId = null,
+            [FromRoute] int? pigmyAccountId = null,
+            [FromQuery] int? agentId = null,
+            [FromQuery] int? pigmyAccountIdQuery = null)
         {
             int targetAgentId = agentId.HasValue && agentId.Value > 0 ? agentId.Value : GetCurrentAgentId();
             if (targetAgentId <= 0)
@@ -892,9 +898,39 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = "Agent ID is required (?agentId=... or X-Agent-Id header)." });
             }
 
+            int resolvedCustomerId = customerId ?? 0;
+            int effectivePigmyAccountId = pigmyAccountId ?? pigmyAccountIdQuery ?? 0;
+
+            // If a pigmyAccountId route or query param was supplied, resolve customer from that pigmy account
+            if (effectivePigmyAccountId > 0)
+            {
+                var pigmyAcc = await _context.PigmyAccounts
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.PigmyAccountID == effectivePigmyAccountId);
+                if (pigmyAcc != null)
+                {
+                    resolvedCustomerId = pigmyAcc.CustomerID;
+                }
+            }
+
             var customer = await _context.Customers
                 .AsNoTracking()
-                .FirstOrDefaultAsync(c => c.CustomerID == customerId);
+                .FirstOrDefaultAsync(c => c.CustomerID == resolvedCustomerId);
+
+            // Fallback: If customer not found, check if resolvedCustomerId itself was actually a PigmyAccountID under this agent
+            if (customer == null && resolvedCustomerId > 0)
+            {
+                var accFallback = await _context.PigmyAccounts
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.PigmyAccountID == resolvedCustomerId && (targetAgentId <= 0 || p.PigmyAgentID == targetAgentId));
+                if (accFallback != null)
+                {
+                    resolvedCustomerId = accFallback.CustomerID;
+                    customer = await _context.Customers
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(c => c.CustomerID == resolvedCustomerId);
+                }
+            }
 
             if (customer == null)
             {
@@ -905,7 +941,7 @@ namespace Bhisi.Api.Controllers
             var pigmyAccounts = await _context.PigmyAccounts
                 .AsNoTracking()
                 .Include(p => p.PigmyScheme)
-                .Where(p => p.CustomerID == customerId && p.PigmyAgentID == targetAgentId && (p.Status == "Active" || p.Status == null))
+                .Where(p => p.CustomerID == resolvedCustomerId && p.PigmyAgentID == targetAgentId && (p.Status == "Active" || p.Status == null))
                 .Select(p => new
                 {
                     accountId = p.PigmyAccountID,
@@ -926,7 +962,7 @@ namespace Bhisi.Api.Controllers
             var loanAccounts = await _context.LoanAccounts
                 .AsNoTracking()
                 .Include(l => l.LoanRate)
-                .Where(l => l.CustomerID == customerId && l.IsAgentCollectionAllowed && l.AssignedAgentID == targetAgentId && (l.Status == "Active" || l.Status == "Disbursed"))
+                .Where(l => l.CustomerID == resolvedCustomerId && l.IsAgentCollectionAllowed && l.AssignedAgentID == targetAgentId && (l.Status == "Active" || l.Status == "Disbursed"))
                 .Select(l => new
                 {
                     accountId = l.LoanAccountID,
@@ -946,7 +982,7 @@ namespace Bhisi.Api.Controllers
             // 3. Saving Accounts: STRICT PRIVACY FILTER (Only allowed & assigned to this agent)
             var savingAccounts = await _context.SavingAccountMasters
                 .AsNoTracking()
-                .Where(s => s.CustomerID == customerId && s.IsAgentCollectionAllowed && s.AssignedAgentID == targetAgentId && s.Status == "Active")
+                .Where(s => s.CustomerID == resolvedCustomerId && s.IsAgentCollectionAllowed && s.AssignedAgentID == targetAgentId && s.Status == "Active")
                 .Select(s => new
                 {
                     accountId = s.SavingAccountID,
@@ -965,7 +1001,7 @@ namespace Bhisi.Api.Controllers
             var rdAccounts = await _context.RdAccounts
                 .AsNoTracking()
                 .Include(r => r.RdScheme)
-                .Where(r => r.CustomerID == customerId && r.IsAgentCollectionAllowed && r.AssignedAgentID == targetAgentId && r.Status == "Active")
+                .Where(r => r.CustomerID == resolvedCustomerId && r.IsAgentCollectionAllowed && r.AssignedAgentID == targetAgentId && r.Status == "Active")
                 .Select(r => new
                 {
                     accountId = r.RdAccountID,

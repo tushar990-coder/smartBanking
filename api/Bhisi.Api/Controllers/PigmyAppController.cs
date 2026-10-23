@@ -583,6 +583,8 @@ namespace Bhisi.Api.Controllers
                     });
 
                     _context.Vouchers.Add(appVoucher);
+                    newColl.Voucher = appVoucher;
+                    newColl.IsVoucherGenerated = true;
 
                     savedCount++;
                     totalCollectionAmount += addedAmount;

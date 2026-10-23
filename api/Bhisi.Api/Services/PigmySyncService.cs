@@ -202,6 +202,7 @@ namespace Bhisi.Api.Services
                 _context.PigmyTransactions.Add(passbookTx);
 
                 // Accounting Double-Entry Voucher
+                Voucher? voucher = null;
                 try
                 {
                     var branchId = account.BranchID;
@@ -212,7 +213,7 @@ namespace Bhisi.Api.Services
                     int crLedgerId = voucherMapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
 
                     string voucherNo = $"PV-{branchId}-{collDate:yyyyMMdd}-APP-{Guid.NewGuid().ToString("N").Substring(0, 4).ToUpper()}";
-                    var voucher = new Voucher
+                    voucher = new Voucher
                     {
                         BranchID = branchId,
                         VoucherNo = voucherNo,
@@ -242,6 +243,8 @@ namespace Bhisi.Api.Services
                     });
 
                     _context.Vouchers.Add(voucher);
+                    newColl.Voucher = voucher;
+                    newColl.IsVoucherGenerated = true;
                 }
                 catch
                 {
@@ -249,6 +252,14 @@ namespace Bhisi.Api.Services
                 }
 
                 await _context.SaveChangesAsync();
+
+                if (voucher != null && voucher.VoucherID > 0 && newColl.VoucherId == null)
+                {
+                    newColl.VoucherId = voucher.VoucherID;
+                    newColl.IsVoucherGenerated = true;
+                    await _context.SaveChangesAsync();
+                }
+
                 await transaction.CommitAsync();
 
                 var customerName = account.Customer != null

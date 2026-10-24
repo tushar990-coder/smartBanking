@@ -119,14 +119,26 @@ const formatDisplayDate = (dStr?: string | null) => {
 };
 
 export default function PigmyReports() {
-  const [reportType, setReportType] = useState<string>(() => {
+  const parseReportType = (): string => {
     const params = new URLSearchParams(window.location.search);
     const fullTab = params.get('tab') || '';
+    let rType = '';
     if (fullTab.includes('reportType=')) {
-      return fullTab.split('reportType=')[1] || 'collection-register';
+      rType = fullTab.split('reportType=')[1] || '';
+    } else {
+      rType = params.get('reportType') || '';
     }
-    return params.get('reportType') || 'collection-register';
-  });
+    rType = rType.split('&')[0].trim().toLowerCase();
+    if (rType === 'register' || rType === 'accounts' || rType === 'account_register' || rType === 'account-register') {
+      return 'account-register';
+    }
+    if (rType === 'collection' || rType === 'daily' || rType === 'collection_register' || rType === 'collection-register') {
+      return 'collection-register';
+    }
+    return rType || 'collection-register';
+  };
+
+  const [reportType, setReportType] = useState<string>(parseReportType);
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -154,6 +166,12 @@ export default function PigmyReports() {
     fetchBranches();
     fetchAgents();
     fetchAccountsMaster();
+
+    const handlePopState = () => {
+      setReportType(parseReportType());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   useEffect(() => {
@@ -212,7 +230,7 @@ export default function PigmyReports() {
         
         const res = await axios.get(url);
         setCollections(res.data || []);
-      } else if (reportType === 'account-register') {
+      } else if (reportType === 'account-register' || reportType === 'register' || reportType === 'accounts') {
         const res = await axios.get('/api/PigmyAccounts?sortOrder=asc');
         let data: PigmyAccountRow[] = res.data || [];
 
@@ -269,7 +287,9 @@ export default function PigmyReports() {
   const getReportTitle = () => {
     switch (reportType) {
       case 'collection-register': return 'पिग्मी दैनंदिन जमा नोंदवही (Daily Collection Register)';
-      case 'account-register': return 'पिग्मी खाती नोंदवही (Pigmy Account Register)';
+      case 'account-register':
+      case 'register':
+      case 'accounts': return 'पिग्मी खाती नोंदवही (Pigmy Account Register)';
       case 'settlement': return 'एजंट दैनंदिन रोख ताळमेळ अहवाल (Daily Settlement)';
       case 'commission': return 'एजंट कमिशन विवरणपत्रक (Commission Statement)';
       default: return 'पिग्मी अहवाल (Pigmy Report)';
@@ -685,7 +705,7 @@ export default function PigmyReports() {
           )}
 
           {/* Table 2: Accounts Master Register */}
-          {reportType === 'account-register' && (
+          {(reportType === 'account-register' || reportType === 'register' || reportType === 'accounts') && (
             <div className="overflow-x-auto mt-2">
               <table className="w-full border-collapse border border-gray-900 text-xs">
                 <thead>

@@ -247,12 +247,11 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
             containerBg: 'bg-emerald-50/20',
             closeBtnHover: 'hover:bg-emerald-100',
             reports: [
-                { id: 'pigmy-reports&reportType=register', name: '१. पिग्मी ठेव नोंदवही (Pigmy Register)' },
-                { id: 'pigmy-reports&reportType=settlement', name: '२. एजंट रोख ताळमेळ (Daily Settlement)' },
-                { id: 'pigmy-reports&reportType=commission', name: '३. एजंट कमिशन विवरणपत्रक (Commission Statement)' },
-                { id: 'pigmy-reports&reportType=ledger', name: '४. पिग्मी खाते लेजर (Account Ledger)' },
+                { id: 'pigmy-reports&reportType=account-register', name: '१. पिग्मी ठेव नोंदवही (Pigmy Accounts Register)' },
+                { id: 'pigmy-daybook', name: '२. एजंट रोख ताळमेळ (Daily Settlement / Daybook)' },
+                { id: 'pigmy-commission', name: '३. एजंट कमिशन विवरणपत्रक (Commission Statement)' },
+                { id: 'pigmy-khatavani-report', name: '४. पिग्मी खाते लेजर (Pigmy Khatavani / Ledger)' },
                 { id: 'pigmy-reports&reportType=collection-register', name: '५. दैनिक वसुली रजिस्टर (Daily Collection Register)' },
-                { id: 'pigmy-khatavani-report', name: '६. पिग्मी ठेव खतावणी (Pigmy Khatavani / CBS Ledger)' },
             ]
         },
         loans: {
@@ -1099,8 +1098,8 @@ export default function Member360Dashboard({ onNavigate }: Member360DashboardPro
                                                             <span className="truncate group-hover/btn:text-purple-900">आय नमुना शेअर नोंदवही</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
-                                                        <button onClick={() => onNavigate('j-namuna-report', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
-                                                            <span className="truncate group-hover/btn:text-purple-900">जे नमुना सभासद यादी</span> 
+                                                        <button onClick={() => onNavigate('member-list-report', getUniversalNavParams())} className="w-full text-left py-1 px-2 rounded-md font-semibold text-[10.5px] text-slate-700 bg-white hover:bg-purple-50/60 border border-slate-200/90 hover:border-purple-200 shadow-2xs flex items-center justify-between group/btn cursor-pointer transition-all">
+                                                            <span className="truncate group-hover/btn:text-purple-900">जे नमुना सभासद यादी (Member List)</span> 
                                                             <ChevronRight size={12} className="text-slate-400 group-hover/btn:text-purple-600 group-hover/btn:translate-x-0.5 transition-all shrink-0" />
                                                         </button>
                                                     </>

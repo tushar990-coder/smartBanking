@@ -2,7 +2,7 @@ import React from 'react';
 import { Calculator, Wallet, Users, PiggyBank, FileText, Lock, LayoutDashboard, Clock } from 'lucide-react';
 
 interface ReportDashboardProps {
-  setActiveTab: (tab: string) => void;
+  setActiveTab: (tab: string, params?: any) => void;
 }
 
 export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) {
@@ -90,10 +90,10 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
       iconColor: 'text-teal-700',
       bgColor: 'bg-teal-50',
       reports: [
-        { id: 'pigmy-reports&reportType=register', name: '१. पिग्मी ठेव नोंदवही (Pigmy Register)' },
-        { id: 'pigmy-reports&reportType=settlement', name: '२. एजंट रोख ताळमेळ (Daily Settlement)' },
-        { id: 'pigmy-reports&reportType=commission', name: '३. एजंट कमिशन विवरणपत्रक (Commission Statement)' },
-        { id: 'pigmy-reports&reportType=ledger', name: '४. पिग्मी खाते लेजर (Account Ledger)' },
+        { id: 'pigmy-reports&reportType=collection-register', name: '१. पिग्मी दैनंदिन वसुली नोंदवही (Collection Register)' },
+        { id: 'pigmy-reports&reportType=account-register', name: '२. पिग्मी खाती नोंदवही (Pigmy Accounts Register)' },
+        { id: 'pigmy-daybook', name: '३. एजंट रोख ताळमेळ (Daily Settlement / Daybook)' },
+        { id: 'pigmy-commission', name: '४. एजंट कमिशन विवरणपत्रक (Commission Statement)' },
         { id: 'pigmy-khatavani-report', name: '५. पिग्मी ठेव खतावणी (Pigmy Khatavani / CBS Ledger)' }
       ]
     },
@@ -163,6 +163,27 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
     'खर्च / उत्पन्न तपशील'
   ];
 
+  const handleReportClick = (reportId: string) => {
+    if (reportId.includes('&')) {
+      const [tab, queryString] = reportId.split('&');
+      const params: Record<string, string> = {};
+      new URLSearchParams(queryString).forEach((val, key) => {
+        params[key] = val;
+      });
+      if (setActiveTab) {
+        setActiveTab(tab, params);
+      } else {
+        window.location.href = `/?tab=${tab}&${queryString}`;
+      }
+    } else {
+      if (setActiveTab) {
+        setActiveTab(reportId);
+      } else {
+        window.location.href = `/?tab=${reportId}`;
+      }
+    }
+  };
+
   return (
     <div className="p-2 h-full flex flex-col bg-gray-50 text-[11px] font-sans">
       
@@ -203,13 +224,7 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
               {module.reports.map((report) => (
                 <button
                   key={report.id}
-                  onClick={() => {
-                    if (setActiveTab) {
-                      setActiveTab(report.id);
-                    } else {
-                      window.location.href = `/?tab=${report.id}`;
-                    }
-                  }}
+                  onClick={() => handleReportClick(report.id)}
                   className="flex items-center gap-1.5 p-1.5 bg-white border border-gray-200 hover:border-primary hover:bg-[#f0f7fb] hover:text-primary transition-colors text-left w-full group rounded-sm cursor-pointer"
                 >
                   <FileText className="w-3.5 h-3.5 text-gray-400 group-hover:text-primary flex-shrink-0" />

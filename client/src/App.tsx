@@ -427,6 +427,10 @@ function App() {
     'gold-jewelry-report': '/reports/gold-jewelry',
     'gold-jewelry': '/reports/gold-jewelry',
     'audit-logs': '/reports/audit-logs',
+    'ibt-reconciliation-report': '/reports/ibt-reconciliation',
+    'loan-outstanding-report': '/reports/loan-outstanding',
+    'share-certificate-report': '/reports/share-certificate',
+    'j-namuna-report': '/reports/member-list',
 
     // Utilities & System Settings
     'interest-calculator': '/utilities/interest-calculator',
@@ -455,12 +459,16 @@ function App() {
   };
 
   const getTabFromURL = () => {
+    const params = new URLSearchParams(window.location.search);
+    const queryTab = params.get('tab');
+    if (queryTab) {
+      return queryTab.split('&')[0];
+    }
     const pathname = window.location.pathname.toLowerCase();
     if (pathToTabMap[pathname]) {
       return pathToTabMap[pathname];
     }
-    const params = new URLSearchParams(window.location.search);
-    return params.get('tab') || 'dashboard';
+    return 'dashboard';
   };
 
   const [activeTab, setActiveTab] = useState(getTabFromURL);
@@ -510,9 +518,25 @@ function App() {
   }, []);
 
   const handleNavigate = (tab: string, params?: any) => {
-    const hasCustomerTarget = Boolean(params && (params.memberId || params.customerId));
+    let cleanTab = tab;
+    const mergedParams: Record<string, any> = { ...(params || {}) };
+
+    if (cleanTab && (cleanTab.includes('&') || cleanTab.includes('?'))) {
+      const delimiter = cleanTab.includes('?') ? '?' : '&';
+      const parts = cleanTab.split(delimiter);
+      cleanTab = parts[0];
+      const queryStr = parts.slice(1).join('&');
+      const searchParams = new URLSearchParams(queryStr);
+      searchParams.forEach((v, k) => {
+        if (mergedParams[k] === undefined) {
+          mergedParams[k] = v;
+        }
+      });
+    }
+
+    const hasCustomerTarget = Boolean(mergedParams && (mergedParams.memberId || mergedParams.customerId));
     if (hasCustomerTarget) {
-      setLastMemberId(String(params.memberId || params.customerId));
+      setLastMemberId(String(mergedParams.memberId || mergedParams.customerId));
     } else {
       setLastMemberId(null);
       try {
@@ -524,22 +548,23 @@ function App() {
     setNavKey(prev => prev + 1);
 
     let targetUrl = '';
-    if (tabToPathMap[tab]) {
-      targetUrl = tabToPathMap[tab];
-      if (params) {
-        const queryParams = new URLSearchParams(params).toString();
-        if (queryParams) targetUrl += `?${queryParams}`;
+    const queryParams = new URLSearchParams();
+    Object.keys(mergedParams).forEach(k => {
+      if (mergedParams[k] !== undefined && mergedParams[k] !== null && mergedParams[k] !== '') {
+        queryParams.set(k, String(mergedParams[k]));
       }
+    });
+    const queryString = queryParams.toString();
+
+    if (tabToPathMap[cleanTab]) {
+      targetUrl = tabToPathMap[cleanTab];
+      if (queryString) targetUrl += `?${queryString}`;
     } else {
-      targetUrl = `?tab=${tab}`;
-      if (params) {
-        Object.keys(params).forEach(key => {
-          targetUrl += `&${key}=${params[key]}`;
-        });
-      }
+      targetUrl = `/?tab=${cleanTab}`;
+      if (queryString) targetUrl += `&${queryString}`;
     }
     window.history.pushState(null, '', targetUrl);
-    setActiveTab(tab);
+    setActiveTab(cleanTab);
   };
 
   if (!user) {
@@ -784,7 +809,7 @@ function App() {
         {activeTab === 'fd-withdrawal' && <FdWithdrawalMaturity onNavigate={handleNavigate} />}
         {activeTab === 'fd-accrual' && <FdAccrualPosting />}
         {activeTab === 'fd-mis-payout' && <FdMisInterestPayout />}
-        {activeTab === 'fd-reports' && <FdReports onNavigate={handleNavigate} />}
+        {(activeTab === 'fd-reports' || activeTab.startsWith('fd-reports&')) && <FdReports onNavigate={handleNavigate} />}
         {activeTab === 'fd-customer-summary' && <FdCustomerSummaryReport onNavigate={handleNavigate} />}
 
         {/* Pigmy Deposit Module */}
@@ -808,7 +833,7 @@ function App() {
         {(activeTab === 'rd-collect' || activeTab === 'rd-collection') && <RdInstallmentCollection onNavigate={handleNavigate} />}
         {activeTab === 'rd-withdrawal' && <RdWithdrawalMaturity onNavigate={handleNavigate} />}
         {activeTab === 'rd-accrual' && <RdAccrualPosting />}
-        {activeTab === 'rd-reports' && <RdReports />}
+        {(activeTab === 'rd-reports' || activeTab.startsWith('rd-reports&')) && <RdReports />}
         {activeTab === 'rd-khatavani-report' && <RdKhatavaniReport />}
 
         {/* Investment Module */}
@@ -817,7 +842,7 @@ function App() {
         {activeTab === 'inv-account' && <InvestmentAccountOpening />}
         {activeTab === 'inv-claim' && <InvestmentMaturityClaim />}
         {activeTab === 'inv-accrual' && <InvestmentInterestAccrualPosting />}
-        {activeTab === 'inv-reports' && <InvestmentReports />}
+        {(activeTab === 'inv-reports' || activeTab.startsWith('inv-reports&')) && <InvestmentReports />}
 
         {/* Asset Management Module */}
         {(activeTab === 'assets' || activeTab === 'asset-category') && <AssetCategoryMaster />}
@@ -867,7 +892,7 @@ function App() {
         {activeTab === 'guarantor-loan-report' && <GuarantorReport />}
         {activeTab === 'customer-list-report' && <CustomerListReport />}
         {activeTab === 'customer-opening-balance-report' && <CustomerOpeningBalanceReport />}
-        {activeTab === 'member-list-report' && <MemberListReport />}
+        {(activeTab === 'member-list-report' || activeTab === 'j-namuna-report') && <MemberListReport />}
         {activeTab === 'aadhaar-list' && <AadhaarCardYadiReport />}
         {activeTab === 'sabhasad-labhansh-report' && <SabhasadLabhanshReport />}
         {activeTab === 'shares-khatavani-report' && <SharesKhatavaniReport />}

@@ -53,22 +53,35 @@ const InvestmentReports: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
 
-  const [activeReport, setActiveReport] = useState<
-    'summary' | 'list' | 'maturityDue' | 'accrued' | 'auditSchedule'
-  >(() => {
+  const parseActiveReport = (): 'summary' | 'list' | 'maturityDue' | 'accrued' | 'auditSchedule' => {
     const params = new URLSearchParams(window.location.search);
-    const rep = params.get('reportType');
-    if (rep === 'list' || rep === 'maturityDue' || rep === 'accrued' || rep === 'auditSchedule') {
-      return rep;
+    const fullTab = params.get('tab') || '';
+    let rep = params.get('reportType');
+    if (!rep && fullTab.includes('reportType=')) {
+      rep = fullTab.split('reportType=')[1] || '';
+    }
+    const cleanRep = (rep || '').split('&')[0].trim();
+    if (cleanRep === 'list' || cleanRep === 'maturityDue' || cleanRep === 'accrued' || cleanRep === 'auditSchedule') {
+      return cleanRep;
     }
     return 'summary';
-  });
+  };
+
+  const [activeReport, setActiveReport] = useState<
+    'summary' | 'list' | 'maturityDue' | 'accrued' | 'auditSchedule'
+  >(parseActiveReport);
 
   const API_URL = '/api';
 
   useEffect(() => {
     fetchBranches();
     fetchSansthaDetail();
+
+    const handlePopState = () => {
+      setActiveReport(parseActiveReport());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   useEffect(() => {

@@ -56,10 +56,19 @@ const formatDisplayDate = (dStr?: string | null) => {
 };
 
 export default function RdReports() {
-  const [reportType, setReportType] = useState(() => {
+  const parseReportType = (): string => {
     const params = new URLSearchParams(window.location.search);
-    return params.get('reportType') || 'register';
-  });
+    const fullTab = params.get('tab') || '';
+    let rType = '';
+    if (fullTab.includes('reportType=')) {
+      rType = fullTab.split('reportType=')[1] || '';
+    } else {
+      rType = params.get('reportType') || '';
+    }
+    return rType.split('&')[0].trim() || 'register';
+  };
+
+  const [reportType, setReportType] = useState<string>(parseReportType);
   const [accounts, setAccounts] = useState<ReportRow[]>([]);
   const [sansthaDetail, setSansthaDetail] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -84,6 +93,12 @@ export default function RdReports() {
     fetchBranches();
     fetchSchemes();
     fetchReportData(initialBranchId, 'all');
+
+    const handlePopState = () => {
+      setReportType(parseReportType());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   useEffect(() => {

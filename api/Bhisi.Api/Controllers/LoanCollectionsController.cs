@@ -270,9 +270,8 @@ namespace Bhisi.Api.Controllers
 
                         var rate = loanRate?.InterestRate ?? loanAccount.InterestRate;
                         var diffTime = collection.CollectionDate.Date - fromDateStr.Date;
-                        var rawDiffDays = Math.Max(0, diffTime.Days);
-                        // Standard core banking rule: repayment date is excluded from interest computation (e.g. 31/03/2026 to 07/10/2026 => 189 days)
-                        var diffDays = rawDiffDays > 0 ? rawDiffDays - 1 : 0;
+                        // Standard core banking rule: (CollectionDate - FromDate) inherently counts elapsed days (e.g. 05/04/2026 to 30/06/2026 => 86 days)
+                        var diffDays = Math.Max(0, diffTime.Days);
                         decimal effectivePrincipal = LoanAccountsController.GetEffectiveInterestBearingPrincipal(loanAccount);
                         currentPeriodInterest = diffDays > 0 ? Math.Round((effectivePrincipal * rate * diffDays) / 36500m) : 0;
                     }

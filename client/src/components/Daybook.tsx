@@ -176,13 +176,18 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
         );
         setPages(newPages);
         if (newPages.length === 0) {
-          setError('या तारखांमध्ये कोणताही व्यवहार आढळला नाही. (No transactions found)');
+          setError(
+            activeStatus === 'pending'
+              ? 'निवडलेल्या तारखांमध्ये कोणतीही प्रलंबित (Pending/Draft) व्हाउचर नोंद आढळली नाही. (No pending vouchers found)'
+              : 'या तारखांमध्ये कोणताही व्यवहार आढळला नाही. (No transactions found)'
+          );
         }
       } else {
-        setError('सर्व्हरशी संपर्क होऊ शकला नाही. (Server connection failed)');
+        const errTxt = await response.text().catch(() => '');
+        setError(`सर्व्हरशी संपर्क होऊ शकला नाही. (${response.status}: ${errTxt || 'Server connection failed'})`);
       }
-    } catch (err) {
-      setError('सर्व्हरशी संपर्क होऊ शकला नाही. (Server connection failed)');
+    } catch (err: any) {
+      setError(`सर्व्हरशी संपर्क होऊ शकला नाही. (${err?.message || 'Network error'})`);
     } finally {
       setLoading(false);
     }
@@ -486,14 +491,21 @@ export default function Daybook({ initialVoucherStatus }: DaybookProps = {}) {
         </div>
       )}
 
-      {error && (
-        <div className="bg-red-50 text-red-700 p-3 rounded-sm mb-4 font-bold text-xs shadow-2xs border border-red-200 no-print flex items-center gap-2">
-          <span>⚠️</span> {error}
+      {/* Loading Indicator */}
+      {loading && (
+        <div className="bg-white border border-gray-200 rounded-sm p-8 text-center my-4 shadow-xs flex flex-col items-center justify-center gap-2.5 no-print">
+          <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-xs font-bold text-gray-800 tracking-wide">
+            {voucherStatus === 'pending'
+              ? '📖 कच्ची रोजकीर्द (Draft Daybook) माहिती लोड होत आहे...'
+              : '📖 रोजकीर्द अहवाल माहिती लोड होत आहे...'}
+          </p>
+          <span className="text-[10px] text-gray-500 font-mono">कृपया प्रतीक्षा करा (Please wait...)</span>
         </div>
       )}
 
       {/* Report Pages Area */}
-      {pages.length > 0 && (
+      {!loading && pages.length > 0 && (
         <div ref={pagesAreaRef} className="space-y-6 print:space-y-0">
           {pages.map((page, idx) => {
             const pageData = page.data;

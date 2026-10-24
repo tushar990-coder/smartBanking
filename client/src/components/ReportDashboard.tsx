@@ -203,8 +203,14 @@ export default function ReportDashboard({ setActiveTab }: ReportDashboardProps) 
               {module.reports.map((report) => (
                 <button
                   key={report.id}
-                  onClick={() => window.open(`/?tab=${report.id}`, '_blank')}
-                  className="flex items-center gap-1.5 p-1.5 bg-white border border-gray-200 hover:border-primary hover:bg-[#f0f7fb] hover:text-primary transition-colors text-left w-full group rounded-sm"
+                  onClick={() => {
+                    if (setActiveTab) {
+                      setActiveTab(report.id);
+                    } else {
+                      window.location.href = `/?tab=${report.id}`;
+                    }
+                  }}
+                  className="flex items-center gap-1.5 p-1.5 bg-white border border-gray-200 hover:border-primary hover:bg-[#f0f7fb] hover:text-primary transition-colors text-left w-full group rounded-sm cursor-pointer"
                 >
                   <FileText className="w-3.5 h-3.5 text-gray-400 group-hover:text-primary flex-shrink-0" />
                   <span className="text-[11px] font-medium text-gray-700 group-hover:text-primary leading-tight truncate">

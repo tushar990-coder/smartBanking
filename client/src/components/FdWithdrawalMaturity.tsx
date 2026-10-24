@@ -983,6 +983,34 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     baseAmount: overdueBaseAmount
   } : undefined;
 
+  // 📅 Calculate Elapsed / Run Days from Opening Date up to Transaction Closure Date
+  const elapsedDaysInfo = React.useMemo(() => {
+    if (!selectedAccount) return null;
+    try {
+      const startDt = new Date(selectedAccount.openingDate.split('T')[0] + 'T00:00:00');
+      const matDt = new Date(selectedAccount.maturityDate.split('T')[0] + 'T00:00:00');
+      const txnDt = new Date((closureDate || activeBusinessDate).split('T')[0] + 'T00:00:00');
+
+      const contractedDays = Math.max(0, Math.round((matDt.getTime() - startDt.getTime()) / (1000 * 60 * 60 * 24)));
+      const elapsedDays = Math.max(0, Math.round((txnDt.getTime() - startDt.getTime()) / (1000 * 60 * 60 * 24)));
+      const overdueDays = Math.max(0, Math.round((txnDt.getTime() - matDt.getTime()) / (1000 * 60 * 60 * 24)));
+      const remainingDays = Math.max(0, contractedDays - elapsedDays);
+
+      return {
+        contractedDays,
+        elapsedDays,
+        overdueDays,
+        remainingDays,
+        isMatured: txnDt.getTime() >= matDt.getTime(),
+        isOverdue: overdueDays > 0,
+        isExactMaturity: txnDt.getTime() === matDt.getTime(),
+        isPremature: txnDt.getTime() < matDt.getTime()
+      };
+    } catch {
+      return null;
+    }
+  }, [selectedAccount, closureDate, activeBusinessDate]);
+
   // 🔄 Live Renewal Simulation & Maturity Calculator
   const renewalSimulation = React.useMemo(() => {
     if (actionType !== 'Renewal' || !selectedAccount || targetSchemeId <= 0) return null;
@@ -2106,6 +2134,51 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                   </th>
                                   <td className="px-2.5 py-1.5 font-mono font-bold text-slate-900">
                                     {formatDateDisplay(acc.maturityDate)}
+                                    {elapsedDaysInfo && elapsedDaysInfo.contractedDays > 0 && (
+                                      <span className="ml-1.5 text-[10px] font-normal text-slate-500 font-sans">
+                                        (करार मुदत: {elapsedDaysInfo.contractedDays} दिवस)
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                                <tr className="border-b border-slate-200 bg-amber-50/20">
+                                  <th className="bg-amber-50/70 px-2.5 py-1.5 text-left font-medium text-slate-700 border-r border-slate-200 whitespace-nowrap">
+                                    व्यवहार दिनांक
+                                  </th>
+                                  <td className="px-2.5 py-1.5 font-mono font-bold text-slate-900 border-r border-slate-200">
+                                    {formatDateDisplay(closureDate)}
+                                    <span className="ml-1.5 text-[9.5px] font-normal text-slate-500 font-sans">
+                                      (सक्रिय सीबीएस)
+                                    </span>
+                                  </td>
+                                  <th className="bg-amber-50/70 px-2.5 py-1.5 text-left font-medium text-slate-700 border-r border-slate-200 whitespace-nowrap">
+                                    व्यवहार दिनांक पर्यंतचे दिवस
+                                  </th>
+                                  <td className="px-2.5 py-1.5">
+                                    {elapsedDaysInfo ? (
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-mono font-black text-xs text-primary">
+                                          {elapsedDaysInfo.elapsedDays} दिवस
+                                        </span>
+                                        {elapsedDaysInfo.isPremature && (
+                                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-300 px-1.5 py-0.5 rounded-sm">
+                                            🏃‍♂️ मुदतीपूर्वी {elapsedDaysInfo.remainingDays} दिवस बाकी
+                                          </span>
+                                        )}
+                                        {elapsedDaysInfo.isExactMaturity && (
+                                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded-sm">
+                                            🎯 तंतोतंत मुदतपूर्ती
+                                          </span>
+                                        )}
+                                        {elapsedDaysInfo.isOverdue && (
+                                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-indigo-800 bg-indigo-50 border border-indigo-300 px-1.5 py-0.5 rounded-sm">
+                                            ⏳ मुदतीनंतर +{elapsedDaysInfo.overdueDays} दिवस ओव्हरड्यू
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      '-'
+                                    )}
                                   </td>
                                 </tr>
                                 <tr className="border-b border-slate-200">
@@ -2648,7 +2721,12 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                           <span>थेट सेटलमेंट सारांश (Settlement Summary)</span>
                         </legend>
 
-                        <div className="flex justify-end -mt-6 mb-2">
+                        <div className="flex items-center justify-end gap-1.5 -mt-6 mb-2">
+                          {elapsedDaysInfo && (
+                            <span className="text-[10px] font-mono font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-sm">
+                              कालावधी: {elapsedDaysInfo.elapsedDays} दिवस
+                            </span>
+                          )}
                           <span className="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-sm">
                             {actionType === 'PrematureClose' ? 'मुदतपूर्व बंद' : actionType === 'Renewal' ? 'नूतनीकरण' : 'मुदतपूर्ती पेमेंट'}
                           </span>

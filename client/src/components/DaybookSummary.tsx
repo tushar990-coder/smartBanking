@@ -433,8 +433,21 @@ export default function DaybookSummary() {
         </div>
       )}
 
+      {/* Loading Indicator */}
+      {loading && (
+        <div className="bg-white border border-gray-200 rounded-sm p-8 text-center my-4 shadow-xs flex flex-col items-center justify-center gap-2.5 no-print">
+          <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-xs font-bold text-gray-800 tracking-wide">
+            {voucherStatus === 'pending'
+              ? '📖 कच्ची रोजकीर्द सारांश (Draft Summary) माहिती लोड होत आहे...'
+              : '📖 रोजकीर्द सारांश माहिती लोड होत आहे...'}
+          </p>
+          <span className="text-[10px] text-gray-500 font-mono">कृपया प्रतीक्षा करा (Please wait...)</span>
+        </div>
+      )}
+
       {/* Report Pages Area */}
-      {pages.length > 0 && (
+      {!loading && pages.length > 0 && (
         <div className="space-y-6 print:space-y-0">
           {pages.map((page, idx) => {
             const data = page.data;

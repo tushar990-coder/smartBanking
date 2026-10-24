@@ -1116,7 +1116,8 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         return acc.loanDisbursementDate || acc.openingDate || null;
     };
 
-    // Core banking day count: Excludes repayment date unless configured otherwise (e.g. 31/03/2026 to 07/10/2026 = 189 days)
+    // Core banking day count: (toDate - fromDate) inherently counts 1 day per night held (first day included, payment day excluded)
+    // E.g., 05/04/2026 to 30/06/2026 = 86 days.
     const calculateElapsedDays = (fromDateStr: string | Date | null | undefined, toDateVal: string | Date | null | undefined): number => {
         if (!fromDateStr) return 0;
         const fromDate = parseDateSafe(fromDateStr);
@@ -1127,8 +1128,10 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         const rawDiffDays = Math.round((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
         if (rawDiffDays <= 0) return 0;
 
-        const isIncludePaymentDay = sanstha?.loanInterestDayCountMethod === 'IncludePaymentDay';
-        return isIncludePaymentDay ? rawDiffDays : Math.max(0, rawDiffDays - 1);
+        // Core banking standard: (toDate - fromDate) inherently includes the first day and excludes the payment day.
+        // If an institution explicitly configures both boundary dates to be included, add 1:
+        const isIncludeBothDays = sanstha?.loanInterestDayCountMethod === 'IncludeBothDays' || sanstha?.loanInterestDayCountMethod === 'IncludePaymentDay';
+        return isIncludeBothDays ? rawDiffDays + 1 : rawDiffDays;
     };
 
     const calculateInterest = (acc: any, dateStr: string) => {
@@ -2502,7 +2505,7 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                                  <td className="p-1.5 border-r border-gray-200 font-mono">{dandVyaj.toFixed(2)}</td>
                                                  <td className="p-1.5 border-r border-gray-200 font-mono">{surcharge.toFixed(2)}</td>
                                                  <td className="p-1.5 border-r border-gray-200 font-mono">{vasuliFee.toFixed(2)}</td>
-                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-semibold" title={`व्याज दिवस: ${fromDateStrGrid ? formatDateSafe(fromDateStrGrid) : ''} ते ${formatDateSafe(formData.collectionDate || new Date())} (${days} दिवस, भरणा दिनांक वगळून)`}>
+                                                 <td className="p-1.5 border-r border-gray-200 font-mono font-semibold" title={`व्याज दिवस: ${fromDateStrGrid ? formatDateSafe(fromDateStrGrid) : ''} ते ${formatDateSafe(formData.collectionDate || new Date())} (${days} दिवस)`}>
                                                     {days}
                                                 </td>
                                                  <td className="p-1.5 border-r border-gray-200 font-mono font-bold text-primary">{shillakKarjRakkam.toFixed(2)}</td>

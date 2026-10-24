@@ -28,14 +28,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(() => {
-    // Purge legacy permanent localStorage token to enforce session expiration on browser close
-    localStorage.removeItem('bhisi_user');
-
-    const savedUser = sessionStorage.getItem('bhisi_user');
+    const savedUser = sessionStorage.getItem('bhisi_user') || localStorage.getItem('bhisi_user');
     if (savedUser) {
       try {
         const parsed = JSON.parse(savedUser);
         if (parsed && typeof parsed === 'object' && (parsed.token || parsed.username)) {
+          sessionStorage.setItem('bhisi_user', savedUser);
           if (parsed?.branchID) {
             sessionStorage.setItem('globalBranchId', parsed.branchID.toString());
             localStorage.setItem('globalBranchId', parsed.branchID.toString());
@@ -43,10 +41,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return parsed;
         } else {
           sessionStorage.removeItem('bhisi_user');
+          localStorage.removeItem('bhisi_user');
           return null;
         }
       } catch {
         sessionStorage.removeItem('bhisi_user');
+        localStorage.removeItem('bhisi_user');
         return null;
       }
     }
@@ -56,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = (userData: AuthUser) => {
     setUser(userData);
     sessionStorage.setItem('bhisi_user', JSON.stringify(userData));
-    localStorage.removeItem('bhisi_user'); // Never persist sensitive banking session on disk
+    localStorage.setItem('bhisi_user', JSON.stringify(userData));
     if (userData?.branchID) {
       sessionStorage.setItem('globalBranchId', userData.branchID.toString());
       localStorage.setItem('globalBranchId', userData.branchID.toString());

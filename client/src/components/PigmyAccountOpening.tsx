@@ -58,6 +58,7 @@ export default function PigmyAccountOpening() {
   const [modalEditForm, setModalEditForm] = useState({
     pigmyAgentID: '',
     pigmySchemeID: '',
+    legacyAccountNumber: '',
     totalDepositedAmount: '',
     status: 'Active'
   });
@@ -405,6 +406,7 @@ export default function PigmyAccountOpening() {
     setModalEditForm({
       pigmyAgentID: getAgentId(acc.pigmyAgent) || acc.pigmyAgentID?.toString() || '',
       pigmySchemeID: getSchemeId(acc.pigmyScheme) || acc.pigmySchemeID?.toString() || '',
+      legacyAccountNumber: acc.legacyAccountNumber || acc.oldAccountNo || '',
       totalDepositedAmount: acc.totalDepositedAmount !== undefined ? acc.totalDepositedAmount.toString() : '0',
       status: acc.status || 'Active'
     });
@@ -423,6 +425,7 @@ export default function PigmyAccountOpening() {
         pigmyAccountID: accId,
         pigmyAgentID: parseInt(modalEditForm.pigmyAgentID),
         pigmySchemeID: parseInt(modalEditForm.pigmySchemeID),
+        legacyAccountNumber: modalEditForm.legacyAccountNumber !== undefined ? modalEditForm.legacyAccountNumber.trim() : null,
         totalDepositedAmount: parseFloat(modalEditForm.totalDepositedAmount) || 0,
         status: modalEditForm.status
       };
@@ -433,6 +436,15 @@ export default function PigmyAccountOpening() {
         setModalMessage({ type: 'success', text: res.data.message || 'पिग्मी खाते माहिती यशस्वीरीत्या अपडेट झाली!' });
         toast.success(res.data.message || 'खाते माहिती अपडेट झाली.');
         setIsEditModalMode(false);
+        setSelectedAccountModal((prev: any) => prev ? {
+          ...prev,
+          legacyAccountNumber: modalEditForm.legacyAccountNumber ? modalEditForm.legacyAccountNumber.trim() : null,
+          oldAccountNo: modalEditForm.legacyAccountNumber ? modalEditForm.legacyAccountNumber.trim() : null,
+          pigmyAgentID: parseInt(modalEditForm.pigmyAgentID),
+          pigmySchemeID: parseInt(modalEditForm.pigmySchemeID),
+          totalDepositedAmount: parseFloat(modalEditForm.totalDepositedAmount) || 0,
+          status: modalEditForm.status
+        } : null);
         fetchSavedAccounts();
       }
     } catch (err: any) {
@@ -514,13 +526,14 @@ export default function PigmyAccountOpening() {
 
   const filteredSavedAccounts = savedAccounts.filter(acc => {
     const accountNo = (acc.accountNo || acc.AccountNo || '').toString().toLowerCase();
+    const legacyNo = (acc.legacyAccountNumber || acc.oldAccountNo || '').toString().toLowerCase();
     const customerName = acc.customer 
       ? `${acc.customer.firstName || ''} ${acc.customer.middleName || ''} ${acc.customer.lastName || ''}`.toLowerCase()
       : '';
     const agentName = acc.pigmyAgent ? (acc.pigmyAgent.agentName || '').toLowerCase() : '';
     const query = searchTerm.toLowerCase();
 
-    return accountNo.includes(query) || customerName.includes(query) || agentName.includes(query);
+    return accountNo.includes(query) || legacyNo.includes(query) || customerName.includes(query) || agentName.includes(query);
   });
 
   return (
@@ -830,6 +843,20 @@ export default function PigmyAccountOpening() {
               </div>
             </div>
 
+            {/* LEGACY ACCOUNT NUMBER */}
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                जुना खाते / पावती क्र. (Old A/C No)
+              </label>
+              <input 
+                type="text" 
+                placeholder="उदा. 0001 (पर्यायी)"
+                className="w-full border border-slate-300 rounded-xl px-3 py-1.5 bg-slate-50 focus:bg-white focus:border-primary outline-none"
+                value={formData.legacyAccountNumber}
+                onChange={(e) => setFormData({ ...formData, legacyAccountNumber: e.target.value })}
+              />
+            </div>
+
           </div>
         </div>
 
@@ -950,7 +977,12 @@ export default function PigmyAccountOpening() {
                       return (
                         <tr key={`acc-${accId}-${idx}`} className="hover:bg-slate-50 transition-colors">
                           <td className="px-3 py-2.5 font-mono font-bold text-primary">
-                            {accNo}
+                            <div>{format14DigitDisplay(accNo)}</div>
+                            {(acc.legacyAccountNumber || acc.oldAccountNo) && (
+                              <div className="text-[10px] text-amber-700 font-bold">
+                                जुना: {acc.legacyAccountNumber || acc.oldAccountNo}
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 font-bold text-slate-900">
                             👤 {customerName}
@@ -1144,6 +1176,19 @@ export default function PigmyAccountOpening() {
                     </div>
 
                     <div>
+                      <label className="block text-slate-700 font-semibold mb-1">
+                        जुना खाते क्रमांक (Old / Legacy A/C No)
+                      </label>
+                      <input 
+                        type="text"
+                        placeholder="उदा. 0001 (रिकामा ठेवल्यास जुना क्रमांक निघून जाईल)"
+                        className="w-full border border-slate-300 rounded-xl px-2.5 py-1.5 bg-white text-xs font-bold text-slate-900"
+                        value={modalEditForm.legacyAccountNumber}
+                        onChange={(e) => setModalEditForm({ ...modalEditForm, legacyAccountNumber: e.target.value })}
+                      />
+                    </div>
+
+                    <div>
                       <label className="block text-slate-700 font-semibold mb-1">एकूण जमा रक्कम (Balance ₹)</label>
                       <input 
                         type="number"
@@ -1187,6 +1232,13 @@ export default function PigmyAccountOpening() {
                 </div>
               ) : (
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-2.5 shadow-2xs">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                    <span className="text-slate-500 font-medium">जुना खाते क्रमांक (Old A/C No):</span>
+                    <span className="font-extrabold text-amber-700 font-mono text-xs">
+                      {selectedAccountModal.legacyAccountNumber || selectedAccountModal.oldAccountNo ? `जुना: ${selectedAccountModal.legacyAccountNumber || selectedAccountModal.oldAccountNo}` : '-'}
+                    </span>
+                  </div>
+
                   <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                     <span className="text-slate-500 font-medium">पिग्मी योजना (Scheme):</span>
                     <span className="font-bold text-slate-800">

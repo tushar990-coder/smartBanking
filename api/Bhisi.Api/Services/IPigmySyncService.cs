@@ -27,6 +27,7 @@ namespace Bhisi.Api.Services
         public DateTime? Timestamp { get; set; }
 
         public int? AgentId { get; set; }
+        public string? ReceiptNo { get; set; }
     }
 
     public class SingleCollectionResponseDto

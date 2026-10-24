@@ -29,6 +29,24 @@ interface DayBreakupItem {
   isRemitted?: boolean;
 }
 
+interface DayCollectionItem {
+  collectionId: number;
+  receiptNo: string;
+  collectionDate: string;
+  collectionAmount: number;
+  collectionSource: string;
+  paymentMode: string;
+  openingBalance: number;
+  closingBalance: number;
+  accountId: number;
+  accountNo: string;
+  legacyAccountNumber: string;
+  customerName: string;
+  mobileNo: string;
+  voucherId?: number;
+  isVoucherGenerated: boolean;
+}
+
 interface DayBookSummary {
   openingBalance: number;
   todaysCollection: number;
@@ -80,6 +98,41 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
   const [narration, setNarration] = useState('');
   const [message, setMessage] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<RemittanceItem | null>(null);
+  const [deletingDepositId, setDeletingDepositId] = useState<number | null>(null);
+
+  // Day Details Modal States
+  const [showDayDetailsModal, setShowDayDetailsModal] = useState<boolean>(false);
+  const [selectedDayInfo, setSelectedDayInfo] = useState<DayBreakupItem | null>(null);
+  const [dayCollections, setDayCollections] = useState<DayCollectionItem[]>([]);
+  const [loadingDayCollections, setLoadingDayCollections] = useState<boolean>(false);
+
+  const handleViewDayDetails = async (day: DayBreakupItem) => {
+    if (!selectedAgentId) return;
+    setSelectedDayInfo(day);
+    setShowDayDetailsModal(true);
+    setLoadingDayCollections(true);
+    try {
+      const dateStr = day.date.split('T')[0];
+      const res = await fetch(`/api/AgentDayBook/DayCollections?agentId=${selectedAgentId}&date=${dateStr}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setDayCollections(data);
+        } else if (data && Array.isArray(data.collections)) {
+          setDayCollections(data.collections);
+        } else {
+          setDayCollections([]);
+        }
+      } else {
+        alert('पावत्या आणताना त्रुटी आली.');
+      }
+    } catch (err) {
+      console.error('Error fetching day collections:', err);
+      alert('सर्व्हरशी संपर्क होऊ शकला नाही.');
+    } finally {
+      setLoadingDayCollections(false);
+    }
+  };
 
   const loadPassingVoucher = async (vId: number) => {
     setPassingLoading(true);
@@ -347,6 +400,33 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
     }
   };
 
+  const handleDeleteDeposit = async (depositId: number, receiptNo: string) => {
+    if (!window.confirm(`तुम्हाला भरणा पावती क्र. ${receiptNo} खरोखर डिलीट / रद्द करायची आहे का?\n\nही नोंद डिलीट केल्यावर या पावतीचे संकलन पुन्हा डे बुकमध्ये भरण्यासाठी उपलब्ध होईल.`)) {
+      return;
+    }
+
+    setDeletingDepositId(depositId);
+    try {
+      const res = await fetch(`/api/AgentDayBook/Deposit/${depositId}`, {
+        method: 'DELETE'
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        alert(data.message || 'भरणा पावती यशस्वीरीत्या डिलीट करण्यात आली.');
+        await fetchSummary();
+      } else {
+        const errText = await res.text();
+        alert('भरणा पावती डिलीट करताना त्रुटी आली: ' + errText);
+      }
+    } catch (err: any) {
+      console.error('Error deleting deposit:', err);
+      alert('सर्व्हरशी संपर्क साधताना त्रुटी: ' + err.message);
+    } finally {
+      setDeletingDepositId(null);
+    }
+  };
+
   const selectedAgentObj = agents.find(a => a.pigmyAgentID === Number(selectedAgentId));
 
   const getModeLabel = (mode?: string) => {
@@ -531,27 +611,29 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
               summary.dayBreakup.map((day) => (
                 <div 
                   key={day.date} 
-                  className={`px-2 py-0.5 rounded border shadow-2xs text-[11px] flex items-center gap-1.5 ${
+                  onClick={() => handleViewDayDetails(day)}
+                  className={`px-2.5 py-1 rounded border shadow-2xs text-[11px] flex items-center gap-1.5 cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all select-none ${
                     day.isRemitted 
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900 hover:bg-emerald-100' 
                       : (day.remittedAmount || 0) > 0
-                        ? 'bg-amber-50 border-amber-300 text-amber-900'
-                        : 'bg-white border-blue-200 text-gray-800'
+                        ? 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
+                        : 'bg-white border-blue-300 text-gray-800 hover:bg-blue-50'
                   }`}
+                  title="या दिवसाच्या सर्व पावत्यांचे तपशील पाहण्यासाठी क्लिक करा"
                 >
-                  <span className="font-semibold">{new Date(day.date).toLocaleDateString('en-GB')}:</span>
-                  <span className="text-[10px] opacity-75 font-medium">({day.count} पावत्या)</span>
-                  <span className="font-bold font-mono">₹{day.amount.toLocaleString('en-IN')}</span>
+                  <span className="font-semibold text-blue-900 underline decoration-dotted">{new Date(day.date).toLocaleDateString('en-GB')}:</span>
+                  <span className="text-[10px] font-medium text-blue-700 bg-blue-50/80 px-1 rounded">({day.count} पावत्या 👁️)</span>
+                  <span className="font-bold font-mono text-emerald-700">₹{day.amount.toLocaleString('en-IN')}</span>
                   {day.isRemitted ? (
-                    <span className="bg-emerald-200/70 text-emerald-800 text-[9px] font-bold px-1 py-0.2 rounded">
+                    <span className="bg-emerald-200/80 text-emerald-800 text-[9px] font-bold px-1.5 py-0.2 rounded">
                       ✓ जमा पूर्ण
                     </span>
                   ) : (day.remittedAmount || 0) > 0 ? (
-                    <span className="bg-amber-200/70 text-amber-900 text-[9px] font-bold px-1 py-0.2 rounded">
+                    <span className="bg-amber-200/80 text-amber-900 text-[9px] font-bold px-1.5 py-0.2 rounded">
                       ⏳ ₹{day.pendingAmount?.toLocaleString('en-IN')} बाकी
                     </span>
                   ) : (
-                    <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1 py-0.2 rounded">
+                    <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1.5 py-0.2 rounded">
                       ⏳ भरणे बाकी
                     </span>
                   )}
@@ -829,12 +911,25 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                         )}
                       </td>
                       <td className="px-2 py-1 text-center">
-                        <button
-                          onClick={() => setSelectedReceipt(item)}
-                          className="border border-blue-500 text-blue-700 px-2 py-0.5 rounded-sm hover:bg-blue-50 transition-colors font-semibold text-[10px] cursor-pointer"
-                        >
-                          पावती प्रिंट
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedReceipt(item)}
+                            className="border border-blue-500 text-blue-700 px-2 py-0.5 rounded-sm hover:bg-blue-50 transition-colors font-semibold text-[10px] cursor-pointer"
+                            title="पावती प्रिंट करा"
+                          >
+                            पावती प्रिंट
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingDepositId === item.depositId}
+                            onClick={() => handleDeleteDeposit(item.depositId, item.receiptNo)}
+                            className="border border-red-500 text-red-700 px-2 py-0.5 rounded-sm hover:bg-red-50 transition-colors font-semibold text-[10px] cursor-pointer disabled:opacity-50"
+                            title="भरणा पावती डिलीट / रद्द करा"
+                          >
+                            {deletingDepositId === item.depositId ? '...' : 'डिलीट'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -995,6 +1090,143 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
                 className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold transition disabled:opacity-50"
               >
                 {passingActionLoading ? 'प्रक्रिया सुरू...' : 'पुष्टी करा व रद्द करा'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Day Details Modal */}
+      {showDayDetailsModal && selectedDayInfo && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-lg max-w-4xl w-full p-5 space-y-4 shadow-2xl border border-gray-200 max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 text-blue-700 rounded-lg text-lg">
+                  📋
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                    दैनिक संकलन पावती तपशील
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                      {new Date(selectedDayInfo.date).toLocaleDateString('en-GB')}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    एजंट: <span className="font-semibold text-gray-700">{agents.find(a => a.pigmyAgentID === selectedAgentId)?.agentName || `एजंट #${selectedAgentId}`}</span>
+                    {' '}| एकूण पावत्या: <span className="font-semibold text-gray-700">{selectedDayInfo.count}</span>
+                    {' '}| एकूण संकलन: <span className="font-bold text-emerald-700">₹{selectedDayInfo.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDayDetailsModal(false)}
+                className="text-gray-400 hover:text-gray-600 rounded-lg p-1.5 hover:bg-gray-100 text-xl font-bold transition cursor-pointer"
+                title="बंद करा"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content Table */}
+            <div className="flex-1 overflow-y-auto">
+              {loadingDayCollections ? (
+                <div className="py-12 flex flex-col items-center justify-center text-gray-500">
+                  <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+                  <span className="text-xs font-medium">पावत्यांचा तपशील लोड होत आहे...</span>
+                </div>
+              ) : dayCollections.length === 0 ? (
+                <div className="py-12 text-center text-gray-400 text-xs">
+                  या दिवसासाठी कोणतीही पावती सापडली नाही.
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-gray-200 rounded">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-gray-50 text-gray-700 uppercase font-semibold border-b border-gray-200 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-center w-10">#</th>
+                        <th className="px-3 py-2">पावती क्र. (Receipt No)</th>
+                        <th className="px-3 py-2">खाते क्र. (Account No)</th>
+                        <th className="px-3 py-2">खातेदाराचे नाव</th>
+                        <th className="px-3 py-2 text-center">वेळ</th>
+                        <th className="px-3 py-2 text-center">स्रोत / माध्यम</th>
+                        <th className="px-3 py-2 text-right">रक्कम (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {dayCollections.map((col, idx) => (
+                        <tr key={col.collectionId} className="hover:bg-blue-50/50 transition-colors">
+                          <td className="px-3 py-2 text-center font-mono text-gray-500">{idx + 1}</td>
+                          <td className="px-3 py-2 font-mono font-medium text-gray-800">
+                            {col.receiptNo || `-`}
+                            {col.voucherId && (
+                              <span className="ml-1 text-[9px] px-1 py-0.2 bg-purple-50 text-purple-700 rounded border border-purple-200 font-normal">
+                                V#{col.voucherId}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 font-mono">
+                            <div className="font-semibold text-blue-900">{col.accountNo}</div>
+                            {col.legacyAccountNumber && (
+                              <div className="text-[10px] text-gray-500">
+                                जुना: <span className="font-semibold text-gray-700">{col.legacyAccountNumber}</span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="font-medium text-gray-900">{col.customerName || 'N/A'}</div>
+                            {col.mobileNo && (
+                              <div className="text-[10px] text-gray-500">📱 {col.mobileNo}</div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center text-gray-600 font-mono">
+                            {col.collectionDate ? new Date(col.collectionDate).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true }) : '-'}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              col.collectionSource === 'APP' 
+                                ? 'bg-indigo-100 text-indigo-700' 
+                                : col.collectionSource === 'IMPORT' 
+                                  ? 'bg-amber-100 text-amber-800' 
+                                  : 'bg-gray-100 text-gray-700'
+                            }`}>
+                              {col.collectionSource || 'MANUAL'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700 text-sm">
+                            ₹{col.collectionAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-100 font-bold border-t-2 border-gray-300">
+                      <tr>
+                        <td colSpan={6} className="px-3 py-2 text-right text-gray-700">
+                          एकूण संकलन ({dayCollections.length} पावत्या):
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-emerald-800 text-sm">
+                          ₹{dayCollections.reduce((sum, c) => sum + (c.collectionAmount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+              <div className="text-[11px] text-gray-500">
+                💡 टीप: ही रक्कम एजंटच्या चालू शिल्लक / जमा खात्याशी संबंधित आहे.
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDayDetailsModal(false)}
+                className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-semibold text-xs transition cursor-pointer"
+              >
+                बंद करा (Close)
               </button>
             </div>
           </div>

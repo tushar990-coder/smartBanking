@@ -7,6 +7,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
     public class AgentDayBookController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -657,6 +658,107 @@ namespace Bhisi.Api.Controllers
                     CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending"
                 }
             });
+        }
+
+        // GET: api/AgentDayBook/DayCollections?agentId=1&date=2026-10-23
+        [HttpGet("DayCollections")]
+        public async Task<IActionResult> GetDayCollections([FromQuery] int agentId, [FromQuery] DateTime date)
+        {
+            var targetDate = date.Date;
+            var nextDate = targetDate.AddDays(1);
+            var collections = await _context.PigmyCollections
+                .AsNoTracking()
+                .Include(c => c.PigmyAccount)
+                    .ThenInclude(a => a.Customer)
+                .Where(c => c.AgentId == agentId && c.CollectionDate >= targetDate && c.CollectionDate < nextDate && c.CollectionAmount > 0)
+                .OrderBy(c => c.CollectionDate)
+                .ThenBy(c => c.CollectionId)
+                .Select(c => new
+                {
+                    collectionId = c.CollectionId,
+                    receiptNo = c.ReceiptNo,
+                    collectionDate = c.CollectionDate,
+                    collectionAmount = c.CollectionAmount,
+                    collectionSource = c.CollectionSource ?? "MANUAL",
+                    accountId = c.PigmyAccountId,
+                    accountNo = c.PigmyAccount != null ? c.PigmyAccount.AccountNo : "",
+                    legacyAccountNumber = c.PigmyAccount != null ? (c.PigmyAccount.LegacyAccountNumber ?? c.PigmyAccount.OldAccountNo) : null,
+                    customerName = c.PigmyAccount != null && c.PigmyAccount.Customer != null 
+                        ? (c.PigmyAccount.Customer.FirstName + " " + (c.PigmyAccount.Customer.MiddleName != null ? c.PigmyAccount.Customer.MiddleName + " " : "") + c.PigmyAccount.Customer.LastName).Trim() 
+                        : "खातेदार",
+                    mobileNo = c.PigmyAccount != null && c.PigmyAccount.Customer != null ? c.PigmyAccount.Customer.MobileNo : "",
+                    voucherId = c.VoucherId
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                agentId,
+                date = targetDate,
+                totalCount = collections.Count,
+                totalAmount = collections.Sum(c => c.collectionAmount),
+                collections
+            });
+        }
+
+        // DELETE: api/AgentDayBook/Deposit/{id}
+        [HttpDelete("Deposit/{id}")]
+        public async Task<IActionResult> DeleteDeposit(int id)
+        {
+            var deposit = await _context.PigmyAgentCashDeposits.FindAsync(id);
+            if (deposit == null)
+            {
+                return NotFound("भरणा नोंद (Deposit Record) सापडली नाही.");
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                // Check if linked to a voucher
+                if (deposit.VoucherId.HasValue)
+                {
+                    var voucher = await _context.Vouchers
+                        .Include(v => v.VoucherDetails)
+                        .FirstOrDefaultAsync(v => v.VoucherID == deposit.VoucherId.Value);
+
+                    if (voucher != null)
+                    {
+                        if (voucher.Status == "Approved" || voucher.Status == "Passed")
+                        {
+                            return BadRequest("हे व्हाउचर पास (Approved) झालेले आहे. पास झालेले व्हाउचर थेट डिलीट करता येणार नाही.");
+                        }
+
+                        if (voucher.VoucherDetails != null && voucher.VoucherDetails.Any())
+                        {
+                            _context.VoucherDetails.RemoveRange(voucher.VoucherDetails);
+                        }
+                        _context.Vouchers.Remove(voucher);
+                    }
+                }
+
+                // Remove linked cash denominations if any
+                if (!string.IsNullOrEmpty(deposit.ReceiptNo))
+                {
+                    var denoms = await _context.CashDenominations
+                        .Where(cd => cd.Remarks != null && cd.Remarks.Contains(deposit.ReceiptNo))
+                        .ToListAsync();
+                    if (denoms.Any())
+                    {
+                        _context.CashDenominations.RemoveRange(denoms);
+                    }
+                }
+
+                _context.PigmyAgentCashDeposits.Remove(deposit);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { message = "भरणा पावती व संबंधित व्हाउचर यशस्वीरीत्या डिलीट करण्यात आले." });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, "भरणा पावती डिलीट करताना त्रुटी आली: " + ex.Message);
+            }
         }
     }
 }

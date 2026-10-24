@@ -12,6 +12,7 @@ namespace Bhisi.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
     public class PigmyAppController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -293,7 +294,7 @@ namespace Bhisi.Api.Controllers
             var day2 = today.AddDays(-2); // Day before yesterday
 
             var last2Days = new List<DateTime> { day2, day1 };
-            bool isPendingRemittance = false;
+            int pendingDaysCount = 0;
             var detailsList = new List<object>();
 
             foreach (var date in last2Days)
@@ -315,7 +316,7 @@ namespace Bhisi.Api.Controllers
 
                 if (dayPending)
                 {
-                    isPendingRemittance = true;
+                    pendingDaysCount++;
                 }
 
                 detailsList.Add(new
@@ -328,11 +329,13 @@ namespace Bhisi.Api.Controllers
                 });
             }
 
+            // Lock ONLY if 2 or more distinct past days have unremitted collections
+            bool isPendingRemittance = pendingDaysCount >= 2;
             int collectPigmiStatus = isPendingRemittance ? 0 : 1;
             int pendingFlag = isPendingRemittance ? 1 : 0;
 
             string statusMessage = isPendingRemittance
-                ? "मागील २ दिवसांचे पिग्मी कलेक्शन शाखेत जमा केलेले नाही. कृपया आधी शाखेत कॅश जमा करा."
+                ? "मागील २ दिवसांचे पिग्मी संकलन शाखेत जमा केलेले नाही. कृपया आधी शाखेत कॅश जमा करा."
                 : "कमिशन व पिग्मी कलेक्शनसाठी एजंट अधिकृत आहे.";
 
             return Ok(new
@@ -387,21 +390,31 @@ namespace Bhisi.Api.Controllers
 
             bool isLocked = pendingCashInHand > agent.MaxCashLimit;
 
-            // Also check 2-day lock
+            // Also check 2-day lock: count distinct past days that have unremitted collections
             var today = DateTime.Today;
-            var lockDate = today.AddDays(-agent.MaxLockDays);
-            
-            // To properly calculate the lock, we should see if there is cash collected before 'today' that hasn't been deposited.
-            // A simplified check using the same logic as in BulkCollection
-            var unremittedPastCash = await _context.PigmyCollections
-                .Where(c => c.AgentId == agentId && c.CollectionDate.Date >= lockDate && c.CollectionDate.Date < today)
-                .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+            int pastPendingDaysCount = 0;
+            int lockDaysToCheck = agent.MaxLockDays > 0 ? agent.MaxLockDays : 2;
 
-            var pastRemittedCash = await _context.PigmyAgentCashDeposits
-                .Where(d => d.AgentId == agentId && d.DepositDate.Date >= lockDate && d.DepositDate.Date < today)
-                .SumAsync(d => (decimal?)d.Amount) ?? 0m;
+            for (int i = lockDaysToCheck; i >= 1; i--)
+            {
+                var pastDate = today.AddDays(-i);
+                var nextPastDate = pastDate.AddDays(1);
 
-            if (unremittedPastCash > 0 && (unremittedPastCash - pastRemittedCash) > 0)
+                var dayCollected = await _context.PigmyCollections
+                    .Where(c => c.AgentId == agentId && c.CollectionDate >= pastDate && c.CollectionDate < nextPastDate)
+                    .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+
+                var dayRemitted = await _context.PigmyAgentCashDeposits
+                    .Where(d => d.AgentId == agentId && d.DepositDate >= pastDate && d.DepositDate < nextPastDate)
+                    .SumAsync(d => (decimal?)d.Amount) ?? 0m;
+
+                if (dayCollected > 0 && (dayCollected - dayRemitted) > 0)
+                {
+                    pastPendingDaysCount++;
+                }
+            }
+
+            if (pastPendingDaysCount >= lockDaysToCheck)
             {
                 isLocked = true;
             }
@@ -436,21 +449,33 @@ namespace Bhisi.Api.Controllers
             var day1 = today.AddDays(-1);
             var day2 = today.AddDays(-2);
 
-            var unremittedPastCash = await _context.PigmyCollections
-                .Where(c => c.AgentId == agentId && c.CollectionDate >= day2 && c.CollectionDate < today)
-                .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
+            int pastPendingDaysCount = 0;
+            for (int i = 2; i >= 1; i--)
+            {
+                var pastDate = today.AddDays(-i);
+                var nextPastDate = pastDate.AddDays(1);
 
-            var pastRemittedCash = await _context.PigmyAgentCashDeposits
-                .Where(d => d.AgentId == agentId && d.DepositDate >= day2 && d.DepositDate < today)
-                .SumAsync(d => (decimal?)d.Amount) ?? 0m;
+                var dayCollected = await _context.PigmyCollections
+                    .Where(c => c.AgentId == agentId && c.CollectionDate >= pastDate && c.CollectionDate < nextPastDate)
+                    .SumAsync(c => (decimal?)c.CollectionAmount) ?? 0m;
 
-            if (unremittedPastCash > 0 && (unremittedPastCash - pastRemittedCash) > 0)
+                var dayRemitted = await _context.PigmyAgentCashDeposits
+                    .Where(d => d.AgentId == agentId && d.DepositDate >= pastDate && d.DepositDate < nextPastDate)
+                    .SumAsync(d => (decimal?)d.Amount) ?? 0m;
+
+                if (dayCollected > 0 && (dayCollected - dayRemitted) > 0)
+                {
+                    pastPendingDaysCount++;
+                }
+            }
+
+            if (pastPendingDaysCount >= 2)
             {
                 return StatusCode(403, new
                 {
                     collect_Pigmi = 0,
                     is_pending = 1,
-                    message = "मागील २ दिवसांची रोख रक्कम शाखेत जमा नसल्यामुळे जमा स्वीकारणे बंद केले आहे. कृपया शाखेत कॅश जमा करा."
+                    message = "मागील २ दिवसांचे पिग्मी संकलन शाखेत जमा केलेले नाही. कृपया आधी शाखेत कॅश जमा करा."
                 });
             }
 
@@ -490,7 +515,7 @@ namespace Bhisi.Api.Controllers
                     
                     string receiptNo = !string.IsNullOrWhiteSpace(item.ReceiptNo) 
                         ? item.ReceiptNo 
-                        : $"REC-APP-{account.BranchID}-{collDate:yyyyMMddHHmmss}-{account.PigmyAccountID}";
+                        : $"PG-AGT-{agentId}-{collDate:yyyyMMddHHmmss}";
 
                     // Check if collection with this ReceiptNo already exists (Idempotency Check)
                     var existingReceipt = await _context.PigmyCollections.FirstOrDefaultAsync(c =>

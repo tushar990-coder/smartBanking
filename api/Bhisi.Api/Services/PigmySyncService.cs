@@ -158,8 +158,9 @@ namespace Bhisi.Api.Services
                 decimal addedAmount = dto.Amount;
                 decimal closingBal = openingBal + addedAmount;
 
-                string randomSuffix = Guid.NewGuid().ToString("N").Substring(0, 6).ToUpper();
-                string receiptNo = $"REC-APP-{account.BranchID}-{collDate:yyyyMMdd}-{account.PigmyAccountID}-{randomSuffix}";
+                string receiptNo = !string.IsNullOrWhiteSpace(dto.ReceiptNo)
+                    ? dto.ReceiptNo.Trim()
+                    : $"PG-AGT-{agentId}-{collDate:yyyyMMddHHmmss}";
 
                 var newColl = new PigmyCollection
                 {

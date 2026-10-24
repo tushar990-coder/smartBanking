@@ -695,7 +695,9 @@ namespace Bhisi.Api.Controllers
             {
                 if (dto.LegacyAccountNumber != null)
                 {
-                    existing.LegacyAccountNumber = string.IsNullOrWhiteSpace(dto.LegacyAccountNumber) ? null : dto.LegacyAccountNumber.Trim();
+                    var trimmed = string.IsNullOrWhiteSpace(dto.LegacyAccountNumber) ? null : dto.LegacyAccountNumber.Trim();
+                    existing.LegacyAccountNumber = trimmed;
+                    existing.OldAccountNo = trimmed;
                 }
                 if (dto.PigmyAgentID > 0) existing.PigmyAgentID = dto.PigmyAgentID;
                 if (dto.PigmySchemeID > 0) existing.PigmySchemeID = dto.PigmySchemeID;

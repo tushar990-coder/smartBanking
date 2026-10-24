@@ -612,7 +612,21 @@ namespace Bhisi.Api.Controllers
                 foreach (var pc in pigmyCommissions) pc.VoucherId = null;
 
                 var pigmyCashDeposits = await _context.PigmyAgentCashDeposits.Where(p => p.VoucherId == id).ToListAsync();
-                foreach (var p in pigmyCashDeposits) p.VoucherId = null;
+                if (pigmyCashDeposits.Any())
+                {
+                    var receiptNos = pigmyCashDeposits.Select(p => p.ReceiptNo).Where(r => !string.IsNullOrEmpty(r)).ToList();
+                    if (receiptNos.Any())
+                    {
+                        var denoms = await _context.CashDenominations
+                            .Where(cd => cd.Remarks != null && receiptNos.Any(r => cd.Remarks.Contains(r)))
+                            .ToListAsync();
+                        if (denoms.Any())
+                        {
+                            _context.CashDenominations.RemoveRange(denoms);
+                        }
+                    }
+                    _context.PigmyAgentCashDeposits.RemoveRange(pigmyCashDeposits);
+                }
 
                 var pigmyInterestLogs = await _context.PigmyInterestLogs.Where(p => p.VoucherId == id).ToListAsync();
                 foreach (var p in pigmyInterestLogs) p.VoucherId = null;

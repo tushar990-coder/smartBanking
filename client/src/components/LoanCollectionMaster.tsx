@@ -1537,7 +1537,28 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             fetchData();
             fetchNextReceiptNo(selectedBranchId);
         } catch (err: any) {
-            alert('माहिती जतन करण्यास अडचण आली: ' + (err.response?.data || err.message));
+            let errorMsg = 'अज्ञात तांत्रिक अडचण आली.';
+            if (err.response?.data) {
+                const data = err.response.data;
+                if (typeof data === 'string') {
+                    errorMsg = data;
+                } else if (data.message) {
+                    errorMsg = data.message;
+                } else if (data.errors && typeof data.errors === 'object') {
+                    errorMsg = Object.values(data.errors).flat().join('\n');
+                } else if (data.title) {
+                    errorMsg = data.detail ? `${data.title} (${data.detail})` : data.title;
+                } else {
+                    try {
+                        errorMsg = JSON.stringify(data);
+                    } catch {
+                        errorMsg = String(data);
+                    }
+                }
+            } else if (err.message) {
+                errorMsg = err.message;
+            }
+            alert('माहिती जतन करण्यास अडचण आली:\n' + errorMsg);
             console.error(err);
         } finally {
             setIsSaving(false);

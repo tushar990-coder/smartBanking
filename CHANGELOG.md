@@ -1,5 +1,23 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-10-24] - आवृत्ती v2.5.89 (Loan Collection Receipt Save Resilience, Ledger Auto-Healing, Unique Voucher Collision Guards & Error Unpacking)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **[object Object] एरर पॉपअप निवारण व संपूर्ण एरर अनपॅकिंग (Frontend Complete Error Unpacking):**
+  * `LoanCollectionMaster.tsx` मधील `handleSubmit` `catch` ब्लॉकमध्ये `err.response?.data` चे संपूर्ण अनपॅकिंग समाविष्ट केले. 
+  * सर्व्हरकडून स्ट्रिंग, `message`, `errors` व्हॅलिडेशन डिक्शनरी, `detail` किंवा `title` यांपैकी कोणताही रिस्पॉन्स आला तरी तो एक्सट्रॅक्ट करून वाचनीय स्वरूपात दाखवला जाईल. भविष्यात युझरला कधीही अस्पष्ट `[object Object]` दिसणार नाही.
+* **कर्ज योजना लेजर स्वयं-दुरुस्ती (Loan & Interest Ledger Intelligent Auto-Healing):**
+  * `LoanCollectionsController.cs` मधील `PostLoanCollection` मध्ये, जर निवडलेल्या कर्ज योजनेत (`LoanRates`) `LoanLedgerID` किंवा `InterestLedgerID` ० (अनमॅप्ड) असेल, तर तात्काळ ४०० बॅड रिक्वेस्ट एरर न देता सिस्टीम आपोआप `Ledgers` टेबलमधून योजनेच्या नावानुसार (उदा. 'सोनेतारण कर्ज' / 'सोने गहाण' व 'व्याज') संबंधित लेजर शोधून आपोआप लिंक करते (`Auto-Heal`).
+* **व्हाउचर व पावती क्रमांक डुप्लिकेशन प्रतिबंध (Receipt & Voucher Collision-Resistant Loops):**
+  * पावती क्रमांक (`ReceiptNo`) आणि जर्नल/पेमेंट व्हाउचर क्रमांक (`VoucherNo`, आंतर-शाखेसाठी `VoucherNoHb`) जनरेट करताना व्हर्च्युअल कोलिजन गार्ड लूप (`while (await ...AnyAsync(...)) count++`) जोडला. 
+  * डेटाबेसमधून पूर्वी नोंदी डिलीट झाल्या असल्या किंवा गॅप्स असले तरीही एकाच क्रमांकाचे दोन व्हाउचर्स बनून SQL `Violation of UNIQUE KEY constraint` एरर उद्भवणार नाही.
+* **ईएफ कोअर ट्रॅकर कॉन्फ्लिक्ट निवारण (EF Core ChangeTracker Conflict Elimination):**
+  * आधीच ट्रॅक असलेल्या आणि सेव्ह झालेल्या कलेक्शन ऑब्जेक्टवर अनावश्यक `_context.Entry(collection).State = EntityState.Modified` काढून ट्रॅकर संघर्ष पूर्णपणे दूर केला.
+* **सर्व्हर एक्सेप्शन सुरक्षित कॅच (Safe CBS InnerException Handling):**
+  * बॅकएंड त्रुटी आल्यास जेनेरिक अनहँडल्ड ५०० क्रॅशऐवजी `ex.InnerException?.Message ?? ex.Message` चा अचूक मराठी संदेश (`पावती जतन करताना सर्व्हर त्रुटी आली: ...`) ५०० रिस्पॉन्समध्ये पाठवला जातो.
+
+---
+
 ## 📅 [2026-10-24] - आवृत्ती v2.5.88 (FD Principal-Only Renewal Dual Vouchers Daybook & Overdue Interest on Principal Base Parity)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

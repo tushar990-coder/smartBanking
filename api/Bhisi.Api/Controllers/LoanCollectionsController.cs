@@ -129,7 +129,14 @@ namespace Bhisi.Api.Controllers
             int collectionCount = await _context.LoanCollections
                 .CountAsync(c => c.BranchID == targetBranchId) + 1;
 
-            return $"{branchCode}-REC-{fy}-{collectionCount:D5}";
+            string receiptNo = $"{branchCode}-REC-{fy}-{collectionCount:D5}";
+            while (await _context.LoanCollections.AnyAsync(c => c.ReceiptNo == receiptNo))
+            {
+                collectionCount++;
+                receiptNo = $"{branchCode}-REC-{fy}-{collectionCount:D5}";
+            }
+
+            return receiptNo;
         }
 
         [HttpPost]
@@ -483,12 +490,45 @@ namespace Bhisi.Api.Controllers
                 loanRate = await _context.LoanRates.FindAsync(loanAccFetched?.LoanRateID ?? 0);
 
                 int loanLedgerId = loanRate?.LoanLedgerID ?? 0;
+                if (loanLedgerId == 0 && loanRate != null)
+                {
+                    string schemeName = (loanRate.ShortName ?? loanRate.LoanType ?? "").Trim();
+                    var matchingLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
+                        l.LedgerName == schemeName ||
+                        l.LedgerName.Contains(schemeName) ||
+                        (!string.IsNullOrWhiteSpace(loanRate.LoanType) && l.LedgerName.Contains(loanRate.LoanType.Trim())));
+                    if (matchingLedger != null)
+                    {
+                        loanLedgerId = matchingLedger.LedgerID;
+                        loanRate.LoanLedgerID = loanLedgerId;
+                    }
+                }
                 if (loanLedgerId == 0)
                 {
                     return BadRequest(new { message = $"कर्ज योजना '{loanRate?.LoanType ?? "अज्ञात"}' ला कर्ज मुद्दल खाते (Loan Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रक (Loan Rate Master) तपासा." });
                 }
 
                 int interestLedgerId = loanRate?.InterestLedgerID ?? 0;
+                if (interestLedgerId == 0 && loanRate != null)
+                {
+                    string schemeName = (loanRate.ShortName ?? loanRate.LoanType ?? "").Trim();
+                    var matchingIntLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
+                        (l.LedgerName.Contains(schemeName) && l.LedgerName.Contains("व्याज")) ||
+                        (!string.IsNullOrWhiteSpace(loanRate.LoanType) && l.LedgerName.Contains(loanRate.LoanType.Trim()) && l.LedgerName.Contains("व्याज")));
+                    if (matchingIntLedger == null)
+                    {
+                        matchingIntLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
+                            l.LedgerName.Contains("कर्ज व्याज") || 
+                            l.LedgerName.Contains("Loan Interest") ||
+                            l.LedgerName.Contains("व्याज येणे") ||
+                            l.LedgerName.Contains("व्याज खाते"));
+                    }
+                    if (matchingIntLedger != null)
+                    {
+                        interestLedgerId = matchingIntLedger.LedgerID;
+                        loanRate.InterestLedgerID = interestLedgerId;
+                    }
+                }
                 if (interestLedgerId == 0)
                 {
                     return BadRequest(new { message = $"कर्ज योजना '{loanRate?.LoanType ?? "अज्ञात"}' ला कर्ज व्याज खाते (Interest Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रक (Loan Rate Master) तपासा." });
@@ -575,6 +615,11 @@ namespace Bhisi.Api.Controllers
 
                 int count = await _context.Vouchers.CountAsync(v => v.BranchID == collectingBranch && v.VoucherType == voucherType) + 1;
                 string voucherNo = $"{branchCode}-{typeCode}-{fy}-{count:D5}";
+                while (await _context.Vouchers.AnyAsync(v => v.VoucherNo == voucherNo))
+                {
+                    count++;
+                    voucherNo = $"{branchCode}-{typeCode}-{fy}-{count:D5}";
+                }
 
                 var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
                 bool autoPost = sanstha?.AutoPostVouchers ?? true;
@@ -690,6 +735,11 @@ namespace Bhisi.Api.Controllers
                     string hbCode = homeBranch?.BranchCode ?? "HB";
                     int countHb = await _context.Vouchers.CountAsync(v => v.BranchID == targetHomeBranchId && v.VoucherType == "Journal") + 1;
                     string voucherNoHb = $"{hbCode}-JV-{fy}-{countHb:D5}";
+                    while (await _context.Vouchers.AnyAsync(v => v.VoucherNo == voucherNoHb))
+                    {
+                        countHb++;
+                        voucherNoHb = $"{hbCode}-JV-{fy}-{countHb:D5}";
+                    }
 
                     var homeVoucher = new Voucher
                     {
@@ -805,7 +855,6 @@ namespace Bhisi.Api.Controllers
                     }
                 }
 
-                _context.Entry(collection).State = EntityState.Modified;
                 await _context.SaveChangesAsync();
 
                 await transaction.CommitAsync();
@@ -846,10 +895,11 @@ namespace Bhisi.Api.Controllers
 
                 return CreatedAtAction("GetLoanCollection", new { id = collection.LoanCollectionID }, collection);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                throw;
+                string detailedError = ex.InnerException?.Message ?? ex.Message;
+                return StatusCode(500, new { message = $"पावती जतन करताना सर्व्हर त्रुटी आली: {detailedError}" });
             }
         }
 

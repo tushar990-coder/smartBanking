@@ -19,7 +19,13 @@ import {
   Square,
   Lock,
   Unlock,
-  AlertCircle
+  AlertCircle,
+  Printer,
+  Download,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  RefreshCw
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
 
@@ -42,6 +48,23 @@ interface RdAccount {
   cifNo?: string;
   customerName?: string;
   totalDepositedAmount?: number;
+}
+
+export interface RdScheduleRow {
+  scheduleID?: number;
+  rdAccountID?: number;
+  installmentNo: number;
+  dueDate: string;
+  graceDate?: string;
+  expectedAmount: number;
+  status: 'Paid' | 'Pending' | 'Overdue' | string;
+  paidDate?: string | null;
+  paidAmount: number;
+  overdueDays: number;
+  penaltyCharged: number;
+  penaltyWaived?: number;
+  voucherID?: number | null;
+  voucherNo?: string | null;
 }
 
 export interface RdInstallmentCollectionProps {
@@ -108,10 +131,34 @@ export default function RdInstallmentCollection({
   // Bulk States
   const [bulkRows, setBulkRows] = useState<{ [key: number]: { count: number; penalty: number; selected: boolean } }>({});
 
+  // Installment Schedule States
+  const [schedule, setSchedule] = useState<RdScheduleRow[]>([]);
+  const [loadingSchedule, setLoadingSchedule] = useState<boolean>(false);
+  const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
+  const [isInlineScheduleOpen, setIsInlineScheduleOpen] = useState<boolean>(false);
+
+  const fetchSchedule = async (accountId: number) => {
+    if (!accountId) {
+      setSchedule([]);
+      return;
+    }
+    setLoadingSchedule(true);
+    try {
+      const res = await axios.get(`/api/RdAccounts/${accountId}/schedule`);
+      setSchedule(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to fetch RD schedule', err);
+      setSchedule([]);
+    } finally {
+      setLoadingSchedule(false);
+    }
+  };
+
   const selectRdAccount = (acc: RdAccount) => {
     setSelectedAccId(acc.rdAccountID.toString());
     setSelectedAcc(acc);
     setCount(1);
+    fetchSchedule(acc.rdAccountID);
 
     if (acc) {
       const start = new Date(acc.openingDate);
@@ -125,7 +172,144 @@ export default function RdInstallmentCollection({
       } else {
         setPenaltyAmount(0);
       }
+    } else {
+      setSchedule([]);
     }
+  };
+
+  const handlePrintSchedule = () => {
+    if (!selectedAcc || schedule.length === 0) return;
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) {
+      alert('पॉप-अप ब्लॉक केले आहे. कृपया ब्राऊझर पॉप-अपला परवानगी द्या.');
+      return;
+    }
+
+    const totalExp = schedule.reduce((sum, r) => sum + (r.expectedAmount || 0), 0);
+    const totalPaid = schedule.reduce((sum, r) => sum + (r.paidAmount || 0), 0);
+    const totalPenalty = schedule.reduce((sum, r) => sum + (r.penaltyCharged || 0), 0);
+
+    const rowsHtml = schedule.map((s) => {
+      const isPaid = s.status === 'Paid';
+      const isOverdue = s.status === 'Overdue';
+      const statusText = isPaid ? 'जमा (Paid)' : isOverdue ? 'थकीत (Overdue)' : 'देय (Pending)';
+      const statusColor = isPaid ? '#166534' : isOverdue ? '#991b1b' : '#854d0e';
+      const paidDateStr = s.paidDate ? new Date(s.paidDate).toLocaleDateString('en-GB') : '-';
+      const dueDateStr = s.dueDate ? new Date(s.dueDate).toLocaleDateString('en-GB') : '-';
+
+      return `
+        <tr>
+          <td style="text-align: center; font-weight: bold; border: 1px solid #333; padding: 4px 6px;">#${s.installmentNo}</td>
+          <td style="text-align: center; border: 1px solid #333; padding: 4px 6px;">${dueDateStr}</td>
+          <td style="text-align: right; border: 1px solid #333; padding: 4px 6px;">₹ ${Number(s.expectedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+          <td style="text-align: center; border: 1px solid #333; padding: 4px 6px;">${paidDateStr}</td>
+          <td style="text-align: right; font-weight: bold; color: ${isPaid ? '#166534' : '#000'}; border: 1px solid #333; padding: 4px 6px;">${s.paidAmount > 0 ? '₹ ' + Number(s.paidAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}</td>
+          <td style="text-align: center; border: 1px solid #333; padding: 4px 6px;">${s.overdueDays > 0 ? s.overdueDays + ' दिवस' : '-'}</td>
+          <td style="text-align: right; border: 1px solid #333; padding: 4px 6px;">${s.penaltyCharged > 0 ? '₹ ' + Number(s.penaltyCharged).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '-'}</td>
+          <td style="text-align: center; font-family: monospace; border: 1px solid #333; padding: 4px 6px;">${s.voucherNo || (isPaid ? 'जमा' : '-')}</td>
+          <td style="text-align: center; font-weight: bold; color: ${statusColor}; border: 1px solid #333; padding: 4px 6px;">${statusText}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>आरडी हप्ता वेळापत्रक - ${selectedAcc.accountNo}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; font-size: 12px; color: #111; }
+          .header { text-align: center; margin-bottom: 16px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+          .header h2 { margin: 0 0 4px 0; font-size: 18px; color: #1e3a8a; }
+          .header p { margin: 0; font-size: 13px; font-weight: bold; }
+          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; background: #f8fafc; padding: 10px; border: 1px solid #cbd5e1; }
+          table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
+          th { background: #e2e8f0; border: 1px solid #333; padding: 6px; font-weight: bold; text-align: center; }
+          tfoot tr td { font-weight: bold; background: #f1f5f9; border: 1px solid #333; padding: 6px; }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="margin-bottom: 12px; text-align: right;">
+          <button onclick="window.print()" style="padding: 6px 14px; background: #2563eb; color: #fff; font-weight: bold; border: none; border-radius: 4px; cursor: pointer;">🖨️ प्रिंट करा (Print)</button>
+        </div>
+        <div class="header">
+          <h2>आरडी हप्ता परतफेड वेळापत्रक (RD Installment Schedule)</h2>
+          <p>खाते क्रमांक: ${selectedAcc.accountNo} ${selectedAcc.legacyAccountNumber ? `(जुने आरडी क्र: ${selectedAcc.legacyAccountNumber})` : ''}</p>
+        </div>
+        <div class="info-grid">
+          <div><strong>खातेदार नाव:</strong> ${selectedAcc.memberName || selectedAcc.customerName || '-'}</div>
+          <div><strong>योजना:</strong> ${selectedAcc.schemeName || '-'}</div>
+          <div><strong>मासिक हप्ता:</strong> ₹ ${Number(selectedAcc.installmentAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          <div><strong>कालावधी व प्रगती:</strong> ${selectedAcc.totalPaidInstallments} / ${selectedAcc.durationMonths} महिने</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>हप्ता क्र.</th>
+              <th>देय दिनांक</th>
+              <th>अपेक्षित हप्ता (₹)</th>
+              <th>भरणा दिनांक</th>
+              <th>भरलेली रक्कम (₹)</th>
+              <th>विलंब दिवस</th>
+              <th>दंड आकारणी (₹)</th>
+              <th>व्हाउचर क्र.</th>
+              <th>स्थिती</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2" style="text-align: right;">एकूण बेरीज:</td>
+              <td style="text-align: right;">₹ ${totalExp.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              <td>-</td>
+              <td style="text-align: right; color: #166534;">₹ ${totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              <td>-</td>
+              <td style="text-align: right;">₹ ${totalPenalty.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+        <div style="margin-top: 24px; display: flex; justify-content: space-between; font-size: 11px;">
+          <div>दिनांक: ${new Date().toLocaleDateString('en-GB')}</div>
+          <div>कॅशियर / ऑपरेटर स्वाक्षरी</div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
+  const handleExportScheduleCsv = () => {
+    if (!selectedAcc || schedule.length === 0) return;
+    const headers = ['हप्ता क्र.', 'देय दिनांक', 'अपेक्षित हप्ता', 'भरणा दिनांक', 'भरलेली रक्कम', 'विलंब दिवस', 'दंड आकारणी', 'व्हाउचर क्र.', 'स्थिती'];
+    const rows = schedule.map((s) => [
+      s.installmentNo,
+      s.dueDate ? new Date(s.dueDate).toLocaleDateString('en-GB') : '',
+      s.expectedAmount || 0,
+      s.paidDate ? new Date(s.paidDate).toLocaleDateString('en-GB') : '',
+      s.paidAmount || 0,
+      s.overdueDays || 0,
+      s.penaltyCharged || 0,
+      s.voucherNo || (s.status === 'Paid' ? 'जमा' : ''),
+      s.status === 'Paid' ? 'जमा (Paid)' : s.status === 'Overdue' ? 'थकीत (Overdue)' : 'देय (Pending)'
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `RD_Schedule_${selectedAcc.accountNo}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const fetchAccounts = async () => {
@@ -357,6 +541,7 @@ export default function RdInstallmentCollection({
     setCount(1);
 
     if (acc) {
+      fetchSchedule(acc.rdAccountID);
       // Auto-penalty calculation rules: compare OpeningDate + Paid Months vs Today
       const start = new Date(acc.openingDate);
       start.setMonth(start.getMonth() + acc.totalPaidInstallments);
@@ -371,6 +556,7 @@ export default function RdInstallmentCollection({
         setPenaltyAmount(0);
       }
     } else {
+      setSchedule([]);
       setPenaltyAmount(0);
     }
   };
@@ -433,6 +619,7 @@ export default function RdInstallmentCollection({
       );
       setSuccess(`✅ आरडी हप्ता यशस्वीरीत्या जमा झाला! खाते क्रमांक: ${selectedAcc.accountNo}`);
 
+      fetchSchedule(selectedAcc.rdAccountID);
       setSelectedAccId('');
       setSelectedAcc(null);
       setCount(1);
@@ -711,6 +898,142 @@ export default function RdInstallmentCollection({
                     {selectedAcc.status === 'Matured' ? 'मुदतपूर्ती (Matured)' : 'सक्रिय (Active)'}
                   </span>
                 </div>
+
+                {/* हप्ता चार्ट बटणे व समरी बार */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-indigo-100">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowScheduleModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-bold text-[11px] shadow-xs transition-all cursor-pointer"
+                      title="संपूर्ण हप्ता परतफेड वेळापत्रक चार्ट पहा"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>📅 हप्ता चार्ट पहा (Schedule)</span>
+                      {schedule.length > 0 && (
+                        <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.2 rounded font-mono ml-0.5">
+                          {schedule.length} हप्ते
+                        </span>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsInlineScheduleOpen(!isInlineScheduleOpen)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-300 rounded-md font-semibold text-[10.5px] transition-all cursor-pointer"
+                      title="फॉर्मवरच हप्ते यादी दाखवा / लपवा"
+                    >
+                      {isInlineScheduleOpen ? (
+                        <>
+                          <ChevronUp className="w-3 h-3" />
+                          <span>संक्षिप्त करा ▲</span>
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="w-3 h-3" />
+                          <span>हप्ते यादी ▼</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Quick summary badges */}
+                  <div className="flex items-center gap-1.5 text-[10px]">
+                    <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold px-2 py-0.5 rounded">
+                      🟢 जमा: {schedule.filter((s) => s.status === 'Paid').length}
+                    </span>
+                    <span className="bg-amber-100 text-amber-800 border border-amber-200 font-bold px-2 py-0.5 rounded">
+                      🟡 बाकी: {schedule.filter((s) => s.status !== 'Paid').length}
+                    </span>
+                    {schedule.filter((s) => s.status === 'Overdue').length > 0 && (
+                      <span className="bg-rose-100 text-rose-800 border border-rose-200 font-bold px-2 py-0.5 rounded">
+                        🔴 थकीत: {schedule.filter((s) => s.status === 'Overdue').length}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Inline Collapsible Mini Schedule Table */}
+                {isInlineScheduleOpen && (
+                  <div className="mt-2 pt-2 border-t border-indigo-200/60 animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between pb-1.5">
+                      <span className="text-[11px] font-bold text-indigo-950 flex items-center gap-1">
+                        <span>📋</span> हप्ता वेळापत्रक संक्षिप्त यादी
+                      </span>
+                      {loadingSchedule && (
+                        <span className="text-[10px] text-indigo-600 font-medium animate-pulse">
+                          माहिती लोड होत आहे...
+                        </span>
+                      )}
+                    </div>
+                    <div className="max-h-56 overflow-y-auto border border-indigo-200 rounded-lg bg-white shadow-2xs">
+                      <table className="w-full text-left text-[11px] border-collapse">
+                        <thead className="bg-slate-100 sticky top-0 border-b border-slate-200 text-slate-700 font-bold">
+                          <tr>
+                            <th className="py-1 px-2 text-center w-12">हप्ता</th>
+                            <th className="py-1 px-2 text-center">देय दिनांक</th>
+                            <th className="py-1 px-2 text-right">रक्कम (₹)</th>
+                            <th className="py-1 px-2 text-center">भरणा दिनांक</th>
+                            <th className="py-1 px-2 text-center">पावती क्र.</th>
+                            <th className="py-1 px-2 text-center">स्थिती</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-mono text-[10.5px]">
+                          {schedule.map((s) => {
+                            const isPaid = s.status === 'Paid';
+                            const isOverdue = s.status === 'Overdue';
+                            return (
+                              <tr
+                                key={s.installmentNo}
+                                className={`hover:bg-indigo-50/40 ${
+                                  !isPaid && !isOverdue && s.installmentNo === (selectedAcc.totalPaidInstallments + 1)
+                                    ? 'bg-amber-50/70 font-semibold'
+                                    : ''
+                                }`}
+                              >
+                                <td className="py-1 px-2 text-center font-bold text-slate-800">
+                                  #{s.installmentNo}
+                                </td>
+                                <td className="py-1 px-2 text-center text-slate-700">
+                                  {s.dueDate ? new Date(s.dueDate).toLocaleDateString('en-GB') : '-'}
+                                </td>
+                                <td className="py-1 px-2 text-right font-bold text-slate-800">
+                                  ₹ {Number(s.expectedAmount || 0).toLocaleString('en-IN')}
+                                </td>
+                                <td className="py-1 px-2 text-center text-slate-600">
+                                  {s.paidDate ? new Date(s.paidDate).toLocaleDateString('en-GB') : '-'}
+                                </td>
+                                <td className="py-1 px-2 text-center text-slate-700 font-medium">
+                                  {s.voucherNo || (isPaid ? 'जमा' : '-')}
+                                </td>
+                                <td className="py-1 px-2 text-center">
+                                  <span
+                                    className={`px-1.5 py-0.2 rounded text-[9.5px] font-bold ${
+                                      isPaid
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : isOverdue
+                                        ? 'bg-rose-100 text-rose-800'
+                                        : 'bg-amber-100 text-amber-800'
+                                    }`}
+                                  >
+                                    {isPaid ? '🟢 जमा' : isOverdue ? '🔴 थकीत' : '🟡 देय'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {schedule.length === 0 && !loadingSchedule && (
+                            <tr>
+                              <td colSpan={6} className="py-4 text-center text-slate-400 italic">
+                                हप्ता वेळापत्रक उपलब्ध नाही.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -948,6 +1271,17 @@ export default function RdInstallmentCollection({
                                 🏷️ {acc.legacyAccountNumber || (acc as any).LegacyAccountNumber}
                               </span>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                selectRdAccount(acc);
+                                setShowScheduleModal(true);
+                              }}
+                              className="p-0.5 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-100 rounded transition-colors ml-1 cursor-pointer"
+                              title="हप्ता वेळापत्रक चार्ट पहा"
+                            >
+                              <Calendar className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                           <div className="text-[10px] text-slate-500 font-normal">
                             {acc.memberName} ({acc.schemeName})
@@ -1169,6 +1503,255 @@ export default function RdInstallmentCollection({
                 type="button"
                 onClick={() => setShowMultiRdModal(false)}
                 className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-bold cursor-pointer transition-colors"
+              >
+                बंद करा (Close)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-Featured RD Installment Schedule Chart Modal */}
+      {showScheduleModal && selectedAcc && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-300">
+            {/* Modal Header */}
+            <div className="bg-indigo-700 text-white p-3.5 flex justify-between items-center rounded-t-xl shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/10 rounded-lg">
+                  <Calendar className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold flex items-center gap-2">
+                    <span>आरडी हप्ता परतफेड वेळापत्रक चार्ट (RD Installment Schedule)</span>
+                    <span className="bg-white/20 text-white text-[11px] px-2 py-0.5 rounded font-mono font-bold">
+                      {selectedAcc.accountNo}
+                    </span>
+                    {(selectedAcc.legacyAccountNumber || (selectedAcc as any).LegacyAccountNumber) && (
+                      <span className="bg-amber-400 text-amber-950 text-[10px] px-2 py-0.5 rounded font-mono font-bold">
+                        🏷️ जुने आरडी: {selectedAcc.legacyAccountNumber || (selectedAcc as any).LegacyAccountNumber}
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-[11px] text-indigo-100 mt-0.5 flex flex-wrap items-center gap-2">
+                    <span>खातेदार: <strong className="text-white">{selectedAcc.memberName || selectedAcc.customerName || '-'}</strong></span>
+                    <span>•</span>
+                    <span>योजना: <strong className="text-white">{selectedAcc.schemeName}</strong></span>
+                    <span>•</span>
+                    <span>मासिक हप्ता: <strong className="text-white">₹ {(selectedAcc.installmentAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                    <span>•</span>
+                    <span>कालावधी: <strong className="text-white">{selectedAcc.durationMonths} महिने</strong></span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowScheduleModal(false)}
+                className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-colors cursor-pointer"
+                title="बंद करा"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal KPI Summaries */}
+            <div className="bg-indigo-50/60 p-3 border-b border-indigo-100 grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs">
+                <span className="text-slate-500 text-[10.5px] block font-medium">एकूण हप्ते (Total)</span>
+                <div className="flex items-baseline justify-between mt-1">
+                  <span className="text-sm font-bold text-slate-900">{schedule.length} महिने</span>
+                  <span className="text-[11px] font-mono font-semibold text-slate-600">
+                    ₹ {schedule.reduce((acc, c) => acc + (c.expectedAmount || 0), 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-emerald-200 shadow-2xs">
+                <span className="text-emerald-700 text-[10.5px] block font-semibold">जमा हप्ते (Paid)</span>
+                <div className="flex items-baseline justify-between mt-1">
+                  <span className="text-sm font-bold text-emerald-800">
+                    {schedule.filter((s) => s.status === 'Paid').length} हप्ते
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-emerald-700">
+                    ₹ {schedule.reduce((acc, c) => acc + (c.paidAmount || 0), 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-amber-200 shadow-2xs">
+                <span className="text-amber-800 text-[10.5px] block font-semibold">चालू देय हप्ता (Due)</span>
+                <div className="flex items-baseline justify-between mt-1">
+                  <span className="text-sm font-bold text-amber-900">
+                    {schedule.filter((s) => s.status !== 'Paid' && s.status !== 'Overdue').length} हप्ते
+                  </span>
+                  <span className="text-[11px] font-mono font-semibold text-amber-800">
+                    ₹ {schedule.filter((s) => s.status !== 'Paid' && s.status !== 'Overdue').reduce((acc, c) => acc + (c.expectedAmount || 0), 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-rose-200 shadow-2xs">
+                <span className="text-rose-700 text-[10.5px] block font-semibold">थकीत हप्ते व दंड (Overdue)</span>
+                <div className="flex items-baseline justify-between mt-1">
+                  <span className="text-sm font-bold text-rose-800">
+                    {schedule.filter((s) => s.status === 'Overdue').length} हप्ते
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-rose-700">
+                    दंड: ₹ {schedule.reduce((acc, c) => acc + (c.penaltyCharged || 0), 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Body / CBS Schedule Table */}
+            <div className="flex-1 overflow-auto p-4 bg-slate-50/50">
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300 text-[11px] uppercase tracking-wider">
+                      <th className="py-2 px-2.5 text-center w-12 border-r border-slate-200">हप्ता</th>
+                      <th className="py-2 px-3 text-center border-r border-slate-200">देय दिनांक (Due Date)</th>
+                      <th className="py-2 px-3 text-right border-r border-slate-200">अपेक्षित हप्ता (₹)</th>
+                      <th className="py-2 px-3 text-center border-r border-slate-200">भरणा दिनांक (Paid Date)</th>
+                      <th className="py-2 px-3 text-right border-r border-slate-200">भरलेली रक्कम (₹)</th>
+                      <th className="py-2 px-2.5 text-center border-r border-slate-200">विलंब दिवस</th>
+                      <th className="py-2 px-2.5 text-right border-r border-slate-200">दंड आकारणी (₹)</th>
+                      <th className="py-2 px-3 text-center border-r border-slate-200">व्हाउचर क्र.</th>
+                      <th className="py-2 px-3 text-center">हप्ता स्थिती</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 text-[11.5px] font-mono">
+                    {schedule.map((s) => {
+                      const isPaid = s.status === 'Paid';
+                      const isOverdue = s.status === 'Overdue';
+                      const isCurrentNext = !isPaid && !isOverdue && s.installmentNo === (selectedAcc.totalPaidInstallments + 1);
+
+                      return (
+                        <tr
+                          key={s.installmentNo}
+                          className={`hover:bg-indigo-50/50 transition-colors ${
+                            isCurrentNext ? 'bg-amber-50/80 font-bold' : isPaid ? 'bg-emerald-50/20' : ''
+                          }`}
+                        >
+                          <td className="py-2 px-2.5 text-center font-bold text-slate-900 border-r border-slate-200">
+                            #{s.installmentNo}
+                            {isCurrentNext && (
+                              <span className="block text-[9px] text-amber-700 uppercase font-sans font-extrabold">
+                                चालू हप्ता
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-center text-slate-700 border-r border-slate-200">
+                            {s.dueDate ? new Date(s.dueDate).toLocaleDateString('en-GB') : '-'}
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold text-slate-900 border-r border-slate-200">
+                            ₹ {Number(s.expectedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2 px-3 text-center text-slate-700 border-r border-slate-200">
+                            {s.paidDate ? new Date(s.paidDate).toLocaleDateString('en-GB') : '-'}
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold border-r border-slate-200">
+                            {s.paidAmount > 0 ? (
+                              <span className="text-emerald-700">
+                                ₹ {Number(s.paidAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-normal">-</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2.5 text-center text-slate-700 border-r border-slate-200">
+                            {s.overdueDays > 0 ? (
+                              <span className="text-rose-700 font-bold">{s.overdueDays} दिवस</span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2.5 text-right font-bold border-r border-slate-200">
+                            {s.penaltyCharged > 0 ? (
+                              <span className="text-rose-700">
+                                ₹ {Number(s.penaltyCharged).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-normal">-</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-center font-bold text-slate-800 border-r border-slate-200">
+                            {s.voucherNo || (isPaid ? 'जमा' : '-')}
+                          </td>
+                          <td className="py-2 px-3 text-center">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                isPaid
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  : isOverdue
+                                  ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                  : 'bg-amber-100 text-amber-900 border border-amber-300'
+                              }`}
+                            >
+                              {isPaid ? '🟢 जमा (Paid)' : isOverdue ? '🔴 थकीत (Overdue)' : '🟡 देय (Pending)'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {schedule.length === 0 && !loadingSchedule && (
+                      <tr>
+                        <td colSpan={9} className="py-8 text-center text-slate-400 italic">
+                          हप्ता वेळापत्रक उपलब्ध नाही.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-bold text-slate-950 border-t-2 border-slate-300 text-xs">
+                      <td colSpan={2} className="py-2.5 px-3 text-right uppercase tracking-wider border-r border-slate-200">
+                        एकूण बेरीज:
+                      </td>
+                      <td className="py-2.5 px-3 text-right border-r border-slate-200 text-slate-900 font-mono">
+                        ₹ {schedule.reduce((acc, c) => acc + (c.expectedAmount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-2.5 px-3 text-center border-r border-slate-200">-</td>
+                      <td className="py-2.5 px-3 text-right text-emerald-800 border-r border-slate-200 font-mono">
+                        ₹ {schedule.reduce((acc, c) => acc + (c.paidAmount || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-2.5 px-2.5 text-center border-r border-slate-200">-</td>
+                      <td className="py-2.5 px-2.5 text-right text-rose-700 border-r border-slate-200 font-mono">
+                        ₹ {schedule.reduce((acc, c) => acc + (c.penaltyCharged || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-100 px-4 py-2.5 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrintSchedule}
+                  disabled={schedule.length === 0}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>वेळापत्रक प्रिंट करा (Print)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportScheduleCsv}
+                  disabled={schedule.length === 0}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>एक्सेल (CSV) डाउनलोड</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowScheduleModal(false)}
+                className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg transition-colors cursor-pointer"
               >
                 बंद करा (Close)
               </button>

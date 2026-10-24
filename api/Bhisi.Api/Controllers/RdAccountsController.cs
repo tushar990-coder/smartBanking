@@ -1242,27 +1242,80 @@ namespace Bhisi.Api.Controllers
         public async Task<ActionResult<IEnumerable<object>>> GetRdSchedule(int id)
         {
             var schedules = await _context.RDInstallmentSchedules
+                .Include(s => s.Voucher)
                 .Where(s => s.RdAccountID == id)
                 .OrderBy(s => s.InstallmentNo)
-                .Select(s => new
-                {
-                    s.ScheduleID,
-                    s.RdAccountID,
-                    s.InstallmentNo,
-                    s.DueDate,
-                    s.GraceDate,
-                    s.ExpectedAmount,
-                    s.Status,
-                    s.PaidDate,
-                    s.PaidAmount,
-                    s.OverdueDays,
-                    s.PenaltyCharged,
-                    s.PenaltyWaived,
-                    s.VoucherID
-                })
                 .ToListAsync();
 
-            return Ok(schedules);
+            if (schedules == null || schedules.Count == 0)
+            {
+                var account = await _context.RdAccounts
+                    .Include(r => r.RdScheme)
+                    .FirstOrDefaultAsync(r => r.RdAccountID == id);
+
+                if (account != null)
+                {
+                    int duration = account.DurationMonths > 0 ? account.DurationMonths : 12;
+                    int gracePeriod = account.RdScheme?.GracePeriodDays ?? 5;
+                    DateTime openingDate = account.OpeningDate;
+                    var generatedList = new List<RdInstallmentSchedule>();
+
+                    for (int i = 1; i <= duration; i++)
+                    {
+                        DateTime dueDate = openingDate.AddMonths(i - 1);
+                        bool isPaid = i <= account.TotalPaidInstallments;
+
+                        var sched = new RdInstallmentSchedule
+                        {
+                            RdAccountID = account.RdAccountID,
+                            InstallmentNo = i,
+                            DueDate = dueDate,
+                            GraceDate = dueDate.AddDays(gracePeriod),
+                            ExpectedAmount = account.InstallmentAmount,
+                            Status = isPaid ? "Paid" : (dueDate.Date < DateTime.Today ? "Overdue" : "Pending"),
+                            PaidDate = isPaid ? dueDate : null,
+                            PaidAmount = isPaid ? account.InstallmentAmount : 0,
+                            OverdueDays = (!isPaid && dueDate.Date < DateTime.Today) ? (int)(DateTime.Today - dueDate.Date).TotalDays : 0,
+                            PenaltyCharged = 0,
+                            PenaltyWaived = 0,
+                            VoucherID = null
+                        };
+                        generatedList.Add(sched);
+                    }
+
+                    try
+                    {
+                        _context.RDInstallmentSchedules.AddRange(generatedList);
+                        await _context.SaveChangesAsync();
+                        schedules = generatedList;
+                    }
+                    catch
+                    {
+                        // In case of any DB constraint issue, fall back to in-memory list
+                        schedules = generatedList;
+                    }
+                }
+            }
+
+            var result = (schedules ?? new List<RdInstallmentSchedule>()).Select(s => new
+            {
+                s.ScheduleID,
+                s.RdAccountID,
+                s.InstallmentNo,
+                s.DueDate,
+                s.GraceDate,
+                s.ExpectedAmount,
+                s.Status,
+                s.PaidDate,
+                s.PaidAmount,
+                s.OverdueDays,
+                s.PenaltyCharged,
+                s.PenaltyWaived,
+                s.VoucherID,
+                VoucherNo = s.Voucher != null ? s.Voucher.VoucherNo : ""
+            });
+
+            return Ok(result);
         }
 
         // POST: api/RdAccounts/AccrueInterest

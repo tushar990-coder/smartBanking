@@ -61,14 +61,31 @@ namespace Bhisi.Api.Controllers
 
             if (status == null)
             {
-                return NotFound();
+                // Verify if loan account exists
+                var accountExists = await _context.LoanAccounts
+                    .AnyAsync(l => l.LoanAccountID == loanAccountId);
+
+                if (!accountExists)
+                {
+                    return NotFound(new { message = "Loan account not found" });
+                }
+
+                // If account exists but has no NPA status row, it is a healthy Standard (नियमित) account
+                return Ok(new
+                {
+                    Category = "Standard",
+                    OverdueDays = 0,
+                    CategoryMarathi = "नियमित (Standard)",
+                    IsNpa = false
+                });
             }
 
             return Ok(new
             {
                 status.Category,
                 status.OverdueDays,
-                CategoryMarathi = GetCategoryMarathi(status.Category)
+                CategoryMarathi = GetCategoryMarathi(status.Category),
+                IsNpa = status.Category != "Standard"
             });
         }
 

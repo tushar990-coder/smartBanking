@@ -1476,10 +1476,17 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
         }
 
+        const targetAccountId = formData.loanAccountID || selectedAccount?.loanAccountID || (window as any).selectedLoanAccountId;
+        if (!targetAccountId) {
+            alert('कृपया आधी कर्जदार व सक्रिय कर्ज खाते निवडा.');
+            return;
+        }
+
         setIsSaving(true);
         try {
             const payload = {
                 ...formData,
+                loanAccountID: targetAccountId,
                 branchID: selectedBranchId
             };
             const res = await axios.post('/api/LoanCollections', payload);

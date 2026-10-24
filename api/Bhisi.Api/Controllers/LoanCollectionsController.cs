@@ -201,8 +201,16 @@ namespace Bhisi.Api.Controllers
                 collection.CollectingCashierID = userId;
                 collection.CreatedByUserID = userId;
 
-                // Core Banking Date Safeguards: Prevent future dating and transactions in closed financial years
-                if (collection.CollectionDate.Date > DateTime.Today)
+                // Core Banking Date Safeguards: Prevent future dating beyond active financial year and transactions in closed financial years
+                var activeFy = await _context.FinancialYears.FirstOrDefaultAsync(fy => fy.IsActive);
+                if (activeFy != null)
+                {
+                    if (collection.CollectionDate.Date > activeFy.EndDate.Date)
+                    {
+                        return BadRequest($"पावतीची दिनांक चालू आर्थिक वर्षाच्या समाप्ती दिनांकापेक्षा ({activeFy.EndDate:dd/MM/yyyy}) पुढील असू शकत नाही.");
+                    }
+                }
+                else if (collection.CollectionDate.Date > DateTime.Today.AddDays(1))
                 {
                     return BadRequest("पावतीची दिनांक भविष्यातील (Future Date) असू शकत नाही.");
                 }
@@ -545,7 +553,15 @@ namespace Bhisi.Api.Controllers
                 }
                 if (loanLedgerId == 0)
                 {
-                    return BadRequest(new { message = $"कर्ज योजना '{loanRate?.LoanType ?? "अज्ञात"}' ला कर्ज मुद्दल खाते (Loan Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रक (Loan Rate Master) तपासा." });
+                    var fallbackLoanLedger = await _context.Ledgers.FirstOrDefaultAsync(l => (l.LedgerName.Contains("कर्ज") || l.LedgerName.Contains("Loan")) && (l.AccountType == "Assets" || l.AccountType == "Loans & Advances" || l.AccountType == "Asset"));
+                    if (fallbackLoanLedger != null)
+                    {
+                        loanLedgerId = fallbackLoanLedger.LedgerID;
+                    }
+                    else
+                    {
+                        return BadRequest(new { message = $"कर्ज योजना '{loanRate?.LoanType ?? "अज्ञात"}' ला कर्ज मुद्दल खाते (Loan Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रक (Loan Rate Master) तपासा." });
+                    }
                 }
 
                 int interestLedgerId = loanRate?.InterestLedgerID ?? 0;
@@ -571,7 +587,15 @@ namespace Bhisi.Api.Controllers
                 }
                 if (interestLedgerId == 0)
                 {
-                    return BadRequest(new { message = $"कर्ज योजना '{loanRate?.LoanType ?? "अज्ञात"}' ला कर्ज व्याज खाते (Interest Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रक (Loan Rate Master) तपासा." });
+                    var fallbackIntLedger = await _context.Ledgers.FirstOrDefaultAsync(l => (l.LedgerName.Contains("व्याज") || l.LedgerName.Contains("Interest")) && (l.AccountType == "Income" || l.AccountType == "Revenue"));
+                    if (fallbackIntLedger != null)
+                    {
+                        interestLedgerId = fallbackIntLedger.LedgerID;
+                    }
+                    else
+                    {
+                        return BadRequest(new { message = $"कर्ज योजना '{loanRate?.LoanType ?? "अज्ञात"}' ला कर्ज व्याज खाते (Interest Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रक (Loan Rate Master) तपासा." });
+                    }
                 }
 
                 int receivableInterestLedgerId = (loanRate?.ReceivableInterestLedgerID ?? 0) > 0 

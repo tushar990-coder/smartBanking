@@ -2531,7 +2531,8 @@ namespace Bhisi.Api.Controllers
                 {
                     overdueDays = (closureDate.Date - account.MaturityDate.Date).Days;
                     decimal overdueRate = account.FdScheme?.OverdueInterestRate ?? req?.OverdueInterestRate ?? 3.00m;
-                    overdueInterest = Math.Round((account.MaturityAmount * overdueRate * overdueDays) / 36500.0m, 2);
+                    // CBS Banking Rule: Overdue interest is strictly calculated on Principal (DepositAmount)
+                    overdueInterest = Math.Round((account.DepositAmount * overdueRate * overdueDays) / 36500.0m, 2);
                 }
             }
 
@@ -4053,7 +4054,8 @@ namespace Bhisi.Api.Controllers
                         // Renewing from closure date with overdue interest for the gap
                         overdueDays = (closureDate.Date - oldAccount.MaturityDate.Date).Days;
                         decimal overdueRate = oldAccount.FdScheme?.OverdueInterestRate ?? request.OverdueInterestRate ?? 3.00m;
-                        overdueInterest = Math.Round((oldAccount.MaturityAmount * overdueRate * overdueDays) / 36500.0m, 2);
+                        // CBS Banking Rule: Overdue interest is strictly calculated on Principal (DepositAmount)
+                        overdueInterest = Math.Round((oldAccount.DepositAmount * overdueRate * overdueDays) / 36500.0m, 2);
                     }
 
                     // ✍️ Manual Amount Override Support (Legacy Pre-Live Society Reconciliation)
@@ -4275,6 +4277,7 @@ namespace Bhisi.Api.Controllers
                     }
 
                     int interestPayoutLedgerId = 0;
+                    SavingTransaction savTx = null;
                     if (request.RenewalType == "PrincipalOnly" && interestPayoutAmount > 0)
                     {
                         if (paymentMode == "Bank" && request.BankAccountLedgerID > 0)
@@ -4292,7 +4295,7 @@ namespace Bhisi.Api.Controllers
                                 savAccount.CurrentBalance += interestPayoutAmount;
                                 interestPayoutLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
 
-                                var savTx = new SavingTransaction
+                                savTx = new SavingTransaction
                                 {
                                     SavingAccountID = savAccount.SavingAccountID,
                                     CustomerID = savAccount.CustomerID,
@@ -4303,7 +4306,7 @@ namespace Bhisi.Api.Controllers
                                     Amount = interestPayoutAmount,
                                     BalanceAfterTxn = savAccount.CurrentBalance,
                                     Narration = $"मुदत ठेव नूतनीकरण व्याज जमा (FD Renewal Interest): {oldAccount.AccountNo}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}",
-                                    VoucherNo = $"JV-FD-REN-{newAccount.AccountNo}",
+                                    VoucherNo = $"JV-FD-INT-{newAccount.AccountNo}",
                                     CreatedBy = 1,
                                     CreatedOn = DateTime.Now
                                 };
@@ -4320,85 +4323,205 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                    var voucher = new Voucher
-                    {
-                        BranchID = oldAccount.BranchID,
-                        VoucherNo = $"JV-FD-REN-{newAccount.AccountNo}",
-                        VoucherDate = closureDate,
-                        VoucherType = "Journal",
-                        TotalAmount = totalMaturityAmount,
-                        Narration = (string.IsNullOrWhiteSpace(request.Narration)
-                            ? $"मुदत ठेव नूतनीकरण (FD Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
-                            : request.Narration) + manualAuditNote,
-                        CreatedBy = 1,
-                        CreatedOn = DateTime.Now
-                    };
-                    _context.Vouchers.Add(voucher);
-                    await _context.SaveChangesAsync();
-
                     var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == oldAccount.CustomerID);
                     int? linkedMemberId = linkedMember?.MemberID;
 
-                    // Dr Old FD Liability (Principal)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = oldLiabilityLedger.LedgerID, DrCr = "Dr", Amount = oldAccount.DepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
-                    
-                    // Dr Interest Payable (Accumulated Contract Interest - cleared only up to already provisioned)
-                    if (payableLedger != null && payableInterestAmount > 0)
-                    {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = payableInterestAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
-                    }
+                    Voucher voucher1 = null;
+                    Voucher voucher2 = null;
+                    Voucher singleVoucher = null;
 
-                    // Dr Interest Expense (Unprovisioned current period interest + Overdue Interest)
-                    if (totalExpenseInterest > 0 && expenseLedger != null)
+                    if (request.RenewalType == "PrincipalOnly")
                     {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = totalExpenseInterest, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
-                    }
+                        // 1. Voucher 1: Pure Journal Voucher for Principal Renewal (100% Transfer, no cash)
+                        voucher1 = new Voucher
+                        {
+                            BranchID = oldAccount.BranchID,
+                            VoucherNo = $"JV-FD-REN-{newAccount.AccountNo}",
+                            VoucherDate = closureDate,
+                            VoucherType = "Journal",
+                            TotalAmount = oldAccount.DepositAmount,
+                            Narration = (string.IsNullOrWhiteSpace(request.Narration)
+                                ? $"मुदत ठेव मुद्दल नूतनीकरण (FD Principal Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}"
+                                : request.Narration) + manualAuditNote,
+                            CreatedBy = 1,
+                            CreatedOn = DateTime.Now
+                        };
+                        _context.Vouchers.Add(voucher1);
+                        await _context.SaveChangesAsync();
 
-                    // Cr New FD Liability
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = targetLiabilityLedger.LedgerID, DrCr = "Cr", Amount = newDepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                        // Dr Old FD Liability (Principal)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher1.VoucherID, LedgerID = oldLiabilityLedger.LedgerID, DrCr = "Dr", Amount = oldAccount.DepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
 
-                    // Cr Interest Payout (If Principal Only, pay out interest to Cash, Bank, or Saving)
-                    if (request.RenewalType == "PrincipalOnly" && interestPayoutAmount > 0 && interestPayoutLedgerId > 0)
-                    {
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = interestPayoutLedgerId, DrCr = "Cr", Amount = interestPayoutAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
-                    }
+                        // Cr New FD Liability (Principal)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher1.VoucherID, LedgerID = targetLiabilityLedger.LedgerID, DrCr = "Cr", Amount = newDepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
 
-                    // Log Transactions
-                    _context.FdTransactions.Add(new FdTransaction
-                    {
-                        BranchID = oldAccount.BranchID,
-                        FdAccountID = oldAccount.FdAccountID,
-                        VoucherID = voucher.VoucherID,
-                        TransactionDate = closureDate,
-                        TransactionType = "Renewal",
-                        DebitCredit = "Dr",
-                        Amount = totalMaturityAmount
-                    });
+                        // 2. Voucher 2: Decoupled Interest Payout Voucher (Payment or Journal)
+                        if (interestPayoutAmount > 0 && interestPayoutLedgerId > 0)
+                        {
+                            string intVoucherType = (paymentMode == "Transfer") ? "Journal" : "Payment";
+                            string intVoucherPrefix = (paymentMode == "Transfer") ? "JV-FD-INT" : "PAY-FD-INT";
+                            string intVoucherNo = $"{intVoucherPrefix}-{newAccount.AccountNo}";
 
-                    if (overdueInterest > 0)
-                    {
+                            voucher2 = new Voucher
+                            {
+                                BranchID = oldAccount.BranchID,
+                                VoucherNo = intVoucherNo,
+                                VoucherDate = closureDate,
+                                VoucherType = intVoucherType,
+                                TotalAmount = interestPayoutAmount,
+                                Narration = $"मुदत ठेव व्याज परतावा ({paymentMode}): खा. क्र. {oldAccount.AccountNo} (नवीन खा. क्र. {newAccount.AccountNo}){(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}" + manualAuditNote,
+                                CreatedBy = 1,
+                                CreatedOn = DateTime.Now
+                            };
+                            _context.Vouchers.Add(voucher2);
+                            await _context.SaveChangesAsync();
+
+                            if (savTx != null)
+                            {
+                                savTx.VoucherNo = intVoucherNo;
+                            }
+
+                            // Dr Interest Payable (Accumulated Contract Interest - cleared only up to already provisioned)
+                            if (payableLedger != null && payableInterestAmount > 0)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher2.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = payableInterestAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                            }
+
+                            // Dr Interest Expense (Unprovisioned current period interest + Overdue Interest)
+                            if (totalExpenseInterest > 0 && expenseLedger != null)
+                            {
+                                _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher2.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = totalExpenseInterest, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                            }
+
+                            // Cr Interest Payout (Cash / Bank / Saving)
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher2.VoucherID, LedgerID = interestPayoutLedgerId, DrCr = "Cr", Amount = interestPayoutAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                        }
+
+                        // Log FdTransactions
                         _context.FdTransactions.Add(new FdTransaction
                         {
                             BranchID = oldAccount.BranchID,
                             FdAccountID = oldAccount.FdAccountID,
-                            VoucherID = voucher.VoucherID,
+                            VoucherID = voucher1.VoucherID,
                             TransactionDate = closureDate,
-                            TransactionType = "Accrual",
+                            TransactionType = "Renewal",
+                            DebitCredit = "Dr",
+                            Amount = oldAccount.DepositAmount
+                        });
+
+                        if (interestPayoutAmount > 0 && voucher2 != null)
+                        {
+                            _context.FdTransactions.Add(new FdTransaction
+                            {
+                                BranchID = oldAccount.BranchID,
+                                FdAccountID = oldAccount.FdAccountID,
+                                VoucherID = voucher2.VoucherID,
+                                TransactionDate = closureDate,
+                                TransactionType = "Interest Payout",
+                                DebitCredit = "Dr",
+                                Amount = interestPayoutAmount
+                            });
+                        }
+
+                        if (overdueInterest > 0)
+                        {
+                            _context.FdTransactions.Add(new FdTransaction
+                            {
+                                BranchID = oldAccount.BranchID,
+                                FdAccountID = oldAccount.FdAccountID,
+                                VoucherID = voucher2 != null ? voucher2.VoucherID : voucher1.VoucherID,
+                                TransactionDate = closureDate,
+                                TransactionType = "Accrual",
+                                DebitCredit = "Cr",
+                                Amount = overdueInterest
+                            });
+                        }
+
+                        _context.FdTransactions.Add(new FdTransaction
+                        {
+                            BranchID = newAccount.BranchID,
+                            FdAccountID = newAccount.FdAccountID,
+                            VoucherID = voucher1.VoucherID,
+                            TransactionDate = closureDate,
+                            TransactionType = "Opening",
                             DebitCredit = "Cr",
-                            Amount = overdueInterest
+                            Amount = newDepositAmount
                         });
                     }
-
-                    _context.FdTransactions.Add(new FdTransaction
+                    else
                     {
-                        BranchID = newAccount.BranchID,
-                        FdAccountID = newAccount.FdAccountID,
-                        VoucherID = voucher.VoucherID,
-                        TransactionDate = closureDate,
-                        TransactionType = "Opening",
-                        DebitCredit = "Cr",
-                        Amount = newDepositAmount
-                    });
+                        // PrincipalPlusInterest: Single compound Journal Voucher (100% Transfer, no cash payout)
+                        singleVoucher = new Voucher
+                        {
+                            BranchID = oldAccount.BranchID,
+                            VoucherNo = $"JV-FD-REN-{newAccount.AccountNo}",
+                            VoucherDate = closureDate,
+                            VoucherType = "Journal",
+                            TotalAmount = totalMaturityAmount,
+                            Narration = (string.IsNullOrWhiteSpace(request.Narration)
+                                ? $"मुदत ठेव नूतनीकरण (FD Renewal): {oldAccount.AccountNo} -> {newAccount.AccountNo}{(overdueInterest > 0 ? $" (समाविष्ट Overdue व्याज: ₹{overdueInterest:F2})" : "")}"
+                                : request.Narration) + manualAuditNote,
+                            CreatedBy = 1,
+                            CreatedOn = DateTime.Now
+                        };
+                        _context.Vouchers.Add(singleVoucher);
+                        await _context.SaveChangesAsync();
+
+                        // Dr Old FD Liability (Principal)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = singleVoucher.VoucherID, LedgerID = oldLiabilityLedger.LedgerID, DrCr = "Dr", Amount = oldAccount.DepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                        
+                        // Dr Interest Payable (Accumulated Contract Interest - cleared only up to already provisioned)
+                        if (payableLedger != null && payableInterestAmount > 0)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = singleVoucher.VoucherID, LedgerID = payableLedger.LedgerID, DrCr = "Dr", Amount = payableInterestAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                        }
+
+                        // Dr Interest Expense (Unprovisioned current period interest + Overdue Interest)
+                        if (totalExpenseInterest > 0 && expenseLedger != null)
+                        {
+                            _context.VoucherDetails.Add(new VoucherDetail { VoucherID = singleVoucher.VoucherID, LedgerID = expenseLedger.LedgerID, DrCr = "Dr", Amount = totalExpenseInterest, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+                        }
+
+                        // Cr New FD Liability
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = singleVoucher.VoucherID, LedgerID = targetLiabilityLedger.LedgerID, DrCr = "Cr", Amount = newDepositAmount, CustomerID = oldAccount.CustomerID, MemberID = linkedMemberId });
+
+                        // Log Transactions
+                        _context.FdTransactions.Add(new FdTransaction
+                        {
+                            BranchID = oldAccount.BranchID,
+                            FdAccountID = oldAccount.FdAccountID,
+                            VoucherID = singleVoucher.VoucherID,
+                            TransactionDate = closureDate,
+                            TransactionType = "Renewal",
+                            DebitCredit = "Dr",
+                            Amount = totalMaturityAmount
+                        });
+
+                        if (overdueInterest > 0)
+                        {
+                            _context.FdTransactions.Add(new FdTransaction
+                            {
+                                BranchID = oldAccount.BranchID,
+                                FdAccountID = oldAccount.FdAccountID,
+                                VoucherID = singleVoucher.VoucherID,
+                                TransactionDate = closureDate,
+                                TransactionType = "Accrual",
+                                DebitCredit = "Cr",
+                                Amount = overdueInterest
+                            });
+                        }
+
+                        _context.FdTransactions.Add(new FdTransaction
+                        {
+                            BranchID = newAccount.BranchID,
+                            FdAccountID = newAccount.FdAccountID,
+                            VoucherID = singleVoucher.VoucherID,
+                            TransactionDate = closureDate,
+                            TransactionType = "Opening",
+                            DebitCredit = "Cr",
+                            Amount = newDepositAmount
+                        });
+                    }
 
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
@@ -4419,7 +4542,9 @@ namespace Bhisi.Api.Controllers
                         SchemeName = scheme?.SchemeName ?? "",
                         SchemeCode = scheme?.SchemeCode ?? "",
                         CustomerName = customer != null ? $"{customer.FirstName} {customer.LastName}".Trim() : "",
-                        CifNo = customer?.CIFNo ?? ""
+                        CifNo = customer?.CIFNo ?? "",
+                        VoucherNo = request.RenewalType == "PrincipalOnly" ? voucher1?.VoucherNo : singleVoucher?.VoucherNo,
+                        InterestVoucherNo = (request.RenewalType == "PrincipalOnly" && voucher2 != null) ? voucher2.VoucherNo : null
                     });
                 }
                 catch (Exception ex)

@@ -927,9 +927,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     const overdueDays = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
     const isOverdue = overdueDays > 0;
 
-    const baseAmount = selectedAccount.maturityAmount && selectedAccount.maturityAmount > selectedAccount.depositAmount
-      ? selectedAccount.maturityAmount
-      : (selectedAccount.depositAmount + (selectedAccount.legacyAccruedInt || 0));
+    // CBS Banking Rule: Overdue interest is strictly calculated on Principal (depositAmount)
+    const baseAmount = selectedAccount.depositAmount;
 
     const isAllowedByScheme = accountScheme ? Boolean(accountScheme.allowOverdueInterest) : false;
     const effectiveOverdueRate = accountScheme?.overdueInterestRate != null ? Number(accountScheme.overdueInterestRate) : overdueInterestRate;
@@ -1372,7 +1371,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           payload
         );
         const resData = response.data;
-        setSuccess(`✅ ${resData.message} (नवीन पावती क्र: ${resData.newAccountNo})${resData.overdueInterest > 0 ? ` [समाविष्ट Overdue व्याज: ₹${resData.overdueInterest.toLocaleString()}]` : ''}`);
+        setSuccess(`✅ ${resData.message} (नवीन पावती क्र: ${resData.newAccountNo}${resData.voucherNo ? ` | व्हाउचर: ${resData.voucherNo}` : ''}${resData.interestVoucherNo ? ` | व्याज व्हाउचर: ${resData.interestVoucherNo}` : ''})${resData.overdueInterest > 0 ? ` [समाविष्ट Overdue व्याज: ₹${resData.overdueInterest.toLocaleString()}]` : ''}`);
 
         // Set rich post-renewal data for instant review and printing
         const sim = renewalSimulation;
@@ -1424,6 +1423,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       editKey?: 'accrued' | 'overdue' | 'premature';
       isLockedPrincipal?: boolean;
       isBalancing?: boolean;
+      voucherGroup?: string;
     }[] = [];
 
     if (actionType === 'MaturityClose') {
@@ -1600,62 +1600,115 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       const newDepositAmount = renewalType === 'PrincipalPlusInterest' ? totalVal : principal;
       const interestPayout = renewalType === 'PrincipalOnly' ? (accruedInt + effOverdueInt) : 0;
 
-      entries.push({
-        drCr: 'Dr',
-        ledgerName: ledgers.fdLiability,
-        note: 'जुने मुदत ठेव खाते बंद करणे (Old FD Liability Cleared)',
-        amount: principal,
-        isLockedPrincipal: true
-      });
-
-      if (payableAmount > 0) {
+      if (renewalType === 'PrincipalOnly') {
+        // Voucher 1: मुदत ठेव मुद्दल नूतनीकरण (कीर्द - JV)
+        const v1Group = 'व्हाउचर १ (कीर्द - JV): मुदत ठेव मुद्दल नूतनीकरण';
         entries.push({
           drCr: 'Dr',
-          ledgerName: ledgers.interestPayable,
-          note: (renewalType === 'PrincipalPlusInterest'
-            ? 'पूर्वी तरतूद झालेले देणे व्याज मुद्दलात पुनर्गठित करणे (Provisioned Interest Capitalized to New FD)'
-            : 'पूर्वी तरतूद झालेले देणे व्याज चुकता करणे (Provisioned Interest Payable Cleared)'),
-          amount: payableAmount
+          ledgerName: ledgers.fdLiability,
+          note: 'जुने मुदत ठेव खाते बंद करणे (Old FD Liability Cleared)',
+          amount: principal,
+          isLockedPrincipal: true,
+          voucherGroup: v1Group
         });
-      }
 
-      const totalExpense = expenseAmount + effOverdueInt;
-      if (totalExpense > 0 || isManualOverride) {
-        const noteParts: string[] = [];
-        if (expenseAmount > 0) {
-          noteParts.push(renewalType === 'PrincipalPlusInterest'
-            ? 'चालू कालावधीतील व्याज खर्च नवीन मुद्दलात पुनर्गठित'
-            : 'चालू कालावधीतील व्याज खर्च');
-        }
-        if (effOverdueInt > 0) {
-          noteParts.push(`ओव्हरड्यू व्याज (@ ${effectiveOverdueRate}%)`);
-        }
-        entries.push({
-          drCr: 'Dr',
-          ledgerName: ledgers.interestExpense,
-          note: (noteParts.join(' + ') || 'मुदत ठेव व्याज खर्च (Interest Expense)') + (isManualOverride && (customAccruedInterest !== '' || customOverdueInterest !== '') ? ' [✍️ मॅन्युअल संपादन]' : ''),
-          amount: totalExpense,
-          isEditable: isManualOverride,
-          editKey: 'overdue'
-        });
-      }
-
-      entries.push({
-        drCr: 'Cr',
-        ledgerName: targetLiabilityLedger,
-        note: `नवीन मुदत ठेव खात्यात मुद्दल जमा (${targetScheme?.schemeName || 'New FD Account'})` + (isRetroactive ? ` [सुरुवात दिनांक: ${selectedAccount.maturityDate.split('T')[0].split('-').reverse().join('/')}]` : ''),
-        amount: newDepositAmount,
-        isBalancing: renewalType === 'PrincipalPlusInterest'
-      });
-
-      if (renewalType === 'PrincipalOnly' && (interestPayout > 0 || isManualOverride)) {
         entries.push({
           drCr: 'Cr',
-          ledgerName: ledgers.cashLedger,
-          note: (paymentMode === 'Cash' 
-            ? 'केवळ व्याजाची रक्कम रोखीने अदा करणे (Interest Cash Payout)' 
-            : (paymentMode === 'Bank' ? 'व्याज बँक ट्रान्सफरने अदा करणे (Interest Bank Payout)' : 'व्याज बचत खात्यात वर्ग करणे (Interest SB Credit)')) + (isManualOverride ? ' [⚡ स्वयंचलित संतुलित]' : ''),
-          amount: interestPayout,
+          ledgerName: targetLiabilityLedger,
+          note: `नवीन मुदत ठेव खात्यात मुद्दल जमा (${targetScheme?.schemeName || 'New FD Account'})` + (isRetroactive ? ` [सुरुवात दिनांक: ${selectedAccount.maturityDate.split('T')[0].split('-').reverse().join('/')}]` : ''),
+          amount: newDepositAmount,
+          isBalancing: false,
+          voucherGroup: v1Group
+        });
+
+        // Voucher 2: व्याज परतावा (Payment / JV)
+        if (interestPayout > 0 || isManualOverride) {
+          const v2Group = `व्हाउचर २ (${paymentMode === 'Transfer' ? 'कीर्द - JV' : 'पेमेंट - Payment'}): व्याज परतावा (${paymentMode === 'Cash' ? 'रोख' : paymentMode === 'Bank' ? 'बँक' : 'बचत'})`;
+
+          if (payableAmount > 0) {
+            entries.push({
+              drCr: 'Dr',
+              ledgerName: ledgers.interestPayable,
+              note: 'पूर्वी तरतूद झालेले देणे व्याज चुकता करणे (Provisioned Interest Payable Cleared)',
+              amount: payableAmount,
+              voucherGroup: v2Group
+            });
+          }
+
+          const totalExpense = expenseAmount + effOverdueInt;
+          if (totalExpense > 0 || isManualOverride) {
+            const noteParts: string[] = [];
+            if (expenseAmount > 0) {
+              noteParts.push('चालू कालावधीतील व्याज खर्च');
+            }
+            if (effOverdueInt > 0) {
+              noteParts.push(`ओव्हरड्यू व्याज (@ ${effectiveOverdueRate}%)`);
+            }
+            entries.push({
+              drCr: 'Dr',
+              ledgerName: ledgers.interestExpense,
+              note: (noteParts.join(' + ') || 'मुदत ठेव व्याज खर्च (Interest Expense)') + (isManualOverride && (customAccruedInterest !== '' || customOverdueInterest !== '') ? ' [✍️ मॅन्युअल संपादन]' : ''),
+              amount: totalExpense,
+              isEditable: isManualOverride,
+              editKey: 'overdue',
+              voucherGroup: v2Group
+            });
+          }
+
+          entries.push({
+            drCr: 'Cr',
+            ledgerName: ledgers.cashLedger,
+            note: (paymentMode === 'Cash' 
+              ? 'केवळ व्याजाची रक्कम रोखीने अदा करणे (Interest Cash Payout)' 
+              : (paymentMode === 'Bank' ? 'व्याज बँक ट्रान्सफरने अदा करणे (Interest Bank Payout)' : 'व्याज बचत खात्यात वर्ग करणे (Interest SB Credit)')) + (isManualOverride ? ' [⚡ स्वयंचलित संतुलित]' : ''),
+            amount: interestPayout,
+            isBalancing: true,
+            voucherGroup: v2Group
+          });
+        }
+      } else {
+        // PrincipalPlusInterest: Single compound JV
+        entries.push({
+          drCr: 'Dr',
+          ledgerName: ledgers.fdLiability,
+          note: 'जुने मुदत ठेव खाते बंद करणे (Old FD Liability Cleared)',
+          amount: principal,
+          isLockedPrincipal: true
+        });
+
+        if (payableAmount > 0) {
+          entries.push({
+            drCr: 'Dr',
+            ledgerName: ledgers.interestPayable,
+            note: 'पूर्वी तरतूद झालेले देणे व्याज मुद्दलात पुनर्गठित करणे (Provisioned Interest Capitalized to New FD)',
+            amount: payableAmount
+          });
+        }
+
+        const totalExpense = expenseAmount + effOverdueInt;
+        if (totalExpense > 0 || isManualOverride) {
+          const noteParts: string[] = [];
+          if (expenseAmount > 0) {
+            noteParts.push('चालू कालावधीतील व्याज खर्च नवीन मुद्दलात पुनर्गठित');
+          }
+          if (effOverdueInt > 0) {
+            noteParts.push(`ओव्हरड्यू व्याज (@ ${effectiveOverdueRate}%)`);
+          }
+          entries.push({
+            drCr: 'Dr',
+            ledgerName: ledgers.interestExpense,
+            note: (noteParts.join(' + ') || 'मुदत ठेव व्याज खर्च (Interest Expense)') + (isManualOverride && (customAccruedInterest !== '' || customOverdueInterest !== '') ? ' [✍️ मॅन्युअल संपादन]' : ''),
+            amount: totalExpense,
+            isEditable: isManualOverride,
+            editKey: 'overdue'
+          });
+        }
+
+        entries.push({
+          drCr: 'Cr',
+          ledgerName: targetLiabilityLedger,
+          note: `नवीन मुदत ठेव खात्यात मुद्दल जमा (${targetScheme?.schemeName || 'New FD Account'})` + (isRetroactive ? ` [सुरुवात दिनांक: ${selectedAccount.maturityDate.split('T')[0].split('-').reverse().join('/')}]` : ''),
+          amount: newDepositAmount,
           isBalancing: true
         });
       }
@@ -1918,7 +1971,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
           const isBalanced = Math.abs(totalDr - totalCr) < 0.01;
           const hasLien = Boolean(activeLoansData?.hasActiveLoan && (activeLoansData?.totalOutstandingLiability || 0) > 0);
           const isFullRoll = actionType === 'Renewal' && renewalType === 'PrincipalPlusInterest';
-          const finalAmount = isFullRoll ? (principal + interestPayable + effOverdue) : netPayout;
+          const finalAmount = isFullRoll ? (principal + interestPayable + effOverdue) : (actionType === 'Renewal' ? principal : netPayout);
           const fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           const hasDateError = isBeforeOpeningDate || isBeforeLastAccrual || isFutureDate || isBackdatedSavingsTransfer;
           const submitDisabled =
@@ -2931,6 +2984,17 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                           </div>
                         )}
 
+                        {actionType === 'Renewal' && renewalType === 'PrincipalOnly' && (interestPayable + effOverdue) > 0 && (
+                          <div className="flex items-center justify-between text-xs text-emerald-800 bg-emerald-50/70 border border-emerald-200 px-2.5 py-1.5 rounded-sm mt-2">
+                            <span className="font-semibold flex items-center gap-1.5">
+                              <span>💵 व्याज परतावा ({paymentModeLabel}):</span>
+                            </span>
+                            <span className="font-mono font-bold">
+                              ₹ {fmt(interestPayable + effOverdue)}
+                            </span>
+                          </div>
+                        )}
+
                         <div className="mt-2 pt-2 border-t-2 border-slate-800 flex items-end justify-between bg-slate-50/80 -mx-3.5 px-3.5 py-2 -mb-2 rounded-b-sm border-b border-slate-200">
                           <div>
                             <div className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
@@ -2981,17 +3045,30 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100">
-                                    {voucherPreview.map((entry, idx) => (
-                                      <tr key={idx}>
-                                        <td className="py-1 px-3 font-bold text-slate-600">{entry.drCr}</td>
-                                        <td className="py-1 px-2 font-medium text-slate-800 truncate max-w-[160px]" title={entry.ledgerName}>
-                                          {entry.ledgerName}
-                                        </td>
-                                        <td className="py-1 px-3 text-right font-mono font-semibold text-slate-900 whitespace-nowrap">
-                                          {fmt(entry.amount)}
-                                        </td>
-                                      </tr>
-                                    ))}
+                                    {voucherPreview.map((entry, idx) => {
+                                      const prevGroup = idx > 0 ? voucherPreview[idx - 1].voucherGroup : null;
+                                      const isNewGroup = entry.voucherGroup && entry.voucherGroup !== prevGroup;
+                                      return (
+                                        <React.Fragment key={idx}>
+                                          {isNewGroup && (
+                                            <tr className="bg-slate-100 font-bold text-[10px] text-primary border-y border-slate-200">
+                                              <td colSpan={3} className="py-1 px-3">
+                                                📑 {entry.voucherGroup}
+                                              </td>
+                                            </tr>
+                                          )}
+                                          <tr>
+                                            <td className="py-1 px-3 font-bold text-slate-600">{entry.drCr}</td>
+                                            <td className="py-1 px-2 font-medium text-slate-800 truncate max-w-[160px]" title={entry.ledgerName}>
+                                              {entry.ledgerName}
+                                            </td>
+                                            <td className="py-1 px-3 text-right font-mono font-semibold text-slate-900 whitespace-nowrap">
+                                              {fmt(entry.amount)}
+                                            </td>
+                                          </tr>
+                                        </React.Fragment>
+                                      );
+                                    })}
                                   </tbody>
                                   <tfoot className="bg-slate-50 border-t border-slate-200 font-mono text-[10px] font-bold text-slate-700">
                                     <tr>

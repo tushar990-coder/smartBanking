@@ -315,12 +315,11 @@ namespace Bhisi.Api.Controllers
         // ==========================================
         public class MobileCreateRequestDto
         {
-            [Required]
+            [Required(ErrorMessage = "First name is required.")]
             public string FirstName { get; set; } = string.Empty;
             public string? MiddleName { get; set; }
-            [Required]
-            public string LastName { get; set; } = string.Empty;
-            [Required]
+            public string? LastName { get; set; }
+            [Required(ErrorMessage = "Mobile number is required.")]
             public string MobileNo { get; set; } = string.Empty;
             public decimal DailyDepositAmount { get; set; } = 100;
             public string? Address { get; set; }
@@ -333,6 +332,7 @@ namespace Bhisi.Api.Controllers
         }
 
         [HttpPost("api/PigmyApp/create-request")]
+        [AllowAnonymous]
         public async Task<IActionResult> CreateAccountRequest([FromBody] MobileCreateRequestDto dto)
         {
             int agentId = dto.AgentId.HasValue && dto.AgentId.Value > 0 ? dto.AgentId.Value : GetCurrentAgentId();
@@ -351,11 +351,16 @@ namespace Bhisi.Api.Controllers
 
             try
             {
+                string firstName = (dto.FirstName ?? string.Empty).Trim();
+                string lastName = !string.IsNullOrWhiteSpace(dto.LastName) 
+                    ? dto.LastName.Trim() 
+                    : (!string.IsNullOrWhiteSpace(firstName) ? firstName : "Customer");
+
                 var newRequest = new AgentCustomerRequest
                 {
-                    FirstName = dto.FirstName.Trim(),
+                    FirstName = firstName,
                     MiddleName = dto.MiddleName?.Trim(),
-                    LastName = dto.LastName.Trim(),
+                    LastName = lastName,
                     MobileNo = dto.MobileNo?.Trim(),
                     Address = dto.Address?.Trim(),
                     AadhaarNo = dto.AadhaarNo?.Trim(),

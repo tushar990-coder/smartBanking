@@ -298,6 +298,8 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
     const [selectedBorrowerKey, setSelectedBorrowerKey] = useState<string | null>(null);
     const [selectedSchemeId, setSelectedSchemeId] = useState<number | null>(null);
+    const [loanSchemes, setLoanSchemes] = useState<any[]>([]);
+    const [isSaving, setIsSaving] = useState(false);
     const [accountDetails, setAccountDetails] = useState<AccountDetailsAndSchedule | null>(null);
     const [npaStatus, setNpaStatus] = useState<{ category: string, overdueDays: number, categoryMarathi: string } | null>(null);
     const [todayTotalCash, setTodayTotalCash] = useState(0);
@@ -315,8 +317,24 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
         }
     };
 
-    // 1. Available Loan Schemes (कर्ज प्रकार / योजना) - Scheme Name only
+    const fetchLoanSchemes = async () => {
+        try {
+            const res = await axios.get('/api/LoanRates');
+            setLoanSchemes(res.data || []);
+        } catch (err) {
+            console.error("Failed to load loan schemes", err);
+        }
+    };
+
+    // 1. Available Loan Schemes (कर्ज प्रकार / योजना) - Instant Load from LoanRates with fallback
     const availableLoanSchemes = useMemo(() => {
+        if (loanSchemes && loanSchemes.length > 0) {
+            return loanSchemes.map((r: any) => ({
+                id: r.loanRateID,
+                name: r.shortName || r.loanType || `योजना #${r.loanRateID}`
+            })).sort((a, b) => a.name.localeCompare(b.name));
+        }
+
         const schemeMap = new Map<number, { id: number; name: string }>();
         accounts.forEach((a: any) => {
             const rId = a.loanRateID || a.loanRate?.loanRateID;
@@ -328,7 +346,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
         });
         return Array.from(schemeMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-    }, [accounts]);
+    }, [loanSchemes, accounts]);
 
     // 2. Filter accounts by selected loan scheme (empty if no scheme selected to prevent software lag)
     const filteredAccountsForBorrowers = useMemo(() => {
@@ -620,6 +638,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     useEffect(() => {
         fetchSanstha();
         fetchBranches();
+        fetchLoanSchemes();
         fetchData();
         fetchAccounts();
         fetchLedgers();
@@ -1441,7 +1460,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (isPassingMode) {
+        if (isSaving || isPassingMode) {
             return;
         }
         
@@ -1457,6 +1476,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
         }
 
+        setIsSaving(true);
         try {
             const payload = {
                 ...formData,
@@ -1468,6 +1488,17 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             // Save the ID for printing
             if (savedCollectionId) {
                 setLastSavedCollectionId(savedCollectionId);
+            }
+
+            // In-memory update of account balance to prevent sluggishness from re-fetching all accounts
+            if (selectedAccount) {
+                const collected = formData.principalCollected || 0;
+                const remainingBal = Math.max(0, (selectedAccount.principalBalance || 0) - collected);
+                setAccounts(prev => prev.map(a => a.loanAccountID === selectedAccount.loanAccountID ? {
+                    ...a,
+                    principalBalance: remainingBal,
+                    status: remainingBal <= 0 ? 'Closed' : a.status
+                } : a));
             }
 
             // Check if loan was fully settled and has active collaterals
@@ -1504,11 +1535,12 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             (window as any).selectedLoanAccountId = undefined;
             (window as any).selectedLoanMemberId = undefined;
             fetchData();
-            fetchAccounts();
             fetchNextReceiptNo(selectedBranchId);
         } catch (err: any) {
             alert('माहिती जतन करण्यास अडचण आली: ' + (err.response?.data || err.message));
             console.error(err);
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -2571,8 +2603,20 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                             </div>
                         ) : (
                             <div className="w-full md:w-1/4 flex flex-col gap-1.5">
-                                <button type="submit" className="bg-primary hover:bg-primary/90 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer">
-                                    <Save size={14} /> जतन (Save)
+                                <button 
+                                    type="submit" 
+                                    disabled={isSaving}
+                                    className={`bg-primary hover:bg-primary/90 text-white text-[11px] font-bold py-1.5 px-3 rounded-sm shadow-xs transition-colors flex justify-center items-center gap-1 cursor-pointer ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                >
+                                    {isSaving ? (
+                                        <>
+                                            <Clock size={14} className="animate-spin" /> ⏳ जतन होत आहे...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save size={14} /> जतन (Save)
+                                        </>
+                                    )}
                                 </button>
                                 <button type="button" onClick={() => {
                                     setFormData({

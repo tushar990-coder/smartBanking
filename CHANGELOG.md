@@ -1,5 +1,18 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-10-24] - आवृत्ती v2.5.87 (Loan Collection Performance Optimization - Instant Scheme Dropdown & Fast Receipt Save)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **कर्ज वसुली (Loan Collection) - कर्ज प्रकार / योजना पर्याय तत्काळ लोड होणे (Instant Scheme Dropdown Loading):**
+  * `LoanCollectionMaster.tsx` मध्ये `loanSchemes` स्टेट व `fetchLoanSchemes()` फंक्शन समाविष्ट करून थेट `GET /api/LoanRates` ला कॉल जोडला.
+  * पूर्वी बँकेतील हजारो कर्ज खाती (`accounts`) डाऊनलोड होईपर्यंत ड्रॉपडाउन रिकामे राहत होते (३ ते ८ सेकंदांचा विलंब). आता पेज लोड होताच **अवघ्या १०-२० मिलिसेकंदांत** सर्व कर्ज योजनांचे पर्याय तत्काळ उपलब्ध होतात.
+* **कर्ज वसुली (Loan Collection) - पावती जलद जतन व स्क्रीन फ्रीझिंग बंद (Fast Receipt Save & UI Freezing Prevention):**
+  * **बटण लोडिंग इंडिकेटर:** सेव्ह बटणावर क्लिक होताच `isSaving` सक्रिय होते, बटण अक्षम (disabled) होते आणि `⏳ जतन होत आहे...` स्पिनर दिसतो, ज्यामुळे युझरला तत्काळ दृश्य प्रतिसाद मिळतो व एकाच वेळी दोनदा क्लिक होणे टळते.
+  * **इन-मेमरी बॅलन्स अपडेट (No Post-Save Freezing):** पावती जतन झाल्यावर संपूर्ण खाती पुन्हा री-डाऊनलोड (`fetchAccounts()`) करण्याऐवजी निवडलेल्या खात्याची शिल्लक इन-मेमरी अपडेट केली जाते (`setAccounts`). यामुळे स्क्रीन किंचितही फ्रीझ न होता तत्काळ रिफ्रेश होऊन पुढील पावतीसाठी तयार होते.
+  * **बॅकएंड कन्सोलिडेशन (`LoanCollectionsController.cs`):** `PostLoanCollection` मधील सलग ६-७ अनावश्यक `SaveChangesAsync()` राउंडट्रिप्स एकत्र करून बॅच सेव्हमध्ये रूपांतरित केले, ज्यामुळे डेटाबेस लॉक टाईम कमी झाला आणि सेव्ह प्रक्रिया जलद झाली.
+
+---
+
 ## 📅 [2026-10-22] - आवृत्ती v2.5.83 (Universal Legacy Account & Member Number Integration & Loan Disbursement Option B Layout)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

@@ -475,7 +475,7 @@ namespace Bhisi.Api.Controllers
                     {
                         _context.Entry(schedule).State = EntityState.Modified;
                     }
-                    await _context.SaveChangesAsync();
+                    // Scheduled changes are tracked in memory and saved together in the consolidated SaveChangesAsync
                 }
 
                 // Get LoanRate to fetch Ledger IDs
@@ -659,7 +659,7 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                    await _context.SaveChangesAsync();
+                    // Voucher details and collection link will be saved in the consolidated batch SaveChangesAsync
                     collection.VoucherID = voucher.VoucherID;
                     collection.HomeBranchVoucherID = null;
                 }
@@ -684,13 +684,6 @@ namespace Bhisi.Api.Controllers
                         ApprovedOn = vStatus == "Approved" ? DateTime.Now : null
                     };
                     _context.Vouchers.Add(counterVoucher);
-                    await _context.SaveChangesAsync();
-
-                    if (cashLedgerId > 0 && totalReceiptAmount > 0)
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
-
-                    if (ibtLedgerId > 0 && totalReceiptAmount > 0)
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
 
                     // 2. Voucher 2: Home Branch Settlement (Dr IBT, Cr Loan Principal, Cr Interest, Cr Penalty, Cr Surcharge, Cr Fees)
                     var homeBranch = await _context.Branches.FindAsync(targetHomeBranchId);
@@ -714,6 +707,12 @@ namespace Bhisi.Api.Controllers
                     };
                     _context.Vouchers.Add(homeVoucher);
                     await _context.SaveChangesAsync();
+
+                    if (cashLedgerId > 0 && totalReceiptAmount > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
+
+                    if (ibtLedgerId > 0 && totalReceiptAmount > 0)
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Cr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
 
                     if (ibtLedgerId > 0 && totalReceiptAmount > 0)
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = homeVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = totalReceiptAmount, CustomerID = custId, MemberID = memId });
@@ -763,14 +762,9 @@ namespace Bhisi.Api.Controllers
                     counterVoucher.RelatedVoucherID = homeVoucher.VoucherID;
                     homeVoucher.RelatedVoucherID = counterVoucher.VoucherID;
 
-                    await _context.SaveChangesAsync();
-
                     collection.VoucherID = counterVoucher.VoucherID;
                     collection.HomeBranchVoucherID = homeVoucher.VoucherID;
                 }
-
-                _context.Entry(collection).State = EntityState.Modified;
-                await _context.SaveChangesAsync();
 
                 // If PaymentMode is Saving Transfer, auto-debit member's Saving Account
                 if (collection.PaymentMode == "Saving Transfer" || collection.PaymentMode == "Saving")
@@ -808,9 +802,11 @@ namespace Bhisi.Api.Controllers
                             Narration = $"Loan Collection Debit for Loan A/C: {loanAccFetched?.LoanAccountNo} (Receipt No: {collection.ReceiptNo})"
                         };
                         _context.SavingTransactions.Add(savingTxn);
-                        await _context.SaveChangesAsync();
                     }
                 }
+
+                _context.Entry(collection).State = EntityState.Modified;
+                await _context.SaveChangesAsync();
 
                 await transaction.CommitAsync();
 

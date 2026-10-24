@@ -1,6 +1,29 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
-## 📅 [2026-10-24] - आवृत्ती v2.5.89 (Loan Collection Receipt Save Resilience, Ledger Auto-Healing, Unique Voucher Collision Guards & Error Unpacking)
+## 📅 [2026-10-25] - आवृत्ती v2.5.92 (RD Installment Collection Legacy Account Number Integration & Searchable Select Badge Support)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **मासिक आरडी हप्ता संकलन - जुना आरडी खाते क्रमांक दृश्यता (RD Installment Collection Legacy Account Number Support):**
+  * `RdAccountsController.cs` मधील `GetRdAccounts`, `GetRdAccount(id)`, `GetRdInstallmentByVoucher`, आणि `GetRdClosureByVoucher` मधील LINQ `.Select(...)` प्रोजेक्शनमध्ये `r.LegacyAccountNumber` समाविष्ट केले.
+  * यामुळे फ्रंटेंडला सर्व सक्रिय व मुदतपूर्व आरडी खात्यांसाठी `legacyAccountNumber` थेट उपलब्ध झाला.
+* **शोधक्षम ड्रॉपडाउनमध्ये जुना क्रमांक व जांभळा बॅज (Enhanced SearchableSelect & Instant Search):**
+  * `RdInstallmentCollection.tsx` मधील 'आरडी खाते क्रमांक निवडा (Select RD Account) \*' ड्रॉपडाउनमध्ये `subLabel` (`खातेदार: ... | योजना: ... | 🏷️ जुने खाते क्र.: ...`) आणि `badge` (`जुने: XYZ`, जांभळा बॅज) समाविष्ट केले.
+  * ऑपरेटरने नवीन खाते क्रमांक, खातेदाराचे नाव, किंवा **जुना आरडी खाते क्रमांक** (उदा. '104' किंवा 'RD-45') टाईप करताच खाते त्वरित शोधून सिलेक्ट करता येते.
+* **खाते तपशील कार्ड, मल्टिपल आरडी मोडल व बल्क टेबल सुधारणा (Card, Modal & Bulk Consistency):**
+  * खाते निवडल्यानंतर खालील कार्डवर, मल्टिपल आरडी खाती असणाऱ्या खातेदारांच्या मोडलमध्ये आणि बल्क हप्ता संकलन टेबलमध्ये जुना आरडी क्रमांक स्पष्ट जांभळ्या बॅजसह प्रदर्शित केला.
+
+---
+
+## 📅 [2026-10-24] - आवृत्ती v2.5.91 (Loan Collection Active Financial Year Save Resilience & NPA Standard Status 404 Fix)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **कर्ज वसुली पावती जतन तारीख व चालू आर्थिक वर्ष ताळमेळ (Active FY Date Validation Resilience):**
+  * `LoanCollectionsController.cs` मध्ये जर वसुली तारीख `ActiveFinancialYear.EndDate` पेक्षा पुढे असेल, तर सरसकट ५०० एरर न देता सक्रिय आर्थिक वर्ष अपडेट किंवा कॅश/व्हाउचर सुरक्षितपणे सेव्ह करण्याची क्षमता.
+  * `LoanCollectionMaster.tsx` मधून `loanAccountID` स्पष्टपणे पाठवून एरर निवारण.
+* **एनपीए स्टँडर्ड खाते ४०४ एरर निवारण (NPA Standard Account Status Fix):**
+  * `NpaController.cs` मधील `GET /api/Npa/status/{loanAccountId}` मध्ये नियमित खात्यांसाठी ४०४ नॉट फाउंड ऐवजी २०० ओके रिस्पॉन्ससह 'Standard (नियमित)' वर्गीकरण परत पाठवणे.
+
+---
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
 * **[object Object] एरर पॉपअप निवारण व संपूर्ण एरर अनपॅकिंग (Frontend Complete Error Unpacking):**

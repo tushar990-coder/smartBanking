@@ -631,15 +631,19 @@ export default function RdInstallmentCollection({
               </div>
               <SearchableSelect
                 options={accounts.map((a) => {
-                  const legBadge = a.legacyAccountNumber ? ` [🏷️ जुने आरडी: ${a.legacyAccountNumber}]` : '';
+                  const legNo = (a.legacyAccountNumber || (a as any).LegacyAccountNumber || '').toString().trim();
+                  const legBadge = legNo ? ` [🏷️ जुने आरडी: ${legNo}]` : '';
                   return {
                     value: a.rdAccountID,
                     label: `${a.accountNo}${legBadge} - ${a.memberName} (${a.schemeName})`,
+                    subLabel: `खातेदार: ${a.memberName} | योजना: ${a.schemeName}${legNo ? ` | 🏷️ जुने खाते क्र.: ${legNo}` : ''}`,
+                    badge: legNo ? `जुने: ${legNo}` : undefined,
+                    badgeColor: 'bg-purple-100 text-purple-900 border-purple-300 font-bold',
                   };
                 })}
                 value={selectedAccId}
                 onChange={handleAccountChange}
-                placeholder="नाव किंवा खाते क्रमांकाने शोधा..."
+                placeholder="नाव किंवा नवीन/जुने खाते क्रमांकाने शोधा..."
                 disabled={isPassingMode}
               />
             </div>
@@ -659,9 +663,9 @@ export default function RdInstallmentCollection({
                     <span className="text-slate-500 text-[11px] font-semibold">खातेदार नाव: </span>
                     <span className="font-bold text-slate-900 text-xs">{selectedAcc.memberName}</span>
                   </div>
-                  {selectedAcc.legacyAccountNumber && (
+                  {(selectedAcc.legacyAccountNumber || (selectedAcc as any).LegacyAccountNumber) && (
                     <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded font-mono font-bold text-[9.5px]">
-                      🏷️ जुने आरडी: {selectedAcc.legacyAccountNumber}
+                      🏷️ जुने आरडी: {selectedAcc.legacyAccountNumber || (selectedAcc as any).LegacyAccountNumber}
                     </span>
                   )}
                 </div>
@@ -939,9 +943,9 @@ export default function RdInstallmentCollection({
                         <td className="py-2.5 px-3 font-semibold text-slate-800">
                           <div className="font-mono font-bold text-indigo-700 flex items-center gap-1.5">
                             <span>{acc.accountNo}</span>
-                            {acc.legacyAccountNumber && (
+                            {(acc.legacyAccountNumber || (acc as any).LegacyAccountNumber) && (
                               <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1 py-0.2 rounded font-mono font-bold text-[9px]">
-                                🏷️ {acc.legacyAccountNumber}
+                                🏷️ {acc.legacyAccountNumber || (acc as any).LegacyAccountNumber}
                               </span>
                             )}
                           </div>
@@ -1103,9 +1107,9 @@ export default function RdInstallmentCollection({
                             <span className="font-mono font-bold text-xs text-slate-900 tracking-wide">
                               {acc.accountNo}
                             </span>
-                            {acc.legacyAccountNumber && (
+                            {(acc.legacyAccountNumber || (acc as any).LegacyAccountNumber) && (
                               <span className="bg-purple-100 text-purple-950 border border-purple-300 px-1.5 py-0.2 rounded font-mono font-bold text-[9.5px]">
-                                🏷️ जुने आरडी: {acc.legacyAccountNumber}
+                                🏷️ जुने आरडी: {acc.legacyAccountNumber || (acc as any).LegacyAccountNumber}
                               </span>
                             )}
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">

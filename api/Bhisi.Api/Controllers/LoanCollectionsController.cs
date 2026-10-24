@@ -53,42 +53,82 @@ namespace Bhisi.Api.Controllers
             [FromQuery] int? page = null, 
             [FromQuery] int? pageSize = null)
         {
-            var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
-
-            var query = _context.LoanCollections
-                .AsNoTracking()
-                .Include(c => c.Branch)
-                .Include(c => c.LoanAccount)
-                    .ThenInclude(l => l!.Member)
-                .Include(c => c.LoanAccount)
-                    .ThenInclude(l => l!.Customer)
-                .Include(c => c.LoanAccount)
-                    .ThenInclude(l => l!.LoanRate)
-                .Include(c => c.LoanAccount)
-                    .ThenInclude(l => l!.Branch)
-                .Include(c => c.Fees)
-                    .ThenInclude(f => f.Ledger)
-                .AsQueryable();
-
-            if (!isHOUser)
+            try
             {
-                // Non-HO users can only view collections where BranchID is their branch
-                query = query.Where(c => c.BranchID == userBranchId);
+                var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
+
+                var query = _context.LoanCollections
+                    .AsNoTracking()
+                    .Include(c => c.Branch)
+                    .Include(c => c.LoanAccount)
+                        .ThenInclude(l => l!.Member)
+                    .Include(c => c.LoanAccount)
+                        .ThenInclude(l => l!.Customer)
+                    .Include(c => c.LoanAccount)
+                        .ThenInclude(l => l!.LoanRate)
+                    .Include(c => c.LoanAccount)
+                        .ThenInclude(l => l!.Branch)
+                    .Include(c => c.Fees)
+                        .ThenInclude(f => f.Ledger)
+                    .AsQueryable();
+
+                if (!isHOUser)
+                {
+                    // Non-HO users can only view collections where BranchID is their branch
+                    query = query.Where(c => c.BranchID == userBranchId);
+                }
+                else if (branchId.HasValue && branchId.Value > 0)
+                {
+                    query = query.Where(c => c.BranchID == branchId.Value);
+                }
+
+                query = query.OrderByDescending(c => c.CollectionDate).ThenByDescending(c => c.LoanCollectionID);
+
+                int p = page ?? 1;
+                int ps = pageSize ?? 50;
+                if (p < 1) p = 1;
+                if (ps < 1 || ps > 500) ps = 50;
+
+                // Bounded pagination prevents unbounded DB scans (Pillar 2)
+                return await query.Skip((p - 1) * ps).Take(ps).ToListAsync();
             }
-            else if (branchId.HasValue && branchId.Value > 0)
+            catch (Exception ex)
             {
-                query = query.Where(c => c.BranchID == branchId.Value);
+                Serilog.Log.Error(ex, "GetLoanCollections failure: {Message}", ex.Message);
+                try
+                {
+                    var (_, _, userBranchId, isHOUser) = GetCurrentUserInfo();
+                    var fallbackQuery = _context.LoanCollections
+                        .AsNoTracking()
+                        .Include(c => c.Branch)
+                        .Include(c => c.LoanAccount)
+                            .ThenInclude(l => l!.Customer)
+                        .AsQueryable();
+
+                    if (!isHOUser)
+                    {
+                        fallbackQuery = fallbackQuery.Where(c => c.BranchID == userBranchId);
+                    }
+                    else if (branchId.HasValue && branchId.Value > 0)
+                    {
+                        fallbackQuery = fallbackQuery.Where(c => c.BranchID == branchId.Value);
+                    }
+
+                    int p = page ?? 1;
+                    int ps = pageSize ?? 50;
+                    if (p < 1) p = 1;
+                    if (ps < 1 || ps > 500) ps = 50;
+
+                    return await fallbackQuery.OrderByDescending(c => c.CollectionDate).ThenByDescending(c => c.LoanCollectionID)
+                        .Skip((p - 1) * ps).Take(ps).ToListAsync();
+                }
+                catch (Exception fallbackEx)
+                {
+                    Serilog.Log.Error(fallbackEx, "GetLoanCollections fallback failure: {Message}", fallbackEx.Message);
+                    string detailedError = ex.InnerException?.Message ?? ex.Message;
+                    return StatusCode(500, new { message = $"कर्ज वसुली नोंदी लोड करताना त्रुटी आली: {detailedError}" });
+                }
             }
-
-            query = query.OrderByDescending(c => c.CollectionDate).ThenByDescending(c => c.LoanCollectionID);
-
-            int p = page ?? 1;
-            int ps = pageSize ?? 50;
-            if (p < 1) p = 1;
-            if (ps < 1 || ps > 500) ps = 50;
-
-            // Bounded pagination prevents unbounded DB scans (Pillar 2)
-            return await query.Skip((p - 1) * ps).Take(ps).ToListAsync();
         }
 
         // GET: api/LoanCollections/next-receipt-no

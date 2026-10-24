@@ -306,6 +306,42 @@ using (var scope = app.Services.CreateScope())
                 END
             END
 
+            IF EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollections')
+            BEGIN
+                IF COL_LENGTH('LoanCollections', 'ReceivableInterestCollected') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [ReceivableInterestCollected] decimal(18,2) NOT NULL DEFAULT 0.00;
+                IF COL_LENGTH('LoanCollections', 'InterestWaived') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [InterestWaived] decimal(18,2) NOT NULL DEFAULT 0.00;
+                IF COL_LENGTH('LoanCollections', 'PenaltyWaived') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [PenaltyWaived] decimal(18,2) NOT NULL DEFAULT 0.00;
+                IF COL_LENGTH('LoanCollections', 'IsOTS') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [IsOTS] bit NOT NULL DEFAULT 0;
+                IF COL_LENGTH('LoanCollections', 'ResolutionNo') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [ResolutionNo] nvarchar(100) NULL;
+                IF COL_LENGTH('LoanCollections', 'ApprovedByUserID') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [ApprovedByUserID] int NULL;
+                IF COL_LENGTH('LoanCollections', 'HomeBranchVoucherID') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [HomeBranchVoucherID] int NULL;
+                IF COL_LENGTH('LoanCollections', 'AgentID') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [AgentID] int NULL;
+                IF COL_LENGTH('LoanCollections', 'CollectionSource') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [CollectionSource] nvarchar(20) NOT NULL DEFAULT 'COUNTER';
+                IF COL_LENGTH('LoanCollections', 'TransactionId') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [TransactionId] nvarchar(100) NULL;
+                IF COL_LENGTH('LoanCollections', 'SyncReferenceId') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [SyncReferenceId] nvarchar(100) NULL;
+            END
+
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollectionFees')
+            BEGIN
+                CREATE TABLE [dbo].[LoanCollectionFees] (
+                    [LoanCollectionFeeID] int NOT NULL IDENTITY(1,1) PRIMARY KEY,
+                    [LoanCollectionID] int NOT NULL,
+                    [LedgerID] int NOT NULL,
+                    [Amount] decimal(18,2) NOT NULL DEFAULT 0.00
+                );
+            END
+
             IF EXISTS (SELECT * FROM sys.tables WHERE name = 'PigmyAgents')
             BEGIN
                 IF COL_LENGTH('PigmyAgents', 'Username') IS NULL ALTER TABLE [PigmyAgents] ADD [Username] nvarchar(100) NULL;

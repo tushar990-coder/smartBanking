@@ -59,6 +59,7 @@ namespace Bhisi.Api.Controllers
         {
             public int AgentId { get; set; }
             public string MonthYear { get; set; } = string.Empty; // e.g. "2026-04"
+            public DateTime? ActiveBusinessDate { get; set; }
             public List<BulkMonthlyChartEntryDto> Entries { get; set; } = new List<BulkMonthlyChartEntryDto>();
         }
 
@@ -732,15 +733,31 @@ namespace Bhisi.Api.Controllers
             try
             {
                 int processedEntriesCount = 0;
+                int openingEntriesCount = 0;
+                int activeEntriesCount = 0;
+                int skippedFutureEntriesCount = 0;
                 decimal grandTotalAmount = 0;
+                decimal openingTotalAmount = 0;
+                decimal activeTotalAmount = 0;
                 var affectedAccounts = new HashSet<int>();
                 var processedDates = new HashSet<string>();
 
+                var businessDate = (request.ActiveBusinessDate ?? DateTime.Today).Date;
                 var groupedByDate = validEntries.GroupBy(e => e.CollectionDate.Date).OrderBy(g => g.Key);
 
                 foreach (var dateGroup in groupedByDate)
                 {
                     var targetDate = dateGroup.Key;
+
+                    // Safely ignore future collections beyond current active business date
+                    if (targetDate > businessDate)
+                    {
+                        skippedFutureEntriesCount += dateGroup.Count();
+                        continue;
+                    }
+
+                    // Prior dates are treated as Opening Balance / Historical migration entries and auto-approved
+                    bool isHistorical = targetDate < businessDate;
                     var nextDate = targetDate.AddDays(1);
                     var baseSeq = await _context.PigmyCollections.CountAsync(c => c.CollectionDate >= targetDate && c.CollectionDate < nextDate);
                     int itemIdx = 0;
@@ -772,7 +789,9 @@ namespace Bhisi.Api.Controllers
                         {
                             itemIdx++;
                             int currentSeq = baseSeq + itemIdx;
-                            receiptNo = $"IMP-{account.PigmyAgentID}-{targetDate:yyyyMMdd}-{currentSeq:D4}";
+                            receiptNo = isHistorical
+                                ? $"IMP-OP-{account.PigmyAgentID}-{targetDate:yyyyMMdd}-{currentSeq:D4}"
+                                : $"IMP-{account.PigmyAgentID}-{targetDate:yyyyMMdd}-{currentSeq:D4}";
 
                             var openingBal = account.TotalDepositedAmount;
                             var closingBal = openingBal + item.CollectionAmount;
@@ -786,7 +805,7 @@ namespace Bhisi.Api.Controllers
                                 CollectionAmount = item.CollectionAmount,
                                 ClosingBalance = closingBal,
                                 ReceiptNo = receiptNo,
-                                CollectionSource = "IMPORT",
+                                CollectionSource = isHistorical ? "OPENING_IMPORT" : "IMPORT",
                                 CreatedBy = 1
                             };
                             _context.PigmyCollections.Add(collection);
@@ -803,7 +822,9 @@ namespace Bhisi.Api.Controllers
                             DrAmount = 0,
                             CrAmount = item.CollectionAmount,
                             BalanceAmount = updatedAccountBalance,
-                            Narration = $"Pigmy Monthly Chart Import - Rcpt: {receiptNo}",
+                            Narration = isHistorical
+                                ? $"Pigmy Opening/Historical Import - Rcpt: {receiptNo}"
+                                : $"Pigmy Chart Collection - Rcpt: {receiptNo}",
                             MakerId = 1,
                             PostedOn = DateTime.Now
                         };
@@ -816,16 +837,23 @@ namespace Bhisi.Api.Controllers
                         int drLedgerId = mapping?.DebitLedgerId ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash")))?.LedgerID ?? 1;
                         int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
 
-                        string uniqueVoucherNo = $"PV-{branchId}-{targetDate:yyyyMMdd}-IMP-{itemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+                        string uniqueVoucherNo = isHistorical
+                            ? $"PV-{branchId}-{targetDate:yyyyMMdd}-OP-IMP-{itemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}"
+                            : $"PV-{branchId}-{targetDate:yyyyMMdd}-BLK-{itemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+
                         var voucher = new Voucher
                         {
                             BranchID = branchId,
                             VoucherNo = uniqueVoucherNo,
                             VoucherDate = targetDate,
-                            VoucherType = "Receipt",
-                            Status = "Pending",
-                            Narration = $"Pigmy Chart Import for A/C {account.AccountNo}",
-                            TotalAmount = item.CollectionAmount
+                            VoucherType = isHistorical ? "Opening" : "Receipt",
+                            Status = isHistorical ? "Approved" : "Pending",
+                            Narration = isHistorical
+                                ? $"Pigmy Opening/Historical Import for A/C {account.AccountNo}"
+                                : $"Pigmy Chart Collection for A/C {account.AccountNo}",
+                            TotalAmount = item.CollectionAmount,
+                            ApprovedBy = isHistorical ? 1 : null,
+                            ApprovedOn = isHistorical ? DateTime.Now : null
                         };
 
                         voucher.VoucherDetails.Add(new VoucherDetail
@@ -854,15 +882,42 @@ namespace Bhisi.Api.Controllers
 
                         processedEntriesCount++;
                         grandTotalAmount += item.CollectionAmount;
+                        if (isHistorical)
+                        {
+                            openingEntriesCount++;
+                            openingTotalAmount += item.CollectionAmount;
+                        }
+                        else
+                        {
+                            activeEntriesCount++;
+                            activeTotalAmount += item.CollectionAmount;
+                        }
                         affectedAccounts.Add(account.PigmyAccountID);
                         processedDates.Add(targetDate.ToString("yyyy-MM-dd"));
                     }
                 }
 
                 await transaction.CommitAsync();
+
+                string messageText = activeEntriesCount > 0 && openingEntriesCount > 0
+                    ? $"एजंट '{agent.AgentName}' अंतर्गत एकूण {processedEntriesCount} नोंदी यशस्वीरीत्या जमा झाल्या! (मागील आरंभिक शिल्लक: ₹{openingTotalAmount:N2} थेट मंजूर; चालू व्यवहार दिनांक {businessDate:dd/MM/yyyy}: ₹{activeTotalAmount:N2} पासिंगसाठी प्रलंबित)."
+                    : (activeEntriesCount > 0 
+                        ? $"एजंट '{agent.AgentName}' अंतर्गत चालू व्यवहार दिनांक ({businessDate:dd/MM/yyyy}) साठी {activeEntriesCount} नोंदी (एकूण ₹{activeTotalAmount:N2}) पासिंगसाठी पाठवण्यात आल्या!" 
+                        : $"एजंट '{agent.AgentName}' अंतर्गत मागील आरंभिक शिल्लकच्या {openingEntriesCount} नोंदी (एकूण ₹{openingTotalAmount:N2}) थेट मंजूर (Approved) करण्यात आल्या!");
+
+                if (skippedFutureEntriesCount > 0)
+                {
+                    messageText += $" (सूचना: चालू तारखेपुढील {skippedFutureEntriesCount} भविष्यकालीन नोंदी वगळल्या).";
+                }
+
                 return Ok(new { 
-                    message = $"एजंट '{agent.AgentName}' अंतर्गत {affectedAccounts.Count} खात्यांच्या एकूण {processedEntriesCount} दैनंदिन नोंदी (एकूण रक्कम ₹{grandTotalAmount:N2}) यशस्वीरीत्या जमा झाल्या!", 
+                    message = messageText, 
                     processedEntriesCount,
+                    openingEntriesCount,
+                    openingTotalAmount,
+                    activeEntriesCount,
+                    activeTotalAmount,
+                    skippedFutureEntriesCount,
                     totalAccounts = affectedAccounts.Count,
                     totalAmount = grandTotalAmount,
                     totalDates = processedDates.Count

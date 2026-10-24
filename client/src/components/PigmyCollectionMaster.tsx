@@ -1208,6 +1208,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       const payload = {
         agentId: Number(selectedMonthlyAgentId),
         monthYear: selectedMonth,
+        activeBusinessDate: activeBusinessDate || collectionDate,
         entries: flatEntries
       };
 
@@ -2097,6 +2098,48 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                     </tfoot>
                   </table>
                 </div>
+
+                {/* Opening Balance vs Active Transaction Date Breakdown Banner */}
+                {(() => {
+                  const effectiveBizDate = activeBusinessDate || collectionDate;
+                  let pastEntriesCount = 0;
+                  let pastTotalAmt = 0;
+                  let todayEntriesCount = 0;
+                  let todayTotalAmt = 0;
+
+                  monthlyImportPreview.rows.forEach(r => {
+                    if (r.isValid && r.pigmyAccountId > 0) {
+                      Object.entries(r.dailyAmounts).forEach(([dStr, amt]) => {
+                        if (amt > 0) {
+                          if (dStr < effectiveBizDate) {
+                            pastEntriesCount++;
+                            pastTotalAmt += amt;
+                          } else if (dStr === effectiveBizDate) {
+                            todayEntriesCount++;
+                            todayTotalAmt += amt;
+                          }
+                        }
+                      });
+                    }
+                  });
+
+                  return (
+                    <div className="mx-3 my-2 p-2.5 bg-blue-50/80 border border-blue-200 rounded-sm text-[11px] text-blue-900 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base">ℹ️</span>
+                        <span>
+                          <strong>आरंभिक शिल्लक (मागील तारखा):</strong> {pastEntriesCount} नोंदी (₹{pastTotalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) थेट <strong>Approved</strong> (मंजूर) होतील.
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
+                        <span>📌</span>
+                        <span>
+                          <strong>चालू व्यवहार दिनांक ({effectiveBizDate}):</strong> {todayEntriesCount} नोंदी (₹{todayTotalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) व्हाउचर पासिंग (Pending) साठी जातील.
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Footer Save Action Bar */}
                 <div className="p-3 bg-gray-50 border-t border-gray-300 flex flex-wrap items-center justify-between gap-3">

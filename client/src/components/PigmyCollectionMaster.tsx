@@ -2099,42 +2099,36 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   </table>
                 </div>
 
-                {/* Opening Balance vs Active Transaction Date Breakdown Banner */}
+                {/* Consolidated Daily Voucher Information Banner */}
                 {(() => {
-                  const effectiveBizDate = activeBusinessDate || collectionDate;
-                  let pastEntriesCount = 0;
-                  let pastTotalAmt = 0;
-                  let todayEntriesCount = 0;
-                  let todayTotalAmt = 0;
+                  const distinctDates = new Set<string>();
+                  let totalEntries = 0;
+                  let totalAmt = 0;
 
                   monthlyImportPreview.rows.forEach(r => {
                     if (r.isValid && r.pigmyAccountId > 0) {
                       Object.entries(r.dailyAmounts).forEach(([dStr, amt]) => {
                         if (amt > 0) {
-                          if (dStr < effectiveBizDate) {
-                            pastEntriesCount++;
-                            pastTotalAmt += amt;
-                          } else if (dStr === effectiveBizDate) {
-                            todayEntriesCount++;
-                            todayTotalAmt += amt;
-                          }
+                          distinctDates.add(dStr);
+                          totalEntries++;
+                          totalAmt += amt;
                         }
                       });
                     }
                   });
 
                   return (
-                    <div className="mx-3 my-2 p-2.5 bg-blue-50/80 border border-blue-200 rounded-sm text-[11px] text-blue-900 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                    <div className="mx-3 my-2 p-2.5 bg-blue-50/90 border border-blue-200 rounded-sm text-[11px] text-blue-900 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-base">ℹ️</span>
+                        <span className="text-base">📑</span>
                         <span>
-                          <strong>आरंभिक शिल्लक (मागील तारखा):</strong> {pastEntriesCount} नोंदी (₹{pastTotalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) थेट <strong>Approved</strong> (मंजूर) होतील.
+                          <strong>दैनिक कन्सोलिडेटेड व्हाउचर (Consolidated Voucher):</strong> एकूण {totalEntries} नोंदींसाठी ({distinctDates.size} दिवस) प्रति दिवस १ व्हाउचर याप्रमाणे एकूण <strong>{distinctDates.size} व्हाउचर्स</strong> तयार होतील.
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
                         <span>📌</span>
                         <span>
-                          <strong>चालू व्यवहार दिनांक ({effectiveBizDate}):</strong> {todayEntriesCount} नोंदी (₹{todayTotalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) व्हाउचर पासिंग (Pending) साठी जातील.
+                          <strong>व्हाउचर पासिंग (Voucher Passing):</strong> एकूण रक्कम ₹{totalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })} पासिंगसाठी प्रलंबित (Pending) राहील.
                         </span>
                       </div>
                     </div>

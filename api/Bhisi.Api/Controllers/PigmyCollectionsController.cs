@@ -756,11 +756,15 @@ namespace Bhisi.Api.Controllers
                         continue;
                     }
 
-                    // Prior dates are treated as Opening Balance / Historical migration entries and auto-approved
-                    bool isHistorical = targetDate < businessDate;
+                    // True Opening Balance is strictly on or prior to 31/03/2026; dates after 31/03/2026 are regular transactional collections
+                    bool isOpeningBalance = targetDate <= new DateTime(2026, 3, 31);
                     var nextDate = targetDate.AddDays(1);
                     var baseSeq = await _context.PigmyCollections.CountAsync(c => c.CollectionDate >= targetDate && c.CollectionDate < nextDate);
                     int itemIdx = 0;
+
+                    decimal dayTotalAmount = 0;
+                    var dayCollections = new List<PigmyCollection>();
+                    int targetBranchId = 1;
 
                     foreach (var item in dateGroup)
                     {
@@ -769,7 +773,7 @@ namespace Bhisi.Api.Controllers
 
                         if (account.OpeningDate.Date > targetDate) continue;
 
-                        var branchId = account.BranchID;
+                        targetBranchId = account.BranchID > 0 ? account.BranchID : 1;
                         PigmyCollection collection;
                         string receiptNo;
 
@@ -789,7 +793,7 @@ namespace Bhisi.Api.Controllers
                         {
                             itemIdx++;
                             int currentSeq = baseSeq + itemIdx;
-                            receiptNo = isHistorical
+                            receiptNo = isOpeningBalance
                                 ? $"IMP-OP-{account.PigmyAgentID}-{targetDate:yyyyMMdd}-{currentSeq:D4}"
                                 : $"IMP-{account.PigmyAgentID}-{targetDate:yyyyMMdd}-{currentSeq:D4}";
 
@@ -805,7 +809,7 @@ namespace Bhisi.Api.Controllers
                                 CollectionAmount = item.CollectionAmount,
                                 ClosingBalance = closingBal,
                                 ReceiptNo = receiptNo,
-                                CollectionSource = isHistorical ? "OPENING_IMPORT" : "IMPORT",
+                                CollectionSource = isOpeningBalance ? "OPENING_IMPORT" : "IMPORT",
                                 CreatedBy = 1
                             };
                             _context.PigmyCollections.Add(collection);
@@ -822,8 +826,8 @@ namespace Bhisi.Api.Controllers
                             DrAmount = 0,
                             CrAmount = item.CollectionAmount,
                             BalanceAmount = updatedAccountBalance,
-                            Narration = isHistorical
-                                ? $"Pigmy Opening/Historical Import - Rcpt: {receiptNo}"
+                            Narration = isOpeningBalance
+                                ? $"Pigmy Opening/Historical Balance - Rcpt: {receiptNo}"
                                 : $"Pigmy Chart Collection - Rcpt: {receiptNo}",
                             MakerId = 1,
                             PostedOn = DateTime.Now
@@ -833,56 +837,12 @@ namespace Bhisi.Api.Controllers
                         account.TotalDepositedAmount = updatedAccountBalance;
                         _context.PigmyAccounts.Update(account);
 
-                        var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.IsActive);
-                        int drLedgerId = mapping?.DebitLedgerId ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash")))?.LedgerID ?? 1;
-                        int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
-
-                        string uniqueVoucherNo = isHistorical
-                            ? $"PV-{branchId}-{targetDate:yyyyMMdd}-OP-IMP-{itemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}"
-                            : $"PV-{branchId}-{targetDate:yyyyMMdd}-BLK-{itemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
-
-                        var voucher = new Voucher
-                        {
-                            BranchID = branchId,
-                            VoucherNo = uniqueVoucherNo,
-                            VoucherDate = targetDate,
-                            VoucherType = isHistorical ? "Opening" : "Receipt",
-                            Status = isHistorical ? "Approved" : "Pending",
-                            Narration = isHistorical
-                                ? $"Pigmy Opening/Historical Import for A/C {account.AccountNo}"
-                                : $"Pigmy Chart Collection for A/C {account.AccountNo}",
-                            TotalAmount = item.CollectionAmount,
-                            ApprovedBy = isHistorical ? 1 : null,
-                            ApprovedOn = isHistorical ? DateTime.Now : null
-                        };
-
-                        voucher.VoucherDetails.Add(new VoucherDetail
-                        {
-                            LedgerID = drLedgerId,
-                            CustomerID = account.CustomerID,
-                            DrCr = "Dr",
-                            Amount = item.CollectionAmount
-                        });
-
-                        voucher.VoucherDetails.Add(new VoucherDetail
-                        {
-                            LedgerID = crLedgerId,
-                            CustomerID = account.CustomerID,
-                            DrCr = "Cr",
-                            Amount = item.CollectionAmount
-                        });
-
-                        _context.Vouchers.Add(voucher);
-                        await _context.SaveChangesAsync();
-
-                        collection.VoucherId = voucher.VoucherID;
-                        collection.IsVoucherGenerated = true;
-
-                        await _context.SaveChangesAsync();
+                        dayCollections.Add(collection);
+                        dayTotalAmount += item.CollectionAmount;
 
                         processedEntriesCount++;
                         grandTotalAmount += item.CollectionAmount;
-                        if (isHistorical)
+                        if (isOpeningBalance)
                         {
                             openingEntriesCount++;
                             openingTotalAmount += item.CollectionAmount;
@@ -895,16 +855,96 @@ namespace Bhisi.Api.Controllers
                         affectedAccounts.Add(account.PigmyAccountID);
                         processedDates.Add(targetDate.ToString("yyyy-MM-dd"));
                     }
+
+                    // Exactly ONE Consolidated Voucher per date for all collections on this targetDate
+                    if (dayTotalAmount > 0 && dayCollections.Any())
+                    {
+                        var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == targetBranchId && m.IsActive);
+                        int drLedgerId = mapping?.DebitLedgerId ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash")))?.LedgerID ?? 1;
+                        int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
+
+                        string uniqueVoucherNo = isOpeningBalance
+                            ? $"PV-{targetBranchId}-{targetDate:yyyyMMdd}-OP-IMP-{Guid.NewGuid().ToString("N").Substring(0, 4)}"
+                            : $"PV-{targetBranchId}-{targetDate:yyyyMMdd}-IMP-CONS";
+
+                        var existingVoucher = await _context.Vouchers
+                            .Include(v => v.VoucherDetails)
+                            .FirstOrDefaultAsync(v => v.BranchID == targetBranchId && v.VoucherDate.Date == targetDate && v.VoucherNo.Contains("-IMP-"));
+
+                        Voucher voucher;
+                        if (existingVoucher != null)
+                        {
+                            voucher = existingVoucher;
+                            voucher.TotalAmount = dayTotalAmount;
+                            voucher.Status = isOpeningBalance ? "Approved" : "Pending";
+                            voucher.VoucherType = isOpeningBalance ? "Opening" : "Receipt";
+                            voucher.Narration = isOpeningBalance
+                                ? $"पिग्मी आरंभिक शिल्लक आयात (एजंट: {agent.AgentName}) - एकूण {dayCollections.Count} खाती"
+                                : $"पिग्मी मासिक एक्सेल संकलन (एजंट: {agent.AgentName}) - एकूण {dayCollections.Count} खाती";
+
+                            if (voucher.VoucherDetails.Any())
+                            {
+                                foreach (var vd in voucher.VoucherDetails)
+                                {
+                                    vd.Amount = dayTotalAmount;
+                                }
+                            }
+                            else
+                            {
+                                voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = drLedgerId, DrCr = "Dr", Amount = dayTotalAmount });
+                                voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = crLedgerId, DrCr = "Cr", Amount = dayTotalAmount });
+                            }
+                            _context.Vouchers.Update(voucher);
+                        }
+                        else
+                        {
+                            voucher = new Voucher
+                            {
+                                BranchID = targetBranchId,
+                                VoucherNo = uniqueVoucherNo,
+                                VoucherDate = targetDate,
+                                VoucherType = isOpeningBalance ? "Opening" : "Receipt",
+                                Status = isOpeningBalance ? "Approved" : "Pending",
+                                Narration = isOpeningBalance
+                                    ? $"पिग्मी आरंभिक शिल्लक आयात (एजंट: {agent.AgentName}) - एकूण {dayCollections.Count} खाती"
+                                    : $"पिग्मी मासिक एक्सेल संकलन (एजंट: {agent.AgentName}) - एकूण {dayCollections.Count} खाती",
+                                TotalAmount = dayTotalAmount,
+                                ApprovedBy = isOpeningBalance ? 1 : null,
+                                ApprovedOn = isOpeningBalance ? DateTime.Now : null
+                            };
+
+                            voucher.VoucherDetails.Add(new VoucherDetail
+                            {
+                                LedgerID = drLedgerId,
+                                DrCr = "Dr",
+                                Amount = dayTotalAmount
+                            });
+
+                            voucher.VoucherDetails.Add(new VoucherDetail
+                            {
+                                LedgerID = crLedgerId,
+                                DrCr = "Cr",
+                                Amount = dayTotalAmount
+                            });
+
+                            _context.Vouchers.Add(voucher);
+                        }
+
+                        await _context.SaveChangesAsync();
+
+                        // Link all collections of this date to this single consolidated voucher
+                        foreach (var col in dayCollections)
+                        {
+                            col.VoucherId = voucher.VoucherID;
+                            col.IsVoucherGenerated = true;
+                        }
+                        await _context.SaveChangesAsync();
+                    }
                 }
 
                 await transaction.CommitAsync();
 
-                string messageText = activeEntriesCount > 0 && openingEntriesCount > 0
-                    ? $"एजंट '{agent.AgentName}' अंतर्गत एकूण {processedEntriesCount} नोंदी यशस्वीरीत्या जमा झाल्या! (मागील आरंभिक शिल्लक: ₹{openingTotalAmount:N2} थेट मंजूर; चालू व्यवहार दिनांक {businessDate:dd/MM/yyyy}: ₹{activeTotalAmount:N2} पासिंगसाठी प्रलंबित)."
-                    : (activeEntriesCount > 0 
-                        ? $"एजंट '{agent.AgentName}' अंतर्गत चालू व्यवहार दिनांक ({businessDate:dd/MM/yyyy}) साठी {activeEntriesCount} नोंदी (एकूण ₹{activeTotalAmount:N2}) पासिंगसाठी पाठवण्यात आल्या!" 
-                        : $"एजंट '{agent.AgentName}' अंतर्गत मागील आरंभिक शिल्लकच्या {openingEntriesCount} नोंदी (एकूण ₹{openingTotalAmount:N2}) थेट मंजूर (Approved) करण्यात आल्या!");
-
+                string messageText = $"एजंट '{agent.AgentName}' अंतर्गत {affectedAccounts.Count} खात्यांच्या एकूण {processedEntriesCount} दैनंदिन नोंदी (एकूण रक्कम ₹{grandTotalAmount:N2}) यशस्वीरीत्या जमा झाल्या! एकूण {processedDates.Count} दिवसांसाठी दैनंदिन व्हाउचर्स पासिंगसाठी (Pending) तयार झाले आहेत.";
                 if (skippedFutureEntriesCount > 0)
                 {
                     messageText += $" (सूचना: चालू तारखेपुढील {skippedFutureEntriesCount} भविष्यकालीन नोंदी वगळल्या).";

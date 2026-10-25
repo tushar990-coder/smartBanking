@@ -1,5 +1,6 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+<<<<<<< HEAD
 ## 📅 [2026-10-25] - आवृत्ती v2.5.92 (RD Installment Collection Legacy Account Number Integration & Searchable Select Badge Support)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
@@ -24,6 +25,26 @@
   * `NpaController.cs` मधील `GET /api/Npa/status/{loanAccountId}` मध्ये नियमित खात्यांसाठी ४०४ नॉट फाउंड ऐवजी २०० ओके रिस्पॉन्ससह 'Standard (नियमित)' वर्गीकरण परत पाठवणे.
 
 ---
+=======
+## 📅 [2026-10-25] - आवृत्ती v2.5.90 (Pigmy Monthly Chart Import Consolidated Single Daily Voucher, Strict Opening Balance Cutoff & Approval Queue Integration)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **प्रति दिवस १ कन्सोलिडेटेड व्हाउचर निर्मिती (Consolidated Single Voucher Per Date):**
+  * `PigmyCollectionsController.cs` मधील `ProcessBulkMonthlyChart` मध्ये प्रत्येक खात्याचे स्वतंत्र व्हाउचर बनवणे बंद करून तारीखनिहाय (`targetDate`) ग्रुपिंग लागू केले. 
+  * प्रत्येक खातेदाराचे ₹१०० वैयक्तिक लेजर व पासबुकमध्ये जमा राहून त्या दिवसाच्या एकूण रकमेचे (उदा. ₹४००) फक्त १ कन्सोलिडेटेड पावती व्हाउचर (`PV-...-IMP-CONS`) तयार होते.
+* **आरंभिक शिल्लक अचूक मर्यादा (Strict 31/03/2026 Opening Balance Cutoff):**
+  * केवळ ३१/०३/२०२६ पर्यंतच्या नोंदींना आरंभिक शिल्लक (`Opening Balance` - `Auto Approved`) मानून, ३१/०३/२०२६ नंतरच्या सर्व मासिक एक्सेल नोंदी नियमित व्यवहार म्हणून व्हाउचर पासिंगसाठी प्रलंबित (`Pending`) ठेवण्यात आल्या.
+* **व्हाउचर पासिंग स्क्रीन संरेखन (Voucher Passing & Approved History Clean-up):**
+  * `VoucherPostingController.cs` मधील `GetUnpostedVouchers` व `GetApprovedVouchers` क्वेरींमधून चुकीचे `-IMP-` फिल्टर्स काढून दैनंदिन इंपोर्ट व्हाउचर्स पासिंग रांगेत आणले आणि ३१/०३ पूर्वीच्या ओपनिंग नोंदी लपवून मंजूर यादी स्वच्छ केली.
+* **डेटाबेस एकत्रीकरण (Existing Loose Vouchers Consolidator):**
+  * डेटाबेसमधील ९१ दिवसांतील ५२९ सुट्या/डुप्लिकेट व्हाउचर्सचे सुरक्षित एकत्रीकरण करून ४३८ अतिरिक्त व्हाउचर्स हटवले व प्रत्येक दिवसाचे १ सुटसुटीत `Pending` व्हाउचर प्रस्थापित केले.
+* **फ्रंटएंड माहिती बॅनर (PigmyCollectionMaster.tsx):**
+  * सेव्ह करण्यापूर्वी ऑपरेटरला एकूण दिवस व तयार होणाऱ्या व्हाउचर्सची अचूक संख्या दाखवणारा सुबक माहिती फलक जोडला.
+
+---
+
+## 📅 [2026-10-24] - आवृत्ती v2.5.89 (Loan Collection Receipt Save Resilience, Ledger Auto-Healing, Unique Voucher Collision Guards & Error Unpacking)
+>>>>>>> 74d7d65 (fix(pigmy): consolidated single daily voucher for monthly chart import, strict opening balance cutoff & approval queue integration v2.5.90)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
 * **[object Object] एरर पॉपअप निवारण व संपूर्ण एरर अनपॅकिंग (Frontend Complete Error Unpacking):**

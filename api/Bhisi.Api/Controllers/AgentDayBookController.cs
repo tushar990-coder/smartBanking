@@ -669,7 +669,7 @@ namespace Bhisi.Api.Controllers
             var collections = await _context.PigmyCollections
                 .AsNoTracking()
                 .Include(c => c.PigmyAccount)
-                    .ThenInclude(a => a.Customer)
+                    .ThenInclude(a => a!.Customer)
                 .Where(c => c.AgentId == agentId && c.CollectionDate >= targetDate && c.CollectionDate < nextDate && c.CollectionAmount > 0)
                 .OrderBy(c => c.CollectionDate)
                 .ThenBy(c => c.CollectionId)

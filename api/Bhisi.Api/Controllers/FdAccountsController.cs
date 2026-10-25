@@ -1840,7 +1840,7 @@ namespace Bhisi.Api.Controllers
                 int migrationLedgerId = migrationLedger?.LedgerID ?? 412;
 
                 Ledger? fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(scheme);
-                int liabilityLedgerId = fdLiabilityLedger?.LedgerID ?? (scheme.FdLiabilityLedgerID ?? 48);
+                int liabilityLedgerId = fdLiabilityLedger?.LedgerID ?? (scheme?.FdLiabilityLedgerID ?? 48);
 
                 var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == account.CustomerID);
 
@@ -4277,7 +4277,7 @@ namespace Bhisi.Api.Controllers
                     }
 
                     int interestPayoutLedgerId = 0;
-                    SavingTransaction savTx = null;
+                    SavingTransaction? savTx = null;
                     if (request.RenewalType == "PrincipalOnly" && interestPayoutAmount > 0)
                     {
                         if (paymentMode == "Bank" && request.BankAccountLedgerID > 0)
@@ -4326,9 +4326,9 @@ namespace Bhisi.Api.Controllers
                     var linkedMember = await _context.Members.FirstOrDefaultAsync(m => m.CustomerID == oldAccount.CustomerID);
                     int? linkedMemberId = linkedMember?.MemberID;
 
-                    Voucher voucher1 = null;
-                    Voucher voucher2 = null;
-                    Voucher singleVoucher = null;
+                    Voucher? voucher1 = null;
+                    Voucher? voucher2 = null;
+                    Voucher? singleVoucher = null;
 
                     if (request.RenewalType == "PrincipalOnly")
                     {

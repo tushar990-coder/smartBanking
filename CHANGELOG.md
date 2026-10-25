@@ -1,6 +1,36 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
-<<<<<<< HEAD
+## 📅 [2026-10-25] - आवृत्ती v2.5.94 (Pigmy Monthly Chart Import Consolidated Single Daily Voucher, Strict Opening Balance Cutoff & Approval Queue Integration)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **प्रति दिवस १ कन्सोलिडेटेड व्हाउचर निर्मिती (Consolidated Single Voucher Per Date):**
+  * `PigmyCollectionsController.cs` मधील `ProcessBulkMonthlyChart` मध्ये प्रत्येक खात्याचे स्वतंत्र व्हाउचर बनवणे बंद करून तारीखनिहाय (`targetDate`) ग्रुपिंग लागू केले. 
+  * प्रत्येक खातेदाराचे ₹१०० वैयक्तिक लेजर व पासबुकमध्ये जमा राहून त्या दिवसाच्या एकूण रकमेचे (उदा. ₹४००) फक्त १ कन्सोलिडेटेड पावती व्हाउचर (`PV-...-IMP-CONS`) तयार होते.
+* **आरंभिक शिल्लक अचूक मर्यादा (Strict 31/03/2026 Opening Balance Cutoff):**
+  * केवळ ३१/०३/२०२६ पर्यंतच्या नोंदींना आरंभिक शिल्लक (`Opening Balance` - `Auto Approved`) मानून, ३१/०३/२०२६ नंतरच्या सर्व मासिक एक्सेल नोंदी नियमित व्यवहार म्हणून व्हाउचर पासिंगसाठी प्रलंबित (`Pending`) ठेवण्यात आल्या.
+* **व्हाउचर पासिंग स्क्रीन संरेखन (Voucher Passing & Approved History Clean-up):**
+  * `VoucherPostingController.cs` मधील `GetUnpostedVouchers` व `GetApprovedVouchers` क्वेरींमधून चुकीचे `-IMP-` फिल्टर्स काढून दैनंदिन इंपोर्ट व्हाउचर्स पासिंग रांगेत आणले आणि ३१/०३ पूर्वीच्या ओपनिंग नोंदी लपवून मंजूर यादी स्वच्छ केली.
+* **डेटाबेस एकत्रीकरण (Existing Loose Vouchers Consolidator):**
+  * डेटाबेसमधील ९१ दिवसांतील ५२९ सुट्या/डुप्लिकेट व्हाउचर्सचे सुरक्षित एकत्रीकरण करून ४३८ अतिरिक्त व्हाउचर्स हटवले व प्रत्येक दिवसाचे १ सुटसुटीत `Pending` व्हाउचर प्रस्थापित केले.
+* **फ्रंटएंड माहिती बॅनर (PigmyCollectionMaster.tsx):**
+  * सेव्ह करण्यापूर्वी ऑपरेटरला एकूण दिवस व तयार होणाऱ्या व्हाउचर्सची अचूक संख्या दाखवणारा सुबक माहिती फलक जोडला.
+
+---
+
+## 📅 [2026-10-25] - आवृत्ती v2.5.93 (RD Installment Schedule Chart, Inline Preview & CBS Modal)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **बॅकएंड एंडपॉईंट सुधारणा (RdAccountsController.cs Schedule Enhancement):**
+  * `GET /api/RdAccounts/{id}/schedule` मध्ये `Include(s => s.Voucher)` जोडून प्रत्येक हप्त्यासाठी पावती/व्हाउचर क्रमांक (`VoucherNo`) समाविष्ट केला; तसेच ज्या जुन्या किंवा मायग्रेट केलेल्या खात्यांचा शेड्युल डेटाबेसमध्ये नसेल, त्यांचा शेड्युल ऑन-द-फ्लाय ऑटो-जनरेट करून सेव्ह करणारा फॉलबॅक मेकॅनिझम लागू केला.
+* **इनलाइन हप्ते यादी व क्विक समरी (Inline Mini Schedule & Quick Badges):**
+  * `RdInstallmentCollection.tsx` मधील निवडलेल्या खात्याच्या कार्डवर [📅 हप्ता चार्ट पहा] मुख्य मोडल बटणासह [हप्ते यादी ▼] इनलाइन टॉगल जोडले; सोबत 🟢 जमा, 🟡 चालू देय व 🔴 थकीत हप्त्यांचे रंगीत बॅजेस दिले.
+* **संपूर्ण CBS हप्ता वेळापत्रक मोडल (Full-Featured Schedule Modal):**
+  * खाते माहिती, ४ केपीआय सारांश कार्ड्स, संपूर्ण हप्ता तक्ता, चालू हप्ता (Current Due) ठळक हायलाइट, आणि एकूण बेरजेचा तळटीप.
+* **ग्राहकासाठी थेट A4 प्रिंट व एक्सेल डाउनलोड (Instant A4 Print & CSV Export):**
+  * मोडलमधून खातेदाराला देण्यायोग्य अधिकृत A4 फॉरमॅट हप्ता वेळापत्रक प्रिंट करणे आणि ऑफलाइन संकलनासाठी एक-क्लिक एक्सेल डाउनलोड करणे शक्य.
+
+---
+
 ## 📅 [2026-10-25] - आवृत्ती v2.5.92 (RD Installment Collection Legacy Account Number Integration & Searchable Select Badge Support)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
@@ -25,26 +55,20 @@
   * `NpaController.cs` मधील `GET /api/Npa/status/{loanAccountId}` मध्ये नियमित खात्यांसाठी ४०४ नॉट फाउंड ऐवजी २०० ओके रिस्पॉन्ससह 'Standard (नियमित)' वर्गीकरण परत पाठवणे.
 
 ---
-=======
-## 📅 [2026-10-25] - आवृत्ती v2.5.90 (Pigmy Monthly Chart Import Consolidated Single Daily Voucher, Strict Opening Balance Cutoff & Approval Queue Integration)
+
+## 📅 [2026-10-24] - आवृत्ती v2.5.90 (All Reports White Screen Resolution, Clean Routing, Loan Collection 500 Safe Fallback & DB Schema Self-Healing)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
-* **प्रति दिवस १ कन्सोलिडेटेड व्हाउचर निर्मिती (Consolidated Single Voucher Per Date):**
-  * `PigmyCollectionsController.cs` मधील `ProcessBulkMonthlyChart` मध्ये प्रत्येक खात्याचे स्वतंत्र व्हाउचर बनवणे बंद करून तारीखनिहाय (`targetDate`) ग्रुपिंग लागू केले. 
-  * प्रत्येक खातेदाराचे ₹१०० वैयक्तिक लेजर व पासबुकमध्ये जमा राहून त्या दिवसाच्या एकूण रकमेचे (उदा. ₹४००) फक्त १ कन्सोलिडेटेड पावती व्हाउचर (`PV-...-IMP-CONS`) तयार होते.
-* **आरंभिक शिल्लक अचूक मर्यादा (Strict 31/03/2026 Opening Balance Cutoff):**
-  * केवळ ३१/०३/२०२६ पर्यंतच्या नोंदींना आरंभिक शिल्लक (`Opening Balance` - `Auto Approved`) मानून, ३१/०३/२०२६ नंतरच्या सर्व मासिक एक्सेल नोंदी नियमित व्यवहार म्हणून व्हाउचर पासिंगसाठी प्रलंबित (`Pending`) ठेवण्यात आल्या.
-* **व्हाउचर पासिंग स्क्रीन संरेखन (Voucher Passing & Approved History Clean-up):**
-  * `VoucherPostingController.cs` मधील `GetUnpostedVouchers` व `GetApprovedVouchers` क्वेरींमधून चुकीचे `-IMP-` फिल्टर्स काढून दैनंदिन इंपोर्ट व्हाउचर्स पासिंग रांगेत आणले आणि ३१/०३ पूर्वीच्या ओपनिंग नोंदी लपवून मंजूर यादी स्वच्छ केली.
-* **डेटाबेस एकत्रीकरण (Existing Loose Vouchers Consolidator):**
-  * डेटाबेसमधील ९१ दिवसांतील ५२९ सुट्या/डुप्लिकेट व्हाउचर्सचे सुरक्षित एकत्रीकरण करून ४३८ अतिरिक्त व्हाउचर्स हटवले व प्रत्येक दिवसाचे १ सुटसुटीत `Pending` व्हाउचर प्रस्थापित केले.
-* **फ्रंटएंड माहिती बॅनर (PigmyCollectionMaster.tsx):**
-  * सेव्ह करण्यापूर्वी ऑपरेटरला एकूण दिवस व तयार होणाऱ्या व्हाउचर्सची अचूक संख्या दाखवणारा सुबक माहिती फलक जोडला.
+* **सर्व अहवाल व्हाईट स्क्रीन १००% निवारण (Universal Report White Screen Elimination):**
+  * `ReportDashboard`, `Member360Dashboard` आणि `App.tsx` मध्ये query composite strings (`&reportType=...`) चे योग्य विभाजन आणि `getTabFromURL()` मध्ये URL query sanitization लागू; मुदत ठेव नोंदवही (FD Register), खातावणी (MemberLedger), आरडी (RD Reports), गुंतवणूक (Investment Reports) यापुढे कधीही पांढरी न पडता तात्काळ उघडणे.
+* **कर्ज वसुली (Loan Collections) ५०० एरर प्रतिबंध व लवचिक फॉलबॅक (Loan Collection Resilience & Safe Fallback):**
+  * `LoanCollectionsController.cs` मधील `GetLoanCollections` मध्ये सेफ try-catch ब्लॉक व डेटाबेस किंवा जॉईन त्रुटी आल्यास मिनिमल जॉईन्ससह सुरक्षित फॉलबॅक क्वेरी.
+* **डेटाबेस स्कीमा स्वयंचलित दुरुस्ती (Program.cs Automatic Schema Self-Healing):**
+  * जुन्या व पडवळवाडी डेटाबेससाठी `LoanCollections` मधील सर्व नवीन कॉलम्स (`ReceivableInterestCollected`, `InterestWaived`, `AgentID`, इत्यादी) व `LoanCollectionFees` टेबलचा IF NOT EXISTS ऑटो-क्रिएशन ब्लॉक समाविष्ट.
 
 ---
 
 ## 📅 [2026-10-24] - आवृत्ती v2.5.89 (Loan Collection Receipt Save Resilience, Ledger Auto-Healing, Unique Voucher Collision Guards & Error Unpacking)
->>>>>>> 74d7d65 (fix(pigmy): consolidated single daily voucher for monthly chart import, strict opening balance cutoff & approval queue integration v2.5.90)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
 * **[object Object] एरर पॉपअप निवारण व संपूर्ण एरर अनपॅकिंग (Frontend Complete Error Unpacking):**

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
-import toast, { Toaster, ToastBar } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { 
   Building2, 
   Calendar, 
@@ -317,10 +317,6 @@ export default function RegulatoryMisReport() {
             setOther(JSON.parse(report.otherInfoJson || report.OtherInfoJson));
           }
 
-          toast.success(`आर्थिक वर्ष ${financialYear} चा सेव्ह केलेला डेटा लोड झाला.`, {
-            id: 'mis-saved-data-loaded',
-            duration: 3000
-          });
           setLoading(false);
           return;
         }
@@ -341,8 +337,6 @@ export default function RegulatoryMisReport() {
         if (res.data.financialRatios) setFinancialRatios(res.data.financialRatios);
         if (res.data.contribution) setContribution(res.data.contribution);
         if (res.data.other) setOther((prev: any) => ({ ...prev, ...res.data.other }));
-        
-        toast.success('CBS सिस्टीममधून सर्व माहिती अचूक स्वयंचलित गणन केली.');
       }
     } catch (err: any) {
       console.error(err);
@@ -511,51 +505,6 @@ export default function RegulatoryMisReport() {
 
   return (
     <div className="p-2 sm:p-3 max-w-7xl mx-auto min-h-screen flex flex-col bg-slate-50 text-[11px] font-sans print:p-0 print:bg-white text-gray-800">
-      <Toaster 
-        position="top-right"
-        reverseOrder={false}
-        gutter={8}
-        toastOptions={{
-          duration: 3000,
-          style: {
-            background: '#ffffff',
-            color: '#1e293b',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08)',
-            border: '1px solid #cbd5e1',
-            borderRadius: '4px',
-            fontSize: '12px',
-            padding: '8px 12px',
-          },
-        }}
-      >
-        {(t) => (
-          <ToastBar toast={t}>
-            {({ icon, message }) => (
-              <div 
-                className="flex items-center gap-2 cursor-pointer select-none"
-                onClick={() => toast.dismiss(t.id)}
-              >
-                {icon}
-                <div className="text-xs font-semibold text-slate-800 pr-1">{message}</div>
-                {t.type !== 'loading' && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toast.dismiss(t.id);
-                    }}
-                    className="p-1 -mr-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-sm cursor-pointer transition-colors"
-                    title="बंद करा (Close)"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-            )}
-          </ToastBar>
-        )}
-      </Toaster>
-
       {/* Print Specific CSS */}
       <style>
         {`

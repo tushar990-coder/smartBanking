@@ -174,7 +174,7 @@ window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
 };
 
 import { BrowserRouter } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast'
+import toast, { Toaster, ToastBar } from 'react-hot-toast'
 import ErrorBoundary from './components/common/ErrorBoundary'
 
 ReactDOM.render(
@@ -183,7 +183,34 @@ ReactDOM.render(
       <BrowserRouter>
         <AuthProvider>
           <App />
-          <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
+          <Toaster 
+            position="bottom-right" 
+            reverseOrder={false}
+            toastOptions={{ 
+              duration: 3000,
+              style: {
+                fontSize: '12px',
+                borderRadius: '6px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                cursor: 'pointer'
+              }
+            }} 
+          >
+            {(t) => (
+              <ToastBar toast={t}>
+                {({ icon, message }) => (
+                  <div 
+                    className="flex items-center gap-1.5 cursor-pointer select-none"
+                    onClick={() => toast.dismiss(t.id)}
+                    title="बंद करण्यासाठी क्लिक करा"
+                  >
+                    {icon}
+                    <div className="text-xs font-semibold pr-1">{message}</div>
+                  </div>
+                )}
+              </ToastBar>
+            )}
+          </Toaster>
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

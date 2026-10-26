@@ -572,10 +572,11 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
       const bFilter = targetBranchId !== undefined ? targetBranchId : filterBranchId;
       const url = bFilter && bFilter !== 'all' ? `/api/LoanApplications?branchId=${bFilter}` : '/api/LoanApplications';
       const res = await axios.get(url);
-      setApplications(res.data);
+      setApplications(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error(err);
       setError('कर्ज अर्ज लोड करण्यात अयशस्वी!');
+      setApplications([]);
     } finally {
       setLoading(false);
     }
@@ -589,10 +590,10 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
         axios.get('/api/SecurityTypes'),
         axios.get('/api/Branches')
       ]);
-      setMembers(memRes.data.filter((m: any) => m.status === 'Active'));
-      setLoanRates(ratesRes.data);
-      setSecurityTypes(secRes.data.filter((s: any) => s.isActive));
-      setBranches(branchRes.data || []);
+      setMembers(Array.isArray(memRes.data) ? memRes.data.filter((m: any) => m.status === 'Active') : []);
+      setLoanRates(Array.isArray(ratesRes.data) ? ratesRes.data : []);
+      setSecurityTypes(Array.isArray(secRes.data) ? secRes.data.filter((s: any) => s.isActive) : []);
+      setBranches(Array.isArray(branchRes.data) ? branchRes.data : []);
     } catch (err) {
       console.error(err);
     }
@@ -818,7 +819,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     if (resolvedAppId) {
       try {
         const colRes = await axios.get(`/api/LoanCollaterals/ByApplication/${resolvedAppId}`);
-        setDepositCollaterals(colRes.data || []);
+        setDepositCollaterals(Array.isArray(colRes.data) ? colRes.data : []);
       } catch {
         setDepositCollaterals([]);
       }
@@ -848,20 +849,26 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
           customInstallmentAmount: rawApp.installmentAmount && rawApp.installmentAmount > 0 ? rawApp.installmentAmount : null
         };
         const res = await axios.post('/api/LoanAccounts/PreviewSchedule', payload);
-        const mappedSchedule = res.data.map((row: any) => ({
-          instNo: row.no,
-          dueDate: formatDateSafe(row.date),
-          principal: Math.round(row.principal),
-          interest: Math.round(row.interest),
-          total: Math.round(row.principal) + Math.round(row.interest),
-          balance: Math.round(row.balance),
-          openingBalance: Math.round(row.openingBalance),
-          closingBalance: Math.round(row.closingBalance),
-          days: row.days,
-          interestRate: row.interestRate
-        }));
-        setScheduleData(mappedSchedule);
-      } catch(e) {}
+        if (Array.isArray(res.data)) {
+          const mappedSchedule = res.data.map((row: any) => ({
+            instNo: row.no,
+            dueDate: formatDateSafe(row.date),
+            principal: Math.round(row.principal),
+            interest: Math.round(row.interest),
+            total: Math.round(row.principal) + Math.round(row.interest),
+            balance: Math.round(row.balance),
+            openingBalance: Math.round(row.openingBalance),
+            closingBalance: Math.round(row.closingBalance),
+            days: row.days,
+            interestRate: row.interestRate
+          }));
+          setScheduleData(mappedSchedule);
+        } else {
+          setScheduleData([]);
+        }
+      } catch(e) {
+        setScheduleData([]);
+      }
     }
   };
 
@@ -893,6 +900,12 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
 
       const res = await axios.post('/api/LoanAccounts/PreviewSchedule', payload);
       
+      if (!Array.isArray(res.data)) {
+        setError('हप्ता वेळापत्रक डेटा अमान्य आहे.');
+        setScheduleData([]);
+        return;
+      }
+
       const mappedSchedule = res.data.map((row: any) => {
         const roundedPrincipal = Math.round(row.principal);
         const roundedInterest = Math.round(row.interest);
@@ -943,7 +956,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
 
     const data: any[][] = [
       ['हप्ता वेळापत्रक पत्रक (Live Schedule)'],
-      ['अर्ज क्र.', formData.applicationNumber || '-', 'अर्ज दिनांक', formData.applicationDate || '-'],
+      ['अर्ज क्र.', formData.applicationNo || '-', 'अर्ज दिनांक', formData.applicationDate || '-'],
       ['अर्जदार', applicantName, 'कर्ज योजना', rateObj?.loanType || '-'],
       ['मागणी रक्कम', formData.requestedAmount || 0, 'व्याज दर', `${formData.interestRate || 0}%`],
       ['हप्ता रक्कम', formData.installmentAmount || 0, 'हप्ते संख्या', formData.noOfInstallments || 0],
@@ -962,16 +975,16 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
       ]);
     });
 
-    const totalPrin = scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0);
-    const totalInt = scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0);
-    const totalAll = scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0);
+    const totalPrin = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0) : 0;
+    const totalInt = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0) : 0;
+    const totalAll = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0) : 0;
 
     data.push(['एकूण (Total)', '', totalPrin, totalInt, totalAll, '']);
 
     const ws = XLSX.utils.aoa_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'वेळापत्रक');
-    XLSX.writeFile(wb, `Loan_Schedule_${formData.applicationNumber || 'APP'}.xlsx`);
+    XLSX.writeFile(wb, `Loan_Schedule_${formData.applicationNo || 'APP'}.xlsx`);
   };
 
   const handlePrintSchedule = () => {
@@ -979,9 +992,9 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     const applicantMember = members.find((m: any) => (m.customerID || m.id) === formData.customerID);
     const applicantName = applicantMember ? (applicantMember.fullName || applicantMember.name) : '-';
     const rateObj = loanRates.find(r => r.loanRateID === formData.loanRateID);
-    const totalPrin = scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0);
-    const totalInt = scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0);
-    const totalAll = scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0);
+    const totalPrin = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0) : 0;
+    const totalInt = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0) : 0;
+    const totalAll = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0) : 0;
 
     const printWin = window.open('', '_blank', 'width=850,height=900');
     if (!printWin) {
@@ -993,7 +1006,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
       <!DOCTYPE html>
       <html>
       <head>
-        <title>हप्ता वेळापत्रक - ${formData.applicationNumber || 'APP'}</title>
+        <title>हप्ता वेळापत्रक - ${formData.applicationNo || 'APP'}</title>
         <style>
           @page { size: A4 portrait; margin: 15mm; }
           body { font-family: Arial, sans-serif; font-size: 12px; color: #111; margin: 0; padding: 10px; }
@@ -1016,7 +1029,7 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
       <body>
         <div class="header">
           <h2>हप्ता वेळापत्रक पत्रक (Live Schedule)</h2>
-          <p>कर्ज अर्ज क्र.: <strong>${formData.applicationNumber || '-'}</strong> | अर्ज दिनांक: <strong>${formData.applicationDate || '-'}</strong></p>
+          <p>कर्ज अर्ज क्र.: <strong>${formData.applicationNo || '-'}</strong> | अर्ज दिनांक: <strong>${formData.applicationDate || '-'}</strong></p>
         </div>
         <div class="meta-grid">
           <div class="meta-item"><span>अर्जदार खातेदार:</span><strong>${applicantName}</strong></div>
@@ -1168,10 +1181,10 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
     }
   };
 
-  const totalGoldItemsCount = goldItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
-  const totalGoldGrossWeight = goldItems.reduce((sum, item) => sum + (item.grossWeight || 0), 0);
-  const totalGoldNetWeight = goldItems.reduce((sum, item) => sum + (item.netWeight || 0), 0);
-  const totalGoldValuation = goldItems.reduce((sum, item) => sum + (item.valuationAmount || 0), 0);
+  const totalGoldItemsCount = Array.isArray(goldItems) ? goldItems.reduce((sum, item) => sum + (item.quantity || 1), 0) : 0;
+  const totalGoldGrossWeight = Array.isArray(goldItems) ? goldItems.reduce((sum, item) => sum + (item.grossWeight || 0), 0) : 0;
+  const totalGoldNetWeight = Array.isArray(goldItems) ? goldItems.reduce((sum, item) => sum + (item.netWeight || 0), 0) : 0;
+  const totalGoldValuation = Array.isArray(goldItems) ? goldItems.reduce((sum, item) => sum + (item.valuationAmount || 0), 0) : 0;
 
   const applyGoldLoanToApplication = () => {
     const securitySummary = `सोने तारण: ${goldItems.length} जिन्नस (${totalGoldItemsCount} नग), निव्वळ वजन: ${totalGoldNetWeight.toFixed(2)} ग्रॅम, मूल्यांकन: ₹${totalGoldValuation.toLocaleString('en-IN')}`;
@@ -1243,8 +1256,8 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
   }));
 
   // KPI Calculations
-  const totalRequestedAmount = applications.reduce((sum, a) => sum + (a.requestedAmount || 0), 0);
-  const avgRate = applications.length > 0
+  const totalRequestedAmount = Array.isArray(applications) ? applications.reduce((sum, a) => sum + (a.requestedAmount || 0), 0) : 0;
+  const avgRate = (Array.isArray(applications) && applications.length > 0)
     ? (applications.reduce((sum, a) => sum + (a.interestRate || 0), 0) / applications.length).toFixed(2)
     : '0.00';
   const activeSchemesCount = loanRates.filter(r => r.isActive).length;
@@ -2127,9 +2140,9 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                     <h3 className="text-xs font-bold text-white tracking-wide truncate">
                       हप्ता वेळापत्रक पत्रक (Live Schedule)
                     </h3>
-                    {formData.applicationNumber && (
+                    {formData.applicationNo && (
                       <span className="text-[9.5px] font-mono bg-white/20 px-1.5 py-0.2 rounded text-emerald-100 shrink-0">
-                        {formData.applicationNumber}
+                        {formData.applicationNo}
                       </span>
                     )}
                   </div>
@@ -2183,14 +2196,14 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                 <div className="px-1.5 py-0.5 border-r border-slate-100">
                   <span className="text-[9.5px] text-rose-500 block leading-tight">एकूण व्याज ({formData.interestRate || 0}%)</span>
                   <span className="font-bold text-rose-700 font-mono text-[11.5px] leading-tight">
-                    ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0).toLocaleString('en-IN')}
+                    ₹{(Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0) : 0).toLocaleString('en-IN')}
                   </span>
                 </div>
                 {/* Metric 4 */}
                 <div className="px-1.5 py-0.5">
                   <span className="text-[9.5px] text-indigo-500 block leading-tight">एकूण परतफेड</span>
                   <span className="font-bold text-indigo-900 font-mono text-[11.5px] leading-tight">
-                    ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0).toLocaleString('en-IN')}
+                    ₹{(Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0) : 0).toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>
@@ -2273,13 +2286,13 @@ const LoanApplicationMaster: React.FC<LoanApplicationMasterProps> = ({ onNext, e
                       <tr>
                         <td colSpan={2} className="py-1 px-2 text-center font-sans text-[10.5px]">एकूण (Total):</td>
                         <td className="py-1 px-2 text-right text-slate-900 border-r border-slate-200">
-                          ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0).toLocaleString('en-IN')}
+                          ₹{(Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0) : 0).toLocaleString('en-IN')}
                         </td>
                         <td className="py-1 px-2 text-right text-rose-700 border-r border-slate-200">
-                          ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0).toLocaleString('en-IN')}
+                          ₹{(Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0) : 0).toLocaleString('en-IN')}
                         </td>
                         <td className="py-1 px-2 text-right text-emerald-800 border-r border-slate-200">
-                          ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0).toLocaleString('en-IN')}
+                          ₹{(Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0) : 0).toLocaleString('en-IN')}
                         </td>
                         <td className="py-1 px-2 text-right text-slate-400 font-sans">-</td>
                       </tr>

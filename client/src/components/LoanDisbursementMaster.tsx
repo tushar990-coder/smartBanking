@@ -559,9 +559,10 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             const bId = targetBranchId ?? selectedBranchId;
             const url = bId ? `/api/LoanDisbursements?branchId=${bId}&pageSize=50` : '/api/LoanDisbursements?pageSize=50';
             const res = await axios.get(url);
-            setDisbursements(res.data || []);
+            setDisbursements(Array.isArray(res.data) ? res.data : []);
         } catch (err) {
             console.error(err);
+            setDisbursements([]);
         } finally {
             setLoading(false);
         }
@@ -579,16 +580,18 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 axios.get(bId ? `/api/LoanDisbursements?branchId=${bId}&pageSize=50` : '/api/LoanDisbursements?pageSize=50')
             ]);
             
-            const allDisbursements: LoanDisbursement[] = disbRes.data || [];
+            const allDisbursements: LoanDisbursement[] = Array.isArray(disbRes.data) ? disbRes.data : [];
             setDisbursements(allDisbursements);
 
             // Compute multi-tranche status for each application
-            const appsWithStatus: LoanApplication[] = (appRes.data || []).map((a: any) => {
-                const linkedAcc = accRes.data?.find((acc: any) => acc.loanApplicationID === a.loanApplicationID);
-                const accDisbursements = linkedAcc ? allDisbursements.filter(d => d.loanAccountID === linkedAcc.loanAccountID) : [];
+            const appsList = Array.isArray(appRes.data) ? appRes.data : [];
+            const accsList = Array.isArray(accRes.data) ? accRes.data : [];
+            const appsWithStatus: LoanApplication[] = appsList.map((a: any) => {
+                const linkedAcc = accsList.find((acc: any) => acc.loanApplicationID === a.loanApplicationID);
+                const accDisbursements = (linkedAcc && Array.isArray(allDisbursements)) ? allDisbursements.filter(d => d.loanAccountID === linkedAcc.loanAccountID) : [];
                 const totalDisb = a.totalDisbursedAmount !== undefined 
                     ? a.totalDisbursedAmount 
-                    : accDisbursements.reduce((s, d) => s + (d.disbursementAmount || 0), 0);
+                    : (Array.isArray(accDisbursements) ? accDisbursements.reduce((s, d) => s + (d.disbursementAmount || 0), 0) : 0);
                 
                 const pendingLimit = a.pendingSanctionedAmount !== undefined
                     ? a.pendingSanctionedAmount
@@ -686,7 +689,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
 
     // Recalculate net amount whenever deductions or disbursement amount changes
     useEffect(() => {
-        const totalDeductions = deductions.reduce((sum, d) => sum + (parseFloat(d.amount as any) || 0), 0);
+        const totalDeductions = Array.isArray(deductions) ? deductions.reduce((sum, d) => sum + (parseFloat(d.amount as any) || 0), 0) : 0;
         const disburseAmt = parseFloat(formData.disbursementAmount as any) || 0;
         setFormData(prev => ({
             ...prev,
@@ -809,11 +812,12 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 memberId = acc.memberID || 0;
                 customerId = acc.customerID || acc.customer?.customerID || 0;
                 
-                alreadyDisb = disbursements
+                const disbList = Array.isArray(disbursements) ? disbursements : [];
+                alreadyDisb = disbList
                     .filter(d => d.loanAccountID === acc.loanAccountID)
                     .reduce((sum, d) => sum + (d.disbursementAmount || 0), 0);
                 pendingLimit = Math.max(0, sancAmount - alreadyDisb);
-                trancheNo = disbursements.filter(d => d.loanAccountID === acc.loanAccountID).length + 1;
+                trancheNo = disbList.filter(d => d.loanAccountID === acc.loanAccountID).length + 1;
 
                 setAlreadyDisbursedAmount(alreadyDisb);
                 setPendingSanctionedLimit(pendingLimit);
@@ -956,9 +960,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             ]);
         });
 
-        const totalPrin = scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0);
-        const totalInt = scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0);
-        const totalAll = scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0);
+        const totalPrin = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0) : 0;
+        const totalInt = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0) : 0;
+        const totalAll = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0) : 0;
 
         data.push(['एकूण (Total)', '', totalPrin, totalInt, totalAll, '']);
 
@@ -970,9 +974,9 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
 
     const handlePrintSchedule = () => {
         if (!scheduleData || scheduleData.length === 0) return;
-        const totalPrin = scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0);
-        const totalInt = scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0);
-        const totalAll = scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0);
+        const totalPrin = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0) : 0;
+        const totalInt = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0) : 0;
+        const totalAll = Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0) : 0;
 
         const printWin = window.open('', '_blank', 'width=850,height=900');
         if (!printWin) {
@@ -1271,14 +1275,14 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     const applicantSavingAccounts = savingAccounts.filter(s => isApplicantSaving(s) && (s.status === 'Active' || !s.status));
     const otherSavingAccounts = savingAccounts.filter(s => !isApplicantSaving(s) && (s.status === 'Active' || !s.status));
 
-    const totalDeductionsAmount = deductions.reduce((sum, d) => sum + (parseFloat(d.amount as any) || 0), 0);
+    const totalDeductionsAmount = Array.isArray(deductions) ? deductions.reduce((sum, d) => sum + (parseFloat(d.amount as any) || 0), 0) : 0;
     const isExceedingPendingLimit = Boolean((formData.disbursementAmount || 0) > (pendingSanctionedLimit > 0 ? pendingSanctionedLimit : (formData.sanctionedAmount || 0)));
 
     // KPI Metrics calculation
-    const totalDisbursementsCount = disbursements.length;
-    const totalSanctionedSum = disbursements.reduce((s, d) => s + (d.sanctionedAmount || 0), 0);
-    const totalDisbursedSum = disbursements.reduce((s, d) => s + (d.disbursementAmount || 0), 0);
-    const totalNetPaidSum = disbursements.reduce((s, d) => s + (d.netAmountPaid || 0), 0);
+    const totalDisbursementsCount = Array.isArray(disbursements) ? disbursements.length : 0;
+    const totalSanctionedSum = Array.isArray(disbursements) ? disbursements.reduce((s, d) => s + (d.sanctionedAmount || 0), 0) : 0;
+    const totalDisbursedSum = Array.isArray(disbursements) ? disbursements.reduce((s, d) => s + (d.disbursementAmount || 0), 0) : 0;
+    const totalNetPaidSum = Array.isArray(disbursements) ? disbursements.reduce((s, d) => s + (d.netAmountPaid || 0), 0) : 0;
 
     return (
         <div ref={formContainerRef} className="p-3 max-w-7xl mx-auto space-y-3 font-sans text-xs">
@@ -1603,7 +1607,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                     const name = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (a.customerID ? `ग्राहक #${a.customerID}` : 'खातेदार');
                                                     const cif = a.customer?.cifNo ? ` [CIF: ${a.customer.cifNo}]` : '';
                                                     const legPart = a.legacyAccountNumber ? ` [जुने कर्ज: ${a.legacyAccountNumber}]` : '';
-                                                    const accDisbursed = disbursements.filter(d => d.loanAccountID === a.loanAccountID).reduce((s, d) => s + (d.disbursementAmount || 0), 0);
+                                                    const disbList = Array.isArray(disbursements) ? disbursements : [];
+                                                    const accDisbursed = disbList.filter(d => d.loanAccountID === a.loanAccountID).reduce((s, d) => s + (d.disbursementAmount || 0), 0);
                                                     const pending = Math.max(0, (a.sanctionedAmount || 0) - accDisbursed);
                                                     return { 
                                                         value: a.loanAccountID.toString(), 
@@ -2465,13 +2470,13 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                     <tr>
                                                         <td colSpan={2} className="py-1 px-2 text-center font-sans text-[10.5px]">एकूण (Total):</td>
                                                         <td className="py-1 px-2 text-right text-slate-900 border-r border-slate-200">
-                                                            ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0).toLocaleString('en-IN')}
+                                                            ₹{(Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.principal || 0), 0) : 0).toLocaleString('en-IN')}
                                                         </td>
                                                         <td className="py-1 px-2 text-right text-rose-700 border-r border-slate-200">
-                                                            ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0).toLocaleString('en-IN')}
+                                                            ₹{(Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.interest || 0), 0) : 0).toLocaleString('en-IN')}
                                                         </td>
                                                         <td className="py-1 px-2 text-right text-emerald-800 border-r border-slate-200">
-                                                            ₹{scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0).toLocaleString('en-IN')}
+                                                            ₹{(Array.isArray(scheduleData) ? scheduleData.reduce((acc, r) => acc + Math.round(r.total || 0), 0) : 0).toLocaleString('en-IN')}
                                                         </td>
                                                         <td className="py-1 px-2 text-right text-slate-400 font-sans">-</td>
                                                     </tr>

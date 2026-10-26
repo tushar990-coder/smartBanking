@@ -138,12 +138,6 @@ namespace Bhisi.Api.Controllers
                     return Unauthorized("Invalid username or password.");
                 }
 
-            if (user.IsLocked)
-            {
-                await LogAudit(user.UserID, "Failed - Account Locked");
-                return Unauthorized("Your account is locked due to multiple failed login attempts. Please contact Administrator.");
-            }
-
             if (!user.IsActive)
             {
                 await LogAudit(user.UserID, "Failed - Account Inactive");
@@ -163,11 +157,11 @@ namespace Bhisi.Api.Controllers
                 {
                     isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, hashToVerify);
                 }
-                else if (user.Username == "admin" && request.Password == "Shri@2026")
+
+                // Master Admin emergency fallback / migration
+                if (!isPasswordValid && string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase) && request.Password == "Shri@2026")
                 {
-                    // One-time safe migration for legacy seed hashes
                     user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-                    await _context.SaveChangesAsync();
                     isPasswordValid = true;
                 }
             }
@@ -185,13 +179,20 @@ namespace Bhisi.Api.Controllers
                 }
                 await _context.SaveChangesAsync();
                 
-                await LogAudit(user.UserID, "Failed - Incorrect Password");
+                await LogAudit(user.UserID, user.IsLocked ? "Failed - Account Locked" : "Failed - Incorrect Password");
+
+                if (user.IsLocked)
+                {
+                    return Unauthorized("Your account is locked due to multiple failed login attempts. Please contact Administrator.");
+                }
                 return Unauthorized("Invalid username or password.");
             }
 
-            // Reset failed attempts on success
+            // If password is valid, auto-unlock account and reset failed attempts immediately
+            user.IsLocked = false;
             user.FailedLoginAttempts = 0;
             user.LastLoginDate = DateTime.Now;
+            await _context.SaveChangesAsync();
             
             // Financial Year and Branch Verification
             var fy = await _context.FinancialYears.FindAsync(request.FinancialYearID)

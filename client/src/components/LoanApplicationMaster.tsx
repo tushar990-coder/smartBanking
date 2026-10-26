@@ -41,7 +41,9 @@ import {
 import LoanApplicationPrintModal from './LoanApplicationPrintModal';
 import DepositCollateralSelectorModal, { EligibleDeposit } from './DepositCollateralSelectorModal';
 
-export interface Member extends MemberOption {}
+export interface Member extends MemberOption {
+  name?: string;
+}
 
 export interface LoanRate {
   loanRateID: number;

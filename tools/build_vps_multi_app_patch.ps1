@@ -253,6 +253,14 @@ if (Test-Path $vouchersIbtSql) {
     Write-Host "  -> fix_vouchers_ibt_and_trial_balance.sql included in database package." -ForegroundColor White
 }
 
+# 3.1.8 Auto-Restore Orphaned Closed FD Accounts (Where vouchers were deleted)
+$fdOrphanHealSource = Join-Path $workspaceRoot "tools\heal_orphaned_closed_fd_accounts.sql"
+if (Test-Path $fdOrphanHealSource) {
+    $fdOrphanHealContent = [System.IO.File]::ReadAllText($fdOrphanHealSource, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText((Join-Path $patchFolder "database\heal_orphaned_closed_fd_accounts.sql"), $fdOrphanHealContent, $utf8WithBom)
+    Write-Host "  -> heal_orphaned_closed_fd_accounts.sql included in database package (UTF-8 BOM)." -ForegroundColor White
+}
+
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null
@@ -295,6 +303,12 @@ if (Test-Path $changelogSource) {
 $applyMemberScript = Join-Path $workspaceRoot "tools\apply_member_code_fix_all_sansthas.ps1"
 if (Test-Path $applyMemberScript) {
     Copy-Item $applyMemberScript (Join-Path $patchFolder "apply_member_code_fix_all_sansthas.ps1") -Force
+}
+
+$applyFdClosureScript = Join-Path $workspaceRoot "tools\apply_fd_closure_rollback_all_sansthas.ps1"
+if (Test-Path $applyFdClosureScript) {
+    Copy-Item $applyFdClosureScript (Join-Path $patchFolder "apply_fd_closure_rollback_all_sansthas.ps1") -Force
+    Write-Host "  -> apply_fd_closure_rollback_all_sansthas.ps1 included in patch." -ForegroundColor White
 }
 
 # Clean temp publish
@@ -350,6 +364,7 @@ $memberCodeHealSql = Join-Path $scriptDir "database\heal_nominal_and_duplicate_m
 $instantFixSql = Join-Path $scriptDir "database\instant_fix_default_ibt_ledger_id.sql"
 $vouchersIbtSql = Join-Path $scriptDir "database\fix_vouchers_ibt_and_trial_balance.sql"
 $branchLedgerOpeningSql = Join-Path $scriptDir "database\create_branch_ledger_opening_balance_table.sql"
+$fdOrphanHealSql = Join-Path $scriptDir "database\heal_orphaned_closed_fd_accounts.sql"
 $backendSource = Join-Path $scriptDir "backend"
 $frontendSource = Join-Path $scriptDir "frontend"
 
@@ -755,6 +770,29 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
                 }
             } catch {
                 Write-Host "  -> Branch Ledger Opening Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
+            }
+        }
+
+        # 2.6 Auto-Restore Orphaned Closed FD Accounts (Where Closure Vouchers were deleted)
+        if (Test-Path $fdOrphanHealSql) {
+            Write-Host " [Step 2.6] Restoring Orphaned Closed FD Accounts on $($target.TargetDatabase)..." -ForegroundColor Yellow
+            try {
+                $fdOrphanOk = $false
+                if ($config.SqlUser -and $config.SqlPassword) {
+                    try {
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$fdOrphanHealSql`"" -f 65001 -b
+                        if ($LASTEXITCODE -eq 0) { $fdOrphanOk = $true }
+                    } catch {}
+                }
+                if (-not $fdOrphanOk) {
+                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$fdOrphanHealSql`"" -f 65001 -b
+                    if ($LASTEXITCODE -eq 0) { $fdOrphanOk = $true }
+                }
+                if ($fdOrphanOk) {
+                    Write-Host "  -> Orphaned Closed FD Accounts Restored Successfully!" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "  -> FD Restore Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
             }
         }
 

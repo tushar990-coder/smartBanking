@@ -252,6 +252,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   } | null>(null);
   const [noFdFoundAlert, setNoFdFoundAlert] = useState<string | null>(null);
 
+  // Reopen Closed Account Modal State (Explicit Manual Reopen)
+  const [showReopenModal, setShowReopenModal] = useState<boolean>(false);
+  const [reopenSearchTerm, setReopenSearchTerm] = useState<string>('');
+  const [reopenReason, setReopenReason] = useState<string>('क्लोजर व्हाउचर डिलीट झाल्याने खाते पूर्ववत');
+  const [reopenLoading, setReopenLoading] = useState<boolean>(false);
+  const [allClosedAccounts, setAllClosedAccounts] = useState<FdAccount[]>([]);
+
   const [actionType, setActionType] = useState<string>('MaturityClose'); // MaturityClose, PrematureClose, Renewal
   const [closureDate, setClosureDate] = useState<string>(activeBusinessDate);
   const [renewalType, setRenewalType] = useState<string>('PrincipalPlusInterest'); // PrincipalOnly, PrincipalPlusInterest
@@ -735,7 +742,9 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
       // Background loading of full accounts list for dropdown searches
       axios.get(`${API_URL}/FdAccounts`).then(response => {
-        const activeList: FdAccount[] = (response.data || []).filter((a: any) => a.status !== 'Closed');
+        const rawList: FdAccount[] = response.data || [];
+        setAllClosedAccounts(rawList.filter((a: any) => a.status === 'Closed'));
+        const activeList: FdAccount[] = rawList.filter((a: any) => a.status !== 'Closed');
         setAccounts(prev => {
           // Keep current selection intact when updating full list
           if (prev.length > 0 && fastTrackDone) {
@@ -827,6 +836,44 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       setMemberSavingAccounts([]);
       setSelectedSavingAccountId('');
       fetchActiveLoans(0);
+    }
+  };
+
+  const handleReopenAccount = async (targetAcc: FdAccount) => {
+    if (!targetAcc) return;
+    const confirmMsg = `आपण खात्रीपूर्वक मुदत ठेव खाते क्र. ${targetAcc.accountNo}${targetAcc.legacyAccountNumber ? ` (जुना क्र. ${targetAcc.legacyAccountNumber})` : ''} पुन्हा सक्रिय (Reopen) करू इच्छिता?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setReopenLoading(true);
+    try {
+      const res = await axios.post(`${API_URL}/FdAccounts/${targetAcc.fdAccountID}/Reopen`, {
+        reason: reopenReason || 'क्लोजर व्हाउचर डिलीट झाल्याने खाते पूर्ववत'
+      });
+
+      alert(res.data?.message || 'खाते यशस्वीरीत्या पूर्ववत करण्यात आले आहे.');
+
+      // Refresh accounts list
+      const accRes = await axios.get(`${API_URL}/FdAccounts`);
+      const rawList: FdAccount[] = accRes.data || [];
+      const updatedClosed = rawList.filter((a: any) => a.status === 'Closed');
+      const updatedActive = rawList.filter((a: any) => a.status !== 'Closed');
+      setAllClosedAccounts(updatedClosed);
+      setAccounts(updatedActive);
+
+      // Automatically select the reopened account
+      const reopened = updatedActive.find(a => a.fdAccountID === targetAcc.fdAccountID) || targetAcc;
+      setSelectedAccId(reopened.fdAccountID);
+      setSelectedAccount(reopened);
+      fetchCustomerSavingsAccounts(reopened.customerID, reopened.memberID);
+      fetchActiveLoans(reopened.fdAccountID);
+
+      setShowReopenModal(false);
+      setReopenSearchTerm('');
+    } catch (err: any) {
+      console.error('Reopen account error:', err);
+      alert('खाते पूर्ववत करताना त्रुटी: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setReopenLoading(false);
     }
   };
 
@@ -2022,13 +2069,31 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
                       <div className="space-y-2 mt-1">
                         <FormRow label="मुदत ठेव खाते (FD Account)" required>
-                          <SearchableSelect
-                            options={accountOptions}
-                            value={selectedAccId.toString()}
-                            onChange={handleAccountSelect}
-                            placeholder="पावती क्र., जुना क्र., खातेदार नाव किंवा CIF ने शोधा..."
-                            disabled={isPassingMode}
-                          />
+                          <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                            <div className="flex-1 w-full">
+                              <SearchableSelect
+                                options={accountOptions}
+                                value={selectedAccId.toString()}
+                                onChange={handleAccountSelect}
+                                placeholder="पावती क्र., जुना क्र., खातेदार नाव किंवा CIF ने शोधा..."
+                                disabled={isPassingMode}
+                              />
+                            </div>
+                            {!isPassingMode && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowReopenModal(true);
+                                  setReopenSearchTerm('');
+                                }}
+                                className="text-[11px] font-semibold text-slate-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2.5 py-1.5 rounded-sm shrink-0 flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                                title="जर या खात्याचा क्लोजर व्हाउचर पूर्वी डिलीट केला असेल तर बंद खाते पुन्हा पूर्ववत करा"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                                <span>बंद खाते पूर्ववत करा</span>
+                              </button>
+                            )}
+                          </div>
                         </FormRow>
 
                         <FormRow label="व्यवहार तारीख (Txn Date)" required>
@@ -3421,6 +3486,138 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                 className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold cursor-pointer transition-colors"
               >
                 बंद करा (Close)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔄 Reopen Closed FD Account Modal */}
+      {showReopenModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-3 animate-fade-in backdrop-blur-xs">
+          <div className="bg-white rounded-lg shadow-2xl max-w-xl w-full border border-slate-300 overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-amber-600 to-amber-700 text-white px-4 py-3 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <RotateCcw className="w-5 h-5" />
+                <div>
+                  <h3 className="font-bold text-sm leading-tight">
+                    बंद झालेले मुदत ठेव खाते पूर्ववत करा (Reopen Closed FD Account)
+                  </h3>
+                  <p className="text-[11px] text-amber-100">
+                    क्लोजर व्हाउचर डिलीट झाल्यावर खाते पुन्हा सक्रिय (Active / Matured) करण्यासाठी
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReopenModal(false)}
+                className="text-white/80 hover:text-white hover:bg-amber-800/50 p-1 rounded-sm transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 space-y-3 overflow-y-auto flex-1 text-xs">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  खाते शोधा (पावती क्र. किंवा जुना खाते क्र.)
+                </label>
+                <input
+                  type="text"
+                  value={reopenSearchTerm}
+                  onChange={(e) => setReopenSearchTerm(e.target.value)}
+                  placeholder="उदा. 1455 किंवा खाते क्र. किंवा खातेदाराचे नाव..."
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-amber-600 bg-white"
+                  autoFocus
+                />
+              </div>
+
+              {/* Matching Closed Accounts List */}
+              <div className="space-y-2 mt-2">
+                {allClosedAccounts
+                  .filter((a) => {
+                    if (!reopenSearchTerm.trim()) return false;
+                    const term = reopenSearchTerm.trim().toLowerCase();
+                    const accNo = (a.accountNo || '').toLowerCase();
+                    const legNo = (a.legacyAccountNumber || '').toLowerCase();
+                    const cName = (a.customerName || a.memberName || '').toLowerCase();
+                    const cif = (a.cifNo || '').toLowerCase();
+                    return accNo.includes(term) || legNo.includes(term) || cName.includes(term) || cif.includes(term);
+                  })
+                  .slice(0, 10)
+                  .map((acc) => {
+                    const isMatured = acc.maturityDate ? new Date(acc.maturityDate) <= new Date() : false;
+                    return (
+                      <div
+                        key={acc.fdAccountID}
+                        className="p-3 bg-amber-50/60 border border-amber-200 rounded flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 hover:bg-amber-100/60 transition"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-slate-900">{acc.accountNo}</span>
+                            {acc.legacyAccountNumber && (
+                              <span className="bg-purple-100 text-purple-800 font-bold px-1.5 py-0.5 rounded text-[10px] border border-purple-200">
+                                जुना क्र: {acc.legacyAccountNumber}
+                              </span>
+                            )}
+                            <span className="bg-red-100 text-red-800 font-bold px-1.5 py-0.5 rounded text-[10px] border border-red-200">
+                              {acc.status}
+                            </span>
+                          </div>
+                          <div className="text-slate-700 font-semibold mt-0.5">
+                            {acc.customerName || acc.memberName || 'खातेदार'}
+                            {acc.cifNo && <span className="text-slate-500 font-normal ml-2">CIF: {acc.cifNo}</span>}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            ठेव: ₹{(acc.depositAmount || 0).toLocaleString()} • मुदतपूर्ती: {acc.maturityDate ? new Date(acc.maturityDate).toLocaleDateString('en-GB') : '-'} ({isMatured ? 'मुदतपूर्ण' : 'सक्रिय'}) • {acc.schemeName}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={reopenLoading}
+                          onClick={() => handleReopenAccount(acc)}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded text-xs shrink-0 flex items-center gap-1 cursor-pointer transition shadow-2xs disabled:opacity-50"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>{reopenLoading ? 'पूर्ववत होत आहे...' : 'खाते पूर्ववत करा'}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                {reopenSearchTerm.trim() && allClosedAccounts.filter((a) => {
+                  const term = reopenSearchTerm.trim().toLowerCase();
+                  return (a.accountNo || '').toLowerCase().includes(term) ||
+                         (a.legacyAccountNumber || '').toLowerCase().includes(term) ||
+                         (a.customerName || a.memberName || '').toLowerCase().includes(term) ||
+                         (a.cifNo || '').toLowerCase().includes(term);
+                }).length === 0 && (
+                  <div className="p-4 text-center text-slate-500 bg-slate-50 border border-slate-200 rounded">
+                    '{reopenSearchTerm}' शी जुळणारे कोणतेही बंद (Closed) मुदत ठेव खाते आढळले नाही.
+                  </div>
+                )}
+
+                {!reopenSearchTerm.trim() && (
+                  <div className="p-3 text-center text-slate-500 bg-slate-50 border border-slate-200 rounded text-[11px]">
+                    कृपया वर शोध पेटीत जुना खाते क्रमांक (उदा. 1455) किंवा पावती क्रमांक टाईप करा.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-100 px-4 py-2.5 border-t border-slate-200 flex justify-between items-center text-xs shrink-0">
+              <span className="text-[11px] text-slate-500">
+                खाते पूर्ववत केल्यावर ते आपोआप क्लोजर व नूतनीकरण फॉर्मवर निवडले जाईल.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowReopenModal(false)}
+                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold cursor-pointer transition"
+              >
+                रद्द करा (Close)
               </button>
             </div>
           </div>

@@ -845,57 +845,96 @@ namespace Bhisi.Api.Controllers
                         throw new InvalidOperationException($"सदर व्हाउचरमध्ये कर्ज खाते क्र. {linkedLoanColl.LoanAccount?.LoanAccountNo ?? linkedLoanColl.LoanAccountID.ToString()} मधील ₹{linkedLoanColl.TotalAmountReceived:N2} ची कर्ज वसुली वजावट समाविष्ट आहे. कर्ज खात्यातील लेजर विसंगती व तारण उल्लंघन टाळण्यासाठी हे संयुक्त व्हाउचर थेट डिलीट करता येणार नाही.");
                     }
 
-                    // Rule: Only delete the withdrawal transaction & voucher; revert FdAccount to "Active".
+                    // Rule: Only delete the withdrawal transaction & voucher; revert FdAccount to "Matured" or "Active".
                     // DO NOT delete FdAccount. DO NOT rollback receipt sequence counter!
+                    FdAccount? fdAcc = null;
+
+                    // 1. Direct foreign-key resolution via linked closure FdTransaction
+                    var closeTx = await _context.FdTransactions
+                        .FirstOrDefaultAsync(ft => ft.VoucherID == id && (ft.TransactionType == "Payout" || ft.TransactionType == "Premature_Close"));
+                    if (closeTx != null)
+                    {
+                        fdAcc = await _context.FdAccounts.FindAsync(closeTx.FdAccountID);
+                    }
+
+                    // 2. Fallback: Parse from VoucherNo or Narration
                     string fdAccNo = "";
                     if (voucher.VoucherNo.StartsWith("JV-FD-CLOSE-"))
                         fdAccNo = voucher.VoucherNo.Substring("JV-FD-CLOSE-".Length).Trim();
                     else if (voucher.VoucherNo.StartsWith("JV-FD-PRECLOSE-"))
                         fdAccNo = voucher.VoucherNo.Substring("JV-FD-PRECLOSE-".Length).Trim();
+                    else if (voucher.VoucherNo.Contains("-FD-CLOSE-"))
+                        fdAccNo = voucher.VoucherNo.Substring(voucher.VoucherNo.IndexOf("-FD-CLOSE-") + "-FD-CLOSE-".Length).Trim();
+                    else if (voucher.VoucherNo.Contains("-FD-PRECLOSE-"))
+                        fdAccNo = voucher.VoucherNo.Substring(voucher.VoucherNo.IndexOf("-FD-PRECLOSE-") + "-FD-PRECLOSE-".Length).Trim();
                     else
                     {
-                        var match = System.Text.RegularExpressions.Regex.Match(voucher.Narration ?? "", @"[A-Za-z0-9]+-[0-9]+-FD-[0-9]+");
-                        if (match.Success) fdAccNo = match.Value;
+                        var match = System.Text.RegularExpressions.Regex.Match(voucher.Narration ?? "", @"(?:खाते|Account|FD|खाते क्र\.?)\s*:?\s*([A-Za-z0-9-]+)");
+                        if (match.Success) fdAccNo = match.Groups[1].Value.Trim();
                     }
 
-                    if (!string.IsNullOrEmpty(fdAccNo))
+                    if (fdAcc == null && !string.IsNullOrEmpty(fdAccNo))
                     {
-                        var fdAcc = await _context.FdAccounts.FirstOrDefaultAsync(f => f.AccountNo == fdAccNo);
-                        if (fdAcc != null)
+                        fdAcc = await _context.FdAccounts.FirstOrDefaultAsync(f => 
+                            f.AccountNo == fdAccNo || 
+                            f.LegacyAccountNumber == fdAccNo || 
+                            (f.LegacyAccountNumber != null && f.LegacyAccountNumber.Trim() == fdAccNo.Trim()) ||
+                            f.AccountNo.EndsWith(fdAccNo));
+                    }
+
+                    // 3. Fallback: Lookup by customer in VoucherDetails
+                    if (fdAcc == null)
+                    {
+                        var custId = voucher.VoucherDetails.FirstOrDefault(vd => vd.CustomerID.HasValue && vd.CustomerID.Value > 0)?.CustomerID;
+                        if (custId.HasValue)
                         {
-                            fdAcc.Status = "Active";
-
-                            // If payout was transferred to Savings account, reverse the SB credit
-                            var sbTx = await _context.SavingTransactions
-                                .FirstOrDefaultAsync(st => st.VoucherNo == voucher.VoucherNo || (st.Narration != null && st.Narration.Contains(fdAccNo)));
-                            if (sbTx != null)
-                            {
-                                var sbAcc = await _context.SavingAccountMasters.FindAsync(sbTx.SavingAccountID);
-                                if (sbAcc != null)
-                                {
-                                    sbAcc.CurrentBalance -= sbTx.Amount;
-                                }
-                                _context.SavingTransactions.Remove(sbTx);
-                            }
-
-                            // Remove ONLY the closure/payout FdTransaction
-                            var closeTxs = await _context.FdTransactions
-                                .Where(ft => ft.VoucherID == id || (ft.FdAccountID == fdAcc.FdAccountID && (ft.TransactionType == "Payout" || ft.TransactionType == "Premature_Close")))
-                                .ToListAsync();
-                            if (closeTxs.Any()) _context.FdTransactions.RemoveRange(closeTxs);
-
-                            _context.AuditLogs.Add(new AuditLog
-                            {
-                                UserID = userId > 0 ? userId : null,
-                                Username = !string.IsNullOrWhiteSpace(username) ? username : $"User-{userId}",
-                                Action = "FD_WITHDRAWAL_VOUCHER_DELETED",
-                                EntityName = "FdAccount",
-                                EntityID = fdAccNo,
-                                Details = $"मुदत ठेव परतफेड (Withdrawal / Closure) व्हाउचर {voucher.VoucherNo} (खाते क्र. {fdAccNo}, रक्कम: ₹{voucher.TotalAmount:N2}) थेट रद्द करून हटवले. मूळ ठेव खाते पुन्हा सक्रिय (Active) केले. ठेव पावती व मूळ ठेव अबाधित ठेवली. कारण: {reason}",
-                                Timestamp = DateTime.Now,
-                                Status = "Success"
-                            });
+                            fdAcc = await _context.FdAccounts
+                                .Where(f => f.CustomerID == custId.Value && f.Status == "Closed")
+                                .OrderByDescending(f => f.FdAccountID)
+                                .FirstOrDefaultAsync();
                         }
+                    }
+
+                    if (fdAcc != null)
+                    {
+                        fdAcc.Status = (fdAcc.MaturityDate.Date <= DateTime.Today.Date) ? "Matured" : "Active";
+                        if (!string.IsNullOrEmpty(fdAcc.Remarks))
+                        {
+                            var idx = fdAcc.Remarks.IndexOf(" | बंद दिनांक:");
+                            if (idx >= 0) fdAcc.Remarks = fdAcc.Remarks.Substring(0, idx).Trim();
+                        }
+
+                        // If payout was transferred to Savings account, reverse the SB credit
+                        var effectiveAccNo = fdAcc.AccountNo ?? fdAccNo;
+                        var sbTx = await _context.SavingTransactions
+                            .FirstOrDefaultAsync(st => st.VoucherNo == voucher.VoucherNo || (st.Narration != null && (st.Narration.Contains(effectiveAccNo) || (fdAcc.LegacyAccountNumber != null && st.Narration.Contains(fdAcc.LegacyAccountNumber)))));
+                        if (sbTx != null)
+                        {
+                            var sbAcc = await _context.SavingAccountMasters.FindAsync(sbTx.SavingAccountID);
+                            if (sbAcc != null)
+                            {
+                                sbAcc.CurrentBalance -= sbTx.Amount;
+                            }
+                            _context.SavingTransactions.Remove(sbTx);
+                        }
+
+                        // Remove ONLY the closure/payout FdTransaction
+                        var closeTxs = await _context.FdTransactions
+                            .Where(ft => ft.VoucherID == id || (ft.FdAccountID == fdAcc.FdAccountID && (ft.TransactionType == "Payout" || ft.TransactionType == "Premature_Close")))
+                            .ToListAsync();
+                        if (closeTxs.Any()) _context.FdTransactions.RemoveRange(closeTxs);
+
+                        _context.AuditLogs.Add(new AuditLog
+                        {
+                            UserID = userId > 0 ? userId : null,
+                            Username = !string.IsNullOrWhiteSpace(username) ? username : $"User-{userId}",
+                            Action = "FD_WITHDRAWAL_VOUCHER_DELETED",
+                            EntityName = "FdAccount",
+                            EntityID = fdAccNo,
+                            Details = $"मुदत ठेव परतफेड (Withdrawal / Closure) व्हाउचर {voucher.VoucherNo} (खाते क्र. {fdAccNo}, रक्कम: ₹{voucher.TotalAmount:N2}) थेट रद्द करून हटवले. मूळ ठेव खाते पुन्हा सक्रिय (Active) केले. ठेव पावती व मूळ ठेव अबाधित ठेवली. कारण: {reason}",
+                            Timestamp = DateTime.Now,
+                            Status = "Success"
+                        });
                     }
                 }
                 else if (isFdOpening)

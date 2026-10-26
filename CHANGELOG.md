@@ -1,5 +1,40 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-10-26] - आवृत्ती v2.5.96 (FD Closure Voucher Deletion Status Rollback, Explicit Reopen Modal & Universal Multi-Sanstha Auto-Heal Master Patch)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **मुदत ठेव परतफेड व्हाउचर डिलीट होताच ठेव स्थिती पूर्ववत (FD Closure Voucher Deletion Status Rollback):**
+  * `VouchersController.cs` आणि `VoucherPostingController.cs` मध्ये सुधारणा केली; मुदत ठेवीचा परतावा/क्लोजर व्हाउचर डिलीट किंवा रिजेक्ट केल्यास संबंधित मुदत ठेव खाते 'Closed' राहण्याऐवजी आपोआप 'Matured' (मुदत संपली असल्यास) किंवा 'Active' वर पूर्ववत होते.
+  * खात्यावरील बंद शेरा (`| बंद दिनांक: ...`) सुरक्षितपणे साफ केला जातो आणि सेव्हिंग्ज खात्यात रक्कम वर्ग झाली असल्यास ती रिव्हर्स केली जाते.
+* **थेट अधिकृत री-ओपन एंडपॉईंट्स (Explicit Reopen API Endpoints):**
+  * `FdAccountsController.cs` मध्ये `POST /api/FdAccounts/{id}/Reopen` आणि `POST /api/FdAccounts/reopen-by-number` जोडले; अनवधानाने क्लोज झालेली अथवा व्हाउचर डिलीट झालेली खाती अधिकृत ऑडिट लॉगसह पूर्ववत करण्याची सुविधा.
+* **फ्रंटएंड 'बंद खाते पूर्ववत करा' मोडल (Interactive Reopen Modal in FdWithdrawalMaturity.tsx):**
+  * क्लोजर व नूतनीकरण स्क्रीनवर **[🔄 बंद खाते पूर्ववत करा]** हे स्वतंत्र बटण व मोडल दिले; ऑपरेटर जुना खाते क्रमांक (उदा. १४५५) किंवा पावती क्रमांक टाईप करून बंद खाते शोधून एका क्लिकवर थेट पूर्ववत करू शकतो.
+* **सर्व संस्थांसाठी सार्वत्रिक अनाथ बंद खाती दुरुस्ती पॅच (Multi-Sanstha Orphaned Closed FD Auto-Healer):**
+  * `heal_orphaned_closed_fd_accounts.sql` आणि `apply_fd_closure_rollback_all_sansthas.ps1` द्वारे VPS वरील सर्व ९ संस्थांमधील (Padvalwadi, Bambavade, Maharshi Yadrav, RIT Employee, Sahyadri, Testing इ.) अनाथ बंद खाती सुरक्षितपणे पूर्ववत करण्याची सुविधा.
+* **१-क्लिक मल्टि-ॲप मास्टर पॅच (SmartBanking_VPS_Multi_App_Master_Patch_v2.5.96.zip):**
+  * सर्व संस्थांसाठी तयार केलेला मास्टर पॅच (२२.९६ MB) डेस्कटॉप व वर्कस्पेसमध्ये उपलब्ध.
+
+---
+
+## 📅 [2026-10-25] - आवृत्ती v2.5.95 (Loan Collection Pigmy Deposit Transfer Adjustment & Strict Physical Hard Delete Purge)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **पिग्मी ठेव कर्ज समायोजन (Pigmy to Loan Fund Transfer):**
+  * कर्ज वसुली (`LoanCollectionMaster.tsx`) मध्ये 'पिग्मी ठेव वर्ग (Pigmy Transfer)' पर्याय समाविष्ट; कर्जदार निवडताच त्याच्या नावावरील सर्व सक्रिय व शिल्लक असलेली पिग्मी खाती आपोआप लोड होतात; एकूण ठेव, तारण (Lien) व वर्गपात्र शिल्लक रक्कमेचे रिअल-टाईम केपीआय बॅजेस.
+* **हप्त्यापुरती वर्ग (Partial) व खाते बंद करून वर्ग (Closure):**
+  * कर्जदार फक्त चालू हप्ता भरू शकतो किंवा शिल्लक पिग्मी ठेव पूर्णपणे समायोजित करून पिग्मी खाते बंद (`Closed`) करू शकतो.
+* **वॉटरफॉल परतफेड व ऑटो-अपॉर्शन (Waterfall Repayment Distribution):**
+  * वसूल खर्च -> थकीत दंड व्याज -> मागील येणे व्याज -> चालू व्याज -> मुद्दल अशा प्रमाणित सीबीएस नियमानुसार वर्ग रकमेचे स्वयंचलित विभाजन.
+* **सुसंतुलित ट्रान्सफर जर्नल व्हाउचर (Balanced Transfer Journal Voucher):**
+  * रोख व्यवहाराऐवजी थेट पिग्मी देयता लेजर (Dr. Pigmy Liability Ledger) नावे करून कर्ज मुद्दल व व्याज लेजर्स (Cr. Loan & Interest Ledgers) जमा करणारे १च संतुलित जर्नल व्हाउचर (`JV`) निर्मिती.
+* **कडक फिजिकल हार्ड डिलीट कार्यपद्धती (Strict Physical Hard Delete Purge):**
+  * कर्ज वसुली पावती डिलीट केल्यास सॉफ्ट डिलीटऐवजी डेटाबेसमधून प्रत्यक्ष कायमस्वरूपी डिलीट (`DELETE FROM LoanCollections, LoanCollectionFees, Vouchers, VoucherDetails, PigmyTransactions`); सोबत पिग्मी खात्याची शिल्लक व सायकल पूर्ववत पुनर्संचयित आणि कर्ज खात्याची मुद्दल व व्याज बाकी अचूक पूर्ववत.
+* **पावती प्रिंट व व्हॉट्सॲप मेसेज संरेखन (Receipt Print & WhatsApp Parity):**
+  * छापील पावतीवर व व्हॉट्सॲप मेसेजमध्ये पिग्मी खाते क्रमांक व वर्ग प्रकाराचा (अंशतः / खाते पूर्ण बंद) स्पष्ट उल्लेख.
+
+---
+
 ## 📅 [2026-10-25] - आवृत्ती v2.5.94 (Pigmy Monthly Chart Import Consolidated Single Daily Voucher, Strict Opening Balance Cutoff & Approval Queue Integration)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)

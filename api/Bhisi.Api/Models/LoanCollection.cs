@@ -81,8 +81,31 @@ namespace Bhisi.Api.Models
 
         public int? BankAccountLedgerID { get; set; } // If PaymentMode is Bank
 
+        public int? SourceSavingAccountID { get; set; } // If PaymentMode is Saving Transfer
+
         [StringLength(50)]
         public string? TransferFromSavingAccountNo { get; set; } // If PaymentMode is Saving Transfer
+
+        [StringLength(150)]
+        public string? SavingCustomerName { get; set; } // Name of the saving account holder (useful if third-party)
+
+        // Pigmy Transfer Fields
+        public int? SourcePigmyAccountID { get; set; }
+
+        [StringLength(50)]
+        public string? TransferFromPigmyAccountNo { get; set; }
+
+        [StringLength(20)]
+        public string? PigmyTransferType { get; set; } // "PARTIAL" or "CLOSURE"
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? PigmyBalanceBefore { get; set; }
+
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? PigmyBalanceAfter { get; set; }
+
+        [StringLength(255)]
+        public string? PigmyConsentRemark { get; set; }
 
         public int? VoucherID { get; set; }
 

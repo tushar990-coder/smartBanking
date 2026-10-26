@@ -6599,6 +6599,111 @@ namespace Bhisi.Api.Controllers
                 }
             });
         }
+
+        // POST: api/FdAccounts/5/Reopen (Explicitly Reopen an unintentionally closed or deleted-voucher FD account)
+        [HttpPost("{id}/Reopen")]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager,HeadOffice,HO_Manager,BranchManager,Cashier,Operator")]
+        public async Task<IActionResult> ReopenFdAccount(int id, [FromBody] FdReopenRequest? request = null)
+        {
+            var account = await _context.FdAccounts
+                .Include(a => a.Customer)
+                .Include(a => a.FdScheme)
+                .FirstOrDefaultAsync(a => a.FdAccountID == id);
+
+            if (account == null)
+            {
+                return NotFound(new { message = $"मुदत ठेव खाते ID #{id} सापडले नाही." });
+            }
+
+            if (account.Status != "Closed")
+            {
+                return BadRequest(new { message = $"हे खाते आधीच '{account.Status}' स्थितीत आहे. केवळ बंद (Closed) झालेली खातीच पूर्ववत (Reopen) करता येतात." });
+            }
+
+            // Check if there is an active un-deleted Payout / Premature_Close transaction
+            var activeCloseTx = await _context.FdTransactions
+                .Include(t => t.Voucher)
+                .FirstOrDefaultAsync(t => t.FdAccountID == id && (t.TransactionType == "Payout" || t.TransactionType == "Premature_Close"));
+
+            if (activeCloseTx != null)
+            {
+                return BadRequest(new { 
+                    message = $"सदर खात्याचा क्लोजर व्यवहार (व्हाउचर क्र. '{activeCloseTx.Voucher?.VoucherNo ?? activeCloseTx.VoucherID.ToString()}') अद्याप सिस्टीममध्ये अस्तित्वात आहे. खाते री-ओपन करण्यापूर्वी संबंधित क्लोजर व्हाउचर रद्द/डिलीट करणे आवश्यक आहे." 
+                });
+            }
+
+            // Revert status
+            string newStatus = (account.MaturityDate.Date <= DateTime.Today.Date) ? "Matured" : "Active";
+            account.Status = newStatus;
+
+            if (!string.IsNullOrEmpty(account.Remarks))
+            {
+                var idx = account.Remarks.IndexOf(" | बंद दिनांक:");
+                if (idx >= 0)
+                {
+                    account.Remarks = account.Remarks.Substring(0, idx).Trim();
+                }
+            }
+
+            string reason = !string.IsNullOrWhiteSpace(request?.Reason) ? request.Reason.Trim() : "क्लोजर व्हाउचर डिलीट झाल्याने खाते पूर्ववत केले";
+            account.Remarks = (account.Remarks ?? "") + $" | खाते पूर्ववत ({DateTime.Now:dd/MM/yyyy}): {reason}";
+
+            _context.AuditLogs.Add(new AuditLog
+            {
+                Action = "FD_ACCOUNT_REOPENED",
+                EntityName = "FdAccount",
+                EntityID = account.AccountNo,
+                Details = $"मुदत ठेव खाते क्र. {account.AccountNo} (जुना क्र. {account.LegacyAccountNumber}) यशस्वीरीत्या पूर्ववत ({account.Status}) केले. कारण: {reason}",
+                Timestamp = DateTime.Now,
+                Status = "Success"
+            });
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                message = $"मुदत ठेव खाते क्र. {account.AccountNo} यशस्वीरीत्या पूर्ववत करण्यात आले आहे (सध्याची स्थिती: {account.Status}). आता हे खाते क्लोजर व नूतनीकरण स्क्रीनवर उपलब्ध असेल.",
+                account = new
+                {
+                    account.FdAccountID,
+                    account.AccountNo,
+                    account.LegacyAccountNumber,
+                    account.DepositAmount,
+                    account.MaturityDate,
+                    account.Status,
+                    CustomerName = account.Customer != null ? (account.Customer.FirstName + " " + account.Customer.LastName).Trim() : "",
+                    CIFNo = account.Customer != null ? account.Customer.CIFNo : "",
+                    SchemeName = account.FdScheme != null ? account.FdScheme.SchemeName : ""
+                }
+            });
+        }
+
+        // POST: api/FdAccounts/reopen-by-number
+        [HttpPost("reopen-by-number")]
+        [Authorize(Roles = "Admin,SuperAdmin,Manager,HeadOffice,HO_Manager,BranchManager,Cashier,Operator")]
+        public async Task<IActionResult> ReopenFdAccountByNumber([FromBody] FdReopenByNumberRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.AccountNumber))
+            {
+                return BadRequest(new { message = "कृपया खाते क्रमांक किंवा जुना खाते क्रमांक नमूद करा." });
+            }
+
+            string term = request.AccountNumber.Trim();
+            var account = await _context.FdAccounts
+                .Include(a => a.Customer)
+                .Include(a => a.FdScheme)
+                .FirstOrDefaultAsync(a => a.AccountNo == term || 
+                                          a.LegacyAccountNumber == term || 
+                                          (a.LegacyAccountNumber != null && a.LegacyAccountNumber.Trim() == term) ||
+                                          a.AccountNo.EndsWith(term));
+
+            if (account == null)
+            {
+                return NotFound(new { message = $"मुदत ठेव खाते क्र. '{term}' सापडले नाही." });
+            }
+
+            return await ReopenFdAccount(account.FdAccountID, new FdReopenRequest { Reason = request.Reason });
+        }
     }
 
     public class FdInterestPreviewRequestDto
@@ -6780,5 +6885,17 @@ namespace Bhisi.Api.Controllers
         [Required]
         public string RevertReason { get; set; } = string.Empty;
         public string? RevertedBy { get; set; }
+    }
+
+    public class FdReopenRequest
+    {
+        public string? Reason { get; set; }
+    }
+
+    public class FdReopenByNumberRequest
+    {
+        [Required]
+        public string AccountNumber { get; set; } = string.Empty;
+        public string? Reason { get; set; }
     }
 }

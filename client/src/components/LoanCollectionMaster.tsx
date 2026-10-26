@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2, Award, Lock, Unlock } from 'lucide-react';
+import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2, Award, Lock, Unlock, Coins, Landmark, UserCheck, Users } from 'lucide-react';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
 import LoanCollectionReceiptPrint from './LoanCollectionReceiptPrint';
 import { useAuth } from '../context/AuthContext';
@@ -156,7 +156,15 @@ interface LoanCollection {
     bankName?: string;
     chequeNo?: string;
     bankAccountLedgerID?: number;
+    sourceSavingAccountID?: number;
     transferFromSavingAccountNo?: string;
+    savingCustomerName?: string;
+    sourcePigmyAccountID?: number;
+    transferFromPigmyAccountNo?: string;
+    pigmyTransferType?: 'PARTIAL' | 'CLOSURE';
+    pigmyBalanceBefore?: number;
+    pigmyBalanceAfter?: number;
+    pigmyConsentRemark?: string;
     remarks?: string;
     loanAccount?: LoanAccount;
     fees?: LoanCollectionFee[];
@@ -305,6 +313,130 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     const [todayTotalCash, setTodayTotalCash] = useState(0);
     const [todayTotalBank, setTodayTotalBank] = useState(0);
     const [sanstha, setSanstha] = useState<any>(null);
+
+    // Pigmy Transfer State
+    const [customerPigmyAccounts, setCustomerPigmyAccounts] = useState<any[]>([]);
+    const [loadingPigmyAccounts, setLoadingPigmyAccounts] = useState(false);
+    const [selectedPigmyAccount, setSelectedPigmyAccount] = useState<any | null>(null);
+    const [pigmyAccountSourceType, setPigmyAccountSourceType] = useState<'SELF' | 'OTHER'>('SELF');
+    const [pigmyOldAccSearchQuery, setPigmyOldAccSearchQuery] = useState('');
+    const [otherPigmySearchResults, setOtherPigmySearchResults] = useState<any[]>([]);
+    const [loadingOtherPigmySearch, setLoadingOtherPigmySearch] = useState(false);
+
+    const fetchCustomerPigmyAccounts = async (cId: number) => {
+        if (!cId) {
+            setCustomerPigmyAccounts([]);
+            setSelectedPigmyAccount(null);
+            return;
+        }
+        setLoadingPigmyAccounts(true);
+        try {
+            const res = await axios.get(`/api/PigmyAccounts/Customer/${cId}`);
+            const list = res.data || [];
+            // Filter accounts with balance or active
+            const valid = list.filter((p: any) => p.status === 'Active' || (p.totalDepositedAmount || 0) > 0);
+            setCustomerPigmyAccounts(valid);
+            if (valid.length > 0) {
+                const acc = valid[0];
+                setSelectedPigmyAccount(acc);
+                setPigmyAccountSourceType('SELF');
+                setFormData(p => ({
+                    ...p,
+                    sourcePigmyAccountID: acc.pigmyAccountID,
+                    transferFromPigmyAccountNo: acc.accountNo
+                }));
+            } else {
+                setSelectedPigmyAccount(null);
+                setPigmyAccountSourceType('OTHER');
+            }
+        } catch (err) {
+            console.error('Failed to load pigmy accounts for customer:', err);
+            setCustomerPigmyAccounts([]);
+            setSelectedPigmyAccount(null);
+        } finally {
+            setLoadingPigmyAccounts(false);
+        }
+    };
+
+    const searchOtherPigmyAccounts = async (query: string) => {
+        if (!query || query.trim().length < 1) {
+            setOtherPigmySearchResults([]);
+            return;
+        }
+        setLoadingOtherPigmySearch(true);
+        try {
+            const res = await axios.get(`/api/PigmyAccounts?search=${encodeURIComponent(query.trim())}`);
+            const list = (res.data || []).filter((p: any) => p.status === 'Active' || (p.totalDepositedAmount || 0) > 0);
+            setOtherPigmySearchResults(list);
+        } catch (err) {
+            console.error('Failed to search other pigmy accounts:', err);
+            setOtherPigmySearchResults([]);
+        } finally {
+            setLoadingOtherPigmySearch(false);
+        }
+    };
+
+    // Saving Transfer State
+    const [customerSavingAccounts, setCustomerSavingAccounts] = useState<any[]>([]);
+    const [loadingSavingAccounts, setLoadingSavingAccounts] = useState(false);
+    const [selectedSavingAccount, setSelectedSavingAccount] = useState<any | null>(null);
+    const [savingAccountSourceType, setSavingAccountSourceType] = useState<'SELF' | 'OTHER'>('SELF');
+    const [otherSavingSearchQuery, setOtherSavingSearchQuery] = useState('');
+    const [otherSavingSearchResults, setOtherSavingSearchResults] = useState<any[]>([]);
+    const [loadingOtherSavingSearch, setLoadingOtherSavingSearch] = useState(false);
+
+    const fetchCustomerSavingAccounts = async (cId: number) => {
+        if (!cId) {
+            setCustomerSavingAccounts([]);
+            setSelectedSavingAccount(null);
+            return;
+        }
+        setLoadingSavingAccounts(true);
+        try {
+            const res = await axios.get(`/api/SavingAccounts?customerId=${cId}`);
+            const list = res.data || [];
+            const valid = list.filter((s: any) => s.status === 'Active');
+            setCustomerSavingAccounts(valid);
+            if (valid.length > 0) {
+                const acc = valid[0];
+                setSelectedSavingAccount(acc);
+                setSavingAccountSourceType('SELF');
+                setFormData(p => ({
+                    ...p,
+                    sourceSavingAccountID: acc.savingAccountID,
+                    transferFromSavingAccountNo: acc.accountNo,
+                    savingCustomerName: acc.customerName || ''
+                }));
+            } else {
+                setSelectedSavingAccount(null);
+                setSavingAccountSourceType('OTHER');
+            }
+        } catch (err) {
+            console.error('Failed to load saving accounts for customer:', err);
+            setCustomerSavingAccounts([]);
+            setSelectedSavingAccount(null);
+        } finally {
+            setLoadingSavingAccounts(false);
+        }
+    };
+
+    const searchOtherSavingAccounts = async (query: string) => {
+        if (!query || query.trim().length < 2) {
+            setOtherSavingSearchResults([]);
+            return;
+        }
+        setLoadingOtherSavingSearch(true);
+        try {
+            const res = await axios.get(`/api/SavingAccounts?search=${encodeURIComponent(query.trim())}`);
+            const list = (res.data || []).filter((s: any) => s.status === 'Active');
+            setOtherSavingSearchResults(list);
+        } catch (err) {
+            console.error('Failed to search other saving accounts:', err);
+            setOtherSavingSearchResults([]);
+        } finally {
+            setLoadingOtherSavingSearch(false);
+        }
+    };
 
     const fetchSanstha = async () => {
         try {
@@ -1038,13 +1170,22 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             setSelectedAccount(null);
             setAccountDetails(null);
             setNpaStatus(null);
+            setCustomerPigmyAccounts([]);
+            setSelectedPigmyAccount(null);
+            setCustomerSavingAccounts([]);
+            setSelectedSavingAccount(null);
+            setSavingAccountSourceType('SELF');
+            setOtherSavingSearchQuery('');
+            setOtherSavingSearchResults([]);
             (window as any).selectedLoanAccountId = undefined;
             (window as any).selectedLoanMemberId = undefined;
-            setFormData(p => ({ ...p, loanAccountID: undefined }));
+            setFormData(p => ({ ...p, loanAccountID: undefined, sourcePigmyAccountID: undefined, transferFromPigmyAccountNo: undefined, sourceSavingAccountID: undefined, transferFromSavingAccountNo: undefined, savingCustomerName: undefined }));
             return;
         }
 
         setSelectedBorrowerKey(`C_${cId}`);
+        fetchCustomerPigmyAccounts(cId);
+        fetchCustomerSavingAccounts(cId);
 
         // Loans of this customer matching the chosen scheme
         const loans = accounts.filter((a: any) => {
@@ -1476,6 +1617,36 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
         }
 
+        if (formData.paymentMode === 'Pigmy Transfer') {
+            if (!formData.sourcePigmyAccountID) {
+                alert('कृपया वर्ग करण्यासाठी पिग्मी खाते निवडा (Please select a Pigmy account).');
+                return;
+            }
+            if (selectedPigmyAccount) {
+                const avail = Math.max(0, (selectedPigmyAccount.totalDepositedAmount || 0) - (selectedPigmyAccount.isLienMarked ? (selectedPigmyAccount.lienAmount || 0) : 0));
+                const totalReq = (formData.totalAmountReceived || 0) + (formData.fees?.reduce((acc, f) => acc + (f.amount || 0), 0) || 0);
+                if (totalReq > avail + 0.01) {
+                    alert(`पिग्मी खात्यात शिल्लक कमी आहे! उपलब्ध शिल्लक: ₹${avail.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
+                    return;
+                }
+            }
+        }
+
+        if (formData.paymentMode === 'Saving Transfer') {
+            if (!formData.sourceSavingAccountID && !formData.transferFromSavingAccountNo) {
+                alert('कृपया वर्ग करण्यासाठी बचत खाते निवडा (Please select a Saving account).');
+                return;
+            }
+            if (selectedSavingAccount) {
+                const avail = Math.max(0, (selectedSavingAccount.currentBalance || 0) - (selectedSavingAccount.lienAmount || 0) - (selectedSavingAccount.minimumBalance || 0));
+                const totalReq = (formData.totalAmountReceived || 0) + (formData.fees?.reduce((acc, f) => acc + (f.amount || 0), 0) || 0);
+                if (totalReq > avail + 0.01) {
+                    alert(`बचत खात्यात शिल्लक कमी आहे! उपलब्ध शिल्लक: ₹${avail.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
+                    return;
+                }
+            }
+        }
+
         const targetAccountId = formData.loanAccountID || selectedAccount?.loanAccountID || (window as any).selectedLoanAccountId;
         if (!targetAccountId) {
             alert('कृपया आधी कर्जदार व सक्रिय कर्ज खाते निवडा.');
@@ -1538,6 +1709,13 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             setSelectedCustomerId(null);
             setSelectedAccount(null);
             setAccountDetails(null);
+            setCustomerPigmyAccounts([]);
+            setSelectedPigmyAccount(null);
+            setCustomerSavingAccounts([]);
+            setSelectedSavingAccount(null);
+            setSavingAccountSourceType('SELF');
+            setOtherSavingSearchQuery('');
+            setOtherSavingSearchResults([]);
             (window as any).selectedLoanCustomerId = undefined;
             (window as any).selectedLoanAccountId = undefined;
             (window as any).selectedLoanMemberId = undefined;
@@ -1997,12 +2175,26 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                 
                                 <div>
                                     <label className={labelClass}>मोड (Payment Mode)</label>
-                                    <select name="paymentMode" value={formData.paymentMode} onChange={(e) => setFormData(p => ({ ...p, paymentMode: e.target.value }))} disabled={isPassingMode}
+                                    <select 
+                                        name="paymentMode" 
+                                        value={formData.paymentMode} 
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setFormData(p => ({ ...p, paymentMode: val }));
+                                            if (val === 'Pigmy Transfer' && selectedCustomerId) {
+                                                fetchCustomerPigmyAccounts(selectedCustomerId);
+                                            }
+                                            if (val === 'Saving Transfer' && selectedCustomerId) {
+                                                fetchCustomerSavingAccounts(selectedCustomerId);
+                                            }
+                                        }} 
+                                        disabled={isPassingMode}
                                         className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`}>
                                         <option value="Cash">Cash (रोख)</option>
                                         <option value="Bank">Bank Transfer (बँक ट्रान्सफर)</option>
                                         <option value="Cheque">Cheque (चेक)</option>
                                         <option value="Saving Transfer">Saving Transfer (सेव्हिंग)</option>
+                                        <option value="Pigmy Transfer">Pigmy Transfer (पिग्मी ठेव वर्ग)</option>
                                     </select>
                                 </div>
                             </div>
@@ -2256,13 +2448,525 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         <input type="text" value={formData.chequeNo || ''} onChange={(e) => setFormData(p => ({ ...p, chequeNo: e.target.value }))} placeholder="चेक नंबर (Cheque No)" disabled={isPassingMode} className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} required />
                                     </>
                                 )}
-                                {formData.paymentMode === 'Saving Transfer' && (
-                                    <input type="text" value={formData.transferFromSavingAccountNo || ''} onChange={(e) => setFormData(p => ({ ...p, transferFromSavingAccountNo: e.target.value }))} placeholder="Saving Account No" disabled={isPassingMode} className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} />
-                                )}
-                                
-                                <label className={labelClass + " whitespace-nowrap !mb-0"}>तपशील</label>
+                                <label className={labelClass + " whitespace-nowrap !mb-0 text-gray-700"}>तपशील</label>
                                 <input type="text" value={formData.remarks || ''} onChange={(e) => setFormData(p => ({ ...p, remarks: e.target.value }))} disabled={isPassingMode} className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} placeholder="अधिक माहिती..." />
                             </div>
+
+                            {/* Pigmy Transfer CBS Section - Simplified */}
+                            {formData.paymentMode === 'Pigmy Transfer' && (
+                                <div className="mt-2 p-2 bg-primary/5 rounded-sm border border-primary/20 shadow-2xs space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/15 pb-1">
+                                        <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                                            <Coins size={14} className="text-primary" />
+                                            <span>पिग्मी ठेव कर्ज समायोजन (Pigmy Transfer Adjustment)</span>
+                                        </span>
+                                        {loadingPigmyAccounts && (
+                                            <span className="text-[10px] text-gray-500 font-semibold flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-gray-200">
+                                                <Clock size={11} className="animate-spin text-primary" /> खाती लोड होत आहेत...
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Pigmy Source Selector: Self vs Other/Old Account Search */}
+                                    <div className="flex flex-wrap items-center gap-4 bg-white px-2.5 py-1 rounded border border-gray-300 shadow-2xs">
+                                        <label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1.5 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="pigmyAccountSourceType"
+                                                checked={pigmyAccountSourceType === 'SELF'}
+                                                disabled={isPassingMode}
+                                                onChange={() => {
+                                                    setPigmyAccountSourceType('SELF');
+                                                    if (customerPigmyAccounts.length > 0) {
+                                                        const acc = customerPigmyAccounts[0];
+                                                        setSelectedPigmyAccount(acc);
+                                                        setFormData(p => ({
+                                                            ...p,
+                                                            sourcePigmyAccountID: acc.pigmyAccountID,
+                                                            transferFromPigmyAccountNo: acc.accountNo
+                                                        }));
+                                                    } else {
+                                                        setSelectedPigmyAccount(null);
+                                                        setFormData(p => ({
+                                                            ...p,
+                                                            sourcePigmyAccountID: undefined,
+                                                            transferFromPigmyAccountNo: undefined
+                                                        }));
+                                                    }
+                                                }}
+                                                className="w-3.5 h-3.5 text-primary focus:ring-primary cursor-pointer accent-primary"
+                                            />
+                                            <span>कर्जदाराचे स्वतःचे पिग्मी खाते (Self A/c)</span>
+                                        </label>
+
+                                        <label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1.5 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="pigmyAccountSourceType"
+                                                checked={pigmyAccountSourceType === 'OTHER'}
+                                                disabled={isPassingMode}
+                                                onChange={() => {
+                                                    setPigmyAccountSourceType('OTHER');
+                                                    setSelectedPigmyAccount(null);
+                                                    setFormData(p => ({
+                                                        ...p,
+                                                        sourcePigmyAccountID: undefined,
+                                                        transferFromPigmyAccountNo: undefined
+                                                    }));
+                                                }}
+                                                className="w-3.5 h-3.5 text-primary focus:ring-primary cursor-pointer accent-primary"
+                                            />
+                                            <span>इतर खातेदार / जुना नंबर थेट शोधा (Other Member / Old A/c Search)</span>
+                                        </label>
+                                    </div>
+
+                                    {/* SELF MODE: Dropdown with Old Account No and Quick Filter */}
+                                    {pigmyAccountSourceType === 'SELF' && (
+                                        <div>
+                                            {customerPigmyAccounts.length > 0 ? (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-end">
+                                                    <div>
+                                                        <div className="flex items-center justify-between">
+                                                            <label className={`${labelClass} text-gray-700`}>
+                                                                पिग्मी खाते निवडा (Select Pigmy A/c) <span className="text-rose-600 font-bold">*</span>
+                                                            </label>
+                                                            {customerPigmyAccounts.length > 1 && (
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="जुना क्र. शोधा..."
+                                                                    value={pigmyOldAccSearchQuery}
+                                                                    onChange={(e) => {
+                                                                        const q = e.target.value;
+                                                                        setPigmyOldAccSearchQuery(q);
+                                                                        if (q.trim()) {
+                                                                            const matched = customerPigmyAccounts.find(a => 
+                                                                                (a.oldAccountNo && a.oldAccountNo.toLowerCase().includes(q.toLowerCase())) ||
+                                                                                (a.legacyAccountNumber && a.legacyAccountNumber.toLowerCase().includes(q.toLowerCase())) ||
+                                                                                (a.previousAccountNo && a.previousAccountNo.toLowerCase().includes(q.toLowerCase())) ||
+                                                                                (a.accountNo && a.accountNo.includes(q))
+                                                                            );
+                                                                            if (matched) {
+                                                                                setSelectedPigmyAccount(matched);
+                                                                                setFormData(p => ({
+                                                                                    ...p,
+                                                                                    sourcePigmyAccountID: matched.pigmyAccountID,
+                                                                                    transferFromPigmyAccountNo: matched.accountNo
+                                                                                }));
+                                                                            }
+                                                                        }
+                                                                    }}
+                                                                    className="text-[10px] px-1.5 py-0.5 border border-gray-300 rounded focus:border-primary focus:outline-none w-28 bg-white"
+                                                                    title="जुना खाते क्रमांक टाकून खाते निवडा"
+                                                                />
+                                                            )}
+                                                        </div>
+                                                        <select
+                                                            value={formData.sourcePigmyAccountID || ''}
+                                                            disabled={isPassingMode || loadingPigmyAccounts}
+                                                            onChange={(e) => {
+                                                                const accId = parseInt(e.target.value);
+                                                                const acc = customerPigmyAccounts.find(a => a.pigmyAccountID === accId);
+                                                                setSelectedPigmyAccount(acc || null);
+                                                                setFormData(p => ({
+                                                                    ...p,
+                                                                    sourcePigmyAccountID: accId || undefined,
+                                                                    transferFromPigmyAccountNo: acc ? acc.accountNo : undefined
+                                                                }));
+                                                            }}
+                                                            className={`${inputClass} font-semibold bg-white border-gray-300 focus:border-primary`}
+                                                            required
+                                                        >
+                                                            <option value="">-- पिग्मी खाते निवडा --</option>
+                                                            {customerPigmyAccounts.map(a => {
+                                                                const oldNo = a.oldAccountNo || a.legacyAccountNumber || a.previousAccountNo;
+                                                                return (
+                                                                    <option key={a.pigmyAccountID} value={a.pigmyAccountID}>
+                                                                        {format14DigitDisplay(a.accountNo)} {oldNo ? `[जुना क्र: ${oldNo}]` : ''} - {a.pigmyScheme?.schemeName || 'दैनिक ठेव'} (शिल्लक: ₹{(a.totalDepositedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })})
+                                                                    </option>
+                                                                );
+                                                            })}
+                                                        </select>
+                                                    </div>
+
+                                                    {selectedPigmyAccount && (
+                                                        <div className="flex flex-wrap gap-1.5 text-[10px] py-0.5 items-center">
+                                                            {(selectedPigmyAccount.oldAccountNo || selectedPigmyAccount.legacyAccountNumber || selectedPigmyAccount.previousAccountNo) && (
+                                                                <span className="bg-purple-100 text-purple-950 px-2 py-0.5 rounded border border-purple-300 font-bold shadow-2xs">
+                                                                    🏷️ जुना क्र: <strong className="font-mono">{selectedPigmyAccount.oldAccountNo || selectedPigmyAccount.legacyAccountNumber || selectedPigmyAccount.previousAccountNo}</strong>
+                                                                </span>
+                                                            )}
+                                                            <span className="bg-white px-2 py-0.5 rounded border border-gray-300 font-medium text-gray-700 shadow-2xs">
+                                                                एकूण ठेव: <strong className="text-gray-900 font-bold font-mono">₹{(selectedPigmyAccount.totalDepositedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                            </span>
+                                                            {selectedPigmyAccount.isLienMarked && (
+                                                                <span className="bg-amber-50 text-amber-900 px-2 py-0.5 rounded border border-amber-300 font-medium shadow-2xs">
+                                                                    तारण (Lien): <strong className="font-bold font-mono">₹{(selectedPigmyAccount.lienAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                                </span>
+                                                            )}
+                                                            <span className="bg-emerald-50 text-emerald-950 px-2 py-0.5 rounded border border-emerald-300 font-bold shadow-2xs">
+                                                                वर्गपात्र शिल्लक: <strong className="text-emerald-700 text-xs font-mono font-bold">₹{Math.max(0, (selectedPigmyAccount.totalDepositedAmount || 0) - (selectedPigmyAccount.isLienMarked ? (selectedPigmyAccount.lienAmount || 0) : 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                            </span>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="text-[11px] text-gray-600 font-medium flex items-center gap-1.5 bg-white px-2 py-1 rounded border border-gray-200">
+                                                        <span>💡 फॉर्ममधील 'एकूण जमा रक्कम' मधील रक्कम थेट या पिग्मी खात्यातून वर्ग होईल.</span>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-amber-50 border border-amber-300 rounded text-[11px] text-amber-900">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <AlertCircle size={14} className="text-amber-600 shrink-0" />
+                                                        <span>या कर्जदार खातेदाराचे कोणतेही सक्रिय पिग्मी खाते आढळले नाही.</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPigmyAccountSourceType('OTHER')}
+                                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-0.5 rounded text-[10px] cursor-pointer"
+                                                    >
+                                                        इतर खातेदार / जुना नंबर थेट शोधा ➔
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* OTHER MODE: Search any pigmy account by Old Account No / Name / CIF */}
+                                    {pigmyAccountSourceType === 'OTHER' && (
+                                        <div className="space-y-2">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-end">
+                                                <div>
+                                                    <label className={`${labelClass} text-gray-700`}>
+                                                        जुना पिग्मी खाते क्र. / नाव / मोबाईल शोधा
+                                                    </label>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="text"
+                                                            value={pigmyOldAccSearchQuery}
+                                                            onChange={(e) => {
+                                                                const q = e.target.value;
+                                                                setPigmyOldAccSearchQuery(q);
+                                                                searchOtherPigmyAccounts(q);
+                                                            }}
+                                                            placeholder="उदा. 104, नाव किंवा मोबाईल टाका..."
+                                                            disabled={isPassingMode}
+                                                            className={`${inputClass} bg-white pr-7 font-medium`}
+                                                        />
+                                                        <Search size={13} className="absolute right-2 top-1.5 text-gray-400 pointer-events-none" />
+                                                    </div>
+                                                </div>
+
+                                                {otherPigmySearchResults.length > 0 && !selectedPigmyAccount && (
+                                                    <div className="md:col-span-2">
+                                                        <label className={`${labelClass} text-primary font-bold`}>
+                                                            शोध निकाल ({otherPigmySearchResults.length} खाती आढळली):
+                                                        </label>
+                                                        <select
+                                                            onChange={(e) => {
+                                                                const accId = parseInt(e.target.value);
+                                                                const acc = otherPigmySearchResults.find(a => a.pigmyAccountID === accId);
+                                                                if (acc) {
+                                                                    setSelectedPigmyAccount(acc);
+                                                                    setFormData(p => ({
+                                                                        ...p,
+                                                                        sourcePigmyAccountID: acc.pigmyAccountID,
+                                                                        transferFromPigmyAccountNo: acc.accountNo
+                                                                    }));
+                                                                }
+                                                            }}
+                                                            defaultValue=""
+                                                            className={`${inputClass} bg-white border-primary focus:border-primary font-semibold`}
+                                                        >
+                                                            <option value="" disabled>-- पिग्मी खाते निवडा --</option>
+                                                            {otherPigmySearchResults.map(a => {
+                                                                const oldNo = a.oldAccountNo || a.legacyAccountNumber || a.previousAccountNo;
+                                                                const custName = a.customerName || (a.customer ? `${a.customer.firstName || ''} ${a.customer.lastName || ''}`.trim() : '');
+                                                                return (
+                                                                    <option key={a.pigmyAccountID} value={a.pigmyAccountID}>
+                                                                        {format14DigitDisplay(a.accountNo)} {oldNo ? `[जुना क्र: ${oldNo}]` : ''} - {custName} (शिल्लक: ₹{(a.totalDepositedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })})
+                                                                    </option>
+                                                                );
+                                                            })}
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                {selectedPigmyAccount && (
+                                                    <div className="flex flex-wrap gap-1.5 text-[10px] py-0.5 md:col-span-2 items-center">
+                                                        <span className="bg-purple-50 text-purple-950 px-2 py-0.5 rounded border border-purple-300 font-bold shadow-2xs">
+                                                            👤 {selectedPigmyAccount.customerName || (selectedPigmyAccount.customer ? `${selectedPigmyAccount.customer.firstName || ''} ${selectedPigmyAccount.customer.lastName || ''}`.trim() : '')} ({format14DigitDisplay(selectedPigmyAccount.accountNo)})
+                                                        </span>
+                                                        {(selectedPigmyAccount.oldAccountNo || selectedPigmyAccount.legacyAccountNumber || selectedPigmyAccount.previousAccountNo) && (
+                                                            <span className="bg-purple-100 text-purple-950 px-2 py-0.5 rounded border border-purple-300 font-bold shadow-2xs">
+                                                                🏷️ जुना क्र: <strong className="font-mono">{selectedPigmyAccount.oldAccountNo || selectedPigmyAccount.legacyAccountNumber || selectedPigmyAccount.previousAccountNo}</strong>
+                                                            </span>
+                                                        )}
+                                                        <span className="bg-white px-2 py-0.5 rounded border border-gray-300 font-medium text-gray-700 shadow-2xs">
+                                                            शिल्लक: <strong className="text-gray-900 font-bold font-mono">₹{(selectedPigmyAccount.totalDepositedAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                        </span>
+                                                        <span className="bg-emerald-50 text-emerald-950 px-2 py-0.5 rounded border border-emerald-300 font-bold shadow-2xs">
+                                                            वर्गपात्र शिल्लक: <strong className="text-emerald-700 text-xs font-mono font-bold">₹{Math.max(0, (selectedPigmyAccount.totalDepositedAmount || 0) - (selectedPigmyAccount.isLienMarked ? (selectedPigmyAccount.lienAmount || 0) : 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedPigmyAccount(null);
+                                                                setFormData(p => ({
+                                                                    ...p,
+                                                                    sourcePigmyAccountID: undefined,
+                                                                    transferFromPigmyAccountNo: undefined
+                                                                }));
+                                                            }}
+                                                            className="text-rose-600 hover:text-rose-800 text-[10px] font-bold underline cursor-pointer ml-1"
+                                                        >
+                                                            बदला
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Saving Transfer CBS Section - Auto-detect & Third Party */}
+                            {formData.paymentMode === 'Saving Transfer' && (
+                                <div className="mt-2 p-2 bg-primary/5 rounded-sm border border-primary/20 shadow-2xs space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-primary/15 pb-1">
+                                        <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                                            <Landmark size={14} className="text-primary" />
+                                            <span>बचत ठेव कर्ज समायोजन (Saving Deposit Transfer)</span>
+                                        </span>
+                                        {loadingSavingAccounts && (
+                                            <span className="text-[10px] text-gray-500 font-semibold flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-gray-200">
+                                                <Clock size={11} className="animate-spin text-primary" /> खाती लोड होत आहेत...
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Account Source Selector: Self vs Other */}
+                                    <div className="flex flex-wrap items-center gap-4 bg-white px-2.5 py-1 rounded border border-gray-300 shadow-2xs">
+                                        <label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1.5 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="savingAccountSourceType"
+                                                checked={savingAccountSourceType === 'SELF'}
+                                                disabled={isPassingMode}
+                                                onChange={() => {
+                                                    setSavingAccountSourceType('SELF');
+                                                    if (customerSavingAccounts.length > 0) {
+                                                        const acc = customerSavingAccounts[0];
+                                                        setSelectedSavingAccount(acc);
+                                                        setFormData(p => ({
+                                                            ...p,
+                                                            sourceSavingAccountID: acc.savingAccountID,
+                                                            transferFromSavingAccountNo: acc.accountNo,
+                                                            savingCustomerName: acc.customerName || ''
+                                                        }));
+                                                    } else {
+                                                        setSelectedSavingAccount(null);
+                                                        setFormData(p => ({
+                                                            ...p,
+                                                            sourceSavingAccountID: undefined,
+                                                            transferFromSavingAccountNo: undefined,
+                                                            savingCustomerName: undefined
+                                                        }));
+                                                    }
+                                                }}
+                                                className="w-3.5 h-3.5 text-primary focus:ring-primary cursor-pointer accent-primary"
+                                            />
+                                            <span>कर्जदाराचे स्वतःचे बचत खाते (Self A/c)</span>
+                                        </label>
+
+                                        <label className="text-[11px] font-semibold text-gray-800 flex items-center gap-1.5 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="savingAccountSourceType"
+                                                checked={savingAccountSourceType === 'OTHER'}
+                                                disabled={isPassingMode}
+                                                onChange={() => {
+                                                    setSavingAccountSourceType('OTHER');
+                                                    setSelectedSavingAccount(null);
+                                                    setFormData(p => ({
+                                                        ...p,
+                                                        sourceSavingAccountID: undefined,
+                                                        transferFromSavingAccountNo: undefined,
+                                                        savingCustomerName: undefined
+                                                    }));
+                                                }}
+                                                className="w-3.5 h-3.5 text-primary focus:ring-primary cursor-pointer accent-primary"
+                                            />
+                                            <span>इतर खातेदार / जामीनदार बचत खाते (Other Member / Guarantor A/c)</span>
+                                        </label>
+                                    </div>
+
+                                    {/* SELF MODE: Dropdown for customer's saving accounts */}
+                                    {savingAccountSourceType === 'SELF' && (
+                                        <div>
+                                            {customerSavingAccounts.length > 0 ? (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-end">
+                                                    <div>
+                                                        <label className={`${labelClass} text-gray-700`}>
+                                                            बचत खाते निवडा (Select Saving A/c) <span className="text-rose-600 font-bold">*</span>
+                                                        </label>
+                                                        <select
+                                                            value={formData.sourceSavingAccountID || ''}
+                                                            disabled={isPassingMode || loadingSavingAccounts}
+                                                            onChange={(e) => {
+                                                                const accId = parseInt(e.target.value);
+                                                                const acc = customerSavingAccounts.find(a => a.savingAccountID === accId);
+                                                                setSelectedSavingAccount(acc || null);
+                                                                setFormData(p => ({
+                                                                    ...p,
+                                                                    sourceSavingAccountID: accId || undefined,
+                                                                    transferFromSavingAccountNo: acc ? acc.accountNo : undefined,
+                                                                    savingCustomerName: acc ? acc.customerName : undefined
+                                                                }));
+                                                            }}
+                                                            className={`${inputClass} font-semibold bg-white border-gray-300 focus:border-primary`}
+                                                            required
+                                                        >
+                                                            {customerSavingAccounts.map(a => (
+                                                                <option key={a.savingAccountID} value={a.savingAccountID}>
+                                                                    {format14DigitDisplay(a.accountNo)} - {a.schemeName || 'बचत ठेव'} (शिल्लक: ₹{(a.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })})
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
+                                                    {selectedSavingAccount && (
+                                                        <div className="flex flex-wrap gap-1.5 text-[10px] py-0.5">
+                                                            <span className="bg-white px-2 py-0.5 rounded border border-gray-300 font-medium text-gray-700 shadow-2xs">
+                                                                एकूण शिल्लक: <strong className="text-gray-900 font-bold font-mono">₹{(selectedSavingAccount.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                            </span>
+                                                            {(selectedSavingAccount.minimumBalance || 0) > 0 && (
+                                                                <span className="bg-slate-50 text-slate-700 px-2 py-0.5 rounded border border-slate-300 font-medium shadow-2xs">
+                                                                    किमान ठेव: <strong className="font-bold font-mono">₹{(selectedSavingAccount.minimumBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                                </span>
+                                                            )}
+                                                            {(selectedSavingAccount.lienAmount || 0) > 0 && (
+                                                                <span className="bg-amber-50 text-amber-900 px-2 py-0.5 rounded border border-amber-300 font-medium shadow-2xs">
+                                                                    तारण: <strong className="font-bold font-mono">₹{(selectedSavingAccount.lienAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                                </span>
+                                                            )}
+                                                            <span className="bg-emerald-50 text-emerald-950 px-2 py-0.5 rounded border border-emerald-300 font-bold shadow-2xs">
+                                                                वर्गपात्र शिल्लक: <strong className="text-emerald-700 text-xs font-mono font-bold">₹{Math.max(0, (selectedSavingAccount.currentBalance || 0) - (selectedSavingAccount.lienAmount || 0) - (selectedSavingAccount.minimumBalance || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                            </span>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="text-[11px] text-gray-600 font-medium flex items-center gap-1.5 bg-white px-2 py-1 rounded border border-gray-200">
+                                                        <span>💡 फॉर्ममधील 'एकूण जमा रक्कम' मधील रक्कम थेट या बचत खात्यातून वर्ग होईल.</span>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-amber-50 border border-amber-300 rounded text-[11px] text-amber-900">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <AlertCircle size={14} className="text-amber-600 shrink-0" />
+                                                        <span>या कर्जदार खातेदाराचे कोणतेही सक्रिय बचत खाते आढळले नाही.</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSavingAccountSourceType('OTHER')}
+                                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-2 py-0.5 rounded text-[10px] cursor-pointer"
+                                                    >
+                                                        इतर खातेदाराचे बचत खाते निवडा ➔
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* OTHER MODE: Search any saving account in bank */}
+                                    {savingAccountSourceType === 'OTHER' && (
+                                        <div className="space-y-2">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-end">
+                                                <div>
+                                                    <label className={`${labelClass} text-gray-700`}>
+                                                        इतर बचत खाते शोधा (Search Account / Name / Mobile / CIF)
+                                                    </label>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="text"
+                                                            value={otherSavingSearchQuery}
+                                                            onChange={(e) => {
+                                                                const q = e.target.value;
+                                                                setOtherSavingSearchQuery(q);
+                                                                searchOtherSavingAccounts(q);
+                                                            }}
+                                                            placeholder="खाते क्र., नाव, मोबाईल किंवा CIF टाका..."
+                                                            disabled={isPassingMode}
+                                                            className={`${inputClass} bg-white pr-7 font-medium`}
+                                                        />
+                                                        <Search size={13} className="absolute right-2 top-1.5 text-gray-400 pointer-events-none" />
+                                                    </div>
+                                                </div>
+
+                                                {otherSavingSearchResults.length > 0 && !selectedSavingAccount && (
+                                                    <div className="md:col-span-2">
+                                                        <label className={`${labelClass} text-primary font-bold`}>
+                                                            शोध निकाल ({otherSavingSearchResults.length} खाती आढळली):
+                                                        </label>
+                                                        <select
+                                                            onChange={(e) => {
+                                                                const accId = parseInt(e.target.value);
+                                                                const acc = otherSavingSearchResults.find(a => a.savingAccountID === accId);
+                                                                if (acc) {
+                                                                    setSelectedSavingAccount(acc);
+                                                                    setFormData(p => ({
+                                                                        ...p,
+                                                                        sourceSavingAccountID: acc.savingAccountID,
+                                                                        transferFromSavingAccountNo: acc.accountNo,
+                                                                        savingCustomerName: acc.customerName || ''
+                                                                    }));
+                                                                }
+                                                            }}
+                                                            defaultValue=""
+                                                            className={`${inputClass} bg-white border-primary focus:border-primary font-semibold`}
+                                                        >
+                                                            <option value="" disabled>-- खाते निवडा --</option>
+                                                            {otherSavingSearchResults.map(a => (
+                                                                <option key={a.savingAccountID} value={a.savingAccountID}>
+                                                                    {format14DigitDisplay(a.accountNo)} - {a.customerName} (शिल्लक: ₹{(a.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })})
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                {selectedSavingAccount && (
+                                                    <div className="flex flex-wrap gap-1.5 text-[10px] py-0.5 md:col-span-2 items-center">
+                                                        <span className="bg-purple-50 text-purple-950 px-2 py-0.5 rounded border border-purple-300 font-bold shadow-2xs">
+                                                            👤 {selectedSavingAccount.customerName} ({format14DigitDisplay(selectedSavingAccount.accountNo)})
+                                                        </span>
+                                                        <span className="bg-white px-2 py-0.5 rounded border border-gray-300 font-medium text-gray-700 shadow-2xs">
+                                                            शिल्लक: <strong className="text-gray-900 font-bold font-mono">₹{(selectedSavingAccount.currentBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                        </span>
+                                                        <span className="bg-emerald-50 text-emerald-950 px-2 py-0.5 rounded border border-emerald-300 font-bold shadow-2xs">
+                                                            वर्गपात्र शिल्लक: <strong className="text-emerald-700 text-xs font-mono font-bold">₹{Math.max(0, (selectedSavingAccount.currentBalance || 0) - (selectedSavingAccount.lienAmount || 0) - (selectedSavingAccount.minimumBalance || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedSavingAccount(null);
+                                                                setFormData(p => ({
+                                                                    ...p,
+                                                                    sourceSavingAccountID: undefined,
+                                                                    transferFromSavingAccountNo: undefined,
+                                                                    savingCustomerName: undefined
+                                                                }));
+                                                            }}
+                                                            className="text-rose-600 hover:text-rose-800 text-[10px] font-bold underline cursor-pointer ml-1"
+                                                        >
+                                                            बदला
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* OTS & Interest Waiver Section */}
                             <div className="bg-amber-50/80 p-2 rounded-sm border border-amber-300 mt-2 space-y-2">
@@ -2664,6 +3368,13 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                     setSelectedBorrowerKey(null);
                                     setSelectedAccount(null);
                                     setAccountDetails(null);
+                                    setCustomerPigmyAccounts([]);
+                                    setSelectedPigmyAccount(null);
+                                    setCustomerSavingAccounts([]);
+                                    setSelectedSavingAccount(null);
+                                    setSavingAccountSourceType('SELF');
+                                    setOtherSavingSearchQuery('');
+                                    setOtherSavingSearchResults([]);
                                     (window as any).selectedLoanCustomerId = undefined;
                                     (window as any).selectedLoanAccountId = undefined;
                                     (window as any).selectedLoanMemberId = undefined;

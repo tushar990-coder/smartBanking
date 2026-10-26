@@ -612,15 +612,147 @@ namespace Bhisi.Api.Controllers
                 int surchargeLedgerId = loanRate?.SurchargeLedgerID ?? 0;
                 int cashLedgerId = collection.BankAccountLedgerID ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, collectingBranch, "LOAN");
 
+                PigmyAccount? sourcePigmyAcc = null;
+                if (collection.PaymentMode == "Pigmy Transfer" || collection.PaymentMode == "Pigmy")
+                {
+                    if (collection.SourcePigmyAccountID.HasValue && collection.SourcePigmyAccountID.Value > 0)
+                    {
+                        sourcePigmyAcc = await _context.PigmyAccounts
+                            .Include(p => p.PigmyScheme)
+                            .FirstOrDefaultAsync(p => p.PigmyAccountID == collection.SourcePigmyAccountID.Value);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(collection.TransferFromPigmyAccountNo))
+                    {
+                        string pNo = collection.TransferFromPigmyAccountNo.Trim();
+                        sourcePigmyAcc = await _context.PigmyAccounts
+                            .Include(p => p.PigmyScheme)
+                            .FirstOrDefaultAsync(p => p.AccountNo == pNo || p.LegacyAccountNumber == pNo || p.OldAccountNo == pNo || p.PreviousAccountNo == pNo);
+                    }
+                    else if (loanAccount.CustomerID > 0)
+                    {
+                        sourcePigmyAcc = await _context.PigmyAccounts
+                            .Include(p => p.PigmyScheme)
+                            .FirstOrDefaultAsync(p => p.CustomerID == loanAccount.CustomerID && p.Status == "Active");
+                    }
+
+                    if (sourcePigmyAcc == null)
+                    {
+                        return BadRequest(new { message = "वर्ग करण्यासाठी पिग्मी खाते निवडलेले नाही किंवा सिस्टीममध्ये सापडले नाही (Selected Pigmy account not found)." });
+                    }
+
+                    if (sourcePigmyAcc.Status == "Closed")
+                    {
+                        return BadRequest(new { message = $"पिग्मी खाते (#{sourcePigmyAcc.AccountNo}) आधीच बंद (Closed) झालेले आहे." });
+                    }
+
+                    decimal pigmyBalance = sourcePigmyAcc.TotalDepositedAmount;
+                    decimal lienAmount = (sourcePigmyAcc.IsLienMarked && sourcePigmyAcc.LienAmount.HasValue) ? sourcePigmyAcc.LienAmount.Value : 0m;
+                    decimal availablePigmyBal = Math.Max(0, pigmyBalance - lienAmount);
+
+                    decimal totalReqAmt = collection.TotalAmountReceived + (collection.Fees?.Sum(f => f.Amount) ?? 0);
+                    if (totalReqAmt > availablePigmyBal + 0.01m)
+                    {
+                        return BadRequest(new { message = $"पिग्मी खात्यात शिल्लक कमी आहे! उपलब्ध शिल्लक: ₹{availablePigmyBal:N2}" });
+                    }
+
+                    collection.SourcePigmyAccountID = sourcePigmyAcc.PigmyAccountID;
+                    collection.TransferFromPigmyAccountNo = sourcePigmyAcc.AccountNo;
+                    collection.PigmyBalanceBefore = pigmyBalance;
+
+                    // Match Pigmy Liability Ledger
+                    int pigmyLedgerId = sourcePigmyAcc.PigmyScheme?.PigmyLiabilityLedgerID ?? 0;
+                    if (pigmyLedgerId == 0)
+                    {
+                        var pigmyLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
+                            l.LedgerName.Contains("पिग्मी ठेवा") || 
+                            l.LedgerName.Contains("पिग्मी ठेव") || 
+                            l.LedgerName.Contains("दैनिक ठेव") || 
+                            l.LedgerName.Contains("Pigmy Deposit") || 
+                            l.LedgerName.Contains("Pigmy Account")
+                        ) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy"));
+
+                        if (pigmyLedger != null)
+                        {
+                            pigmyLedgerId = pigmyLedger.LedgerID;
+                        }
+                    }
+
+                    if (pigmyLedgerId > 0)
+                    {
+                        cashLedgerId = pigmyLedgerId;
+                    }
+                }
+                SavingAccountMaster? sourceSavingAcc = null;
                 if (collection.PaymentMode == "Saving Transfer" || collection.PaymentMode == "Saving") {
-                    var savingLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
-                        l.LedgerName.Contains("बचत ठेवा") || 
-                        l.LedgerName.Contains("बचत ठेव") || 
-                        l.LedgerName.Contains("बचत खाते") || 
-                        l.LedgerName.Contains("Saving Deposit") || 
-                        l.LedgerName.Contains("Saving Account")
-                    ) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("बचत") || l.LedgerName.Contains("Saving"));
-                    if (savingLedger != null) cashLedgerId = savingLedger.LedgerID;
+                    if (collection.SourceSavingAccountID.HasValue && collection.SourceSavingAccountID.Value > 0)
+                    {
+                        sourceSavingAcc = await _context.SavingAccountMasters
+                            .Include(s => s.SavingScheme)
+                            .Include(s => s.Customer)
+                            .FirstOrDefaultAsync(s => s.SavingAccountID == collection.SourceSavingAccountID.Value);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(collection.TransferFromSavingAccountNo))
+                    {
+                        string sNo = collection.TransferFromSavingAccountNo.Trim();
+                        sourceSavingAcc = await _context.SavingAccountMasters
+                            .Include(s => s.SavingScheme)
+                            .Include(s => s.Customer)
+                            .FirstOrDefaultAsync(s => s.AccountNo == sNo || s.LegacyAccountNumber == sNo || s.OldAccountNo == sNo);
+                    }
+                    else if (loanAccount.CustomerID > 0)
+                    {
+                        sourceSavingAcc = await _context.SavingAccountMasters
+                            .Include(s => s.SavingScheme)
+                            .Include(s => s.Customer)
+                            .FirstOrDefaultAsync(s => s.CustomerID == loanAccount.CustomerID && s.Status == "Active");
+                    }
+
+                    if (sourceSavingAcc == null)
+                    {
+                        return BadRequest(new { message = "वर्ग करण्यासाठी बचत खाते निवडलेले नाही किंवा सिस्टीममध्ये सापडले नाही (Selected Saving account not found)." });
+                    }
+
+                    if (sourceSavingAcc.Status == "Closed")
+                    {
+                        return BadRequest(new { message = $"बचत खाते (#{sourceSavingAcc.AccountNo}) आधीच बंद (Closed) झालेले आहे." });
+                    }
+
+                    decimal savingBalance = sourceSavingAcc.CurrentBalance;
+                    decimal lienAmt = sourceSavingAcc.LienAmount;
+                    decimal minBal = sourceSavingAcc.MinimumBalance;
+                    decimal availableSavingBal = Math.Max(0, savingBalance - lienAmt - minBal);
+
+                    decimal totalReqAmt = collection.TotalAmountReceived + (collection.Fees?.Sum(f => f.Amount) ?? 0);
+                    if (totalReqAmt > availableSavingBal + 0.01m)
+                    {
+                        return BadRequest(new { message = $"बचत खात्यात शिल्लक कमी आहे! उपलब्ध शिल्लक: ₹{availableSavingBal:N2}" });
+                    }
+
+                    collection.SourceSavingAccountID = sourceSavingAcc.SavingAccountID;
+                    collection.TransferFromSavingAccountNo = sourceSavingAcc.AccountNo;
+                    if (sourceSavingAcc.Customer != null)
+                    {
+                        collection.SavingCustomerName = $"{sourceSavingAcc.Customer.FirstName} {sourceSavingAcc.Customer.LastName}".Trim();
+                    }
+
+                    // Match Saving Liability Ledger
+                    int savingLedgerId = sourceSavingAcc.LedgerID > 0 ? sourceSavingAcc.LedgerID : (sourceSavingAcc.SavingScheme?.SavingLiabilityLedgerID ?? 0);
+                    if (savingLedgerId == 0)
+                    {
+                        var savingLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
+                            l.LedgerName.Contains("बचत ठेवा") || 
+                            l.LedgerName.Contains("बचत ठेव") || 
+                            l.LedgerName.Contains("बचत खाते") || 
+                            l.LedgerName.Contains("Saving Deposit") || 
+                            l.LedgerName.Contains("Saving Account")
+                        ) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("बचत") || l.LedgerName.Contains("Saving"));
+                        if (savingLedger != null) savingLedgerId = savingLedger.LedgerID;
+                    }
+
+                    if (savingLedgerId > 0)
+                    {
+                        cashLedgerId = savingLedgerId;
+                    }
                 }
 
                 // Find or create Interest Waiver Expense Ledger
@@ -883,8 +1015,12 @@ namespace Bhisi.Api.Controllers
                 // If PaymentMode is Saving Transfer, auto-debit member's Saving Account
                 if (collection.PaymentMode == "Saving Transfer" || collection.PaymentMode == "Saving")
                 {
-                    SavingAccountMaster? savingAccount = null;
-                    if (!string.IsNullOrEmpty(collection.TransferFromSavingAccountNo))
+                    SavingAccountMaster? savingAccount = sourceSavingAcc;
+                    if (savingAccount == null && collection.SourceSavingAccountID.HasValue && collection.SourceSavingAccountID.Value > 0)
+                    {
+                        savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == collection.SourceSavingAccountID.Value);
+                    }
+                    if (savingAccount == null && !string.IsNullOrEmpty(collection.TransferFromSavingAccountNo))
                     {
                         savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == collection.TransferFromSavingAccountNo);
                     }
@@ -917,6 +1053,42 @@ namespace Bhisi.Api.Controllers
                         };
                         _context.SavingTransactions.Add(savingTxn);
                     }
+                }
+
+                // If PaymentMode is Pigmy Transfer, auto-debit member's Pigmy Account
+                if ((collection.PaymentMode == "Pigmy Transfer" || collection.PaymentMode == "Pigmy") && sourcePigmyAcc != null && totalReceiptAmount > 0)
+                {
+                    decimal newPigmyBal = Math.Max(0, sourcePigmyAcc.TotalDepositedAmount - totalReceiptAmount);
+                    collection.PigmyBalanceAfter = newPigmyBal;
+
+                    sourcePigmyAcc.TotalDepositedAmount = newPigmyBal;
+                    sourcePigmyAcc.TotalWithdrawnAmount += totalReceiptAmount;
+                    sourcePigmyAcc.LastWithdrawalDate = collection.CollectionDate;
+                    sourcePigmyAcc.EffectiveStartDate = collection.CollectionDate;
+                    sourcePigmyAcc.CurrentCycleNumber += 1;
+
+                    if (collection.PigmyTransferType == "CLOSURE")
+                    {
+                        sourcePigmyAcc.Status = "Closed";
+                        sourcePigmyAcc.TotalDepositedAmount = 0;
+                    }
+                    _context.Entry(sourcePigmyAcc).State = EntityState.Modified;
+
+                    var pigmyTxn = new PigmyTransaction
+                    {
+                        PigmyAccountID = sourcePigmyAcc.PigmyAccountID,
+                        TransactionDate = collection.CollectionDate,
+                        ValueDate = collection.CollectionDate,
+                        TransactionType = "LOAN_TRANSFER",
+                        DrAmount = totalReceiptAmount,
+                        CrAmount = 0,
+                        BalanceAmount = sourcePigmyAcc.TotalDepositedAmount,
+                        Narration = $"कर्ज खात्याला वर्ग ₹{totalReceiptAmount:N2} (कर्ज खाते: {loanAccFetched?.LoanAccountNo}, पावती क्र: {collection.ReceiptNo})",
+                        ReferenceId = collection.ReceiptNo,
+                        MakerId = userId ?? 1,
+                        PostedOn = DateTime.Now
+                    };
+                    _context.PigmyTransactions.Add(pigmyTxn);
                 }
 
                 await _context.SaveChangesAsync();
@@ -1132,6 +1304,65 @@ namespace Bhisi.Api.Controllers
                     }
 
                     _context.Entry(loanAccount).State = EntityState.Modified;
+                }
+
+                // Strict Physical Hard Delete: Revert and Clean up Pigmy Account & Transactions
+                if (collection.SourcePigmyAccountID.HasValue && collection.SourcePigmyAccountID.Value > 0)
+                {
+                    decimal totalDeducted = collection.TotalAmountReceived + (collection.Fees?.Sum(f => f.Amount) ?? 0);
+                    var pigmyAcc = await _context.PigmyAccounts.FindAsync(collection.SourcePigmyAccountID.Value);
+                    if (pigmyAcc != null)
+                    {
+                        pigmyAcc.TotalDepositedAmount += totalDeducted;
+                        if (pigmyAcc.TotalWithdrawnAmount >= totalDeducted)
+                        {
+                            pigmyAcc.TotalWithdrawnAmount -= totalDeducted;
+                        }
+                        if (collection.PigmyTransferType == "CLOSURE" && pigmyAcc.Status == "Closed")
+                        {
+                            pigmyAcc.Status = "Active";
+                        }
+                        _context.Entry(pigmyAcc).State = EntityState.Modified;
+
+                        // Physically Hard Delete PigmyTransaction rows associated with this collection
+                        var pigmyTxns = await _context.PigmyTransactions
+                            .Where(pt => pt.PigmyAccountID == pigmyAcc.PigmyAccountID && 
+                                         ((!string.IsNullOrEmpty(collection.ReceiptNo) && pt.ReferenceId == collection.ReceiptNo) || 
+                                          (!string.IsNullOrEmpty(collection.ReceiptNo) && pt.Narration.Contains(collection.ReceiptNo))))
+                            .ToListAsync();
+
+                        if (pigmyTxns.Any())
+                        {
+                            _context.PigmyTransactions.RemoveRange(pigmyTxns);
+                        }
+                    }
+                }
+                else if (collection.PaymentMode == "Saving Transfer" || collection.PaymentMode == "Saving")
+                {
+                    SavingAccountMaster? savingAccount = null;
+                    if (collection.SourceSavingAccountID.HasValue && collection.SourceSavingAccountID.Value > 0)
+                    {
+                        savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.SavingAccountID == collection.SourceSavingAccountID.Value);
+                    }
+                    if (savingAccount == null && !string.IsNullOrEmpty(collection.TransferFromSavingAccountNo))
+                    {
+                        savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == collection.TransferFromSavingAccountNo);
+                    }
+                    if (savingAccount != null)
+                    {
+                        decimal totalDeducted = collection.TotalAmountReceived + (collection.Fees?.Sum(f => f.Amount) ?? 0);
+                        savingAccount.CurrentBalance += totalDeducted;
+                        _context.Entry(savingAccount).State = EntityState.Modified;
+
+                        var savingTxns = await _context.SavingTransactions
+                            .Where(st => st.SavingAccountID == savingAccount.SavingAccountID && 
+                                         !string.IsNullOrEmpty(collection.ReceiptNo) && st.Narration.Contains(collection.ReceiptNo))
+                            .ToListAsync();
+                        if (savingTxns.Any())
+                        {
+                            _context.SavingTransactions.RemoveRange(savingTxns);
+                        }
+                    }
                 }
 
                 // Delete associated Fees records

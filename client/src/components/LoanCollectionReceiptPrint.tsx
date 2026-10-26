@@ -84,7 +84,7 @@ ${collection.isCrossBranch && homeBranchName ? `📌 *कर्ज मूळ श
 • मुद्दल जमा: ₹ ${collection.principalCollected?.toLocaleString('en-IN') || '0.00'}
 ${(collection.receivableInterestCollected || 0) > 0 ? `• थकीत येणे व्याज: ₹ ${(collection.receivableInterestCollected || 0).toLocaleString('en-IN')}\n` : ''}• चालू व्याज जमा: ₹ ${collection.interestCollected?.toLocaleString('en-IN') || '0.00'}
 ${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${collection.penaltyInterestCollected?.toLocaleString('en-IN')}\n` : ''}${collection.surchargeCollected > 0 ? `• सरचार्ज: ₹ ${collection.surchargeCollected?.toLocaleString('en-IN')}\n` : ''}💰 *एकूण जमा रक्कम:* ₹ ${totalCollected?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-💳 *पेमेंट पद्धत:* ${collection.paymentMode}
+💳 *पेमेंट पद्धत:* ${collection.paymentMode === 'Pigmy Transfer' ? `पिग्मी ठेव वर्ग (${collection.transferFromPigmyAccountNo || ''})` : collection.paymentMode === 'Saving Transfer' ? `बचत ठेव वर्ग (${collection.transferFromSavingAccountNo || ''}${collection.savingCustomerName ? ` - ${collection.savingCustomerName}` : ''})` : collection.paymentMode}
 
 सदर पावती संगणक प्रणालीद्वारे तयार करण्यात आली आहे.
 धन्यवाद! 🙏
@@ -202,9 +202,23 @@ ${collection.penaltyInterestCollected > 0 ? `• जादा व्याज: �
                 <span className="font-bold">{collection.loanAccount?.branch?.branchName || `शाखा #${collection.homeBranchID}`}</span>
               </div>
             )}
-            <div className="flex justify-between">
+            <div className="flex justify-between items-start">
               <span className="text-gray-600">पेमेंट प्रकार (Payment Mode):</span>
-              <span className="font-bold text-slate-900">{collection.paymentMode}</span>
+              <div className="text-right">
+                <span className="font-bold text-slate-900">
+                  {collection.paymentMode === 'Pigmy Transfer' ? 'पिग्मी ठेव वर्ग (Pigmy Transfer)' : collection.paymentMode}
+                </span>
+                {collection.paymentMode === 'Pigmy Transfer' && collection.transferFromPigmyAccountNo && (
+                  <span className="block text-[10px] text-blue-800 font-medium">
+                    पिग्मी खाते क्र: {collection.transferFromPigmyAccountNo}
+                  </span>
+                )}
+                {collection.paymentMode === 'Saving Transfer' && collection.transferFromSavingAccountNo && (
+                  <span className="block text-[10px] text-emerald-800 font-medium">
+                    बचत खाते क्र: {collection.transferFromSavingAccountNo} {collection.savingCustomerName ? `(${collection.savingCustomerName})` : ''}
+                  </span>
+                )}
+              </div>
             </div>
             {accountDetails && (
               <div className="flex justify-between pt-1 border-t border-dashed border-slate-300">

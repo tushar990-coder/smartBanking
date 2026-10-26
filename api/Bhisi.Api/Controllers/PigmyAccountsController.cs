@@ -148,6 +148,7 @@ namespace Bhisi.Api.Controllers
             [FromQuery] int? branchId,
             [FromQuery] int? customerId,
             [FromQuery] string? status,
+            [FromQuery] string? search = null,
             [FromQuery] string? sortOrder = null)
         {
             var query = _context.PigmyAccounts
@@ -175,6 +176,25 @@ namespace Bhisi.Api.Controllers
             if (!string.IsNullOrWhiteSpace(status))
             {
                 query = query.Where(p => p.Status == status);
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                string sTerm = search.Trim();
+                string digitsOnly = new string(sTerm.Where(char.IsDigit).ToArray());
+                query = query.Where(p => 
+                    p.AccountNo.Contains(sTerm) ||
+                    (digitsOnly.Length >= 2 && p.AccountNo.Contains(digitsOnly)) ||
+                    (p.OldAccountNo != null && p.OldAccountNo.Contains(sTerm)) ||
+                    (p.LegacyAccountNumber != null && p.LegacyAccountNumber.Contains(sTerm)) ||
+                    (p.PreviousAccountNo != null && p.PreviousAccountNo.Contains(sTerm)) ||
+                    (p.Customer != null && (
+                        p.Customer.FirstName.Contains(sTerm) || 
+                        p.Customer.LastName.Contains(sTerm) || 
+                        (p.Customer.MobileNo != null && p.Customer.MobileNo.Contains(sTerm)) || 
+                        (p.Customer.CIFNo != null && p.Customer.CIFNo.Contains(sTerm))
+                    ))
+                );
             }
 
             List<PigmyAccount> accounts;

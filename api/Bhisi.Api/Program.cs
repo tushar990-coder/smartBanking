@@ -330,6 +330,22 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE [dbo].[LoanCollections] ADD [TransactionId] nvarchar(100) NULL;
                 IF COL_LENGTH('LoanCollections', 'SyncReferenceId') IS NULL
                     ALTER TABLE [dbo].[LoanCollections] ADD [SyncReferenceId] nvarchar(100) NULL;
+                IF COL_LENGTH('LoanCollections', 'SourcePigmyAccountID') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [SourcePigmyAccountID] int NULL;
+                IF COL_LENGTH('LoanCollections', 'TransferFromPigmyAccountNo') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [TransferFromPigmyAccountNo] nvarchar(50) NULL;
+                IF COL_LENGTH('LoanCollections', 'PigmyTransferType') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [PigmyTransferType] nvarchar(20) NULL;
+                IF COL_LENGTH('LoanCollections', 'PigmyBalanceBefore') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [PigmyBalanceBefore] decimal(18,2) NULL;
+                IF COL_LENGTH('LoanCollections', 'PigmyBalanceAfter') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [PigmyBalanceAfter] decimal(18,2) NULL;
+                IF COL_LENGTH('LoanCollections', 'PigmyConsentRemark') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [PigmyConsentRemark] nvarchar(255) NULL;
+                IF COL_LENGTH('LoanCollections', 'SourceSavingAccountID') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [SourceSavingAccountID] int NULL;
+                IF COL_LENGTH('LoanCollections', 'SavingCustomerName') IS NULL
+                    ALTER TABLE [dbo].[LoanCollections] ADD [SavingCustomerName] nvarchar(150) NULL;
             END
 
             IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'LoanCollectionFees')

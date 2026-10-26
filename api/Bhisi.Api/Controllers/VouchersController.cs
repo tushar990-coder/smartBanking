@@ -486,6 +486,48 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            // FD Closure / Premature Close Rollback when deleting closure vouchers
+            var fdCloseTxs = await _context.FdTransactions
+                .Where(ft => ft.VoucherID == id && (ft.TransactionType == "Payout" || ft.TransactionType == "Premature_Close"))
+                .ToListAsync();
+
+            var affectedCloseAccIds = fdCloseTxs.Select(t => t.FdAccountID).Distinct().ToList();
+
+            // Also check from VoucherNo if no transaction was directly tagged
+            string vNo = voucher.VoucherNo ?? "";
+            string fdAccCandidate = "";
+            if (vNo.Contains("-FD-CLOSE-"))
+                fdAccCandidate = vNo.Substring(vNo.IndexOf("-FD-CLOSE-") + "-FD-CLOSE-".Length).Trim();
+            else if (vNo.Contains("-FD-PRECLOSE-"))
+                fdAccCandidate = vNo.Substring(vNo.IndexOf("-FD-PRECLOSE-") + "-FD-PRECLOSE-".Length).Trim();
+
+            if (!string.IsNullOrEmpty(fdAccCandidate))
+            {
+                var candAcc = await _context.FdAccounts.FirstOrDefaultAsync(f => 
+                    f.AccountNo == fdAccCandidate || 
+                    f.LegacyAccountNumber == fdAccCandidate || 
+                    (f.LegacyAccountNumber != null && f.LegacyAccountNumber.Trim() == fdAccCandidate.Trim()) ||
+                    f.AccountNo.EndsWith(fdAccCandidate));
+                if (candAcc != null && !affectedCloseAccIds.Contains(candAcc.FdAccountID))
+                {
+                    affectedCloseAccIds.Add(candAcc.FdAccountID);
+                }
+            }
+
+            foreach (var accId in affectedCloseAccIds)
+            {
+                var acc = await _context.FdAccounts.FindAsync(accId);
+                if (acc != null && acc.Status == "Closed")
+                {
+                    acc.Status = (acc.MaturityDate.Date <= DateTime.Today.Date) ? "Matured" : "Active";
+                    if (!string.IsNullOrEmpty(acc.Remarks))
+                    {
+                        var idx = acc.Remarks.IndexOf(" | बंद दिनांक:");
+                        if (idx >= 0) acc.Remarks = acc.Remarks.Substring(0, idx).Trim();
+                    }
+                }
+            }
+
             var fdTxs = await _context.FdTransactions.Where(ft => ft.VoucherID == id).ToListAsync();
             if (fdTxs.Any()) _context.FdTransactions.RemoveRange(fdTxs);
 

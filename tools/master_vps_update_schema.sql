@@ -6374,6 +6374,83 @@ BEGIN
 END
 GO
 
+-- -----------------------------------------------------------------------------------------
+-- ORPHANED CLOSED FD ACCOUNTS RESTORATION (Where Closure Vouchers Were Deleted)
+-- -----------------------------------------------------------------------------------------
+IF OBJECT_ID('FdAccounts', 'U') IS NOT NULL
+BEGIN
+    IF OBJECT_ID('tempdb..#OrphanedFdAccountsSync') IS NOT NULL DROP TABLE #OrphanedFdAccountsSync;
+
+    SELECT 
+        f.FdAccountID,
+        f.AccountNo,
+        f.LegacyAccountNumber,
+        f.DepositAmount,
+        CASE 
+            WHEN f.MaturityDate <= CAST(GETDATE() AS DATE) THEN 'Matured' 
+            ELSE 'Active' 
+        END AS TargetStatus
+    INTO #OrphanedFdAccountsSync
+    FROM FdAccounts f
+    WHERE f.Status = 'Closed'
+      AND NOT EXISTS (
+          SELECT 1 
+          FROM FdTransactions ft
+          INNER JOIN Vouchers v ON ft.VoucherID = v.VoucherID
+          WHERE ft.FdAccountID = f.FdAccountID
+            AND ft.TransactionType IN ('Payout', 'Premature_Close')
+            AND ISNULL(v.Status, '') NOT IN ('Cancelled', 'Rejected')
+      );
+
+    DECLARE @OrphanSyncCount INT = (SELECT COUNT(*) FROM #OrphanedFdAccountsSync);
+
+    IF @OrphanSyncCount > 0
+    BEGIN
+        -- Clean up orphaned payout transactions without vouchers
+        IF OBJECT_ID('FdTransactions', 'U') IS NOT NULL
+        BEGIN
+            DELETE ft
+            FROM FdTransactions ft
+            INNER JOIN #OrphanedFdAccountsSync o ON ft.FdAccountID = o.FdAccountID
+            WHERE ft.TransactionType IN ('Payout', 'Premature_Close')
+              AND (
+                  ft.VoucherID IS NULL 
+                  OR NOT EXISTS (SELECT 1 FROM Vouchers v WHERE v.VoucherID = ft.VoucherID AND ISNULL(v.Status, '') NOT IN ('Cancelled', 'Rejected'))
+              );
+        END
+
+        UPDATE f
+        SET 
+            f.Status = o.TargetStatus,
+            f.Remarks = CASE 
+                WHEN CHARINDEX(' | बंद दिनांक:', f.Remarks) > 0 
+                THEN SUBSTRING(f.Remarks, 1, CHARINDEX(' | बंद दिनांक:', f.Remarks) - 1) + ' | [पूर्ववत ' + CONVERT(VARCHAR(10), GETDATE(), 105) + '] व्हाउचर डिलीट झाल्याने खाते पूर्ववत केले'
+                ELSE ISNULL(f.Remarks, '') + ' | [पूर्ववत ' + CONVERT(VARCHAR(10), GETDATE(), 105) + '] खाते पूर्ववत केले'
+            END,
+            f.ModifiedDate = GETDATE()
+        FROM FdAccounts f
+        INNER JOIN #OrphanedFdAccountsSync o ON f.FdAccountID = o.FdAccountID;
+
+        IF OBJECT_ID('AuditLogs', 'U') IS NOT NULL
+        BEGIN
+            INSERT INTO AuditLogs (Action, EntityName, EntityID, Details, Timestamp, Status)
+            SELECT 
+                'FD_ACCOUNT_AUTO_RESTORED',
+                'FdAccount',
+                ISNULL(o.AccountNo, CAST(o.FdAccountID AS VARCHAR(20))),
+                'मुदत ठेव खाते क्र. ' + ISNULL(o.AccountNo, '') + ' ची स्थिती पूर्ववत केली (Status: ' + o.TargetStatus + ')',
+                GETDATE(),
+                'Success'
+            FROM #OrphanedFdAccountsSync o;
+        END
+
+        PRINT '  -> [FD RESTORE] ' + CAST(@OrphanSyncCount AS VARCHAR(10)) + ' अनाथ बंद मुदत ठेव खाती पूर्ववत (Matured/Active) करण्यात आली.';
+    END
+
+    IF OBJECT_ID('tempdb..#OrphanedFdAccountsSync') IS NOT NULL DROP TABLE #OrphanedFdAccountsSync;
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

@@ -3878,6 +3878,22 @@ namespace Bhisi.Api.Controllers
                             finalVoucherId = counterVoucher.VoucherID;
                         }
 
+                        // Log Closure Interest (Cr) if recalculated interest > 0 so FD sub-ledger stays balanced to 0.00
+                        if (recalculatedInterest > 0)
+                        {
+                            var intTx = new FdTransaction
+                            {
+                                BranchID = isCrossBranchTxn ? operatingBranchId : account.BranchID,
+                                FdAccountID = account.FdAccountID,
+                                VoucherID = finalVoucherId,
+                                TransactionDate = effectiveClosureDate,
+                                TransactionType = "Accrual",
+                                DebitCredit = "Cr",
+                                Amount = recalculatedInterest
+                            };
+                            _context.FdTransactions.Add(intTx);
+                        }
+
                         // Log Close Transaction
                         var tx = new FdTransaction
                         {
@@ -5030,7 +5046,12 @@ namespace Bhisi.Api.Controllers
         [HttpGet("MemberLedger/{memberId}")]
         [HttpGet("CustomerLedger/{customerId}")]
         [AllowAnonymous]
-        public async Task<IActionResult> GetMemberFdLedger(int? memberId, int? customerId)
+        public async Task<IActionResult> GetMemberFdLedger(
+            int? memberId, 
+            int? customerId, 
+            [FromQuery] DateTime? fromDate = null, 
+            [FromQuery] DateTime? toDate = null, 
+            [FromQuery] int? fdAccountId = null)
         {
             Customer? customer = null;
             Member? member = null;
@@ -5068,10 +5089,19 @@ namespace Bhisi.Api.Controllers
             int? targetCustId = customer?.CustomerID ?? member?.CustomerID;
             int? targetMemId = member?.MemberID;
 
-            var accounts = await _context.FdAccounts
+            var accountsQuery = _context.FdAccounts
                 .Include(a => a.FdScheme)
                 .Where(a => targetCustId != null && a.CustomerID == targetCustId)
-                .OrderByDescending(a => a.OpeningDate)
+                .AsQueryable();
+
+            if (fdAccountId.HasValue && fdAccountId.Value > 0)
+            {
+                accountsQuery = accountsQuery.Where(a => a.FdAccountID == fdAccountId.Value);
+            }
+
+            var accounts = await accountsQuery
+                .OrderBy(a => a.AccountNo)
+                .ThenBy(a => a.FdAccountID)
                 .ToListAsync();
 
             var accountLedgerList = new List<object>();
@@ -5081,70 +5111,206 @@ namespace Bhisi.Api.Controllers
                 var rawTransactions = await _context.FdTransactions
                     .Include(t => t.Voucher)
                     .Where(t => t.FdAccountID == acc.FdAccountID)
-                    .OrderBy(t => t.TransactionDate)
-                    .ThenBy(t => t.FdTransactionID)
-                    .Select(t => new {
-                        t.FdTransactionID,
-                        t.TransactionDate,
-                        t.TransactionType,
-                        t.DebitCredit,
-                        t.Amount,
-                        VoucherNo = t.Voucher != null ? t.Voucher.VoucherNo : "",
-                        RawNarration = t.Voucher != null ? t.Voucher.Narration : ""
-                    })
                     .ToListAsync();
 
-                var transactions = rawTransactions.Select(t =>
-                {
-                    string narration = t.RawNarration ?? "";
-                    string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुना पावती क्र. {acc.LegacyAccountNumber.Trim()})" : "";
+                // Calculate total recorded accrual in FdTransactions
+                decimal txAccrualSum = rawTransactions
+                    .Where(t => t.TransactionType == "Accrual")
+                    .Sum(t => t.Amount);
+                decimal totalAccruedInt = Math.Max(txAccrualSum, acc.LegacyAccruedInt);
 
-                    if (string.IsNullOrWhiteSpace(narration) || narration.Contains("???") || narration.Contains("????"))
+                // Structured transaction list with unified typing
+                var fullTxList = rawTransactions.Select(t =>
+                {
+                    string drcr = t.DebitCredit?.Trim() ?? "";
+                    if (string.IsNullOrEmpty(drcr))
                     {
-                        if (t.TransactionType == "Opening" || (!string.IsNullOrEmpty(t.VoucherNo) && t.VoucherNo.Contains("FD-OP")))
-                        {
-                            narration = $"मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): {acc.AccountNo}{legPart}";
-                        }
-                        else if (t.TransactionType == "Accrual" || (!string.IsNullOrEmpty(t.VoucherNo) && t.VoucherNo.Contains("PROV")))
-                        {
-                            narration = $"मुदत ठेव साचलेले व्याज तरतूद (FD Accrued Interest): {acc.AccountNo}{legPart}";
-                        }
-                        else if (t.TransactionType == "Renewal" || (!string.IsNullOrEmpty(t.VoucherNo) && t.VoucherNo.Contains("REN")))
-                        {
-                            narration = $"मुदत ठेव नूतनीकरण (FD Renewal): {acc.AccountNo}{legPart}";
-                        }
-                        else if (t.TransactionType == "Maturity" || t.TransactionType == "PrematureClose" || (!string.IsNullOrEmpty(t.VoucherNo) && t.VoucherNo.Contains("MAT")))
-                        {
-                            narration = $"मुदत ठेव परतावा / मुदत समाप्ती (FD Maturity / Closure): {acc.AccountNo}{legPart}";
-                        }
+                        string tt = (t.TransactionType ?? "").ToLowerInvariant();
+                        if (tt.Contains("opening") || tt.Contains("deposit") || tt.Contains("accrual") || tt.Contains("interest"))
+                            drcr = "Cr";
                         else
-                        {
-                            narration = $"मुदत ठेव व्यवहार: {acc.AccountNo}{legPart}";
-                        }
+                            drcr = "Dr";
                     }
 
-                    return new {
+                    string rawNarration = t.Voucher?.Narration ?? "";
+                    string vnUpper = (t.Voucher?.VoucherNo ?? "").ToUpper();
+                    string ttLower = (t.TransactionType ?? "").ToLower();
+                    string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : "";
+                    string narration = "";
+
+                    if (ttLower.Contains("premature") || vnUpper.Contains("PRECLOSE") || rawNarration.Contains("मुदतपूर्व बंद") || rawNarration.Contains("Premature Close"))
+                    {
+                        narration = "मुदतपूर्व बंद परतावा";
+                    }
+                    else if (ttLower.Contains("matur") || vnUpper.Contains("MAT") || vnUpper.Contains("CLOSE") || rawNarration.Contains("मुदतपूर्ती") || rawNarration.Contains("Maturity"))
+                    {
+                        narration = "मुदतपूर्ती परतावा";
+                    }
+                    else if (ttLower == "opening" || vnUpper.Contains("FD-OP") || rawNarration.Contains("खाते उघडले") || rawNarration.Contains("Account Opened") || rawNarration.Contains("आरंभिक") || rawNarration.Contains("Migration"))
+                    {
+                        narration = (!string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) || rawNarration.Contains("स्थलांतर") || rawNarration.Contains("Migration") || rawNarration.Contains("आरंभिक"))
+                            ? $"आरंभिक मुदत ठेव जमा{legPart}"
+                            : "नवीन मुदत ठेव जमा";
+                    }
+                    else if (ttLower.Contains("renew") || vnUpper.Contains("REN") || rawNarration.Contains("नूतनीकरण") || rawNarration.Contains("Renewal"))
+                    {
+                        narration = "मुदत ठेव नूतनीकरण";
+                    }
+                    else if (ttLower == "accrual" || vnUpper.Contains("INT") || vnUpper.Contains("PROV") || rawNarration.Contains("व्याज जमा") || rawNarration.Contains("व्याज तरतूद") || rawNarration.Contains("Accrued Interest"))
+                    {
+                        narration = rawNarration.Contains("मुदतपूर्व") || vnUpper.Contains("PRECLOSE")
+                            ? "मुदतपूर्व व्याज जमा"
+                            : (rawNarration.Contains("मुदतपूर्ती") || vnUpper.Contains("MAT") ? "मुदतपूर्ती व्याज जमा" : "मुदत ठेव व्याज जमा");
+                    }
+                    else if (string.IsNullOrWhiteSpace(rawNarration) || rawNarration.Contains("???") || rawNarration.Contains("????"))
+                    {
+                        narration = "मुदत ठेव व्यवहार";
+                    }
+                    else
+                    {
+                        // Clean verbose narration into concise Marathi
+                        narration = rawNarration
+                            .Replace(" (FD Account Opened - Cash)", "")
+                            .Replace(" (Premature Close - Cash)", "")
+                            .Replace(" (Maturity Payout - Cash)", "")
+                            .Trim();
+                        if (string.IsNullOrWhiteSpace(narration)) narration = "मुदत ठेव व्यवहार";
+                    }
+
+                    return new
+                    {
                         t.FdTransactionID,
                         t.TransactionDate,
                         t.TransactionType,
-                        t.DebitCredit,
+                        DebitCredit = drcr,
                         t.Amount,
-                        t.VoucherNo,
+                        VoucherNo = t.Voucher != null ? t.Voucher.VoucherNo : "",
                         Narration = narration
                     };
                 }).ToList();
 
-                decimal txAccrualSum = await _context.FdTransactions
-                    .Where(t => t.FdAccountID == acc.FdAccountID && t.TransactionType == "Accrual")
-                    .SumAsync(t => (decimal?)t.Amount) ?? 0m;
-                decimal totalAccruedInt = Math.Max(txAccrualSum, acc.LegacyAccruedInt);
+                // If legacy accrued interest exists but was missing from FdTransactions, synthesize virtual opening accrual entry
+                if (acc.IsLegacyAccount && acc.LegacyAccruedInt > 0 && txAccrualSum < acc.LegacyAccruedInt)
+                {
+                    decimal missingLegacyInt = acc.LegacyAccruedInt - txAccrualSum;
+                    string legPart = !string.IsNullOrWhiteSpace(acc.LegacyAccountNumber) ? $" (जुनी पावती: {acc.LegacyAccountNumber.Trim()})" : "";
+                    fullTxList.Add(new
+                    {
+                        FdTransactionID = -1,
+                        TransactionDate = acc.OpeningDate,
+                        TransactionType = "Accrual",
+                        DebitCredit = "Cr",
+                        Amount = missingLegacyInt,
+                        VoucherNo = "LEG-INT-MIG",
+                        Narration = $"साचलेले जुने व्याज जमा{legPart}"
+                    });
+                }
 
-                accountLedgerList.Add(new {
+                // If FD was closed with payout > principal/net liability, synthesize uncredited closure interest entry
+                var closeTx = fullTxList.FirstOrDefault(t => t.DebitCredit == "Dr" && (t.TransactionType == "Premature_Close" || t.TransactionType == "PrematureClose" || t.TransactionType == "Maturity" || t.TransactionType == "Closure" || t.TransactionType == "Payout" || (!string.IsNullOrEmpty(t.VoucherNo) && (t.VoucherNo.Contains("PRECLOSE") || t.VoucherNo.Contains("CLOSE")))));
+                if (closeTx != null)
+                {
+                    decimal totalCrBeforeClosure = fullTxList.Where(t => t != closeTx && t.DebitCredit == "Cr").Sum(t => t.Amount);
+                    decimal otherDr = fullTxList.Where(t => t != closeTx && t.DebitCredit == "Dr").Sum(t => t.Amount);
+                    decimal netLiabilityBeforeClosure = totalCrBeforeClosure - otherDr;
+
+                    if (closeTx.Amount > netLiabilityBeforeClosure && (closeTx.Amount - netLiabilityBeforeClosure) >= 0.01m)
+                    {
+                        decimal closureInterest = Math.Round(closeTx.Amount - netLiabilityBeforeClosure, 2);
+                        bool alreadyHasAccrual = fullTxList.Any(t => t.TransactionType == "Accrual" && Math.Abs(t.Amount - closureInterest) < 0.01m);
+                        if (!alreadyHasAccrual)
+                        {
+                            bool isPremature = closeTx.TransactionType.Contains("Premature") || (!string.IsNullOrEmpty(closeTx.VoucherNo) && closeTx.VoucherNo.Contains("PRECLOSE"));
+                            fullTxList.Add(new
+                            {
+                                FdTransactionID = -2,
+                                TransactionDate = closeTx.TransactionDate,
+                                TransactionType = "Accrual",
+                                DebitCredit = "Cr",
+                                Amount = closureInterest,
+                                VoucherNo = closeTx.VoucherNo,
+                                Narration = isPremature ? "मुदतपूर्व व्याज जमा" : "मुदतपूर्ती व्याज जमा"
+                            });
+                        }
+                    }
+                }
+
+                // Sort chronologically: same-day Credit entries MUST be listed before Debit entries
+                var sortedTxList = fullTxList
+                    .OrderBy(t => t.TransactionDate.Date)
+                    .ThenBy(t => t.DebitCredit == "Cr" ? 0 : 1)
+                    .ThenBy(t => t.FdTransactionID)
+                    .ToList();
+
+                // Compute opening balance before fromDate (if filtered)
+                decimal openingBal = 0m;
+                DateTime? filterFrom = fromDate?.Date;
+                DateTime? filterTo = toDate?.Date;
+
+                if (filterFrom.HasValue)
+                {
+                    var prePeriodTxs = sortedTxList.Where(t => t.TransactionDate.Date < filterFrom.Value).ToList();
+                    foreach (var p in prePeriodTxs)
+                    {
+                        if (p.DebitCredit == "Cr") openingBal += p.Amount;
+                        else if (p.DebitCredit == "Dr") openingBal -= p.Amount;
+                    }
+                }
+
+                // Filter transactions within selected period
+                var periodTxs = sortedTxList.Where(t =>
+                {
+                    if (filterFrom.HasValue && t.TransactionDate.Date < filterFrom.Value) return false;
+                    if (filterTo.HasValue && t.TransactionDate.Date > filterTo.Value) return false;
+                    return true;
+                }).ToList();
+
+                decimal runningBal = openingBal;
+                decimal periodTotalDebit = 0m;
+                decimal periodTotalCredit = 0m;
+
+                var finalLedgerRows = new List<object>();
+
+                foreach (var tx in periodTxs)
+                {
+                    decimal drAmt = tx.DebitCredit == "Dr" ? tx.Amount : 0m;
+                    decimal crAmt = tx.DebitCredit == "Cr" ? tx.Amount : 0m;
+
+                    runningBal += (crAmt - drAmt);
+                    if (Math.Abs(runningBal) < 0.0001m) runningBal = 0m;
+                    periodTotalDebit += drAmt;
+                    periodTotalCredit += crAmt;
+
+                    finalLedgerRows.Add(new
+                    {
+                        tx.FdTransactionID,
+                        TransactionDate = tx.TransactionDate.ToString("yyyy-MM-dd"),
+                        tx.TransactionType,
+                        tx.DebitCredit,
+                        Debit = drAmt,
+                        Credit = crAmt,
+                        Balance = runningBal,
+                        tx.Amount,
+                        tx.VoucherNo,
+                        tx.Narration
+                    });
+                }
+
+                // Check if FD has an active loan lien
+                bool isLien = acc.IsLienMarked;
+                string lienLoanNo = acc.LienLoanAccountNo ?? "";
+                if (!isLien && !string.IsNullOrWhiteSpace(acc.LienLoanAccountNo))
+                {
+                    isLien = true;
+                }
+
+                accountLedgerList.Add(new
+                {
                     acc.FdAccountID,
                     acc.AccountNo,
                     acc.LegacyAccountNumber,
-                    acc.OpeningDate,
-                    acc.MaturityDate,
+                    OpeningDate = acc.OpeningDate.ToString("yyyy-MM-dd"),
+                    MaturityDate = acc.MaturityDate.ToString("yyyy-MM-dd"),
                     acc.DepositAmount,
                     acc.InterestRate,
                     acc.MaturityAmount,
@@ -5152,11 +5318,21 @@ namespace Bhisi.Api.Controllers
                     acc.PaymentMode,
                     acc.NomineeName,
                     acc.NomineeRelation,
+                    DurationType = acc.DurationType ?? "Months",
+                    DurationValue = acc.DurationValue ?? (acc.FdScheme != null ? acc.FdScheme.DurationMonths : 12),
+                    DurationInDays = acc.DurationInDays ?? 0,
+                    IsLienMarked = isLien,
+                    LienLoanAccountNo = lienLoanNo,
+                    LienAmount = acc.LienAmount ?? 0m,
                     acc.Remarks,
                     SchemeName = acc.FdScheme != null ? acc.FdScheme.SchemeName : "Standard Scheme",
                     DurationMonths = acc.FdScheme != null ? acc.FdScheme.DurationMonths : 12,
                     TotalAccruedInterest = totalAccruedInt,
-                    Transactions = transactions
+                    OpeningBalance = openingBal,
+                    PeriodTotalDebit = periodTotalDebit,
+                    PeriodTotalCredit = periodTotalCredit,
+                    ClosingBalance = ((acc.Status == "Closed" || acc.Status == "Closed-Premature") && Math.Abs(runningBal) < 0.01m) ? 0m : runningBal,
+                    Transactions = finalLedgerRows
                 });
             }
 
@@ -5171,18 +5347,22 @@ namespace Bhisi.Api.Controllers
                     : (member?.Customer != null ? $"{member.Customer.FirstNameEng} {member.Customer.MiddleNameEng} {member.Customer.LastNameEng}".Replace("  ", " ").Trim() : "");
             }
 
-            return Ok(new {
-                CustomerID = targetCustId,
+            return Ok(new
+            {
+                CustomerID = targetCustId ?? 0,
+                CustomerName = fullName,
                 MemberID = targetMemId ?? (customer?.CustomerID ?? 0),
                 MemberCode = member?.MemberCode ?? (customer?.CIFNo ?? ""),
                 CIFNo = customer?.CIFNo ?? member?.Customer?.CIFNo ?? "",
                 MemberName = fullName,
                 MobileNo = customer?.MobileNo ?? member?.Customer?.MobileNo ?? "",
                 Address = customer?.Address ?? member?.Customer?.Address ?? "",
-                BranchName = customer?.Branch?.BranchName ?? member?.Branch?.BranchName ?? "",
+                BranchName = customer?.Branch?.BranchName ?? member?.Branch?.BranchName ?? "मुख्य शाखा",
                 TotalFDAccountsCount = accounts.Count,
                 TotalPrincipalInvested = accounts.Sum(a => a.DepositAmount),
                 TotalMaturityValue = accounts.Sum(a => a.MaturityAmount),
+                FromDate = fromDate?.ToString("yyyy-MM-dd"),
+                ToDate = toDate?.ToString("yyyy-MM-dd"),
                 Accounts = accountLedgerList
             });
         }

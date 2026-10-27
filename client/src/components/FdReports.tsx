@@ -100,6 +100,8 @@ interface CustomerLedgerData {
   totalFDAccountsCount: number;
   totalPrincipalInvested: number;
   totalMaturityValue: number;
+  fromDate?: string;
+  toDate?: string;
   accounts: {
     fdAccountID: number;
     accountNo: string;
@@ -113,15 +115,28 @@ interface CustomerLedgerData {
     paymentMode: string;
     nomineeName: string;
     nomineeRelation: string;
+    durationType?: string;
+    durationValue?: number;
+    durationInDays?: number;
+    isLienMarked?: boolean;
+    lienLoanAccountNo?: string;
+    lienAmount?: number;
     remarks: string;
     schemeName: string;
     durationMonths: number;
     totalAccruedInterest: number;
+    openingBalance?: number;
+    periodTotalDebit?: number;
+    periodTotalCredit?: number;
+    closingBalance?: number;
     transactions: {
       fdTransactionID: number;
       transactionDate: string;
       transactionType: string;
       debitCredit: string;
+      debit: number;
+      credit: number;
+      balance: number;
       amount: number;
       voucherNo: string;
       narration: string;
@@ -208,6 +223,7 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
   const [summaryViewMode, setSummaryViewMode] = useState<'DualColumn' | 'Detailed'>('DualColumn');
 
   const [customerLedger, setCustomerLedger] = useState<CustomerLedgerData | null>(null);
+  const [selectedLedgerFdAccountId, setSelectedLedgerFdAccountId] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -295,14 +311,14 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
   useEffect(() => {
     if (reportType === 'MemberLedger') {
       if (selectedCustomerID > 0) {
-        fetchCustomerLedgerData(selectedCustomerID);
+        fetchCustomerLedgerData(selectedCustomerID, selectedLedgerFdAccountId);
       } else {
         setCustomerLedger(null);
       }
     } else if (reportType !== 'AccrualProvision') {
       fetchReportData();
     }
-  }, [reportType, branchID, selectedSchemeId, selectedCustomerID, fromDate, toDate, asOfDate, voucherPassingStatus]);
+  }, [reportType, branchID, selectedSchemeId, selectedCustomerID, selectedLedgerFdAccountId, fromDate, toDate, asOfDate, voucherPassingStatus]);
 
   const fetchReportData = async () => {
     setLoading(true);
@@ -357,12 +373,175 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
     }
   };
 
-  const fetchCustomerLedgerData = async (customerId: number) => {
+  const fetchCustomerLedgerData = async (customerId: number, fdAccId?: number) => {
     setLoading(true);
     try {
-      const res = await axios.get(`/api/Reports/fd-member-ledger/${customerId}`);
+      const activeFdAccId = fdAccId !== undefined ? fdAccId : selectedLedgerFdAccountId;
+      const res = await axios.get(`/api/Reports/fd-member-ledger/${customerId}`, {
+        params: {
+          fromDate: fromDate || undefined,
+          toDate: toDate || undefined,
+          fdAccountId: activeFdAccId > 0 ? activeFdAccId : undefined
+        }
+      });
       const d = res.data;
       if (d) {
+        // Robust normalization ensuring Debit, Credit, Running Balance, and Totals are always properly computed
+        const normalizedAccounts = (d.accounts || []).map((acc: any) => {
+          const openingBal = Number(acc.openingBalance ?? 0);
+          let runningBal = openingBal;
+          let calculatedTotalDr = 0;
+          let calculatedTotalCr = 0;
+
+          const rawTxs = acc.transactions || [];
+          const fullRawTxs = [...rawTxs];
+
+          // Synthesize uncredited closure interest if an FD was closed with payout > principal / net liability
+          const closureTx = fullRawTxs.find((t: any) => {
+            const tt = (t.transactionType || '').toLowerCase();
+            const vn = (t.voucherNo || '').toLowerCase();
+            const drcr = (t.debitCredit || '').trim();
+            return (drcr === 'Dr' || tt.includes('close') || tt.includes('payout') || tt.includes('matur') || vn.includes('preclose') || vn.includes('clo')) &&
+                   (tt.includes('close') || tt.includes('payout') || tt.includes('matur') || vn.includes('preclose') || vn.includes('clo'));
+          });
+
+          if (closureTx) {
+            const closeAmt = Math.abs(Number(closureTx.amount || closureTx.debit || 0));
+            // Calculate total credits before closure
+            const totalCreditsBefore = fullRawTxs.reduce((sum: number, t: any) => {
+              if (t === closureTx) return sum;
+              const drcr = (t.debitCredit || '').trim();
+              const tt = (t.transactionType || '').toLowerCase();
+              const isCr = drcr === 'Cr' || (t.credit && t.credit > 0) || (!tt.includes('close') && !tt.includes('payout') && !tt.includes('dr'));
+              if (isCr) {
+                return sum + Math.abs(Number(t.amount || t.credit || 0));
+              }
+              return sum;
+            }, 0);
+
+            // Other debits before closure (e.g. TDS or penalty)
+            const otherDebits = fullRawTxs.reduce((sum: number, t: any) => {
+              if (t === closureTx) return sum;
+              const drcr = (t.debitCredit || '').trim();
+              const tt = (t.transactionType || '').toLowerCase();
+              const isDr = drcr === 'Dr' || (t.debit && t.debit > 0);
+              if (isDr) {
+                return sum + Math.abs(Number(t.amount || t.debit || 0));
+              }
+              return sum;
+            }, 0);
+
+            const netLiability = totalCreditsBefore - otherDebits;
+            if (closeAmt > netLiability && (closeAmt - netLiability) >= 0.01) {
+              const uncreditedClosureInt = Math.round((closeAmt - netLiability) * 100) / 100;
+              const isPremature = (closureTx.transactionType || '').toLowerCase().includes('premature') || (closureTx.voucherNo || '').toLowerCase().includes('preclose');
+              
+              // Check if we already have an accrual entry for this exact closure interest
+              const alreadyHasEntry = fullRawTxs.some((t: any) => {
+                const tt = (t.transactionType || '').toLowerCase();
+                const amt = Math.abs(Number(t.amount || t.credit || 0));
+                return tt === 'accrual' && Math.abs(amt - uncreditedClosureInt) < 0.01;
+              });
+
+              if (!alreadyHasEntry) {
+                fullRawTxs.push({
+                  fdTransactionID: -2,
+                  transactionDate: closureTx.transactionDate,
+                  transactionType: 'Accrual',
+                  debitCredit: 'Cr',
+                  amount: uncreditedClosureInt,
+                  credit: uncreditedClosureInt,
+                  debit: 0,
+                  voucherNo: closureTx.voucherNo,
+                  narration: isPremature ? 'मुदतपूर्व व्याज जमा' : 'मुदतपूर्ती व्याज जमा'
+                });
+              }
+            }
+          }
+
+          // Sort chronologically: Credits before Debits on same day
+          const sortedRawTxs = [...fullRawTxs].sort((a: any, b: any) => {
+            const dateA = new Date(a.transactionDate).getTime();
+            const dateB = new Date(b.transactionDate).getTime();
+            if (dateA !== dateB) return dateA - dateB;
+
+            const isCrA = (a.debitCredit === 'Cr' || (a.credit && a.credit > 0) || !a.transactionType?.toLowerCase().includes('close'));
+            const isCrB = (b.debitCredit === 'Cr' || (b.credit && b.credit > 0) || !b.transactionType?.toLowerCase().includes('close'));
+            if (isCrA && !isCrB) return -1;
+            if (!isCrA && isCrB) return 1;
+            return (a.fdTransactionID || 0) - (b.fdTransactionID || 0);
+          });
+
+          const processedTxs = sortedRawTxs.map((tx: any) => {
+            let drcr = tx.debitCredit ? tx.debitCredit.trim() : '';
+            const tt = (tx.transactionType || '').toLowerCase();
+            const vn = (tx.voucherNo || '').toLowerCase();
+
+            if (!drcr) {
+              if (
+                tt.includes('close') || 
+                tt.includes('payout') || 
+                tt.includes('withdraw') || 
+                tt.includes('matur') || 
+                tt.includes('tds') || 
+                tt.includes('penalty') || 
+                vn.includes('preclose') || 
+                vn.includes('pmt') || 
+                vn.includes('clo')
+              ) {
+                drcr = 'Dr';
+              } else {
+                drcr = 'Cr';
+              }
+            }
+
+            const amt = Math.abs(Number(tx.amount || 0));
+            let dr = tx.debit !== undefined && tx.debit !== null ? Number(tx.debit) : 0;
+            let cr = tx.credit !== undefined && tx.credit !== null ? Number(tx.credit) : 0;
+
+            // Fallback if backend returned dr and cr as 0 or undefined
+            if (dr === 0 && cr === 0 && amt > 0) {
+              if (drcr === 'Dr') {
+                dr = amt;
+              } else {
+                cr = amt;
+              }
+            }
+
+            // Accumulate running balance
+            runningBal += (cr - dr);
+            if (Math.abs(runningBal) < 0.0001) runningBal = 0;
+
+            calculatedTotalDr += dr;
+            calculatedTotalCr += cr;
+
+            return {
+              ...tx,
+              debitCredit: drcr,
+              debit: dr,
+              credit: cr,
+              balance: runningBal,
+              amount: amt
+            };
+          });
+
+          const periodDr = calculatedTotalDr;
+          const periodCr = calculatedTotalCr;
+          let closing = runningBal;
+          if ((acc.status === 'Closed' || acc.status === 'Closed-Premature') && Math.abs(closing) < 0.01) {
+            closing = 0;
+          }
+
+          return {
+            ...acc,
+            openingBalance: openingBal,
+            periodTotalDebit: periodDr,
+            periodTotalCredit: periodCr,
+            closingBalance: closing,
+            transactions: processedTxs
+          };
+        });
+
         setCustomerLedger({
           customerID: d.customerID || d.memberID || customerId,
           cifNo: d.cifNo || d.memberCode || '',
@@ -370,10 +549,12 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
           mobileNo: d.mobileNo || '',
           address: d.address || '',
           branchName: d.branchName || '',
-          totalFDAccountsCount: d.totalFDAccountsCount || 0,
-          totalPrincipalInvested: d.totalPrincipalInvested || 0,
-          totalMaturityValue: d.totalMaturityValue || 0,
-          accounts: d.accounts || []
+          totalFDAccountsCount: d.totalFDAccountsCount || normalizedAccounts.length,
+          totalPrincipalInvested: d.totalPrincipalInvested || normalizedAccounts.reduce((sum: number, a: any) => sum + (Number(a.depositAmount) || 0), 0),
+          totalMaturityValue: d.totalMaturityValue || normalizedAccounts.reduce((sum: number, a: any) => sum + (Number(a.maturityAmount) || 0), 0),
+          fromDate: d.fromDate,
+          toDate: d.toDate,
+          accounts: normalizedAccounts
         });
       } else {
         setCustomerLedger(null);
@@ -494,31 +675,80 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
       case 'MigratedFD':
         return 'स्थलांतरित मुदत ठेव खाती यादी (आरंभिक शिल्लक)';
       case 'MemberLedger':
-        return customerLedger ? `ग्राहक: ${customerLedger.customerName} (${customerLedger.cifNo || '-'})` : 'कृपया खातेदार निवडा';
+        return customerLedger 
+          ? `ग्राहक: ${customerLedger.customerName} (${customerLedger.cifNo || '-'}) | कालावधी: ${formatDisplayDate(fromDate)} ते ${formatDisplayDate(toDate)}` 
+          : 'कृपया खातेदार निवडा';
       default:
         return `दिनांक: ${formatDisplayDate(new Date().toISOString())}`;
     }
   };
 
   const formatSafeFdNarration = (narration?: string, txType?: string, voucherNo?: string, accNo?: string, legacyNo?: string) => {
-    let text = narration || txType || '';
-    if (!text || text.includes('????') || text.includes('???')) {
-      const legText = legacyNo ? ` (जुना पावती क्र. ${legacyNo})` : '';
-      if (txType === 'Opening' || (voucherNo && voucherNo.includes('FD-OP'))) {
-        return `मुदत ठेव आरंभिक शिल्लक स्थलांतर (FD Opening Balance Migration): ${accNo || ''}${legText}`;
-      }
-      if (txType === 'Accrual' || (voucherNo && voucherNo.includes('PROV'))) {
-        return `मुदत ठेव साचलेले व्याज तरतूद (FD Accrued Interest): ${accNo || ''}${legText}`;
-      }
-      if (txType === 'Renewal' || (voucherNo && voucherNo.includes('REN'))) {
-        return `मुदत ठेव नूतनीकरण (FD Renewal): ${accNo || ''}${legText}`;
-      }
-      if (txType === 'Maturity' || txType === 'PrematureClose' || (voucherNo && voucherNo.includes('MAT'))) {
-        return `मुदत ठेव परतावा / मुदत समाप्ती (FD Maturity / Closure): ${accNo || ''}${legText}`;
-      }
-      return `मुदत ठेव व्यवहार: ${accNo || ''}${legText}`;
+    const raw = (narration || txType || '').trim();
+    const vn = (voucherNo || '').toUpperCase();
+    const tt = (txType || '').toLowerCase();
+    const leg = legacyNo ? ` (जुनी पावती: ${legacyNo})` : '';
+
+    // 1. Accrual / Interest credit
+    if (tt === 'accrual' || vn.includes('INT') || vn.includes('PROV') || raw.includes('व्याज जमा') || raw.includes('व्याज तरतूद') || raw.includes('Accrued Interest')) {
+      if (raw.includes('मुदतपूर्व') || vn.includes('PRECLOSE')) return 'मुदतपूर्व व्याज जमा';
+      if (raw.includes('मुदतपूर्ती') || vn.includes('MAT')) return 'मुदतपूर्ती व्याज जमा';
+      if (raw.includes('जुने व्याज') || vn.includes('LEG-INT')) return `साचलेले जुने व्याज जमा${leg}`;
+      return 'मुदत ठेव व्याज जमा';
     }
-    return text;
+
+    // 2. Premature close payout
+    if (
+      tt.includes('premature') ||
+      vn.includes('PRECLOSE') ||
+      raw.includes('मुदतपूर्व बंद') ||
+      raw.includes('Premature Close')
+    ) {
+      return 'मुदतपूर्व बंद परतावा';
+    }
+
+    // 3. Maturity close payout
+    if (
+      tt.includes('matur') ||
+      vn.includes('MAT') ||
+      vn.includes('CLOSE') ||
+      raw.includes('मुदतपूर्ती बंद') ||
+      raw.includes('मुदत समाप्ती') ||
+      raw.includes('Maturity')
+    ) {
+      return 'मुदतपूर्ती परतावा';
+    }
+
+    // 4. Renewal
+    if (tt.includes('renew') || vn.includes('REN') || raw.includes('नूतनीकरण') || raw.includes('Renewal')) {
+      return 'मुदत ठेव नूतनीकरण';
+    }
+
+    // 5. Opening / Migration
+    if (
+      tt === 'opening' ||
+      vn.includes('FD-OP') ||
+      raw.includes('आरंभिक') ||
+      raw.includes('Migration') ||
+      raw.includes('खाते उघडले') ||
+      raw.includes('Account Opened')
+    ) {
+      if (raw.includes('स्थलांतर') || raw.includes('Migration') || legacyNo || raw.includes('आरंभिक')) {
+        return `आरंभिक मुदत ठेव जमा${leg}`;
+      }
+      return 'नवीन मुदत ठेव जमा';
+    }
+
+    // Fallback: strip english brackets, trailing account numbers, duration details
+    let clean = raw
+      .replace(/\s*\([^)]*\)/g, '')
+      .replace(/\s*:\s*[0-9A-Za-z\-_]+/g, '')
+      .replace(/-\s*कालावधी:[^,]*,?/, '')
+      .replace(/पुनर्हिशोब व्याज:[^,]*,?/, '')
+      .replace(/दंड कपात:[^,]*/, '')
+      .trim();
+
+    return clean || raw || 'मुदत ठेव व्यवहार';
   };
 
   const selectedBranchObj = branches.find(b => b.branchID === branchID);
@@ -567,26 +797,76 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
     if (reportType === 'MemberLedger') {
       if (!customerLedger || customerLedger.accounts.length === 0) return alert('एक्सपोर्ट करण्यासाठी डेटा नाही.');
       const rows: any[] = [];
-      customerLedger.accounts.forEach(acc => {
+      const accountsToExport = selectedLedgerFdAccountId > 0
+        ? customerLedger.accounts.filter(a => a.fdAccountID === selectedLedgerFdAccountId)
+        : customerLedger.accounts;
+
+      accountsToExport.forEach(acc => {
+        // Opening balance row if filtered
+        if (acc.openingBalance !== undefined && acc.openingBalance > 0) {
+          rows.push({
+            'FD पावती क्र.': acc.accountNo,
+            'जुनी पावती क्र.': acc.legacyAccountNumber || '-',
+            'खातेदाराचे नाव': customerLedger.customerName,
+            'योजना': acc.schemeName,
+            'ठेव तारीख': formatDisplayDate(acc.openingDate),
+            'मुदत तारीख': formatDisplayDate(acc.maturityDate),
+            'व्याजदर %': acc.interestRate,
+            'वारसदार': acc.nomineeName ? `${acc.nomineeName} (${acc.nomineeRelation || ''})` : '-',
+            'तारण बोजा': acc.isLienMarked ? `Lien (${acc.lienLoanAccountNo || 'कर्ज तारण'})` : 'निरंक',
+            'व्यवहार तारीख': formatDisplayDate(fromDate),
+            'व्हाउचर क्र.': 'B/F',
+            'तपशील': 'आरंभिक शिल्लक (Opening Balance Brought Forward)',
+            'नावे रक्कम (Dr ₹)': 0,
+            'जमा रक्कम (Cr ₹)': 0,
+            'शिल्लक रक्कम (Balance ₹)': acc.openingBalance
+          });
+        }
+
         acc.transactions.forEach((tx) => {
           rows.push({
             'FD पावती क्र.': acc.accountNo,
             'जुनी पावती क्र.': acc.legacyAccountNumber || '-',
+            'खातेदाराचे नाव': customerLedger.customerName,
             'योजना': acc.schemeName,
-            'ठेव रक्कम (₹)': acc.depositAmount,
-            'व्याज दर %': acc.interestRate,
-            'मुदत दिनांक': formatDisplayDate(acc.maturityDate),
+            'ठेव तारीख': formatDisplayDate(acc.openingDate),
+            'मुदत तारीख': formatDisplayDate(acc.maturityDate),
+            'व्याजदर %': acc.interestRate,
+            'वारसदार': acc.nomineeName ? `${acc.nomineeName} (${acc.nomineeRelation || ''})` : '-',
+            'तारण बोजा': acc.isLienMarked ? `Lien (${acc.lienLoanAccountNo || 'कर्ज तारण'})` : 'निरंक',
             'व्यवहार तारीख': formatDisplayDate(tx.transactionDate),
             'व्हाउचर क्र.': tx.voucherNo || '-',
             'तपशील': formatSafeFdNarration(tx.narration, tx.transactionType, tx.voucherNo, acc.accountNo, acc.legacyAccountNumber),
-            'रक्कम (₹)': tx.amount
+            'नावे रक्कम (Dr ₹)': tx.debit > 0 ? tx.debit : 0,
+            'जमा रक्कम (Cr ₹)': tx.credit > 0 ? tx.credit : 0,
+            'शिल्लक रक्कम (Balance ₹)': tx.balance
           });
         });
+
+        // Account subtotal row
+        rows.push({
+          'FD पावती क्र.': `${acc.accountNo} एकूण:`,
+          'जुनी पावती क्र.': '',
+          'खातेदाराचे नाव': '',
+          'योजना': '',
+          'ठेव तारीख': '',
+          'मुदत तारीख': '',
+          'व्याजदर %': '',
+          'वारसदार': '',
+          'तारण बोजा': '',
+          'व्यवहार तारीख': '',
+          'व्हाउचर क्र.': '',
+          'तपशील': 'खाते एकूण नावे / जमा / अखेर शिल्लक',
+          'नावे रक्कम (Dr ₹)': acc.periodTotalDebit ?? acc.transactions.reduce((s, t) => s + (t.debit || 0), 0),
+          'जमा रक्कम (Cr ₹)': acc.periodTotalCredit ?? acc.transactions.reduce((s, t) => s + (t.credit || 0), 0),
+          'शिल्लक रक्कम (Balance ₹)': acc.closingBalance ?? (acc.transactions[acc.transactions.length - 1]?.balance ?? acc.depositAmount)
+        });
       });
+
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'FD Member Ledger');
-      XLSX.writeFile(wb, `FD_Ledger_${customerLedger.customerName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      XLSX.writeFile(wb, `FD_Ledger_${(customerLedger.customerName || 'Statement').replace(/\s+/g, '_')}_${fromDate}_to_${toDate}.xlsx`);
       return;
     }
 
@@ -1010,14 +1290,39 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
 
       {/* 3. Customer Search Select (for MemberLedger) */}
       {reportType === 'MemberLedger' && (
-        <div className="w-56 sm:w-72">
-          <CustomerSearchSelect
-            customers={customers}
-            value={selectedCustomerID || ''}
-            onChange={(val) => setSelectedCustomerID(val ? Number(val) : 0)}
-            placeholder="-- खातेदार निवडा (CIF / नाव / मो.) --"
-          />
-        </div>
+        <>
+          <div className="w-56 sm:w-72">
+            <CustomerSearchSelect
+              customers={customers}
+              value={selectedCustomerID || ''}
+              onChange={(val) => {
+                const nextId = val ? Number(val) : 0;
+                setSelectedCustomerID(nextId);
+                setSelectedLedgerFdAccountId(0);
+              }}
+              placeholder="-- खातेदार निवडा (CIF / नाव / मो.) --"
+            />
+          </div>
+
+          {/* Account selector if accounts exist */}
+          {customerLedger && customerLedger.accounts.length > 0 && (
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5">
+              <label className="text-[10px] text-slate-600 font-semibold whitespace-nowrap">पावती:</label>
+              <select
+                value={selectedLedgerFdAccountId}
+                onChange={(e) => setSelectedLedgerFdAccountId(Number(e.target.value))}
+                className="h-5 text-[10.5px] font-bold border-none bg-transparent focus:ring-0 p-0 text-slate-900 cursor-pointer max-w-[170px]"
+              >
+                <option value={0}>सर्व पावत्या ({customerLedger.accounts.length})</option>
+                {customerLedger.accounts.map((acc) => (
+                  <option key={acc.fdAccountID} value={acc.fdAccountID}>
+                    {acc.accountNo} {acc.legacyAccountNumber ? `(जुनी: ${acc.legacyAccountNumber})` : ''} - ₹{fmtCurrency(acc.depositAmount)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </>
       )}
 
       {/* 4. Scheme Selector */}
@@ -1053,8 +1358,8 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
         </div>
       )}
 
-      {/* 6. Date Range (for Register, MaturityDue, VoucherPassing, DeletedEntries) */}
-      {(reportType === 'Register' || reportType === 'MaturityDue' || reportType === 'VoucherPassing' || reportType === 'DeletedEntries') && (
+      {/* 6. Date Range (for Register, MaturityDue, VoucherPassing, DeletedEntries, MemberLedger) */}
+      {(reportType === 'Register' || reportType === 'MaturityDue' || reportType === 'VoucherPassing' || reportType === 'DeletedEntries' || reportType === 'MemberLedger') && (
         <div className="flex items-center gap-1 bg-slate-50 border border-slate-300 rounded px-1.5 py-0.5">
           <Calendar size={11} className="text-slate-500" />
           <input
@@ -1488,64 +1793,286 @@ export default function FdReports({ onNavigate }: FdReportsProps) {
           ============================================================ */}
       {reportType === 'MemberLedger' && customerLedger && (
         <div className="space-y-4">
-          <div className="border border-slate-900 p-2.5 my-2 bg-slate-50/50 rounded-xs text-[11px]">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {/* Member Details CBS Header */}
+          <div className="border border-slate-900 p-2.5 my-2 bg-slate-50/70 rounded-xs text-[11px]">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
               <div>
                 <span className="text-slate-500 block text-[10px]">खातेदाराचे नाव:</span>
-                <strong className="text-slate-950">{customerLedger.customerName}</strong>
+                <strong className="text-slate-950 text-xs">{customerLedger.customerName}</strong>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">ग्राहक क्र. (CIF):</span>
+                <span className="text-slate-500 block text-[10px]">ग्राहक क्र. (CIF / Member):</span>
                 <strong className="text-primary font-mono">{customerLedger.cifNo || '-'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-[10px]">मोबाईल क्र.:</span>
+                <strong className="text-slate-800 font-mono">{customerLedger.mobileNo || '-'}</strong>
               </div>
               <div>
                 <span className="text-slate-500 block text-[10px]">एकूण FD खाती:</span>
                 <strong className="text-slate-900 font-mono">{customerLedger.totalFDAccountsCount}</strong>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">एकूण मुदत ठेव गुंतवणूक:</span>
+                <span className="text-slate-500 block text-[10px]">एकूण ठेव मुद्दल:</span>
                 <strong className="text-emerald-800 font-mono">₹ {fmtCurrency(customerLedger.totalPrincipalInvested)}</strong>
               </div>
+              <div>
+                <span className="text-slate-500 block text-[10px]">कालावधी / तारीख:</span>
+                <strong className="text-slate-700 font-mono text-[10px]">
+                  {customerLedger.fromDate || customerLedger.toDate
+                    ? `${customerLedger.fromDate ? formatDisplayDate(customerLedger.fromDate) : 'आरंभ'} ते ${customerLedger.toDate ? formatDisplayDate(customerLedger.toDate) : 'आज'}`
+                    : 'संपूर्ण खातावणी'}
+                </strong>
+              </div>
             </div>
+            {customerLedger.address && (
+              <div className="mt-1.5 pt-1.5 border-t border-slate-300 text-[10px] text-slate-600 flex items-center gap-1">
+                <span className="font-semibold text-slate-700">पत्ता:</span>
+                <span>{customerLedger.address}</span>
+              </div>
+            )}
           </div>
 
-          {customerLedger.accounts.map((acc, aIdx) => (
-            <div key={acc.fdAccountID || aIdx} className="border border-slate-900 p-2.5 rounded-xs mt-3">
-              <div className="flex justify-between items-center bg-slate-100 p-1.5 border-b border-slate-900 font-bold text-xs mb-2">
-                <span>
-                  FD पावती नं.: <span className="font-mono text-primary">{acc.accountNo}</span>
-                  {acc.legacyAccountNumber && (
-                    <span className="text-[10px] text-amber-900 bg-amber-50 border border-amber-300 px-1 py-0.5 rounded font-mono ml-1.5 font-bold" title="जुना पावती क्र.">
-                      जुनी पावती: {acc.legacyAccountNumber}
-                    </span>
-                  )}
-                  {' '}({acc.schemeName})
-                </span>
-                <span className="text-emerald-800 font-mono">ठेव रक्कम: ₹ {fmtCurrency(acc.depositAmount)} | व्याज दर: {acc.interestRate}%</span>
-              </div>
-
-              <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
-                <thead>
-                  <tr className="bg-slate-100 font-bold border-b border-slate-900">
-                    <th className="border border-slate-900 p-1 text-center">तारीख</th>
-                    <th className="border border-slate-900 p-1 text-center">व्हाउचर क्र.</th>
-                    <th className="border border-slate-900 p-1 text-left">तपशील</th>
-                    <th className="border border-slate-900 p-1 text-right">रक्कम (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {acc.transactions.map((tx, tIdx) => (
-                    <tr key={tIdx} className="text-[11px]">
-                      <td className="border border-slate-900 p-1 text-center font-mono">{formatDisplayDate(tx.transactionDate)}</td>
-                      <td className="border border-slate-900 p-1 text-center font-mono">{tx.voucherNo || '-'}</td>
-                      <td className="border border-slate-900 p-1">{formatSafeFdNarration(tx.narration, tx.transactionType, tx.voucherNo, acc.accountNo, acc.legacyAccountNumber)}</td>
-                      <td className="border border-slate-900 p-1 text-right font-mono font-bold">{fmtCurrency(tx.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Accounts Ledger List */}
+          {customerLedger.accounts.length === 0 ? (
+            <div className="p-4 text-center text-slate-500 border border-slate-300 rounded bg-white">
+              सदर खातेदाराचे कोणतीही मुदत ठेव खाती आढळली नाहीत.
             </div>
-          ))}
+          ) : (
+            customerLedger.accounts.map((acc, aIdx) => (
+              <div key={acc.fdAccountID || aIdx} className="border border-slate-900 rounded-xs mt-3 overflow-hidden bg-white shadow-xs">
+                {/* Account Summary Header Strip */}
+                <div className="flex flex-wrap justify-between items-center bg-slate-100 px-2.5 py-1.5 border-b border-slate-900 gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-900">
+                      FD पावती नं.: <span className="font-mono text-primary text-sm font-black">{acc.accountNo}</span>
+                    </span>
+                    {acc.legacyAccountNumber && (
+                      <span className="text-[10px] text-amber-900 bg-amber-50 border border-amber-300 px-1.5 py-0.2 rounded font-mono font-bold" title="जुना पावती क्र.">
+                        जुनी पावती: {acc.legacyAccountNumber}
+                      </span>
+                    )}
+                    <span className="text-[11px] font-semibold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-300">
+                      {acc.schemeName}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                        acc.status === 'Active'
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                          : acc.status === 'Matured'
+                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : 'bg-slate-200 text-slate-800 border-slate-400'
+                      }`}
+                    >
+                      {acc.status === 'Active' ? '● चालू (Active)' : acc.status === 'Matured' ? '● मुदत भरली (Matured)' : `● ${acc.status}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Account Metadata Quick Strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 p-2 bg-slate-50/50 border-b border-slate-300 text-[11px]">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">ठेव दिनांक:</span>
+                    <strong className="font-mono text-slate-900">{formatDisplayDate(acc.openingDate)}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">मुदतपूर्ती दिनांक:</span>
+                    <strong className="font-mono text-slate-900">{formatDisplayDate(acc.maturityDate)}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">कालावधी:</span>
+                    <strong className="font-mono text-slate-900">
+                      {acc.durationValue
+                        ? `${acc.durationValue} ${acc.durationType === 'Days' ? 'दिवस' : 'महिने'}`
+                        : (acc.durationMonths ? `${acc.durationMonths} महिने` : '-')}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">मुद्दल ठेव रक्कम:</span>
+                    <strong className="font-mono text-emerald-800 font-bold">₹ {fmtCurrency(acc.depositAmount)}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">व्याज दर:</span>
+                    <strong className="font-mono text-slate-900">{acc.interestRate}%</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">मुदतपूर्ती रक्कम:</span>
+                    <strong className="font-mono text-blue-900 font-bold">₹ {fmtCurrency(acc.maturityAmount)}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">वारसदार (Nominee):</span>
+                    <span className="text-slate-800 font-medium truncate block" title={acc.nomineeName || '-'}>
+                      {acc.nomineeName ? `${acc.nomineeName} (${acc.nomineeRelation || '-'})` : '-'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Lien Warning Banner (if Encumbered) */}
+                {acc.isLienMarked && (
+                  <div className="bg-amber-100/80 border-b border-amber-400 p-2 flex items-center justify-between text-amber-950 text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🔒</span>
+                      <span>
+                        <strong className="font-bold text-amber-900">तारण नोंद (Lien Warning):</strong> सदर मुदत ठेव पावती कर्जासाठी तारण (Lien Marked) ठेवलेली आहे.
+                        {acc.lienLoanAccountNo && (
+                          <span className="ml-1 font-mono font-bold">कर्ज खाते क्र.: {acc.lienLoanAccountNo}</span>
+                        )}
+                        {acc.lienAmount !== undefined && acc.lienAmount > 0 && (
+                          <span className="ml-1 font-mono font-bold">| तारण रक्कम: ₹ {fmtCurrency(acc.lienAmount)}</span>
+                        )}
+                      </span>
+                    </div>
+                    <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded border border-amber-400">
+                      कर्ज नील झाल्याशिवाय पावती बंद करू नये
+                    </span>
+                  </div>
+                )}
+
+                {/* Double-Entry Ledger Table */}
+                <div className="overflow-x-auto">
+                  <table className="cbs-table w-full border-collapse border border-slate-900 text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-900 font-bold border-b border-slate-900 text-center">
+                        <th className="border border-slate-900 py-1.5 px-1 w-[4%]">#</th>
+                        <th className="border border-slate-900 py-1.5 px-2 w-[11%]">दिनांक</th>
+                        <th className="border border-slate-900 py-1.5 px-2 w-[13%]">व्हाउचर क्र.</th>
+                        <th className="border border-slate-900 py-1.5 px-2 w-[34%] text-left">तपशील (Narration / Details)</th>
+                        <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-right text-rose-900 bg-rose-50/50">
+                          नावे रक्कम Dr (₹)
+                        </th>
+                        <th className="border border-slate-900 py-1.5 px-2 w-[12%] text-right text-emerald-900 bg-emerald-50/50">
+                          जमा रक्कम Cr (₹)
+                        </th>
+                        <th className="border border-slate-900 py-1.5 px-2 w-[14%] text-right text-slate-950 bg-slate-100">
+                          शिल्लक रक्कम (₹)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Opening Balance B/F Row */}
+                      {((acc.openingBalance ?? 0) > 0 || customerLedger.fromDate) && (
+                        <tr className="bg-slate-100/90 font-bold text-slate-800 text-[11px] italic">
+                          <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-500">-</td>
+                          <td className="border border-slate-900 py-1 px-2 text-center font-mono">
+                            {customerLedger.fromDate ? formatDisplayDate(customerLedger.fromDate) : formatDisplayDate(acc.openingDate)}
+                          </td>
+                          <td className="border border-slate-900 py-1 px-2 text-center font-mono text-slate-500">-</td>
+                          <td className="border border-slate-900 py-1 px-2 font-semibold text-slate-700">
+                            मागील शिल्लक (Opening Balance B/F)
+                          </td>
+                          <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                          <td className="border border-slate-900 py-1 px-2 text-right font-mono text-slate-400">-</td>
+                          <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-slate-950 bg-slate-200/60">
+                            ₹ {fmtCurrency(acc.openingBalance ?? 0)}
+                          </td>
+                        </tr>
+                      )}
+
+                      {/* Transaction Rows */}
+                      {acc.transactions && acc.transactions.length > 0 ? (
+                        acc.transactions.map((tx, tIdx) => {
+                          const amt = Math.abs(Number(tx.amount || 0));
+                          let dr = Number(tx.debit || 0);
+                          let cr = Number(tx.credit || 0);
+
+                          if (dr === 0 && cr === 0 && amt > 0) {
+                            const drcr = (tx.debitCredit || '').trim();
+                            const tt = (tx.transactionType || '').toLowerCase();
+                            const vn = (tx.voucherNo || '').toLowerCase();
+                            const isDr = drcr === 'Dr' || tt.includes('close') || tt.includes('payout') || tt.includes('withdraw') || tt.includes('matur') || vn.includes('preclose') || vn.includes('pmt') || vn.includes('clo');
+                            if (isDr) {
+                              dr = amt;
+                            } else {
+                              cr = amt;
+                            }
+                          }
+
+                          const isDebit = dr > 0;
+                          const isCredit = cr > 0;
+                          const isAccrual = tx.transactionType?.toLowerCase().includes('accrual') || tx.transactionType?.toLowerCase().includes('interest');
+                          const isClosure = tx.transactionType?.toLowerCase().includes('closure') || tx.transactionType?.toLowerCase().includes('payout') || isDebit;
+
+                          return (
+                            <tr
+                              key={tx.fdTransactionID || tIdx}
+                              className={`text-[11px] hover:bg-slate-50 transition-colors ${
+                                isClosure ? 'bg-rose-50/20' : isAccrual ? 'bg-emerald-50/20' : ''
+                              }`}
+                            >
+                              <td className="border border-slate-900 py-1 px-1 text-center font-mono text-slate-600">
+                                {tIdx + 1}
+                              </td>
+                              <td className="border border-slate-900 py-1 px-2 text-center font-mono">
+                                {formatDisplayDate(tx.transactionDate)}
+                              </td>
+                              <td className="border border-slate-900 py-1 px-2 text-center font-mono font-semibold text-blue-900">
+                                {tx.voucherNo || '-'}
+                              </td>
+                              <td className="border border-slate-900 py-1 px-2">
+                                <span className="font-medium text-slate-900">
+                                  {formatSafeFdNarration(tx.narration, tx.transactionType, tx.voucherNo, acc.accountNo, acc.legacyAccountNumber)}
+                                </span>
+                              </td>
+                              <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-rose-700 bg-rose-50/20">
+                                {isDebit ? `₹ ${fmtCurrency(dr)}` : <span className="text-slate-300 font-normal">-</span>}
+                              </td>
+                              <td className="border border-slate-900 py-1 px-2 text-right font-mono font-bold text-emerald-700 bg-emerald-50/20">
+                                {isCredit ? `₹ ${fmtCurrency(cr)}` : <span className="text-slate-300 font-normal">-</span>}
+                              </td>
+                              <td className="border border-slate-900 py-1 px-2 text-right font-mono font-black text-slate-950 bg-slate-50/50">
+                                ₹ {fmtCurrency(tx.balance)}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={7} className="border border-slate-900 p-4 text-center text-slate-500 italic">
+                            निवडलेल्या कालावधीत कोणतेही खातावणी व्यवहार उपलब्ध नाहीत.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+
+                    {/* Table Footer with Period Totals & Closing Balance */}
+                    <tfoot>
+                      <tr className="bg-slate-100 font-bold text-slate-950 border-t-2 border-slate-900 text-xs">
+                        <td colSpan={4} className="border border-slate-900 py-1.5 px-3 text-right uppercase tracking-wider">
+                          कालावधी एकूण बेरीज (Period Total):
+                        </td>
+                        <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-rose-900 bg-rose-100/60">
+                          ₹ {fmtCurrency(acc.periodTotalDebit ?? 0)}
+                        </td>
+                        <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-bold text-emerald-900 bg-emerald-100/60">
+                          ₹ {fmtCurrency(acc.periodTotalCredit ?? 0)}
+                        </td>
+                        <td className="border border-slate-900 py-1.5 px-2 text-right font-mono font-black text-blue-950 bg-blue-100/60">
+                          ₹ {fmtCurrency(acc.closingBalance ?? (acc.transactions?.slice(-1)[0]?.balance ?? acc.depositAmount))}
+                        </td>
+                      </tr>
+
+                      {/* Audit Double-Entry Balance Equation Verification */}
+                      <tr className="bg-slate-50 text-[10px] text-slate-700 border-t border-slate-300">
+                        <td colSpan={7} className="py-1 px-3 border border-slate-900">
+                          <span className="font-semibold text-slate-900">ऑडिट ताळमेळ (Audit Balance Equation): </span>
+                          आरंभी शिल्लक: <span className="font-mono font-bold">₹ {fmtCurrency(acc.openingBalance ?? 0)}</span>
+                          {' '}+ एकूण जमा (Cr): <span className="font-mono font-bold text-emerald-700">₹ {fmtCurrency(acc.periodTotalCredit ?? 0)}</span>
+                          {' '}- एकूण नावे (Dr): <span className="font-mono font-bold text-rose-700">₹ {fmtCurrency(acc.periodTotalDebit ?? 0)}</span>
+                          {' '}={' '}
+                          <strong className="text-slate-950">
+                            अंतिम शिल्लक (Closing Balance): <span className="font-mono font-bold text-blue-900">₹ {fmtCurrency(acc.closingBalance ?? 0)}</span>
+                          </strong>
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
 

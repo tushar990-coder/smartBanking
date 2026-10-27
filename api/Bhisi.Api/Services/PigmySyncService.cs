@@ -210,8 +210,8 @@ namespace Bhisi.Api.Services
                     var voucherMapping = await _context.PigmyVoucherMappings
                         .FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "APP" && m.IsActive);
 
-                    int drLedgerId = voucherMapping?.DebitLedgerId ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash")))?.LedgerID ?? 1;
-                    int crLedgerId = voucherMapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
+                    int drLedgerId = voucherMapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
+                    int crLedgerId = voucherMapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
                     string voucherNo = $"PV-{branchId}-{collDate:yyyyMMdd}-APP-{Guid.NewGuid().ToString("N").Substring(0, 4).ToUpper()}";
                     voucher = new Voucher

@@ -576,8 +576,8 @@ namespace Bhisi.Api.Controllers
                     // Create Pending Voucher for Voucher Passing
                     var appBranchId = account.BranchID;
                     var appMapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == appBranchId && m.CollectionSource == "APP" && m.IsActive);
-                    int appDrLedgerId = appMapping?.DebitLedgerId ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash")))?.LedgerID ?? 1;
-                    int appCrLedgerId = appMapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
+                    int appDrLedgerId = appMapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, appBranchId, "PIGMY");
+                    int appCrLedgerId = appMapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
                     string appVoucherNo = $"PV-{appBranchId}-{collDate:yyyyMMdd}-APP-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
                     var appVoucher = new Voucher

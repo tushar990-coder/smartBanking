@@ -309,8 +309,8 @@ namespace Bhisi.Api.Controllers
                 _context.PigmyAccounts.Update(account);
 
                 var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "MANUAL" && m.IsActive);
-                int drLedgerId = mapping?.DebitLedgerId ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash")))?.LedgerID ?? 1;
-                int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
+                int drLedgerId = mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
+                int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
                 string uniqueVoucherNo = $"PV-{branchId}-{targetDate:yyyyMMdd}-{DateTime.Now:HHmmss}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
                 var voucher = new Voucher
@@ -431,45 +431,41 @@ namespace Bhisi.Api.Controllers
 
                     // Auto Voucher
                     var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "APP" && m.IsActive);
-                    if (mapping != null)
+                    int drLedgerId = mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
+                    int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
+
+                    string uniqueVoucherNo = $"PV-{branchId}-{dto.CollectionDate:yyyyMMdd}-APP-{appItemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+                    var voucher = new Voucher
                     {
-                        string uniqueVoucherNo = $"PV-{branchId}-{dto.CollectionDate:yyyyMMdd}-APP-{appItemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
-                        var voucher = new Voucher
-                        {
-                            BranchID = branchId,
-                            VoucherNo = uniqueVoucherNo,
-                            VoucherDate = dto.CollectionDate,
-                            VoucherType = "Receipt",
-                            Narration = $"Pigmy App Collection for A/C {account.AccountNo}",
-                            TotalAmount = dto.CollectionAmount
-                        };
+                        BranchID = branchId,
+                        VoucherNo = uniqueVoucherNo,
+                        VoucherDate = dto.CollectionDate,
+                        VoucherType = "Receipt",
+                        Narration = $"Pigmy App Collection for A/C {account.AccountNo}",
+                        TotalAmount = dto.CollectionAmount
+                    };
 
-                        voucher.VoucherDetails.Add(new VoucherDetail
-                        {
-                            LedgerID = mapping.DebitLedgerId,
-                            CustomerID = account.CustomerID,
-                            DrCr = "Dr",
-                            Amount = dto.CollectionAmount
-                        });
-
-                        voucher.VoucherDetails.Add(new VoucherDetail
-                        {
-                            LedgerID = mapping.CreditLedgerId,
-                            CustomerID = account.CustomerID,
-                            DrCr = "Cr",
-                            Amount = dto.CollectionAmount
-                        });
-
-                        _context.Vouchers.Add(voucher);
-                        await _context.SaveChangesAsync();
-
-                        collection.VoucherId = voucher.VoucherID;
-                        collection.IsVoucherGenerated = true;
-                    }
-                    else
+                    voucher.VoucherDetails.Add(new VoucherDetail
                     {
-                        await _context.SaveChangesAsync();
-                    }
+                        LedgerID = drLedgerId,
+                        CustomerID = account.CustomerID,
+                        DrCr = "Dr",
+                        Amount = dto.CollectionAmount
+                    });
+
+                    voucher.VoucherDetails.Add(new VoucherDetail
+                    {
+                        LedgerID = crLedgerId,
+                        CustomerID = account.CustomerID,
+                        DrCr = "Cr",
+                        Amount = dto.CollectionAmount
+                    });
+
+                    _context.Vouchers.Add(voucher);
+                    await _context.SaveChangesAsync();
+
+                    collection.VoucherId = voucher.VoucherID;
+                    collection.IsVoucherGenerated = true;
 
                     processedReceipts.Add(receiptNo);
                 }
@@ -591,8 +587,8 @@ namespace Bhisi.Api.Controllers
                     _context.PigmyAccounts.Update(account);
 
                     var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "MANUAL" && m.IsActive);
-                    int drLedgerId = mapping?.DebitLedgerId ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash")))?.LedgerID ?? 1;
-                    int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
+                    int drLedgerId = mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
+                    int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
                     string uniqueVoucherNo = $"PV-{branchId}-{targetDate:yyyyMMdd}-BLK-{itemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
                     var voucher = new Voucher
@@ -860,8 +856,8 @@ namespace Bhisi.Api.Controllers
                     if (dayTotalAmount > 0 && dayCollections.Any())
                     {
                         var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == targetBranchId && m.IsActive);
-                        int drLedgerId = mapping?.DebitLedgerId ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash")))?.LedgerID ?? 1;
-                        int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
+                        int drLedgerId = mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranchId, "PIGMY");
+                        int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
                         string uniqueVoucherNo = isOpeningBalance
                             ? $"PV-{targetBranchId}-{targetDate:yyyyMMdd}-OP-IMP-{Guid.NewGuid().ToString("N").Substring(0, 4)}"
@@ -887,6 +883,8 @@ namespace Bhisi.Api.Controllers
                                 foreach (var vd in voucher.VoucherDetails)
                                 {
                                     vd.Amount = dayTotalAmount;
+                                    if (vd.DrCr == "Dr" && vd.LedgerID != drLedgerId) vd.LedgerID = drLedgerId;
+                                    if (vd.DrCr == "Cr" && vd.LedgerID != crLedgerId) vd.LedgerID = crLedgerId;
                                 }
                             }
                             else

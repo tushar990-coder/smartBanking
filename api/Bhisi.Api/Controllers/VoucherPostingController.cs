@@ -38,13 +38,14 @@ namespace Bhisi.Api.Controllers
 
                 if (unmappedCollections.Any())
                 {
-                    int defaultDrLedgerId = (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash")))?.LedgerID ?? 1;
-                    int defaultCrLedgerId = (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;
-
                     foreach (var coll in unmappedCollections)
                     {
                         int targetBranch = (coll.PigmyAccount != null && coll.PigmyAccount.BranchID > 0) ? coll.PigmyAccount.BranchID : (branchId ?? 1);
                         if (targetBranch == 0) targetBranch = 1;
+
+                        int defaultDrLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranch, "PIGMY");
+                        int defaultCrLedgerId = (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == coll.PigmyAccount!.PigmySchemeID))?.PigmyLiabilityLedgerID 
+                            ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
                         string uniqueVoucherNo = $"PV-{targetBranch}-{coll.CollectionDate:yyyyMMdd}-AUD-{coll.CollectionId:D4}";
                         var voucher = new Voucher

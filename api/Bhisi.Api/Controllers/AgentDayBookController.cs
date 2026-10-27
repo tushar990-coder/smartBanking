@@ -460,7 +460,8 @@ namespace Bhisi.Api.Controllers
                 string combinedNarration = $"{dateRangeTag}{request.Narration}".Trim();
 
                 // Voucher Auto Generation Logic
-                var debitLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash"));
+                int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "PIGMY");
+                var debitLedger = await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash" || l.AccountType == "Cash In Hand");
                 var creditLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy") || l.LedgerName.Contains("Suspense"));
                 
                 if (debitLedger == null) debitLedger = await _context.Ledgers.FirstAsync();

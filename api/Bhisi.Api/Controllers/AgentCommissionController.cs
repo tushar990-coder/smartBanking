@@ -356,8 +356,10 @@ namespace Bhisi.Api.Controllers
 
                 if (creditLedger == null)
                 {
-                    creditLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("Cash") || l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("रोख"));
-                    if (creditLedger == null) creditLedger = await _context.Ledgers.FirstOrDefaultAsync();
+                    int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
+                    creditLedger = await _context.Ledgers.FindAsync(branchCashId)
+                        ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash" || l.AccountType == "Cash In Hand" || l.LedgerName.Contains("रोख") || l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash"))
+                        ?? await _context.Ledgers.FirstOrDefaultAsync();
                 }
 
                 DateTime effDate = request.PaymentDate?.Date ?? DateTime.Today;

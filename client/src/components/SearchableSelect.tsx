@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import ReactDOM from 'react-dom';
 
-const convertMarathiDigits = (val: string): string => {
+export const convertMarathiDigits = (val: string): string => {
   if (!val) return val;
   return val.replace(/[०-९]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0x0966 + 48));
 };
@@ -61,17 +62,71 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number; maxHeight: number }>({
+    top: 0,
+    left: 0,
+    width: 480,
+    maxHeight: 280
+  });
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
+  const menuPortalRef = useRef<HTMLDivElement>(null);
 
   const inputId = id ? `${id}-input` : (name ? `${name}-input` : 'searchable-select-input');
   const inputName = name ? `${name}Search` : 'searchableSelectSearch';
 
   const safeOptions = Array.isArray(options) ? options : [];
 
+  // Update floating dropdown position whenever opened, scrolled, or resized
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const updatePosition = () => {
+      if (!triggerRef.current) return;
+      const rect = triggerRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+
+      const spaceBelow = viewportHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const openUp = spaceBelow < 250 && spaceAbove > spaceBelow;
+
+      const desiredWidth = Math.max(rect.width, 540);
+      let left = rect.left;
+      if (left + desiredWidth > viewportWidth - 16) {
+        left = Math.max(16, viewportWidth - desiredWidth - 16);
+      }
+
+      const availableHeight = openUp ? Math.min(280, spaceAbove - 20) : Math.min(280, spaceBelow - 20);
+      const top = openUp ? Math.max(10, rect.top - availableHeight - 4) : rect.bottom + 4;
+
+      setMenuPos({
+        top,
+        left,
+        width: Math.min(desiredWidth, viewportWidth - 32),
+        maxHeight: availableHeight
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen]);
+
+  // Click outside to close (checking both trigger and portaled menu)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(target) &&
+        menuPortalRef.current && !menuPortalRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
@@ -80,18 +135,73 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   }, []);
 
   const selectedOption = safeOptions.find((o: any) => String(o.value) === String(value));
-  const normalizedSearch = convertMarathiDigits(searchTerm).toLowerCase().trim();
-  const filteredOptions = safeOptions.filter((o: any) => {
-    const normLabel = convertMarathiDigits(o.label || '').toLowerCase();
-    const normSub = convertMarathiDigits(o.subLabel || '').toLowerCase();
-    const normBadge = convertMarathiDigits(o.badge || '').toLowerCase();
-    const normVal = convertMarathiDigits(String(o.value || '')).toLowerCase();
-    return normLabel.includes(normalizedSearch) ||
-           normSub.includes(normalizedSearch) ||
-           normBadge.includes(normalizedSearch) ||
-           normVal === normalizedSearch ||
-           normVal.includes(normalizedSearch);
-  });
+  const rawSearch = searchTerm.trim();
+  const normalizedSearch = convertMarathiDigits(rawSearch).toLowerCase();
+
+  // Smart relevance ranking: Exact ID > ID prefix > Group code > Name prefix > Substring
+  const filteredOptions = useMemo(() => {
+    if (!normalizedSearch) return safeOptions;
+
+    return safeOptions
+      .filter((o: any) => {
+        const normLabel = convertMarathiDigits(o.label || '').toLowerCase();
+        const normSub = convertMarathiDigits(o.subLabel || '').toLowerCase();
+        const normBadge = convertMarathiDigits(o.badge || '').toLowerCase();
+        const normVal = convertMarathiDigits(String(o.value || '')).toLowerCase();
+
+        return (
+          normVal === normalizedSearch ||
+          normVal.startsWith(normalizedSearch) ||
+          normVal.includes(normalizedSearch) ||
+          normLabel.includes(normalizedSearch) ||
+          normSub.includes(normalizedSearch) ||
+          normBadge.includes(normalizedSearch) ||
+          (rawSearch && (
+            (o.label && o.label.toLowerCase().includes(rawSearch.toLowerCase())) ||
+            (o.subLabel && o.subLabel.toLowerCase().includes(rawSearch.toLowerCase()))
+          ))
+        );
+      })
+      .sort((a: any, b: any) => {
+        const valA = convertMarathiDigits(String(a.value || '')).toLowerCase();
+        const valB = convertMarathiDigits(String(b.value || '')).toLowerCase();
+        const labelA = convertMarathiDigits(a.label || '').toLowerCase();
+        const labelB = convertMarathiDigits(b.label || '').toLowerCase();
+        const subA = convertMarathiDigits(a.subLabel || '').toLowerCase();
+        const subB = convertMarathiDigits(b.subLabel || '').toLowerCase();
+
+        // 1. Exact खाते क्र. (ID) match gets highest priority
+        const exactA = valA === normalizedSearch;
+        const exactB = valB === normalizedSearch;
+        if (exactA && !exactB) return -1;
+        if (!exactA && exactB) return 1;
+
+        // 2. खाते क्र. (ID) starts with search
+        const startValA = valA.startsWith(normalizedSearch);
+        const startValB = valB.startsWith(normalizedSearch);
+        if (startValA && !startValB) return -1;
+        if (!startValA && startValB) return 1;
+
+        // 3. SubLabel contains exact group code (उदा. [28.1] किंवा [28])
+        const grpMatchA = subA.includes(`[${normalizedSearch}]`) || subA.includes(` ${normalizedSearch} `) || subA.startsWith(`गट: [${normalizedSearch}]`);
+        const grpMatchB = subB.includes(`[${normalizedSearch}]`) || subB.includes(` ${normalizedSearch} `) || subB.startsWith(`गट: [${normalizedSearch}]`);
+        if (grpMatchA && !grpMatchB) return -1;
+        if (!grpMatchA && grpMatchB) return 1;
+
+        // 4. Label starts with search term
+        const startLabelA = labelA.startsWith(normalizedSearch);
+        const startLabelB = labelB.startsWith(normalizedSearch);
+        if (startLabelA && !startLabelB) return -1;
+        if (!startLabelA && startLabelB) return 1;
+
+        // 5. Default sort by numeric ID if both are numbers
+        const numA = parseInt(valA, 10);
+        const numB = parseInt(valB, 10);
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+
+        return labelA.localeCompare(labelB);
+      });
+  }, [safeOptions, normalizedSearch, rawSearch]);
 
   const triggerChange = (selectedVal: string | number) => {
     if (!onChange) return;
@@ -138,51 +248,83 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
         <span className="text-slate-400 ml-1.5 shrink-0 text-[10px]">▼</span>
       </div>
 
-      {isOpen && (
-        <div className="absolute z-50 min-w-full sm:min-w-[560px] max-w-[680px] left-0 mt-1 bg-white border border-slate-300 shadow-xl rounded-xl max-h-64 overflow-y-auto">
-          <div className="sticky top-0 bg-slate-50 p-2 border-b border-slate-200 z-10">
-            <input
-              id={inputId}
-              name={inputName}
-              aria-label={placeholder || "शोधा..."}
-              type="text"
-              className="w-full border border-slate-300 px-2.5 py-1.5 text-xs rounded-lg focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 bg-white"
-              placeholder="नाव, कोड किंवा नंबरने शोधा..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  if (filteredOptions.length > 0) {
-                    triggerChange(filteredOptions[0].value);
+      {isOpen && typeof document !== 'undefined' && ReactDOM.createPortal(
+        <div 
+          ref={menuPortalRef}
+          style={{
+            position: 'fixed',
+            top: `${menuPos.top}px`,
+            left: `${menuPos.left}px`,
+            width: `${menuPos.width}px`,
+            maxHeight: `${menuPos.maxHeight}px`,
+            zIndex: 999999
+          }}
+          className="bg-white border border-slate-300 shadow-2xl rounded-xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 ring-1 ring-black/5"
+        >
+          {/* Search Box Header */}
+          <div className="sticky top-0 bg-slate-50 p-2 border-b border-slate-200 z-10 shrink-0">
+            <div className="relative flex items-center">
+              <input
+                id={inputId}
+                name={inputName}
+                aria-label={placeholder || "शोधा..."}
+                type="text"
+                className="w-full border border-slate-300 pl-3 pr-7 py-1.5 text-xs rounded-lg focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 bg-white font-medium"
+                placeholder="खाते क्र. (ID), खाते नाव किंवा गट कोड (उदा. 1, 28.1)..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (filteredOptions.length > 0) {
+                      triggerChange(filteredOptions[0].value);
+                      setIsOpen(false);
+                      setSearchTerm('');
+                      setTimeout(() => triggerRef.current?.focus(), 0);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setIsOpen(false);
+                    setTimeout(() => triggerRef.current?.focus(), 0);
+                  } else if (e.key === 'Tab') {
+                    if (filteredOptions.length > 0 && searchTerm.trim() !== '') {
+                      triggerChange(filteredOptions[0].value);
+                    }
                     setIsOpen(false);
                     setSearchTerm('');
-                    setTimeout(() => triggerRef.current?.focus(), 0);
+                    if (!e.shiftKey) {
+                      e.preventDefault();
+                      focusNext(triggerRef.current);
+                    } else {
+                      e.preventDefault();
+                      focusPrev(triggerRef.current);
+                    }
                   }
-                } else if (e.key === 'Escape') {
-                  setIsOpen(false);
-                  setTimeout(() => triggerRef.current?.focus(), 0);
-                } else if (e.key === 'Tab') {
-                  if (filteredOptions.length > 0 && searchTerm.trim() !== '') {
-                    triggerChange(filteredOptions[0].value);
-                  }
-                  setIsOpen(false);
-                  setSearchTerm('');
-                  if (!e.shiftKey) {
-                    e.preventDefault();
-                    focusNext(triggerRef.current);
-                  } else {
-                    e.preventDefault();
-                    focusPrev(triggerRef.current);
-                  }
-                }
-              }}
-              onClick={(e) => e.stopPropagation()}
-              autoFocus
-            />
+                }}
+                onClick={(e) => e.stopPropagation()}
+                autoFocus
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSearchTerm('');
+                  }}
+                  className="absolute right-2 text-slate-400 hover:text-slate-600 font-bold text-xs"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <div className="mt-1 flex items-center justify-between text-[10.5px] text-slate-500 px-1 font-semibold">
+              <span>उपलब्ध खाती: <strong className="text-primary font-mono">{filteredOptions.length}</strong></span>
+              {searchTerm && <span className="text-[10px] text-indigo-600">सर्च: "{searchTerm}"</span>}
+            </div>
           </div>
+
+          {/* Reset / Clear Option */}
           <div
-            className="px-3 py-2 hover:bg-slate-100 cursor-pointer text-xs text-slate-500 border-b border-slate-100 font-medium"
+            className="px-3 py-1.5 hover:bg-slate-100 cursor-pointer text-xs text-slate-500 border-b border-slate-100 font-medium shrink-0 flex items-center gap-1.5"
             onClick={() => {
               triggerChange('');
               setIsOpen(false);
@@ -190,50 +332,62 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
               setTimeout(() => triggerRef.current?.focus(), 0);
             }}
           >
-            {placeholder}
+            <span className="text-slate-400">✕</span>
+            <span>{placeholder}</span>
           </div>
-          {filteredOptions.map((option: any, idx: number) => {
-            const isSelected = String(value) === String(option.value);
-            return (
-              <div
-                key={`${option.value}-${idx}`}
-                title={option.label + (option.subLabel ? `\n${option.subLabel}` : '')}
-                className={`px-3 py-2 hover:bg-indigo-50/80 cursor-pointer text-xs transition duration-100 border-b border-slate-100 last:border-b-0 ${
-                  isSelected
-                    ? 'bg-indigo-50 text-indigo-950 font-semibold'
-                    : 'text-slate-700'
-                }`}
-                onClick={() => {
-                  triggerChange(option.value);
-                  setIsOpen(false);
-                  setSearchTerm('');
-                  setTimeout(() => triggerRef.current?.focus(), 0);
-                }}
-              >
-                {option.subLabel ? (
-                  <div className="flex flex-col gap-0.5 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-slate-900 truncate">{option.label}</span>
-                      {option.badge && (
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm shrink-0 border ${option.badgeColor || 'bg-slate-100 text-slate-700 border-slate-300'}`}>
-                          {option.badge}
+
+          {/* Scrollable Results List */}
+          <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
+            {filteredOptions.map((option: any, idx: number) => {
+              const isSelected = String(value) === String(option.value);
+              return (
+                <div
+                  key={`${option.value}-${idx}`}
+                  title={option.label + (option.subLabel ? `\n${option.subLabel}` : '')}
+                  className={`px-3 py-2 hover:bg-indigo-50/80 cursor-pointer text-xs transition duration-100 ${
+                    isSelected
+                      ? 'bg-indigo-50 text-indigo-950 font-semibold'
+                      : 'text-slate-700'
+                  }`}
+                  onClick={() => {
+                    triggerChange(option.value);
+                    setIsOpen(false);
+                    setSearchTerm('');
+                    setTimeout(() => triggerRef.current?.focus(), 0);
+                  }}
+                >
+                  {option.subLabel ? (
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-slate-900 truncate">
+                          {option.label}
                         </span>
-                      )}
+                        {option.badge && (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm shrink-0 border ${option.badgeColor || 'bg-slate-100 text-slate-700 border-slate-300'}`}>
+                            {option.badge}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-500 truncate flex items-center gap-1">
+                        <span>{option.subLabel}</span>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-500 truncate">
-                      {option.subLabel}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="whitespace-nowrap truncate">{option.label}</div>
-                )}
+                  ) : (
+                    <div className="whitespace-nowrap truncate font-medium">{option.label}</div>
+                  )}
+                </div>
+              );
+            })}
+
+            {filteredOptions.length === 0 && (
+              <div className="px-3 py-6 text-slate-400 text-xs text-center flex flex-col items-center gap-1">
+                <span>कोणतीही खाती आढळली नाहीत.</span>
+                <span className="text-[10.5px] text-slate-500">खाते क्र. (ID), खाते नाव किंवा गट कोड तपासा.</span>
               </div>
-            );
-          })}
-          {filteredOptions.length === 0 && (
-            <div className="px-3 py-4 text-slate-400 text-xs text-center">माहिती आढळली नाही</div>
-          )}
-        </div>
+            )}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

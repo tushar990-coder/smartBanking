@@ -15,9 +15,15 @@ interface Ledger {
   ledgerName: string;
   ledgerNameEnglish?: string;
   accountType?: string;
-  legacyLedgerId?: string;
+  legacyLedgerId?: string | number;
+  ledgerCode?: string;
   accountGroup?: {
+    groupID?: number;
+    groupCode?: string;
     groupName?: string;
+    groupNameEnglish?: string;
+    natureOfGroup?: string;
+    displayOrder?: number;
   };
 }
 
@@ -99,15 +105,30 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     }
   }, [user?.branchID]);
   
-  // Form State
+  // Form State - Rich Searchable Ledger Options
   const ledgerOptions = useMemo(() => {
     return ledgers.map(l => {
       const legacyPart = l.legacyLedgerId ? ` [जुना क्र: ${l.legacyLedgerId}]` : '';
       const engPart = l.ledgerNameEnglish ? ` (${l.ledgerNameEnglish})` : '';
-      const groupPart = l.accountGroup?.groupName ? ` - ${l.accountGroup.groupName}` : '';
+      const grpCode = l.accountGroup?.groupCode ? `[${l.accountGroup.groupCode}] ` : (l.accountGroup?.displayOrder ? `[${l.accountGroup.displayOrder}] ` : '');
+      const grpName = l.accountGroup?.groupName ? `${grpCode}${l.accountGroup.groupName}` : '';
+      const groupPart = grpName ? ` - ${grpName}` : '';
+      
+      const natureText = l.accountGroup?.natureOfGroup === 'Expenses' ? 'खर्च (Expenses)' :
+                         l.accountGroup?.natureOfGroup === 'Income' ? 'उत्पन्न (Income)' :
+                         l.accountGroup?.natureOfGroup === 'Assets' ? 'मालमत्ता (Assets)' :
+                         l.accountGroup?.natureOfGroup === 'Liabilities' ? 'देयता (Liabilities)' :
+                         (l.accountType || '');
+
       return {
         value: l.ledgerID.toString(),
-        label: `${l.ledgerID} - ${l.ledgerName}${engPart}${legacyPart}${groupPart}`
+        label: `${l.ledgerID} - ${l.ledgerName}${engPart}${legacyPart}${groupPart}`,
+        subLabel: grpName ? `गट: ${grpName}${l.accountGroup?.groupNameEnglish ? ' (' + l.accountGroup.groupNameEnglish + ')' : ''}` : undefined,
+        badge: natureText,
+        badgeColor: l.accountGroup?.natureOfGroup === 'Expenses' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                    l.accountGroup?.natureOfGroup === 'Income' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                    l.accountGroup?.natureOfGroup === 'Assets' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                    'bg-slate-100 text-slate-700 border-slate-200'
       };
     });
   }, [ledgers]);

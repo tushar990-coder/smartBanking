@@ -462,9 +462,15 @@ export default function LedgerMaster() {
     }
   };
 
+const convertMarathiDigits = (val: string): string => {
+  if (!val) return val;
+  return val.replace(/[०-९]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0x0966 + 48));
+};
+
   // Filtered Flat Ledgers List (Clean & Direct)
   const filteredFlatLedgers = useMemo(() => {
-    const term = searchTerm.toLowerCase().trim();
+    const rawTerm = searchTerm.trim();
+    const term = convertMarathiDigits(rawTerm).toLowerCase();
 
     return ledgers.filter(l => {
       // Nature filter
@@ -486,14 +492,35 @@ export default function LedgerMaster() {
       // Search term
       if (term) {
         const grp = groupMap.get(l.groupID);
-        const matchId = l.ledgerID.toString().includes(term);
-        const matchName = l.ledgerName.toLowerCase().includes(term);
+        const lIdStr = l.ledgerID.toString();
+        const matchExactId = lIdStr === term;
+        const matchId = lIdStr.includes(term);
+        const matchName = l.ledgerName.toLowerCase().includes(term) || (rawTerm && l.ledgerName.toLowerCase().includes(rawTerm.toLowerCase()));
         const matchEng = l.ledgerNameEnglish ? l.ledgerNameEnglish.toLowerCase().includes(term) : false;
-        const matchGrp = grp ? (grp.groupName.toLowerCase().includes(term) || (grp.groupNameEnglish && grp.groupNameEnglish.toLowerCase().includes(term))) : false;
-        return matchId || matchName || matchEng || matchGrp;
+        const matchGrp = grp ? (
+          grp.groupName.toLowerCase().includes(term) || 
+          (grp.groupNameEnglish && grp.groupNameEnglish.toLowerCase().includes(term)) ||
+          (grp.groupCode && grp.groupCode.toLowerCase().includes(term)) ||
+          (grp.displayOrder && grp.displayOrder.toString().includes(term))
+        ) : false;
+        const matchLegacy = (l as any).legacyLedgerId ? (l as any).legacyLedgerId.toString().includes(term) : false;
+        return matchExactId || matchId || matchName || matchEng || matchGrp || matchLegacy;
       }
       return true;
-    }).sort((a, b) => a.ledgerID - b.ledgerID);
+    }).sort((a, b) => {
+      if (term) {
+        const exactA = a.ledgerID.toString() === term;
+        const exactB = b.ledgerID.toString() === term;
+        if (exactA && !exactB) return -1;
+        if (!exactA && exactB) return 1;
+
+        const startA = a.ledgerID.toString().startsWith(term);
+        const startB = b.ledgerID.toString().startsWith(term);
+        if (startA && !startB) return -1;
+        if (!startA && startB) return 1;
+      }
+      return a.ledgerID - b.ledgerID;
+    });
   }, [ledgers, groupMap, searchTerm, selectedNatureFilter, selectedGroupFilter]);
 
   // Hierarchical Tree Display Builder (for Tree View mode only)
@@ -506,7 +533,8 @@ export default function LedgerMaster() {
 
   const treeDisplayItems = useMemo((): DisplayItem[] => {
     if (viewMode !== 'tree') return [];
-    const term = searchTerm.toLowerCase().trim();
+    const rawTerm = searchTerm.trim();
+    const term = convertMarathiDigits(rawTerm).toLowerCase();
     
     let filtered = ledgers;
     if (selectedNatureFilter === 'BalanceSheet') {
@@ -530,6 +558,7 @@ export default function LedgerMaster() {
     }
 
     const ledgerMatches = filtered.filter(l => 
+      l.ledgerID.toString() === term ||
       l.ledgerID.toString().includes(term) ||
       l.ledgerName.toLowerCase().includes(term) || 
       (l.ledgerNameEnglish && l.ledgerNameEnglish.toLowerCase().includes(term))
@@ -538,7 +567,8 @@ export default function LedgerMaster() {
     const groupMatches = groups.filter(g => 
       g.groupName.toLowerCase().includes(term) || 
       (g.groupNameEnglish && g.groupNameEnglish.toLowerCase().includes(term)) ||
-      (g.groupCode && g.groupCode.toLowerCase().includes(term))
+      (g.groupCode && g.groupCode.toLowerCase().includes(term)) ||
+      (g.displayOrder && g.displayOrder.toString().includes(term))
     );
     
     const groupsToKeep = new Set<number>();

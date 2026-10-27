@@ -6451,6 +6451,88 @@ BEGIN
 END
 GO
 
+-- ========================================================================
+-- HEAL ORPHAN LOAN DISBURSEMENTS & COLLECTIONS (Daybook Out-of-Balance Fix)
+-- Removes unvouchered ghost loan disbursements & collections created by deleted vouchers
+-- ========================================================================
+IF OBJECT_ID('dbo.LoanDisbursements', 'U') IS NOT NULL
+BEGIN
+    IF OBJECT_ID('tempdb..#OrphanDisb') IS NOT NULL DROP TABLE #OrphanDisb;
+
+    SELECT ld.LoanDisbursementID, ld.LoanAccountID
+    INTO #OrphanDisb
+    FROM dbo.LoanDisbursements ld
+    WHERE (ld.VoucherID IS NULL OR ld.VoucherID NOT IN (SELECT VoucherID FROM dbo.Vouchers WHERE Status NOT IN ('Cancelled', 'Rejected')))
+      AND ISNULL(ld.PaymentMode, '') != 'Opening Balance'
+      AND (ld.Remarks IS NULL OR (ld.Remarks NOT LIKE '%Opening Balance%' AND ld.Remarks NOT LIKE '%मागील येणे%'));
+
+    DECLARE @OrphanDisbCount INT = (SELECT COUNT(*) FROM #OrphanDisb);
+    IF @OrphanDisbCount > 0
+    BEGIN
+        PRINT '  -> [DAYBOOK HEAL] सापडलेल्या ' + CAST(@OrphanDisbCount AS VARCHAR(10)) + ' अनाथ कर्ज वाटप (Orphan LoanDisbursement) नोंदी स्वच्छ करत आहे...';
+        
+        -- 1. Delete linked Deductions
+        IF OBJECT_ID('dbo.LoanDisbursementDeductions', 'U') IS NOT NULL
+        BEGIN
+            DELETE FROM dbo.LoanDisbursementDeductions
+            WHERE LoanDisbursementID IN (SELECT LoanDisbursementID FROM #OrphanDisb);
+        END
+
+        -- 2. Delete orphan LoanDisbursements
+        DELETE FROM dbo.LoanDisbursements
+        WHERE LoanDisbursementID IN (SELECT LoanDisbursementID FROM #OrphanDisb);
+
+        -- 3. Update LoanAccounts disbursement date if all disbursements deleted
+        UPDATE la
+        SET la.LoanDisbursementDate = (
+            SELECT MAX(ld2.DisbursementDate) 
+            FROM dbo.LoanDisbursements ld2 
+            WHERE ld2.LoanAccountID = la.LoanAccountID
+        )
+        FROM dbo.LoanAccounts la
+        WHERE la.LoanAccountID IN (SELECT LoanAccountID FROM #OrphanDisb);
+
+        PRINT '  -> [SUCCESS] ' + CAST(@OrphanDisbCount AS VARCHAR(10)) + ' अनाथ कर्ज वाटप नोंदी स्वच्छ झाल्या. रोजकीर्द नावे/पेमेंट बाजू पूर्ववत संतुलित झाली!';
+    END
+
+    IF OBJECT_ID('tempdb..#OrphanDisb') IS NOT NULL DROP TABLE #OrphanDisb;
+END
+GO
+
+IF OBJECT_ID('dbo.LoanCollections', 'U') IS NOT NULL
+BEGIN
+    IF OBJECT_ID('tempdb..#OrphanCols') IS NOT NULL DROP TABLE #OrphanCols;
+
+    SELECT lc.LoanCollectionID, lc.LoanAccountID
+    INTO #OrphanCols
+    FROM dbo.LoanCollections lc
+    WHERE (lc.VoucherID IS NULL OR lc.VoucherID NOT IN (SELECT VoucherID FROM dbo.Vouchers WHERE Status NOT IN ('Cancelled', 'Rejected')))
+      AND (lc.HomeBranchVoucherID IS NULL OR lc.HomeBranchVoucherID NOT IN (SELECT VoucherID FROM dbo.Vouchers WHERE Status NOT IN ('Cancelled', 'Rejected')))
+      AND (lc.Remarks IS NULL OR (lc.Remarks NOT LIKE '%Opening Balance%' AND lc.Remarks NOT LIKE '%मागील येणे%'));
+
+    DECLARE @OrphanColCount INT = (SELECT COUNT(*) FROM #OrphanCols);
+    IF @OrphanColCount > 0
+    BEGIN
+        PRINT '  -> [DAYBOOK HEAL] सापडलेल्या ' + CAST(@OrphanColCount AS VARCHAR(10)) + ' अनाथ कर्ज वसुली (Orphan LoanCollection) नोंदी स्वच्छ करत आहे...';
+
+        -- 1. Delete linked Fees
+        IF OBJECT_ID('dbo.LoanCollectionFees', 'U') IS NOT NULL
+        BEGIN
+            DELETE FROM dbo.LoanCollectionFees
+            WHERE LoanCollectionID IN (SELECT LoanCollectionID FROM #OrphanCols);
+        END
+
+        -- 2. Delete orphan LoanCollections
+        DELETE FROM dbo.LoanCollections
+        WHERE LoanCollectionID IN (SELECT LoanCollectionID FROM #OrphanCols);
+
+        PRINT '  -> [SUCCESS] ' + CAST(@OrphanColCount AS VARCHAR(10)) + ' अनाथ कर्ज वसुली नोंदी स्वच्छ झाल्या. रोजकीर्द जमा/पावती बाजू पूर्ववत संतुलित झाली!';
+    END
+
+    IF OBJECT_ID('tempdb..#OrphanCols') IS NOT NULL DROP TABLE #OrphanCols;
+END
+GO
+
 PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';

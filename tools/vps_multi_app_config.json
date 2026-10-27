@@ -27,42 +27,42 @@
       "FrontendFolderPath": "D:\\WebApps\\Testing\\testing.hellomindspace.in"
     },
     {
-      "SansthaName": "Shree Bambawade Nagari Sahakari PatSanstha (Bambavade)",
+      "SansthaName": "Shree Bambavade Nagari Sahakari Patsanstha Maryadit, Bambavade",
       "TargetDatabase": "SmartBanking_bambavadeurban",
       "IISAppPoolName": "bambavadeurban-backend",
       "BackendFolderPath": "D:\\WebApps\\bambavadeurban\\backend",
       "FrontendFolderPath": "D:\\WebApps\\bambavadeurban\\frontend"
     },
     {
-      "SansthaName": "Shree Jotirling Nagari Sahakari PatSanstha (Padawalwadi)",
+      "SansthaName": "Shree Jotirling Gramin Bigarsheti Sahakari Patsanstha Maryadit, Padvalwadi",
       "TargetDatabase": "SmartBanking_padvalwadi",
       "IISAppPoolName": "padvalwadi-backend",
       "BackendFolderPath": "D:\\WebApps\\padvalwadi\\backend",
       "FrontendFolderPath": "D:\\WebApps\\padvalwadi\\frontend"
     },
     {
-      "SansthaName": "Shree Maharshi Shamrao Patil Yadravkar gramin BigarshetiSahakari Patsanstha Maryadit Yadrav",
+      "SansthaName": "Shree Maharshi Shamrao Patil Yadravkar Gramin Bigarsheti Sahakari Patsanstha Maryadit, Yadrav",
       "TargetDatabase": "SmartBanking_maharshiyadrav",
       "IISAppPoolName": "maharshiyadrav-backend",
       "BackendFolderPath": "D:\\WebApps\\maharshiyadrav\\backend",
       "FrontendFolderPath": "D:\\WebApps\\maharshiyadrav\\frontend"
     },
     {
-      "SansthaName": "Abhiyantriki Tantraniketan Sevkanchi Sahakari Karmachari Patsanstha Maryadit Rajaramnagar,Sakharale",
+      "SansthaName": "Abhiyantriki Tantraniketan Sevkanchi Sahakari Karmachari Patsanstha Maryadit, Rajaramnagar, Sakharale",
       "TargetDatabase": "SmartBanking_ritemployee",
       "IISAppPoolName": "ritemployee-backend",
       "BackendFolderPath": "D:\\WebApps\\ritemployee\\backend",
       "FrontendFolderPath": "D:\\WebApps\\ritemployee\\frontend"
     },
     {
-      "SansthaName": "Sahyadri Gruhataran Sahakari Sanstha Maryadit Bambavade",
+      "SansthaName": "Sahyadri Gruhataran Sahakari Sanstha Maryadit, Bambavade",
       "TargetDatabase": "SmartBanking_sahyadribambavade",
       "IISAppPoolName": "sahyadribambavade-backend",
       "BackendFolderPath": "D:\\WebApps\\sahyadribambavade\\backend",
       "FrontendFolderPath": "D:\\WebApps\\sahyadribambavade\\frontend"
     },
     {
-      "SansthaName": "Sahyadri shasakiy karmachari patasanatha maryadit,Bambavade",
+      "SansthaName": "Sahyadri Shaskiya Karmachari Patsanstha Maryadit, Bambavade",
       "TargetDatabase": "SmartBanking_sahyadrikarmachari",
       "IISAppPoolName": "sahyadrikarmachari-backend",
       "BackendFolderPath": "D:\\WebApps\\sahyadrikarmachari\\backend",

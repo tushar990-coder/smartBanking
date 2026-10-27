@@ -627,8 +627,10 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // Include unvouchered Loan Disbursements into Nave (Payments)
-            if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
+            // Include unvouchered Loan Disbursements and Collections ONLY when explicitly requesting unposted/draft or all entries (कच्ची रोजकीर्द / सर्व).
+            // Approved Daybook (पक्की रोजकीर्द - मंजूर) MUST ONLY contain approved vouchers and never inject unvouchered ghost entries.
+            bool includeUnvouchered = (statusFilter == "all" || statusFilter == "both" || statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted");
+            if (includeUnvouchered)
             {
                 var existingVoucherIds = vouchers.Select(v => v.VoucherID).ToHashSet();
                 var unvoucheredDisbQuery = _context.LoanDisbursements
@@ -930,11 +932,12 @@ namespace Bhisi.Api.Controllers
             }
             var allVouchers = await vouchersQuery.ToListAsync();
 
-            // Load unvouchered loan disbursements and collections for the range (only if not draft/pending)
+            // Load unvouchered loan disbursements and collections for the range ONLY when explicitly requesting unposted/draft or all entries (कच्ची रोजकीर्द / सर्व)
             var allUnvoucheredDisb = new List<LoanDisbursement>();
             var allUnvoucheredCols = new List<LoanCollection>();
 
-            if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
+            bool includeUnvoucheredBatch = (statusFilter == "all" || statusFilter == "both" || statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted");
+            if (includeUnvoucheredBatch)
             {
                 var unvoucheredDisbQuery = _context.LoanDisbursements.AsNoTracking()
                     .Where(ld => ld.LoanAccount != null 
@@ -1448,8 +1451,9 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
-            // Include unvouchered Loan Disbursements and Collections into GetDaybookSummary (only if not draft/pending)
-            if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
+            // Include unvouchered Loan Disbursements and Collections into GetDaybookSummary ONLY when explicitly requesting unposted/draft or all entries (कच्ची रोजकीर्द / सर्व)
+            bool includeUnvoucheredSummary = (statusFilter == "all" || statusFilter == "both" || statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted");
+            if (includeUnvoucheredSummary)
             {
                 var existingVoucherIdsSummary = vouchers.Select(v => v.VoucherID).ToHashSet();
                 var unvoucheredDisbQuerySummary = _context.LoanDisbursements.AsNoTracking()
@@ -1717,7 +1721,8 @@ namespace Bhisi.Api.Controllers
             var allUnvoucheredDisb = new List<LoanDisbursement>();
             var allUnvoucheredCols = new List<LoanCollection>();
 
-            if (statusFilter != "pending" && statusFilter != "draft" && statusFilter != "unposted")
+            bool includeUnvoucheredSummaryBatch = (statusFilter == "all" || statusFilter == "both" || statusFilter == "pending" || statusFilter == "draft" || statusFilter == "unposted");
+            if (includeUnvoucheredSummaryBatch)
             {
                 var unvoucheredDisbQuery = _context.LoanDisbursements.AsNoTracking()
                     .Include(ld => ld.LoanAccount!).ThenInclude(la => la!.Member).ThenInclude(m => m!.Customer)

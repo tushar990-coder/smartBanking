@@ -261,6 +261,14 @@ if (Test-Path $fdOrphanHealSource) {
     Write-Host "  -> heal_orphaned_closed_fd_accounts.sql included in database package (UTF-8 BOM)." -ForegroundColor White
 }
 
+# 3.1.9 Auto-Heal Orphan Loan Disbursements & Collections (Daybook Balance Restoration)
+$daybookOrphanHealSource = Join-Path $workspaceRoot "tools\heal_orphan_loan_disbursements_and_collections.sql"
+if (Test-Path $daybookOrphanHealSource) {
+    $daybookOrphanContent = [System.IO.File]::ReadAllText($daybookOrphanHealSource, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText((Join-Path $patchFolder "database\heal_orphan_loan_disbursements_and_collections.sql"), $daybookOrphanContent, $utf8WithBom)
+    Write-Host "  -> heal_orphan_loan_disbursements_and_collections.sql included in database package (UTF-8 BOM)." -ForegroundColor White
+}
+
 # 3.2 Copy Backend Files (excluding local connection strings & logs)
 $backendDest = Join-Path $patchFolder "backend"
 robocopy $backendTempPublish $backendDest /E /XD "logs" "wwwroot" "uploads" /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.json" | Out-Null
@@ -365,6 +373,7 @@ $instantFixSql = Join-Path $scriptDir "database\instant_fix_default_ibt_ledger_i
 $vouchersIbtSql = Join-Path $scriptDir "database\fix_vouchers_ibt_and_trial_balance.sql"
 $branchLedgerOpeningSql = Join-Path $scriptDir "database\create_branch_ledger_opening_balance_table.sql"
 $fdOrphanHealSql = Join-Path $scriptDir "database\heal_orphaned_closed_fd_accounts.sql"
+$daybookOrphanHealSql = Join-Path $scriptDir "database\heal_orphan_loan_disbursements_and_collections.sql"
 $backendSource = Join-Path $scriptDir "backend"
 $frontendSource = Join-Path $scriptDir "frontend"
 
@@ -796,6 +805,29 @@ for ($i = 0; $i -lt $totalTargets; $i++) {
             }
         }
 
+        # 2.7 Auto-Heal Orphan Loan Disbursements & Collections (Daybook Payment Balance Restoration)
+        if (Test-Path $daybookOrphanHealSql) {
+            Write-Host " [Step 2.7] Auto-Healing Daybook Orphan Loan Disbursements & Collections on $($target.TargetDatabase)..." -ForegroundColor Yellow
+            try {
+                $daybookOrphanOk = $false
+                if ($config.SqlUser -and $config.SqlPassword) {
+                    try {
+                        sqlcmd -S $config.SqlServerInstance -U $config.SqlUser -P $config.SqlPassword -d "$($target.TargetDatabase)" -i "`"$daybookOrphanHealSql`"" -f 65001 -b
+                        if ($LASTEXITCODE -eq 0) { $daybookOrphanOk = $true }
+                    } catch {}
+                }
+                if (-not $daybookOrphanOk) {
+                    sqlcmd -S $config.SqlServerInstance -d "$($target.TargetDatabase)" -E -i "`"$daybookOrphanHealSql`"" -f 65001 -b
+                    if ($LASTEXITCODE -eq 0) { $daybookOrphanOk = $true }
+                }
+                if ($daybookOrphanOk) {
+                    Write-Host "  -> Daybook Orphan Loan Disbursements & Collections Auto-Healed Successfully!" -ForegroundColor Green
+                }
+            } catch {
+                Write-Host "  -> Daybook Heal Note: $($_.Exception.Message)" -ForegroundColor DarkYellow
+            }
+        }
+
         # 3. Stop IIS AppPool & Release Process Locks
         if (![string]::IsNullOrWhiteSpace($target.IISAppPoolName)) {
             Write-Host " [Step 3] Stopping IIS AppPool ($($target.IISAppPoolName)) & releasing file locks..." -ForegroundColor Yellow
@@ -1205,12 +1237,12 @@ New-BatchScript -FilePath (Join-Path $patchFolder "Reverse_VPS_Patch.bat") -Titl
 
 # Generate Individual Sanstha Update and Reverse Batch Files
 # 1. Padawalwadi
-New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Padawalwadi.bat") -Title "SmartBanking ERP - 1-Click Update Padawalwadi" -ScriptFile "apply_patch.ps1" -TargetName "Padawalwadi" -Color "0B"
-New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Padawalwadi.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Padawalwadi" -ScriptFile "reverse_patch.ps1" -TargetName "Padawalwadi" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Padawalwadi.bat") -Title "SmartBanking ERP - 1-Click Update Padawalwadi" -ScriptFile "apply_patch.ps1" -TargetName "padval" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Padawalwadi.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Padawalwadi" -ScriptFile "reverse_patch.ps1" -TargetName "padval" -Color "0D"
 
 # 2. Bambavade
-New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Bambavade.bat") -Title "SmartBanking ERP - 1-Click Update Bambavade" -ScriptFile "apply_patch.ps1" -TargetName "Bambawade" -Color "0B"
-New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Bambavade.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Bambavade" -ScriptFile "reverse_patch.ps1" -TargetName "Bambawade" -Color "0D"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Bambavade.bat") -Title "SmartBanking ERP - 1-Click Update Bambavade" -ScriptFile "apply_patch.ps1" -TargetName "bambavade" -Color "0B"
+New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_REVERSE_PATCH_Bambavade.bat") -Title "SmartBanking ERP - 1-Click REVERSE PATCH Bambavade" -ScriptFile "reverse_patch.ps1" -TargetName "bambavade" -Color "0D"
 
 # 3. Yadravkar
 New-BatchScript -FilePath (Join-Path $patchFolder "1_Click_Update_Yadravkar.bat") -Title "SmartBanking ERP - 1-Click Update Yadravkar" -ScriptFile "apply_patch.ps1" -TargetName "Yadrav" -Color "0B"

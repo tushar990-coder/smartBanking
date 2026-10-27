@@ -446,12 +446,154 @@ namespace Bhisi.Api.Controllers
                 return BadRequest($"तारीख {voucher.VoucherDate:dd/MM/yyyy} साठी दिवस अखेर (EOD) पूर्ण झाली आहे. बंद झालेल्या तारखेचा व्हाऊचर डिलीट करता येणार नाही.");
             }
 
-            // 5. Clear FK references and reverse linked saving transactions if any
-            var loanCollections = await _context.LoanCollections.Where(lc => lc.VoucherID == id).ToListAsync();
-            foreach (var lc in loanCollections) lc.VoucherID = null;
+            // 5. Comprehensive Cascade Rollback for Linked Loan Collections & Disbursements
+            var loanCollections = await _context.LoanCollections
+                .Include(lc => lc.Fees)
+                .Where(lc => lc.VoucherID == id || lc.HomeBranchVoucherID == id)
+                .ToListAsync();
 
-            var loanDisbursements = await _context.LoanDisbursements.Where(ld => ld.VoucherID == id).ToListAsync();
-            foreach (var ld in loanDisbursements) ld.VoucherID = null;
+            foreach (var lc in loanCollections)
+            {
+                var loanAcc = await _context.LoanAccounts.FindAsync(lc.LoanAccountID);
+                if (loanAcc != null)
+                {
+                    loanAcc.PrincipalBalance += lc.PrincipalCollected;
+                    loanAcc.PurePrincipalBalance = Math.Min(loanAcc.PrincipalBalance, loanAcc.PurePrincipalBalance + lc.PrincipalCollected);
+                    if (lc.PenaltyInterestCollected > 0) loanAcc.OverdueInterestBalance += lc.PenaltyInterestCollected;
+                    if (lc.ReceivableInterestCollected > 0) loanAcc.InterestBalance += lc.ReceivableInterestCollected;
+                    if (loanAcc.Status == "Closed" && loanAcc.PrincipalBalance > 0) loanAcc.Status = "Active";
+                    _context.Entry(loanAcc).State = EntityState.Modified;
+                }
+
+                if (lc.Fees != null && lc.Fees.Any())
+                {
+                    _context.LoanCollectionFees.RemoveRange(lc.Fees);
+                }
+
+                _context.LoanCollections.Remove(lc);
+            }
+
+            var loanDisbursements = await _context.LoanDisbursements
+                .Include(ld => ld.Deductions)
+                .Where(ld => ld.VoucherID == id)
+                .ToListAsync();
+
+            foreach (var ld in loanDisbursements)
+            {
+                // Clean up linked ShareTransactions and reverse ShareAccount totals
+                var linkedShareTxns = await _context.ShareTransactions.Where(st => st.VoucherId == id).ToListAsync();
+                foreach (var st in linkedShareTxns)
+                {
+                    var shAcc = await _context.ShareAccounts.FindAsync(st.ShareAccountId);
+                    if (shAcc != null)
+                    {
+                        shAcc.TotalShareCount = Math.Max(0, shAcc.TotalShareCount - st.NumberOfShares);
+                        shAcc.TotalShareAmount = Math.Max(0, shAcc.TotalShareAmount - st.Amount);
+                        _context.Entry(shAcc).State = EntityState.Modified;
+                    }
+                    _context.ShareTransactions.Remove(st);
+                }
+
+                // 1. Remove linked Deductions
+                if (ld.Deductions != null && ld.Deductions.Any())
+                {
+                    _context.LoanDisbursementDeductions.RemoveRange(ld.Deductions);
+                }
+
+                // 2. Adjust LoanAccount principal balance and disbursement date
+                var loanAcc = await _context.LoanAccounts.FindAsync(ld.LoanAccountID);
+                if (loanAcc != null)
+                {
+                    loanAcc.PrincipalBalance = Math.Max(0, loanAcc.PrincipalBalance - ld.DisbursementAmount);
+
+                    var otherDisbursements = await _context.LoanDisbursements
+                        .Where(d => d.LoanAccountID == loanAcc.LoanAccountID && d.LoanDisbursementID != ld.LoanDisbursementID)
+                        .ToListAsync();
+
+                    if (!otherDisbursements.Any())
+                    {
+                        loanAcc.LoanDisbursementDate = null;
+
+                        var allPendingSchedules = await _context.LoanInstallmentSchedules
+                            .Where(s => s.LoanAccountID == loanAcc.LoanAccountID)
+                            .ToListAsync();
+                        if (allPendingSchedules.Any())
+                        {
+                            _context.LoanInstallmentSchedules.RemoveRange(allPendingSchedules);
+                        }
+
+                        if (loanAcc.LoanApplicationID.HasValue)
+                        {
+                            var app = await _context.LoanApplications.FindAsync(loanAcc.LoanApplicationID.Value);
+                            if (app != null)
+                            {
+                                app.LoanAccountNo = null;
+                                _context.Entry(app).State = EntityState.Modified;
+                            }
+                        }
+
+                        // Release Liens on Deposit Collaterals
+                        var linkedCollaterals = await _context.LoanDepositCollaterals
+                            .Where(c => c.LoanAccountID == loanAcc.LoanAccountID)
+                            .ToListAsync();
+
+                        foreach (var col in linkedCollaterals)
+                        {
+                            if (col.CollateralType == "FixedDeposit")
+                            {
+                                var fd = await _context.FdAccounts.FindAsync(col.DepositAccountID);
+                                if (fd != null && (fd.LienLoanAccountNo == loanAcc.LoanAccountNo || fd.IsLienMarked))
+                                {
+                                    fd.IsLienMarked = false;
+                                    fd.LienLoanAccountNo = null;
+                                    fd.LienAmount = 0;
+                                    _context.Entry(fd).State = EntityState.Modified;
+                                }
+                            }
+                            else if (col.CollateralType == "PigmyDeposit")
+                            {
+                                var pg = await _context.PigmyAccounts.FindAsync(col.DepositAccountID);
+                                if (pg != null && (pg.LienLoanAccountNo == loanAcc.LoanAccountNo || pg.IsLienMarked))
+                                {
+                                    pg.IsLienMarked = false;
+                                    pg.LienLoanAccountNo = null;
+                                    pg.LienAmount = 0;
+                                    _context.Entry(pg).State = EntityState.Modified;
+                                }
+                            }
+                            else if (col.CollateralType == "RecurringDeposit")
+                            {
+                                var rd = await _context.RdAccounts.FindAsync(col.DepositAccountID);
+                                if (rd != null && (rd.LienLoanAccountNo == loanAcc.LoanAccountNo || rd.IsLienMarked))
+                                {
+                                    rd.IsLienMarked = false;
+                                    rd.LienLoanAccountNo = null;
+                                    rd.LienAmount = 0;
+                                    _context.Entry(rd).State = EntityState.Modified;
+                                }
+                            }
+                            else if (col.CollateralType == "SavingDeposit")
+                            {
+                                var sav = await _context.SavingAccountMasters.FindAsync(col.DepositAccountID);
+                                if (sav != null)
+                                {
+                                    sav.LienAmount = 0;
+                                    sav.LienReason = null;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        loanAcc.LoanDisbursementDate = otherDisbursements.OrderByDescending(d => d.DisbursementDate).FirstOrDefault()?.DisbursementDate;
+                    }
+
+                    _context.Entry(loanAcc).State = EntityState.Modified;
+                }
+
+                // 3. Remove the LoanDisbursement record so it never becomes an orphan
+                _context.LoanDisbursements.Remove(ld);
+            }
 
             if (!string.IsNullOrEmpty(voucher.VoucherNo))
             {

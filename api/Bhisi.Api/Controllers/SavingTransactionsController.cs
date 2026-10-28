@@ -244,7 +244,7 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
                 
                 // === Auto Voucher Generation ===
-                int savingControlLedgerID = account.LedgerID;
+                int savingControlLedgerID = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, account);
                 
                 // Get customer info and BranchID for narration, branch routing and numbering
                 var customerInfo = await _context.SavingAccountMasters
@@ -270,7 +270,7 @@ namespace Bhisi.Api.Controllers
                 }
                 else if (txn.PaymentMode == "Transfer" && targetAccount != null)
                 {
-                    cashBankLedgerID = targetAccount.LedgerID;
+                    cashBankLedgerID = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, targetAccount);
                 }
                 else if (txn.PaymentMode == "Bank" && txn.BankLedgerID.HasValue && txn.BankLedgerID.Value > 0)
                 {

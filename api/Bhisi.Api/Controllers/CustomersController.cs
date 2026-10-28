@@ -138,6 +138,7 @@ namespace Bhisi.Api.Controllers
                     query = query.Where(c => c.FirstName.ToLower().Contains(s) || 
                                              c.LastName.ToLower().Contains(s) || 
                                              (c.CIFNo != null && c.CIFNo.ToLower().Contains(s)) ||
+                                             (c.LegacyCustomerNo != null && c.LegacyCustomerNo.ToLower().Contains(s)) ||
                                              (c.MobileNo != null && c.MobileNo.Contains(s)) ||
                                              (c.AadhaarNo != null && c.AadhaarNo.Contains(s)));
                 }

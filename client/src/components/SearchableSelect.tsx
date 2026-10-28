@@ -62,6 +62,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(0);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number; maxHeight: number }>({
     top: 0,
     left: 0,
@@ -72,6 +73,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const menuPortalRef = useRef<HTMLDivElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
 
   const inputId = id ? `${id}-input` : (name ? `${name}-input` : 'searchable-select-input');
   const inputName = name ? `${name}Search` : 'searchableSelectSearch';
@@ -203,6 +205,26 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
       });
   }, [safeOptions, normalizedSearch, rawSearch]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const selectedIdx = filteredOptions.findIndex((o: any) => String(o.value) === String(value));
+    setHighlightedIndex(selectedIdx >= 0 ? selectedIdx : 0);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (highlightedIndex >= filteredOptions.length) {
+      setHighlightedIndex(0);
+    }
+  }, [filteredOptions.length, highlightedIndex]);
+
+  useEffect(() => {
+    if (!isOpen || !listContainerRef.current) return;
+    const activeEl = listContainerRef.current.querySelector<HTMLElement>(`[data-option-idx="${highlightedIndex}"]`);
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: 'nearest' });
+    }
+  }, [isOpen, highlightedIndex]);
+
   const triggerChange = (selectedVal: string | number) => {
     if (!onChange) return;
     const syntheticEvent = {
@@ -272,22 +294,40 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 className="w-full border border-slate-300 pl-3 pr-7 py-1.5 text-xs rounded-lg focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 bg-white font-medium"
                 placeholder="खाते क्र. (ID), खाते नाव किंवा गट कोड (उदा. 1, 28.1)..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setHighlightedIndex(0);
+                }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'ArrowDown') {
                     e.preventDefault();
                     if (filteredOptions.length > 0) {
-                      triggerChange(filteredOptions[0].value);
+                      setHighlightedIndex(prev => (prev + 1 < filteredOptions.length ? prev + 1 : 0));
+                    }
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (filteredOptions.length > 0) {
+                      setHighlightedIndex(prev => (prev - 1 >= 0 ? prev - 1 : filteredOptions.length - 1));
+                    }
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (filteredOptions.length > 0) {
+                      const safeIdx = highlightedIndex >= 0 && highlightedIndex < filteredOptions.length ? highlightedIndex : 0;
+                      triggerChange(filteredOptions[safeIdx].value);
                       setIsOpen(false);
                       setSearchTerm('');
                       setTimeout(() => triggerRef.current?.focus(), 0);
                     }
                   } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
                     setIsOpen(false);
                     setTimeout(() => triggerRef.current?.focus(), 0);
                   } else if (e.key === 'Tab') {
-                    if (filteredOptions.length > 0 && searchTerm.trim() !== '') {
-                      triggerChange(filteredOptions[0].value);
+                    if (filteredOptions.length > 0 && (searchTerm.trim() !== '' || highlightedIndex > 0)) {
+                      const safeIdx = highlightedIndex >= 0 && highlightedIndex < filteredOptions.length ? highlightedIndex : 0;
+                      triggerChange(filteredOptions[safeIdx].value);
                     }
                     setIsOpen(false);
                     setSearchTerm('');
@@ -309,6 +349,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   onClick={(e) => {
                     e.stopPropagation();
                     setSearchTerm('');
+                    setHighlightedIndex(0);
                   }}
                   className="absolute right-2 text-slate-400 hover:text-slate-600 font-bold text-xs"
                 >
@@ -325,6 +366,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
           {/* Reset / Clear Option */}
           <div
             className="px-3 py-1.5 hover:bg-slate-100 cursor-pointer text-xs text-slate-500 border-b border-slate-100 font-medium shrink-0 flex items-center gap-1.5"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               triggerChange('');
               setIsOpen(false);
@@ -337,18 +379,24 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
           </div>
 
           {/* Scrollable Results List */}
-          <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
+          <div ref={listContainerRef} className="overflow-y-auto flex-1 divide-y divide-slate-100">
             {filteredOptions.map((option: any, idx: number) => {
               const isSelected = String(value) === String(option.value);
+              const isHighlighted = idx === highlightedIndex;
               return (
                 <div
                   key={`${option.value}-${idx}`}
+                  data-option-idx={idx}
                   title={option.label + (option.subLabel ? `\n${option.subLabel}` : '')}
-                  className={`px-3 py-2 hover:bg-indigo-50/80 cursor-pointer text-xs transition duration-100 ${
+                  className={`px-3 py-2 cursor-pointer text-xs transition duration-100 ${
                     isSelected
-                      ? 'bg-indigo-50 text-indigo-950 font-semibold'
-                      : 'text-slate-700'
+                      ? 'bg-indigo-100 text-indigo-950 font-semibold'
+                      : isHighlighted
+                        ? 'bg-indigo-50/90 text-slate-900 ring-1 ring-inset ring-indigo-200'
+                        : 'text-slate-700 hover:bg-indigo-50/80'
                   }`}
+                  onMouseEnter={() => setHighlightedIndex(idx)}
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     triggerChange(option.value);
                     setIsOpen(false);

@@ -571,35 +571,59 @@ namespace Bhisi.Api.Controllers
                     await _context.SaveChangesAsync();
 
                     // Auto-debit from Saving Account if PaymentMode == AutoDebit_Saving
-                    if (account.PaymentMode == "AutoDebit_Saving" && account.SavingAccountID.HasValue && account.SavingAccountID.Value > 0)
+                    int? autoDebitSavingLedgerId = null;
+                    int? autoDebitSavingCustomerId = null;
+                    if (account.PaymentMode == "AutoDebit_Saving")
                     {
-                        var sbAcc = await _context.SavingAccountMasters.FindAsync(account.SavingAccountID.Value);
-                        if (sbAcc != null && sbAcc.CurrentBalance >= account.InstallmentAmount)
+                        if (!account.SavingAccountID.HasValue || account.SavingAccountID.Value <= 0)
                         {
-                            sbAcc.CurrentBalance -= account.InstallmentAmount;
-                            _context.SavingTransactions.Add(new SavingTransaction
-                            {
-                                SavingAccountID = sbAcc.SavingAccountID,
-                                CustomerID = sbAcc.CustomerID,
-                                BranchID = account.BranchID > 0 ? account.BranchID : sbAcc.BranchID,
-                                TransactionDate = account.OpeningDate,
-                                TransactionType = "Withdrawal",
-                                PaymentMode = "Transfer",
-                                Amount = account.InstallmentAmount,
-                                BalanceAfterTxn = sbAcc.CurrentBalance,
-                                Narration = $"आरडी खाते हप्ता क्र. १ ऑटो-डेबिट: {account.AccountNo}",
-                                CreatedBy = account.CreatedBy
-                            });
+                            return BadRequest("बचत खात्यातून ऑटो-डेबिटसाठी वैध बचत खाते निवडणे बंधनकारक आहे.");
                         }
+
+                        var sbAcc = await _context.SavingAccountMasters.FindAsync(account.SavingAccountID.Value);
+                        if (sbAcc == null || sbAcc.Status == "Closed" || sbAcc.Status == "Frozen")
+                        {
+                            return BadRequest("ऑटो-डेबिटसाठी निवडलेले बचत खाते सापडले नाही किंवा सक्रिय नाही.");
+                        }
+
+                        if (sbAcc.CurrentBalance < account.InstallmentAmount)
+                        {
+                            return BadRequest($"बचत खात्यात अपुरी शिल्लक आहे! आवश्यक: ₹{account.InstallmentAmount:N2}, उपलब्ध: ₹{sbAcc.CurrentBalance:N2}");
+                        }
+
+                        int resolvedSbLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, sbAcc);
+                        if (resolvedSbLedgerId <= 0)
+                        {
+                            return BadRequest(Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(sbAcc.AccountNo));
+                        }
+
+                        autoDebitSavingLedgerId = resolvedSbLedgerId;
+                        autoDebitSavingCustomerId = sbAcc.CustomerID;
+
+                        sbAcc.CurrentBalance -= account.InstallmentAmount;
+                        _context.SavingTransactions.Add(new SavingTransaction
+                        {
+                            SavingAccountID = sbAcc.SavingAccountID,
+                            CustomerID = sbAcc.CustomerID,
+                            BranchID = account.BranchID > 0 ? account.BranchID : sbAcc.BranchID,
+                            TransactionDate = account.OpeningDate,
+                            TransactionType = "Withdrawal",
+                            PaymentMode = "Transfer",
+                            Amount = account.InstallmentAmount,
+                            BalanceAfterTxn = sbAcc.CurrentBalance,
+                            Narration = $"आरडी खाते हप्ता क्र. १ ऑटो-डेबिट: {account.AccountNo}",
+                            CreatedBy = account.CreatedBy
+                        });
                     }
 
                     // Accounting
                     var rdLiabilityLedger = await GetLiabilityLedgerAsync(scheme);
-                    int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "RD");
-                    var cashLedger = await _context.Ledgers.FindAsync(branchCashId);
+                    int openingDebitLedgerId = autoDebitSavingLedgerId
+                        ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "RD");
+                    var debitGlLedger = await _context.Ledgers.FindAsync(openingDebitLedgerId);
 
                     int? generatedVoucherId = null;
-                    if (rdLiabilityLedger != null && cashLedger != null)
+                    if (rdLiabilityLedger != null && debitGlLedger != null)
                     {
                         var (vStatus, appBy, appOn) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(_context, account.InstallmentAmount, account.CreatedBy);
                         var voucher = new Voucher
@@ -607,7 +631,7 @@ namespace Bhisi.Api.Controllers
                             BranchID = account.BranchID,
                             VoucherNo = $"JV-RD-OP-{account.AccountNo}",
                             VoucherDate = account.OpeningDate,
-                            VoucherType = "Receipt",
+                            VoucherType = autoDebitSavingLedgerId.HasValue ? "Journal" : "Receipt",
                             Status = vStatus,
                             ApprovedBy = appBy,
                             ApprovedOn = appOn,
@@ -622,8 +646,8 @@ namespace Bhisi.Api.Controllers
                         await _context.SaveChangesAsync();
                         generatedVoucherId = voucher.VoucherID;
 
-                        // Dr Cash / Saving, Cr RD Liability
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Dr", Amount = account.InstallmentAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        // Dr Cash / Saving Liability, Cr RD Liability
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = debitGlLedger.LedgerID, DrCr = "Dr", Amount = account.InstallmentAmount, CustomerID = autoDebitSavingCustomerId ?? account.CustomerID, MemberID = linkedMemberId });
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = rdLiabilityLedger.LedgerID, DrCr = "Cr", Amount = account.InstallmentAmount, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                         
                         await _context.SaveChangesAsync();
@@ -1136,20 +1160,13 @@ namespace Bhisi.Api.Controllers
                             return BadRequest($"बचत खात्यात अपुरी शिल्लक आहे! आवश्यक: ₹{totalReceived:N2}, उपलब्ध: ₹{availableSavingBal:N2}");
                         }
 
-                        int savingLedgerId = sourceSavingAcc.LedgerID > 0 ? sourceSavingAcc.LedgerID : (sourceSavingAcc.SavingScheme?.SavingLiabilityLedgerID ?? 0);
-                        if (savingLedgerId == 0)
+                        int savingLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, sourceSavingAcc);
+                        if (savingLedgerId <= 0)
                         {
-                            var savingLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
-                                l.LedgerName.Contains("बचत ठेवा") || 
-                                l.LedgerName.Contains("बचत ठेव") || 
-                                l.LedgerName.Contains("बचत खाते") || 
-                                l.LedgerName.Contains("Saving Deposit") || 
-                                l.LedgerName.Contains("Saving Account")
-                            ) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("बचत") || l.LedgerName.Contains("Saving"));
-                            if (savingLedger != null) savingLedgerId = savingLedger.LedgerID;
+                            return BadRequest(Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(sourceSavingAcc.AccountNo));
                         }
 
-                        debitLedgerId = savingLedgerId > 0 ? savingLedgerId : branchCashId;
+                        debitLedgerId = savingLedgerId;
                         modeNarration = $"बचत खात्यातून वर्ग ({sourceSavingAcc.AccountNo})";
                     }
                     else if (normalizedMode.Equals("Pigmy", StringComparison.OrdinalIgnoreCase) || normalizedMode.Equals("Pigmy Transfer", StringComparison.OrdinalIgnoreCase))
@@ -2576,7 +2593,7 @@ namespace Bhisi.Api.Controllers
                     paymentMode = "Bank";
                     bankLedgerId = debitDetail.LedgerID;
                 }
-                else if (debitDetail.Ledger.AccountType == "Savings" || debitDetail.Ledger.LedgerName.Contains("बचत") || debitDetail.Ledger.LedgerName.Contains("Savings"))
+                else if (await Helpers.SavingLedgerHelper.IsConfiguredSavingLiabilityLedgerAsync(_context, debitDetail.LedgerID))
                 {
                     paymentMode = "Transfer";
                     var sb = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.CustomerID == account.CustomerID);

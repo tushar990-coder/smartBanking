@@ -431,18 +431,15 @@ namespace Bhisi.Api.Controllers
             var branch = await _context.Branches.FindAsync(dto.BranchID);
             if (branch == null) return BadRequest("निवडलेली शाखा सापडली नाही.");
 
-            int targetLedgerId = dto.LedgerID;
             int? targetSchemeId = dto.SavingSchemeID ?? dto.SettingID;
-
-            if (targetLedgerId <= 0 && targetSchemeId.HasValue && targetSchemeId.Value > 0)
+            int targetLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(
+                _context,
+                explicitLedgerId: dto.LedgerID > 0 ? dto.LedgerID : null,
+                explicitSchemeId: targetSchemeId);
+            if (targetLedgerId <= 0)
             {
-                var scheme = await _context.SavingInterestSettings.FindAsync(targetSchemeId.Value);
-                if (scheme != null)
-                {
-                    targetLedgerId = scheme.SavingLiabilityLedgerID ?? scheme.LedgerID ?? 7;
-                }
+                return BadRequest(Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage());
             }
-            if (targetLedgerId <= 0) targetLedgerId = 7;
 
             // Auto-sync interest rate from active SavingInterestSetting if interest rate is not provided
             if (dto.InterestRate <= 0)
@@ -675,18 +672,15 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = errorMsg ?? "कृपया वैध खातेदाराची निवड करा." });
             }
 
-            int targetLedgerId = dto.LedgerID;
             int? targetSchemeId = dto.SavingSchemeID ?? dto.SettingID;
-
-            if (targetLedgerId <= 0 && targetSchemeId.HasValue && targetSchemeId.Value > 0)
+            int targetLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(
+                _context,
+                explicitLedgerId: dto.LedgerID > 0 ? dto.LedgerID : null,
+                explicitSchemeId: targetSchemeId);
+            if (targetLedgerId <= 0)
             {
-                var scheme = await _context.SavingInterestSettings.FindAsync(targetSchemeId.Value);
-                if (scheme != null)
-                {
-                    targetLedgerId = scheme.SavingLiabilityLedgerID ?? scheme.LedgerID ?? 7;
-                }
+                return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage() });
             }
-            if (targetLedgerId <= 0) targetLedgerId = 7;
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -905,16 +899,16 @@ namespace Bhisi.Api.Controllers
                     decimal oldBalance = existing.OpeningBalance;
                     decimal newBalance = dto.OpeningBalance;
                     int oldLedgerId = existing.LedgerID;
-                    int newLedgerId = dto.LedgerID > 0 ? dto.LedgerID : existing.LedgerID;
-                    if (newLedgerId <= 0 && dto.SettingID.HasValue && dto.SettingID.Value > 0)
+                    int newLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(
+                        _context,
+                        existing,
+                        explicitLedgerId: dto.LedgerID > 0 ? dto.LedgerID : null,
+                        explicitSchemeId: dto.SettingID);
+                    if (newLedgerId <= 0)
                     {
-                        var scheme = await _context.SavingInterestSettings.FindAsync(dto.SettingID.Value);
-                        if (scheme != null)
-                        {
-                            newLedgerId = scheme.SavingLiabilityLedgerID ?? scheme.LedgerID ?? 7;
-                        }
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(existing.AccountNo) });
                     }
-                    if (newLedgerId <= 0) newLedgerId = 7;
 
                     // Adjust General Ledgers
                     if (oldLedgerId == newLedgerId)

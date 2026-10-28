@@ -344,6 +344,7 @@ namespace Bhisi.Api.Controllers
                     }
 
                     // 2. IMPORT SAVING ACCOUNTS
+                    int defaultSavingLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context);
                     var cmdSav = new SqlCommand("SELECT Acc_id, Cust_id, Acc_no, S_id, Acc_open_date, Opn_bal FROM SAVING_ACCOUNT", conn);
                     using (var reader = await cmdSav.ExecuteReaderAsync())
                     {
@@ -359,9 +360,19 @@ namespace Bhisi.Api.Controllers
                             if (existing == null)
                             {
                                 var legacySId = reader["S_id"] != DBNull.Value ? Convert.ToInt32(reader["S_id"]) : (int?)null;
-                                int mappedLedgerId = 7; // Default
-                                if (legacySId.HasValue && ledgerMap.ContainsKey(legacySId.Value)) {
-                                    mappedLedgerId = ledgerMap[legacySId.Value];
+                                int? candidateLegacyLedgerId = (legacySId.HasValue && ledgerMap.ContainsKey(legacySId.Value))
+                                    ? ledgerMap[legacySId.Value]
+                                    : null;
+                                int mappedLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(
+                                    _context,
+                                    explicitLedgerId: candidateLegacyLedgerId);
+                                if (mappedLedgerId <= 0)
+                                {
+                                    mappedLedgerId = defaultSavingLedgerId;
+                                }
+                                if (mappedLedgerId <= 0)
+                                {
+                                    throw new InvalidOperationException(Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(accNo));
                                 }
                                 
                                 var openDate = reader["Acc_open_date"] != DBNull.Value ? Convert.ToDateTime(reader["Acc_open_date"]) : DateTime.Today;

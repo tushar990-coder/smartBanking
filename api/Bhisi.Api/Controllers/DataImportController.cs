@@ -274,10 +274,13 @@ namespace Bhisi.Api.Controllers
                 .OrderByDescending(s => s.EffectiveDate)
                 .FirstOrDefaultAsync();
 
-            int defaultLedgerId = ledgerId ?? activeSetting?.LedgerID ?? 0;
-            if (defaultLedgerId == 0)
+            int defaultLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(
+                _context,
+                explicitLedgerId: ledgerId,
+                explicitSchemeId: activeSetting?.SettingID);
+            if (defaultLedgerId <= 0)
             {
-                return BadRequest(new { message = "कृपया प्रथम 'बचत ठेव व्याजदर सेटिंग' मध्ये जाऊन लेजर मॅप करा किंवा ड्रॉपडाऊन मधून लेजर निवडा." });
+                return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage() });
             }
 
             var errors = new List<string>();

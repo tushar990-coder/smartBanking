@@ -112,19 +112,23 @@ namespace Bhisi.Api.Controllers
                 .OrderByDescending(s => s.EffectiveDate)
                 .FirstOrDefaultAsync();
 
-            int expLedgerId = currentSetting?.InterestExpenseLedgerID ?? currentSetting?.LedgerID ?? 0;
-            int liabLedgerId = currentSetting?.SavingLiabilityLedgerID ?? 0;
+            int expLedgerId = currentSetting?.InterestExpenseLedgerID ?? 0;
+            int liabLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(
+                _context,
+                explicitSchemeId: currentSetting?.SettingID);
+
+            if (expLedgerId <= 0)
+            {
+                var expMapping = await _context.SavingVoucherMappings
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(m => m.OperationType == "InterestExpense");
+                expLedgerId = expMapping?.LedgerID ?? 0;
+            }
 
             if (expLedgerId <= 0)
             {
                 var foundExp = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("Interest on Savings") || l.LedgerName.Contains("बचत व्या"));
                 expLedgerId = foundExp?.LedgerID ?? 0;
-            }
-
-            if (liabLedgerId <= 0)
-            {
-                var foundLiab = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("Saving") || l.LedgerName.Contains("बचत ठेव"));
-                liabLedgerId = foundLiab?.LedgerID ?? 0;
             }
 
             if (expLedgerId <= 0 || liabLedgerId <= 0)

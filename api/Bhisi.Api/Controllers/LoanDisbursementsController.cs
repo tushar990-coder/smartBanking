@@ -100,7 +100,7 @@ namespace Bhisi.Api.Controllers
                 disbursement.DisbursementDate = cleanDate;
 
                 // Ensure all ledgers are loaded and validated
-                var ledgers = await _context.Ledgers.ToListAsync();
+                var ledgers = await _context.Ledgers.Include(l => l.AccountGroup).ToListAsync();
                 var validLedgerDict = ledgers.ToDictionary(l => l.LedgerID);
                 var shareCapitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context);
 
@@ -244,10 +244,54 @@ namespace Bhisi.Api.Controllers
                     return BadRequest($"वाटप रक्कम (₹{disbursement.DisbursementAmount:N2}) ही शिल्लक मंजूर मर्यादेपेक्षा (₹{pendingLimit:N2}) जास्त असू शकत नाही! एकूण मंजूर मर्यादा: ₹{sanctionedLimit:N2}, यापूर्वीचे वाटप: ₹{alreadyDisbursed:N2}.");
                 }
 
+                // Fail-Fast: Validate Saving Transfer target account (Same-Branch, Active, Liability Ledger) or Bank Ledger upfront
+                bool isSavingTransfer = Helpers.LoanDisbursementReversalHelper.IsSavingTransferMode(disbursement.PaymentMode);
+                Helpers.SavingTransferTargetResult? savingTransferTarget = null;
+                if (isSavingTransfer)
+                {
+                    try
+                    {
+                        savingTransferTarget = await Helpers.LoanDisbursementReversalHelper.ResolveSavingTransferTargetAsync(
+                            _context,
+                            disbursement.TransferToSavingAccountNo,
+                            targetBranchId,
+                            validLedgerDict,
+                            ledgers);
+                        disbursement.TransferToSavingAccountNo = savingTransferTarget.SavingAccount.AccountNo;
+                    }
+                    catch (InvalidOperationException valEx)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = valEx.Message });
+                    }
+                }
+                else if (disbursement.PaymentMode == "Bank" || disbursement.PaymentMode == "Cheque" || disbursement.PaymentMode == "RTGS")
+                {
+                    if (!disbursement.BankAccountLedgerID.HasValue || disbursement.BankAccountLedgerID.Value <= 0 || !validLedgerDict.ContainsKey(disbursement.BankAccountLedgerID.Value))
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "बँक / चेक पेमेंटसाठी कृपया वैध बँक खाते (Bank Ledger) निवडा." });
+                    }
+                }
+
                 if (existingLoanAcc != null)
                 {
                     // Reuse existing LoanAccount for subsequent tranche
                     disbursement.LoanAccountID = existingLoanAcc.LoanAccountID;
+                    if (app != null && !existingLoanAcc.LoanApplicationID.HasValue)
+                    {
+                        existingLoanAcc.LoanApplicationID = app.LoanApplicationID;
+                    }
+                    if (app != null)
+                    {
+                        var unlinkedGold = await _context.GoldLoanDetails
+                            .Where(g => g.LoanApplicationID == app.LoanApplicationID && g.LoanAccountID == null)
+                            .ToListAsync();
+                        foreach (var gold in unlinkedGold)
+                        {
+                            gold.LoanAccountID = existingLoanAcc.LoanAccountID;
+                        }
+                    }
                     existingLoanAcc.PrincipalBalance += disbursement.DisbursementAmount;
                     existingLoanAcc.OpeningDate = cleanDate; // Update last active disbursement date
                     existingLoanAcc.LoanDisbursementDate = cleanDate;
@@ -292,6 +336,8 @@ namespace Bhisi.Api.Controllers
 
                     if (app != null)
                     {
+                        disbursement.LoanAccount.LoanApplicationID = app.LoanApplicationID;
+
                         if (!disbursement.LoanAccount.CustomerID.HasValue && app.CustomerID.HasValue)
                             disbursement.LoanAccount.CustomerID = app.CustomerID;
 
@@ -496,6 +542,16 @@ namespace Bhisi.Api.Controllers
                                 }
                             }
                         }
+
+                        // Link Pledged Gold Loan Details to the newly created Loan Account
+                        var pledgedGold = await _context.GoldLoanDetails
+                            .Where(g => g.LoanApplicationID == app.LoanApplicationID)
+                            .ToListAsync();
+
+                        foreach (var gold in pledgedGold)
+                        {
+                            gold.LoanAccountID = loanAcc.LoanAccountID;
+                        }
                     }
                 }
 
@@ -512,11 +568,46 @@ namespace Bhisi.Api.Controllers
                 var loanAccFetched = await _context.LoanAccounts
                     .Include(l => l.Customer)
                     .Include(l => l.Member)
+                        .ThenInclude(m => m!.Customer)
                     .FirstOrDefaultAsync(l => l.LoanAccountID == disbursement.LoanAccountID);
                 var loanRate = await _context.LoanRates.FindAsync(loanAccFetched?.LoanRateID ?? 0);
                 if (loanAccFetched != null && loanAccFetched.BranchID > 0)
                 {
                     targetBranchId = loanAccFetched.BranchID;
+                }
+
+                // CustomerID-First Party Resolution for Borrower
+                int? borrowerCustomerId = loanAccFetched?.CustomerID
+                    ?? loanAccFetched?.Customer?.CustomerID
+                    ?? app?.CustomerID
+                    ?? loanAccFetched?.Member?.CustomerID;
+                if (borrowerCustomerId.HasValue && borrowerCustomerId.Value <= 0)
+                {
+                    borrowerCustomerId = null;
+                }
+                if (loanAccFetched != null && (!loanAccFetched.CustomerID.HasValue || loanAccFetched.CustomerID.Value <= 0) && borrowerCustomerId.HasValue)
+                {
+                    loanAccFetched.CustomerID = borrowerCustomerId;
+                    _context.Entry(loanAccFetched).State = EntityState.Modified;
+                }
+
+                int? borrowerMemberId = loanAccFetched?.MemberID;
+                if (borrowerMemberId.HasValue && borrowerMemberId.Value <= 0)
+                {
+                    borrowerMemberId = null;
+                }
+                if (!borrowerMemberId.HasValue && borrowerCustomerId.HasValue)
+                {
+                    borrowerMemberId = await _context.Members
+                        .AsNoTracking()
+                        .Where(m => m.CustomerID == borrowerCustomerId.Value)
+                        .Select(m => (int?)m.MemberID)
+                        .FirstOrDefaultAsync();
+                    if (borrowerMemberId.HasValue && loanAccFetched != null)
+                    {
+                        loanAccFetched.MemberID = borrowerMemberId;
+                        _context.Entry(loanAccFetched).State = EntityState.Modified;
+                    }
                 }
 
                 int loanLedgerId = loanRate?.LoanLedgerID ?? 0;
@@ -527,25 +618,15 @@ namespace Bhisi.Api.Controllers
                 }
 
                 int cashLedgerId = 0;
-                if (disbursement.PaymentMode == "Saving Transfer" || disbursement.PaymentMode == "Saving") {
-                    var savingLedger = ledgers.FirstOrDefault(l => 
-                        (l.LedgerName ?? "").Contains("बचत ठेवा") || 
-                        (l.LedgerName ?? "").Contains("बचत ठेव") || 
-                        (l.LedgerName ?? "").Contains("बचत खाते") || 
-                        (l.LedgerName ?? "").Contains("Saving Deposit") || 
-                        (l.LedgerName ?? "").Contains("Saving Account")
-                    ) ?? ledgers.FirstOrDefault(l => (l.LedgerName ?? "").Contains("बचत") || (l.LedgerName ?? "").Contains("Saving"));
-                    if (savingLedger != null) cashLedgerId = savingLedger.LedgerID;
+                if (isSavingTransfer && savingTransferTarget != null)
+                {
+                    cashLedgerId = savingTransferTarget.SavingLiabilityLedgerId;
                 }
                 else if (disbursement.PaymentMode == "Bank" || disbursement.PaymentMode == "Cheque" || disbursement.PaymentMode == "RTGS")
                 {
-                    if (disbursement.BankAccountLedgerID.HasValue && disbursement.BankAccountLedgerID.Value > 0 && validLedgerDict.ContainsKey(disbursement.BankAccountLedgerID.Value))
-                    {
-                        cashLedgerId = disbursement.BankAccountLedgerID.Value;
-                    }
+                    cashLedgerId = disbursement.BankAccountLedgerID!.Value;
                 }
-
-                if (cashLedgerId == 0 || !validLedgerDict.ContainsKey(cashLedgerId))
+                else
                 {
                     cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranchId, "LOAN");
                 }
@@ -575,15 +656,26 @@ namespace Bhisi.Api.Controllers
 
                 int count = await _context.Vouchers.CountAsync(v => v.BranchID == targetBranchId && v.VoucherType == voucherType) + 1;
                 string voucherNo = $"{branchCode}-{typeCode}-{fy}-{count:D5}";
+                while (await _context.Vouchers.AnyAsync(v => v.VoucherNo == voucherNo))
+                {
+                    count++;
+                    voucherNo = $"{branchCode}-{typeCode}-{fy}-{count:D5}";
+                }
 
-                var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
-                bool autoPost = sanstha?.AutoPostVouchers ?? true;
-                decimal autoPostLimit = sanstha?.AutoPostVoucherLimit ?? 50000m;
-                string vStatus = (autoPost && disbursement.DisbursementAmount <= autoPostLimit) ? "Approved" : "Pending";
+                var (vStatus, approvedBy, approvedOn) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(
+                    _context,
+                    disbursement.DisbursementAmount,
+                    postUserId > 0 ? postUserId : 1);
 
-                string borrowerName = loanAccFetched?.Customer != null 
-                    ? $"{loanAccFetched.Customer.FirstName} {loanAccFetched.Customer.LastName}".Trim() 
-                    : (loanAccFetched?.Member?.Customer != null ? $"{loanAccFetched.Member.Customer.FirstName} {loanAccFetched.Member.Customer.LastName}".Trim() : "N/A");
+                string borrowerName = loanAccFetched?.Customer != null
+                    ? string.Join(" ", new[] { loanAccFetched.Customer.FirstName, loanAccFetched.Customer.MiddleName, loanAccFetched.Customer.LastName }.Where(p => !string.IsNullOrWhiteSpace(p))).Trim()
+                    : (loanAccFetched?.Member?.Customer != null
+                        ? string.Join(" ", new[] { loanAccFetched.Member.Customer.FirstName, loanAccFetched.Member.Customer.MiddleName, loanAccFetched.Member.Customer.LastName }.Where(p => !string.IsNullOrWhiteSpace(p))).Trim()
+                        : "N/A");
+
+                string voucherNarration = (isSavingTransfer && savingTransferTarget != null)
+                    ? $"Loan Disbursed to {borrowerName} (Loan A/C: {loanAccFetched?.LoanAccountNo}) | Saving Transfer to A/C: {savingTransferTarget.SavingAccount.AccountNo} ({savingTransferTarget.SavingHolderFullName})"
+                    : $"Loan Disbursed to {borrowerName} (Loan A/C: {loanAccFetched?.LoanAccountNo})";
 
                 var voucher = new Voucher
                 {
@@ -591,38 +683,69 @@ namespace Bhisi.Api.Controllers
                     VoucherNo = voucherNo,
                     VoucherDate = disbursement.DisbursementDate,
                     VoucherType = voucherType,
-                    Narration = $"Loan Disbursed to {borrowerName} (A/C: {loanAccFetched?.LoanAccountNo})",
+                    Narration = voucherNarration,
                     TotalAmount = disbursement.DisbursementAmount,
+                    CreatedBy = postUserId > 0 ? postUserId : 1,
+                    CreatedOn = DateTime.Now,
                     Status = vStatus,
-                    ApprovedBy = vStatus == "Approved" ? GetCurrentUserContext().userId : null,
-                    ApprovedOn = vStatus == "Approved" ? DateTime.Now : null
+                    ApprovedBy = approvedBy,
+                    ApprovedOn = approvedOn
                 };
                 
                 _context.Vouchers.Add(voucher);
                 await _context.SaveChangesAsync();
 
-                // Add Voucher Details
-                int? memberId = loanAccFetched?.MemberID;
+                // Add Voucher Details (Strictly CustomerID-First per Line Item)
+                int? memberId = borrowerMemberId;
 
                 if (loanLedgerId > 0 && disbursement.DisbursementAmount > 0)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = loanLedgerId, DrCr = "Dr", Amount = disbursement.DisbursementAmount, MemberID = memberId });
+                {
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = voucher.VoucherID,
+                        LedgerID = loanLedgerId,
+                        DrCr = "Dr",
+                        Amount = disbursement.DisbursementAmount,
+                        CustomerID = borrowerCustomerId,
+                        MemberID = borrowerMemberId
+                    });
+                }
 
                 if (cashLedgerId > 0 && disbursement.NetAmountPaid > 0)
-                    _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedgerId, DrCr = "Cr", Amount = disbursement.NetAmountPaid, MemberID = memberId });
+                {
+                    int? payoutCustomerId = (isSavingTransfer && savingTransferTarget != null)
+                        ? savingTransferTarget.SavingHolderCustomerId
+                        : borrowerCustomerId;
+                    int? payoutMemberId = (isSavingTransfer && savingTransferTarget != null)
+                        ? savingTransferTarget.SavingHolderMemberId
+                        : borrowerMemberId;
+
+                    _context.VoucherDetails.Add(new VoucherDetail
+                    {
+                        VoucherID = voucher.VoucherID,
+                        LedgerID = cashLedgerId,
+                        DrCr = "Cr",
+                        Amount = disbursement.NetAmountPaid,
+                        CustomerID = payoutCustomerId,
+                        MemberID = payoutMemberId
+                    });
+                }
 
                 if (disbursement.Deductions != null && disbursement.Deductions.Any())
                 {
-                    foreach(var ded in disbursement.Deductions)
+                    foreach (var ded in disbursement.Deductions)
                     {
                         if (ded.Amount > 0)
                         {
                             int targetDedLedgerId = validLedgerDict.ContainsKey(ded.LedgerID) ? ded.LedgerID : shareCapitalLedger.LedgerID;
-                            _context.VoucherDetails.Add(new VoucherDetail { 
-                                VoucherID = voucher.VoucherID, 
-                                LedgerID = targetDedLedgerId, 
-                                DrCr = "Cr", 
-                                Amount = ded.Amount, 
-                                MemberID = memberId 
+                            _context.VoucherDetails.Add(new VoucherDetail
+                            {
+                                VoucherID = voucher.VoucherID,
+                                LedgerID = targetDedLedgerId,
+                                DrCr = "Cr",
+                                Amount = ded.Amount,
+                                CustomerID = borrowerCustomerId,
+                                MemberID = borrowerMemberId
                             });
                         }
                     }
@@ -717,9 +840,11 @@ namespace Bhisi.Api.Controllers
                             _context.Entry(targetMember).State = EntityState.Modified;
                         }
 
-                        // 3. Ensure voucher details reflect newly created or updated MemberID
+                        // 3. Ensure borrower's voucher details reflect newly created MemberID (never overwrite third-party Saving Transfer holder!)
                         var detailsToUpdate = await _context.VoucherDetails
-                            .Where(vd => vd.VoucherID == voucher.VoucherID && vd.MemberID == null)
+                            .Where(vd => vd.VoucherID == voucher.VoucherID &&
+                                         vd.MemberID == null &&
+                                         (!isSavingTransfer || vd.CustomerID == borrowerCustomerId))
                             .ToListAsync();
                         if (detailsToUpdate.Any())
                         {
@@ -757,30 +882,31 @@ namespace Bhisi.Api.Controllers
                             int nextFromShareNo = maxToShareNo + 1;
                             int nextToShareNo = nextFromShareNo + numShares - 1;
                             string certNo = $"CERT-{cleanDate.Year}-{nextCertCount:D5}";
+                            int certCustomerId = borrowerCustomerId ?? targetMember?.CustomerID ?? memberId.Value;
 
                             var cert = new ShareCertificate
                             {
                                 ShareAccountId = shAcc.ShareAccountId,
-                                CustomerID = targetMember?.CustomerID ?? memberId.Value,
+                                CustomerID = certCustomerId,
                                 CertificateNo = certNo,
                                 FromShareNo = nextFromShareNo,
                                 ToShareNo = nextToShareNo,
                                 NumberOfShares = numShares,
                                 FaceValue = 100m,
                                 IssueDate = cleanDate,
-                                Status = "Issued"
+                                Status = vStatus == "Approved" ? "Active" : "PendingApproval"
                             };
                             _context.ShareCertificates.Add(cert);
 
                             var shareTx = new ShareTransaction
                             {
                                 ShareAccountId = shAcc.ShareAccountId,
-                                CustomerID = targetMember?.CustomerID ?? memberId.Value,
+                                CustomerID = certCustomerId,
                                 TransactionDate = cleanDate,
                                 TransactionType = "Allotment",
                                 NumberOfShares = numShares,
                                 Amount = numShares * 100m,
-                                Narration = $"Loan Disbursement Share Deduction",
+                                Narration = $"Loan Disbursement Share Deduction (Cert: {certNo})",
                                 VoucherId = voucher.VoucherID
                             };
                             _context.ShareTransactions.Add(shareTx);
@@ -788,41 +914,17 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
-                // If PaymentMode is Saving Transfer, auto-credit member's Saving Account
-                if (disbursement.PaymentMode == "Saving Transfer" || disbursement.PaymentMode == "Saving")
+                // Maker-Checker Rule: Credit Saving Account ONLY if Voucher is auto-approved (Status == "Approved").
+                // When Pending, Saving credit is deferred until Checker passes the voucher in VoucherPostingController.
+                if (isSavingTransfer && vStatus == "Approved" && savingTransferTarget != null)
                 {
-                    SavingAccountMaster? savingAccount = null;
-                    if (!string.IsNullOrEmpty(disbursement.TransferToSavingAccountNo))
-                    {
-                        savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.AccountNo == disbursement.TransferToSavingAccountNo);
-                    }
-                    int? custId = loanAccFetched?.CustomerID ?? loanAccFetched?.Customer?.CustomerID ?? loanAccFetched?.Member?.CustomerID;
-                    if (savingAccount == null && custId != null)
-                    {
-                        savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.CustomerID == custId.Value && s.Status == "Active");
-                    }
-
-                    if (savingAccount != null && disbursement.NetAmountPaid > 0)
-                    {
-                        savingAccount.CurrentBalance += disbursement.NetAmountPaid;
-                        _context.Entry(savingAccount).State = EntityState.Modified;
-
-                        var savingTxn = new SavingTransaction
-                        {
-                            SavingAccountID = savingAccount.SavingAccountID,
-                            CustomerID = savingAccount.CustomerID,
-                            BranchID = disbursement.BranchID > 0 ? disbursement.BranchID : savingAccount.BranchID,
-                            TransactionDate = disbursement.DisbursementDate,
-                            TransactionType = "Deposit",
-                            Amount = disbursement.NetAmountPaid,
-                            BalanceAfterTxn = savingAccount.CurrentBalance,
-                            PaymentMode = "Transfer",
-                            VoucherNo = voucher.VoucherNo,
-                            Narration = $"Loan Disbursement Credit from Loan A/C: {loanAccFetched?.LoanAccountNo}"
-                        };
-                        _context.SavingTransactions.Add(savingTxn);
-                        await _context.SaveChangesAsync();
-                    }
+                    await Helpers.LoanDisbursementReversalHelper.ApplyApprovedSavingTransferCreditAsync(
+                        _context,
+                        disbursement,
+                        voucher,
+                        savingTransferTarget.SavingAccount,
+                        loanAccFetched?.LoanAccountNo,
+                        borrowerName);
                 }
 
                 disbursement.VoucherID = voucher.VoucherID;
@@ -858,7 +960,14 @@ namespace Bhisi.Api.Controllers
 
                 await transaction.CommitAsync();
 
-                return Ok(new { message = "Success", id = disbursement.LoanDisbursementID });
+                return Ok(new
+                {
+                    message = "Success",
+                    id = disbursement.LoanDisbursementID,
+                    voucherId = voucher.VoucherID,
+                    voucherNo = voucher.VoucherNo,
+                    voucherStatus = vStatus
+                });
             }
             catch (Exception ex)
             {
@@ -987,7 +1096,7 @@ namespace Bhisi.Api.Controllers
                 existingDisbursement.DisbursementAmount = disbursement.DisbursementAmount;
                 
                 // Categorize deductions into scalar properties
-                var ledgers = await _context.Ledgers.ToListAsync();
+                var ledgers = await _context.Ledgers.Include(l => l.AccountGroup).ToListAsync();
                 var validLedgerDict = ledgers.ToDictionary(l => l.LedgerID);
                 var shareCapitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context);
 
@@ -1042,64 +1151,132 @@ namespace Bhisi.Api.Controllers
                 existingDisbursement.TransferToSavingAccountNo = disbursement.TransferToSavingAccountNo;
                 existingDisbursement.Remarks = disbursement.Remarks;
 
+                var loanAccFetched = await _context.LoanAccounts
+                    .Include(l => l.Customer)
+                    .Include(l => l.Member)
+                        .ThenInclude(m => m!.Customer)
+                    .FirstOrDefaultAsync(l => l.LoanAccountID == existingDisbursement.LoanAccountID);
+
+                int targetBranchId = (loanAccFetched != null && loanAccFetched.BranchID > 0)
+                    ? loanAccFetched.BranchID
+                    : currentDisbBranchId;
+
+                bool isSavingTransfer = Helpers.LoanDisbursementReversalHelper.IsSavingTransferMode(disbursement.PaymentMode);
+                Helpers.SavingTransferTargetResult? savingTransferTarget = null;
+                if (isSavingTransfer)
+                {
+                    savingTransferTarget = await Helpers.LoanDisbursementReversalHelper.ResolveSavingTransferTargetAsync(
+                        _context,
+                        disbursement.TransferToSavingAccountNo,
+                        targetBranchId,
+                        validLedgerDict,
+                        ledgers);
+                    existingDisbursement.TransferToSavingAccountNo = savingTransferTarget.SavingAccount.AccountNo;
+                }
+                else if (disbursement.PaymentMode == "Bank" || disbursement.PaymentMode == "Cheque" || disbursement.PaymentMode == "RTGS")
+                {
+                    if (!disbursement.BankAccountLedgerID.HasValue || disbursement.BankAccountLedgerID.Value <= 0 || !validLedgerDict.ContainsKey(disbursement.BankAccountLedgerID.Value))
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "बँक / चेक पेमेंटसाठी कृपया वैध बँक खाते (Bank Ledger) निवडा." });
+                    }
+                }
+
+                if (loanAccFetched != null)
+                {
+                    loanAccFetched.OpeningDate = cleanDate;
+                    loanAccFetched.LoanDisbursementDate = cleanDate;
+                    loanAccFetched.PrincipalBalance += amountDifference;
+                    loanAccFetched.SanctionedAmount = sanctionedLimit;
+
+                    if (disbursement.LoanAccount != null && disbursement.LoanAccount.InterestRate > 0)
+                    {
+                        loanAccFetched.InterestRate = disbursement.LoanAccount.InterestRate;
+                        loanAccFetched.DurationMonths = disbursement.LoanAccount.DurationMonths;
+                        loanAccFetched.InstallmentAmount = disbursement.LoanAccount.InstallmentAmount;
+                        loanAccFetched.NoOfInstallments = disbursement.LoanAccount.NoOfInstallments;
+                        loanAccFetched.InstallmentFrequency = disbursement.LoanAccount.InstallmentFrequency;
+                        loanAccFetched.FirstInstallmentDate = disbursement.LoanAccount.FirstInstallmentDate;
+                        loanAccFetched.MaturityDate = disbursement.LoanAccount.MaturityDate;
+                    }
+                }
+
+                // CustomerID-First Party Resolution for Borrower
+                int? borrowerCustomerId = loanAccFetched?.CustomerID
+                    ?? loanAccFetched?.Customer?.CustomerID
+                    ?? loanAccFetched?.Member?.CustomerID;
+                if (borrowerCustomerId.HasValue && borrowerCustomerId.Value <= 0)
+                {
+                    borrowerCustomerId = null;
+                }
+
+                int? borrowerMemberId = loanAccFetched?.MemberID;
+                if (borrowerMemberId.HasValue && borrowerMemberId.Value <= 0)
+                {
+                    borrowerMemberId = null;
+                }
+                if (!borrowerMemberId.HasValue && borrowerCustomerId.HasValue)
+                {
+                    borrowerMemberId = await _context.Members
+                        .AsNoTracking()
+                        .Where(m => m.CustomerID == borrowerCustomerId.Value)
+                        .Select(m => (int?)m.MemberID)
+                        .FirstOrDefaultAsync();
+                }
+
+                string borrowerName = loanAccFetched?.Customer != null
+                    ? string.Join(" ", new[] { loanAccFetched.Customer.FirstName, loanAccFetched.Customer.MiddleName, loanAccFetched.Customer.LastName }.Where(p => !string.IsNullOrWhiteSpace(p))).Trim()
+                    : (loanAccFetched?.Member?.Customer != null
+                        ? string.Join(" ", new[] { loanAccFetched.Member.Customer.FirstName, loanAccFetched.Member.Customer.MiddleName, loanAccFetched.Member.Customer.LastName }.Where(p => !string.IsNullOrWhiteSpace(p))).Trim()
+                        : "N/A");
+
                 // Update Voucher
                 if (existingDisbursement.Voucher != null)
                 {
+                    var (vStatus, approvedBy, approvedOn) = await Helpers.ApprovalPolicyHelper.DetermineVoucherStatusAsync(
+                        _context,
+                        disbursement.DisbursementAmount,
+                        putUserId > 0 ? putUserId : 1);
+
                     existingDisbursement.Voucher.VoucherDate = cleanDate;
                     existingDisbursement.Voucher.TotalAmount = disbursement.DisbursementAmount;
-                    existingDisbursement.Voucher.Status = "Approved";
-                    
+                    existingDisbursement.Voucher.Status = vStatus;
+                    if (vStatus == "Pending")
+                    {
+                        existingDisbursement.Voucher.ScrollNo = null;
+                        existingDisbursement.Voucher.ApprovedBy = null;
+                        existingDisbursement.Voucher.ApprovedOn = null;
+                    }
+                    else
+                    {
+                        existingDisbursement.Voucher.ApprovedBy ??= approvedBy;
+                        existingDisbursement.Voucher.ApprovedOn ??= approvedOn;
+                    }
+
                     var voucherType = disbursement.PaymentMode == "Cash" ? "Payment" : "Journal";
                     existingDisbursement.Voucher.VoucherType = voucherType;
-                    
-                    var loanAccFetched = await _context.LoanAccounts.Include(l => l.Member).FirstOrDefaultAsync(l => l.LoanAccountID == existingDisbursement.LoanAccountID);
-                    if (loanAccFetched != null)
-                    {
-                        loanAccFetched.OpeningDate = disbursement.DisbursementDate;
-                        loanAccFetched.LoanDisbursementDate = disbursement.DisbursementDate;
-                        loanAccFetched.PrincipalBalance += amountDifference;
-                        loanAccFetched.SanctionedAmount = disbursement.SanctionedAmount;
-                        
-                        if (disbursement.LoanAccount != null && disbursement.LoanAccount.InterestRate > 0)
-                        {
-                            loanAccFetched.InterestRate = disbursement.LoanAccount.InterestRate;
-                            loanAccFetched.DurationMonths = disbursement.LoanAccount.DurationMonths;
-                            loanAccFetched.InstallmentAmount = disbursement.LoanAccount.InstallmentAmount;
-                            loanAccFetched.NoOfInstallments = disbursement.LoanAccount.NoOfInstallments;
-                            loanAccFetched.InstallmentFrequency = disbursement.LoanAccount.InstallmentFrequency;
-                            loanAccFetched.FirstInstallmentDate = disbursement.LoanAccount.FirstInstallmentDate;
-                            loanAccFetched.MaturityDate = disbursement.LoanAccount.MaturityDate;
-                        }
-                    }
+                    existingDisbursement.Voucher.Narration = (isSavingTransfer && savingTransferTarget != null)
+                        ? $"Loan Disbursed to {borrowerName} (Loan A/C: {loanAccFetched?.LoanAccountNo}) | Saving Transfer to A/C: {savingTransferTarget.SavingAccount.AccountNo} ({savingTransferTarget.SavingHolderFullName})"
+                        : $"Loan Disbursed to {borrowerName} (Loan A/C: {loanAccFetched?.LoanAccountNo})";
+
                     var loanRate = await _context.LoanRates.FindAsync(loanAccFetched?.LoanRateID ?? 0);
-                    int targetBranchId = loanAccFetched?.BranchID ?? 1;
-                    
                     int loanLedgerId = loanRate?.LoanLedgerID ?? 0;
                     if (loanLedgerId == 0 || !validLedgerDict.ContainsKey(loanLedgerId))
                     {
+                        await transaction.RollbackAsync();
                         return BadRequest(new { message = $"कर्ज योजना '{loanRate?.LoanType ?? "अज्ञात"}' ला वैध कर्ज मुद्दल खाते (Loan Ledger) जोडलेले नाही. कृपया कर्ज दर पत्रक (Loan Rate Master) तपासा." });
                     }
-                    
+
                     int cashLedgerId = 0;
-                    if (disbursement.PaymentMode == "Saving Transfer" || disbursement.PaymentMode == "Saving") {
-                        var savingLedger = ledgers.FirstOrDefault(l => 
-                            (l.LedgerName ?? "").Contains("बचत ठेवा") || 
-                            (l.LedgerName ?? "").Contains("बचत ठेव") || 
-                            (l.LedgerName ?? "").Contains("बचत खाते") || 
-                            (l.LedgerName ?? "").Contains("Saving Deposit") || 
-                            (l.LedgerName ?? "").Contains("Saving Account")
-                        ) ?? ledgers.FirstOrDefault(l => (l.LedgerName ?? "").Contains("बचत") || (l.LedgerName ?? "").Contains("Saving"));
-                        if (savingLedger != null) cashLedgerId = savingLedger.LedgerID;
+                    if (isSavingTransfer && savingTransferTarget != null)
+                    {
+                        cashLedgerId = savingTransferTarget.SavingLiabilityLedgerId;
                     }
                     else if (disbursement.PaymentMode == "Bank" || disbursement.PaymentMode == "Cheque" || disbursement.PaymentMode == "RTGS")
                     {
-                        if (disbursement.BankAccountLedgerID.HasValue && disbursement.BankAccountLedgerID.Value > 0 && validLedgerDict.ContainsKey(disbursement.BankAccountLedgerID.Value))
-                        {
-                            cashLedgerId = disbursement.BankAccountLedgerID.Value;
-                        }
+                        cashLedgerId = disbursement.BankAccountLedgerID!.Value;
                     }
-
-                    if (cashLedgerId == 0 || !validLedgerDict.ContainsKey(cashLedgerId))
+                    else
                     {
                         cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranchId, "LOAN");
                     }
@@ -1109,36 +1286,86 @@ namespace Bhisi.Api.Controllers
                         _context.VoucherDetails.RemoveRange(existingDisbursement.Voucher.VoucherDetails);
                     }
                     existingDisbursement.Voucher.VoucherDetails = new List<VoucherDetail>();
-                    
-                    // Assign MemberID if available
-                    int? memberId = loanAccFetched?.MemberID;
-                    
+
                     if (loanLedgerId > 0 && disbursement.DisbursementAmount > 0)
-                        existingDisbursement.Voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = loanLedgerId, DrCr = "Dr", Amount = disbursement.DisbursementAmount, MemberID = memberId });
+                    {
+                        existingDisbursement.Voucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = loanLedgerId,
+                            DrCr = "Dr",
+                            Amount = disbursement.DisbursementAmount,
+                            CustomerID = borrowerCustomerId,
+                            MemberID = borrowerMemberId
+                        });
+                    }
 
                     if (cashLedgerId > 0 && disbursement.NetAmountPaid > 0)
-                        existingDisbursement.Voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = cashLedgerId, DrCr = "Cr", Amount = disbursement.NetAmountPaid, MemberID = memberId });
+                    {
+                        int? payoutCustomerId = (isSavingTransfer && savingTransferTarget != null)
+                            ? savingTransferTarget.SavingHolderCustomerId
+                            : borrowerCustomerId;
+                        int? payoutMemberId = (isSavingTransfer && savingTransferTarget != null)
+                            ? savingTransferTarget.SavingHolderMemberId
+                            : borrowerMemberId;
+
+                        existingDisbursement.Voucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = cashLedgerId,
+                            DrCr = "Cr",
+                            Amount = disbursement.NetAmountPaid,
+                            CustomerID = payoutCustomerId,
+                            MemberID = payoutMemberId
+                        });
+                    }
 
                     if (disbursement.Deductions != null && disbursement.Deductions.Any())
                     {
-                        foreach(var ded in disbursement.Deductions)
+                        foreach (var ded in disbursement.Deductions)
                         {
                             if (ded.Amount > 0)
                             {
                                 int validDedLedgerId = validLedgerDict.ContainsKey(ded.LedgerID) ? ded.LedgerID : shareCapitalLedger.LedgerID;
-                                existingDisbursement.Voucher.VoucherDetails.Add(new VoucherDetail { 
-                                    LedgerID = validDedLedgerId, 
-                                    DrCr = "Cr", 
-                                    Amount = ded.Amount, 
-                                    MemberID = memberId 
+                                existingDisbursement.Voucher.VoucherDetails.Add(new VoucherDetail
+                                {
+                                    LedgerID = validDedLedgerId,
+                                    DrCr = "Cr",
+                                    Amount = ded.Amount,
+                                    CustomerID = borrowerCustomerId,
+                                    MemberID = borrowerMemberId
                                 });
                             }
                         }
                     }
+
+                    // Reverse any previously posted SavingTransaction for this VoucherNo, then re-apply ONLY if Approved
+                    await Helpers.LoanDisbursementReversalHelper.ReverseSavingTransferCreditForVoucherAsync(
+                        _context,
+                        existingDisbursement.Voucher.VoucherNo);
+
+                    await _context.SaveChangesAsync();
+
+                    if (isSavingTransfer && vStatus == "Approved" && savingTransferTarget != null)
+                    {
+                        await Helpers.LoanDisbursementReversalHelper.ApplyApprovedSavingTransferCreditAsync(
+                            _context,
+                            existingDisbursement,
+                            existingDisbursement.Voucher,
+                            savingTransferTarget.SavingAccount,
+                            loanAccFetched?.LoanAccountNo,
+                            borrowerName);
+                    }
+                }
+                else
+                {
+                    await _context.SaveChangesAsync();
                 }
 
-                await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+            }
+            catch (InvalidOperationException valEx)
+            {
+                await transaction.RollbackAsync();
+                return BadRequest(new { message = valEx.Message });
             }
             catch (Exception)
             {
@@ -1176,201 +1403,21 @@ namespace Bhisi.Api.Controllers
                     return StatusCode(StatusCodes.Status403Forbidden, new { message = "सुरक्षा उल्लंघन: तुम्हाला इतर शाखेचे कर्ज वितरण डिलीट करण्याचा अधिकार नाही." });
                 }
 
-                // 1. Remove linked Deductions
-                if (disbursement.Deductions != null && disbursement.Deductions.Any())
-                {
-                    _context.LoanDisbursementDeductions.RemoveRange(disbursement.Deductions);
-                }
+                await Helpers.LoanDisbursementReversalHelper.ReverseAndDeleteDisbursementAsync(
+                    _context,
+                    disbursement,
+                    disbursement.Voucher,
+                    deleteVoucherRecord: true);
 
-                // 2. Handle linked Voucher and related transactions
-                if (disbursement.VoucherID.HasValue || disbursement.Voucher != null)
-                {
-                    int vId = disbursement.VoucherID ?? disbursement.Voucher?.VoucherID ?? 0;
-                    string? voucherNo = disbursement.Voucher?.VoucherNo;
-
-                    if (vId > 0)
-                    {
-                        // Clean up linked ShareTransactions and reverse ShareAccount totals
-                        var linkedShareTxns = await _context.ShareTransactions.Where(st => st.VoucherId == vId).ToListAsync();
-                        foreach (var st in linkedShareTxns)
-                        {
-                            var shAcc = await _context.ShareAccounts.FindAsync(st.ShareAccountId);
-                            if (shAcc != null)
-                            {
-                                shAcc.TotalShareCount = Math.Max(0, shAcc.TotalShareCount - st.NumberOfShares);
-                                shAcc.TotalShareAmount = Math.Max(0, shAcc.TotalShareAmount - st.Amount);
-                                _context.Entry(shAcc).State = EntityState.Modified;
-                            }
-                            _context.ShareTransactions.Remove(st);
-                        }
-
-                        // Clean up linked SavingTransactions and reverse SavingAccount balance
-                        if (!string.IsNullOrEmpty(voucherNo))
-                        {
-                            var linkedSavingTxns = await _context.SavingTransactions
-                                .Where(st => st.VoucherNo == voucherNo)
-                                .ToListAsync();
-                            foreach (var st in linkedSavingTxns)
-                            {
-                                var savAcc = await _context.SavingAccountMasters.FindAsync(st.SavingAccountID);
-                                if (savAcc != null)
-                                {
-                                    savAcc.CurrentBalance = Math.Max(0, savAcc.CurrentBalance - st.Amount);
-                                    _context.Entry(savAcc).State = EntityState.Modified;
-                                }
-                                _context.SavingTransactions.Remove(st);
-                            }
-                        }
-
-                        // Clean up VoucherDetails
-                        if (disbursement.Voucher?.VoucherDetails != null && disbursement.Voucher.VoucherDetails.Any())
-                        {
-                            _context.VoucherDetails.RemoveRange(disbursement.Voucher.VoucherDetails);
-                        }
-                        else
-                        {
-                            var details = await _context.VoucherDetails.Where(vd => vd.VoucherID == vId).ToListAsync();
-                            if (details.Any())
-                            {
-                                _context.VoucherDetails.RemoveRange(details);
-                            }
-                        }
-
-                        // Remove Voucher
-                        var vObj = disbursement.Voucher ?? await _context.Vouchers.FindAsync(vId);
-                        if (vObj != null)
-                        {
-                            _context.Vouchers.Remove(vObj);
-                        }
-                    }
-                }
-
-                // 3. Update LoanAccount and recalculate schedules
-                var loanAcc = await _context.LoanAccounts.FindAsync(disbursement.LoanAccountID);
-                if (loanAcc != null)
-                {
-                    loanAcc.PrincipalBalance = Math.Max(0, loanAcc.PrincipalBalance - disbursement.DisbursementAmount);
-
-                    // Check remaining disbursements for this account
-                    var remainingDisbursements = await _context.LoanDisbursements
-                        .Where(d => d.LoanAccountID == loanAcc.LoanAccountID && d.LoanDisbursementID != id)
-                        .ToListAsync();
-
-                    if (!remainingDisbursements.Any())
-                    {
-                        // No disbursements remain: remove all schedules for this loan account
-                        var allPendingSchedules = await _context.LoanInstallmentSchedules
-                            .Where(s => s.LoanAccountID == loanAcc.LoanAccountID)
-                            .ToListAsync();
-                        if (allPendingSchedules.Any())
-                        {
-                            _context.LoanInstallmentSchedules.RemoveRange(allPendingSchedules);
-                        }
-
-                        if (loanAcc.LoanApplicationID.HasValue)
-                        {
-                            var app = await _context.LoanApplications.FindAsync(loanAcc.LoanApplicationID.Value);
-                            if (app != null)
-                            {
-                                app.LoanAccountNo = null;
-                                _context.Entry(app).State = EntityState.Modified;
-                            }
-                        }
-
-                        // Release Liens on Deposit Collaterals back to Pledged
-                        var linkedCollaterals = await _context.LoanDepositCollaterals
-                            .Where(c => c.LoanAccountID == loanAcc.LoanAccountID)
-                            .ToListAsync();
-
-                        foreach (var col in linkedCollaterals)
-                        {
-                            if (col.CollateralType == "FixedDeposit")
-                            {
-                                var fd = await _context.FdAccounts.FindAsync(col.DepositAccountID);
-                                if (fd != null && (fd.LienLoanAccountNo == loanAcc.LoanAccountNo || fd.IsLienMarked))
-                                {
-                                    fd.IsLienMarked = false;
-                                    fd.LienLoanAccountNo = null;
-                                    fd.LienAmount = 0;
-                                    _context.Entry(fd).State = EntityState.Modified;
-                                }
-                            }
-                            else if (col.CollateralType == "PigmyDeposit")
-                            {
-                                var pg = await _context.PigmyAccounts.FindAsync(col.DepositAccountID);
-                                if (pg != null && (pg.LienLoanAccountNo == loanAcc.LoanAccountNo || pg.IsLienMarked))
-                                {
-                                    pg.IsLienMarked = false;
-                                    pg.LienLoanAccountNo = null;
-                                    pg.LienAmount = 0;
-                                    _context.Entry(pg).State = EntityState.Modified;
-                                }
-                            }
-                            else if (col.CollateralType == "RecurringDeposit")
-                            {
-                                var rd = await _context.RdAccounts.FindAsync(col.DepositAccountID);
-                                if (rd != null && (rd.LienLoanAccountNo == loanAcc.LoanAccountNo || rd.IsLienMarked))
-                                {
-                                    rd.IsLienMarked = false;
-                                    rd.LienLoanAccountNo = null;
-                                    rd.LienAmount = 0;
-                                    _context.Entry(rd).State = EntityState.Modified;
-                                }
-                            }
-                            else if (col.CollateralType == "SavingDeposit")
-                            {
-                                var sav = await _context.SavingAccountMasters.FindAsync(col.DepositAccountID);
-                                if (sav != null && sav.LienReason != null && sav.LienReason.Contains(loanAcc.LoanAccountNo ?? ""))
-                                {
-                                    sav.LienAmount = 0;
-                                    sav.LienReason = null;
-                                    _context.Entry(sav).State = EntityState.Modified;
-                                }
-                            }
-
-                            if (col.LoanApplicationID.HasValue)
-                            {
-                                col.LoanAccountID = null;
-                                col.LienStatus = "Pledged";
-                                col.LienMarkedDate = null;
-                                _context.Entry(col).State = EntityState.Modified;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // Recalculate schedules for remaining balance if principal > 0
-                        var oldPendingSchedules = await _context.LoanInstallmentSchedules
-                            .Where(s => s.LoanAccountID == loanAcc.LoanAccountID && s.Status != "Paid")
-                            .ToListAsync();
-                        if (oldPendingSchedules.Any())
-                        {
-                            _context.LoanInstallmentSchedules.RemoveRange(oldPendingSchedules);
-                        }
-
-                        if (loanAcc.PrincipalBalance > 0 && loanAcc.LoanRateID > 0)
-                        {
-                            var loanRateForCalc = await _context.LoanRates.FindAsync(loanAcc.LoanRateID);
-                            if (loanRateForCalc != null)
-                            {
-                                var scheduleRecords = Services.LoanScheduleGenerator.GenerateSchedules(loanAcc, loanRateForCalc);
-                                foreach (var s in scheduleRecords)
-                                {
-                                    s.LoanAccountID = loanAcc.LoanAccountID;
-                                    _context.LoanInstallmentSchedules.Add(s);
-                                }
-                            }
-                        }
-                    }
-                    _context.Entry(loanAcc).State = EntityState.Modified;
-                }
-
-                // 4. Remove Disbursement record
-                _context.LoanDisbursements.Remove(disbursement);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
                 return NoContent();
+            }
+            catch (InvalidOperationException valEx)
+            {
+                await transaction.RollbackAsync();
+                return BadRequest(new { message = valEx.Message });
             }
             catch (Exception ex)
             {

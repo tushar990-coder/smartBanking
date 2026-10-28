@@ -718,6 +718,10 @@ namespace Bhisi.Api.Controllers
                 {
                     foreach (var item in dto.GoldItems)
                     {
+                        decimal purityFactor = 22m / 24m;
+                        if (item.Purity > 0 && item.Purity <= 24) purityFactor = item.Purity / 24m;
+                        else if (item.Purity > 24 && item.Purity <= 100) purityFactor = item.Purity / 100m;
+
                         var goldDetail = new GoldLoanDetail
                         {
                             LoanAccountID = loanAccount.LoanAccountID,
@@ -725,10 +729,15 @@ namespace Bhisi.Api.Controllers
                             Quantity = item.Quantity > 0 ? item.Quantity : 1,
                             GrossWeight = item.GrossWeight,
                             NetWeight = item.NetWeight,
-                            Purity = item.Purity,
+                            Purity = item.Purity > 0 ? item.Purity : 22,
                             GoldRatePerGram = item.GoldRatePerGram,
-                            EstimatedValue = item.EstimatedValue > 0 ? item.EstimatedValue : (item.NetWeight * item.GoldRatePerGram),
-                            ImagePath = item.Remarks
+                            EstimatedValue = item.EstimatedValue > 0 ? item.EstimatedValue : Math.Round(item.NetWeight * purityFactor * item.GoldRatePerGram, 2),
+                            ImagePath = string.IsNullOrWhiteSpace(item.ImagePath) ? null : item.ImagePath,
+                            Remarks = string.IsNullOrWhiteSpace(item.Remarks) ? null : item.Remarks,
+                            ValuerName = item.ValuerName,
+                            ValuerValuation = item.ValuerValuation > 0 ? item.ValuerValuation : (item.EstimatedValue > 0 ? item.EstimatedValue : Math.Round(item.NetWeight * purityFactor * item.GoldRatePerGram, 2)),
+                            ValuationReceiptNo = item.ValuationReceiptNo,
+                            ValuationDate = item.ValuationDate ?? DateTime.Today
                         };
                         _context.GoldLoanDetails.Add(goldDetail);
                     }
@@ -1071,6 +1080,10 @@ namespace Bhisi.Api.Controllers
                     {
                         foreach (var item in dto.GoldItems)
                         {
+                            decimal purityFactor = 22m / 24m;
+                            if (item.Purity > 0 && item.Purity <= 24) purityFactor = item.Purity / 24m;
+                            else if (item.Purity > 24 && item.Purity <= 100) purityFactor = item.Purity / 100m;
+
                             var goldDetail = new GoldLoanDetail
                             {
                                 LoanAccountID = id,
@@ -1078,10 +1091,15 @@ namespace Bhisi.Api.Controllers
                                 Quantity = item.Quantity > 0 ? item.Quantity : 1,
                                 GrossWeight = item.GrossWeight,
                                 NetWeight = item.NetWeight,
-                                Purity = item.Purity,
+                                Purity = item.Purity > 0 ? item.Purity : 22,
                                 GoldRatePerGram = item.GoldRatePerGram,
-                                EstimatedValue = item.EstimatedValue > 0 ? item.EstimatedValue : (item.NetWeight * item.GoldRatePerGram),
-                                ImagePath = item.Remarks
+                                EstimatedValue = item.EstimatedValue > 0 ? item.EstimatedValue : Math.Round(item.NetWeight * purityFactor * item.GoldRatePerGram, 2),
+                                ImagePath = string.IsNullOrWhiteSpace(item.ImagePath) ? null : item.ImagePath,
+                            Remarks = string.IsNullOrWhiteSpace(item.Remarks) ? null : item.Remarks,
+                                ValuerName = item.ValuerName,
+                                ValuerValuation = item.ValuerValuation > 0 ? item.ValuerValuation : (item.EstimatedValue > 0 ? item.EstimatedValue : Math.Round(item.NetWeight * purityFactor * item.GoldRatePerGram, 2)),
+                                ValuationReceiptNo = item.ValuationReceiptNo,
+                                ValuationDate = item.ValuationDate ?? DateTime.Today
                             };
                             _context.GoldLoanDetails.Add(goldDetail);
                         }

@@ -92,15 +92,23 @@ export function VoucherPrintTemplate({ voucher, sanstha }: { voucher: any, sanst
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
-  const partyDetail = voucher.voucherDetails?.find((d: any) => d.customer != null || d.member != null) || 
+  const partyDetail = voucher.voucherDetails?.find((d: any) => d.customer != null || d.member?.customer != null || d.member != null) || 
                       voucher.voucherDetails?.find((d: any) => d.ledger?.ledgerName !== 'Cash' && !d.ledger?.ledgerName?.includes('रोख'));
 
-  const partyCif = partyDetail?.customer?.cifNo || partyDetail?.customer?.CIFNo || partyDetail?.member?.customer?.cifNo || partyDetail?.member?.customer?.CIFNo;
-  const partyNameStr = `${partyDetail?.customer?.firstName || partyDetail?.customer?.FirstName || partyDetail?.member?.firstName || partyDetail?.member?.FirstName || ''} ${partyDetail?.customer?.lastName || partyDetail?.customer?.LastName || partyDetail?.member?.lastName || partyDetail?.member?.LastName || ''}`.trim();
-  const partyCode = partyCif || partyDetail?.member?.memberCode || partyDetail?.member?.MemberCode;
+  const partyCust = partyDetail?.customer || partyDetail?.member?.customer;
+  const partyCif = partyCust?.cifNo || partyCust?.CIFNo || '';
+  const partyLegacyNo = partyCust?.legacyCustomerNo || partyCust?.LegacyCustomerNo || '';
+  const partyNameStr = [
+    partyCust?.firstName || partyCust?.FirstName || partyDetail?.member?.firstName || partyDetail?.member?.FirstName || '',
+    partyCust?.middleName || partyCust?.MiddleName || partyDetail?.member?.middleName || partyDetail?.member?.MiddleName || '',
+    partyCust?.lastName || partyCust?.LastName || partyDetail?.member?.lastName || partyDetail?.member?.LastName || ''
+  ].filter(Boolean).join(' ').trim();
+  const partyCode = partyCif
+    ? `${partyCif}${partyLegacyNo ? ` (जुना खा.नं: ${partyLegacyNo})` : ''}`
+    : (partyLegacyNo ? `जुना खा.नं: ${partyLegacyNo}` : '');
 
   const partyName = partyCode || partyNameStr
-    ? `${partyCode ? `${partyCode} - ` : ''}${partyNameStr || partyDetail?.member?.firstName || ''}`.trim()
+    ? `${partyCode ? `${partyCode} - ` : ''}${partyNameStr}`.trim()
     : (partyDetail?.ledger?.ledgerName || 'Unknown');
 
   let vTypeMarathi = voucher.voucherType;
@@ -145,7 +153,7 @@ export function VoucherPrintTemplate({ voucher, sanstha }: { voucher: any, sanst
           <div className="flex justify-between mb-3 text-[11px]">
             <div className="w-1/2 pr-2 space-y-1">
               <div className="flex items-start">
-                <span className="w-28 text-gray-500 font-medium">पार्टी / सभासदाचे नाव :</span> 
+                <span className="w-28 text-gray-500 font-medium">पार्टी / खातेदाराचे नाव :</span> 
                 <span className="flex-1 font-bold text-gray-800 border-b border-dashed border-gray-300 pb-0.5">{partyName}</span>
               </div>
               <div className="flex items-start">
@@ -185,9 +193,17 @@ export function VoucherPrintTemplate({ voucher, sanstha }: { voucher: any, sanst
                     <td className="border-r border-gray-400 p-1">
                       <span className="font-bold text-gray-800">{d.ledger?.ledgerName}</span>
                       {(() => {
-                        const cif = d.customer?.cifNo || d.customer?.CIFNo || d.member?.customer?.cifNo || d.member?.customer?.CIFNo;
-                        const name = `${d.customer?.firstName || d.customer?.FirstName || d.member?.firstName || d.member?.FirstName || ''} ${d.customer?.lastName || d.customer?.LastName || d.member?.lastName || d.member?.LastName || ''}`.trim();
-                        const code = cif || d.member?.memberCode || d.member?.MemberCode;
+                        const cust = d.customer || d.member?.customer;
+                        const cif = cust?.cifNo || cust?.CIFNo || '';
+                        const legacyNo = cust?.legacyCustomerNo || cust?.LegacyCustomerNo || '';
+                        const name = [
+                          cust?.firstName || cust?.FirstName || d.member?.firstName || d.member?.FirstName || '',
+                          cust?.middleName || cust?.MiddleName || d.member?.middleName || d.member?.MiddleName || '',
+                          cust?.lastName || cust?.LastName || d.member?.lastName || d.member?.LastName || ''
+                        ].filter(Boolean).join(' ').trim();
+                        const code = cif
+                          ? `${cif}${legacyNo ? ` | जुना खा.नं: ${legacyNo}` : ''}`
+                          : (legacyNo ? `जुना खा.नं: ${legacyNo}` : '');
                         if (code || name) {
                           return <div className="text-[10px] text-gray-500 mt-0.5">({code ? `${code} - ` : ''}{name})</div>;
                         }

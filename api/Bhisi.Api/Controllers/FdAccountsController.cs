@@ -755,9 +755,16 @@ namespace Bhisi.Api.Controllers
                             return BadRequest($"अपुऱ्या शिल्लकेमुळे वर्ग करता येणार नाही! बचत खात्यात फक्त ₹{sbAcc.CurrentBalance:N2} शिल्लक आहेत (हवी असलेली रक्कम ₹{account.DepositAmount:N2}).");
                         }
 
-                        if (sbAcc.LedgerID > 0)
+                        int savingLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, sbAcc);
+                        if (savingLedgerId > 0)
                         {
-                            debitLedger = await _context.Ledgers.FindAsync(sbAcc.LedgerID);
+                            debitLedger = await _context.Ledgers.FindAsync(savingLedgerId);
+                        }
+
+                        if (debitLedger == null)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(sbAcc.AccountNo));
                         }
 
                         // Deduct balance from Member Savings Account
@@ -776,15 +783,6 @@ namespace Bhisi.Api.Controllers
                             CreatedBy = account.CreatedBy,
                             CreatedOn = DateTime.Now
                         });
-
-                        if (debitLedger == null)
-                        {
-                            debitLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
-                                l.AccountType == "Savings" ||
-                                l.LedgerName.Contains("सभासद बचत ठेव") || 
-                                l.LedgerName.Contains("बचत ठेव") || 
-                                l.LedgerName.ToLower().Contains("savings"));
-                        }
                     }
 
                     if (debitLedger == null)
@@ -1313,18 +1311,15 @@ namespace Bhisi.Api.Controllers
                     return BadRequest(new { message = $"अपुऱ्या शिल्लकेमुळे वर्ग करता येणार नाही! बचत खात्यात फक्त ₹{sbAcc.CurrentBalance:N2} शिल्लक आहेत (हवी असलेली एकूण रक्कम ₹{req.TotalAmount:N2})." });
                 }
 
-                if (sbAcc.LedgerID > 0)
+                int savingLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, sbAcc);
+                if (savingLedgerId > 0)
                 {
-                    debitLedger = await _context.Ledgers.FindAsync(sbAcc.LedgerID);
+                    debitLedger = await _context.Ledgers.FindAsync(savingLedgerId);
                 }
 
                 if (debitLedger == null)
                 {
-                    debitLedger = await _context.Ledgers.FirstOrDefaultAsync(l =>
-                        l.AccountType == "Savings" ||
-                        l.LedgerName.Contains("सभासद बचत ठेव") ||
-                        l.LedgerName.Contains("बचत ठेव") ||
-                        l.LedgerName.ToLower().Contains("savings"));
+                    return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(sbAcc.AccountNo) });
                 }
             }
 
@@ -2657,7 +2652,7 @@ namespace Bhisi.Api.Controllers
                                 if (savAccount != null)
                                 {
                                     savAccount.CurrentBalance += surplusPayoutAmount;
-                                    surplusLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
+                                    surplusLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savAccount);
 
                                     var savTx = new SavingTransaction
                                     {
@@ -2813,7 +2808,7 @@ namespace Bhisi.Api.Controllers
                             if (savAccount != null)
                             {
                                 savAccount.CurrentBalance += totalMaturityPayout;
-                                payoutLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
+                                payoutLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savAccount);
 
                                 var savTx = new SavingTransaction
                                 {
@@ -3515,7 +3510,7 @@ namespace Bhisi.Api.Controllers
                                 if (savAccount != null)
                                 {
                                     savAccount.CurrentBalance += surplusPayoutAmount;
-                                    surplusLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
+                                    surplusLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savAccount);
 
                                     var savTx = new SavingTransaction
                                     {
@@ -3684,7 +3679,7 @@ namespace Bhisi.Api.Controllers
                             if (savAccount != null)
                             {
                                 savAccount.CurrentBalance += netPayoutAmount;
-                                payoutLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
+                                payoutLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savAccount);
 
                                 var savTx = new SavingTransaction
                                 {
@@ -4309,7 +4304,7 @@ namespace Bhisi.Api.Controllers
                             if (savAccount != null)
                             {
                                 savAccount.CurrentBalance += interestPayoutAmount;
-                                interestPayoutLedgerId = savAccount.LedgerID > 0 ? savAccount.LedgerID : (savAccount.Ledger?.LedgerID ?? 7);
+                                interestPayoutLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savAccount);
 
                                 savTx = new SavingTransaction
                                 {
@@ -6181,7 +6176,7 @@ namespace Bhisi.Api.Controllers
                         if (targetSaving != null)
                         {
                             targetSaving.CurrentBalance += interestPayoutAmount;
-                            payoutLedgerId = targetSaving.LedgerID > 0 ? targetSaving.LedgerID : (targetSaving.Ledger?.LedgerID ?? 7);
+                            payoutLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, targetSaving);
 
                             _context.SavingTransactions.Add(new SavingTransaction
                             {
@@ -6608,7 +6603,7 @@ namespace Bhisi.Api.Controllers
                     paymentMode = "Bank";
                     bankLedgerId = debitDetail.LedgerID;
                 }
-                else if (debitDetail.Ledger.AccountType == "Savings" || debitDetail.Ledger.LedgerName.Contains("बचत") || debitDetail.Ledger.LedgerName.Contains("Savings"))
+                else if (await Helpers.SavingLedgerHelper.IsConfiguredSavingLiabilityLedgerAsync(_context, debitDetail.LedgerID))
                 {
                     paymentMode = "Transfer";
                     var sb = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.CustomerID == account.CustomerID);

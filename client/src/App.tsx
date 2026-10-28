@@ -902,7 +902,7 @@ function App() {
         {activeTab === 'saving-account-list-report' && <SavingAccountListReport />}
         {activeTab === 'saving-khatavani-report' && <SavingKhatavaniReport />}
         {activeTab === 'npa-register' && <NpaRegister />}
-        {activeTab === 'gold-jewelry-report' && <GoldJewelryReport />}
+        {activeTab === 'gold-jewelry-report' && <GoldJewelryReport onNavigate={handleNavigate} />}
         {activeTab === 'loan-rate' && <LoanRateMaster isReportOnly={true} />}
         {activeTab === 'audit-logs' && <AuditLogReport />}
 

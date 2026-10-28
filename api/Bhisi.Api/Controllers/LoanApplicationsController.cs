@@ -147,7 +147,28 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
+                int? effectiveBranchId = User.ResolveOptionalBranchId(branchId);
+
+                // Subquery 1: Applications already fully disbursed via linked LoanAccount (by LoanApplicationID)
+                var completedAppIdsQuery = _context.LoanAccounts
+                    .AsNoTracking()
+                    .Where(l => l.LoanApplicationID.HasValue &&
+                        (l.Status == "Closed" ||
+                         (l.SanctionedAmount > 0 && 
+                          _context.LoanDisbursements.Where(d => d.LoanAccountID == l.LoanAccountID).Sum(d => (decimal?)d.DisbursementAmount ?? 0) >= l.SanctionedAmount)))
+                    .Select(l => l.LoanApplicationID!.Value);
+
+                // Subquery 2: Applications already fully disbursed via LoanAccountNo match
+                var completedAccNosQuery = _context.LoanAccounts
+                    .AsNoTracking()
+                    .Where(l => !string.IsNullOrEmpty(l.LoanAccountNo) &&
+                        (l.Status == "Closed" ||
+                         (l.SanctionedAmount > 0 &&
+                          _context.LoanDisbursements.Where(d => d.LoanAccountID == l.LoanAccountID).Sum(d => (decimal?)d.DisbursementAmount ?? 0) >= l.SanctionedAmount)))
+                    .Select(l => l.LoanAccountNo!);
+
                 var query = _context.LoanApplications
+                    .AsNoTracking()
                     .Include(a => a.Branch)
                     .Include(a => a.Customer)
                     .Include(a => a.CoCustomer)
@@ -156,9 +177,10 @@ namespace Bhisi.Api.Controllers
                     .Include(a => a.Guarantor1Customer)
                     .Include(a => a.Guarantor2Customer)
                     .Include(a => a.RecommendedByDirector)
+                    .Where(a => !completedAppIdsQuery.Contains(a.LoanApplicationID) &&
+                                (string.IsNullOrEmpty(a.LoanAccountNo) || !completedAccNosQuery.Contains(a.LoanAccountNo)))
                     .AsQueryable();
 
-                int? effectiveBranchId = User.ResolveOptionalBranchId(branchId);
                 if (effectiveBranchId.HasValue && effectiveBranchId.Value > 0)
                 {
                     query = query.Where(a => a.BranchID == effectiveBranchId.Value);
@@ -211,22 +233,32 @@ namespace Bhisi.Api.Controllers
             if (applications == null || !applications.Any()) return;
 
             var appIds = applications.Select(a => a.LoanApplicationID).ToList();
+            var appAccountNos = applications
+                .Where(a => !string.IsNullOrWhiteSpace(a.LoanAccountNo))
+                .Select(a => a.LoanAccountNo!.Trim())
+                .ToList();
 
-            // Find all linked loan accounts
+            // Find all linked loan accounts (both by LoanApplicationID AND by LoanAccountNo)
             var linkedAccounts = await _context.LoanAccounts
-                .Where(l => l.LoanApplicationID.HasValue && appIds.Contains(l.LoanApplicationID.Value))
+                .AsNoTracking()
+                .Where(l => (l.LoanApplicationID.HasValue && appIds.Contains(l.LoanApplicationID.Value))
+                         || (!string.IsNullOrEmpty(l.LoanAccountNo) && appAccountNos.Contains(l.LoanAccountNo)))
                 .ToListAsync();
 
             var accountIds = linkedAccounts.Select(l => l.LoanAccountID).ToList();
 
             // Find all disbursements for these accounts
             var disbursements = await _context.LoanDisbursements
+                .AsNoTracking()
                 .Where(d => accountIds.Contains(d.LoanAccountID))
                 .ToListAsync();
 
             foreach (var app in applications)
             {
-                var linkedAcc = linkedAccounts.FirstOrDefault(l => l.LoanApplicationID == app.LoanApplicationID);
+                var linkedAcc = linkedAccounts.FirstOrDefault(l => 
+                    (l.LoanApplicationID.HasValue && l.LoanApplicationID.Value == app.LoanApplicationID)
+                    || (!string.IsNullOrEmpty(app.LoanAccountNo) && !string.IsNullOrEmpty(l.LoanAccountNo) && l.LoanAccountNo.Trim() == app.LoanAccountNo.Trim()));
+
                 if (linkedAcc != null)
                 {
                     app.LinkedLoanAccountID = linkedAcc.LoanAccountID;
@@ -613,6 +645,10 @@ namespace Bhisi.Api.Controllers
                     var collateralLogs = await _context.CollateralComplianceLogs.Where(c => c.LoanAccountID == loanAcc.LoanAccountID).ToListAsync();
                     if (collateralLogs.Any()) _context.CollateralComplianceLogs.RemoveRange(collateralLogs);
                 }
+
+                // Clean up Application-level GoldLoanDetails
+                var appGold = await _context.GoldLoanDetails.Where(g => g.LoanApplicationID == id).ToListAsync();
+                if (appGold.Any()) _context.GoldLoanDetails.RemoveRange(appGold);
 
                 // 3. Remove Loan Accounts and Application
                 if (linkedLoanAccounts.Any())

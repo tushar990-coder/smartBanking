@@ -192,6 +192,26 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = $"हे लॉकर खाते आधीच बंद किंवा समर्पित केलेले आहे. स्थिती: {allotment.Status}" });
             }
 
+            int savingLiabilityLedgerId = 0;
+            if (dto.NetRefundAmount > 0 && dto.RefundPaymentMode == "SavingCredit")
+            {
+                if (allotment.LinkedSavingAccount == null)
+                {
+                    return BadRequest(new { message = "बचत खात्यावर परतावा जमा करण्यासाठी या लॉकर खात्याशी संलग्न बचत खाते सापडले नाही." });
+                }
+
+                if (allotment.LinkedSavingAccount.Status == "Closed" || allotment.LinkedSavingAccount.Status == "Frozen")
+                {
+                    return BadRequest(new { message = $"संलग्न बचत खाते (#{allotment.LinkedSavingAccount.AccountNo}) सध्या '{allotment.LinkedSavingAccount.Status}' स्थितीत असल्यामुळे त्यावर परतावा जमा करता येणार नाही." });
+                }
+
+                savingLiabilityLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, allotment.LinkedSavingAccount);
+                if (savingLiabilityLedgerId <= 0)
+                {
+                    return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(allotment.LinkedSavingAccount.AccountNo) });
+                }
+            }
+
             // Update Allotment and Locker Status
             allotment.Status = "Surrendered";
             if (allotment.Locker != null)
@@ -203,9 +223,14 @@ namespace Bhisi.Api.Controllers
             // Generate Deposit Refund Voucher if refund amount > 0 and GL configured
             if (dto.NetRefundAmount > 0 && allotment.Locker?.LockerType?.DepositLiabilityLedgerID.HasValue == true)
             {
-                int cashLedgerId = 1;
-                var cashLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("रोख") || l.LedgerName.Contains("Cash"));
-                if (cashLedger != null) cashLedgerId = cashLedger.LedgerID;
+                int refundCreditLedgerId = dto.RefundPaymentMode == "SavingCredit"
+                    ? savingLiabilityLedgerId
+                    : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, allotment.BranchID, "LOCKER");
+
+                int? allotmentCustomerId = allotment.CustomerID ?? allotment.Member?.CustomerID;
+                int? creditCustomerId = dto.RefundPaymentMode == "SavingCredit"
+                    ? allotment.LinkedSavingAccount?.CustomerID
+                    : allotmentCustomerId;
 
                 string holderName = allotment.Customer != null ? $"{allotment.Customer.FirstName} {allotment.Customer.LastName}" : (allotment.Member?.Customer != null ? $"{allotment.Member.Customer.FirstName} {allotment.Member.Customer.LastName}" : "Holder");
 
@@ -227,14 +252,18 @@ namespace Bhisi.Api.Controllers
                 voucher.VoucherDetails.Add(new VoucherDetail { 
                     LedgerID = allotment.Locker!.LockerType!.DepositLiabilityLedgerID!.Value, 
                     DrCr = "Dr", 
-                    Amount = dto.DepositAmount 
+                    Amount = dto.DepositAmount,
+                    CustomerID = allotmentCustomerId,
+                    MemberID = allotment.MemberID
                 });
 
-                // Credit Cash or Saving for Net Refund
+                // Credit Cash or Dynamically Resolved Saving Liability Ledger for Net Refund
                 voucher.VoucherDetails.Add(new VoucherDetail { 
-                    LedgerID = cashLedgerId, 
+                    LedgerID = refundCreditLedgerId, 
                     DrCr = "Cr", 
-                    Amount = dto.NetRefundAmount 
+                    Amount = dto.NetRefundAmount,
+                    CustomerID = creditCustomerId,
+                    MemberID = dto.RefundPaymentMode == "SavingCredit" ? null : allotment.MemberID
                 });
 
                 // Credit Deductions to Rent / Penalty if any
@@ -243,7 +272,9 @@ namespace Bhisi.Api.Controllers
                     voucher.VoucherDetails.Add(new VoucherDetail { 
                         LedgerID = allotment.Locker!.LockerType!.RentIncomeLedgerID!.Value, 
                         DrCr = "Cr", 
-                        Amount = dto.UnpaidRentDeduction 
+                        Amount = dto.UnpaidRentDeduction,
+                        CustomerID = allotmentCustomerId,
+                        MemberID = allotment.MemberID
                     });
                 }
                 if (dto.DamagePenaltyDeduction > 0 && allotment.Locker?.LockerType?.LateFeeIncomeLedgerID.HasValue == true)
@@ -251,7 +282,9 @@ namespace Bhisi.Api.Controllers
                     voucher.VoucherDetails.Add(new VoucherDetail { 
                         LedgerID = allotment.Locker!.LockerType!.LateFeeIncomeLedgerID!.Value, 
                         DrCr = "Cr", 
-                        Amount = dto.DamagePenaltyDeduction 
+                        Amount = dto.DamagePenaltyDeduction,
+                        CustomerID = allotmentCustomerId,
+                        MemberID = allotment.MemberID
                     });
                 }
 
@@ -273,6 +306,7 @@ namespace Bhisi.Api.Controllers
                         Amount = dto.NetRefundAmount,
                         BalanceAfterTxn = allotment.LinkedSavingAccount.CurrentBalance,
                         Narration = $"Locker Deposit Refund Credit: {allotment.LockerAccountNo}",
+                        VoucherNo = voucher.VoucherNo,
                         PaymentMode = "Transfer",
                         CreatedOn = DateTime.UtcNow
                     };

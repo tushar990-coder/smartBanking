@@ -339,7 +339,7 @@ namespace Bhisi.Api.Models
 
     public class GoldLoanDetailItemDto
     {
-        public int GoldLoanDetailID { get; set; }
+        public long? GoldLoanDetailID { get; set; }
         public string OrnamentName { get; set; } = string.Empty;
         public int Quantity { get; set; } = 1;
         public decimal GrossWeight { get; set; }
@@ -348,6 +348,11 @@ namespace Bhisi.Api.Models
         public decimal GoldRatePerGram { get; set; }
         public decimal EstimatedValue { get; set; }
         public string? Remarks { get; set; }
+        public string? ImagePath { get; set; }
+        public string? ValuerName { get; set; }
+        public decimal ValuerValuation { get; set; }
+        public string? ValuationReceiptNo { get; set; }
+        public DateTime? ValuationDate { get; set; }
     }
 
     public class OpeningBalanceScheduleDto
@@ -665,14 +670,20 @@ namespace Bhisi.Api.Models
     public class GoldJewelryReportItemDto
     {
         public int SrNo { get; set; }
-        public int GoldLoanDetailID { get; set; }
+        public long? GoldLoanDetailID { get; set; }
         public int LoanAccountID { get; set; }
         public string LoanAccountNo { get; set; } = string.Empty;
+        public int? LoanApplicationID { get; set; }
         public int? CustomerID { get; set; }
         public string CifNo { get; set; } = string.Empty;
         public int MemberID { get; set; }
         public string MemberCode { get; set; } = string.Empty;
         public string BorrowerName { get; set; } = string.Empty;
+        public string CustomerMobile { get; set; } = string.Empty;
+        public string CustomerAddress { get; set; } = string.Empty;
+        public string LoanRateName { get; set; } = string.Empty;
+        public decimal InterestRate { get; set; }
+        public int DurationMonths { get; set; }
         public string OrnamentName { get; set; } = string.Empty;
         public decimal EstimatedValue { get; set; }
         public decimal NetWeight { get; set; }
@@ -680,10 +691,23 @@ namespace Bhisi.Api.Models
         public int Quantity { get; set; }
         public decimal Purity { get; set; }
         public decimal GoldRatePerGram { get; set; }
+        public string? ValuerName { get; set; }
+        public decimal ValuerValuation { get; set; }
+        public string? ValuationReceiptNo { get; set; }
+        public DateTime? ValuationDate { get; set; }
+        public string? ImagePath { get; set; }
+        public string? Remarks { get; set; }
         public string LoanStatus { get; set; } = "Active";
         public decimal SanctionedAmount { get; set; }
         public decimal PrincipalBalance { get; set; }
         public DateTime? LoanDisbursementDate { get; set; }
+        public string? LegacyAccountNumber { get; set; }
+        public string? ApplicationNo { get; set; }
+        public string? SecurityDetails { get; set; }
+        public decimal SecurityValue { get; set; }
+        public bool IsCollateralDetailPending { get; set; }
+        public string? VoucherStatus { get; set; }
+        public string? BranchName { get; set; }
     }
 
     public class GoldJewelryReportResponseDto
@@ -693,10 +717,14 @@ namespace Bhisi.Api.Models
         public string BranchName { get; set; } = "सर्व शाखा";
         public List<GoldJewelryReportItemDto> Items { get; set; } = new();
         public decimal TotalEstimatedValue { get; set; }
+        public decimal TotalValuerValuation { get; set; }
         public decimal TotalNetWeight { get; set; }
         public decimal TotalGrossWeight { get; set; }
         public int TotalQuantity { get; set; }
         public int TotalAccountsCount { get; set; }
+        public int PendingCollateralAccountsCount { get; set; }
+        public decimal TotalSanctionedAmount { get; set; }
+        public decimal TotalPrincipalBalance { get; set; }
     }
 
     public class AlphanumericComparer : IComparer<string?>

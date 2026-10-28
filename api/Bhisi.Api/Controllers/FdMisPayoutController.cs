@@ -544,7 +544,7 @@ namespace Bhisi.Api.Controllers
                                     };
                                     _context.SavingTransactions.Add(savTx);
 
-                                    int sbLedgerId = sbAcc.LedgerID > 0 ? sbAcc.LedgerID : (sbAcc.Ledger?.LedgerID ?? 7);
+                                    int sbLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, sbAcc);
                                     voucherCreditGroups[sbLedgerId] = voucherCreditGroups.GetValueOrDefault(sbLedgerId) + item.NetDisbursedAmount;
                                 }
                                 else

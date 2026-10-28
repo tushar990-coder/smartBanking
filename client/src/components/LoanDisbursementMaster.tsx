@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { 
@@ -9,7 +9,7 @@ import {
     Sparkles, Eye, FileText, Banknote, RefreshCw, CreditCard, 
     Wallet, Receipt, ArrowRight, ChevronRight, Lock, Unlock, Printer
 } from 'lucide-react';
-import SearchableSelect from './SearchableSelect';
+import SearchableSelect, { SearchableSelectOption } from './SearchableSelect';
 import LoanDistributionListModal from './LoanDistributionListModal';
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 import { useAuth } from '../context/AuthContext';
@@ -75,6 +75,7 @@ interface LoanApplication {
 interface LoanAccount {
     loanAccountID: number;
     loanAccountNo: string;
+    branchID?: number;
     legacyAccountNumber?: string;
     customerID?: number | null;
     memberID?: number | null;
@@ -102,6 +103,7 @@ interface LoanAccount {
     firstInstallmentDate?: string;
     maturityDate?: string;
     status?: string;
+    loanDisbursements?: any[];
     loanRate?: {
         loanRateID: number;
         loanType: string;
@@ -120,10 +122,17 @@ interface LoanDisbursementDeduction {
 interface LoanDisbursement {
     loanDisbursementID: number;
     loanAccountID: number;
+    branchID?: number;
     disbursementDate: string;
     sanctionedAmount: number;
     disbursementAmount: number;
     netAmountPaid: number;
+    processingFee?: number;
+    shareDeduction?: number;
+    insuranceDeduction?: number;
+    stationeryCharges?: number;
+    otherDeductions?: number;
+    loanInstallmentType?: string;
     paymentMode: string;
     paymentDetails?: string;
     bankName?: string;
@@ -307,13 +316,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 setPendingSanctionedLimit(draftApplication.requestedAmount || 0);
                 setCurrentTrancheNo(1);
 
-                const autoDisbDate = draftApplication.applicationDate 
-                    ? draftApplication.applicationDate.split('T')[0] 
-                    : new Date().toISOString().split('T')[0];
+                const currentDisbDate = activeBusinessDate || new Date().toISOString().split('T')[0];
 
                 setFormData(prev => ({
                     ...prev,
-                    disbursementDate: autoDisbDate,
+                    disbursementDate: prev.disbursementDate || currentDisbDate,
                     sanctionedAmount: draftApplication.requestedAmount,
                     disbursementAmount: draftApplication.requestedAmount,
                     netAmountPaid: draftApplication.requestedAmount
@@ -337,7 +344,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     noOfInstallments: draftApplication.noOfInstallments || 0,
                     installmentAmount: draftApplication.installmentAmount || 0,
                     installmentFrequency: draftApplication.installmentFrequency || 'मासिक',
-                    openingDate: autoDisbDate,
+                    openingDate: currentDisbDate,
                     firstInstallmentDate: draftApplication.firstInstallmentDate,
                     maturityDate: draftApplication.maturityDate,
                     status: "Active",
@@ -571,27 +578,26 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     const fetchDropdowns = async (targetBranchId?: number) => {
         try {
             const bId = targetBranchId ?? selectedBranchId;
-            const [appRes, accRes, ledgersRes, branchesRes, savingAccsRes, disbRes] = await Promise.all([
-                axios.get(bId ? `/api/LoanApplications?branchId=${bId}` : '/api/LoanApplications'),
-                axios.get('/api/LoanAccounts'),
+            const [appRes, accRes, ledgersRes, branchesRes, savingAccsRes] = await Promise.all([
+                axios.get(bId ? `/api/LoanApplications/pending-disbursements?branchId=${bId}` : '/api/LoanApplications/pending-disbursements'),
+                axios.get(bId ? `/api/LoanAccounts?branchId=${bId}` : '/api/LoanAccounts'),
                 axios.get('/api/Ledgers'),
                 axios.get('/api/Branches'),
-                axios.get('/api/SavingAccounts'),
-                axios.get(bId ? `/api/LoanDisbursements?branchId=${bId}&pageSize=50` : '/api/LoanDisbursements?pageSize=50')
+                axios.get('/api/SavingAccounts')
             ]);
-            
-            const allDisbursements: LoanDisbursement[] = Array.isArray(disbRes.data) ? disbRes.data : [];
-            setDisbursements(allDisbursements);
 
-            // Compute multi-tranche status for each application
+            // Pending applications are pre-filtered and enriched directly by the server
             const appsList = Array.isArray(appRes.data) ? appRes.data : [];
             const accsList = Array.isArray(accRes.data) ? accRes.data : [];
             const appsWithStatus: LoanApplication[] = appsList.map((a: any) => {
-                const linkedAcc = accsList.find((acc: any) => acc.loanApplicationID === a.loanApplicationID);
-                const accDisbursements = (linkedAcc && Array.isArray(allDisbursements)) ? allDisbursements.filter(d => d.loanAccountID === linkedAcc.loanAccountID) : [];
+                const linkedAcc = accsList.find((acc: any) => 
+                    (acc.loanApplicationID && acc.loanApplicationID === a.loanApplicationID) ||
+                    (acc.loanAccountNo && a.loanAccountNo && acc.loanAccountNo === a.loanAccountNo)
+                );
+                const accDisbursements = (linkedAcc && Array.isArray(linkedAcc.loanDisbursements)) ? linkedAcc.loanDisbursements : [];
                 const totalDisb = a.totalDisbursedAmount !== undefined 
                     ? a.totalDisbursedAmount 
-                    : (Array.isArray(accDisbursements) ? accDisbursements.reduce((s, d) => s + (d.disbursementAmount || 0), 0) : 0);
+                    : (accDisbursements.reduce((s: number, d: any) => s + (d.disbursementAmount || 0), 0));
                 
                 const pendingLimit = a.pendingSanctionedAmount !== undefined
                     ? a.pendingSanctionedAmount
@@ -602,7 +608,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     totalDisbursedAmount: totalDisb,
                     pendingSanctionedAmount: pendingLimit,
                     disbursementCount: a.disbursementCount !== undefined ? a.disbursementCount : accDisbursements.length,
-                    linkedLoanAccountID: linkedAcc?.loanAccountID,
+                    linkedLoanAccountID: a.linkedLoanAccountID || linkedAcc?.loanAccountID,
                     loanAccountNo: a.loanAccountNo || linkedAcc?.loanAccountNo
                 };
             });
@@ -711,18 +717,49 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         return 0;
     };
 
-    // Auto-select applicant's primary saving account when payment mode is Saving Transfer
+    const getEffectiveLoanBranchId = () => {
+        if (draftApplication?.branchID && draftApplication.branchID > 0) {
+            return draftApplication.branchID;
+        }
+        if (sourceType === 'Application' && selectedSourceId) {
+            const app = applications.find(a => a.loanApplicationID === selectedSourceId);
+            if (app?.branchID && app.branchID > 0) return app.branchID;
+        }
+        if (sourceType === 'ExistingAccount' && selectedSourceId) {
+            const acc = accounts.find(a => a.loanAccountID === selectedSourceId);
+            if (acc?.branchID && acc.branchID > 0) return acc.branchID;
+        }
+        return selectedBranchId || 0;
+    };
+
+    // Auto-select applicant's primary same-branch saving account when payment mode is Saving Transfer
+    // (Never overwrite an already-selected valid same-branch third-party saving account or edit/passing state)
     useEffect(() => {
-        const applicantCustId = getCurrentApplicantCustomerId();
-        if (formData.paymentMode === 'Saving Transfer' && applicantCustId && savingAccounts.length > 0) {
-            const appAcc = savingAccounts.find(s => 
-                s.customerID === applicantCustId && (s.status === 'Active' || !s.status)
-            );
-            if (appAcc && (!formData.transferToSavingAccountNo || !savingAccounts.some(s => s.accountNo === formData.transferToSavingAccountNo))) {
-                setFormData(prev => ({ ...prev, transferToSavingAccountNo: appAcc.accountNo }));
+        if (isPassingMode || editingId) return;
+        if (formData.paymentMode !== 'Saving Transfer' || savingAccounts.length === 0) return;
+
+        const effectiveBranchId = getEffectiveLoanBranchId();
+        const isValidSameBranchActive = (s: any) =>
+            (s.status === 'Active' || !s.status) &&
+            (!effectiveBranchId || !s.branchID || s.branchID === effectiveBranchId);
+
+        if (formData.transferToSavingAccountNo) {
+            const currentSelected = savingAccounts.find(s => s.accountNo === formData.transferToSavingAccountNo);
+            if (currentSelected && isValidSameBranchActive(currentSelected)) {
+                return;
             }
         }
-    }, [formData.paymentMode, selectedSourceId, sourceType, draftApplication, savingAccounts]);
+
+        const applicantCustId = getCurrentApplicantCustomerId();
+        const appAcc = applicantCustId
+            ? savingAccounts.find(s => s.customerID === applicantCustId && isValidSameBranchActive(s))
+            : undefined;
+
+        const nextAccNo = appAcc ? appAcc.accountNo : '';
+        if ((formData.transferToSavingAccountNo || '') !== nextAccNo) {
+            setFormData(prev => ({ ...prev, transferToSavingAccountNo: nextAccNo }));
+        }
+    }, [formData.paymentMode, selectedSourceId, sourceType, draftApplication, savingAccounts, selectedBranchId, isPassingMode, editingId]);
 
     const handleSourceSelection = (e: any) => {
         const val = e.target.value;
@@ -752,9 +789,17 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 if (app.branchID && app.branchID > 0) {
                     setSelectedBranchId(app.branchID);
                 }
-                const autoDisbDate = app.applicationDate 
-                    ? app.applicationDate.split('T')[0] 
-                    : new Date().toISOString().split('T')[0];
+                
+                // Core Banking Rule: Disbursement date is ALWAYS the active business date (व्यवहार दिनांक), NOT the historical applicationDate!
+                const currentDisbDate = formData.disbursementDate || activeBusinessDate || new Date().toISOString().split('T')[0];
+
+                // Ensure first installment date is aligned with the active disbursement date
+                let calculatedFirstInstDate = app.firstInstallmentDate;
+                if (!calculatedFirstInstDate || calculatedFirstInstDate < currentDisbDate) {
+                    const dDate = new Date(currentDisbDate);
+                    dDate.setMonth(dDate.getMonth() + 1);
+                    calculatedFirstInstDate = dDate.toISOString().split('T')[0];
+                }
 
                 sancAmount = app.requestedAmount;
                 memberId = app.memberID || 0;
@@ -786,8 +831,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     noOfInstallments: app.noOfInstallments || 0,
                     installmentAmount: app.installmentAmount || 0,
                     installmentFrequency: app.installmentFrequency || 'मासिक',
-                    openingDate: autoDisbDate,
-                    firstInstallmentDate: app.firstInstallmentDate,
+                    openingDate: currentDisbDate,
+                    firstInstallmentDate: calculatedFirstInstDate,
                     maturityDate: app.maturityDate,
                     status: "Active",
                     loanAccountNo: app.loanAccountNo || ''
@@ -802,22 +847,27 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     loanAccountID: app.linkedLoanAccountID || 0,
                     sanctionedAmount: sancAmount,
                     disbursementAmount: pendingLimit,
-                    disbursementDate: autoDisbDate
+                    disbursementDate: currentDisbDate,
+                    transferToSavingAccountNo: ''
                 }));
             }
         } else {
             const acc = accounts.find(a => a.loanAccountID === id);
             if (acc) {
+                if (acc.branchID && acc.branchID > 0) {
+                    setSelectedBranchId(acc.branchID);
+                }
                 sancAmount = acc.sanctionedAmount;
                 memberId = acc.memberID || 0;
                 customerId = acc.customerID || acc.customer?.customerID || 0;
                 
-                const disbList = Array.isArray(disbursements) ? disbursements : [];
+                const disbList = (Array.isArray(acc.loanDisbursements) && acc.loanDisbursements.length > 0)
+                    ? acc.loanDisbursements
+                    : (Array.isArray(disbursements) ? disbursements.filter(d => d.loanAccountID === acc.loanAccountID) : []);
                 alreadyDisb = disbList
-                    .filter(d => d.loanAccountID === acc.loanAccountID)
-                    .reduce((sum, d) => sum + (d.disbursementAmount || 0), 0);
+                    .reduce((sum: number, d: any) => sum + (d.disbursementAmount || 0), 0);
                 pendingLimit = Math.max(0, sancAmount - alreadyDisb);
-                trancheNo = disbList.filter(d => d.loanAccountID === acc.loanAccountID).length + 1;
+                trancheNo = disbList.length + 1;
 
                 setAlreadyDisbursedAmount(alreadyDisb);
                 setPendingSanctionedLimit(pendingLimit);
@@ -851,7 +901,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     ...p, 
                     loanAccountID: acc.loanAccountID,
                     sanctionedAmount: sancAmount,
-                    disbursementAmount: pendingLimit > 0 ? pendingLimit : sancAmount
+                    disbursementAmount: pendingLimit > 0 ? pendingLimit : sancAmount,
+                    transferToSavingAccountNo: ''
                 }));
             }
         }
@@ -1143,37 +1194,93 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
         const allowedMax = pendingSanctionedLimit > 0 ? pendingSanctionedLimit : (formData.sanctionedAmount || 0);
 
         if (!selectedSourceId && sourceType !== 'Draft') {
-            setErrorMessage('कृपया मंजूर कर्ज अर्ज किंवा कर्ज खाते निवडा!');
+            const m = 'कृपया मंजूर कर्ज अर्ज किंवा कर्ज खाते निवडा!';
+            setErrorMessage(m);
+            alert(m);
             return;
         }
 
         if (curDisbAmt <= 0) {
-            setErrorMessage('कृपया वैध कर्ज वाटप रक्कम टाका!');
+            const m = 'कृपया वैध कर्ज वाटप रक्कम टाका!';
+            setErrorMessage(m);
+            alert(m);
             return;
         }
 
         if (curDisbAmt > allowedMax) {
-            setErrorMessage(`वाटप रक्कम (₹${curDisbAmt.toLocaleString('en-IN')}) मंजूर शिल्लक मर्यादेपेक्षा (₹${allowedMax.toLocaleString('en-IN')}) जास्त असू शकत नाही!`);
+            const m = `वाटप रक्कम (₹${curDisbAmt.toLocaleString('en-IN')}) मंजूर शिल्लक मर्यादेपेक्षा (₹${allowedMax.toLocaleString('en-IN')}) जास्त असू शकत नाही!`;
+            setErrorMessage(m);
+            alert(m);
             return;
         }
 
         if ((formData.netAmountPaid || 0) < 0) {
-            setErrorMessage('एकूण कपातींची रक्कम वाटप रक्कमेपेक्षा जास्त असू शकत नाही! कृपया कपाती तपासा.');
+            const m = 'एकूण कपातींची रक्कम वाटप रक्कमेपेक्षा जास्त असू शकत नाही! कृपया कपाती तपासा.';
+            setErrorMessage(m);
+            alert(m);
             return;
+        }
+
+        const effectiveBranchId = getEffectiveLoanBranchId();
+
+        if (formData.paymentMode === 'Saving Transfer') {
+            const cleanSavNo = (formData.transferToSavingAccountNo || '').trim();
+            if (!cleanSavNo) {
+                const m = 'बचत खाते वर्ग (Saving Transfer) साठी कृपया वैध सेव्हिंग खाते निवडा!';
+                setErrorMessage(m);
+                alert(m);
+                return;
+            }
+            const targetSaving = savingAccounts.find(s => s.accountNo === cleanSavNo);
+            if (!targetSaving) {
+                const m = `निवडलेले बचत खाते (${cleanSavNo}) सापडले नाही. कृपया यादीतून वैध बचत खाते निवडा!`;
+                setErrorMessage(m);
+                alert(m);
+                return;
+            }
+            if (targetSaving.status && targetSaving.status !== 'Active') {
+                const m = `निवडलेले बचत खाते (#${cleanSavNo}) '${targetSaving.status}' स्थितीत असल्याने त्यावर कर्ज रक्कम वर्ग करता येणार नाही!`;
+                setErrorMessage(m);
+                alert(m);
+                return;
+            }
+            if (effectiveBranchId > 0 && targetSaving.branchID && targetSaving.branchID !== effectiveBranchId) {
+                const m = `आंतर-शाखा बचत वर्ग अनुमत नाही! कर्ज खाते शाखा #${effectiveBranchId} मधील असून निवडलेले बचत खाते शाखा #${targetSaving.branchID} मधील आहे. कृपया एकाच शाखेतील बचत खाते निवडा.`;
+                setErrorMessage(m);
+                alert(m);
+                return;
+            }
+        } else if (formData.paymentMode === 'Bank' || formData.paymentMode === 'Cheque') {
+            if (!formData.bankAccountLedgerID || formData.bankAccountLedgerID <= 0) {
+                const m = 'बँक / चेक पेमेंटसाठी कृपया वैध बँक खाते (Bank A/c) निवडा!';
+                setErrorMessage(m);
+                alert(m);
+                return;
+            }
         }
 
         setIsSaving(true);
         try {
             const payload: any = { 
                 ...formData, 
-                branchID: selectedBranchId,
+                branchID: effectiveBranchId || selectedBranchId,
                 deductions: deductions.filter(d => d.ledgerID && d.amount > 0)
             };
 
             if (sourceType === 'Application' || sourceType === 'Draft') {
+                const currentApp = sourceType === 'Draft' 
+                    ? draftApplication 
+                    : applications.find(a => String(a.loanApplicationID) === String(selectedSourceId));
+
                 payload.loanAccount = {
                     ...newAccountData,
-                    branchID: selectedBranchId,
+                    customerID: newAccountData.customerID || currentApp?.customerID || currentApp?.customer?.customerID || null,
+                    memberID: newAccountData.memberID || currentApp?.memberID || null,
+                    loanRateID: newAccountData.loanRateID || currentApp?.loanRateID || 0,
+                    sanctionedAmount: newAccountData.sanctionedAmount || currentApp?.requestedAmount || formData.sanctionedAmount || formData.disbursementAmount,
+                    interestRate: newAccountData.interestRate || currentApp?.interestRate || 0,
+                    durationMonths: newAccountData.durationMonths || currentApp?.durationMonths || 12,
+                    branchID: effectiveBranchId || selectedBranchId,
                     loanAccountNo: (autoLoanAccountNo || newAccountData.loanAccountNo || 'AUTO').trim(),
                     legacyAccountNumber: (legacyLoanAccountNo || '').trim() || null,
                     openingDate: formData.disbursementDate,
@@ -1185,30 +1292,54 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 } as any;
             }
 
-            // Strict CBS Single-Call Atomicity: Link Draft Application ID directly into payload
+            // Strict CBS Single-Call Atomicity: Link Application ID directly into payload
             // The unified database transaction in POST /api/LoanDisbursements commits or rolls back atomically.
-            if (sourceType === 'Draft' && draftApplication) {
+            if (sourceType === 'Application' && selectedSourceId) {
+                if (payload.loanAccount) {
+                    payload.loanAccount.loanApplicationID = selectedSourceId;
+                }
+            } else if (sourceType === 'Draft' && draftApplication) {
                 if (payload.loanAccount && draftApplication.loanApplicationID) {
                     payload.loanAccount.loanApplicationID = draftApplication.loanApplicationID;
                 }
             }
 
+            let sMsg = '';
+            let shouldAlertPending = false;
+
             if (editingId) {
                 await axios.put(`/api/LoanDisbursements/${editingId}`, payload);
-                setSuccessMessage(`कर्ज वाटप #${editingId} यशस्वीरीत्या अद्यतनित (Updated) झाले!`);
+                sMsg = `कर्ज वाटप #${editingId} यशस्वीरीत्या अद्यतनित (Updated) झाले!`;
             } else {
-                await axios.post('/api/LoanDisbursements', payload);
-                setSuccessMessage(`नवीन कर्ज वाटप यशस्वीरीत्या पूर्ण झाले! पावती/व्हाउचर तयार झाले.`);
+                const res = await axios.post('/api/LoanDisbursements', payload);
+                const vNo = res.data?.voucherNo ? ` (${res.data.voucherNo})` : '';
+                const vStatus = res.data?.voucherStatus || '';
+                const netPaidFormatted = (formData.netAmountPaid || 0).toLocaleString('en-IN');
+
+                if (vStatus === 'Pending') {
+                    shouldAlertPending = true;
+                    sMsg = formData.paymentMode === 'Saving Transfer'
+                        ? `कर्ज वाटप नोंद जतन झाली! व्हाउचर${vNo} सध्या 'प्रलंबित (Pending)' आहे. चेकरकडून व्हाउचर पासिंग (Voucher Passing) झाल्यावरच निवडलेल्या बचत खात्यात ₹${netPaidFormatted} जमा दिसतील.`
+                        : `कर्ज वाटप नोंद जतन झाली! व्हाउचर${vNo} मंजुरीसाठी 'प्रलंबित (Pending)' यादीत पाठवले आहे.`;
+                } else {
+                    sMsg = `नवीन कर्ज वाटप यशस्वीरीत्या पूर्ण व ऑटो-पास झाले! व्हाउचर${vNo} तयार झाले.`;
+                }
             }
             
             fetchData();
             fetchDropdowns();
             handleResetForm();
+            setSuccessMessage(sMsg);
+            if (shouldAlertPending) {
+                alert(sMsg);
+            }
             if (onSaveSuccess) onSaveSuccess();
         } catch (err: any) {
             console.error(err);
             const msg = err.response?.data?.message || err.response?.data?.title || (typeof err.response?.data === 'string' ? err.response.data : err.message);
-            setErrorMessage(msg || 'कर्ज वाटप सेव्ह करताना त्रुटी आली.');
+            const finalMsg = msg || 'कर्ज वाटप सेव्ह करताना त्रुटी आली.';
+            setErrorMessage(finalMsg);
+            alert(`कर्ज वाटप त्रुटी (Disbursement Error):\n${finalMsg}`);
         } finally {
             setIsSaving(false);
         }
@@ -1224,12 +1355,22 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     let selectedGuarantor2 = "-";
     let selectedSecurity = "-";
 
+    const formatSchemeDisplay = (lr?: any) => {
+        if (!lr) return 'General Loan';
+        const sName = (lr.shortName || '').trim();
+        const lType = (lr.loanType || '').trim();
+        if (sName && lType && sName.toLowerCase() !== lType.toLowerCase()) {
+            return `${sName} (${lType})`;
+        }
+        return sName || lType || 'General Loan';
+    };
+
     if (draftApplication) {
         const borrower = draftApplication.customer;
         selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (draftApplication.customerID ? `ग्राहक #${draftApplication.customerID}` : 'अर्जदार');
         selectedCif = draftApplication.customer?.cifNo || '';
         selectedAccountNo = draftApplication.applicationNo || 'DRAFT';
-        selectedLoanType = draftApplication.loanRate?.loanType || 'General Loan';
+        selectedLoanType = formatSchemeDisplay(draftApplication.loanRate);
         const g1 = draftApplication.guarantor1Customer;
         selectedGuarantor1 = g1 ? `${g1.firstName || ''} ${g1.lastName || ''}`.trim() : '-';
         const g2 = draftApplication.guarantor2Customer;
@@ -1242,7 +1383,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             selectedName = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (app.customerID ? `ग्राहक #${app.customerID}` : 'अर्जदार');
             selectedCif = app.customer?.cifNo || '';
             selectedAccountNo = app.applicationNo || '';
-            selectedLoanType = app.loanRate?.loanType || '';
+            selectedLoanType = formatSchemeDisplay(app.loanRate);
             const g1 = app.guarantor1Customer;
             selectedGuarantor1 = g1 ? `${g1.firstName || ''} ${g1.lastName || ''}`.trim() : '-';
             const g2 = app.guarantor2Customer;
@@ -1257,7 +1398,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             selectedCif = acc.customer?.cifNo || '';
             selectedAccountNo = acc.loanAccountNo || '';
             selectedLegacyLoanNo = acc.legacyAccountNumber || '';
-            selectedLoanType = acc.loanRate?.loanType || '';
+            selectedLoanType = formatSchemeDisplay(acc.loanRate);
             const g1 = acc.guarantor1Customer;
             selectedGuarantor1 = g1 ? `${g1.firstName || ''} ${g1.lastName || ''}`.trim() : '-';
             const g2 = acc.guarantor2Customer;
@@ -1267,13 +1408,55 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
     }
 
     const currentApplicantCustomerId = getCurrentApplicantCustomerId();
+    const effectiveLoanBranchId = getEffectiveLoanBranchId();
     const isApplicantSaving = (s: any) => {
         if (currentApplicantCustomerId && s.customerID === currentApplicantCustomerId) return true;
         return false;
     };
+    const isSameBranchEligibleSaving = (s: any) => {
+        if (isPassingMode && formData.transferToSavingAccountNo && s.accountNo === formData.transferToSavingAccountNo) {
+            return true;
+        }
+        const activeOk = s.status === 'Active' || !s.status;
+        const branchOk = !effectiveLoanBranchId || !s.branchID || s.branchID === effectiveLoanBranchId;
+        return activeOk && branchOk;
+    };
 
-    const applicantSavingAccounts = savingAccounts.filter(s => isApplicantSaving(s) && (s.status === 'Active' || !s.status));
-    const otherSavingAccounts = savingAccounts.filter(s => !isApplicantSaving(s) && (s.status === 'Active' || !s.status));
+    const applicantSavingAccounts = savingAccounts.filter(s => isApplicantSaving(s) && isSameBranchEligibleSaving(s));
+    const otherSavingAccounts = savingAccounts.filter(s => !isApplicantSaving(s) && isSameBranchEligibleSaving(s));
+
+    const formatSavingOption = (s: any, isApplicant: boolean): SearchableSelectOption => {
+        const oldAcc = (s.oldAccountNo || s.legacyAccountNumber || s.previousAccountNo || '').toString().trim();
+        const custName = (s.customerName || s.customerNameEng || s.memberName || (s.customer ? `${s.customer.firstName || ''} ${s.customer.lastName || ''}`.trim() : '') || 'खातेदार').trim();
+        const balance = (Number(s.currentBalance) || 0).toLocaleString('en-IN');
+        const rawAcc = (s.accountNo || '').toString().trim();
+        const formattedAcc = (s.formattedAccountNo || rawAcc).toString().trim();
+
+        // Label: "00110100000014 (जुना: 102) - आनंद पाटील (शिल्लक: ₹15,200)"
+        const oldTag = oldAcc ? ` (जुना: ${oldAcc})` : '';
+        const label = `${formattedAcc}${oldTag} - ${custName} (₹${balance})`;
+
+        // Sublabel: searchable by old account, CIF, mobile, balance
+        const subParts: string[] = [];
+        if (oldAcc) subParts.push(`जुना खा. क्र.: ${oldAcc}`);
+        if (s.cifNo) subParts.push(`CIF: ${s.cifNo}`);
+        subParts.push(`शिल्लक: ₹${balance}`);
+        if (s.mobileNo) subParts.push(`मो.: ${s.mobileNo}`);
+
+        return {
+            value: rawAcc,
+            label,
+            subLabel: subParts.join(' | '),
+            badge: isApplicant ? '⭐ अर्जदार' : (oldAcc ? `जुना: ${oldAcc}` : undefined),
+            badgeColor: isApplicant ? 'emerald' : 'amber'
+        };
+    };
+
+    const savingAccountOptions: SearchableSelectOption[] = useMemo(() => {
+        const appOptions = applicantSavingAccounts.map(s => formatSavingOption(s, true));
+        const otherOptions = otherSavingAccounts.map(s => formatSavingOption(s, false));
+        return [...appOptions, ...otherOptions];
+    }, [applicantSavingAccounts, otherSavingAccounts]);
 
     const totalDeductionsAmount = Array.isArray(deductions) ? deductions.reduce((sum, d) => sum + (parseFloat(d.amount as any) || 0), 0) : 0;
     const isExceedingPendingLimit = Boolean((formData.disbursementAmount || 0) > (pendingSanctionedLimit > 0 ? pendingSanctionedLimit : (formData.sanctionedAmount || 0)));
@@ -1399,6 +1582,43 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                     </button>
                 </div>
             </div>
+
+            {/* Success Notification Banner */}
+            {successMessage && (
+                <div className="bg-emerald-50 border-l-4 border-emerald-500 p-3 rounded-sm shadow-xs flex items-center justify-between gap-2 mb-3 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-emerald-800 text-xs font-bold">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span>{successMessage}</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setSuccessMessage('')}
+                        className="text-emerald-700 hover:text-emerald-950 font-bold text-xs p-1 cursor-pointer"
+                    >
+                        ✕
+                    </button>
+                </div>
+            )}
+
+            {/* Error Notification Banner */}
+            {errorMessage && (
+                <div className="bg-rose-50 border-l-4 border-rose-500 p-3 rounded-sm shadow-xs flex items-center justify-between gap-2 mb-3 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-rose-800 text-xs font-bold">
+                        <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                        <div>
+                            <span className="block font-black text-rose-900">त्रुटी (Error):</span>
+                            <span>{errorMessage}</span>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setErrorMessage('')}
+                        className="text-rose-700 hover:text-rose-950 font-bold text-xs p-1 cursor-pointer"
+                    >
+                        ✕
+                    </button>
+                </div>
+            )}
 
             {/* ========================================================================= */}
             {/* SUMMARY KPI CARDS (Matching LoanApplicationMaster.tsx)                     */}
@@ -1590,31 +1810,51 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                     ) : (
                                         <SearchableSelect 
                                             options={sourceType === 'Application' 
-                                                ? applications.map(a => {
-                                                    const borrower = a.customer;
-                                                    const name = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (a.customerID ? `ग्राहक #${a.customerID}` : 'अर्जदार');
-                                                    const cif = a.customer?.cifNo ? ` [CIF: ${a.customer.cifNo}]` : '';
-                                                    const trancheTag = (a.disbursementCount || 0) > 0 
-                                                        ? ` [टप्पा ${(a.disbursementCount || 0) + 1} | शिल्लक: ₹${(a.pendingSanctionedAmount || 0).toLocaleString('en-IN')}]` 
-                                                        : ` - मंजूर: ₹${(a.requestedAmount || 0).toLocaleString('en-IN')}`;
-                                                    return { 
-                                                        value: a.loanApplicationID.toString(), 
-                                                        label: `${name} (${a.applicationNo || a.loanApplicationID})${trancheTag}${cif}` 
-                                                    };
-                                                })
-                                                : accounts.map(a => {
-                                                    const borrower = a.customer;
-                                                    const name = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (a.customerID ? `ग्राहक #${a.customerID}` : 'खातेदार');
-                                                    const cif = a.customer?.cifNo ? ` [CIF: ${a.customer.cifNo}]` : '';
-                                                    const legPart = a.legacyAccountNumber ? ` [जुने कर्ज: ${a.legacyAccountNumber}]` : '';
-                                                    const disbList = Array.isArray(disbursements) ? disbursements : [];
-                                                    const accDisbursed = disbList.filter(d => d.loanAccountID === a.loanAccountID).reduce((s, d) => s + (d.disbursementAmount || 0), 0);
-                                                    const pending = Math.max(0, (a.sanctionedAmount || 0) - accDisbursed);
-                                                    return { 
-                                                        value: a.loanAccountID.toString(), 
-                                                        label: `${name} (${format14DigitDisplay(a.loanAccountNo)})${legPart} - ${a.loanRate?.shortName || a.loanRate?.loanType || ''} - मंजूर: ₹${(a.sanctionedAmount || 0).toLocaleString('en-IN')} | शिल्लक: ₹${pending.toLocaleString('en-IN')}${cif}` 
-                                                    };
-                                                })
+                                                ? applications
+                                                    .filter(a => {
+                                                        const pending = a.pendingSanctionedAmount !== undefined 
+                                                            ? a.pendingSanctionedAmount 
+                                                            : ((a.requestedAmount || 0) - (a.totalDisbursedAmount || 0));
+                                                        return pending > 0;
+                                                    })
+                                                    .map(a => {
+                                                        const borrower = a.customer;
+                                                        const name = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (a.customerID ? `ग्राहक #${a.customerID}` : 'अर्जदार');
+                                                        const cif = a.customer?.cifNo ? ` [CIF: ${a.customer.cifNo}]` : '';
+                                                        const schemeName = a.loanRate?.shortName || a.loanRate?.loanType ? ` - ${a.loanRate.shortName ? `${a.loanRate.shortName} (${a.loanRate.loanType})` : a.loanRate.loanType}` : '';
+                                                        const trancheTag = (a.disbursementCount || 0) > 0 
+                                                            ? ` [टप्पा ${(a.disbursementCount || 0) + 1} | शिल्लक: ₹${(a.pendingSanctionedAmount || 0).toLocaleString('en-IN')}]` 
+                                                            : ` - मंजूर: ₹${(a.requestedAmount || 0).toLocaleString('en-IN')}`;
+                                                        return { 
+                                                            value: a.loanApplicationID.toString(), 
+                                                            label: `${name} (${a.applicationNo || a.loanApplicationID})${schemeName}${trancheTag}${cif}` 
+                                                        };
+                                                    })
+                                                : accounts
+                                                    .filter(a => {
+                                                        if (a.status === 'Closed') return false;
+                                                        const disbList = (Array.isArray(a.loanDisbursements) && a.loanDisbursements.length > 0)
+                                                            ? a.loanDisbursements
+                                                            : (Array.isArray(disbursements) ? disbursements.filter(d => d.loanAccountID === a.loanAccountID) : []);
+                                                        const accDisbursed = disbList.reduce((s: number, d: any) => s + (d.disbursementAmount || 0), 0);
+                                                        const pending = Math.max(0, (a.sanctionedAmount || 0) - accDisbursed);
+                                                        return pending > 0;
+                                                    })
+                                                    .map(a => {
+                                                        const borrower = a.customer;
+                                                        const name = borrower ? `${borrower.firstName || ''} ${borrower.lastName || ''}`.trim() : (a.customerID ? `ग्राहक #${a.customerID}` : 'खातेदार');
+                                                        const cif = a.customer?.cifNo ? ` [CIF: ${a.customer.cifNo}]` : '';
+                                                        const legPart = a.legacyAccountNumber ? ` [जुने कर्ज: ${a.legacyAccountNumber}]` : '';
+                                                        const disbList = (Array.isArray(a.loanDisbursements) && a.loanDisbursements.length > 0)
+                                                            ? a.loanDisbursements
+                                                            : (Array.isArray(disbursements) ? disbursements.filter(d => d.loanAccountID === a.loanAccountID) : []);
+                                                        const accDisbursed = disbList.reduce((s: number, d: any) => s + (d.disbursementAmount || 0), 0);
+                                                        const pending = Math.max(0, (a.sanctionedAmount || 0) - accDisbursed);
+                                                        return { 
+                                                            value: a.loanAccountID.toString(), 
+                                                            label: `${name} (${format14DigitDisplay(a.loanAccountNo)})${legPart} - ${a.loanRate?.shortName || a.loanRate?.loanType || ''} - मंजूर: ₹${(a.sanctionedAmount || 0).toLocaleString('en-IN')} | शिल्लक: ₹${pending.toLocaleString('en-IN')}${cif}` 
+                                                        };
+                                                    })
                                             }
                                             value={selectedSourceId.toString()} 
                                             onChange={handleSourceSelection} 
@@ -1651,6 +1891,12 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                             <span><b>जामीनदार २:</b> {selectedGuarantor2}</span>
                                             <span><b>तारण:</b> {selectedSecurity}</span>
                                         </div>
+                                        {selectedLoanType.includes('विनातारणी') && (!selectedGuarantor1 || selectedGuarantor1 === '-') && (!selectedGuarantor2 || selectedGuarantor2 === '-') && (
+                                            <div className="mt-1 px-2 py-1 bg-amber-50 border border-amber-300 rounded text-[10px] text-amber-900 flex items-center gap-1.5">
+                                                <span className="shrink-0 text-amber-600 font-bold">⚠️</span>
+                                                <span><b>सूचना:</b> ही विनातारणी (Unsecured) कर्ज योजना आहे, परंतु या अर्जात दोन्ही जामीनदार नोंदवलेले नाहीत.</span>
+                                            </div>
+                                        )}
                                     </div>
                                 ) : null}
 
@@ -1902,7 +2148,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                                     <div className="w-28 shrink-0">
                                                         <input 
                                                             type="number" 
-                                                            value={deduction.amount || ''} 
+                                                            value={deduction.amount !== undefined && deduction.amount !== null ? deduction.amount : ''} 
                                                             onChange={(e) => handleDeductionChange(index, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                                             onFocus={(e) => e.target.select()}
                                                             placeholder="रक्कम ₹" 
@@ -1957,6 +2203,31 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                     const applicantMember = appObj?.member || accObj?.member || draftApplication?.member;
                                     
                                     if (shareAmt <= 0 || qty <= 0) {
+                                        const isMember = Boolean(applicantMember || memberShareBalance > 0 || appObj?.customer?.memberID || accObj?.customer?.memberID);
+                                        if (isMember && memberShareBalance >= maxShareLimit) {
+                                            return (
+                                                <div className="p-1.5 bg-emerald-50 border border-emerald-200 rounded text-[10px] text-emerald-900 flex items-center justify-between">
+                                                    <span className="font-medium">
+                                                        ✅ सभासदांकडे आधीच पूर्ण शेअर्स भांडवल (₹{memberShareBalance.toLocaleString('en-IN')}) जमा असल्याने नवीन शेअर्स कपात केलेली नाही.
+                                                    </span>
+                                                    <span className="text-[9px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.2 rounded font-bold font-mono">
+                                                        Regular Member (पूर्ण शेअर्स)
+                                                    </span>
+                                                </div>
+                                            );
+                                        }
+                                        if (isMember) {
+                                            return (
+                                                <div className="p-1.5 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-900 flex items-center justify-between">
+                                                    <span className="font-medium">
+                                                        ℹ️ विद्यमान शेअर्स भांडवल: ₹{memberShareBalance.toLocaleString('en-IN')} (नवीन शेअर्स कपात शून्य).
+                                                    </span>
+                                                    <span className="text-[9px] bg-blue-100 text-blue-800 border border-blue-300 px-1 py-0.2 rounded font-semibold font-mono">
+                                                        Member
+                                                    </span>
+                                                </div>
+                                            );
+                                        }
                                         return (
                                             <div className="p-1.5 bg-amber-50/80 border border-amber-200 rounded text-[10px] text-amber-900 flex items-center justify-between">
                                                 <span className="font-medium">
@@ -2072,32 +2343,42 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
 
                                         {formData.paymentMode === 'Saving Transfer' && (
                                             <div>
-                                                <label className={labelClass}>सेव्हिंग खाते नंबर <span className="text-red-500">*</span></label>
-                                                <select 
+                                                <label className={labelClass}>
+                                                    सेव्हिंग खाते नंबर (Saving A/c) <span className="text-red-500">*</span>
+                                                </label>
+                                                <SearchableSelect 
                                                     name="transferToSavingAccountNo" 
                                                     value={formData.transferToSavingAccountNo || ''} 
-                                                    onChange={(e) => setFormData(p => ({ ...p, transferToSavingAccountNo: e.target.value }))} 
-                                                    className={inputClass}
-                                                    required
-                                                >
-                                                    <option value="">-- सेव्हिंग खाते निवडा --</option>
-                                                    {applicantSavingAccounts.length > 0 && (
-                                                        <optgroup label="⭐ अर्जदाराचे सेव्हिंग खाते">
-                                                            {applicantSavingAccounts.map(s => (
-                                                                <option key={s.savingAccountID} value={s.accountNo}>
-                                                                    {s.accountNo} - {s.memberName || 'Member'} (₹{(s.currentBalance || 0).toLocaleString('en-IN')})
-                                                                </option>
-                                                            ))}
-                                                        </optgroup>
-                                                    )}
-                                                    <optgroup label="📋 इतर सर्व सेव्हिंग खाती">
-                                                        {otherSavingAccounts.map(s => (
-                                                            <option key={s.savingAccountID} value={s.accountNo}>
-                                                                {s.accountNo} - {s.memberName || 'Member'} (₹{(s.currentBalance || 0).toLocaleString('en-IN')})
-                                                            </option>
-                                                        ))}
-                                                    </optgroup>
-                                                </select>
+                                                    onChange={(e: any) => setFormData(p => ({ ...p, transferToSavingAccountNo: e.target.value }))} 
+                                                    options={savingAccountOptions}
+                                                    placeholder="नवीन क्र., जुना क्र. किंवा नावाने शोधा..."
+                                                />
+                                                {/* Selected Saving Account Info preview box */}
+                                                {(() => {
+                                                    if (!formData.transferToSavingAccountNo) return null;
+                                                    const selectedSaving = savingAccounts.find(s => s.accountNo === formData.transferToSavingAccountNo);
+                                                    if (!selectedSaving) return null;
+                                                    const oldAcc = (selectedSaving.oldAccountNo || selectedSaving.legacyAccountNumber || selectedSaving.previousAccountNo || '').toString().trim();
+                                                    const custName = (selectedSaving.customerName || selectedSaving.customerNameEng || selectedSaving.memberName || 'खातेदार').trim();
+                                                    const balance = (Number(selectedSaving.currentBalance) || 0).toLocaleString('en-IN');
+                                                    return (
+                                                        <div className="mt-1 text-[10.5px] bg-emerald-50 text-emerald-900 border border-emerald-300 rounded px-2 py-0.5 flex flex-wrap items-center justify-between gap-1 shadow-2xs animate-in fade-in duration-150">
+                                                            <span className="flex items-center gap-1">
+                                                                <span>✅</span>
+                                                                <strong>{custName}</strong>
+                                                                <span className="text-emerald-800">| नवीन खा. क्र.: <strong className="font-mono">{selectedSaving.accountNo}</strong></span>
+                                                                {oldAcc && (
+                                                                    <span className="bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded font-mono border border-amber-300 ml-1">
+                                                                        जुना क्र.: {oldAcc}
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                            <span className="font-mono text-emerald-800 font-bold">
+                                                                शिल्लक: ₹{balance}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
                                         )}
                                     </div>
@@ -2134,6 +2415,26 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                         </div>
                     </div>
                     </fieldset>
+
+                    {/* Bottom Error Banner right above Submit Button */}
+                    {errorMessage && (
+                        <div className="mb-2 p-2.5 bg-rose-50 border-2 border-rose-400 text-rose-900 rounded-sm flex items-center justify-between gap-2 shadow-xs animate-in fade-in">
+                            <div className="flex items-center gap-2 text-xs font-bold">
+                                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                                <div>
+                                    <span className="font-black text-rose-950 block">वाटप त्रुटी (Disbursement Error):</span>
+                                    <span>{errorMessage}</span>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setErrorMessage('')}
+                                className="text-rose-700 hover:text-rose-950 font-bold text-xs p-1 cursor-pointer"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    )}
 
                     {/* Form Action Buttons Bar (Full Width) */}
                     <div className="pt-2 flex flex-wrap justify-between items-center gap-2 border-t border-gray-200 bg-slate-50/70 -mx-2.5 sm:-mx-3 -mb-2.5 sm:-mb-3 p-2 rounded-b-sm">

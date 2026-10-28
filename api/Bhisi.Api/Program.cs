@@ -519,6 +519,28 @@ using (var scope = app.Services.CreateScope())
             IF COL_LENGTH('LoanRates', 'IsCollateralMandatoryForOpeningBalance') IS NULL
                 ALTER TABLE [dbo].[LoanRates] ADD [IsCollateralMandatoryForOpeningBalance] bit NOT NULL DEFAULT 0;
 
+            -- Gold Loan Collateral & Valuer Tracking Migration Checks
+            IF COL_LENGTH('GoldLoanDetails', 'LoanApplicationID') IS NULL
+                ALTER TABLE [dbo].[GoldLoanDetails] ADD [LoanApplicationID] int NULL;
+            IF COL_LENGTH('GoldLoanDetails', 'ValuerName') IS NULL
+                ALTER TABLE [dbo].[GoldLoanDetails] ADD [ValuerName] nvarchar(200) NULL;
+            IF COL_LENGTH('GoldLoanDetails', 'ValuerValuation') IS NULL
+                ALTER TABLE [dbo].[GoldLoanDetails] ADD [ValuerValuation] decimal(18,2) NOT NULL DEFAULT 0.00;
+            IF COL_LENGTH('GoldLoanDetails', 'ValuationReceiptNo') IS NULL
+                ALTER TABLE [dbo].[GoldLoanDetails] ADD [ValuationReceiptNo] nvarchar(100) NULL;
+            IF COL_LENGTH('GoldLoanDetails', 'ValuationDate') IS NULL
+                ALTER TABLE [dbo].[GoldLoanDetails] ADD [ValuationDate] datetime2 NULL;
+            IF COL_LENGTH('GoldLoanDetails', 'Remarks') IS NULL
+                ALTER TABLE [dbo].[GoldLoanDetails] ADD [Remarks] nvarchar(500) NULL;
+            IF COL_LENGTH('GoldLoanDetails', 'ImagePath') IS NOT NULL
+                ALTER TABLE [dbo].[GoldLoanDetails] ALTER COLUMN [ImagePath] nvarchar(max) NULL;
+            IF COL_LENGTH('GoldLoanDetails', 'LoanAccountID') IS NOT NULL
+                ALTER TABLE [dbo].[GoldLoanDetails] ALTER COLUMN [LoanAccountID] int NULL;
+            IF COL_LENGTH('LoanApplications', 'SecurityDetails') IS NOT NULL
+                ALTER TABLE [dbo].[LoanApplications] ALTER COLUMN [SecurityDetails] nvarchar(max) NULL;
+            IF COL_LENGTH('LoanAccounts', 'SecurityDetails') IS NOT NULL
+                ALTER TABLE [dbo].[LoanAccounts] ALTER COLUMN [SecurityDetails] nvarchar(max) NULL;
+
             -- Multi-Branch Migration: Add BranchID to LoanApplications
             IF COL_LENGTH('LoanApplications', 'BranchID') IS NULL
             BEGIN

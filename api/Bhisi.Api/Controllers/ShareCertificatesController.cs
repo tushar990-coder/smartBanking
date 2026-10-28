@@ -433,7 +433,7 @@ namespace Bhisi.Api.Controllers
                             CreatedOn = DateTime.Now
                         });
 
-                        creditLedgerId = savingAccount.LedgerID;
+                        creditLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savingAccount);
                     }
                     else
                     {

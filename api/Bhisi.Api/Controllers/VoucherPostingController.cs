@@ -305,6 +305,36 @@ namespace Bhisi.Api.Controllers
                             }
                         }
 
+                        // 🌟 Apply deferred Saving Transfer credit for Loan Disbursement ONLY upon Voucher Approval
+                        var linkedDisbursements = await _context.LoanDisbursements
+                            .Include(d => d.LoanAccount)
+                                .ThenInclude(l => l!.Customer)
+                            .Include(d => d.LoanAccount)
+                                .ThenInclude(l => l!.Member)
+                                    .ThenInclude(m => m!.Customer)
+                            .Where(d => d.VoucherID == voucher.VoucherID)
+                            .ToListAsync();
+
+                        foreach (var linkedDisb in linkedDisbursements)
+                        {
+                            if (Helpers.LoanDisbursementReversalHelper.IsSavingTransferMode(linkedDisb.PaymentMode) && linkedDisb.NetAmountPaid > 0)
+                            {
+                                string borrowerName = linkedDisb.LoanAccount?.Customer != null
+                                    ? string.Join(" ", new[] { linkedDisb.LoanAccount.Customer.FirstName, linkedDisb.LoanAccount.Customer.MiddleName, linkedDisb.LoanAccount.Customer.LastName }.Where(p => !string.IsNullOrWhiteSpace(p))).Trim()
+                                    : (linkedDisb.LoanAccount?.Member?.Customer != null
+                                        ? string.Join(" ", new[] { linkedDisb.LoanAccount.Member.Customer.FirstName, linkedDisb.LoanAccount.Member.Customer.MiddleName, linkedDisb.LoanAccount.Member.Customer.LastName }.Where(p => !string.IsNullOrWhiteSpace(p))).Trim()
+                                        : "");
+
+                                await Helpers.LoanDisbursementReversalHelper.ApplyApprovedSavingTransferCreditAsync(
+                                    _context,
+                                    linkedDisb,
+                                    voucher,
+                                    null,
+                                    linkedDisb.LoanAccount?.LoanAccountNo,
+                                    borrowerName);
+                            }
+                        }
+
                         postedVoucherDetails.Add(new
                         {
                             voucherId = voucher.VoucherID,
@@ -326,6 +356,11 @@ namespace Bhisi.Api.Controllers
                     postedCount = vouchers.Count,
                     vouchers = postedVoucherDetails
                 });
+            }
+            catch (InvalidOperationException valEx)
+            {
+                await dbTransaction.RollbackAsync();
+                return BadRequest(valEx.Message);
             }
             catch (Exception ex)
             {
@@ -425,6 +460,14 @@ namespace Bhisi.Api.Controllers
                         }
                     }
 
+                    // 🌟 Reverse Saving Transfer credit for Loan Disbursement when Unpassed back to Pending
+                    bool isLoanDisbursementVoucher = await _context.LoanDisbursements
+                        .AnyAsync(d => d.VoucherID == voucher.VoucherID);
+                    if (isLoanDisbursementVoucher)
+                    {
+                        await Helpers.LoanDisbursementReversalHelper.ReverseSavingTransferCreditForVoucherAsync(_context, voucher.VoucherNo);
+                    }
+
                     // 3. Record in AuditLogs
                     _context.AuditLogs.Add(new AuditLog
                     {
@@ -450,6 +493,11 @@ namespace Bhisi.Api.Controllers
                     unpassedCount,
                     voucherNumbers = unpassedVoucherNumbers
                 });
+            }
+            catch (InvalidOperationException valEx)
+            {
+                await dbTransaction.RollbackAsync();
+                return BadRequest(new { message = valEx.Message });
             }
             catch (Exception ex)
             {
@@ -516,6 +564,11 @@ namespace Bhisi.Api.Controllers
                 await dbTransaction.CommitAsync();
 
                 return Ok(new { message = $"व्हाउचर क्र. {voucher.VoucherNo} (₹{voucher.TotalAmount:N2}) यशस्वीरीत्या रद्द व डिलीट करण्यात आले आणि सुरक्षा ऑडिट नोंद जतन केली." });
+            }
+            catch (InvalidOperationException valEx)
+            {
+                await dbTransaction.RollbackAsync();
+                return BadRequest(new { message = valEx.Message });
             }
             catch (Exception ex)
             {
@@ -585,6 +638,11 @@ namespace Bhisi.Api.Controllers
                     voucherNumbers = deletedVoucherNumbers
                 });
             }
+            catch (InvalidOperationException valEx)
+            {
+                await dbTransaction.RollbackAsync();
+                return BadRequest(new { message = valEx.Message });
+            }
             catch (Exception ex)
             {
                 await dbTransaction.RollbackAsync();
@@ -595,6 +653,24 @@ namespace Bhisi.Api.Controllers
         private async Task ProcessSingleVoucherDeletionAsync(Voucher voucher, string reason, int userId, string username, string userRole)
         {
             int id = voucher.VoucherID;
+
+            // 0. Loan Disbursement Full Reversal & Cleanup (Reverses Saving Credit, Shares/Certs, Deductions, Schedules, Liens, Gold Links & Empty LoanAccount)
+            var linkedLoanDisbursements = await _context.LoanDisbursements
+                .Include(ld => ld.Deductions)
+                .Where(ld => ld.VoucherID == id)
+                .ToListAsync();
+            if (linkedLoanDisbursements.Any())
+            {
+                foreach (var ld in linkedLoanDisbursements)
+                {
+                    await Helpers.LoanDisbursementReversalHelper.ReverseAndDeleteDisbursementAsync(
+                        _context,
+                        ld,
+                        voucher,
+                        deleteVoucherRecord: false);
+                }
+                await _context.SaveChangesAsync();
+            }
 
             // 1. Pigmy Module Unlinking
             try
@@ -657,9 +733,6 @@ namespace Bhisi.Api.Controllers
             {
                 var loanCollections = await _context.LoanCollections.Where(lc => lc.VoucherID == id).ToListAsync();
                 foreach (var lc in loanCollections) lc.VoucherID = null;
-
-                var loanDisbursements = await _context.LoanDisbursements.Where(ld => ld.VoucherID == id).ToListAsync();
-                foreach (var ld in loanDisbursements) ld.VoucherID = null;
 
                 var overdueRecoveries = await _context.OverdueRecoveryLedgers.Where(o => o.VoucherID == id).ToListAsync();
                 foreach (var o in overdueRecoveries) o.VoucherID = null;
@@ -1197,6 +1270,7 @@ namespace Bhisi.Api.Controllers
                     LedgerName = d.Ledger?.LedgerName ?? "",
                     d.DrCr,
                     d.Amount,
+                    d.CustomerID,
                     d.MemberID
                 })
             });

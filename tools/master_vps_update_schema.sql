@@ -6534,6 +6534,47 @@ END
 GO
 
 PRINT '========================================================================';
+PRINT '  -> Running v2.6.01 Gold Loan Collateral & Voucher CustomerID Schema Checks...';
+PRINT '========================================================================';
+GO
+
+-- ========================================================================
+-- v2.6.01: GOLD LOAN COLLATERAL & VOUCHER CUSTOMER-ID FIRST SCHEMA SYNC
+-- ========================================================================
+IF OBJECT_ID('dbo.GoldLoanDetails', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('GoldLoanDetails', 'LoanApplicationID') IS NULL
+        ALTER TABLE [dbo].[GoldLoanDetails] ADD [LoanApplicationID] INT NULL;
+    IF COL_LENGTH('GoldLoanDetails', 'ValuerName') IS NULL
+        ALTER TABLE [dbo].[GoldLoanDetails] ADD [ValuerName] NVARCHAR(200) NULL;
+    IF COL_LENGTH('GoldLoanDetails', 'ValuerValuation') IS NULL
+        ALTER TABLE [dbo].[GoldLoanDetails] ADD [ValuerValuation] DECIMAL(18,2) NOT NULL DEFAULT 0.00;
+    IF COL_LENGTH('GoldLoanDetails', 'ValuationReceiptNo') IS NULL
+        ALTER TABLE [dbo].[GoldLoanDetails] ADD [ValuationReceiptNo] NVARCHAR(100) NULL;
+    IF COL_LENGTH('GoldLoanDetails', 'ValuationDate') IS NULL
+        ALTER TABLE [dbo].[GoldLoanDetails] ADD [ValuationDate] DATETIME2 NULL;
+    IF COL_LENGTH('GoldLoanDetails', 'Remarks') IS NULL
+        ALTER TABLE [dbo].[GoldLoanDetails] ADD [Remarks] NVARCHAR(500) NULL;
+    IF COL_LENGTH('GoldLoanDetails', 'ImagePath') IS NOT NULL
+        ALTER TABLE [dbo].[GoldLoanDetails] ALTER COLUMN [ImagePath] NVARCHAR(MAX) NULL;
+    IF COL_LENGTH('GoldLoanDetails', 'LoanAccountID') IS NOT NULL
+        ALTER TABLE [dbo].[GoldLoanDetails] ALTER COLUMN [LoanAccountID] INT NULL;
+END
+GO
+
+IF OBJECT_ID('dbo.LoanApplications', 'U') IS NOT NULL AND COL_LENGTH('LoanApplications', 'SecurityDetails') IS NOT NULL
+    ALTER TABLE [dbo].[LoanApplications] ALTER COLUMN [SecurityDetails] NVARCHAR(MAX) NULL;
+GO
+
+IF OBJECT_ID('dbo.LoanAccounts', 'U') IS NOT NULL AND COL_LENGTH('LoanAccounts', 'SecurityDetails') IS NOT NULL
+    ALTER TABLE [dbo].[LoanAccounts] ALTER COLUMN [SecurityDetails] NVARCHAR(MAX) NULL;
+GO
+
+IF OBJECT_ID('dbo.VoucherDetails', 'U') IS NOT NULL AND COL_LENGTH('VoucherDetails', 'CustomerID') IS NULL
+    ALTER TABLE [dbo].[VoucherDetails] ADD [CustomerID] INT NULL;
+GO
+
+PRINT '========================================================================';
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

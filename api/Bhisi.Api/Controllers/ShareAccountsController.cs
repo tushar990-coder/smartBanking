@@ -382,7 +382,7 @@ namespace Bhisi.Api.Controllers
                 int debitLedgerId;
                 if (request.PaymentMode == "Transfer" && savingAccount != null)
                 {
-                    debitLedgerId = savingAccount.LedgerID;
+                    debitLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savingAccount);
                 }
                 else if (request.PaymentMode == "Bank" && request.BankLedgerId.HasValue)
                 {
@@ -634,7 +634,7 @@ namespace Bhisi.Api.Controllers
                 int creditLedgerId;
                 if (request.PaymentMode == "Transfer" && savingAccount != null)
                 {
-                    creditLedgerId = savingAccount.LedgerID;
+                    creditLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savingAccount);
                 }
                 else if (request.PaymentMode == "Bank" && request.BankLedgerId.HasValue)
                 {
@@ -2626,7 +2626,7 @@ namespace Bhisi.Api.Controllers
                         {
                             savingAcc.CurrentBalance -= request.TransferFee;
                             _context.Entry(savingAcc).State = EntityState.Modified;
-                            feeDebitLedgerId = savingAcc.LedgerID;
+                            feeDebitLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savingAcc);
 
                             _context.SavingTransactions.Add(new SavingTransaction
                             {

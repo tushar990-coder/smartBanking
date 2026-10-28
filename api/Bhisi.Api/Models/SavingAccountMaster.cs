@@ -55,7 +55,7 @@ namespace Bhisi.Api.Models
 
         // बचत ठेव प्रकार - Ledger mapping (विविध प्रकारच्या बचत ठेवी)
         [Required]
-        public int LedgerID { get; set; } = 7; // Default: बचत ठेव ledger
+        public int LedgerID { get; set; }
 
         [ForeignKey("LedgerID")]
         public virtual Ledger? Ledger { get; set; }

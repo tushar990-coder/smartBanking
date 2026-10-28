@@ -1025,7 +1025,7 @@ namespace Bhisi.Api.Controllers
                         };
                         _context.SavingTransactions.Add(savingTxn);
 
-                        debitLedgerId = savingAcc.LedgerID;
+                        debitLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savingAcc);
                     }
                     else
                     {

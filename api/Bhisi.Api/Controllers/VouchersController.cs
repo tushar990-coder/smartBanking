@@ -239,7 +239,22 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Voucher TotalAmount does not match line totals.");
             }
 
-            // 2.5 Cross-Branch Member & Account Isolation Validation Check
+            // 2.5 Cross-Branch Customer / Member & Account Isolation Validation Check
+            foreach (var detail in voucher.VoucherDetails)
+            {
+                if (detail.CustomerID.HasValue && detail.CustomerID.Value > 0)
+                {
+                    var customerBranch = await _context.Customers
+                        .Where(c => c.CustomerID == detail.CustomerID.Value)
+                        .Select(c => c.BranchID)
+                        .FirstOrDefaultAsync();
+
+                    if (customerBranch > 0 && customerBranch != voucher.BranchID)
+                    {
+                        return BadRequest("क्रॉस-ब्रांच व्यवहार बंदी! निवडलेला खातेदार वेगळ्या शाखेचा असल्यामुळे व्हाऊचर सेव्ह करता येणार नाही.");
+                    }
+                }
+            }
             foreach (var detail in voucher.VoucherDetails)
             {
                 if (detail.MemberID.HasValue && detail.MemberID.Value > 0)
@@ -376,6 +391,23 @@ namespace Bhisi.Api.Controllers
             if (dayStatus != null && dayStatus.IsDayClosed && !User.IsHeadOfficeAdmin())
             {
                 return BadRequest($"तारीख {existingVoucher.VoucherDate:dd/MM/yyyy} साठी दिवस अखेर (EOD) पूर्ण झाली आहे. बंद झालेल्या तारखेचे वॉउचर बदलता येणार नाही.");
+            }
+
+            // Cross-Branch Customer Isolation Check on Update
+            foreach (var detail in voucher.VoucherDetails)
+            {
+                if (detail.CustomerID.HasValue && detail.CustomerID.Value > 0)
+                {
+                    var customerBranch = await _context.Customers
+                        .Where(c => c.CustomerID == detail.CustomerID.Value)
+                        .Select(c => c.BranchID)
+                        .FirstOrDefaultAsync();
+
+                    if (customerBranch > 0 && customerBranch != existingVoucher.BranchID)
+                    {
+                        return BadRequest("क्रॉस-ब्रांच व्यवहार बंदी! निवडलेला खातेदार वेगळ्या शाखेचा असल्यामुळे व्हाऊचर अपडेट करता येणार नाही.");
+                    }
+                }
             }
 
             // Update scalar properties
@@ -691,6 +723,7 @@ namespace Bhisi.Api.Controllers
                     d.LedgerID,
                     d.DrCr,
                     d.Amount,
+                    d.CustomerID,
                     d.MemberID
                 })
             });
@@ -727,6 +760,9 @@ namespace Bhisi.Api.Controllers
                                 .ThenInclude(d => d.Ledger)
                                 .Include(v => v.VoucherDetails)
                                 .ThenInclude(d => d.Member)
+                                    .ThenInclude(m => m!.Customer)
+                                .Include(v => v.VoucherDetails)
+                                .ThenInclude(d => d.Customer)
                                 .Where(v => v.VoucherDate >= startDate && v.VoucherDate <= endDate);
 
             if (!string.IsNullOrEmpty(type) && type != "All")

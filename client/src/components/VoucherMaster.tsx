@@ -27,15 +27,17 @@ interface Ledger {
   };
 }
 
-interface Member {
-  memberID: number;
-  memberCode: string;
+interface Customer {
+  customerID: number;
+  branchID?: number;
+  cifNo?: string;
+  legacyCustomerNo?: string;
   firstName: string;
   middleName?: string;
   lastName: string;
+  nickName?: string;
   mobileNo?: string;
   aadhaarNo?: string;
-  cifNo?: string;
 }
 
 interface VoucherDetail {
@@ -47,8 +49,9 @@ interface VoucherDetail {
   ledgerBalanceType?: string;
   ledgerPath?: string;
   isLocked?: boolean;
-  memberID?: number | '';
+  customerID?: number | '';
   accountType?: string;
+  showCustomerSelect?: boolean;
 }
 
 interface Voucher {
@@ -65,7 +68,10 @@ interface Voucher {
     ledger?: Ledger;
     drCr: string;
     amount: number;
+    customerID?: number;
+    customer?: Customer;
     memberID?: number;
+    member?: any;
   }[];
 }
 
@@ -75,7 +81,7 @@ interface VoucherMasterProps {
 
 export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const globalBranchStr = localStorage.getItem('globalBranchId');
@@ -102,6 +108,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
   useEffect(() => {
     if (user?.branchID) {
       setSelectedBranchId(user.branchID);
+      fetchCustomers(user.branchID);
     }
   }, [user?.branchID]);
   
@@ -144,14 +151,14 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
 
   const API_URL = '/api/Vouchers';
   const LEDGER_API = '/api/Ledgers';
-  const MEMBER_API = '/api/Members';
+  const CUSTOMER_API = '/api/Customers';
   const BRANCH_API = '/api/Branches';
 
   useEffect(() => {
     fetchLedgers().then(() => {
       fetchNextVoucherNo('Receipt', selectedBranchId);
     });
-    fetchMembers();
+    fetchCustomers(selectedBranchId);
     fetchVouchers();
     fetchBranches();
     fetchBranchBusinessDate(selectedBranchId);
@@ -364,12 +371,13 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     return [];
   };
 
-  const fetchMembers = async () => {
+  const fetchCustomers = async (branchId: number = selectedBranchId) => {
     try {
-      const response = await fetch(MEMBER_API);
+      const url = branchId > 0 ? `${CUSTOMER_API}?branchId=${branchId}` : CUSTOMER_API;
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
-        setMembers(data);
+        setCustomers(Array.isArray(data) ? data : []);
       }
     } catch (err) {
       console.error(err);
@@ -393,6 +401,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     setSelectedBranchId(newBranchId);
     fetchBranchBusinessDate(newBranchId);
     fetchNextVoucherNo(voucherType, newBranchId);
+    fetchCustomers(newBranchId);
 
     if (voucherType === 'Receipt' || voucherType === 'Payment') {
       const cashLId = getCashLedger(ledgers, newBranchId, branches);
@@ -447,82 +456,139 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     if (voucherType === 'Receipt') defaultDrCr = 'Cr';
     if (voucherType === 'Payment') defaultDrCr = 'Dr';
 
-    setDetails([...details, { ledgerID: 0, drCr: defaultDrCr, amount: 0, searchQuery: '' }]);
+    setDetails(prev => [...prev, { ledgerID: 0, drCr: defaultDrCr, amount: 0, searchQuery: '' }]);
   };
 
   const handleRemoveRow = (index: number) => {
-    setDetails(details.filter((_, i) => i !== index));
+    setDetails(prev => {
+      const next = prev.filter((_, i) => i !== index);
+      if (voucherType === 'Receipt' || voucherType === 'Payment') {
+        const targetDrCr = voucherType === 'Receipt' ? 'Cr' : 'Dr';
+        const totalOther = next
+          .filter(d => !d.isLocked && d.drCr === targetDrCr)
+          .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+        return next.map(d => (d.isLocked ? { ...d, amount: totalOther } : d));
+      }
+      return next;
+    });
   };
 
   const fetchLedgerBalanceAndPath = async (ledgerId: number, index: number) => {
-    if (!ledgerId) return;
+    if (!ledgerId || ledgerId <= 0) return;
     try {
-      const bRes = await fetch(`/api/Ledgers/${ledgerId}/balance`);
-      if (bRes.ok) {
-        const bData = await bRes.json();
-        setDetails(prev => {
-          const updated = [...prev];
-          if (updated[index]) {
-            updated[index].ledgerBalance = bData.currentBalance;
-            updated[index].ledgerBalanceType = bData.balanceType;
-          }
-          return updated;
-        });
+      const [infoSettled, ledgerSettled] = await Promise.allSettled([
+        fetch(`/api/Ledgers/${ledgerId}/info`),
+        fetch(`/api/Ledgers/${ledgerId}`)
+      ]);
+
+      let infoData: any = null;
+      if (infoSettled.status === 'fulfilled' && infoSettled.value.ok) {
+        infoData = await infoSettled.value.json();
       }
 
-      const lRes = await fetch(`/api/Ledgers/${ledgerId}`);
-      if (lRes.ok) {
-        const lData = await lRes.json();
-        setDetails(prev => {
-          const updated = [...prev];
-          if (updated[index]) {
-            updated[index].ledgerPath = lData.pathString || '';
-            updated[index].accountType = lData.accountType || '';
-          }
-          return updated;
-        });
+      let ledgerData: any = null;
+      if (ledgerSettled.status === 'fulfilled' && ledgerSettled.value.ok) {
+        ledgerData = await ledgerSettled.value.json();
       }
+
+      if (!infoData && !ledgerData) return;
+
+      setDetails(prev => {
+        if (!prev[index] || prev[index].ledgerID !== ledgerId) {
+          return prev;
+        }
+        const updated = [...prev];
+        const current = updated[index];
+        updated[index] = {
+          ...current,
+          ledgerBalance: infoData
+            ? Number(infoData.balance ?? infoData.Balance ?? infoData.currentBalance ?? 0)
+            : current.ledgerBalance,
+          ledgerBalanceType: infoData
+            ? (infoData.balanceType ?? infoData.BalanceType ?? '')
+            : current.ledgerBalanceType,
+          ledgerPath:
+            infoData?.path ??
+            infoData?.Path ??
+            ledgerData?.pathString ??
+            current.ledgerPath ??
+            '',
+          accountType:
+            ledgerData?.accountType ??
+            ledgerData?.AccountType ??
+            current.accountType ??
+            ''
+        };
+        return updated;
+      });
     } catch (e) {
       console.error('Error fetching ledger details', e);
     }
   };
 
+  const handleLedgerSelect = (index: number, rawValue: string | number) => {
+    const lId = parseInt(String(rawValue), 10) || 0;
+    const sel = lId > 0 ? ledgers.find(l => l.ledgerID === lId) : undefined;
+
+    setDetails(prev => {
+      if (!prev[index] || prev[index].isLocked) return prev;
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        ledgerID: lId,
+        searchQuery: sel?.ledgerName || '',
+        accountType: sel?.accountType || '',
+        customerID: '',
+        showCustomerSelect: false,
+        ledgerBalance: undefined,
+        ledgerBalanceType: undefined,
+        ledgerPath: undefined
+      };
+      return updated;
+    });
+
+    if (lId > 0) {
+      fetchLedgerBalanceAndPath(lId, index);
+    }
+  };
+
   const handleDetailChange = (index: number, field: keyof VoucherDetail, value: any) => {
-    const newDetails = [...details];
-    const isEditingLocked = newDetails[index]?.isLocked;
-
-    if (isEditingLocked && field !== 'amount') return;
-
-    newDetails[index] = { ...newDetails[index], [field]: value };
-
-    if (field === 'ledgerID' && value) {
-      fetchLedgerBalanceAndPath(Number(value), index);
+    if (field === 'ledgerID') {
+      handleLedgerSelect(index, value);
+      return;
     }
 
-    if (field === 'amount') {
-      const val = parseFloat(value) || 0;
-      newDetails[index].amount = val;
+    setDetails(prev => {
+      if (!prev[index]) return prev;
+      const isEditingLocked = prev[index].isLocked;
+      if (isEditingLocked && field !== 'amount') return prev;
 
-      if (voucherType === 'Receipt') {
-        const totalOther = newDetails
-          .filter(d => !d.isLocked && d.drCr === 'Cr')
-          .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
-        const lockedIndex = newDetails.findIndex(d => d.isLocked);
-        if (lockedIndex !== -1) {
-          newDetails[lockedIndex].amount = totalOther;
-        }
-      } else if (voucherType === 'Payment') {
-        const totalOther = newDetails
-          .filter(d => !d.isLocked && d.drCr === 'Dr')
-          .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
-        const lockedIndex = newDetails.findIndex(d => d.isLocked);
-        if (lockedIndex !== -1) {
-          newDetails[lockedIndex].amount = totalOther;
+      const newDetails = [...prev];
+      const nextValue = field === 'amount' ? (parseFloat(value) || 0) : value;
+      newDetails[index] = { ...newDetails[index], [field]: nextValue };
+
+      if (field === 'amount' || field === 'drCr') {
+        if (voucherType === 'Receipt') {
+          const totalOther = newDetails
+            .filter(d => !d.isLocked && d.drCr === 'Cr')
+            .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+          const lockedIndex = newDetails.findIndex(d => d.isLocked);
+          if (lockedIndex !== -1) {
+            newDetails[lockedIndex] = { ...newDetails[lockedIndex], amount: totalOther };
+          }
+        } else if (voucherType === 'Payment') {
+          const totalOther = newDetails
+            .filter(d => !d.isLocked && d.drCr === 'Dr')
+            .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+          const lockedIndex = newDetails.findIndex(d => d.isLocked);
+          if (lockedIndex !== -1) {
+            newDetails[lockedIndex] = { ...newDetails[lockedIndex], amount: totalOther };
+          }
         }
       }
-    }
 
-    setDetails(newDetails);
+      return newDetails;
+    });
   };
 
   const totalDr = details.filter(d => d.drCr === 'Dr').reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
@@ -554,15 +620,19 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     }
 
     const payload = {
+      voucherNo: voucherNo && voucherNo.trim() ? voucherNo.trim() : 'AUTO',
       voucherDate,
       voucherType,
       narration: narration || '',
       branchID: selectedBranchId,
-      details: details.map(d => ({
+      totalAmount: Number(totalDr.toFixed(2)),
+      createdBy: user?.userID || 1,
+      voucherDetails: details.map(d => ({
         ledgerID: d.ledgerID,
         drCr: d.drCr,
         amount: d.amount,
-        memberID: d.memberID ? Number(d.memberID) : null
+        customerID: d.customerID ? Number(d.customerID) : null,
+        memberID: null
       }))
     };
 
@@ -605,6 +675,9 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     setNarration(v.narration || '');
     if ((v as any).branchID) {
       setSelectedBranchId((v as any).branchID);
+      if ((v as any).branchID !== selectedBranchId) {
+        fetchCustomers((v as any).branchID);
+      }
     }
 
     const cashLId = getCashLedger(ledgers, (v as any).branchID || selectedBranchId, branches);
@@ -612,13 +685,17 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     const loadedDetails: VoucherDetail[] = (v.voucherDetails || []).map((vd) => {
       const isAutoCashRow = (v.voucherType === 'Receipt' && vd.drCr === 'Dr' && vd.ledgerID === cashLId) ||
                             (v.voucherType === 'Payment' && vd.drCr === 'Cr' && vd.ledgerID === cashLId);
+      const matchedLedger = vd.ledger || ledgers.find(l => l.ledgerID === vd.ledgerID);
+      const resolvedCustId = vd.customerID || vd.customer?.customerID || vd.member?.customerID || vd.member?.customer?.customerID || '';
       return {
         ledgerID: vd.ledgerID,
         drCr: vd.drCr as 'Dr' | 'Cr',
         amount: vd.amount,
-        memberID: vd.memberID || '',
+        customerID: resolvedCustId,
+        showCustomerSelect: Boolean(resolvedCustId),
         isLocked: isAutoCashRow,
-        searchQuery: vd.ledger?.ledgerName || ''
+        searchQuery: matchedLedger?.ledgerName || '',
+        accountType: matchedLedger?.accountType || ''
       };
     });
 
@@ -703,9 +780,13 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
     const matchDate = dateStr.includes(q);
     const matchBranch = branchName.toLowerCase().includes(q);
 
-    const matchLedger = v.voucherDetails?.some(vd => 
-      (vd.ledger?.ledgerName || '').toLowerCase().includes(q)
-    );
+    const matchLedger = v.voucherDetails?.some(vd => {
+      const cust = vd.customer || vd.member?.customer;
+      const custStr = cust
+        ? `${cust.cifNo || ''} ${cust.legacyCustomerNo || ''} ${cust.firstName || ''} ${cust.middleName || ''} ${cust.lastName || ''}`.toLowerCase()
+        : '';
+      return (vd.ledger?.ledgerName || '').toLowerCase().includes(q) || custStr.includes(q);
+    });
 
     return matchesType && (matchNo || matchType || matchNarration || matchAmount || matchDate || matchBranch || matchLedger);
   });
@@ -942,6 +1023,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
               {!isPassingMode && (
                 <button 
                   type="button" 
+                  tabIndex={-1}
                   onClick={handleAddRow} 
                   className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-sm text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
                 >
@@ -978,14 +1060,10 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
 
                       <td className="p-2 border-r border-gray-200 text-left min-w-[280px]">
                         <SearchableSelect
+                          id={`voucher-ledger-${index}`}
                           disabled={isPassingMode || detail.isLocked}
                           value={detail.ledgerID ? detail.ledgerID.toString() : ''}
-                          onChange={(e) => {
-                            const lId = parseInt(String(e.target.value)) || 0;
-                            handleDetailChange(index, 'ledgerID', lId);
-                            const sel = ledgers.find(l => l.ledgerID === lId);
-                            handleDetailChange(index, 'searchQuery', sel?.ledgerName || '');
-                          }}
+                          onChange={(e) => handleLedgerSelect(index, e.target.value)}
                           options={ledgerOptions}
                           placeholder="-- खाते नाव किंवा नंबर शोधा (Search Ledger) --"
                           className={isPassingMode || detail.isLocked 
@@ -994,26 +1072,69 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                           }
                         />
 
-                        {detail.ledgerID > 0 && detail.ledgerPath && (
+                        {detail.ledgerID > 0 && (
+                          detail.ledgerPath ||
+                          detail.ledgerBalance !== undefined ||
+                          (!isPassingMode && !detail.isLocked && !detail.showCustomerSelect && !detail.customerID && detail.accountType !== 'Cash In Hand')
+                        ) && (
                           <div className="mt-1 flex flex-col gap-0.5">
-                            <p className="text-[10px] text-gray-500 truncate" title={detail.ledgerPath}>
-                              📍 {detail.ledgerPath}
-                            </p>
-                            <p className="text-[10.5px] font-bold text-indigo-700">
-                              शिल्लक (Balance): {detail.ledgerBalance?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {detail.ledgerBalanceType}
-                            </p>
+                            {detail.ledgerPath && (
+                              <p className="text-[10px] text-gray-500 truncate" title={detail.ledgerPath}>
+                                📍 {detail.ledgerPath}
+                              </p>
+                            )}
+                            <div className="flex items-center justify-between gap-2">
+                              {detail.ledgerBalance !== undefined ? (
+                                <p className="text-[10.5px] font-bold text-indigo-700">
+                                  शिल्लक (Balance): ₹{Number(detail.ledgerBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {detail.ledgerBalanceType || ''}
+                                </p>
+                              ) : <span />}
+                              {!isPassingMode && !detail.isLocked && !detail.showCustomerSelect && !detail.customerID && detail.accountType !== 'Cash In Hand' && (
+                                <button
+                                  type="button"
+                                  tabIndex={-1}
+                                  onClick={() => handleDetailChange(index, 'showCustomerSelect', true)}
+                                  className="text-[10.5px] font-bold text-primary hover:text-[#003657] underline cursor-pointer shrink-0"
+                                >
+                                  + खातेदार जोडा
+                                </button>
+                              )}
+                            </div>
                           </div>
                         )}
                         
-                        {(detail.accountType === 'Personal Account' || detail.accountType === 'Share Capital') && (
-                          <div className="mt-1.5">
-                            <MemberSearchSelect
-                              members={members}
-                              value={detail.memberID || ''}
-                              onChange={(val) => !isPassingMode && handleDetailChange(index, 'memberID', val)}
-                              placeholder="-- सभासद निवडा (Select Member) --"
-                              className="w-full text-[11px]"
-                            />
+                        {detail.ledgerID > 0 && Boolean(detail.showCustomerSelect || detail.customerID) && (
+                          <div className="mt-1.5 flex items-center gap-1">
+                            <div className="flex-1 min-w-0">
+                              <MemberSearchSelect
+                                members={customers}
+                                value={detail.customerID || ''}
+                                isDisabled={isPassingMode}
+                                valueType="customerId"
+                                hideMemberRef={true}
+                                onChange={(val) => !isPassingMode && handleDetailChange(index, 'customerID', val)}
+                                placeholder="-- खातेदार निवडा (नाव, CIF किंवा जुना खातेदार नं शोधा) --"
+                                className="w-full text-[11px]"
+                              />
+                            </div>
+                            {!isPassingMode && !detail.isLocked && (
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                title="खातेदार काढून टाका"
+                                onClick={() => {
+                                  setDetails(prev => {
+                                    if (!prev[index]) return prev;
+                                    const updated = [...prev];
+                                    updated[index] = { ...updated[index], customerID: '', showCustomerSelect: false };
+                                    return updated;
+                                  });
+                                }}
+                                className="px-1.5 h-[28px] bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-gray-300 rounded-sm text-[11px] font-bold cursor-pointer shrink-0"
+                              >
+                                ✕
+                              </button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -1025,6 +1146,11 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                           step="0.01" 
                           value={detail.amount || ''} 
                           onChange={e => handleDetailChange(index, 'amount', e.target.value)} 
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                            }
+                          }}
                           readOnly={isPassingMode || detail.isLocked}
                           placeholder="0.00"
                           className={`w-full text-right font-mono font-bold text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary h-[28px] ${
@@ -1037,6 +1163,7 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                         {!isPassingMode && !detail.isLocked ? (
                           <button 
                             type="button" 
+                            tabIndex={-1}
                             onClick={() => handleRemoveRow(index)} 
                             disabled={details.filter(d => !d.isLocked).length <= 1}
                             className="px-2 py-0.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-sm font-bold text-[10px] transition-colors cursor-pointer disabled:opacity-30"
@@ -1312,17 +1439,44 @@ export default function VoucherMaster({ onNavigate }: VoucherMasterProps = {}) {
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100">
-                                    {v.voucherDetails && v.voucherDetails.map((vd, i) => (
-                                      <tr key={i} className="hover:bg-slate-50">
-                                        <td className="p-1.5 border-r border-gray-200 text-gray-900 font-medium">{vd.ledger?.ledgerName || 'Unknown Ledger'}</td>
-                                        <td className="p-1.5 border-r border-gray-200 text-right text-emerald-700 font-bold font-mono">
-                                          {vd.drCr === 'Dr' ? `₹${vd.amount.toFixed(2)}` : '-'}
-                                        </td>
-                                        <td className="p-1.5 text-right text-primary font-bold font-mono">
-                                          {vd.drCr === 'Cr' ? `₹${vd.amount.toFixed(2)}` : '-'}
-                                        </td>
-                                      </tr>
-                                    ))}
+                                    {v.voucherDetails && v.voucherDetails.map((vd, i) => {
+                                      const linkedCust = vd.customer || vd.member?.customer;
+                                      const custCif = linkedCust?.cifNo || (linkedCust as any)?.CIFNo || '';
+                                      const custLegacy = linkedCust?.legacyCustomerNo || (linkedCust as any)?.LegacyCustomerNo || '';
+                                      const custName = linkedCust
+                                        ? [linkedCust.firstName || (linkedCust as any).FirstName, linkedCust.middleName || (linkedCust as any).MiddleName, linkedCust.lastName || (linkedCust as any).LastName].filter(Boolean).join(' ').trim()
+                                        : '';
+                                      return (
+                                        <tr key={i} className="hover:bg-slate-50">
+                                          <td className="p-1.5 border-r border-gray-200 text-gray-900 font-medium">
+                                            <div>{vd.ledger?.ledgerName || 'Unknown Ledger'}</div>
+                                            {(custCif || custName) && (
+                                              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
+                                                {custCif && (
+                                                  <span className="px-1.5 py-0.5 rounded font-mono font-bold bg-sky-100 text-sky-950 border border-sky-200">
+                                                    {custCif}
+                                                  </span>
+                                                )}
+                                                {custLegacy && (
+                                                  <span className="px-1.5 py-0.5 rounded font-mono font-bold bg-purple-100 text-purple-950 border border-purple-200">
+                                                    जुना खातेदार नं: {custLegacy}
+                                                  </span>
+                                                )}
+                                                {custName && (
+                                                  <span className="font-bold text-slate-700">{custName}</span>
+                                                )}
+                                              </div>
+                                            )}
+                                          </td>
+                                          <td className="p-1.5 border-r border-gray-200 text-right text-emerald-700 font-bold font-mono">
+                                            {vd.drCr === 'Dr' ? `₹${vd.amount.toFixed(2)}` : '-'}
+                                          </td>
+                                          <td className="p-1.5 text-right text-primary font-bold font-mono">
+                                            {vd.drCr === 'Cr' ? `₹${vd.amount.toFixed(2)}` : '-'}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
                                   </tbody>
                                 </table>
                               </td>

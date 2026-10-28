@@ -73,7 +73,8 @@ export default function MemberSearchSelect({
       let cleanMemCode = isNullOrEmpty ? '' : rawCode;
 
       const rawLegacyMember = String(rawMemProfile?.legacyMemberNo || rawMemProfile?.LegacyMemberNo || m.legacyMemberNo || m.oldMemberCode || m.oldMemberNo || m.LegacyMemberNo || '').trim();
-      const rawLegacyCust = String(m.legacyCustomerNo || m.LegacyCustomerNo || (m as any)?.customerProfile?.legacyCustomerNo || '').trim();
+      const rawLegacyCustCandidate = String(m.legacyCustomerNo || m.LegacyCustomerNo || (m as any)?.customerProfile?.legacyCustomerNo || '').trim();
+      const rawLegacyCust = (!rawLegacyCustCandidate || rawLegacyCustCandidate.toLowerCase() === 'null' || rawLegacyCustCandidate.toLowerCase() === 'undefined') ? '' : rawLegacyCustCandidate;
       const cif = String(m.cifNo || m.cif || m.CifNo || m.CIFNo || '').trim();
       const mobile = String(m.mobileNo || m.mobile || m.MobileNo || m.mobileNumber || '').trim();
       const aadhaar = String(m.aadhaarNo || m.aadhaar || m.AadhaarNo || '').trim();
@@ -91,9 +92,10 @@ export default function MemberSearchSelect({
         fullName = isCustomerMode ? `खातेदार #${primaryValueId}` : `सभासद / खातेदार #${primaryValueId}`;
       }
 
-      // If customer mode or hideMemberRef, strictly display [CIF] without any Member Code
+      // If customer mode or hideMemberRef, strictly display [CIF] (plus जुना खातेदार नं if present) without any Member Code
       const cleanCif = cif ? (cif.toUpperCase().startsWith('CIF') ? cif : `CIF:${cif}`) : (rawLegacyCust ? `CIF:${rawLegacyCust}` : `CIF00${custId || primaryValueId}`);
-      const prefix = isCustomerMode ? `[${cleanCif}]` : (cleanMemCode ? `[${cleanCif} | ${cleanMemCode}]` : `[${cleanCif}]`);
+      const legacyCustTag = isCustomerMode && rawLegacyCust ? ` [जुना खातेदार नं: ${rawLegacyCust}]` : '';
+      const prefix = isCustomerMode ? `[${cleanCif}]${legacyCustTag}` : (cleanMemCode ? `[${cleanCif} | ${cleanMemCode}]` : `[${cleanCif}]`);
       const label = `${prefix} ${fullName}${nick ? ` (${nick})` : ''}${mobile ? ` - 📱 ${mobile}` : ''}`;
 
       return {
@@ -174,7 +176,11 @@ export default function MemberSearchSelect({
     if (cleanInput) {
       if (cifNum && (cifNum.includes(cleanInput) || parseInt(cifNum) === parseInt(cleanInput))) return true;
       if (member.customerID && (member.customerID.toString().includes(cleanInput) || member.customerID === parseInt(cleanInput))) return true;
-      if (member.legacyCustomerNo && member.legacyCustomerNo.toString().includes(cleanInput)) return true;
+      if (member.legacyCustomerNo) {
+        const legStr = member.legacyCustomerNo.toString();
+        const legNum = legStr.replace(/\D/g, '');
+        if (legStr.includes(cleanInput) || (legNum && (legNum.includes(cleanInput) || parseInt(legNum, 10) === parseInt(cleanInput, 10)))) return true;
+      }
       if (!isCustomerMode) {
         const memCodeStr = (member.memberCode || '').toLowerCase();
         const memCodeNum = memCodeStr.replace(/\D/g, '');
@@ -198,7 +204,7 @@ export default function MemberSearchSelect({
     if (context === 'value') {
       if (compact) {
         return (
-          <div className="flex items-center overflow-hidden text-xs w-full" title={isCustomerMode ? `${cifCode} | ${fullName}` : `${cifCode} | ${memCode} | ${fullName}`}>
+          <div className="flex items-center overflow-hidden text-xs w-full" title={isCustomerMode ? `${cifCode}${m.legacyCustomerNo ? ` | जुना खातेदार नं: ${m.legacyCustomerNo}` : ''} | ${fullName}` : `${cifCode} | ${memCode} | ${fullName}`}>
             <span className="font-bold text-slate-900 truncate text-[11px]">
               {fullName}
             </span>
@@ -222,7 +228,7 @@ export default function MemberSearchSelect({
           )}
           {isCustomerMode && m.legacyCustomerNo && (
             <span className="text-[10px] font-mono font-bold shrink-0 px-1.5 py-0.5 rounded bg-purple-100 text-purple-950 border border-purple-300">
-              [जुना CIF: {m.legacyCustomerNo}]
+              [जुना खातेदार नं: {m.legacyCustomerNo}]
             </span>
           )}
           <span className="font-bold text-slate-900 truncate text-xs ml-1">
@@ -255,7 +261,7 @@ export default function MemberSearchSelect({
           )}
           {isCustomerMode && m.legacyCustomerNo && (
             <span className="px-2 py-0.5 rounded font-mono font-bold text-[11px] shrink-0 bg-purple-100 text-purple-950 border border-purple-300">
-              🏷️ जुना CIF: {m.legacyCustomerNo}
+              🏷️ जुना खातेदार नं: {m.legacyCustomerNo}
             </span>
           )}
           <span className="font-bold text-slate-900 text-xs sm:text-sm leading-tight truncate">
@@ -278,7 +284,7 @@ export default function MemberSearchSelect({
     );
   };
 
-  const effectivePlaceholder = placeholder || (isCustomerMode ? "-- खातेदार शोधा (नाव किंवा CIF नं) --" : "-- सभासद निवडा --");
+  const effectivePlaceholder = placeholder || (isCustomerMode ? "-- खातेदार शोधा (नाव, CIF किंवा जुना खातेदार नं) --" : "-- सभासद निवडा --");
 
   return (
     <div className={className}>

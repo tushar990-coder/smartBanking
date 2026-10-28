@@ -347,19 +347,56 @@ namespace Bhisi.Api.Controllers
                     if (expenseLedger == null) expenseLedger = await _context.Ledgers.FirstOrDefaultAsync();
                 }
 
-                // Find Credit Ledger (Cash or Bank)
-                Ledger? creditLedger = null;
-                if (request.CashLedgerId.HasValue && request.CashLedgerId.Value > 0)
-                {
-                    creditLedger = await _context.Ledgers.FindAsync(request.CashLedgerId.Value);
-                }
+                bool isAgentSavingCredit = string.Equals(request.PaymentMode, "AGENT_SB", StringComparison.OrdinalIgnoreCase) ||
+                                           string.Equals(request.PaymentMode, "SAVING", StringComparison.OrdinalIgnoreCase);
+                SavingAccountMaster? savingAccount = null;
 
-                if (creditLedger == null)
+                // Find Credit Ledger (Saving Liability Ledger if AGENT_SB, otherwise Cash or Bank)
+                Ledger? creditLedger = null;
+                if (isAgentSavingCredit)
                 {
-                    int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
-                    creditLedger = await _context.Ledgers.FindAsync(branchCashId)
-                        ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash" || l.AccountType == "Cash In Hand" || l.LedgerName.Contains("रोख") || l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash"))
-                        ?? await _context.Ledgers.FirstOrDefaultAsync();
+                    if (!request.AgentSavingAccountId.HasValue || request.AgentSavingAccountId.Value <= 0)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest("एजंट बचत खात्यात कमिशन जमा करण्यासाठी वैध बचत खाते निवडणे बंधनकारक आहे.");
+                    }
+
+                    savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(a => a.SavingAccountID == request.AgentSavingAccountId.Value);
+                    if (savingAccount == null)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest("निवडलेले एजंट बचत खाते सिस्टीममध्ये सापडले नाही.");
+                    }
+
+                    if (savingAccount.Status == "Closed" || savingAccount.Status == "Frozen")
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest($"एजंट बचत खाते (#{savingAccount.AccountNo}) सध्या '{savingAccount.Status}' स्थितीत असल्यामुळे त्यावर कमिशन जमा करता येणार नाही.");
+                    }
+
+                    int savingLiabilityLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, savingAccount);
+                    if (savingLiabilityLedgerId <= 0)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(savingAccount.AccountNo));
+                    }
+
+                    creditLedger = await _context.Ledgers.FindAsync(savingLiabilityLedgerId);
+                }
+                else
+                {
+                    if (request.CashLedgerId.HasValue && request.CashLedgerId.Value > 0)
+                    {
+                        creditLedger = await _context.Ledgers.FindAsync(request.CashLedgerId.Value);
+                    }
+
+                    if (creditLedger == null)
+                    {
+                        int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
+                        creditLedger = await _context.Ledgers.FindAsync(branchCashId)
+                            ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash" || l.AccountType == "Cash In Hand" || l.LedgerName.Contains("रोख") || l.LedgerName.Contains("कॅश") || l.LedgerName.Contains("Cash"))
+                            ?? await _context.Ledgers.FirstOrDefaultAsync();
+                    }
                 }
 
                 DateTime effDate = request.PaymentDate?.Date ?? DateTime.Today;
@@ -373,14 +410,20 @@ namespace Bhisi.Api.Controllers
                     BranchID = branchId,
                     VoucherNo = uniqueVoucherNo,
                     VoucherDate = effDate,
-                    VoucherType = "Payment",
+                    VoucherType = isAgentSavingCredit ? "Journal" : "Payment",
                     TotalAmount = commission.CalculatedCommission,
                     Narration = narration,
                     CreatedBy = 1,
                     VoucherDetails = new List<VoucherDetail>
                     {
                         new VoucherDetail { LedgerID = expenseLedger!.LedgerID, DrCr = "Dr", Amount = commission.CalculatedCommission },
-                        new VoucherDetail { LedgerID = creditLedger!.LedgerID, DrCr = "Cr", Amount = commission.CalculatedCommission }
+                        new VoucherDetail
+                        {
+                            LedgerID = creditLedger!.LedgerID,
+                            DrCr = "Cr",
+                            Amount = commission.CalculatedCommission,
+                            CustomerID = isAgentSavingCredit ? savingAccount?.CustomerID : null
+                        }
                     }
                 };
 
@@ -388,31 +431,27 @@ namespace Bhisi.Api.Controllers
                 await _context.SaveChangesAsync();
 
                 // Direct Credit to Agent Savings Account if AGENT_SB is selected
-                if (request.PaymentMode == "AGENT_SB" && request.AgentSavingAccountId.HasValue && request.AgentSavingAccountId.Value > 0)
+                if (isAgentSavingCredit && savingAccount != null)
                 {
-                    var savingAccount = await _context.SavingAccountMasters.FirstOrDefaultAsync(a => a.SavingAccountID == request.AgentSavingAccountId.Value);
-                    if (savingAccount != null)
-                    {
-                        savingAccount.CurrentBalance += commission.CalculatedCommission;
-                        _context.SavingAccountMasters.Update(savingAccount);
+                    savingAccount.CurrentBalance += commission.CalculatedCommission;
+                    _context.SavingAccountMasters.Update(savingAccount);
 
-                        var savingTx = new SavingTransaction
-                        {
-                            SavingAccountID = savingAccount.SavingAccountID,
-                            CustomerID = savingAccount.CustomerID,
-                            BranchID = voucher.BranchID > 0 ? voucher.BranchID : savingAccount.BranchID,
-                            TransactionDate = effDate,
-                            TransactionType = "Deposit",
-                            PaymentMode = "Transfer",
-                            Amount = commission.CalculatedCommission,
-                            BalanceAfterTxn = savingAccount.CurrentBalance,
-                            Narration = $"Agent Commission Credit - Voucher: {uniqueVoucherNo}",
-                            VoucherNo = uniqueVoucherNo,
-                            CreatedBy = 1,
-                            CreatedOn = DateTime.UtcNow
-                        };
-                        _context.SavingTransactions.Add(savingTx);
-                    }
+                    var savingTx = new SavingTransaction
+                    {
+                        SavingAccountID = savingAccount.SavingAccountID,
+                        CustomerID = savingAccount.CustomerID,
+                        BranchID = voucher.BranchID > 0 ? voucher.BranchID : savingAccount.BranchID,
+                        TransactionDate = effDate,
+                        TransactionType = "Deposit",
+                        PaymentMode = "Transfer",
+                        Amount = commission.CalculatedCommission,
+                        BalanceAfterTxn = savingAccount.CurrentBalance,
+                        Narration = $"Agent Commission Credit - Voucher: {uniqueVoucherNo}",
+                        VoucherNo = uniqueVoucherNo,
+                        CreatedBy = 1,
+                        CreatedOn = DateTime.UtcNow
+                    };
+                    _context.SavingTransactions.Add(savingTx);
                 }
 
                 commission.Status = "PAID";

@@ -5461,19 +5461,98 @@ namespace Bhisi.Api.Controllers
             [FromQuery] string? status,
             [FromQuery] DateTime? asOfDate)
         {
-            var sanstha = await _context.SansthaDetails.FirstOrDefaultAsync();
+            var sanstha = await _context.SansthaDetails.AsNoTracking().FirstOrDefaultAsync();
 
             string branchName = "सर्व शाखा";
             if (branchId.HasValue && branchId.Value > 0)
             {
-                var branch = await _context.Branches.FindAsync(branchId.Value);
+                var branch = await _context.Branches.AsNoTracking().FirstOrDefaultAsync(b => b.BranchID == branchId.Value);
                 if (branch != null)
                 {
                     branchName = branch.BranchName;
                 }
             }
 
-            var query = _context.GoldLoanDetails
+            static bool HasGoldKeyword(string? text)
+            {
+                if (string.IsNullOrWhiteSpace(text)) return false;
+                var t = text.Trim().ToLowerInvariant();
+                return t.Contains("gold") ||
+                       t.Contains("सोने") ||
+                       t.Contains("सोन्या") ||
+                       t.Contains("सुवर्ण") ||
+                       t.Contains("दागिन") ||
+                       t.Contains("अलंकार") ||
+                       t.Contains("ornament") ||
+                       t.Contains("jewel");
+            }
+
+            var allLoanRates = await _context.LoanRates.AsNoTracking().ToListAsync();
+            var goldLoanRateIds = allLoanRates
+                .Where(r => string.Equals(r.CollateralCategory, "Gold", StringComparison.OrdinalIgnoreCase) ||
+                            HasGoldKeyword(r.LoanType) ||
+                            HasGoldKeyword(r.ShortName) ||
+                            HasGoldKeyword(r.SecurityType))
+                .Select(r => r.LoanRateID)
+                .ToHashSet();
+
+            string normStatus = (status ?? string.Empty).Trim().ToLowerInvariant();
+            bool filterActiveOnly = normStatus == "active" || normStatus == "चालू";
+            bool filterClosedOnly = normStatus == "closed" || normStatus == "बंद";
+
+            // Track all accounts & applications that have explicit GoldLoanDetails rows in DB
+            var allGoldLinkMeta = await _context.GoldLoanDetails
+                .AsNoTracking()
+                .Select(g => new { g.LoanAccountID, g.LoanApplicationID })
+                .ToListAsync();
+
+            var accountsWithGoldDetails = allGoldLinkMeta
+                .Where(x => x.LoanAccountID.HasValue && x.LoanAccountID.Value > 0)
+                .Select(x => x.LoanAccountID!.Value)
+                .ToHashSet();
+
+            var appsWithGoldDetails = allGoldLinkMeta
+                .Where(x => x.LoanApplicationID.HasValue && x.LoanApplicationID.Value > 0)
+                .Select(x => x.LoanApplicationID!.Value)
+                .ToHashSet();
+
+            // Load LoanAccounts so we can both:
+            // 1) Resolve orphan GoldLoanDetails rows that only had LoanApplicationID set, and
+            // 2) Include Gold Loan accounts that do not yet have child rows in GoldLoanDetails.
+            var loanAccountsQuery = _context.LoanAccounts
+                .AsNoTracking()
+                .Include(l => l.Customer)
+                .Include(l => l.Member)
+                    .ThenInclude(m => m!.Customer)
+                .Include(l => l.Branch)
+                .Include(l => l.LoanRate)
+                .Include(l => l.LoanDisbursements)
+                    .ThenInclude(d => d.Voucher)
+                .AsQueryable();
+
+            if (branchId.HasValue && branchId.Value > 0)
+            {
+                loanAccountsQuery = loanAccountsQuery.Where(l => l.BranchID == branchId.Value);
+            }
+
+            var candidateLoanAccounts = await loanAccountsQuery.ToListAsync();
+
+            var accountsByAppId = new Dictionary<int, LoanAccount>();
+            var accountsByAccNo = new Dictionary<string, LoanAccount>(StringComparer.OrdinalIgnoreCase);
+            foreach (var acc in candidateLoanAccounts)
+            {
+                if (acc.LoanApplicationID.HasValue && acc.LoanApplicationID.Value > 0 && !accountsByAppId.ContainsKey(acc.LoanApplicationID.Value))
+                {
+                    accountsByAppId[acc.LoanApplicationID.Value] = acc;
+                }
+                if (!string.IsNullOrWhiteSpace(acc.LoanAccountNo) && !accountsByAccNo.ContainsKey(acc.LoanAccountNo.Trim()))
+                {
+                    accountsByAccNo[acc.LoanAccountNo.Trim()] = acc;
+                }
+            }
+
+            var goldQuery = _context.GoldLoanDetails
+                .AsNoTracking()
                 .Include(g => g.LoanAccount)
                     .ThenInclude(l => l!.Customer)
                 .Include(g => g.LoanAccount)
@@ -5481,88 +5560,173 @@ namespace Bhisi.Api.Controllers
                         .ThenInclude(m => m!.Customer)
                 .Include(g => g.LoanAccount)
                     .ThenInclude(l => l!.Branch)
+                .Include(g => g.LoanAccount)
+                    .ThenInclude(l => l!.LoanRate)
+                .Include(g => g.LoanAccount)
+                    .ThenInclude(l => l!.LoanDisbursements)
+                        .ThenInclude(d => d.Voucher)
+                .Include(g => g.LoanApplication)
+                    .ThenInclude(a => a!.Customer)
+                .Include(g => g.LoanApplication)
+                    .ThenInclude(a => a!.LoanRate)
+                .Include(g => g.LoanApplication)
+                    .ThenInclude(a => a!.Branch)
                 .AsQueryable();
 
-            if (branchId.HasValue && branchId.Value > 0)
-            {
-                query = query.Where(g => g.LoanAccount != null && g.LoanAccount.BranchID == branchId.Value);
-            }
-
-            if (loanAccountId.HasValue && loanAccountId.Value > 0)
-            {
-                query = query.Where(g => g.LoanAccountID == loanAccountId.Value);
-            }
-
-            if (!string.IsNullOrWhiteSpace(status) && status.Trim().ToLower() != "all" && status.Trim().ToLower() != "सर्व")
-            {
-                if (status.Trim().ToLower() == "active" || status.Trim() == "चालू")
-                {
-                    query = query.Where(g => g.LoanAccount != null && g.LoanAccount.Status == "Active");
-                }
-                else if (status.Trim().ToLower() == "closed" || status.Trim() == "बंद")
-                {
-                    query = query.Where(g => g.LoanAccount != null && (g.LoanAccount.Status == "Closed" || g.LoanAccount.Status == "Settled"));
-                }
-            }
-
-            if (asOfDate.HasValue)
-            {
-                query = query.Where(g => g.LoanAccount == null || g.LoanAccount.OpeningDate.Date <= asOfDate.Value.Date);
-            }
-
-            var goldList = await query
-                .OrderBy(g => g.LoanAccount != null ? g.LoanAccount.LoanAccountNo : "")
-                .ThenBy(g => g.GoldLoanDetailID)
+            var rawGoldList = await goldQuery
+                .OrderBy(g => g.GoldLoanDetailID)
                 .ToListAsync();
 
-            var items = new List<GoldJewelryReportItemDto>();
-            int sr = 1;
-            var uniqueAccountIds = new HashSet<int>();
-
-            foreach (var g in goldList)
+            static string ResolveVoucherStatus(LoanAccount? l, LoanApplication? app)
             {
-                var l = g.LoanAccount;
-                var c = l?.Customer;
-                var m = l?.Member;
+                if (l == null)
+                {
+                    return app != null ? "PendingDisbursement" : "Approved";
+                }
+                if (l.IsOpeningBalance)
+                {
+                    return "OpeningBalance";
+                }
+                if (l.LoanDisbursements != null && l.LoanDisbursements.Any())
+                {
+                    if (l.LoanDisbursements.Any(d => d.Voucher != null && string.Equals(d.Voucher.Status, "Pending", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return "Pending";
+                    }
+                    return "Approved";
+                }
+                return "Approved";
+            }
 
-                string borrowerName = "";
+            static (string BorrowerName, string CifNo, string MemberCode, int MemberId, string Mobile, string Address) ResolveBorrowerMeta(
+                LoanAccount? l,
+                LoanApplication? app)
+            {
+                var m = l?.Member;
+                var c = l?.Customer ?? app?.Customer ?? m?.Customer;
+
+                string cif = c?.CIFNo ?? m?.Customer?.CIFNo ?? string.Empty;
+                string memCode = m?.MemberCode ?? cif;
+                int memId = m?.MemberID ?? l?.CustomerID ?? app?.CustomerID ?? 0;
+                string mobile = c?.MobileNo ?? string.Empty;
+                string addr = c != null
+                    ? $"{c.Address ?? ""} {c.Village ?? ""} {c.Taluka ?? ""}".Trim().Replace("  ", " ")
+                    : string.Empty;
+
+                string borrowerName;
                 if (c != null)
                 {
                     borrowerName = $"{c.FirstName} {c.MiddleName} {c.LastName}".Trim().Replace("  ", " ");
-                    if (!string.IsNullOrEmpty(c.CIFNo))
+                    if (!string.IsNullOrEmpty(cif))
                     {
-                        borrowerName = $"{c.CIFNo} - {borrowerName}";
+                        borrowerName = $"{cif} - {borrowerName}";
                     }
                 }
-                else if (m?.Customer != null)
+                else if (m != null && !string.IsNullOrEmpty(m.MemberCode))
                 {
-                    borrowerName = $"{m.Customer.FirstName} {m.Customer.MiddleName} {m.Customer.LastName}".Trim().Replace("  ", " ");
-                    if (!string.IsNullOrEmpty(m.MemberCode))
-                    {
-                        borrowerName = $"{m.MemberCode} - {borrowerName}";
-                    }
+                    borrowerName = m.MemberCode;
                 }
                 else if (l != null)
                 {
                     borrowerName = $"खाते क्र. {l.LoanAccountNo}";
                 }
+                else if (app != null)
+                {
+                    borrowerName = $"अर्ज क्र. {app.ApplicationNo}";
+                }
+                else
+                {
+                    borrowerName = "-";
+                }
+
+                return (borrowerName, cif, memCode, memId, mobile, addr);
+            }
+
+            var items = new List<GoldJewelryReportItemDto>();
+
+            // 1. Add rows from GoldLoanDetails
+            foreach (var g in rawGoldList)
+            {
+                var l = g.LoanAccount;
+                var app = g.LoanApplication;
+
+                // Auto-resolve LoanAccount if GoldLoanDetail was saved on Application before account creation
+                if (l == null && g.LoanApplicationID.HasValue && accountsByAppId.TryGetValue(g.LoanApplicationID.Value, out var matchedByApp))
+                {
+                    l = matchedByApp;
+                }
+                else if (l == null && !string.IsNullOrWhiteSpace(app?.LoanAccountNo) && accountsByAccNo.TryGetValue(app.LoanAccountNo.Trim(), out var matchedByNo))
+                {
+                    l = matchedByNo;
+                }
 
                 if (l != null)
                 {
-                    uniqueAccountIds.Add(l.LoanAccountID);
+                    accountsWithGoldDetails.Add(l.LoanAccountID);
                 }
+
+                int? effectiveBranchId = l?.BranchID ?? app?.BranchID;
+                if (branchId.HasValue && branchId.Value > 0 && effectiveBranchId != branchId.Value)
+                {
+                    continue;
+                }
+
+                int resolvedAccId = l?.LoanAccountID ?? g.LoanAccountID ?? 0;
+                if (loanAccountId.HasValue && loanAccountId.Value > 0)
+                {
+                    if (resolvedAccId != loanAccountId.Value && g.LoanApplicationID != loanAccountId.Value)
+                    {
+                        continue;
+                    }
+                }
+
+                if (filterActiveOnly)
+                {
+                    bool isActiveRow = (l != null && string.Equals(l.Status, "Active", StringComparison.OrdinalIgnoreCase)) ||
+                                       (l == null && app != null);
+                    if (!isActiveRow) continue;
+                }
+                else if (filterClosedOnly)
+                {
+                    bool isClosedRow = l != null &&
+                                       (string.Equals(l.Status, "Closed", StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(l.Status, "Settled", StringComparison.OrdinalIgnoreCase));
+                    if (!isClosedRow) continue;
+                }
+
+                if (asOfDate.HasValue)
+                {
+                    DateTime? rowDate = l != null
+                        ? (l.LoanDisbursementDate ?? l.OpeningDate)
+                        : app?.ApplicationDate;
+                    if (rowDate.HasValue && rowDate.Value.Date > asOfDate.Value.Date)
+                    {
+                        continue;
+                    }
+                }
+
+                var lr = l?.LoanRate ?? app?.LoanRate;
+                var meta = ResolveBorrowerMeta(l, app);
 
                 items.Add(new GoldJewelryReportItemDto
                 {
-                    SrNo = sr++,
                     GoldLoanDetailID = g.GoldLoanDetailID,
-                    LoanAccountID = g.LoanAccountID,
-                    LoanAccountNo = l?.LoanAccountNo ?? g.LoanAccountID.ToString(),
-                    CustomerID = l?.CustomerID,
-                    CifNo = c?.CIFNo ?? m?.Customer?.CIFNo ?? "",
-                    MemberID = m?.MemberID ?? l?.CustomerID ?? 0,
-                    MemberCode = m?.MemberCode ?? c?.CIFNo ?? "",
-                    BorrowerName = borrowerName,
+                    LoanAccountID = resolvedAccId,
+                    LoanAccountNo = l?.LoanAccountNo ?? (app?.ApplicationNo != null ? $"अर्ज: {app.ApplicationNo}" : (resolvedAccId > 0 ? resolvedAccId.ToString() : "")),
+                    LegacyAccountNumber = l?.LegacyAccountNumber,
+                    ApplicationNo = app?.ApplicationNo,
+                    LoanApplicationID = g.LoanApplicationID ?? l?.LoanApplicationID,
+                    CustomerID = l?.CustomerID ?? app?.CustomerID,
+                    CifNo = meta.CifNo,
+                    MemberID = meta.MemberId,
+                    MemberCode = meta.MemberCode,
+                    BorrowerName = meta.BorrowerName,
+                    CustomerMobile = meta.Mobile,
+                    CustomerAddress = meta.Address,
+                    BranchName = l?.Branch?.BranchName ?? app?.Branch?.BranchName ?? branchName,
+                    LoanRateName = lr?.ShortName ?? lr?.LoanType ?? "सुवर्ण कर्ज",
+                    InterestRate = l?.InterestRate ?? (app?.InterestRate ?? 12),
+                    DurationMonths = l?.DurationMonths ?? (app?.DurationMonths ?? 12),
                     OrnamentName = g.OrnamentName,
                     EstimatedValue = g.EstimatedValue > 0 ? g.EstimatedValue : (g.NetWeight * g.GoldRatePerGram),
                     NetWeight = g.NetWeight,
@@ -5570,11 +5734,398 @@ namespace Bhisi.Api.Controllers
                     Quantity = g.Quantity > 0 ? g.Quantity : 1,
                     Purity = g.Purity,
                     GoldRatePerGram = g.GoldRatePerGram,
-                    LoanStatus = l?.Status ?? "Active",
-                    SanctionedAmount = l?.SanctionedAmount ?? 0,
-                    PrincipalBalance = l?.PrincipalBalance ?? 0,
-                    LoanDisbursementDate = l?.LoanDisbursementDate ?? l?.OpeningDate
+                    ValuerName = g.ValuerName,
+                    ValuerValuation = g.ValuerValuation,
+                    ValuationReceiptNo = g.ValuationReceiptNo,
+                    ValuationDate = g.ValuationDate,
+                    ImagePath = g.ImagePath,
+                    Remarks = g.Remarks,
+                    SecurityDetails = l?.SecurityDetails ?? app?.SecurityDetails,
+                    SecurityValue = l?.SecurityValue ?? app?.SecurityValue ?? 0,
+                    IsCollateralDetailPending = false,
+                    VoucherStatus = ResolveVoucherStatus(l, app),
+                    LoanStatus = l?.Status ?? (l == null && app != null ? "Pending Disbursement" : "Active"),
+                    SanctionedAmount = l?.SanctionedAmount ?? (app?.RequestedAmount ?? 0),
+                    PrincipalBalance = l?.PrincipalBalance ?? (app?.RequestedAmount ?? 0),
+                    LoanDisbursementDate = l?.LoanDisbursementDate ?? l?.OpeningDate ?? app?.ApplicationDate
                 });
+            }
+
+            // 2. Include Gold Loan Accounts that do not yet have individual ornament rows in GoldLoanDetails
+            foreach (var l in candidateLoanAccounts)
+            {
+                bool hasGoldRows = accountsWithGoldDetails.Contains(l.LoanAccountID) ||
+                                   (l.LoanApplicationID.HasValue && appsWithGoldDetails.Contains(l.LoanApplicationID.Value));
+                if (hasGoldRows) continue;
+
+                bool isGoldAccount = goldLoanRateIds.Contains(l.LoanRateID) ||
+                                     HasGoldKeyword(l.LoanRate?.LoanType) ||
+                                     HasGoldKeyword(l.LoanRate?.ShortName) ||
+                                     HasGoldKeyword(l.LoanRate?.SecurityType) ||
+                                     HasGoldKeyword(l.SecurityDetails);
+                if (!isGoldAccount) continue;
+
+                if (loanAccountId.HasValue && loanAccountId.Value > 0 && l.LoanAccountID != loanAccountId.Value)
+                {
+                    continue;
+                }
+
+                if (filterActiveOnly && !string.Equals(l.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                if (filterClosedOnly &&
+                    !string.Equals(l.Status, "Closed", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(l.Status, "Settled", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (asOfDate.HasValue)
+                {
+                    var effDate = l.LoanDisbursementDate ?? l.OpeningDate;
+                    if (effDate.Date > asOfDate.Value.Date)
+                    {
+                        continue;
+                    }
+                }
+
+                var meta = ResolveBorrowerMeta(l, null);
+                var lr = l.LoanRate;
+
+                items.Add(new GoldJewelryReportItemDto
+                {
+                    GoldLoanDetailID = 0,
+                    LoanAccountID = l.LoanAccountID,
+                    LoanAccountNo = l.LoanAccountNo ?? l.LoanAccountID.ToString(),
+                    LegacyAccountNumber = l.LegacyAccountNumber,
+                    LoanApplicationID = l.LoanApplicationID,
+                    CustomerID = l.CustomerID,
+                    CifNo = meta.CifNo,
+                    MemberID = meta.MemberId,
+                    MemberCode = meta.MemberCode,
+                    BorrowerName = meta.BorrowerName,
+                    CustomerMobile = meta.Mobile,
+                    CustomerAddress = meta.Address,
+                    BranchName = l.Branch?.BranchName ?? branchName,
+                    LoanRateName = !string.IsNullOrWhiteSpace(lr?.ShortName) ? lr!.ShortName! : (lr?.LoanType ?? "सोनेतारण कर्जे"),
+                    InterestRate = l.InterestRate,
+                    DurationMonths = l.DurationMonths,
+                    OrnamentName = !string.IsNullOrWhiteSpace(l.SecurityDetails)
+                        ? l.SecurityDetails!
+                        : "सोने तारण (दागिन्यांचा तपशील भरणे बाकी)",
+                    EstimatedValue = 0,
+                    NetWeight = 0,
+                    GrossWeight = 0,
+                    Quantity = 0,
+                    Purity = 0,
+                    GoldRatePerGram = 0,
+                    ValuerName = null,
+                    ValuerValuation = 0,
+                    ValuationReceiptNo = null,
+                    ValuationDate = null,
+                    ImagePath = null,
+                    Remarks = l.SecurityDetails,
+                    SecurityDetails = l.SecurityDetails,
+                    SecurityValue = l.SecurityValue,
+                    IsCollateralDetailPending = true,
+                    VoucherStatus = ResolveVoucherStatus(l, null),
+                    LoanStatus = l.Status,
+                    SanctionedAmount = l.SanctionedAmount,
+                    PrincipalBalance = l.PrincipalBalance,
+                    LoanDisbursementDate = l.LoanDisbursementDate ?? l.OpeningDate
+                });
+            }
+
+            // 3. Include undisbursed Gold Loan Applications that do not yet have a LoanAccount or GoldLoanDetails rows
+            if (!filterClosedOnly)
+            {
+                var appsQuery = _context.LoanApplications
+                    .AsNoTracking()
+                    .Include(a => a.Customer)
+                    .Include(a => a.LoanRate)
+                    .Include(a => a.Branch)
+                    .AsQueryable();
+
+                if (branchId.HasValue && branchId.Value > 0)
+                {
+                    appsQuery = appsQuery.Where(a => a.BranchID == branchId.Value);
+                }
+
+                var candidateApps = await appsQuery.ToListAsync();
+
+                // Check across all branches whether an account already exists for an application
+                var allLinkedAppIdsInDb = await _context.LoanAccounts
+                    .AsNoTracking()
+                    .Where(l => l.LoanApplicationID.HasValue)
+                    .Select(l => l.LoanApplicationID!.Value)
+                    .ToListAsync();
+                var linkedAppIdSet = allLinkedAppIdsInDb.ToHashSet();
+
+                foreach (var app in candidateApps)
+                {
+                    if (appsWithGoldDetails.Contains(app.LoanApplicationID)) continue;
+                    if (linkedAppIdSet.Contains(app.LoanApplicationID)) continue;
+                    if (!string.IsNullOrWhiteSpace(app.LoanAccountNo) && accountsByAccNo.ContainsKey(app.LoanAccountNo.Trim())) continue;
+
+                    bool isGoldApp = goldLoanRateIds.Contains(app.LoanRateID) ||
+                                     HasGoldKeyword(app.LoanRate?.LoanType) ||
+                                     HasGoldKeyword(app.LoanRate?.ShortName) ||
+                                     HasGoldKeyword(app.LoanRate?.SecurityType) ||
+                                     HasGoldKeyword(app.SecurityDetails);
+                    if (!isGoldApp) continue;
+
+                    if (loanAccountId.HasValue && loanAccountId.Value > 0)
+                    {
+                        // When a specific LoanAccountID is selected in dropdown, skip unrelated undisbursed applications
+                        continue;
+                    }
+
+                    if (asOfDate.HasValue && app.ApplicationDate.Date > asOfDate.Value.Date)
+                    {
+                        continue;
+                    }
+
+                    var meta = ResolveBorrowerMeta(null, app);
+                    var lr = app.LoanRate;
+
+                    items.Add(new GoldJewelryReportItemDto
+                    {
+                        GoldLoanDetailID = 0,
+                        LoanAccountID = 0,
+                        LoanAccountNo = !string.IsNullOrWhiteSpace(app.ApplicationNo)
+                            ? $"अर्ज: {app.ApplicationNo}"
+                            : $"अर्ज #{app.LoanApplicationID}",
+                        ApplicationNo = app.ApplicationNo,
+                        LoanApplicationID = app.LoanApplicationID,
+                        CustomerID = app.CustomerID,
+                        CifNo = meta.CifNo,
+                        MemberID = meta.MemberId,
+                        MemberCode = meta.MemberCode,
+                        BorrowerName = meta.BorrowerName,
+                        CustomerMobile = meta.Mobile,
+                        CustomerAddress = meta.Address,
+                        BranchName = app.Branch?.BranchName ?? branchName,
+                        LoanRateName = !string.IsNullOrWhiteSpace(lr?.ShortName) ? lr!.ShortName! : (lr?.LoanType ?? "सोनेतारण कर्जे"),
+                        InterestRate = app.InterestRate,
+                        DurationMonths = app.DurationMonths,
+                        OrnamentName = !string.IsNullOrWhiteSpace(app.SecurityDetails)
+                            ? app.SecurityDetails!
+                            : "सोने तारण अर्ज (वाटप व दागिना तपशील बाकी)",
+                        EstimatedValue = 0,
+                        NetWeight = 0,
+                        GrossWeight = 0,
+                        Quantity = 0,
+                        Purity = 0,
+                        GoldRatePerGram = 0,
+                        ValuerName = null,
+                        ValuerValuation = 0,
+                        ValuationReceiptNo = null,
+                        ValuationDate = null,
+                        ImagePath = null,
+                        Remarks = app.SecurityDetails,
+                        SecurityDetails = app.SecurityDetails,
+                        SecurityValue = app.SecurityValue,
+                        IsCollateralDetailPending = true,
+                        VoucherStatus = "PendingDisbursement",
+                        LoanStatus = "Pending Disbursement",
+                        SanctionedAmount = app.RequestedAmount,
+                        PrincipalBalance = app.RequestedAmount,
+                        LoanDisbursementDate = app.ApplicationDate
+                    });
+                }
+            }
+
+            var comparer = new AlphanumericComparer();
+            items = items
+                .OrderBy(i => i.LoanAccountID > 0 ? 0 : 1)
+                .ThenBy(i => !string.IsNullOrWhiteSpace(i.LegacyAccountNumber) ? i.LegacyAccountNumber : i.LoanAccountNo, comparer)
+                .ThenBy(i => i.LoanAccountNo, comparer)
+                .ThenBy(i => i.IsCollateralDetailPending ? 1 : 0)
+                .ThenBy(i => i.GoldLoanDetailID)
+                .ToList();
+
+            var accountTotals = new Dictionary<string, (decimal Sanctioned, decimal Balance)>();
+            static (int Quantity, decimal NetWeight, decimal GrossWeight, decimal EstimatedValue, decimal ValuerValuation, string? ValuerName) ParseGoldSecuritySummary(string? securityDetails, decimal securityValue)
+            {
+                int qty = 0;
+                decimal netWt = 0m;
+                decimal grossWt = 0m;
+                decimal sysVal = 0m;
+                decimal valuerVal = 0m;
+                string? valuerName = null;
+
+                if (!string.IsNullOrWhiteSpace(securityDetails))
+                {
+                    var normalizedChars = securityDetails.Select(ch =>
+                        (ch >= '\u0966' && ch <= '\u096F') ? (char)('0' + (ch - '\u0966')) : ch
+                    ).ToArray();
+                    string norm = new string(normalizedChars);
+
+                    static decimal ParseDec(string raw)
+                    {
+                        if (string.IsNullOrWhiteSpace(raw)) return 0m;
+                        string cleaned = raw.Replace(",", "").Trim();
+                        return decimal.TryParse(cleaned, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0m;
+                    }
+
+                    var qtyMatch = System.Text.RegularExpressions.Regex.Match(norm, @"(\d+)\s*नग");
+                    if (!qtyMatch.Success)
+                    {
+                        qtyMatch = System.Text.RegularExpressions.Regex.Match(norm, @"(\d+)\s*जिन्नस");
+                    }
+                    if (qtyMatch.Success && int.TryParse(qtyMatch.Groups[1].Value, out int parsedQty) && parsedQty > 0)
+                    {
+                        qty = parsedQty;
+                    }
+
+                    var netMatch = System.Text.RegularExpressions.Regex.Match(
+                        norm,
+                        @"(?:निव्वळ\s*वजन|शुद्ध\s*वजन|शुध्द\s*वजन|net\s*weight|वजन)\s*[:\-]?\s*([\d,]+(?:\.\d+)?)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (netMatch.Success)
+                    {
+                        netWt = ParseDec(netMatch.Groups[1].Value);
+                    }
+
+                    var grossMatch = System.Text.RegularExpressions.Regex.Match(
+                        norm,
+                        @"(?:ग्रॉस\s*वजन|एकूण\s*वजन|gross\s*weight)\s*[:\-]?\s*([\d,]+(?:\.\d+)?)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (grossMatch.Success)
+                    {
+                        grossWt = ParseDec(grossMatch.Groups[1].Value);
+                    }
+                    if (grossWt <= 0m && netWt > 0m)
+                    {
+                        grossWt = netWt;
+                    }
+
+                    var sysValMatch = System.Text.RegularExpressions.Regex.Match(
+                        norm,
+                        @"सिस्टीम\s*मूल्यांकन\s*[:\-]?\s*₹?\s*([\d,]+(?:\.\d+)?)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (sysValMatch.Success)
+                    {
+                        sysVal = ParseDec(sysValMatch.Groups[1].Value);
+                    }
+
+                    var valuerValMatch = System.Text.RegularExpressions.Regex.Match(
+                        norm,
+                        @"(?:सोनाराचे\s*मूल्यांकन|व्हॅल्यूअर\s*मूल्यांकन|सोनार\s*मूल्यांकन)\s*[:\-]?\s*₹?\s*([\d,]+(?:\.\d+)?)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (valuerValMatch.Success)
+                    {
+                        valuerVal = ParseDec(valuerValMatch.Groups[1].Value);
+                    }
+                    else
+                    {
+                        var genericValMatch = System.Text.RegularExpressions.Regex.Match(
+                            norm,
+                            @"मूल्यांकन\s*[:\-]?\s*₹?\s*([\d,]+(?:\.\d+)?)",
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                        if (genericValMatch.Success)
+                        {
+                            valuerVal = ParseDec(genericValMatch.Groups[1].Value);
+                        }
+                    }
+
+                    var valuerNameMatch = System.Text.RegularExpressions.Regex.Match(
+                        securityDetails,
+                        @"(?:सोनार|व्हॅल्यूअर|valuer)\s*[:\-]\s*([^|,;\r\n]+)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (valuerNameMatch.Success)
+                    {
+                        string extractedName = valuerNameMatch.Groups[1].Value.Trim();
+                        if (!string.IsNullOrWhiteSpace(extractedName))
+                        {
+                            valuerName = extractedName;
+                        }
+                    }
+                }
+
+                decimal finalValuerVal = securityValue > 0m
+                    ? securityValue
+                    : (valuerVal > 0m ? valuerVal : sysVal);
+                decimal finalSysVal = sysVal > 0m ? sysVal : finalValuerVal;
+
+                return (qty, netWt, grossWt, finalSysVal, finalValuerVal, valuerName);
+            }
+
+            // Enrich pending Gold Loan rows using SecurityDetails / SecurityValue (including linked LoanApplication fallback)
+            var pendingAppIds = items
+                .Where(i => i.IsCollateralDetailPending && i.LoanApplicationID.HasValue && i.LoanApplicationID.Value > 0)
+                .Select(i => i.LoanApplicationID!.Value)
+                .Distinct()
+                .ToList();
+
+            Dictionary<int, (string? SecurityDetails, decimal SecurityValue)> appSecLookup = new();
+            if (pendingAppIds.Count > 0)
+            {
+                var appSecRows = await _context.LoanApplications
+                    .AsNoTracking()
+                    .Where(a => pendingAppIds.Contains(a.LoanApplicationID))
+                    .Select(a => new { a.LoanApplicationID, a.SecurityDetails, a.SecurityValue })
+                    .ToListAsync();
+                foreach (var row in appSecRows)
+                {
+                    appSecLookup[row.LoanApplicationID] = (row.SecurityDetails, row.SecurityValue);
+                }
+            }
+
+            foreach (var pendingItem in items.Where(i => i.IsCollateralDetailPending))
+            {
+                if (pendingItem.LoanApplicationID.HasValue &&
+                    appSecLookup.TryGetValue(pendingItem.LoanApplicationID.Value, out var appSec))
+                {
+                    if (string.IsNullOrWhiteSpace(pendingItem.SecurityDetails) && !string.IsNullOrWhiteSpace(appSec.SecurityDetails))
+                    {
+                        pendingItem.SecurityDetails = appSec.SecurityDetails;
+                        pendingItem.Remarks = appSec.SecurityDetails;
+                        pendingItem.OrnamentName = appSec.SecurityDetails;
+                    }
+                    if (pendingItem.SecurityValue <= 0m && appSec.SecurityValue > 0m)
+                    {
+                        pendingItem.SecurityValue = appSec.SecurityValue;
+                    }
+                }
+
+                var parsed = ParseGoldSecuritySummary(pendingItem.SecurityDetails, pendingItem.SecurityValue);
+                if (parsed.Quantity > 0) pendingItem.Quantity = parsed.Quantity;
+                if (parsed.NetWeight > 0m) pendingItem.NetWeight = parsed.NetWeight;
+                if (parsed.GrossWeight > 0m) pendingItem.GrossWeight = parsed.GrossWeight;
+                if (parsed.EstimatedValue > 0m) pendingItem.EstimatedValue = parsed.EstimatedValue;
+                if (parsed.ValuerValuation > 0m) pendingItem.ValuerValuation = parsed.ValuerValuation;
+                if (pendingItem.SecurityValue <= 0m && parsed.ValuerValuation > 0m)
+                {
+                    pendingItem.SecurityValue = parsed.ValuerValuation;
+                }
+                if (string.IsNullOrWhiteSpace(pendingItem.ValuerName) && !string.IsNullOrWhiteSpace(parsed.ValuerName))
+                {
+                    pendingItem.ValuerName = parsed.ValuerName;
+                }
+            }
+
+            var pendingCollateralKeys = new HashSet<string>();
+
+            for (int idx = 0; idx < items.Count; idx++)
+            {
+                var item = items[idx];
+                item.SrNo = idx + 1;
+
+                string accKey = item.LoanAccountID > 0
+                    ? $"ACC_{item.LoanAccountID}"
+                    : $"APP_{item.LoanApplicationID ?? item.SrNo}";
+
+                if (!accountTotals.ContainsKey(accKey))
+                {
+                    accountTotals[accKey] = (item.SanctionedAmount, item.PrincipalBalance);
+                }
+
+                if (item.IsCollateralDetailPending)
+                {
+                    pendingCollateralKeys.Add(accKey);
+                }
             }
 
             var response = new GoldJewelryReportResponseDto
@@ -5584,15 +6135,18 @@ namespace Bhisi.Api.Controllers
                 BranchName = branchName,
                 Items = items,
                 TotalEstimatedValue = items.Sum(i => i.EstimatedValue),
+                TotalValuerValuation = items.Sum(i => i.ValuerValuation > 0 ? i.ValuerValuation : i.EstimatedValue),
                 TotalNetWeight = items.Sum(i => i.NetWeight),
                 TotalGrossWeight = items.Sum(i => i.GrossWeight),
                 TotalQuantity = items.Sum(i => i.Quantity),
-                TotalAccountsCount = uniqueAccountIds.Count
+                TotalAccountsCount = accountTotals.Count,
+                PendingCollateralAccountsCount = pendingCollateralKeys.Count,
+                TotalSanctionedAmount = accountTotals.Values.Sum(x => x.Sanctioned),
+                TotalPrincipalBalance = accountTotals.Values.Sum(x => x.Balance)
             };
 
             return Ok(response);
         }
-
         // GET: api/Reports/CustomerListReport
         [HttpGet("CustomerListReport")]
         public async Task<ActionResult<CustomerReportResponseDto>> GetCustomerListReport(

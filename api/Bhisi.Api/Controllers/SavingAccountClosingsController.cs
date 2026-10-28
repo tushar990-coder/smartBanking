@@ -97,7 +97,7 @@ namespace Bhisi.Api.Controllers
                 var now = DateTime.Now;
 
                 // 1. Resolve Ledgers for Double-Entry Accounting
-                int savingControlLedgerID = account.LedgerID > 0 ? account.LedgerID : 7;
+                int savingControlLedgerID = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, account);
                 int cashBankLedgerID;
                 if (request.PaymentMode == "Cash")
                 {

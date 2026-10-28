@@ -735,24 +735,13 @@ namespace Bhisi.Api.Controllers
                         collection.SavingCustomerName = $"{sourceSavingAcc.Customer.FirstName} {sourceSavingAcc.Customer.LastName}".Trim();
                     }
 
-                    // Match Saving Liability Ledger
-                    int savingLedgerId = sourceSavingAcc.LedgerID > 0 ? sourceSavingAcc.LedgerID : (sourceSavingAcc.SavingScheme?.SavingLiabilityLedgerID ?? 0);
-                    if (savingLedgerId == 0)
+                    // Dynamically resolve Saving Liability Ledger via SavingLedgerHelper (no hardcoded names or silent Cash fallback)
+                    int savingLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, sourceSavingAcc);
+                    if (savingLedgerId <= 0)
                     {
-                        var savingLedger = await _context.Ledgers.FirstOrDefaultAsync(l => 
-                            l.LedgerName.Contains("बचत ठेवा") || 
-                            l.LedgerName.Contains("बचत ठेव") || 
-                            l.LedgerName.Contains("बचत खाते") || 
-                            l.LedgerName.Contains("Saving Deposit") || 
-                            l.LedgerName.Contains("Saving Account")
-                        ) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("बचत") || l.LedgerName.Contains("Saving"));
-                        if (savingLedger != null) savingLedgerId = savingLedger.LedgerID;
+                        return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(sourceSavingAcc.AccountNo) });
                     }
-
-                    if (savingLedgerId > 0)
-                    {
-                        cashLedgerId = savingLedgerId;
-                    }
+                    cashLedgerId = savingLedgerId;
                 }
 
                 // Find or create Interest Waiver Expense Ledger

@@ -561,6 +561,7 @@ namespace Bhisi.Api.Controllers
             public int? CustomerId { get; set; }
             public int MemberId { get; set; }
             public int NumberOfShares { get; set; }
+            public decimal? FaceValue { get; set; } = 100M;
             public int BranchId { get; set; } = 1;
             public DateTime? WithdrawalDate { get; set; }
             public string Narration { get; set; } = "Share Withdrawal";
@@ -578,7 +579,7 @@ namespace Bhisi.Api.Controllers
         {
             if (request.NumberOfShares <= 0) return BadRequest("Number of shares must be greater than zero.");
 
-            decimal faceValue = 100M;
+            decimal faceValue = request.FaceValue.HasValue && request.FaceValue.Value > 0 ? request.FaceValue.Value : 100M;
             decimal totalAmount = request.NumberOfShares * faceValue;
 
             using var transaction = await _context.Database.BeginTransactionAsync();

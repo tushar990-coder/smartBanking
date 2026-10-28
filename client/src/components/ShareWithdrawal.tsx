@@ -45,6 +45,7 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
 
   const [formData, setFormData] = useState({
     numberOfShares: '',
+    faceValue: '100',
     narration: 'Share Withdrawal'
   });
   const [withdrawalDate, setWithdrawalDate] = useState<string>(activeBusinessDate);
@@ -81,8 +82,13 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
           loadShareAccount(data.member.memberID.toString());
         }
         if (data.numberOfShares) {
+          const loadedFaceValue = (data.transaction?.amount && data.numberOfShares)
+            ? (data.transaction.amount / data.numberOfShares).toString()
+            : (data.certificate?.faceValue ? String(data.certificate.faceValue) : '100');
+
           setFormData({
             numberOfShares: data.numberOfShares.toString(),
+            faceValue: loadedFaceValue,
             narration: data.voucher?.narration || 'Share Withdrawal'
           });
         }
@@ -327,8 +333,14 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
         return;
     }
 
-    const amount = qty * 100;
-    if (!window.confirm(`तुम्ही नक्की ${qty} शेअर्स (₹${amount}) ${paymentMode} द्वारे काढून घेऊ इच्छिता? (Are you sure?)`)) return;
+    const rate = parseFloat(formData.faceValue) || 100;
+    if (rate <= 0) {
+      setMessage('⚠️ प्रति शेअर दर (Face Value) ० पेक्षा जास्त असणे आवश्यक आहे.');
+      return;
+    }
+
+    const amount = qty * rate;
+    if (!window.confirm(`तुम्ही नक्की ${qty} शेअर्स (दर ₹${rate}, एकूण परतावा रक्कम ₹${amount.toFixed(2)}) ${paymentMode} द्वारे काढून घेऊ इच्छिता? (Are you sure?)`)) return;
 
     setLoading(true);
     try {
@@ -339,6 +351,7 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
           customerId: parseInt(selectedMemberId),
           memberId: parseInt(selectedMemberId),
           numberOfShares: qty,
+          faceValue: rate,
           withdrawalDate: withdrawalDate,
           narration: formData.narration,
           paymentMode: paymentMode,
@@ -350,7 +363,7 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
       const data = await res.json();
       if (res.ok) {
         setMessage(`शेअर्स यशस्वीरित्या काढण्यात आले! (Voucher: ${data.voucherNo})`);
-        setFormData({ numberOfShares: '', narration: 'Share Withdrawal' });
+        setFormData({ numberOfShares: '', faceValue: '100', narration: 'Share Withdrawal' });
         setChequeNo('');
         loadShareAccount(selectedMemberId);
       } else {
@@ -390,7 +403,7 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
               </div>
               <div className="text-[10px] text-amber-800">
                 व्हाउचर क्र: <span className="font-mono font-bold text-amber-950">{passingVoucherData?.voucher?.voucherNo || effectiveVoucherId}</span> | 
-                रक्कम: <span className="font-mono font-bold text-amber-950">₹{passingVoucherData?.voucher?.totalAmount ?? ((parseInt(formData.numberOfShares) || 0) * 100)}</span> | 
+                रक्कम: <span className="font-mono font-bold text-amber-950">₹{passingVoucherData?.voucher?.totalAmount ?? (((parseInt(formData.numberOfShares) || 0) * (parseFloat(formData.faceValue) || 100)).toFixed(2))}</span> | 
                 तारीख: <span className="font-mono font-bold text-amber-950">{passingVoucherData?.voucher?.voucherDate ? new Date(passingVoucherData.voucher.voucherDate).toLocaleDateString('en-GB') : '-'}</span>
               </div>
             </div>
@@ -503,30 +516,47 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
               
               <form onSubmit={handleWithdraw} className="space-y-3 flex-1 flex flex-col justify-between">
                 <fieldset disabled={isPassing} className="space-y-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-gray-700 mb-0.5">काढायच्या शेअर्सची संख्या (Quantity) *</label>
-                    <div className="flex gap-2 items-center">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-700 mb-0.5">काढायच्या शेअर्सची संख्या (Quantity) *</label>
                       <input 
                         type="number" 
                         name="numberOfShares"
                         min="1"
                         max={shareAccount?.totalShareCount || 9999}
                         placeholder="उदा. 5"
-                        className="w-24 border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors text-xs bg-white font-bold text-gray-800 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        className="w-full border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors text-xs bg-white font-bold text-gray-800 disabled:bg-gray-100 disabled:cursor-not-allowed"
                         value={formData.numberOfShares}
                         onChange={handleChange}
                         required
                       />
-                      <div className="bg-gray-100 px-2 py-1 rounded-sm border border-gray-200 text-gray-700 font-bold text-[10px]">
-                        x ₹100 / share
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-700 mb-0.5">प्रति शेअर दर (Rate / Face Value ₹) *</label>
+                      <div className="flex items-center">
+                        <span className="bg-gray-100 border border-r-0 border-gray-300 px-2 py-1 text-gray-600 text-xs font-bold rounded-l-sm">₹</span>
+                        <input 
+                          type="number" 
+                          name="faceValue"
+                          min="0.01"
+                          step="any"
+                          placeholder="100"
+                          className="w-full border border-gray-300 px-2 py-1 rounded-r-sm focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors text-xs bg-white font-bold text-gray-800 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          value={formData.faceValue}
+                          onChange={handleChange}
+                          required
+                        />
                       </div>
                     </div>
                   </div>
 
                   <div>
                     <label className="block text-[11px] font-bold text-gray-700 mb-0.5">परत मिळणारी रक्कम (Amount to Refund)</label>
-                    <div className="text-sm font-black text-red-800 bg-red-50/90 px-2 py-1 rounded-sm border border-red-200 h-[30px] flex items-center">
-                      ₹{((parseInt(formData.numberOfShares) || 0) * 100).toFixed(2)}
+                    <div className="text-sm font-black text-red-800 bg-red-50/90 px-2 py-1 rounded-sm border border-red-200 h-[30px] flex items-center justify-between">
+                      <span>₹{(((parseInt(formData.numberOfShares) || 0) * (parseFloat(formData.faceValue) || 100))).toFixed(2)}</span>
+                      <span className="text-[10px] text-gray-500 font-normal">
+                        ({parseInt(formData.numberOfShares) || 0} शेअर्स × ₹{parseFloat(formData.faceValue) || 100})
+                      </span>
                     </div>
                   </div>
 

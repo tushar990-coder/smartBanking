@@ -707,20 +707,38 @@ namespace Bhisi.Api.Controllers
             }
             catch { }
 
-            // 2. Shares & Dividends Module Unlinking
+            // 2. Shares & Dividends Module Unlinking & Balance Rollback
             try
             {
                 var shareTxs = await _context.ShareTransactions.Where(st => st.VoucherId == id).ToListAsync();
                 foreach (var st in shareTxs)
                 {
+                    var shAcc = await _context.ShareAccounts.FindAsync(st.ShareAccountId);
+                    if (shAcc != null)
+                    {
+                        if (st.TransactionType == "Allotment")
+                        {
+                            shAcc.TotalShareCount = Math.Max(0, shAcc.TotalShareCount - st.NumberOfShares);
+                            shAcc.TotalShareAmount = Math.Max(0, shAcc.TotalShareAmount - st.Amount);
+                            _context.Entry(shAcc).State = EntityState.Modified;
+                        }
+                        else if (st.TransactionType == "Withdrawal")
+                        {
+                            shAcc.TotalShareCount += st.NumberOfShares;
+                            shAcc.TotalShareAmount += st.Amount;
+                            _context.Entry(shAcc).State = EntityState.Modified;
+                        }
+                    }
+
                     var pendingCerts = await _context.ShareCertificates
-                        .Where(c => c.ShareAccountId == st.ShareAccountId && c.Status == "PendingApproval")
+                        .Where(c => c.ShareAccountId == st.ShareAccountId && (c.Status == "PendingApproval" || c.NumberOfShares == st.NumberOfShares))
                         .ToListAsync();
                     foreach (var pc in pendingCerts)
                     {
                         pc.Status = "Cancelled";
                     }
-                    st.VoucherId = null;
+
+                    _context.ShareTransactions.Remove(st);
                 }
 
                 var dividendDists = await _context.DividendDistributions.Where(d => d.VoucherId == id).ToListAsync();

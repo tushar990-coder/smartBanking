@@ -505,6 +505,38 @@ namespace Bhisi.Api.Controllers
                 _context.LoanCollections.Remove(lc);
             }
 
+            // 5.1 Comprehensive Cascade Rollback for Linked Share Transactions & Certificates
+            var linkedAllShareTxns = await _context.ShareTransactions.Where(st => st.VoucherId == id).ToListAsync();
+            foreach (var st in linkedAllShareTxns)
+            {
+                var shAcc = await _context.ShareAccounts.FindAsync(st.ShareAccountId);
+                if (shAcc != null)
+                {
+                    if (st.TransactionType == "Allotment")
+                    {
+                        shAcc.TotalShareCount = Math.Max(0, shAcc.TotalShareCount - st.NumberOfShares);
+                        shAcc.TotalShareAmount = Math.Max(0, shAcc.TotalShareAmount - st.Amount);
+                        _context.Entry(shAcc).State = EntityState.Modified;
+                    }
+                    else if (st.TransactionType == "Withdrawal")
+                    {
+                        shAcc.TotalShareCount += st.NumberOfShares;
+                        shAcc.TotalShareAmount += st.Amount;
+                        _context.Entry(shAcc).State = EntityState.Modified;
+                    }
+                }
+
+                var certsToCancel = await _context.ShareCertificates
+                    .Where(c => c.ShareAccountId == st.ShareAccountId && (c.Status == "PendingApproval" || c.NumberOfShares == st.NumberOfShares))
+                    .ToListAsync();
+                foreach (var pc in certsToCancel)
+                {
+                    pc.Status = "Cancelled";
+                }
+
+                _context.ShareTransactions.Remove(st);
+            }
+
             var loanDisbursements = await _context.LoanDisbursements
                 .Include(ld => ld.Deductions)
                 .Where(ld => ld.VoucherID == id)
@@ -512,19 +544,6 @@ namespace Bhisi.Api.Controllers
 
             foreach (var ld in loanDisbursements)
             {
-                // Clean up linked ShareTransactions and reverse ShareAccount totals
-                var linkedShareTxns = await _context.ShareTransactions.Where(st => st.VoucherId == id).ToListAsync();
-                foreach (var st in linkedShareTxns)
-                {
-                    var shAcc = await _context.ShareAccounts.FindAsync(st.ShareAccountId);
-                    if (shAcc != null)
-                    {
-                        shAcc.TotalShareCount = Math.Max(0, shAcc.TotalShareCount - st.NumberOfShares);
-                        shAcc.TotalShareAmount = Math.Max(0, shAcc.TotalShareAmount - st.Amount);
-                        _context.Entry(shAcc).State = EntityState.Modified;
-                    }
-                    _context.ShareTransactions.Remove(st);
-                }
 
                 // 1. Remove linked Deductions
                 if (ld.Deductions != null && ld.Deductions.Any())

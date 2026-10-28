@@ -63,33 +63,11 @@ namespace Bhisi.Api.Controllers
             }
 
             var account = await _context.ShareAccounts
-                .AsNoTracking()
                 .Include(s => s.Certificates)
+                .Include(s => s.Transactions)
                 .Where(s => s.MemberId == memberId || (resolvedCustId > 0 && s.CustomerID == resolvedCustId) || (s.MemberId == 0 && s.CustomerID == memberId))
                 .OrderByDescending(s => s.TotalShareCount > 0)
                 .ThenByDescending(s => s.ShareAccountId)
-                .Select(s => new
-                {
-                    s.ShareAccountId,
-                    s.MemberId,
-                    s.CustomerID,
-                    s.AccountNo,
-                    s.TotalShareCount,
-                    s.TotalShareAmount,
-                    s.OpeningDate,
-                    s.DividendPayableBalance,
-                    s.Status,
-                    Certificates = s.Certificates!.Select(c => new
-                    {
-                        c.CertificateId,
-                        c.CertificateNo,
-                        c.FromShareNo,
-                        c.ToShareNo,
-                        c.NumberOfShares,
-                        c.FaceValue,
-                        c.Status
-                    }).ToList()
-                })
                 .FirstOrDefaultAsync();
 
             if (account == null)
@@ -97,7 +75,63 @@ namespace Bhisi.Api.Controllers
                 return NotFound("No share account found for this member.");
             }
 
-            return Ok(account);
+            // 🌟 Permanent Auto-Sync & Self-Healing:
+            // Ensure TotalShareCount and TotalShareAmount accurately reflect non-cancelled active certificates.
+            // If any voucher was deleted, rejected or duplicate cancelled, this automatically keeps account totals 100% accurate.
+            if (account.Certificates != null && account.Certificates.Any())
+            {
+                var validCerts = account.Certificates
+                    .Where(c => c.Status != "Cancelled" && c.Status != "Surrendered")
+                    .ToList();
+
+                int verifiedShareCount = validCerts.Sum(c => c.NumberOfShares);
+                decimal verifiedShareAmount = validCerts.Sum(c => c.NumberOfShares * (c.FaceValue > 0 ? c.FaceValue : 100m));
+
+                if (account.TotalShareCount != verifiedShareCount || account.TotalShareAmount != verifiedShareAmount)
+                {
+                    account.TotalShareCount = verifiedShareCount;
+                    account.TotalShareAmount = verifiedShareAmount;
+                    _context.Entry(account).State = EntityState.Modified;
+                    await _context.SaveChangesAsync();
+                }
+            }
+
+            return Ok(new
+            {
+                account.ShareAccountId,
+                account.MemberId,
+                account.CustomerID,
+                account.AccountNo,
+                account.LegacyAccountNumber,
+                account.TotalShareCount,
+                account.TotalShareAmount,
+                account.OpeningDate,
+                account.DividendPayableBalance,
+                account.Status,
+                Certificates = account.Certificates?.Select(c => new
+                {
+                    c.CertificateId,
+                    c.CertificateNo,
+                    c.FromShareNo,
+                    c.ToShareNo,
+                    c.NumberOfShares,
+                    c.FaceValue,
+                    c.Status
+                }).ToList(),
+                Transactions = account.Transactions?
+                    .OrderByDescending(t => t.TransactionDate)
+                    .ThenByDescending(t => t.TransactionId)
+                    .Take(10)
+                    .Select(t => new
+                    {
+                        t.TransactionId,
+                        t.TransactionDate,
+                        t.TransactionType,
+                        t.NumberOfShares,
+                        t.Amount,
+                        t.Narration
+                    }).ToList()
+            });
         }
 
         // GET: api/ShareAccounts/Shareholders
@@ -575,6 +609,25 @@ namespace Bhisi.Api.Controllers
 
                 if (account == null) return NotFound("Share account not found for this member.");
 
+                // 🌟 Permanent Auto-Sync & Self-Healing before withdrawal validation:
+                if (account.Certificates != null && account.Certificates.Any())
+                {
+                    var validCerts = account.Certificates
+                        .Where(c => c.Status != "Cancelled" && c.Status != "Surrendered")
+                        .ToList();
+
+                    int verifiedShareCount = validCerts.Sum(c => c.NumberOfShares);
+                    decimal verifiedShareAmount = validCerts.Sum(c => c.NumberOfShares * (c.FaceValue > 0 ? c.FaceValue : 100m));
+
+                    if (account.TotalShareCount != verifiedShareCount || account.TotalShareAmount != verifiedShareAmount)
+                    {
+                        account.TotalShareCount = verifiedShareCount;
+                        account.TotalShareAmount = verifiedShareAmount;
+                        _context.Entry(account).State = EntityState.Modified;
+                        await _context.SaveChangesAsync();
+                    }
+                }
+
                 if (account.TotalShareCount < request.NumberOfShares)
                 {
                     return BadRequest($"Insufficient shares. Available: {account.TotalShareCount}");
@@ -719,9 +772,30 @@ namespace Bhisi.Api.Controllers
                 account.TotalShareCount -= request.NumberOfShares;
                 account.TotalShareAmount -= totalAmount;
 
-                // Handle Certificates (Simplified: Just mark some as Surrendered if they match, or don't manage certificate granularly for now)
-                // For a robust system, we would ask WHICH certificates are being surrendered.
-                // Here we simply decrease the total balance.
+                // 🌟 Handle Certificates (FIFO Deduction & Surrender):
+                int remainingToDeduct = request.NumberOfShares;
+                var activeCerts = (account.Certificates ?? new List<ShareCertificate>())
+                    .Where(c => c.Status != "Cancelled" && c.Status != "Surrendered")
+                    .OrderBy(c => c.CertificateId)
+                    .ToList();
+
+                foreach (var cert in activeCerts)
+                {
+                    if (remainingToDeduct <= 0) break;
+
+                    if (cert.NumberOfShares <= remainingToDeduct)
+                    {
+                        remainingToDeduct -= cert.NumberOfShares;
+                        cert.Status = "Surrendered";
+                        _context.Entry(cert).State = EntityState.Modified;
+                    }
+                    else
+                    {
+                        cert.NumberOfShares -= remainingToDeduct;
+                        remainingToDeduct = 0;
+                        _context.Entry(cert).State = EntityState.Modified;
+                    }
+                }
                 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -3143,7 +3217,7 @@ namespace Bhisi.Api.Controllers
 
                 // 2. Find and Cancel matching Share Certificate
                 var certs = await _context.ShareCertificates
-                    .Where(c => c.ShareAccountId == account.ShareAccountId && c.Status == "Active" && c.NumberOfShares == txn.NumberOfShares)
+                    .Where(c => c.ShareAccountId == account.ShareAccountId && (c.Status == "Active" || c.Status == "PendingApproval") && c.NumberOfShares == txn.NumberOfShares)
                     .OrderByDescending(c => c.CertificateId)
                     .ToListAsync();
 

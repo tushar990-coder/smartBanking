@@ -1892,18 +1892,27 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
           
           {/* Success Banner if collection saved */}
           {monthlySuccessBanner && (
-            <div className="bg-emerald-50 border-2 border-emerald-500 rounded p-3 text-emerald-900 flex items-center justify-between shadow-2xs">
+            <div className="bg-emerald-50 border-2 border-emerald-500 rounded p-3 text-emerald-900 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
               <div className="flex items-center gap-2 font-bold text-xs">
                 <CheckCircleIcon className="w-5 h-5 text-emerald-600 shrink-0" />
                 <span>{monthlySuccessBanner}</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setMonthlySuccessBanner(null)}
-                className="text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-sm font-bold cursor-pointer transition-colors"
-              >
-                ठीक आहे (OK)
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigate ? onNavigate('pigmy-daybook') : (window.location.href = '/?tab=pigmy-daybook')}
+                  className="text-[11px] bg-blue-700 hover:bg-blue-800 text-white px-2.5 py-1 rounded-sm font-bold cursor-pointer transition-colors flex items-center gap-1"
+                >
+                  📖 एजंट डे बुक (कॅश भरणा) वर जा
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMonthlySuccessBanner(null)}
+                  className="text-[11px] bg-gray-200 hover:bg-gray-300 text-gray-800 px-2.5 py-1 rounded-sm font-bold cursor-pointer transition-colors"
+                >
+                  बंद करा
+                </button>
+              </div>
             </div>
           )}
 
@@ -2302,13 +2311,13 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                       <div className="flex items-center gap-1.5">
                         <span className="text-base">📑</span>
                         <span>
-                          <strong>दैनिक कन्सोलिडेटेड व्हाउचर (Consolidated Voucher):</strong> एकूण {totalEntries} नोंदींसाठी ({distinctDates.size} दिवस) प्रति दिवस १ व्हाउचर याप्रमाणे एकूण <strong>{distinctDates.size} व्हाउचर्स</strong> तयार होतील.
+                          <strong>खाते जमा नोंद:</strong> एकूण {totalEntries} दैनंदिन नोंदी ({distinctDates.size} दिवस) सभासदांच्या पिग्मी खात्यांवर थेट जमा होतील.
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
-                        <span>📌</span>
+                        <span>🏦</span>
                         <span>
-                          <strong>व्हाउचर पासिंग (Voucher Passing):</strong> एकूण रक्कम ₹{totalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })} पासिंगसाठी प्रलंबित (Pending) राहील.
+                          <strong>कॅश भरणा व व्हाउचर:</strong> एजंटने शाखेत रक्कम आणून भरल्यावर (<strong>एजंट डे बुक</strong> मधून) त्या दिवसाचे १ एकत्रित व्हाउचर तयार होईल व पासिंगला जाईल.
                         </span>
                       </div>
                     </div>

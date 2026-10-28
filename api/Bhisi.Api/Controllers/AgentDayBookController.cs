@@ -474,25 +474,37 @@ namespace Bhisi.Api.Controllers
 
                 string combinedNarration = $"{dateRangeTag}{request.Narration}".Trim();
 
-                // Voucher Auto Generation Logic
+                // Voucher Auto Generation Logic (Consolidated Day Voucher for Cash Remittance)
                 int branchCashId = isBankMode ? resolvedBankLedgerId : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "PIGMY");
                 var debitLedger = isBankMode
                     ? await _context.Ledgers.FindAsync(resolvedBankLedgerId)
                     : (await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash" || l.AccountType == "Cash In Hand"));
-                var creditLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy") || l.LedgerName.Contains("Suspense"));
+                
+                var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == request.BranchId && m.IsActive);
+                int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy") || l.LedgerName.Contains("Suspense")))?.LedgerID ?? 47;
+                var creditLedger = await _context.Ledgers.FindAsync(crLedgerId) ?? await _context.Ledgers.FirstAsync();
                 
                 if (debitLedger == null) debitLedger = await _context.Ledgers.FirstAsync();
-                if (creditLedger == null) creditLedger = await _context.Ledgers.FirstAsync();
+
+                var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == request.AgentId);
+                string agentName = agent?.AgentName ?? ("Agent-" + request.AgentId);
+
+                string uniqueVoucherNo = $"PV-{request.BranchId}-{request.DepositDate:yyyyMMdd}-AGT-{request.AgentId}-{nextSeq:D3}";
+                var existingVch = await _context.Vouchers.FirstOrDefaultAsync(v => v.BranchID == request.BranchId && v.VoucherNo == uniqueVoucherNo);
+                if (existingVch != null)
+                {
+                    uniqueVoucherNo = $"PV-{request.BranchId}-{request.DepositDate:yyyyMMdd}-AGT-{request.AgentId}-{nextSeq:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+                }
 
                 var voucher = new Voucher
                 {
                     BranchID = request.BranchId,
-                    VoucherNo = $"VCH-{todayStr}-{nextSeq:D4}",
+                    VoucherNo = uniqueVoucherNo,
                     VoucherDate = request.DepositDate,
                     VoucherType = "Receipt",
                     Status = "Pending",
                     TotalAmount = request.Amount,
-                    Narration = $"Pigmy Cash Remittance by Agent ID {request.AgentId}. Ref: {receiptNo} {combinedNarration}".Trim(),
+                    Narration = $"पिग्मी एजंट संकलन भरणा (एजंट: {agentName}). पावती: {receiptNo} {combinedNarration}".Trim(),
                     CreatedBy = 1,
                     CreatedOn = DateTime.Now,
                     VoucherDetails = new List<VoucherDetail>
@@ -522,6 +534,26 @@ namespace Bhisi.Api.Controllers
 
                 _context.PigmyAgentCashDeposits.Add(deposit);
                 await _context.SaveChangesAsync();
+
+                // Link unvouchered collections for this agent within this deposit date range to this consolidated voucher
+                DateTime fromDate = (request.CollectionDateFrom ?? request.DepositDate).Date;
+                DateTime toDate = (request.CollectionDateTo ?? request.DepositDate).Date;
+                var unvoucheredCollections = await _context.PigmyCollections
+                    .Where(c => c.AgentId == request.AgentId &&
+                                c.CollectionDate.Date >= fromDate &&
+                                c.CollectionDate.Date <= toDate &&
+                                (!c.IsVoucherGenerated || c.VoucherId == null))
+                    .ToListAsync();
+
+                foreach (var col in unvoucheredCollections)
+                {
+                    col.VoucherId = voucher.VoucherID;
+                    col.IsVoucherGenerated = true;
+                }
+                if (unvoucheredCollections.Any())
+                {
+                    await _context.SaveChangesAsync();
+                }
 
                 // Record Denomination Breakdown if provided
                 if (denomTotal > 0)

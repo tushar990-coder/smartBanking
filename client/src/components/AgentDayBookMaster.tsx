@@ -1247,13 +1247,31 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
               <div className="text-[11px] text-gray-500">
                 💡 टीप: ही रक्कम एजंटच्या चालू शिल्लक / जमा खात्याशी संबंधित आहे.
               </div>
-              <button
-                type="button"
-                onClick={() => setShowDayDetailsModal(false)}
-                className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-semibold text-xs transition cursor-pointer"
-              >
-                बंद करा (Close)
-              </button>
+              <div className="flex items-center gap-2">
+                {!selectedDayInfo.isRemitted && (selectedDayInfo.pendingAmount || 0) > 0 && !isPassingMode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const dayStr = selectedDayInfo.date.split('T')[0];
+                      setCollectionDateFrom(dayStr);
+                      setCollectionDateTo(dayStr);
+                      setDepositAmount(selectedDayInfo.pendingAmount || selectedDayInfo.amount);
+                      setShowDayDetailsModal(false);
+                      setMessage(`दिवस ${new Date(dayStr).toLocaleDateString('en-GB')} ची प्रलंबित संकलन रक्कम भरण्यासाठी निवडली.`);
+                    }}
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-xs shadow transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>⚡ या दिवसाचा भरणा करा (₹{(selectedDayInfo.pendingAmount || selectedDayInfo.amount).toLocaleString('en-IN')})</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowDayDetailsModal(false)}
+                  className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-semibold text-xs transition cursor-pointer"
+                >
+                  बंद करा (Close)
+                </button>
+              </div>
             </div>
           </div>
         </div>

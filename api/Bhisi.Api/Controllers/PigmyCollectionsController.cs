@@ -486,43 +486,9 @@ namespace Bhisi.Api.Controllers
                     account.TotalDepositedAmount = closingBalance;
                     _context.PigmyAccounts.Update(account);
 
-                    // Auto Voucher
-                    var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "APP" && m.IsActive);
-                    int drLedgerId = isBankMode ? validatedBankLedgerId : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY"));
-                    int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
-
-                    string uniqueVoucherNo = $"PV-{branchId}-{dto.CollectionDate:yyyyMMdd}-APP-{appItemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
-                    var voucher = new Voucher
-                    {
-                        BranchID = branchId,
-                        VoucherNo = uniqueVoucherNo,
-                        VoucherDate = dto.CollectionDate,
-                        VoucherType = "Receipt",
-                        Narration = $"Pigmy App Collection for A/C {account.AccountNo}",
-                        TotalAmount = dto.CollectionAmount
-                    };
-
-                    voucher.VoucherDetails.Add(new VoucherDetail
-                    {
-                        LedgerID = drLedgerId,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Dr",
-                        Amount = dto.CollectionAmount
-                    });
-
-                    voucher.VoucherDetails.Add(new VoucherDetail
-                    {
-                        LedgerID = crLedgerId,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Cr",
-                        Amount = dto.CollectionAmount
-                    });
-
-                    _context.Vouchers.Add(voucher);
-                    await _context.SaveChangesAsync();
-
-                    collection.VoucherId = voucher.VoucherID;
-                    collection.IsVoucherGenerated = true;
+                    // Collections are credited to member accounts; voucher will be generated when agent deposits cash at the branch.
+                    collection.VoucherId = null;
+                    collection.IsVoucherGenerated = false;
 
                     processedReceipts.Add(receiptNo);
                 }
@@ -933,85 +899,47 @@ namespace Bhisi.Api.Controllers
                         processedDates.Add(targetDate.ToString("yyyy-MM-dd"));
                     }
 
-                    // Exactly ONE Consolidated Voucher per date for all collections on this targetDate
-                    if (dayTotalAmount > 0 && dayCollections.Any())
+                    // Opening Balance Migration Voucher (<= 31/03/2026 only).
+                    // For regular active collections, NO voucher is generated at import time; 
+                    // exactly ONE consolidated voucher will be created when the agent submits cash at the branch counter (Agent Day Book).
+                    if (isOpeningBalance && dayTotalAmount > 0 && dayCollections.Any())
                     {
                         var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == targetBranchId && m.IsActive);
                         int drLedgerId = isBankMonthly ? validatedMonthlyBankLedgerId : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranchId, "PIGMY"));
                         int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
-                        string uniqueVoucherNo = isOpeningBalance
-                            ? $"PV-{targetBranchId}-{targetDate:yyyyMMdd}-OP-IMP-{Guid.NewGuid().ToString("N").Substring(0, 4)}"
-                            : $"PV-{targetBranchId}-{targetDate:yyyyMMdd}-IMP-CONS";
+                        string uniqueVoucherNo = $"PV-{targetBranchId}-{targetDate:yyyyMMdd}-OP-IMP-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
 
-                        var existingVoucher = await _context.Vouchers
-                            .Include(v => v.VoucherDetails)
-                            .FirstOrDefaultAsync(v => v.BranchID == targetBranchId && v.VoucherDate.Date == targetDate && v.VoucherNo.Contains("-IMP-"));
-
-                        Voucher voucher;
-                        if (existingVoucher != null)
+                        var voucher = new Voucher
                         {
-                            voucher = existingVoucher;
-                            voucher.TotalAmount = dayTotalAmount;
-                            voucher.Status = isOpeningBalance ? "Approved" : "Pending";
-                            voucher.VoucherType = isOpeningBalance ? "Opening" : "Receipt";
-                            voucher.Narration = isOpeningBalance
-                                ? $"पिग्मी आरंभिक शिल्लक आयात (एजंट: {agent.AgentName}) - एकूण {dayCollections.Count} खाती"
-                                : $"पिग्मी मासिक एक्सेल संकलन (एजंट: {agent.AgentName}) - एकूण {dayCollections.Count} खाती";
+                            BranchID = targetBranchId,
+                            VoucherNo = uniqueVoucherNo,
+                            VoucherDate = targetDate,
+                            VoucherType = "Opening",
+                            Status = "Approved",
+                            Narration = $"पिग्मी आरंभिक शिल्लक आयात (एजंट: {agent.AgentName}) - एकूण {dayCollections.Count} खाती",
+                            TotalAmount = dayTotalAmount,
+                            ApprovedBy = 1,
+                            ApprovedOn = DateTime.Now
+                        };
 
-                            if (voucher.VoucherDetails.Any())
-                            {
-                                foreach (var vd in voucher.VoucherDetails)
-                                {
-                                    vd.Amount = dayTotalAmount;
-                                    if (vd.DrCr == "Dr" && vd.LedgerID != drLedgerId) vd.LedgerID = drLedgerId;
-                                    if (vd.DrCr == "Cr" && vd.LedgerID != crLedgerId) vd.LedgerID = crLedgerId;
-                                }
-                            }
-                            else
-                            {
-                                voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = drLedgerId, DrCr = "Dr", Amount = dayTotalAmount });
-                                voucher.VoucherDetails.Add(new VoucherDetail { LedgerID = crLedgerId, DrCr = "Cr", Amount = dayTotalAmount });
-                            }
-                            _context.Vouchers.Update(voucher);
-                        }
-                        else
+                        voucher.VoucherDetails.Add(new VoucherDetail
                         {
-                            voucher = new Voucher
-                            {
-                                BranchID = targetBranchId,
-                                VoucherNo = uniqueVoucherNo,
-                                VoucherDate = targetDate,
-                                VoucherType = isOpeningBalance ? "Opening" : "Receipt",
-                                Status = isOpeningBalance ? "Approved" : "Pending",
-                                Narration = isOpeningBalance
-                                    ? $"पिग्मी आरंभिक शिल्लक आयात (एजंट: {agent.AgentName}) - एकूण {dayCollections.Count} खाती"
-                                    : $"पिग्मी मासिक एक्सेल संकलन (एजंट: {agent.AgentName}) - एकूण {dayCollections.Count} खाती",
-                                TotalAmount = dayTotalAmount,
-                                ApprovedBy = isOpeningBalance ? 1 : null,
-                                ApprovedOn = isOpeningBalance ? DateTime.Now : null
-                            };
+                            LedgerID = drLedgerId,
+                            DrCr = "Dr",
+                            Amount = dayTotalAmount
+                        });
 
-                            voucher.VoucherDetails.Add(new VoucherDetail
-                            {
-                                LedgerID = drLedgerId,
-                                DrCr = "Dr",
-                                Amount = dayTotalAmount
-                            });
+                        voucher.VoucherDetails.Add(new VoucherDetail
+                        {
+                            LedgerID = crLedgerId,
+                            DrCr = "Cr",
+                            Amount = dayTotalAmount
+                        });
 
-                            voucher.VoucherDetails.Add(new VoucherDetail
-                            {
-                                LedgerID = crLedgerId,
-                                DrCr = "Cr",
-                                Amount = dayTotalAmount
-                            });
-
-                            _context.Vouchers.Add(voucher);
-                        }
-
+                        _context.Vouchers.Add(voucher);
                         await _context.SaveChangesAsync();
 
-                        // Link all collections of this date to this single consolidated voucher
                         foreach (var col in dayCollections)
                         {
                             col.VoucherId = voucher.VoucherID;
@@ -1023,7 +951,7 @@ namespace Bhisi.Api.Controllers
 
                 await transaction.CommitAsync();
 
-                string messageText = $"एजंट '{agent.AgentName}' अंतर्गत {affectedAccounts.Count} खात्यांच्या एकूण {processedEntriesCount} दैनंदिन नोंदी (एकूण रक्कम ₹{grandTotalAmount:N2}) यशस्वीरीत्या जमा झाल्या! एकूण {processedDates.Count} दिवसांसाठी दैनंदिन व्हाउचर्स पासिंगसाठी (Pending) तयार झाले आहेत.";
+                string messageText = $"एजंट '{agent.AgentName}' अंतर्गत {affectedAccounts.Count} खात्यांच्या एकूण {processedEntriesCount} दैनंदिन नोंदी (एकूण रक्कम ₹{grandTotalAmount:N2}) यशस्वीरीत्या जमा झाल्या! एजंटने रक्कम बँकेत जमा केल्यावर (एजंट डे बुक) त्या दिवसाचे १ एकत्रित व्हाउचर तयार होईल.";
                 if (skippedFutureEntriesCount > 0)
                 {
                     messageText += $" (सूचना: चालू तारखेपुढील {skippedFutureEntriesCount} भविष्यकालीन नोंदी वगळल्या).";
@@ -1097,65 +1025,111 @@ namespace Bhisi.Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                int generatedCount = 0;
-                foreach (var col in pendingItems)
-                {
-                    var account = col.PigmyAccount ?? await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.PigmyAccountID == col.PigmyAccountId);
-                    if (account == null) continue;
+                var groupedItems = pendingItems
+                    .GroupBy(c => new {
+                        BranchId = (c.PigmyAccount != null && c.PigmyAccount.BranchID > 0) ? c.PigmyAccount.BranchID : 1,
+                        AgentId = c.AgentId,
+                        Date = c.CollectionDate.Date
+                    })
+                    .ToList();
 
-                    var branchId = account.BranchID;
-                    bool itemIsBank = requestForcesBank || Helpers.BankLedgerHelper.IsBankPaymentMode(col.PaymentMode);
-                    if (itemIsBank)
+                int generatedVouchersCount = 0;
+                int totalProcessedCollections = 0;
+
+                foreach (var group in groupedItems)
+                {
+                    int groupBranchId = group.Key.BranchId;
+                    int groupAgentId = group.Key.AgentId;
+                    DateTime groupDate = group.Key.Date;
+                    decimal groupTotal = group.Sum(c => c.CollectionAmount);
+
+                    if (groupTotal <= 0) continue;
+
+                    var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == groupAgentId);
+                    string agentName = agent?.AgentName ?? ("Agent-" + groupAgentId);
+
+                    var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == groupBranchId && m.CollectionSource == "APP" && m.IsActive);
+                    int drLedgerId = anyItemIsBank
+                        ? validatedSyncBankLedgerId
+                        : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, groupBranchId, "PIGMY"));
+                    int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
+
+                    generatedVouchersCount++;
+                    string uniqueVoucherNo = $"PV-{groupBranchId}-{groupDate:yyyyMMdd}-APP-AGT-{groupAgentId}";
+                    var existingVoucher = await _context.Vouchers.FirstOrDefaultAsync(v => v.BranchID == groupBranchId && v.VoucherNo == uniqueVoucherNo);
+                    if (existingVoucher != null)
                     {
-                        col.PaymentMode = NormalizePigmyPaymentMode(requestForcesBank ? request.PaymentMode : col.PaymentMode, true);
+                        uniqueVoucherNo = $"PV-{groupBranchId}-{groupDate:yyyyMMdd}-APP-AGT-{groupAgentId}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
                     }
 
-                    var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "APP" && m.IsActive);
-                    int drLedgerId = itemIsBank
-                        ? validatedSyncBankLedgerId
-                        : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY"));
-                    int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
-
-                    generatedCount++;
-                    string uniqueVoucherNo = $"PV-{branchId}-{col.CollectionDate:yyyyMMdd}-APP-{generatedCount:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
                     var voucher = new Voucher
                     {
-                        BranchID = branchId,
+                        BranchID = groupBranchId,
                         VoucherNo = uniqueVoucherNo,
-                        VoucherDate = col.CollectionDate,
+                        VoucherDate = groupDate,
                         VoucherType = "Receipt",
                         Status = "Pending",
-                        Narration = $"Pigmy App Collection for A/C {account.AccountNo}",
-                        TotalAmount = col.CollectionAmount
+                        Narration = $"पिग्मी मोबाईल ॲप संकलन भरणा (एजंट: {agentName}, दिनांक: {groupDate:dd/MM/yyyy}) - एकूण {group.Count()} खाती",
+                        TotalAmount = groupTotal
                     };
 
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = drLedgerId,
-                        CustomerID = account.CustomerID,
+                        CustomerID = group.First().PigmyAccount?.CustomerID,
                         DrCr = "Dr",
-                        Amount = col.CollectionAmount
+                        Amount = groupTotal
                     });
 
                     voucher.VoucherDetails.Add(new VoucherDetail
                     {
                         LedgerID = crLedgerId,
-                        CustomerID = account.CustomerID,
+                        CustomerID = group.First().PigmyAccount?.CustomerID,
                         DrCr = "Cr",
-                        Amount = col.CollectionAmount
+                        Amount = groupTotal
                     });
 
                     _context.Vouchers.Add(voucher);
                     await _context.SaveChangesAsync();
 
-                    col.VoucherId = voucher.VoucherID;
-                    col.IsVoucherGenerated = true;
-                    _context.PigmyCollections.Update(col);
+                    foreach (var col in group)
+                    {
+                        col.VoucherId = voucher.VoucherID;
+                        col.IsVoucherGenerated = true;
+                        if (anyItemIsBank)
+                        {
+                            col.PaymentMode = NormalizePigmyPaymentMode(requestForcesBank ? request.PaymentMode : col.PaymentMode, true);
+                        }
+                        _context.PigmyCollections.Update(col);
+                        totalProcessedCollections++;
+                    }
+                    await _context.SaveChangesAsync();
+
+                    // Record PigmyAgentCashDeposit so Agent Day Book reflects this remittance
+                    var deposit = new PigmyAgentCashDeposit
+                    {
+                        AgentId = groupAgentId,
+                        DepositDate = groupDate,
+                        CollectionDateFrom = groupDate,
+                        CollectionDateTo = groupDate,
+                        Amount = groupTotal,
+                        PaymentMode = anyItemIsBank ? "BANK" : "CASH",
+                        ReceiptNo = $"REMD-{groupDate:yyyyMMdd}-APP-{groupAgentId}-{generatedVouchersCount:D2}",
+                        Narration = $"पिग्मी मोबाईल ॲप संकलन भरणा (एजंट: {agentName})",
+                        VoucherId = voucher.VoucherID,
+                        CreatedBy = 1,
+                        CreatedOn = DateTime.Now
+                    };
+                    _context.PigmyAgentCashDeposits.Add(deposit);
                     await _context.SaveChangesAsync();
                 }
 
                 await transaction.CommitAsync();
-                return Ok(new { message = $"एकूण {generatedCount} प्रलंबित मोबाईल सिंक व्हाउचर यशस्वीरीत्या तयार झाले!", generatedCount });
+                return Ok(new { 
+                    message = $"एकूण {totalProcessedCollections} नोंदींसाठी {generatedVouchersCount} दिवसानिहाय एकत्रित व्हाउचर्स यशस्वीरीत्या तयार झाले व पासिंगसाठी पाठवले गेले!", 
+                    generatedCount = generatedVouchersCount,
+                    totalCollections = totalProcessedCollections
+                });
             }
             catch (Exception ex)
             {

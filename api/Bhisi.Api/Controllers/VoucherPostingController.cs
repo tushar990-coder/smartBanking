@@ -30,60 +30,6 @@ namespace Bhisi.Api.Controllers
         {
             try
             {
-                // 1. Audit & Self-Healing: Repair any PigmyCollections missing Pending Vouchers
-                var unmappedCollections = await _context.PigmyCollections
-                    .Include(c => c.PigmyAccount)
-                    .Where(c => !c.IsVoucherGenerated || c.VoucherId == null)
-                    .ToListAsync();
-
-                if (unmappedCollections.Any())
-                {
-                    foreach (var coll in unmappedCollections)
-                    {
-                        int targetBranch = (coll.PigmyAccount != null && coll.PigmyAccount.BranchID > 0) ? coll.PigmyAccount.BranchID : (branchId ?? 1);
-                        if (targetBranch == 0) targetBranch = 1;
-
-                        int defaultDrLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranch, "PIGMY");
-                        int defaultCrLedgerId = (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == coll.PigmyAccount!.PigmySchemeID))?.PigmyLiabilityLedgerID 
-                            ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
-
-                        string uniqueVoucherNo = $"PV-{targetBranch}-{coll.CollectionDate:yyyyMMdd}-AUD-{coll.CollectionId:D4}";
-                        var voucher = new Voucher
-                        {
-                            BranchID = targetBranch,
-                            VoucherNo = uniqueVoucherNo,
-                            VoucherDate = coll.CollectionDate,
-                            VoucherType = "Receipt",
-                            Status = "Pending",
-                            Narration = $"Pigmy Bulk Collection (Auto-Audited) - Rcpt: {coll.ReceiptNo}",
-                            TotalAmount = coll.CollectionAmount
-                        };
-
-                        voucher.VoucherDetails.Add(new VoucherDetail
-                        {
-                            LedgerID = defaultDrLedgerId,
-                            CustomerID = coll.PigmyAccount?.CustomerID,
-                            DrCr = "Dr",
-                            Amount = coll.CollectionAmount
-                        });
-
-                        voucher.VoucherDetails.Add(new VoucherDetail
-                        {
-                            LedgerID = defaultCrLedgerId,
-                            CustomerID = coll.PigmyAccount?.CustomerID,
-                            DrCr = "Cr",
-                            Amount = coll.CollectionAmount
-                        });
-
-                        _context.Vouchers.Add(voucher);
-                        await _context.SaveChangesAsync();
-
-                        coll.VoucherId = voucher.VoucherID;
-                        coll.IsVoucherGenerated = true;
-                    }
-                    await _context.SaveChangesAsync();
-                }
-
                 // 2. Also ensure all existing unposted vouchers have Status set to "Pending"
                 var nullStatusVouchers = await _context.Vouchers.Where(v => string.IsNullOrEmpty(v.Status)).ToListAsync();
                 if (nullStatusVouchers.Any())

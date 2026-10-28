@@ -202,64 +202,10 @@ namespace Bhisi.Api.Services
                 };
                 _context.PigmyTransactions.Add(passbookTx);
 
-                // Accounting Double-Entry Voucher
-                Voucher? voucher = null;
-                try
-                {
-                    var branchId = account.BranchID;
-                    var voucherMapping = await _context.PigmyVoucherMappings
-                        .FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "APP" && m.IsActive);
-
-                    int drLedgerId = voucherMapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
-                    int crLedgerId = voucherMapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
-
-                    string voucherNo = $"PV-{branchId}-{collDate:yyyyMMdd}-APP-{Guid.NewGuid().ToString("N").Substring(0, 4).ToUpper()}";
-                    voucher = new Voucher
-                    {
-                        BranchID = branchId,
-                        VoucherNo = voucherNo,
-                        VoucherDate = collDate,
-                        VoucherType = "Receipt",
-                        Status = "Pending",
-                        Narration = $"Pigmy App Deposit: A/c {account.AccountNo}, Receipt: {receiptNo}",
-                        TotalAmount = addedAmount,
-                        CreatedBy = agentId,
-                        CreatedOn = DateTime.UtcNow
-                    };
-
-                    voucher.VoucherDetails.Add(new VoucherDetail
-                    {
-                        LedgerID = drLedgerId,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Dr",
-                        Amount = addedAmount
-                    });
-
-                    voucher.VoucherDetails.Add(new VoucherDetail
-                    {
-                        LedgerID = crLedgerId,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Cr",
-                        Amount = addedAmount
-                    });
-
-                    _context.Vouchers.Add(voucher);
-                    newColl.Voucher = voucher;
-                    newColl.IsVoucherGenerated = true;
-                }
-                catch
-                {
-                    // Non-fatal if voucher mapping fails; core ledger transaction is already saved.
-                }
-
+                // Vouchers are not generated on field collection; voucher is generated when agent submits cash to the branch.
+                newColl.VoucherId = null;
+                newColl.IsVoucherGenerated = false;
                 await _context.SaveChangesAsync();
-
-                if (voucher != null && voucher.VoucherID > 0 && newColl.VoucherId == null)
-                {
-                    newColl.VoucherId = voucher.VoucherID;
-                    newColl.IsVoucherGenerated = true;
-                    await _context.SaveChangesAsync();
-                }
 
                 await transaction.CommitAsync();
 

@@ -577,67 +577,10 @@ namespace Bhisi.Api.Controllers
                     };
                     _context.PigmyTransactions.Add(pigmyTx);
 
-                    // Create Pending Voucher for Voucher Passing
-                    var appBranchId = account.BranchID;
-                    var appMapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == appBranchId && m.CollectionSource == "APP" && m.IsActive);
-                    string effectiveMode = !string.IsNullOrWhiteSpace(item.PaymentMode)
-                        ? item.PaymentMode.Trim()
-                        : (!string.IsNullOrWhiteSpace(request.PaymentMode) ? request.PaymentMode.Trim() : "CASH");
-                    bool isAppBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(effectiveMode);
-                    int validatedAppBankLedgerId = 0;
-                    if (isAppBankMode)
-                    {
-                        int? targetBankLedgerId = item.BankLedgerId ?? request.BankLedgerId;
-                        var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, targetBankLedgerId);
-                        if (!bankCheck.IsValid)
-                        {
-                            await transaction.RollbackAsync();
-                            return BadRequest(bankCheck.ErrorMessage);
-                        }
-                        validatedAppBankLedgerId = bankCheck.LedgerId;
-                        newColl.PaymentMode = effectiveMode.Length <= 10 ? effectiveMode.ToUpperInvariant() : "BANK";
-                    }
-                    else
-                    {
-                        newColl.PaymentMode = "CASH";
-                    }
-
-                    int appDrLedgerId = isAppBankMode
-                        ? validatedAppBankLedgerId
-                        : (appMapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, appBranchId, "PIGMY"));
-                    int appCrLedgerId = appMapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
-
-                    string appVoucherNo = $"PV-{appBranchId}-{collDate:yyyyMMdd}-APP-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
-                    var appVoucher = new Voucher
-                    {
-                        BranchID = appBranchId,
-                        VoucherNo = appVoucherNo,
-                        VoucherDate = collDate,
-                        VoucherType = "Receipt",
-                        Status = "Pending",
-                        Narration = $"Pigmy App Collection for A/C {account.AccountNo}",
-                        TotalAmount = addedAmount
-                    };
-
-                    appVoucher.VoucherDetails.Add(new VoucherDetail
-                    {
-                        LedgerID = appDrLedgerId,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Dr",
-                        Amount = addedAmount
-                    });
-
-                    appVoucher.VoucherDetails.Add(new VoucherDetail
-                    {
-                        LedgerID = appCrLedgerId,
-                        CustomerID = account.CustomerID,
-                        DrCr = "Cr",
-                        Amount = addedAmount
-                    });
-
-                    _context.Vouchers.Add(appVoucher);
-                    newColl.Voucher = appVoucher;
-                    newColl.IsVoucherGenerated = true;
+                    // No voucher generated on mobile sync; voucher will be generated when agent deposits cash at the branch.
+                    newColl.Voucher = null;
+                    newColl.VoucherId = null;
+                    newColl.IsVoucherGenerated = false;
 
                     savedCount++;
                     totalCollectionAmount += addedAmount;

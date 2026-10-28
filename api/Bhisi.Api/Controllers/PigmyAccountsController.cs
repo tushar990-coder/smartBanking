@@ -20,6 +20,8 @@ namespace Bhisi.Api.Controllers
         public int PigmyAgentID { get; set; }
         public DateTime OpeningDate { get; set; }
         public decimal OpeningBalance { get; set; }
+        public string? PaymentMode { get; set; } = "Cash";
+        public int? BankLedgerId { get; set; }
         
         // For migration 
         public string? FinancialYear { get; set; }
@@ -492,7 +494,22 @@ namespace Bhisi.Api.Controllers
                     _context.PigmyTransactions.Add(initialTx);
 
                     // Create GL Accounting Voucher for Opening Deposit
-                    int cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchID, "PIGMY");
+                    int cashLedgerId;
+                    bool isBankOpening = Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode);
+                    if (isBankOpening)
+                    {
+                        var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                        if (!bankCheck.IsValid)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(bankCheck.ErrorMessage);
+                        }
+                        cashLedgerId = bankCheck.LedgerId;
+                    }
+                    else
+                    {
+                        cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchID, "PIGMY");
+                    }
                     int liabilityLedgerId = (scheme.PigmyLiabilityLedgerID.HasValue && scheme.PigmyLiabilityLedgerID > 0)
                         ? scheme.PigmyLiabilityLedgerID.Value
                         : (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 2;

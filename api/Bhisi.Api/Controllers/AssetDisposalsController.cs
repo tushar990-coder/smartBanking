@@ -24,6 +24,7 @@ namespace Bhisi.Api.Controllers
         {
             public required AssetDisposal Disposal { get; set; }
             public bool PostVoucher { get; set; }
+            public string? PaymentMode { get; set; }
             public int? DebitLedgerID { get; set; } // Cash/Bank Ledger (or Expense Ledger if write-off)
             public int? CreditLedgerID { get; set; } // Asset Ledger
             public int? ProfitLossLedgerID { get; set; } // Profit/Loss Ledger
@@ -75,7 +76,7 @@ namespace Bhisi.Api.Controllers
             }
 
             // Auto-resolve branch cash ledger if sale amount > 0 and no debit ledger provided
-            if (request.PostVoucher && request.Disposal.SaleAmount > 0 && (!request.DebitLedgerID.HasValue || request.DebitLedgerID.Value <= 0))
+            if (request.PostVoucher && request.Disposal.SaleAmount > 0 && Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode)) { var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.DebitLedgerID); if (!bankCheck.IsValid) return BadRequest(bankCheck.ErrorMessage); request.DebitLedgerID = bankCheck.LedgerId; } else if (request.PostVoucher && request.Disposal.SaleAmount > 0 && (!request.DebitLedgerID.HasValue || request.DebitLedgerID.Value <= 0))
             {
                 int cashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.Disposal.BranchID, "ASSET");
                 if (cashId > 0) request.DebitLedgerID = cashId;

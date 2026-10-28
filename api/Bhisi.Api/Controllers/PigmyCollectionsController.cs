@@ -18,7 +18,30 @@ namespace Bhisi.Api.Controllers
             _context = context;
         }
 
-        public class ManualCollectionDto
+        private static string NormalizePigmyPaymentMode(string? mode, bool isBank)
+        {
+            if (!isBank) return "CASH";
+            var trimmed = mode?.Trim();
+            if (string.IsNullOrEmpty(trimmed)) return "BANK";
+            return trimmed.Length <= 10 ? trimmed.ToUpperInvariant() : "BANK";
+        }
+
+        public class ApproveMobileSyncRequestDto
+        {
+            public DateTime? Date { get; set; }
+            public int? AgentId { get; set; }
+            public List<long>? CollectionIds { get; set; }
+            public string? PaymentMode { get; set; }
+            public int? BankLedgerId { get; set; }
+        }
+
+        public class ManualCollectionBaseDto
+        {
+            public string? PaymentMode { get; set; }
+            public int? BankLedgerId { get; set; }
+        }
+
+        public class ManualCollectionDto : ManualCollectionBaseDto
         {
             public int PigmyAccountId { get; set; }
             public int AgentId { get; set; }
@@ -33,6 +56,8 @@ namespace Bhisi.Api.Controllers
             public DateTime CollectionDate { get; set; }
             public decimal CollectionAmount { get; set; }
             public string SyncReferenceId { get; set; } = string.Empty;
+            public string? PaymentMode { get; set; }
+            public int? BankLedgerId { get; set; }
         }
 
         public class BulkManualItemDto
@@ -45,6 +70,8 @@ namespace Bhisi.Api.Controllers
         {
             public int AgentId { get; set; }
             public DateTime CollectionDate { get; set; }
+            public string? PaymentMode { get; set; }
+            public int? BankLedgerId { get; set; }
             public List<BulkManualItemDto> Items { get; set; } = new List<BulkManualItemDto>();
         }
 
@@ -60,6 +87,8 @@ namespace Bhisi.Api.Controllers
             public int AgentId { get; set; }
             public string MonthYear { get; set; } = string.Empty; // e.g. "2026-04"
             public DateTime? ActiveBusinessDate { get; set; }
+            public string? PaymentMode { get; set; }
+            public int? BankLedgerId { get; set; }
             public List<BulkMonthlyChartEntryDto> Entries { get; set; } = new List<BulkMonthlyChartEntryDto>();
         }
 
@@ -246,6 +275,19 @@ namespace Bhisi.Api.Controllers
                 if (account == null) return NotFound("पिग्मी खाते सापडले नाही.");
                 if (account.Status != "Active") return BadRequest("बंद किंवा निष्क्रिय खात्यावर जमा करता येणार नाही.");
 
+                bool isBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode);
+                int validatedBankLedgerId = 0;
+                if (isBankMode)
+                {
+                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerId);
+                    if (!bankCheck.IsValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(bankCheck.ErrorMessage);
+                    }
+                    validatedBankLedgerId = bankCheck.LedgerId;
+                }
+
                 var targetDate = dto.CollectionDate.Date;
                 var nextDate = targetDate.AddDays(1);
                 var branchId = account.BranchID;
@@ -309,9 +351,10 @@ namespace Bhisi.Api.Controllers
                 _context.PigmyAccounts.Update(account);
 
                 var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "MANUAL" && m.IsActive);
-                int drLedgerId = mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
+                int drLedgerId = isBankMode ? validatedBankLedgerId : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY"));
                 int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
+                collection.PaymentMode = NormalizePigmyPaymentMode(dto.PaymentMode, isBankMode);
                 string uniqueVoucherNo = $"PV-{branchId}-{targetDate:yyyyMMdd}-{DateTime.Now:HHmmss}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
                 var voucher = new Voucher
                 {
@@ -390,6 +433,19 @@ namespace Bhisi.Api.Controllers
                     appItemIdx++;
                     int currentSeq = baseAppSeq + appItemIdx;
                     var branchId = account.BranchID;
+                    bool isBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode);
+                    int validatedBankLedgerId = 0;
+                    if (isBankMode)
+                    {
+                        var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerId);
+                        if (!bankCheck.IsValid)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(bankCheck.ErrorMessage);
+                        }
+                        validatedBankLedgerId = bankCheck.LedgerId;
+                    }
+
                     string receiptNo = $"APP-{account.PigmyAgentID}-{dto.CollectionDate:yyyyMMdd}-{currentSeq:D4}";
 
                     var openingBalance = account.TotalDepositedAmount;
@@ -406,6 +462,7 @@ namespace Bhisi.Api.Controllers
                         ReceiptNo = receiptNo,
                         CollectionSource = "APP",
                         SyncReferenceId = dto.SyncReferenceId,
+                        PaymentMode = NormalizePigmyPaymentMode(dto.PaymentMode, isBankMode),
                         CreatedBy = 1
                     };
 
@@ -431,7 +488,7 @@ namespace Bhisi.Api.Controllers
 
                     // Auto Voucher
                     var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "APP" && m.IsActive);
-                    int drLedgerId = mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
+                    int drLedgerId = isBankMode ? validatedBankLedgerId : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY"));
                     int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
                     string uniqueVoucherNo = $"PV-{branchId}-{dto.CollectionDate:yyyyMMdd}-APP-{appItemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
@@ -503,6 +560,17 @@ namespace Bhisi.Api.Controllers
             }
 
             var validItems = request.Items.Where(i => i.CollectionAmount > 0).ToList();
+            bool isBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode);
+            int validatedBankLedgerId = 0;
+            if (isBankMode)
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(bankCheck.ErrorMessage);
+                }
+                validatedBankLedgerId = bankCheck.LedgerId;
+            }
             var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == request.AgentId);
             if (agent == null)
             {
@@ -587,9 +655,10 @@ namespace Bhisi.Api.Controllers
                     _context.PigmyAccounts.Update(account);
 
                     var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "MANUAL" && m.IsActive);
-                    int drLedgerId = mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY");
+                    int drLedgerId = isBankMode ? validatedBankLedgerId : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY"));
                     int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
+                    collection.PaymentMode = NormalizePigmyPaymentMode(request.PaymentMode, isBankMode);
                     string uniqueVoucherNo = $"PV-{branchId}-{targetDate:yyyyMMdd}-BLK-{itemIdx:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
                     var voucher = new Voucher
                     {
@@ -701,6 +770,17 @@ namespace Bhisi.Api.Controllers
             }
 
             var validEntries = request.Entries.Where(i => i.CollectionAmount > 0).ToList();
+            bool isBankMonthly = Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode);
+            int validatedMonthlyBankLedgerId = 0;
+            if (isBankMonthly)
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(bankCheck.ErrorMessage);
+                }
+                validatedMonthlyBankLedgerId = bankCheck.LedgerId;
+            }
             var agent = await _context.PigmyAgents.FirstOrDefaultAsync(a => a.PigmyAgentID == request.AgentId);
             if (agent == null)
             {
@@ -806,6 +886,7 @@ namespace Bhisi.Api.Controllers
                                 ClosingBalance = closingBal,
                                 ReceiptNo = receiptNo,
                                 CollectionSource = isOpeningBalance ? "OPENING_IMPORT" : "IMPORT",
+                                PaymentMode = NormalizePigmyPaymentMode(request.PaymentMode, isBankMonthly),
                                 CreatedBy = 1
                             };
                             _context.PigmyCollections.Add(collection);
@@ -856,7 +937,7 @@ namespace Bhisi.Api.Controllers
                     if (dayTotalAmount > 0 && dayCollections.Any())
                     {
                         var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == targetBranchId && m.IsActive);
-                        int drLedgerId = mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranchId, "PIGMY");
+                        int drLedgerId = isBankMonthly ? validatedMonthlyBankLedgerId : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, targetBranchId, "PIGMY"));
                         int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync())?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
                         string uniqueVoucherNo = isOpeningBalance
@@ -968,6 +1049,121 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        // POST: api/PigmyCollections/ApproveMobileSync
+        [HttpPost("ApproveMobileSync")]
+        public async Task<IActionResult> ApproveMobileSync([FromBody] ApproveMobileSyncRequestDto request)
+        {
+            if (request == null) return BadRequest("Invalid request.");
+
+            var query = _context.PigmyCollections
+                .Include(c => c.PigmyAccount)
+                .Where(c => c.CollectionSource == "APP" && !c.IsVoucherGenerated);
+
+            if (request.CollectionIds != null && request.CollectionIds.Any())
+            {
+                query = query.Where(c => request.CollectionIds.Contains(c.CollectionId));
+            }
+            else
+            {
+                var targetDate = (request.Date ?? DateTime.Today).Date;
+                var nextDate = targetDate.AddDays(1);
+                query = query.Where(c => c.CollectionDate >= targetDate && c.CollectionDate < nextDate);
+                if (request.AgentId.HasValue && request.AgentId.Value > 0)
+                {
+                    query = query.Where(c => c.AgentId == request.AgentId.Value);
+                }
+            }
+
+            var pendingItems = await query.ToListAsync();
+            if (!pendingItems.Any())
+            {
+                return BadRequest("व्हाउचर तयार करण्यासाठी प्रलंबित मोबाईल सिंक नोंदी आढळल्या नाहीत.");
+            }
+
+            bool requestForcesBank = Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode);
+            bool anyItemIsBank = requestForcesBank || pendingItems.Any(c => Helpers.BankLedgerHelper.IsBankPaymentMode(c.PaymentMode));
+            int validatedSyncBankLedgerId = 0;
+
+            if (anyItemIsBank)
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(bankCheck.ErrorMessage);
+                }
+                validatedSyncBankLedgerId = bankCheck.LedgerId;
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                int generatedCount = 0;
+                foreach (var col in pendingItems)
+                {
+                    var account = col.PigmyAccount ?? await _context.PigmyAccounts.FirstOrDefaultAsync(a => a.PigmyAccountID == col.PigmyAccountId);
+                    if (account == null) continue;
+
+                    var branchId = account.BranchID;
+                    bool itemIsBank = requestForcesBank || Helpers.BankLedgerHelper.IsBankPaymentMode(col.PaymentMode);
+                    if (itemIsBank)
+                    {
+                        col.PaymentMode = NormalizePigmyPaymentMode(requestForcesBank ? request.PaymentMode : col.PaymentMode, true);
+                    }
+
+                    var mapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == branchId && m.CollectionSource == "APP" && m.IsActive);
+                    int drLedgerId = itemIsBank
+                        ? validatedSyncBankLedgerId
+                        : (mapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "PIGMY"));
+                    int crLedgerId = mapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
+
+                    generatedCount++;
+                    string uniqueVoucherNo = $"PV-{branchId}-{col.CollectionDate:yyyyMMdd}-APP-{generatedCount:D3}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
+                    var voucher = new Voucher
+                    {
+                        BranchID = branchId,
+                        VoucherNo = uniqueVoucherNo,
+                        VoucherDate = col.CollectionDate,
+                        VoucherType = "Receipt",
+                        Status = "Pending",
+                        Narration = $"Pigmy App Collection for A/C {account.AccountNo}",
+                        TotalAmount = col.CollectionAmount
+                    };
+
+                    voucher.VoucherDetails.Add(new VoucherDetail
+                    {
+                        LedgerID = drLedgerId,
+                        CustomerID = account.CustomerID,
+                        DrCr = "Dr",
+                        Amount = col.CollectionAmount
+                    });
+
+                    voucher.VoucherDetails.Add(new VoucherDetail
+                    {
+                        LedgerID = crLedgerId,
+                        CustomerID = account.CustomerID,
+                        DrCr = "Cr",
+                        Amount = col.CollectionAmount
+                    });
+
+                    _context.Vouchers.Add(voucher);
+                    await _context.SaveChangesAsync();
+
+                    col.VoucherId = voucher.VoucherID;
+                    col.IsVoucherGenerated = true;
+                    _context.PigmyCollections.Update(col);
+                    await _context.SaveChangesAsync();
+                }
+
+                await transaction.CommitAsync();
+                return Ok(new { message = $"एकूण {generatedCount} प्रलंबित मोबाईल सिंक व्हाउचर यशस्वीरीत्या तयार झाले!", generatedCount });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, "मोबाईल सिंक व्हाउचर तयार करताना त्रुटी आली: " + ex.Message);
+            }
+        }
+
         // GET: api/PigmyCollections/by-voucher/{voucherId}
         [HttpGet("by-voucher/{voucherId}")]
         public async Task<IActionResult> GetCollectionByVoucher(int voucherId)
@@ -1042,7 +1238,8 @@ namespace Bhisi.Api.Controllers
                     collection.CollectionAmount,
                     collection.CollectionSource,
                     collection.OpeningBalance,
-                    collection.ClosingBalance
+                    collection.ClosingBalance,
+                    collection.PaymentMode
                 } : null,
                 account = account != null ? new
                 {
@@ -1073,7 +1270,8 @@ namespace Bhisi.Api.Controllers
                     voucher.Narration,
                     voucher.ApprovedBy,
                     voucher.ApprovedOn,
-                    CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending"
+                    CanPass = voucher.Status == "Unapproved" || voucher.Status == "Draft" || voucher.Status == "Pending",
+                    BankLedgerId = voucher.VoucherDetails.FirstOrDefault(vd => vd.DrCr == "Dr" && vd.Ledger != null && Helpers.BankLedgerHelper.IsBankAccountType(vd.Ledger.AccountType))?.LedgerID
                 }
             });
         }

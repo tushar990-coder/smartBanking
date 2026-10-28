@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Scale, FileText, Printer, CheckCircle, AlertTriangle, ShieldCheck, UserCheck, Calculator, ArrowRight, Search, RefreshCw } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 
 interface EligibleLoan {
   loanAccountID: number;
@@ -101,6 +102,9 @@ export default function Sec101CaseFilingMaster() {
   const [filingDate, setFilingDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [courtFeeAmount, setCourtFeeAmount] = useState<number>(0);
   const [courtFeeChallanNo, setCourtFeeChallanNo] = useState<string>('');
+  const [courtFeePaymentMode, setCourtFeePaymentMode] = useState<string>('CASH');
+  const [courtFeeBankLedgerId, setCourtFeeBankLedgerId] = useState<number>(0);
+  const [courtFeeReferenceNo, setCourtFeeReferenceNo] = useState<string>('');
   const [remarks, setRemarks] = useState<string>('');
   const [filing, setFiling] = useState<boolean>(false);
 
@@ -271,6 +275,11 @@ export default function Sec101CaseFilingMaster() {
       return;
     }
 
+    if (Number(courtFeeAmount) > 0 && courtFeePaymentMode === 'BANK_TRANSFER' && (!courtFeeBankLedgerId || courtFeeBankLedgerId <= 0)) {
+      alert('कोर्ट फी बँकेद्वारे भरल्यास कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
+      return;
+    }
+
     setFiling(true);
     try {
       const res = await axios.post('/api/LegalRecovery/case/file', {
@@ -286,6 +295,9 @@ export default function Sec101CaseFilingMaster() {
         otherChargesClaim: Number(otherChargesClaim) || 0,
         courtFeeAmount: Number(courtFeeAmount) || 0,
         courtFeeChallanNo,
+        paymentMode: Number(courtFeeAmount) > 0 ? courtFeePaymentMode : 'CASH',
+        bankLedgerId: Number(courtFeeAmount) > 0 && courtFeePaymentMode === 'BANK_TRANSFER' ? courtFeeBankLedgerId : null,
+        referenceNo: Number(courtFeeAmount) > 0 && courtFeePaymentMode === 'BANK_TRANSFER' ? (courtFeeReferenceNo || courtFeeChallanNo) : null,
         remarks
       });
 
@@ -632,6 +644,49 @@ export default function Sec101CaseFilingMaster() {
                 />
               </div>
             </div>
+
+            {Number(courtFeeAmount) > 0 && (
+              <div className="bg-blue-50/60 border border-blue-200 rounded-lg p-3 space-y-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-800">कोर्ट फी पेमेंट पद्धत (Court Fee Payment Mode):</label>
+                    <select
+                      value={courtFeePaymentMode}
+                      onChange={(e) => {
+                        setCourtFeePaymentMode(e.target.value);
+                        if (e.target.value !== 'BANK_TRANSFER') {
+                          setCourtFeeBankLedgerId(0);
+                          setCourtFeeReferenceNo('');
+                        }
+                      }}
+                      className="w-full mt-0.5 border border-gray-300 rounded-md px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-white"
+                    >
+                      <option value="CASH">रोख (Cash)</option>
+                      <option value="BANK_TRANSFER">बँक खाते / GRAS ऑनलाइन / चेक (Bank Account)</option>
+                    </select>
+                  </div>
+                  {courtFeePaymentMode === 'BANK_TRANSFER' && (
+                    <div>
+                      <label className="text-[11px] font-bold text-blue-950">चेक / UTR संदर्भ क्र. (Reference No.):</label>
+                      <input
+                        type="text"
+                        placeholder="उदा. UTR / चेक क्र. (ऐच्छिक)"
+                        value={courtFeeReferenceNo}
+                        onChange={(e) => setCourtFeeReferenceNo(e.target.value)}
+                        className="w-full mt-0.5 border border-blue-200 rounded-md px-2.5 py-1.5 text-xs bg-white"
+                      />
+                    </div>
+                  )}
+                </div>
+                {courtFeePaymentMode === 'BANK_TRANSFER' && (
+                  <BankLedgerSelect
+                    value={courtFeeBankLedgerId}
+                    onChange={setCourtFeeBankLedgerId}
+                    showCountBadge
+                  />
+                )}
+              </div>
+            )}
 
             <div>
               <label className="text-[11px] font-bold text-gray-700">शेरा / तपशील (Remarks):</label>

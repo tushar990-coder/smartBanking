@@ -4,6 +4,8 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import { RawLedgerItem, filterBankAccountLedgers } from '../utils/bankLedgerUtils';
 import { MemberOption } from './common/MemberSearchSelect';
 import FdReceiptPrintModal from './FdReceiptPrintModal';
 import { FdInterestScheduleModal } from './FdInterestScheduleModal';
@@ -89,7 +91,8 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   const [customers, setCustomers] = useState<any[]>([]);
   const [schemes, setSchemes] = useState<FdScheme[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
-  const [bankLedgers, setBankLedgers] = useState<any[]>([]);
+  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>([]);
+  const bankLedgers = React.useMemo(() => filterBankAccountLedgers(allLedgers), [allLedgers]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -320,14 +323,8 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
   const fetchBankLedgers = async () => {
     try {
       const response = await axios.get(`${API_URL}/Ledgers`);
-      const allLedgers = response.data || [];
-      const filteredBanks = allLedgers.filter((l: any) =>
-        l.groupName?.toLowerCase().includes('bank') ||
-        l.ledgerName?.toLowerCase().includes('bank') ||
-        l.ledgerName?.includes('बँक') ||
-        l.ledgerName?.includes('बेंक')
-      );
-      setBankLedgers(filteredBanks.length > 0 ? filteredBanks : allLedgers);
+      const fetchedLedgers = Array.isArray(response.data) ? response.data : [];
+      setAllLedgers(fetchedLedgers);
     } catch (err) {
       console.error('Error fetching bank ledgers', err);
     }
@@ -1217,7 +1214,10 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
     const activeCustId = formData.customerID || formData.memberID;
     if (!activeCustId || activeCustId === 0) { setError('कृपया खातेदार निवडा.'); return; }
     if (formData.fdSchemeID === 0) { setError('कृपया ठेव योजना निवडा.'); return; }
-    if (paymentMode === 'Bank' && bankAccountLedgerID === 0) { setError('कृपया बँक खातावणी लेजर निवडा.'); return; }
+    if (paymentMode === 'Bank' && (!bankAccountLedgerID || bankAccountLedgerID <= 0)) {
+      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
     if (paymentMode === 'Transfer') {
       if (selectedSavingAccountID === 0) {
         setError('कृपया वर्ग करण्यासाठी खातेदाराचे बचत खाते निवडा.');
@@ -2252,7 +2252,17 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 items-end">
                   <div>
                     <label className="block text-[11px] font-medium text-gray-600 mb-0.5">भरणा प्रकार (Payment Mode) *</label>
-                    <select value={paymentMode} onChange={(e: any) => setPaymentMode(e.target.value)}
+                    <select
+                      value={paymentMode}
+                      onChange={(e: any) => {
+                        const nextMode = e.target.value;
+                        setPaymentMode(nextMode);
+                        if (nextMode !== 'Bank') {
+                          setBankAccountLedgerID(0);
+                        } else if (bankAccountLedgerID === 0 && bankLedgers.length === 1) {
+                          setBankAccountLedgerID(bankLedgers[0].ledgerID);
+                        }
+                      }}
                       className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-blue-900">
                       <option value="Cash">💵 रोख (Cash)</option>
                       <option value="Bank">🏦 बँक ट्रान्सफर</option>
@@ -2274,25 +2284,24 @@ const FdAccountOpening: React.FC<FdAccountOpeningProps> = ({
                   {/* Conditional Fields for Bank Payment */}
                   {paymentMode === 'Bank' && (
                     <>
-                      <div>
-                        <label className="block text-[11px] font-medium text-gray-600 mb-0.5">बँक लेजर निवडा *</label>
-                        <select value={bankAccountLedgerID} onChange={(e) => setBankAccountLedgerID(parseInt(e.target.value, 10) || 0)} required
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-bold text-slate-800">
-                          <option value={0}>-- बँक खाते लेजर निवडा --</option>
-                          {bankLedgers.map((l: any) => (
-                            <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
-                          ))}
-                        </select>
+                      <div className="md:col-span-2">
+                        <BankLedgerSelect
+                          ledgers={allLedgers}
+                          value={bankAccountLedgerID}
+                          onChange={(id) => setBankAccountLedgerID(id)}
+                          disabled={isPassingMode}
+                          showCountBadge
+                        />
                       </div>
                       <div>
                         <label className="block text-[11px] font-medium text-gray-600 mb-0.5">चेक / संदर्भ क्र. (Ref/Cheque No)</label>
                         <input type="text" value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} placeholder="चेक क्र. किंवा UTR"
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white" />
+                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white h-[30px]" />
                       </div>
                       <div>
                         <label className="block text-[11px] font-medium text-gray-600 mb-0.5">चेक तारीख (Cheque Date)</label>
                         <input type="date" value={chequeDate} onChange={(e) => setChequeDate(e.target.value)}
-                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white" />
+                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white h-[30px]" />
                       </div>
                     </>
                   )}

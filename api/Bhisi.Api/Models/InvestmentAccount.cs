@@ -89,5 +89,14 @@ namespace Bhisi.Api.Models
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
         public int? ModifiedBy { get; set; }
         public DateTime? ModifiedDate { get; set; }
+
+        [NotMapped]
+        public string? PaymentMode { get; set; } = "Bank";
+
+        [NotMapped]
+        public int? BankLedgerID { get; set; }
+
+        [NotMapped]
+        public string? ReferenceNo { get; set; }
     }
 }

@@ -26,6 +26,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import { filterBankAccountLedgers, buildBankLedgerOptions } from '../utils/bankLedgerUtils';
 
 interface SavingAccount {
   savingAccountID: number;
@@ -61,6 +62,15 @@ interface SavingAccount {
 interface Ledger {
   ledgerID: number;
   ledgerName: string;
+  ledgerNameEnglish?: string;
+  accountType?: string;
+  groupID?: number;
+  isActive?: boolean;
+  accountGroup?: {
+    groupID?: number;
+    groupCode?: string;
+    groupName?: string;
+  };
 }
 
 interface SavingTransaction {
@@ -121,6 +131,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   const [accounts, setAccounts] = useState<SavingAccount[]>([]);
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [bankLedgers, setBankLedgers] = useState<Ledger[]>([]);
+  const [allRawLedgers, setAllRawLedgers] = useState<Ledger[]>([]);
   const [transactions, setTransactions] = useState<SavingTransaction[]>([]);
   
   const [selectedLedgerID, setSelectedLedgerID] = useState<number>(0);
@@ -188,7 +199,7 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
         setFormData({
           savingAccountID: d.savingAccountID || d.savingAccount?.savingAccountID || 0,
           targetSavingAccountID: d.targetSavingAccountID || 0,
-          bankLedgerID: 0,
+          bankLedgerID: d.bankLedgerID || 0,
           transactionDate: d.transactionDate ? d.transactionDate.split('T')[0] : new Date().toISOString().split('T')[0],
           transactionType: d.transactionType || 'Deposit',
           paymentMode: d.paymentMode || 'Cash',
@@ -227,19 +238,8 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
   }, [isPassingMode, voucherIdFromUrl]);
 
   const parseBankLedgers = (allLedgers: any[]) => {
-    const bLedgers = allLedgers.filter((l: any) => {
-      if (!l) return false;
-      const name = (l.ledgerName || '').toLowerCase();
-      const type = (l.accountType || '').toLowerCase();
-      const group = l.groupID || 0;
-      return (
-        type.includes('bank') ||
-        name.includes('bank') ||
-        name.includes('बँक') ||
-        group === 12 || group === 8 || group === 9
-      );
-    });
-    setBankLedgers(bLedgers.length > 0 ? bLedgers : allLedgers);
+    setAllRawLedgers(allLedgers);
+    setBankLedgers(filterBankAccountLedgers(allLedgers));
   };
 
   const fetchAccounts = async (preserveAccountId?: number) => {
@@ -523,6 +523,15 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
     }
     setError('');
     setSuccess('');
+  };
+
+  const handleBankLedgerChange = (e: any) => {
+    const lid = parseInt(String(e?.target?.value ?? 0), 10) || 0;
+    setFormData((prev) => ({
+      ...prev,
+      bankLedgerID: lid,
+    }));
+    setError('');
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -1127,57 +1136,73 @@ const SavingTransactionEntry: React.FC<SavingTransactionEntryProps> = ({ voucher
             )}
 
             {/* Bank GL Account Selection Card (Shown when Payment Mode is Bank Transfer) */}
-            {formData.paymentMode === 'Bank' && (
-              <div className="bg-slate-50 p-3 rounded-sm border border-blue-200 shadow-2xs space-y-2">
-                <div className="flex items-center justify-between border-b border-blue-200 pb-1">
-                  <div className="flex items-center gap-1.5">
-                    <Building className="w-4 h-4 text-blue-700" />
-                    <h3 className="text-xs font-bold text-blue-950 tracking-wide">
-                      बँक ट्रान्सफर व बँक जी.एल. तपशील (Bank GL Transfer Details)
-                    </h3>
-                  </div>
-                  <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-300">
-                    {bankLedgers.length} बँक जी.एल. खाती उपलब्ध
-                  </span>
-                </div>
+            {formData.paymentMode === 'Bank' && (() => {
+              const bankLedgerOptions = buildBankLedgerOptions(
+                bankLedgers,
+                formData.bankLedgerID,
+                isPassingMode ? allRawLedgers : undefined
+              );
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
-                  <div>
-                    <label className="block text-[11px] font-bold text-blue-950 mb-0.5">
-                      🏦 बँक जी.एल. खाते निवडा (Select Bank GL Account) *
-                    </label>
-                    <select
-                      name="bankLedgerID"
-                      value={formData.bankLedgerID}
-                      onChange={handleInputChange}
-                      className="w-full text-[11px] border border-blue-400 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-blue-600 focus:border-blue-600 focus:outline-none bg-white text-blue-950 font-bold h-[30px] shadow-2xs"
-                      required
-                    >
-                      <option value={0}>-- बँक जी.एल. खाते निवडा --</option>
-                      {bankLedgers.map((bl) => (
-                        <option key={bl.ledgerID} value={bl.ledgerID}>
-                          {bl.ledgerName}
-                        </option>
-                      ))}
-                    </select>
+              return (
+                <div className="bg-slate-50 p-3 rounded-sm border border-blue-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between border-b border-blue-200 pb-1">
+                    <div className="flex items-center gap-1.5">
+                      <Building className="w-4 h-4 text-blue-700" />
+                      <h3 className="text-xs font-bold text-blue-950 tracking-wide">
+                        बँक ट्रान्सफर व बँक जी.एल. तपशील (Bank GL Transfer Details)
+                      </h3>
+                    </div>
+                    <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-300">
+                      {bankLedgers.length} बँक जी.एल. खाती उपलब्ध
+                    </span>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-blue-950 mb-0.5">
-                      चेक / युटीआर / संदर्भ क्र. (Cheque / UTR / Ref No)
-                    </label>
-                    <input
-                      type="text"
-                      name="checkNo"
-                      value={formData.checkNo}
-                      onChange={handleInputChange}
-                      placeholder="उदा. CHQ-984512 / UTR12345678"
-                      className="w-full text-[11px] border border-blue-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none bg-white font-medium text-slate-800 h-[30px]"
-                    />
+                  {!isPassingMode && bankLedgers.length === 0 && (
+                    <div className="p-2 bg-amber-50 border border-amber-300 rounded-sm text-[11px] text-amber-900 font-semibold flex items-center gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>
+                        कोणत्याही खात्याला <b>Bank Account (बँक खाते)</b> प्रकार दिलेला नाही. कृपया <b>सेटिंग्ज &rarr; खाते माहिती (Ledger Master)</b> मध्ये बँक खात्याचा <b>खाते प्रकार = Bank Account</b> निवडा.
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+                    <div>
+                      <label className="block text-[11px] font-bold text-blue-950 mb-0.5">
+                        🏦 बँक जी.एल. खाते निवडा (Select Bank GL Account) *
+                      </label>
+                      <SearchableSelect
+                        options={bankLedgerOptions}
+                        value={formData.bankLedgerID || ''}
+                        onChange={handleBankLedgerChange}
+                        name="bankLedgerID"
+                        disabled={isPassingMode}
+                        placeholder="-- खाते क्र. (Ledger No.) किंवा बँक जी.एल. नाव शोधा --"
+                        className={`w-full text-[11px] border border-blue-400 rounded-sm px-2.5 py-1 flex justify-between items-center h-[30px] shadow-2xs ${
+                          isPassingMode
+                            ? 'bg-slate-100 text-slate-500 cursor-not-allowed opacity-75'
+                            : 'bg-white text-blue-950 font-bold cursor-pointer hover:border-blue-500'
+                        }`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-blue-950 mb-0.5">
+                        चेक / युटीआर / संदर्भ क्र. (Cheque / UTR / Ref No)
+                      </label>
+                      <input
+                        type="text"
+                        name="checkNo"
+                        value={formData.checkNo}
+                        onChange={handleInputChange}
+                        placeholder="उदा. CHQ-984512 / UTR12345678"
+                        className="w-full text-[11px] border border-blue-300 rounded-sm px-2.5 py-1 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none bg-white font-medium text-slate-800 h-[30px]"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Selected Customer Quick Info Badge */}
             {selectedAccount && (

@@ -21,6 +21,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 
 interface AllotmentOption {
   allotmentID: number;
@@ -99,6 +100,8 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
     damagePenaltyDeduction: 0,
     netRefundAmount: 0,
     refundPaymentMode: 'Cash',
+    bankLedgerID: 0,
+    referenceNo: '',
     remarks: ''
   });
 
@@ -209,6 +212,8 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
           damagePenaltyDeduction: data.damagePenaltyDeduction || 0,
           netRefundAmount: data.netRefundAmount || (data.voucher?.totalAmount || 0),
           refundPaymentMode: data.refundPaymentMode || (data.voucher?.voucherType === 'Journal' ? 'SavingCredit' : 'Cash'),
+          bankLedgerID: data.bankLedgerID || 0,
+          referenceNo: '',
           remarks: data.remarks || data.voucher?.narration || 'लॉकर समर्पण व डिपॉझिट परतावा'
         });
       }
@@ -332,6 +337,8 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
       damagePenaltyDeduction: 0,
       netRefundAmount: 0,
       refundPaymentMode: 'Cash',
+      bankLedgerID: 0,
+      referenceNo: '',
       remarks: ''
     });
   };
@@ -341,6 +348,10 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
     if (isPassing) return;
     if (!formData.allotmentID) {
       showMsg('कृपया लॉकर खाते निवडा.', 'error');
+      return;
+    }
+    if (Number(formData.netRefundAmount) > 0 && formData.refundPaymentMode === 'BankTransfer' && (!formData.bankLedgerID || Number(formData.bankLedgerID) <= 0)) {
+      showMsg('बँक ट्रान्सफर परताव्यासाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.', 'error');
       return;
     }
     if (!window.confirm('तुम्हाला हे लॉकर खाते नक्की बंद (Surrender) करायचे आहे का?')) return;
@@ -355,6 +366,8 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
       damagePenaltyDeduction: Number(formData.damagePenaltyDeduction),
       netRefundAmount: Number(formData.netRefundAmount),
       refundPaymentMode: formData.refundPaymentMode,
+      bankLedgerID: formData.refundPaymentMode === 'BankTransfer' ? Number(formData.bankLedgerID) : null,
+      referenceNo: formData.refundPaymentMode === 'BankTransfer' ? formData.referenceNo.trim() : null,
       remarks: formData.remarks
     };
 
@@ -627,16 +640,46 @@ const LockerSurrenderMaster: React.FC<LockerSurrenderMasterProps> = ({ onNavigat
                     <select
                       name="refundPaymentMode"
                       value={formData.refundPaymentMode}
-                      onChange={handleChange}
+                      onChange={(e) => {
+                        handleChange(e);
+                        if (e.target.value !== 'BankTransfer') {
+                          setFormData((prev) => ({ ...prev, bankLedgerID: 0 }));
+                        }
+                      }}
                       disabled={isPassing}
                       className={inputClass}
                     >
-                      <option value="Cash">रोख परतावा (Cash Refund)</option>
-                      <option value="SavingCredit">बचत खात्यात जमा (Saving Credit)</option>
-                      <option value="BankTransfer">बँक ट्रान्सफर (Bank Transfer)</option>
+                      <option value="Cash">💵 रोख परतावा (Cash Refund)</option>
+                      <option value="SavingCredit">💳 बचत खात्यात जमा (Saving Credit)</option>
+                      <option value="BankTransfer">🏦 बँक ट्रान्सफर (Bank Transfer)</option>
                     </select>
                   </div>
                 </div>
+
+                {formData.refundPaymentMode === 'BankTransfer' && (
+                  <div className="mt-3 pt-3 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+                    <div>
+                      <BankLedgerSelect
+                        value={formData.bankLedgerID}
+                        onChange={(id) => setFormData((prev) => ({ ...prev, bankLedgerID: id }))}
+                        disabled={Boolean(isPassing)}
+                        showCountBadge
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>चेक / युटीआर / संदर्भ क्र. (UTR / Cheque No)</label>
+                      <input
+                        type="text"
+                        name="referenceNo"
+                        value={formData.referenceNo}
+                        onChange={handleChange}
+                        disabled={isPassing}
+                        placeholder="उदा. UTR123456 / CHQ-001"
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Step 3: Refund & Deductions Calculation */}

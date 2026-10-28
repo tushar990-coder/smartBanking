@@ -199,6 +199,7 @@ namespace Bhisi.Api.Models
         public DateTime? AllotmentDate { get; set; }
         public string? PaymentMode { get; set; }
         public int? SavingAccountId { get; set; }
+        public int? BankLedgerId { get; set; }
         public string? GeneratedVoucherNo { get; set; }
     }
 }

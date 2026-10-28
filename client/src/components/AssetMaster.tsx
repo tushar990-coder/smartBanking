@@ -29,6 +29,8 @@ import {
   CheckSquare,
   BookOpen
 } from 'lucide-react';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import { RawLedgerItem } from '../utils/bankLedgerUtils';
 
 interface Asset {
   assetID: number;
@@ -48,7 +50,7 @@ interface Asset {
   isOpeningBalance: boolean;
 }
 
-interface Ledger {
+interface Ledger extends RawLedgerItem {
   ledgerID: number;
   ledgerName: string;
 }
@@ -153,6 +155,7 @@ const AssetMaster: React.FC = () => {
     remarks: '',
     nextServiceDate: '',
     postVoucher: true,
+    paymentMode: 'Cash' as 'Cash' | 'Bank',
     debitLedgerID: 0,
     creditLedgerID: 0
   });
@@ -164,6 +167,7 @@ const AssetMaster: React.FC = () => {
     remarks: '',
     disposalDate: activeBusinessDate,
     postVoucher: true,
+    paymentMode: 'Cash' as 'Cash' | 'Bank',
     debitLedgerID: 0,
     creditLedgerID: 0,
     profitLossLedgerID: 0
@@ -409,20 +413,28 @@ const AssetMaster: React.FC = () => {
     e.preventDefault();
     if (!selectedAsset) return;
     setError(''); setSuccess('');
-    if (maintenanceData.postVoucher && (!maintenanceData.debitLedgerID || !maintenanceData.creditLedgerID)) {
-      setError('व व्हाउचर जोडण्यासाठी खर्च आणि बँक/कॅश खाते आवश्यक आहे. (Voucher mapping ledgers required.)');
-      return;
+    if (maintenanceData.postVoucher) {
+      if (!maintenanceData.debitLedgerID) {
+        setError('व्हाउचर जोडण्यासाठी खर्च खाते (Debit Expense Ledger) निवडणे आवश्यक आहे.');
+        return;
+      }
+      if (maintenanceData.paymentMode === 'Bank' && !maintenanceData.creditLedgerID) {
+        setError('बँक पेमेंटसाठी बँक जी.एल. खाते (Bank GL Account) निवडणे आवश्यक आहे.');
+        return;
+      }
     }
     try {
+      const { paymentMode, ...maintenanceEntityFields } = maintenanceData;
       await axios.post(`${API_URL}/AssetMaintenances`, {
         maintenance: {
-          ...maintenanceData,
+          ...maintenanceEntityFields,
           assetID: selectedAsset.assetID,
           cost: parseFloat(maintenanceData.cost as any)
         },
         postVoucher: maintenanceData.postVoucher,
+        paymentMode,
         debitLedgerID: maintenanceData.debitLedgerID,
-        creditLedgerID: maintenanceData.creditLedgerID
+        creditLedgerID: paymentMode === 'Bank' ? maintenanceData.creditLedgerID : null
       });
       setSuccess('देखभाल नोंद यशस्वीरित्या जतन झाली! (Maintenance log recorded!)');
       fetchAssetHistory(selectedAsset.assetID);
@@ -434,11 +446,12 @@ const AssetMaster: React.FC = () => {
         remarks: '',
         nextServiceDate: '',
         postVoucher: true,
+        paymentMode: 'Cash',
         debitLedgerID: 0,
         creditLedgerID: 0
       });
     } catch (err: any) {
-      setError(err.response?.data || 'त्रुटी आली.');
+      setError(typeof err.response?.data === 'string' ? err.response.data : (err.response?.data?.message || 'त्रुटी आली.'));
     }
   };
 
@@ -446,19 +459,27 @@ const AssetMaster: React.FC = () => {
     e.preventDefault();
     if (!selectedAsset) return;
     setError(''); setSuccess('');
-    if (disposeData.postVoucher && (!disposeData.creditLedgerID || !disposeData.profitLossLedgerID)) {
-      setError('व्हाउचर नोंदवण्यासाठी मालमत्ता आणि नफा/तोटा खाते आवश्यक आहे.');
-      return;
+    if (disposeData.postVoucher) {
+      if (!disposeData.creditLedgerID || !disposeData.profitLossLedgerID) {
+        setError('व्हाउचर नोंदवण्यासाठी मालमत्ता आणि नफा/तोटा खाते आवश्यक आहे.');
+        return;
+      }
+      if (Number(disposeData.saleAmount) > 0 && disposeData.paymentMode === 'Bank' && !disposeData.debitLedgerID) {
+        setError('बँक प्राप्तीसाठी बँक जी.एल. खाते (Bank GL Account) निवडणे आवश्यक आहे.');
+        return;
+      }
     }
     try {
+      const { paymentMode, ...disposalEntityFields } = disposeData;
       await axios.post(`${API_URL}/AssetDisposals`, {
         disposal: {
-          ...disposeData,
+          ...disposalEntityFields,
           assetID: selectedAsset.assetID,
           saleAmount: parseFloat(disposeData.saleAmount as any)
         },
         postVoucher: disposeData.postVoucher,
-        debitLedgerID: disposeData.debitLedgerID || null,
+        paymentMode,
+        debitLedgerID: (Number(disposeData.saleAmount) > 0 && paymentMode === 'Bank') ? disposeData.debitLedgerID : null,
         creditLedgerID: disposeData.creditLedgerID,
         profitLossLedgerID: disposeData.profitLossLedgerID
       });
@@ -466,7 +487,7 @@ const AssetMaster: React.FC = () => {
       fetchAssets();
       selectAsset({ ...selectedAsset, status: 'Disposed', currentBookValue: 0 });
     } catch (err: any) {
-      setError(err.response?.data || 'त्रुटी आली.');
+      setError(typeof err.response?.data === 'string' ? err.response.data : (err.response?.data?.message || 'त्रुटी आली.'));
     }
   };
 
@@ -1493,21 +1514,34 @@ const AssetMaster: React.FC = () => {
                           className={selectClass}
                         >
                           <option value={0}>-- खर्च खाते निवडा --</option>
-                          {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
+                          {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerID} - {l.ledgerName}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label className={labelClass}>जमा खाते (Credit Ledger - Cash/Bank) *</label>
-                        <select 
-                          value={maintenanceData.creditLedgerID} 
-                          onChange={e => setMaintenanceData({ ...maintenanceData, creditLedgerID: parseInt(e.target.value) })} 
-                          required
+                        <label className={labelClass}>पेमेंट पद्धत (Payment Mode) *</label>
+                        <select
+                          value={maintenanceData.paymentMode}
+                          onChange={e => setMaintenanceData({
+                            ...maintenanceData,
+                            paymentMode: e.target.value as 'Cash' | 'Bank',
+                            creditLedgerID: e.target.value === 'Cash' ? 0 : maintenanceData.creditLedgerID
+                          })}
                           className={selectClass}
                         >
-                          <option value={0}>-- बँक / रोख खाते निवडा --</option>
-                          {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
+                          <option value="Cash">💵 रोख रक्कम (Cash)</option>
+                          <option value="Bank">🏦 बँक खाते (Bank Account)</option>
                         </select>
                       </div>
+                      {maintenanceData.paymentMode === 'Bank' && (
+                        <div>
+                          <BankLedgerSelect
+                            label="🏦 जमा बँक जी.एल. खाते (Credit Bank GL) *"
+                            ledgers={ledgers}
+                            value={maintenanceData.creditLedgerID}
+                            onChange={id => setMaintenanceData({ ...maintenanceData, creditLedgerID: id })}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1698,18 +1732,33 @@ const AssetMaster: React.FC = () => {
                   {disposeData.postVoucher && (
                     <div className="grid grid-cols-1 gap-1.5 text-[10px] pt-1 border-t border-slate-200">
                       {disposeData.saleAmount > 0 && (
-                        <div>
-                          <label className={labelClass}>नावे खाते (Debit Cash/Bank Ledger) *</label>
-                          <select 
-                            value={disposeData.debitLedgerID} 
-                            onChange={e => setDisposeData({ ...disposeData, debitLedgerID: parseInt(e.target.value) })} 
-                            required
-                            className={selectClass}
-                          >
-                            <option value={0}>-- कॅश / बँक खाते निवडा --</option>
-                            {ledgers.map(l => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
-                          </select>
-                        </div>
+                        <>
+                          <div>
+                            <label className={labelClass}>प्राप्ती पद्धत (Receipt Mode) *</label>
+                            <select
+                              value={disposeData.paymentMode}
+                              onChange={e => setDisposeData({
+                                ...disposeData,
+                                paymentMode: e.target.value as 'Cash' | 'Bank',
+                                debitLedgerID: e.target.value === 'Cash' ? 0 : disposeData.debitLedgerID
+                              })}
+                              className={selectClass}
+                            >
+                              <option value="Cash">💵 रोख रक्कम (Cash)</option>
+                              <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                            </select>
+                          </div>
+                          {disposeData.paymentMode === 'Bank' && (
+                            <div>
+                              <BankLedgerSelect
+                                label="🏦 नावे बँक जी.एल. खाते (Debit Bank GL) *"
+                                ledgers={ledgers}
+                                value={disposeData.debitLedgerID}
+                                onChange={id => setDisposeData({ ...disposeData, debitLedgerID: id })}
+                              />
+                            </div>
+                          )}
+                        </>
                       )}
                       <div>
                         <label className={labelClass}>जमा खाते (Credit Asset Ledger) *</label>

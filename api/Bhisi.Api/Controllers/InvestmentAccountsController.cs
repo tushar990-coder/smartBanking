@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Bhisi.Api.Data;
 using Bhisi.Api.Models;
 using Bhisi.Api.Filters;
+using Bhisi.Api.Helpers;
 
 namespace Bhisi.Api.Controllers
 {
@@ -292,6 +293,31 @@ namespace Bhisi.Api.Controllers
                     message = $"GL सिंक करताना त्रुटी आली: {ex.Message}" 
                 });
             }
+        }
+
+        private async Task<(bool IsValid, int LedgerId, string? ErrorMessage)> ResolveInvestmentPaymentLedgerAsync(
+            int branchId,
+            string? paymentMode,
+            int? bankLedgerId)
+        {
+            var mode = string.IsNullOrWhiteSpace(paymentMode) ? "Bank" : paymentMode.Trim();
+            if (string.Equals(mode, "Cash", StringComparison.OrdinalIgnoreCase))
+            {
+                int cashLedgerId = await CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId, "INVESTMENT");
+                return (true, cashLedgerId, null);
+            }
+
+            if (BankLedgerHelper.IsBankPaymentMode(mode))
+            {
+                var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, bankLedgerId);
+                if (!bankCheck.IsValid)
+                {
+                    return (false, 0, bankCheck.ErrorMessage);
+                }
+                return (true, bankCheck.LedgerId, null);
+            }
+
+            return (false, 0, $"अवैध व्यवहार पद्धत (Invalid Payment Mode): {mode}");
         }
 
         private async Task<int> GetDefaultCashBankLedgerId(int branchId = 1)
@@ -644,6 +670,17 @@ namespace Bhisi.Api.Controllers
                 }
             }
 
+            int resolvedOpeningLedgerId = 0;
+            if (!account.IsLegacyAccount)
+            {
+                var paymentCheck = await ResolveInvestmentPaymentLedgerAsync(account.BranchID, account.PaymentMode, account.BankLedgerID);
+                if (!paymentCheck.IsValid)
+                {
+                    return BadRequest(paymentCheck.ErrorMessage);
+                }
+                resolvedOpeningLedgerId = paymentCheck.LedgerId;
+            }
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -706,10 +743,10 @@ namespace Bhisi.Api.Controllers
                         var voucher = new Voucher
                         {
                             BranchID = account.BranchID,
-                            VoucherNo = $"JV-INV-OP-{account.InvestmentNo}",
+                            VoucherNo = $"PAY-INV-OP-{account.InvestmentNo}",
                             VoucherDate = account.InvestmentDate,
-                            VoucherType = "Journal",
-                            Narration = $"गुंतवणूक खाते उघडले - {account.InvestmentNo}",
+                            VoucherType = "Payment",
+                            Narration = $"गुंतवणूक खाते उघडले - {account.InvestmentNo}" + (!string.IsNullOrWhiteSpace(account.ReferenceNo) ? $" [संदर्भ/UTR: {account.ReferenceNo.Trim()}]" : ""),
                             TotalAmount = account.PrincipalAmount,
                             CreatedBy = account.CreatedBy,
                             CreatedOn = DateTime.Now
@@ -729,7 +766,7 @@ namespace Bhisi.Api.Controllers
                         var credDetail = new VoucherDetail
                         {
                             VoucherID = voucher.VoucherID,
-                            LedgerID = await GetDefaultCashBankLedgerId(account.BranchID), // Branch-specific Cash/Bank
+                            LedgerID = resolvedOpeningLedgerId,
                             DrCr = "Cr",
                             Amount = account.PrincipalAmount
                         };
@@ -895,36 +932,53 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/InvestmentAccounts/Maturity - Process Maturity
         [HttpPost("Maturity")]
-        public async Task<ActionResult> ProcessMaturity([FromBody] InvestmentMaturity maturity)
+        public async Task<ActionResult> ProcessMaturity([FromBody] MaturityClaimRequest request)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var account = await _context.InvestmentAccounts.FindAsync(maturity.InvestmentAccountID);
+                var account = await _context.InvestmentAccounts.FindAsync(request.InvestmentAccountID);
                 if (account == null) return NotFound("गुंतवणूक खाते सापडले नाही.");
                 if (account.Status != "Active") return BadRequest("हे खाते Active नाही.");
 
-                maturity.TotalReceived = maturity.PrincipalReceived + maturity.InterestReceived;
+                var paymentCheck = await ResolveInvestmentPaymentLedgerAsync(account.BranchID, request.PaymentMode, request.BankLedgerID);
+                if (!paymentCheck.IsValid)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(paymentCheck.ErrorMessage);
+                }
 
                 var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
-                if (fy != null)
+
+                var maturity = new InvestmentMaturity
                 {
-                    maturity.FinancialYearID = fy.FinancialYearID;
-                }
-                maturity.BranchID = account.BranchID;
+                    InstitutionID = request.InstitutionID > 0 ? request.InstitutionID : account.InstitutionID,
+                    BranchID = account.BranchID,
+                    FinancialYearID = fy?.FinancialYearID ?? (request.FinancialYearID > 0 ? request.FinancialYearID : 1),
+                    InvestmentAccountID = request.InvestmentAccountID,
+                    MaturityDate = request.MaturityDate,
+                    PrincipalReceived = request.PrincipalReceived,
+                    InterestReceived = request.InterestReceived,
+                    TotalReceived = request.PrincipalReceived + request.InterestReceived,
+                    CreatedBy = request.CreatedBy > 0 ? request.CreatedBy : 1
+                };
 
                 // Create voucher
                 var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
 
                 if (mapping != null)
                 {
+                    string refSuffix = !string.IsNullOrWhiteSpace(request.ReferenceNo)
+                        ? $" [संदर्भ/UTR: {request.ReferenceNo.Trim()}]"
+                        : string.Empty;
+
                     var voucher = new Voucher
                     {
                         BranchID = account.BranchID,
-                        VoucherNo = $"JV-INV-MAT-{account.InvestmentNo}",
+                        VoucherNo = $"REC-INV-MAT-{account.InvestmentNo}",
                         VoucherDate = maturity.MaturityDate,
-                        VoucherType = "Journal",
-                        Narration = $"गुंतवणूक मुदतपूर्ती - {account.InvestmentNo}",
+                        VoucherType = "Receipt",
+                        Narration = $"गुंतवणूक मुदतपूर्ती - {account.InvestmentNo}{refSuffix}",
                         TotalAmount = maturity.TotalReceived,
                         CreatedBy = maturity.CreatedBy,
                         CreatedOn = DateTime.Now
@@ -936,7 +990,7 @@ namespace Bhisi.Api.Controllers
                     var d1 = new VoucherDetail
                     {
                         VoucherID = voucher.VoucherID,
-                        LedgerID = await GetDefaultCashBankLedgerId(account.BranchID), // Branch-specific Bank/Cash
+                        LedgerID = paymentCheck.LedgerId,
                         DrCr = "Dr",
                         Amount = maturity.TotalReceived
                     };
@@ -949,17 +1003,21 @@ namespace Bhisi.Api.Controllers
                         Amount = maturity.PrincipalReceived
                     };
 
-                    var d3 = new VoucherDetail
-                    {
-                        VoucherID = voucher.VoucherID,
-                        LedgerID = mapping.InterestIncomeLedgerID,
-                        DrCr = "Cr",
-                        Amount = maturity.InterestReceived
-                    };
-
                     _context.VoucherDetails.Add(d1);
                     _context.VoucherDetails.Add(d2);
-                    _context.VoucherDetails.Add(d3);
+
+                    if (maturity.InterestReceived > 0)
+                    {
+                        var d3 = new VoucherDetail
+                        {
+                            VoucherID = voucher.VoucherID,
+                            LedgerID = mapping.InterestIncomeLedgerID,
+                            DrCr = "Cr",
+                            Amount = maturity.InterestReceived
+                        };
+                        _context.VoucherDetails.Add(d3);
+                    }
+
                     await _context.SaveChangesAsync();
                     maturity.VoucherID = voucher.VoucherID;
                 }
@@ -980,32 +1038,54 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/InvestmentAccounts/PrematureWithdraw - Premature Withdrawal
         [HttpPost("PrematureWithdraw")]
-        public async Task<ActionResult> PrematureWithdraw([FromBody] InvestmentPrematureWithdrawal withdrawal)
+        public async Task<ActionResult> PrematureWithdraw([FromBody] PrematureWithdrawRequest request)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var account = await _context.InvestmentAccounts.FindAsync(withdrawal.InvestmentAccountID);
+                var account = await _context.InvestmentAccounts.FindAsync(request.InvestmentAccountID);
                 if (account == null) return NotFound("गुंतवणूक खाते सापडले नाही.");
                 if (account.Status != "Active") return BadRequest("हे खाते Active नाही.");
 
-                withdrawal.NetPayout = withdrawal.PrincipalPaid + withdrawal.InterestPaid - withdrawal.PenaltyAmount;
+                var paymentCheck = await ResolveInvestmentPaymentLedgerAsync(account.BranchID, request.PaymentMode, request.BankLedgerID);
+                if (!paymentCheck.IsValid)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(paymentCheck.ErrorMessage);
+                }
 
                 var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
-                if (fy != null) withdrawal.FinancialYearID = fy.FinancialYearID;
-                withdrawal.BranchID = account.BranchID;
+
+                var withdrawal = new InvestmentPrematureWithdrawal
+                {
+                    InstitutionID = request.InstitutionID > 0 ? request.InstitutionID : account.InstitutionID,
+                    BranchID = account.BranchID,
+                    FinancialYearID = fy?.FinancialYearID ?? (request.FinancialYearID > 0 ? request.FinancialYearID : 1),
+                    InvestmentAccountID = request.InvestmentAccountID,
+                    WithdrawalDate = request.WithdrawalDate,
+                    PrincipalPaid = request.PrincipalPaid,
+                    RevisedInterestRate = request.RevisedInterestRate,
+                    InterestPaid = request.InterestPaid,
+                    PenaltyAmount = request.PenaltyAmount,
+                    NetPayout = request.PrincipalPaid + request.InterestPaid - request.PenaltyAmount,
+                    CreatedBy = request.CreatedBy > 0 ? request.CreatedBy : 1
+                };
 
                 var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
 
                 if (mapping != null)
                 {
+                    string refSuffix = !string.IsNullOrWhiteSpace(request.ReferenceNo)
+                        ? $" [संदर्भ/UTR: {request.ReferenceNo.Trim()}]"
+                        : string.Empty;
+
                     var voucher = new Voucher
                     {
                         BranchID = account.BranchID,
-                        VoucherNo = $"JV-INV-PRE-{account.InvestmentNo}",
+                        VoucherNo = $"REC-INV-PRE-{account.InvestmentNo}",
                         VoucherDate = withdrawal.WithdrawalDate,
-                        VoucherType = "Journal",
-                        Narration = $"गुंतवणूक मुदतपूर्व बंद - {account.InvestmentNo}",
+                        VoucherType = "Receipt",
+                        Narration = $"गुंतवणूक मुदतपूर्व बंद - {account.InvestmentNo}{refSuffix}",
                         TotalAmount = withdrawal.NetPayout,
                         CreatedBy = withdrawal.CreatedBy,
                         CreatedOn = DateTime.Now
@@ -1017,7 +1097,7 @@ namespace Bhisi.Api.Controllers
                     var d1 = new VoucherDetail
                     {
                         VoucherID = voucher.VoucherID,
-                        LedgerID = await GetDefaultCashBankLedgerId(account.BranchID), // Branch-specific Bank/Cash
+                        LedgerID = paymentCheck.LedgerId,
                         DrCr = "Dr",
                         Amount = withdrawal.NetPayout
                     };
@@ -1299,29 +1379,54 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/InvestmentAccounts/InterestReceipt - Record Interest Receipt
         [HttpPost("InterestReceipt")]
-        public async Task<ActionResult> RecordInterestReceipt([FromBody] InvestmentInterestReceipt receipt)
+        public async Task<ActionResult> RecordInterestReceipt([FromBody] InterestReceiptRequest request)
         {
+            if (request.ReceivedAmount <= 0)
+            {
+                return BadRequest("प्राप्त व्याज रक्कम ₹0 पेक्षा जास्त असणे आवश्यक आहे.");
+            }
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var account = await _context.InvestmentAccounts.FindAsync(receipt.InvestmentAccountID);
+                var account = await _context.InvestmentAccounts.FindAsync(request.InvestmentAccountID);
                 if (account == null) return NotFound("गुंतवणूक खाते सापडले नाही.");
 
+                var paymentCheck = await ResolveInvestmentPaymentLedgerAsync(account.BranchID, request.PaymentMode, request.BankLedgerID);
+                if (!paymentCheck.IsValid)
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(paymentCheck.ErrorMessage);
+                }
+
                 var fy = await _context.FinancialYears.FirstOrDefaultAsync(f => f.IsActive);
-                if (fy != null) receipt.FinancialYearID = fy.FinancialYearID;
-                receipt.BranchID = account.BranchID;
+
+                var receipt = new InvestmentInterestReceipt
+                {
+                    InstitutionID = request.InstitutionID > 0 ? request.InstitutionID : account.InstitutionID,
+                    BranchID = account.BranchID,
+                    FinancialYearID = fy?.FinancialYearID ?? (request.FinancialYearID > 0 ? request.FinancialYearID : 1),
+                    InvestmentAccountID = request.InvestmentAccountID,
+                    ReceiptDate = request.ReceiptDate,
+                    ReceivedAmount = request.ReceivedAmount,
+                    CreatedBy = request.CreatedBy > 0 ? request.CreatedBy : 1
+                };
 
                 var mapping = await GetVoucherMappingForBranch(account.BranchID, "", account.SchemeID);
 
                 if (mapping != null)
                 {
+                    string refSuffix = !string.IsNullOrWhiteSpace(request.ReferenceNo)
+                        ? $" [संदर्भ/UTR: {request.ReferenceNo.Trim()}]"
+                        : string.Empty;
+
                     var voucher = new Voucher
                     {
                         BranchID = account.BranchID,
                         VoucherNo = $"REC-INV-INT-{account.InvestmentNo}",
                         VoucherDate = receipt.ReceiptDate,
                         VoucherType = "Receipt",
-                        Narration = $"गुंतवणूक व्याज प्राप्ती - {account.InvestmentNo}",
+                        Narration = $"गुंतवणूक व्याज प्राप्ती - {account.InvestmentNo}{refSuffix}",
                         TotalAmount = receipt.ReceivedAmount,
                         CreatedBy = receipt.CreatedBy,
                         CreatedOn = DateTime.Now
@@ -1333,7 +1438,7 @@ namespace Bhisi.Api.Controllers
                     var d1 = new VoucherDetail
                     {
                         VoucherID = voucher.VoucherID,
-                        LedgerID = await GetDefaultCashBankLedgerId(account.BranchID), // Branch-specific Bank/Cash
+                        LedgerID = paymentCheck.LedgerId,
                         DrCr = "Dr",
                         Amount = receipt.ReceivedAmount
                     };
@@ -1485,6 +1590,57 @@ namespace Bhisi.Api.Controllers
     }
 
     // Request DTOs
+    public class MaturityClaimRequest
+    {
+        public int MaturityID { get; set; }
+        public int InstitutionID { get; set; } = 1;
+        public int BranchID { get; set; } = 1;
+        public int FinancialYearID { get; set; } = 1;
+        public int InvestmentAccountID { get; set; }
+        public DateTime MaturityDate { get; set; }
+        public decimal PrincipalReceived { get; set; }
+        public decimal InterestReceived { get; set; }
+        public decimal TotalReceived { get; set; }
+        public int CreatedBy { get; set; } = 1;
+        public string? PaymentMode { get; set; } = "Bank";
+        public int? BankLedgerID { get; set; }
+        public string? ReferenceNo { get; set; }
+    }
+
+    public class PrematureWithdrawRequest
+    {
+        public int WithdrawalID { get; set; }
+        public int InstitutionID { get; set; } = 1;
+        public int BranchID { get; set; } = 1;
+        public int FinancialYearID { get; set; } = 1;
+        public int InvestmentAccountID { get; set; }
+        public DateTime WithdrawalDate { get; set; }
+        public decimal PrincipalPaid { get; set; }
+        public decimal RevisedInterestRate { get; set; }
+        public decimal InterestPaid { get; set; }
+        public decimal PenaltyAmount { get; set; } = 0;
+        public decimal NetPayout { get; set; }
+        public int CreatedBy { get; set; } = 1;
+        public string? PaymentMode { get; set; } = "Bank";
+        public int? BankLedgerID { get; set; }
+        public string? ReferenceNo { get; set; }
+    }
+
+    public class InterestReceiptRequest
+    {
+        public int ReceiptID { get; set; }
+        public int InstitutionID { get; set; } = 1;
+        public int BranchID { get; set; } = 1;
+        public int FinancialYearID { get; set; } = 1;
+        public int InvestmentAccountID { get; set; }
+        public DateTime ReceiptDate { get; set; }
+        public decimal ReceivedAmount { get; set; }
+        public int CreatedBy { get; set; } = 1;
+        public string? PaymentMode { get; set; } = "Bank";
+        public int? BankLedgerID { get; set; }
+        public string? ReferenceNo { get; set; }
+    }
+
     public class RenewalRequest
     {
         public int OldInvestmentAccountID { get; set; }

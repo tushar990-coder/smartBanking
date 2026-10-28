@@ -488,6 +488,21 @@ namespace Bhisi.Api.Controllers
             {
                 try
                 {
+                    int? validatedOpeningBankLedgerId = null;
+                    string? validatedOpeningBankName = null;
+                    if (BankLedgerHelper.IsBankPaymentMode(account.PaymentMode))
+                    {
+                        var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, account.BankLedgerID);
+                        if (!bankCheck.IsValid)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(bankCheck.ErrorMessage);
+                        }
+                        validatedOpeningBankLedgerId = bankCheck.LedgerId;
+                        validatedOpeningBankName = bankCheck.Ledger?.LedgerName;
+                        account.PaymentMode = "Bank";
+                    }
+
                     // Generate Standard 14-Digit CBS Account Number or accept Custom Number
                     if (string.IsNullOrWhiteSpace(account.AccountNo) || account.AccountNo == "AUTO")
                     {
@@ -618,7 +633,7 @@ namespace Bhisi.Api.Controllers
 
                     // Accounting
                     var rdLiabilityLedger = await GetLiabilityLedgerAsync(scheme);
-                    int openingDebitLedgerId = autoDebitSavingLedgerId
+                    int openingDebitLedgerId = autoDebitSavingLedgerId ?? validatedOpeningBankLedgerId
                         ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "RD");
                     var debitGlLedger = await _context.Ledgers.FindAsync(openingDebitLedgerId);
 
@@ -638,7 +653,9 @@ namespace Bhisi.Api.Controllers
                             TotalAmount = account.InstallmentAmount,
                             Narration = account.PaymentMode == "AutoDebit_Saving" 
                                 ? $"नवीन आरडी खाते हप्ता क्र. १ (बचत खात्यातून ऑटो-डेबिट): {account.AccountNo}" 
-                                : $"नवीन आरडी खाते हप्ता क्र. १ भरून उघडले: {account.AccountNo}",
+                                : validatedOpeningBankLedgerId.HasValue
+                                    ? $"नवीन आरडी खाते हप्ता क्र. १ (बँक जमा - {validatedOpeningBankName}): {account.AccountNo}"
+                                    : $"नवीन आरडी खाते हप्ता क्र. १ भरून उघडले: {account.AccountNo}",
                             CreatedBy = account.CreatedBy,
                             CreatedOn = DateTime.Now
                         };
@@ -1107,12 +1124,13 @@ namespace Bhisi.Api.Controllers
 
                     string normalizedMode = (payMode ?? "Cash").Trim();
 
-                    if (normalizedMode.Equals("Bank", StringComparison.OrdinalIgnoreCase))
+                    if (BankLedgerHelper.IsBankPaymentMode(normalizedMode))
                     {
                         finalVoucherType = "Journal";
-                        if (bankLedgerId.HasValue && bankLedgerId.Value > 0)
+                        var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, bankLedgerId);
+                        if (bankCheck.IsValid)
                         {
-                            var bLedger = await _context.Ledgers.FindAsync(bankLedgerId.Value);
+                            var bLedger = bankCheck.Ledger;
                             if (bLedger != null)
                             {
                                 debitLedgerId = bLedger.LedgerID;
@@ -1121,12 +1139,14 @@ namespace Bhisi.Api.Controllers
                             }
                             else
                             {
-                                return BadRequest("निवडलेले बँक खाते/लेजर सापडले नाही.");
+                                await transaction.RollbackAsync();
+                                return BadRequest(bankCheck.ErrorMessage ?? "निवडलेले बँक खाते/लेजर सापडले नाही.");
                             }
                         }
                         else
                         {
-                            return BadRequest("बँक ट्रान्सफरसाठी कृपया बँक खाते निवडा.");
+                            await transaction.RollbackAsync();
+                            return BadRequest(bankCheck.ErrorMessage ?? "बँक ट्रान्सफरसाठी कृपया बँक खाते निवडा.");
                         }
                     }
                     else if (normalizedMode.Equals("Saving", StringComparison.OrdinalIgnoreCase) || normalizedMode.Equals("Saving Transfer", StringComparison.OrdinalIgnoreCase))
@@ -1686,9 +1706,101 @@ namespace Bhisi.Api.Controllers
             }
         }
 
+        private async Task<(bool IsValid, string? ErrorMessage, Ledger? PayoutLedger, string VoucherType, string ModeLabel, SavingAccountMaster? TargetSavingAccount)> ResolveRdClosurePayoutAsync(
+            RdAccount account,
+            int operatingBranchId,
+            string? paymentMode,
+            int? bankLedgerId,
+            int? savingAccountId)
+        {
+            string mode = (paymentMode ?? "Cash").Trim();
+            if (BankLedgerHelper.IsBankPaymentMode(mode))
+            {
+                var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, bankLedgerId);
+                if (!bankCheck.IsValid)
+                {
+                    return (false, bankCheck.ErrorMessage, null, "Payment", "बँक", null);
+                }
+                var bLedger = await _context.Ledgers.FindAsync(bankCheck.LedgerId);
+                if (bLedger == null)
+                {
+                    return (false, "निवडलेले बँक जी.एल. खाते प्रणालीत आढळले नाही.", null, "Payment", "बँक", null);
+                }
+                return (true, null, bLedger, "Payment", $"बँक ({bLedger.LedgerName})", null);
+            }
+
+            if (mode.Equals("Transfer", StringComparison.OrdinalIgnoreCase) ||
+                mode.Equals("Saving", StringComparison.OrdinalIgnoreCase) ||
+                mode.Equals("SavingTransfer", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!savingAccountId.HasValue || savingAccountId.Value <= 0)
+                {
+                    return (false, "बचत खात्यात वर्ग करण्यासाठी कृपया खातेदाराचे सक्रिय बचत खाते निवडा.", null, "Journal", "बचत वर्ग", null);
+                }
+                var sbAcc = await _context.SavingAccountMasters
+                    .Include(s => s.SavingScheme)
+                    .FirstOrDefaultAsync(s => s.SavingAccountID == savingAccountId.Value);
+                if (sbAcc == null || sbAcc.Status == "Closed" || sbAcc.Status == "Frozen")
+                {
+                    return (false, "निवडलेले बचत खाते सापडले नाही किंवा सक्रिय (Active) नाही.", null, "Journal", "बचत वर्ग", null);
+                }
+                int sbLedgerId = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, sbAcc);
+                if (sbLedgerId <= 0)
+                {
+                    return (false, Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(sbAcc.AccountNo), null, "Journal", "बचत वर्ग", null);
+                }
+                var sbLedger = await _context.Ledgers.FindAsync(sbLedgerId);
+                if (sbLedger == null)
+                {
+                    return (false, Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(sbAcc.AccountNo), null, "Journal", "बचत वर्ग", null);
+                }
+                return (true, null, sbLedger, "Journal", $"बचत खात्यात वर्ग ({sbAcc.AccountNo})", sbAcc);
+            }
+
+            int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, operatingBranchId, "RD");
+            var cLedger = await _context.Ledgers.FindAsync(branchCashId);
+            if (cLedger == null)
+            {
+                return (false, "शाखेचे रोख जी.एल. खाते (Cash Ledger) सापडले नाही.", null, "Payment", "रोख", null);
+            }
+            return (true, null, cLedger, "Payment", "रोख", null);
+        }
+
+        private void ApplyRdClosureSavingCredit(
+            SavingAccountMaster? targetSavingAcc,
+            decimal payoutAmount,
+            DateTime txnDate,
+            int fallbackBranchId,
+            string voucherNo,
+            string narration)
+        {
+            if (targetSavingAcc == null || payoutAmount <= 0) return;
+            targetSavingAcc.CurrentBalance += payoutAmount;
+            _context.Entry(targetSavingAcc).State = EntityState.Modified;
+            _context.SavingTransactions.Add(new SavingTransaction
+            {
+                SavingAccountID = targetSavingAcc.SavingAccountID,
+                CustomerID = targetSavingAcc.CustomerID,
+                BranchID = targetSavingAcc.BranchID > 0 ? targetSavingAcc.BranchID : fallbackBranchId,
+                TransactionDate = txnDate,
+                TransactionType = "Deposit",
+                PaymentMode = "Transfer",
+                Amount = payoutAmount,
+                BalanceAfterTxn = targetSavingAcc.CurrentBalance,
+                VoucherNo = voucherNo,
+                Narration = narration,
+                CreatedBy = 1
+            });
+        }
+
         // POST: api/RdAccounts/5/MaturedClose
         [HttpPost("{id}/MaturedClose")]
-        public async Task<IActionResult> MaturedClose(int id, [FromQuery] DateTime? closureDate = null)
+        public async Task<IActionResult> MaturedClose(
+            int id,
+            [FromQuery] DateTime? closureDate = null,
+            [FromQuery] string paymentMode = "Cash",
+            [FromQuery] int? bankLedgerId = null,
+            [FromQuery] int? savingAccountId = null)
         {
             var account = await _context.RdAccounts
                 .Include(a => a.RdScheme)
@@ -1708,6 +1820,14 @@ namespace Bhisi.Api.Controllers
 
             decimal totalPayout = account.TotalDepositedAmount + accruedInt;
 
+            int preCheckUserBranchId = HttpContext.User.GetOperatingBranchId();
+            int preCheckOperatingBranchId = preCheckUserBranchId > 0 ? preCheckUserBranchId : (account.BranchID > 0 ? account.BranchID : 1);
+            var payoutCheck = await ResolveRdClosurePayoutAsync(account, preCheckOperatingBranchId, paymentMode, bankLedgerId, savingAccountId);
+            if (!payoutCheck.IsValid || payoutCheck.PayoutLedger == null)
+            {
+                return BadRequest(payoutCheck.ErrorMessage ?? "पेमेंट लेजर सापडले नाही.");
+            }
+
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
@@ -1726,7 +1846,7 @@ namespace Bhisi.Api.Controllers
                     int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, operatingBranchId, "RD");
                     var cashLedger = await _context.Ledgers.FindAsync(branchCashId);
 
-                    if (rdLiabilityLedger == null || cashLedger == null)
+                    if (rdLiabilityLedger == null || payoutCheck.PayoutLedger == null)
                     {
                         return BadRequest("Required ledgers not found.");
                     }
@@ -1745,7 +1865,7 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = effClosureDate,
                             VoucherType = "Payment",
                             TotalAmount = totalPayout,
-                            Narration = $"आरडी मुदतपूर्ती पेआउट (RD Maturity Close): {account.AccountNo}",
+                            Narration = $"आरडी मुदतपूर्ती पेआउट ({payoutCheck.ModeLabel}): {account.AccountNo}",
                             CreatedBy = 1,
                             CreatedOn = DateTime.Now
                         };
@@ -1762,7 +1882,9 @@ namespace Bhisi.Api.Controllers
                         }
 
                         // Cr Cash
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = totalPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        voucher.VoucherType = payoutCheck.VoucherType;
+                        ApplyRdClosureSavingCredit(payoutCheck.TargetSavingAccount, totalPayout, effClosureDate, homeBranchId, $"JV-RD-CLOSE-{account.AccountNo}", $"आरडी मुदतपूर्ती परतावा जमा (RD A/C: {account.AccountNo})");
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutCheck.PayoutLedger.LedgerID, DrCr = "Cr", Amount = totalPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                         await _context.SaveChangesAsync();
                         finalVoucherId = voucher.VoucherID;
                     }
@@ -1779,7 +1901,7 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = effClosureDate,
                             VoucherType = "Payment",
                             TotalAmount = totalPayout,
-                            Narration = $"[आंतर-शाखा आरडी मुदतपूर्ती परतावा] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा",
+                            Narration = $"[आंतर-शाखा आरडी मुदतपूर्ती परतावा] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी परतावा अदा ({payoutCheck.ModeLabel})",
                             CreatedBy = 1,
                             CreatedOn = DateTime.Now,
                             IsIbtVoucher = true,
@@ -1791,7 +1913,9 @@ namespace Bhisi.Api.Controllers
                         // Dr IBT
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = totalPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                         // Cr Cash
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = totalPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        counterVoucher.VoucherType = payoutCheck.VoucherType;
+                        ApplyRdClosureSavingCredit(payoutCheck.TargetSavingAccount, totalPayout, effClosureDate, operatingBranchId, $"JV-RD-CLOSE-{account.AccountNo}", $"आरडी मुदतपूर्ती परतावा जमा (RD A/C: {account.AccountNo})");
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = payoutCheck.PayoutLedger.LedgerID, DrCr = "Cr", Amount = totalPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                         // 2. Home Branch Voucher (Branch B, Journal): Dr RD Liability, Dr Interest Payable, Cr IBT
                         var homeVoucher = new Voucher
@@ -1858,7 +1982,13 @@ namespace Bhisi.Api.Controllers
 
         // POST: api/RdAccounts/5/PrematureClose
         [HttpPost("{id}/PrematureClose")]
-        public async Task<IActionResult> PrematureClose(int id, [FromQuery] DateTime closureDate, [FromQuery] decimal? customPrematureRate)
+        public async Task<IActionResult> PrematureClose(
+            int id,
+            [FromQuery] DateTime closureDate,
+            [FromQuery] decimal? customPrematureRate = null,
+            [FromQuery] string paymentMode = "Cash",
+            [FromQuery] int? bankLedgerId = null,
+            [FromQuery] int? savingAccountId = null)
         {
             var account = await _context.RdAccounts
                 .Include(a => a.RdScheme)
@@ -1905,6 +2035,15 @@ namespace Bhisi.Api.Controllers
                     decimal clawbackAmount = 0;
                     decimal netPayout = account.TotalDepositedAmount + recalculatedInterest;
 
+                    int preCheckUserBranchId = HttpContext.User.GetOperatingBranchId();
+                    int preCheckOperatingBranchId = preCheckUserBranchId > 0 ? preCheckUserBranchId : (account.BranchID > 0 ? account.BranchID : 1);
+                    var payoutCheck = await ResolveRdClosurePayoutAsync(account, preCheckOperatingBranchId, paymentMode, bankLedgerId, savingAccountId);
+                    if (!payoutCheck.IsValid || payoutCheck.PayoutLedger == null)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(payoutCheck.ErrorMessage ?? "पेमेंट लेजर सापडले नाही.");
+                    }
+
                     if (alreadyAccruedInt > recalculatedInterest)
                     {
                         clawbackAmount = alreadyAccruedInt - recalculatedInterest;
@@ -1930,7 +2069,7 @@ namespace Bhisi.Api.Controllers
                         ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash In Hand")
                         ?? await GetOrCreateLedgerAsync("५१ हातातील रोख शिल्लक", "रोख व बँक शिल्लक", "Dr");
 
-                    if (rdLiabilityLedger == null || cashLedger == null)
+                    if (rdLiabilityLedger == null || payoutCheck.PayoutLedger == null)
                     {
                         return BadRequest("Required ledgers not found.");
                     }
@@ -1949,7 +2088,7 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = closureDate,
                             VoucherType = "Payment",
                             TotalAmount = netPayout,
-                            Narration = $"आरडी मुदतपूर्व बंद (Premature Close) - Rate: {prematureRate}%, Recalc Int: ₹{recalculatedInterest}, Clawback: ₹{clawbackAmount}",
+                            Narration = $"आरडी मुदतपूर्व बंद ({payoutCheck.ModeLabel}) - Rate: {prematureRate}%, Recalc Int: ₹{recalculatedInterest}, Clawback: ₹{clawbackAmount}",
                             CreatedBy = 1,
                             CreatedOn = DateTime.Now
                         };
@@ -1976,7 +2115,9 @@ namespace Bhisi.Api.Controllers
                         }
 
                         // Cr Cash
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = netPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        voucher.VoucherType = payoutCheck.VoucherType;
+                        ApplyRdClosureSavingCredit(payoutCheck.TargetSavingAccount, netPayout, closureDate, homeBranchId, $"JV-RD-PRECLOSE-{account.AccountNo}", $"आरडी मुदतपूर्व बंद परतावा जमा (RD A/C: {account.AccountNo})");
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = voucher.VoucherID, LedgerID = payoutCheck.PayoutLedger.LedgerID, DrCr = "Cr", Amount = netPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                         // Cr Interest Expense / Clawback Income (If accrued was higher than recalculated)
                         if (clawbackAmount > 0)
@@ -2003,7 +2144,7 @@ namespace Bhisi.Api.Controllers
                             VoucherDate = closureDate,
                             VoucherType = "Payment",
                             TotalAmount = netPayout,
-                            Narration = $"[आंतर-शाखा आरडी मुदतपूर्व परतावा] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी काऊंटरवर रोख परतावा अदा - Rate: {prematureRate}%, Recalc Int: ₹{recalculatedInterest}, Clawback: ₹{clawbackAmount}",
+                            Narration = $"[आंतर-शाखा आरडी मुदतपूर्व परतावा] खाते: {account.AccountNo} (मूळ शाखा #{homeBranchId}) साठी परतावा अदा ({payoutCheck.ModeLabel}) - Rate: {prematureRate}%, Recalc Int: ₹{recalculatedInterest}, Clawback: ₹{clawbackAmount}",
                             CreatedBy = 1,
                             CreatedOn = DateTime.Now,
                             IsIbtVoucher = true,
@@ -2015,7 +2156,9 @@ namespace Bhisi.Api.Controllers
                         // Dr IBT
                         _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = ibtLedgerId, DrCr = "Dr", Amount = netPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
                         // Cr Cash
-                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = netPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
+                        counterVoucher.VoucherType = payoutCheck.VoucherType;
+                        ApplyRdClosureSavingCredit(payoutCheck.TargetSavingAccount, netPayout, closureDate, operatingBranchId, $"JV-RD-PRECLOSE-{account.AccountNo}", $"आरडी मुदतपूर्व बंद परतावा जमा (RD A/C: {account.AccountNo})");
+                        _context.VoucherDetails.Add(new VoucherDetail { VoucherID = counterVoucher.VoucherID, LedgerID = payoutCheck.PayoutLedger.LedgerID, DrCr = "Cr", Amount = netPayout, CustomerID = account.CustomerID, MemberID = linkedMemberId });
 
                         // 2. Home Branch Voucher (Branch B, Journal): Dr RD Liability, Dr Interest Payable, Dr Interest Expense, Cr Clawback, Cr IBT
                         var homeVoucher = new Voucher
@@ -2588,14 +2731,14 @@ namespace Bhisi.Api.Controllers
             var debitDetail = voucher.VoucherDetails.FirstOrDefault(vd => vd.DrCr == "Dr");
             if (debitDetail?.Ledger != null)
             {
-                if (debitDetail.Ledger.AccountType == "Bank" || debitDetail.Ledger.LedgerName.Contains("Bank") || debitDetail.Ledger.LedgerName.Contains("बँक"))
+                if (BankLedgerHelper.IsBankAccountType(debitDetail.Ledger.AccountType))
                 {
                     paymentMode = "Bank";
                     bankLedgerId = debitDetail.LedgerID;
                 }
                 else if (await Helpers.SavingLedgerHelper.IsConfiguredSavingLiabilityLedgerAsync(_context, debitDetail.LedgerID))
                 {
-                    paymentMode = "Transfer";
+                    paymentMode = account.PaymentMode == "AutoDebit_Saving" ? "AutoDebit_Saving" : "Transfer";
                     var sb = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.CustomerID == account.CustomerID);
                     savingAccountId = sb?.SavingAccountID;
                 }
@@ -2629,6 +2772,7 @@ namespace Bhisi.Api.Controllers
                     account.Remarks,
                     PaymentMode = paymentMode,
                     BankAccountLedgerID = bankLedgerId,
+                    BankLedgerID = bankLedgerId,
                     SavingAccountID = savingAccountId,
                     IsSeniorCitizen = isSenior
                 },
@@ -2721,6 +2865,18 @@ namespace Bhisi.Api.Controllers
 
             int installmentCount = schedules.Count > 0 ? schedules.Count : 1;
             decimal penalty = schedules.Sum(s => s.PenaltyCharged);
+            string instPayMode = "Cash";
+            int? instBankLedgerId = null;
+            var instDebitDetail = voucher.VoucherDetails.FirstOrDefault(vd => vd.DrCr == "Dr");
+            if (instDebitDetail?.Ledger != null && BankLedgerHelper.IsBankAccountType(instDebitDetail.Ledger.AccountType))
+            {
+                instPayMode = "Bank";
+                instBankLedgerId = instDebitDetail.LedgerID;
+            }
+            else if (instDebitDetail != null && await Helpers.SavingLedgerHelper.IsConfiguredSavingLiabilityLedgerAsync(_context, instDebitDetail.LedgerID))
+            {
+                instPayMode = "Saving";
+            }
 
             return Ok(new
             {
@@ -2749,6 +2905,8 @@ namespace Bhisi.Api.Controllers
                     PenaltyAmount = penalty,
                     TotalAmount = voucher.TotalAmount,
                     CollectionDate = voucher.VoucherDate,
+                    PaymentMode = instPayMode,
+                    BankLedgerID = instBankLedgerId,
                     Narration = voucher.Narration
                 },
                 voucher = new
@@ -2789,7 +2947,7 @@ namespace Bhisi.Api.Controllers
                     .ThenInclude(a => a!.RdScheme)
                 .Include(t => t.RdAccount)
                     .ThenInclude(a => a!.Branch)
-                .FirstOrDefaultAsync(t => t.VoucherID == voucherId && (t.TransactionType == "Payout" || t.TransactionType == "Renewal"));
+                .FirstOrDefaultAsync(t => t.VoucherID == voucherId && (t.TransactionType == "Payout" || t.TransactionType == "Premature_Close" || t.TransactionType == "Renewal"));
 
             RdAccount? account = tx?.RdAccount;
 
@@ -2833,6 +2991,28 @@ namespace Bhisi.Api.Controllers
             }
 
             string closureType = (voucher.VoucherNo?.Contains("PRECLOSE") == true) ? "PrematureClose" : "MaturityClose";
+            string closurePaymentMode = "Cash";
+            int? closureBankLedgerId = null;
+            int? closureSavingAccountId = null;
+            var closureCreditDetail = voucher.VoucherDetails.FirstOrDefault(vd => vd.DrCr == "Cr" && vd.Ledger != null && BankLedgerHelper.IsBankAccountType(vd.Ledger.AccountType));
+            if (closureCreditDetail != null)
+            {
+                closurePaymentMode = "Bank";
+                closureBankLedgerId = closureCreditDetail.LedgerID;
+            }
+            else
+            {
+                foreach (var crLine in voucher.VoucherDetails.Where(vd => vd.DrCr == "Cr"))
+                {
+                    if (await Helpers.SavingLedgerHelper.IsConfiguredSavingLiabilityLedgerAsync(_context, crLine.LedgerID))
+                    {
+                        closurePaymentMode = "Transfer";
+                        var sb = await _context.SavingAccountMasters.FirstOrDefaultAsync(s => s.CustomerID == account.CustomerID && s.Status == "Active");
+                        closureSavingAccountId = sb?.SavingAccountID;
+                        break;
+                    }
+                }
+            }
 
             return Ok(new
             {
@@ -2862,6 +3042,9 @@ namespace Bhisi.Api.Controllers
                     ClosureDate = tx?.TransactionDate ?? voucher.VoucherDate,
                     ClosureType = closureType,
                     TotalPayoutAmount = voucher.TotalAmount,
+                    PaymentMode = closurePaymentMode,
+                    BankLedgerID = closureBankLedgerId,
+                    SavingAccountID = closureSavingAccountId,
                     Narration = voucher.Narration
                 },
                 voucher = new

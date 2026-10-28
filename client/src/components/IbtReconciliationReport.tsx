@@ -19,6 +19,8 @@ import {
   Sparkles
 } from 'lucide-react';
 import CbsReportLayout, { formatDisplayDate, CbsPaperSize, SansthaDetails } from './common/CbsReportLayout';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import { filterBankAccountLedgers, RawLedgerItem } from '../utils/bankLedgerUtils';
 
 interface IbtBranchItem {
   branchID: number;
@@ -164,7 +166,8 @@ export default function IbtReconciliationReport() {
   const [settlementAmount, setSettlementAmount] = useState<number>(0);
   const [settlementMode, setSettlementMode] = useState<string>('Bank');
   const [settlementNarration, setSettlementNarration] = useState<string>('');
-  const [bankLedgers, setBankLedgers] = useState<any[]>([]);
+  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>([]);
+  const [bankLedgers, setBankLedgers] = useState<RawLedgerItem[]>([]);
   const [selectedBankLedgerId, setSelectedBankLedgerId] = useState<number | undefined>();
   const [settling, setSettling] = useState<boolean>(false);
 
@@ -254,12 +257,17 @@ export default function IbtReconciliationReport() {
   const fetchBankLedgers = async () => {
     try {
       const res = await axios.get('/api/Ledgers');
-      const banks = (res.data || []).filter((l: any) => 
-        l.accountType === 'Bank' || 
-        (l.groupName && (l.groupName.includes('बँक') || l.groupName.toLowerCase().includes('bank')))
-      );
+      const raw: RawLedgerItem[] = Array.isArray(res.data) ? res.data : [];
+      setAllLedgers(raw);
+      const banks = filterBankAccountLedgers(raw);
       setBankLedgers(banks);
-      if (banks.length > 0) setSelectedBankLedgerId(banks[0].ledgerID);
+      setSelectedBankLedgerId((prev) =>
+        prev && banks.some((b) => Number(b.ledgerID) === Number(prev))
+          ? prev
+          : banks.length > 0
+            ? banks[0].ledgerID
+            : undefined
+      );
     } catch (err) {
       console.error('Error fetching bank ledgers', err);
     }
@@ -283,8 +291,8 @@ export default function IbtReconciliationReport() {
       alert('देणारी व घेणारी शाखा एकच असू शकत नाही.');
       return;
     }
-    if (settlementMode === 'Bank' && !selectedBankLedgerId) {
-      alert('कृपया बँक खाते निवडा.');
+    if (settlementMode === 'Bank' && (!selectedBankLedgerId || Number(selectedBankLedgerId) <= 0)) {
+      alert('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       return;
     }
 
@@ -295,7 +303,7 @@ export default function IbtReconciliationReport() {
         toBranchID: settlementToBranch,
         settlementAmount: settlementAmount,
         paymentMode: settlementMode,
-        bankLedgerID: settlementMode === 'Bank' ? selectedBankLedgerId : null,
+        bankLedgerID: settlementMode === 'Bank' ? Number(selectedBankLedgerId) : null,
         narration: settlementNarration,
         createdBy: user?.userID || 1
       };
@@ -306,7 +314,11 @@ export default function IbtReconciliationReport() {
       if (activeTab === 'drilldown') fetchDrilldownData();
       setTimeout(() => setSuccessMsg(null), 6000);
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'सेटलमेंट करताना त्रुटी आली.');
+      const errMsg =
+        typeof err?.response?.data === 'string'
+          ? err.response.data
+          : err?.response?.data?.message || err?.message || 'सेटलमेंट करताना त्रुटी आली.';
+      alert(errMsg);
     } finally {
       setSettling(false);
     }
@@ -1186,12 +1198,20 @@ export default function IbtReconciliationReport() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">माध्यम (Payment Mode):</label>
                   <select
                     value={settlementMode}
-                    onChange={(e) => setSettlementMode(e.target.value)}
+                    onChange={(e) => {
+                      const mode = e.target.value;
+                      setSettlementMode(mode);
+                      if (mode !== 'Bank') {
+                        setSelectedBankLedgerId(undefined);
+                      } else if (!selectedBankLedgerId && bankLedgers.length > 0) {
+                        setSelectedBankLedgerId(bankLedgers[0].ledgerID);
+                      }
+                    }}
                     className="w-full px-2.5 py-1.5 border border-slate-300 rounded font-semibold outline-none focus:border-primary"
                   >
                     <option value="Bank">बँक ट्रान्सफर (RTGS/NEFT)</option>
@@ -1201,16 +1221,12 @@ export default function IbtReconciliationReport() {
 
                 {settlementMode === 'Bank' && (
                   <div>
-                    <label className="block text-slate-700 font-bold mb-1">बँक खाते (Bank Ledger):</label>
-                    <select
+                    <BankLedgerSelect
+                      ledgers={allLedgers}
                       value={selectedBankLedgerId}
-                      onChange={(e) => setSelectedBankLedgerId(Number(e.target.value))}
-                      className="w-full px-2.5 py-1.5 border border-slate-300 rounded font-medium outline-none focus:border-primary"
-                    >
-                      {bankLedgers.map((l: any) => (
-                        <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>
-                      ))}
-                    </select>
+                      onChange={(id) => setSelectedBankLedgerId(id > 0 ? id : undefined)}
+                      showCountBadge
+                    />
                   </div>
                 )}
               </div>

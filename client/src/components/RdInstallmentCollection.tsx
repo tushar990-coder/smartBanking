@@ -1,4 +1,6 @@
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import { RawLedgerItem } from '../utils/bankLedgerUtils';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -133,9 +135,14 @@ export default function RdInstallmentCollection({
   const [success, setSuccess] = useState('');
 
   // Multi-Payment Mode States
-  const [bankLedgers, setBankLedgers] = useState<any[]>([]);
-  const [selectedBankLedgerId, setSelectedBankLedgerId] = useState<number | ''>('');
+  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>([]);
+  const [selectedBankLedgerId, setSelectedBankLedgerId] = useState<number>(0);
   const [chequeNo, setChequeNo] = useState('');
+
+  // Bulk Payment Mode States
+  const [bulkPayMode, setBulkPayMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [bulkBankLedgerId, setBulkBankLedgerId] = useState<number>(0);
+  const [bulkChequeNo, setBulkChequeNo] = useState('');
 
   const [customerSavingAccounts, setCustomerSavingAccounts] = useState<any[]>([]);
   const [loadingSavingAccounts, setLoadingSavingAccounts] = useState(false);
@@ -145,28 +152,20 @@ export default function RdInstallmentCollection({
   const [loadingPigmyAccounts, setLoadingPigmyAccounts] = useState(false);
   const [selectedPigmyAccountId, setSelectedPigmyAccountId] = useState<number | ''>('');
 
-  // Fetch Bank Ledgers on mount
+  // Fetch GL Ledgers on mount for BankLedgerSelect
   useEffect(() => {
-    const fetchBankLedgers = async () => {
-      try {
-        const res = await axios.get('/api/Ledgers');
-        const list = Array.isArray(res.data) ? res.data : [];
-        const banks = list.filter((l: any) => 
-          l.accountType === 'Bank' || 
-          l.groupName?.includes('Bank') || 
-          l.groupName?.includes('बँक') ||
-          l.ledgerName?.includes('बँक') ||
-          l.ledgerName?.toLowerCase().includes('bank')
-        );
-        setBankLedgers(banks);
-        if (banks.length > 0) {
-          setSelectedBankLedgerId(banks[0].ledgerID);
-        }
-      } catch (e) {
-        console.error('Failed to fetch bank ledgers', e);
-      }
+    let isMounted = true;
+    axios.get('/api/Ledgers')
+      .then((res) => {
+        if (!isMounted) return;
+        setAllLedgers(Array.isArray(res.data) ? res.data : []);
+      })
+      .catch((e) => {
+        console.error('Failed to fetch ledgers', e);
+      });
+    return () => {
+      isMounted = false;
     };
-    fetchBankLedgers();
   }, []);
 
   const loadCustomerLinkedAccounts = (cId?: number) => {
@@ -578,6 +577,12 @@ export default function RdInstallmentCollection({
       if (installmentDetails) {
         setCount(installmentDetails.installmentCount || 1);
         setPenaltyAmount(installmentDetails.penaltyAmount || 0);
+        if (installmentDetails.paymentMode) {
+          setPayMode(installmentDetails.paymentMode);
+        }
+        if (installmentDetails.bankLedgerID) {
+          setSelectedBankLedgerId(Number(installmentDetails.bankLedgerID) || 0);
+        }
       }
     } catch (err: any) {
       console.error('Error loading RD installment voucher:', err);
@@ -750,8 +755,8 @@ export default function RdInstallmentCollection({
 
     // Mode-specific validations
     if (payMode === 'Bank') {
-      if (!selectedBankLedgerId) {
-        setError('कृपया बँक खाते निवडा.');
+      if (!selectedBankLedgerId || Number(selectedBankLedgerId) <= 0) {
+        setError('बँक ट्रान्सफरसाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
         return;
       }
     } else if (payMode === 'Saving') {
@@ -789,8 +794,8 @@ export default function RdInstallmentCollection({
         collectionDate: collectionDate,
         depositAmount: effectivePrincipal.toString()
       });
-      if (payMode === 'Bank' && selectedBankLedgerId) {
-        qParams.append('bankLedgerId', selectedBankLedgerId.toString());
+      if (payMode === 'Bank' && Number(selectedBankLedgerId) > 0) {
+        qParams.append('bankLedgerId', String(selectedBankLedgerId));
         if (chequeNo.trim()) qParams.append('chequeNo', chequeNo.trim());
       } else if (payMode === 'Saving' && selectedSavingAccountId) {
         qParams.append('sourceSavingAccountId', selectedSavingAccountId.toString());
@@ -830,6 +835,11 @@ export default function RdInstallmentCollection({
       return;
     }
 
+    if (bulkPayMode === 'Bank' && (!bulkBankLedgerId || Number(bulkBankLedgerId) <= 0)) {
+      setError('एकत्रित बँक ट्रान्सफरसाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setSuccess('');
@@ -837,12 +847,25 @@ export default function RdInstallmentCollection({
       let successCount = 0;
       for (const id of selectedIds) {
         const row = bulkRows[id];
+        const qParams = new URLSearchParams({
+          count: String(row.count),
+          penaltyAmount: String(row.penalty),
+          payMode: bulkPayMode,
+          collectionDate: collectionDate,
+        });
+        if (bulkPayMode === 'Bank' && Number(bulkBankLedgerId) > 0) {
+          qParams.append('bankLedgerId', String(bulkBankLedgerId));
+          if (bulkChequeNo.trim()) {
+            qParams.append('chequeNo', bulkChequeNo.trim());
+          }
+        }
         await axios.post(
-          `/api/RdAccounts/${id}/CollectInstallment?count=${row.count}&penaltyAmount=${row.penalty}&payMode=Cash&collectionDate=${collectionDate}`
+          `/api/RdAccounts/${id}/CollectInstallment?${qParams.toString()}`
         );
         successCount++;
       }
-      setSuccess(`✅ एकत्रित संकलन यशस्वी! ${successCount} खात्यांचे हप्ते जमा झाले.`);
+      setSuccess(`✅ एकत्रित संकलन यशस्वी! ${successCount} खात्यांचे हप्ते (${bulkPayMode === 'Bank' ? 'बँक ट्रान्सफर' : 'रोख'}) जमा झाले.`);
+      setBulkChequeNo('');
       fetchAccounts();
     } catch (err: any) {
       const errText = typeof err.response?.data === 'string' ? err.response.data : err.response?.data?.message || 'एकत्रित संकलन करताना त्रुटी आली.';
@@ -1296,22 +1319,15 @@ export default function RdInstallmentCollection({
 
             {/* Conditional Bank Transfer Section */}
             {payMode === 'Bank' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-blue-50/70 border border-blue-200 rounded-xl shadow-2xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-blue-50/70 border border-blue-200 rounded-xl shadow-2xs items-end">
                 <div>
-                  <label className={labelClass}>बँक खाते निवडा (Bank Account) *</label>
-                  <select
+                  <BankLedgerSelect
+                    ledgers={allLedgers}
                     value={selectedBankLedgerId}
-                    onChange={(e) => setSelectedBankLedgerId(Number(e.target.value) || '')}
-                    className={inputClass}
-                    required
-                  >
-                    <option value="">-- बँक खाते निवडा --</option>
-                    {bankLedgers.map((b) => (
-                      <option key={b.ledgerID} value={b.ledgerID}>
-                        {b.ledgerName}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(id) => setSelectedBankLedgerId(id)}
+                    disabled={isPassingMode}
+                    showCountBadge
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>चेक / UTR / संदर्भ क्र. (Ref / Cheque No)</label>
@@ -1622,6 +1638,18 @@ export default function RdInstallmentCollection({
 
             <div className="flex flex-wrap items-center gap-2.5">
               <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
+                <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">पेमेंट पद्धत:</label>
+                <select
+                  value={bulkPayMode}
+                  onChange={(e) => setBulkPayMode(e.target.value as 'Cash' | 'Bank')}
+                  className="text-xs border border-slate-300 rounded px-2 py-0.5 bg-white text-slate-900 font-semibold focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                >
+                  <option value="Cash">💵 रोख (Cash)</option>
+                  <option value="Bank">🏦 बँक ट्रान्सफर (Bank)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
                 <Calendar className="w-3.5 h-3.5 text-slate-500" />
                 <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">तारीख:</label>
                 <input
@@ -1649,6 +1677,34 @@ export default function RdInstallmentCollection({
               </button>
             </div>
           </div>
+
+          {bulkPayMode === 'Bank' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-blue-50/70 border border-blue-200 rounded-xl items-end">
+              <div>
+                <BankLedgerSelect
+                  ledgers={allLedgers}
+                  value={bulkBankLedgerId}
+                  onChange={(id) => setBulkBankLedgerId(id)}
+                  showCountBadge
+                />
+              </div>
+              <div>
+                <label className={labelClass}>बॅच चेक / UTR / संदर्भ क्र. (Batch Ref / Cheque No - ऐच्छिक)</label>
+                <input
+                  type="text"
+                  placeholder="उदा. UTR12345678 किंवा बॅच चेक क्र."
+                  value={bulkChequeNo}
+                  onChange={(e) => setBulkChequeNo(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+          ) : (
+            <CashLedgerReflectBadge
+              transactionType="Collection"
+              customTitle="एकत्रित हप्ता जमा होणारे रोख खाते (Bulk Cash Collection Ledger)"
+            />
+          )}
 
           <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className="w-full text-left border-collapse">

@@ -113,10 +113,12 @@ namespace Bhisi.Api.Controllers
             var toDate = fromDate.AddYears(1).AddDays(-1);
 
             int cashLedgerId = 1;
-            var cashLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("रोख") || l.LedgerName.Contains("Cash"));
+            cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, allotment.BranchID, "LOCKER");
+            var cashLedger = (Ledger?)null;
             if (cashLedger != null) cashLedgerId = cashLedger.LedgerID;
 
             int debitLedgerId = cashLedgerId;
+            if (dto.PaymentMode == "Bank" || dto.PaymentMode == "Transfer" || Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode)) { var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerID); if (!bankCheck.IsValid) return BadRequest(new { message = bankCheck.ErrorMessage }); debitLedgerId = bankCheck.LedgerId; } else if (dto.PaymentMode == "SavingDebit" && allotment.LinkedSavingAccount != null) { var savLiab = await Helpers.SavingLedgerHelper.TryResolveSavingLiabilityLedgerIdAsync(_context, allotment.LinkedSavingAccount); if (savLiab <= 0) return BadRequest(new { message = Helpers.SavingLedgerHelper.GetMissingMappingErrorMessage(allotment.LinkedSavingAccount.AccountNo) }); debitLedgerId = savLiab; }
 
             // If paying through Savings Account, deduct from savings
             if (dto.PaymentMode == "SavingDebit" && allotment.LinkedSavingAccount != null)
@@ -404,7 +406,9 @@ namespace Bhisi.Api.Controllers
     {
         public int AllotmentID { get; set; }
         public DateTime PaymentDate { get; set; } = DateTime.Today;
-        public string PaymentMode { get; set; } = "Cash"; // Cash, SavingDebit, Transfer
+        public string PaymentMode { get; set; } = "Cash"; // Cash, SavingDebit, Bank
+        public int? BankLedgerID { get; set; }
+        public string? ReferenceNo { get; set; }
         public decimal RentAmount { get; set; }
         public decimal GstAmount { get; set; }
         public decimal PenaltyAmount { get; set; }

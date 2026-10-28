@@ -3,6 +3,8 @@ import MemberSearchSelect from './common/MemberSearchSelect';
 import ShareCertificatePreview from './ShareCertificatePreview';
 import VoucherPrint from './VoucherPrint';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import { filterBankAccountLedgers } from '../utils/bankLedgerUtils';
 import { useAuth } from '../context/AuthContext';
 import { 
   PlusCircle, 
@@ -210,6 +212,12 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
   const [cancelAllotModal, setCancelAllotModal] = useState<{ open: boolean; txn: ShareTransactionData | null }>({ open: false, txn: null });
   const [cancellationReason, setCancellationReason] = useState('');
 
+  const [cancelCertModal, setCancelCertModal] = useState<{ open: boolean; cert: CertificateData | null }>({ open: false, cert: null });
+  const [certCancelReason, setCertCancelReason] = useState('');
+  const [certCancelPaymentMode, setCertCancelPaymentMode] = useState<'Cash' | 'Transfer' | 'Bank'>('Cash');
+  const [certCancelBankLedgerId, setCertCancelBankLedgerId] = useState<number>(0);
+  const [certCancelSavingAccountId, setCertCancelSavingAccountId] = useState<number | ''>('');
+
   const numberOfSharesInputRef = useRef<HTMLInputElement>(null);
   const formContainerRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
@@ -284,6 +292,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
         }
         if (data.numberOfShares) setNumberOfShares(data.numberOfShares);
         if (data.paymentMode) setPaymentMode(data.paymentMode);
+        if (data.bankLedgerId) setSelectedBankLedgerId(Number(data.bankLedgerId));
         if (data.voucher?.narration) setNarration(data.voucher.narration);
         if (data.voucher?.voucherDate) setTransactionDate(data.voucher.voucherDate.split('T')[0]);
       }
@@ -385,18 +394,8 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
         if (data.length > 0) {
           setSelectedSourceLedgerId(data[0].ledgerID);
 
-          const bLedgers = data.filter((l: any) => 
-            (l.accountType || '').toLowerCase() === 'bank' || 
-            (l.groupName || '').includes('बँक') || 
-            (l.groupName || '').toLowerCase().includes('bank') || 
-            (l.ledgerName || '').includes('बँक') || 
-            (l.ledgerName || '').toLowerCase().includes('bank')
-          );
-          if (bLedgers.length > 0) {
-            setSelectedBankLedgerId(bLedgers[0].ledgerID);
-          } else {
-            setSelectedBankLedgerId(data[0].ledgerID);
-          }
+          const bLedgers = filterBankAccountLedgers(data);
+          setSelectedBankLedgerId(bLedgers.length > 0 ? bLedgers[0].ledgerID : '');
 
           const cLedgers = data.filter((l: any) => 
             (l.accountType || '').toLowerCase() === 'cash' || 
@@ -594,8 +593,8 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
       setMessage({ text: '⚠️ कृपया रक्कम वर्ग करण्यासाठी बचत खाते निवडा.', type: 'error' });
       return;
     }
-    if (paymentMode === 'Bank' && !selectedBankLedgerId) {
-      setMessage({ text: '⚠️ कृपया बँक खाते लेजर निवडा.', type: 'error' });
+    if (paymentMode === 'Bank' && (!selectedBankLedgerId || Number(selectedBankLedgerId) <= 0)) {
+      setMessage({ text: '⚠️ कृपया वैध बँक खाते लेजर निवडा.', type: 'error' });
       return;
     }
     if (paymentMode === 'LedgerTransfer' && !selectedSourceLedgerId) {
@@ -618,7 +617,7 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
       legacyAccountNumber: legacyAccountNo.trim() || null,
       paymentMode: paymentMode,
       savingAccountId: paymentMode === 'Transfer' ? selectedSavingAccountId : null,
-      bankLedgerId: paymentMode === 'Bank' ? selectedBankLedgerId : null,
+      bankLedgerId: paymentMode === 'Bank' ? Number(selectedBankLedgerId) : null,
       sourceLedgerId: paymentMode === 'LedgerTransfer' ? selectedSourceLedgerId : null,
       chequeNo: paymentMode === 'Bank' ? chequeNo : null,
       narration: narration.trim() || 'भाग भांडवल वाटप'
@@ -751,24 +750,52 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
     }
   };
 
-  const handleCancelCertificate = async (cert: CertificateData) => {
-    const reason = window.prompt(`तुम्हाला प्रमाणपत्र क्र. ${cert.certificateNo} खरोखर रद्द करायचे आहे का? कृपया कारण प्रविष्ट करा:`);
-    if (!reason) return;
+  const handleCancelCertificate = (cert: CertificateData) => {
+    setCancelCertModal({ open: true, cert });
+    setCertCancelReason('');
+    setCertCancelPaymentMode('Cash');
+    const bLedgers = filterBankAccountLedgers(allLedgers);
+    setCertCancelBankLedgerId(bLedgers.length > 0 ? bLedgers[0].ledgerID : 0);
+    setCertCancelSavingAccountId(memberSavingAccounts.length > 0 ? memberSavingAccounts[0].savingAccountID : '');
+  };
+
+  const handleConfirmCancelCertificate = async () => {
+    if (!cancelCertModal.cert) return;
+    if (!certCancelReason.trim()) {
+      setMessage({ text: '⚠️ कृपया प्रमाणपत्र रद्दीकरणाचे कारण प्रविष्ट करा.', type: 'error' });
+      return;
+    }
+    if (certCancelPaymentMode === 'Transfer' && !certCancelSavingAccountId) {
+      setMessage({ text: '⚠️ कृपया परतावा जमा करण्यासाठी सभासदाचे बचत खाते निवडा.', type: 'error' });
+      return;
+    }
+    if (certCancelPaymentMode === 'Bank' && (!certCancelBankLedgerId || certCancelBankLedgerId <= 0)) {
+      setMessage({ text: '⚠️ बँक परताव्यासाठी कृपया वैध बँक खाते लेजर निवडा.', type: 'error' });
+      return;
+    }
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/ShareCertificates/${cert.certificateId}/Cancel`, {
+      const res = await fetch(`/api/ShareCertificates/${cancelCertModal.cert.certificateId}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason })
+        body: JSON.stringify({
+          reason: certCancelReason.trim(),
+          paymentMode: certCancelPaymentMode,
+          savingAccountId: certCancelPaymentMode === 'Transfer' ? Number(certCancelSavingAccountId) : null,
+          bankLedgerId: certCancelPaymentMode === 'Bank' ? certCancelBankLedgerId : null
+        })
       });
 
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setMessage({ text: '✅ प्रमाणपत्र रद्द केले.', type: 'success' });
+        setMessage({ text: `✅ ${data.message || 'प्रमाणपत्र यशस्वीरीत्या रद्द केले.'}`, type: 'success' });
+        setCancelCertModal({ open: false, cert: null });
         if (selectedMemberId) loadShareData(selectedMemberId as number);
+        fetchAllTransactions();
+        fetchNextShareConfig();
       } else {
-        const err = await res.json();
-        setMessage({ text: `❌ त्रुटी: ${err.message || ''}`, type: 'error' });
+        setMessage({ text: `❌ त्रुटी: ${data.message || data || 'प्रमाणपत्र रद्दीकरण अयशस्वी.'}`, type: 'error' });
       }
     } catch (e) {
       setMessage({ text: 'सर्व्हर त्रुटी.', type: 'error' });
@@ -1260,15 +1287,12 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
               {paymentMode === 'Bank' && (
                 <>
                   <div>
-                    <label className={labelClass}>बँक लेजर निवडा <span className="text-red-500">*</span></label>
-                    <SearchableSelect 
-                      options={allLedgers.map(l => ({ value: l.ledgerID.toString(), label: `${l.ledgerName} (₹${(l.currentBalance || 0).toFixed(0)})` }))}
-                      value={selectedBankLedgerId ? selectedBankLedgerId.toString() : ''}
-                      onChange={(e: any) => {
-                        const val = e?.target ? e.target.value : e;
-                        setSelectedBankLedgerId(val ? parseInt(String(val), 10) : '');
-                      }}
-                      placeholder="बँक निवडा..."
+                    <BankLedgerSelect
+                      ledgers={allLedgers}
+                      value={selectedBankLedgerId}
+                      onChange={(id) => setSelectedBankLedgerId(id || '')}
+                      disabled={isPassing}
+                      showCountBadge
                     />
                   </div>
                   <div>
@@ -2058,6 +2082,121 @@ export default function ShareMaster({ initialMemberId, onNavigate, voucherId, is
                 className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-bold cursor-pointer text-xs"
               >
                 बंद करा
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Certificate Cancellation Modal */}
+      {cancelCertModal.open && cancelCertModal.cert && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-5 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <h3 className="text-sm font-bold text-rose-700 flex items-center gap-2">
+                <XCircle className="w-5 h-5" />
+                शेअर प्रमाणपत्र रद्द व परतावा (Cancel Certificate)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setCancelCertModal({ open: false, cert: null })}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-rose-50 border border-rose-200 rounded p-2.5 text-xs text-rose-950 space-y-1">
+              <div className="flex justify-between">
+                <span className="font-semibold">प्रमाणपत्र क्र.:</span>
+                <span className="font-mono font-bold">{cancelCertModal.cert.certificateNo}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-semibold">शेअर्स व परतावा रक्कम:</span>
+                <span className="font-bold">
+                  {cancelCertModal.cert.numberOfShares} शेअर्स (₹{(cancelCertModal.cert.totalAmount || cancelCertModal.cert.numberOfShares * cancelCertModal.cert.faceValue).toFixed(2)})
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                परतावा पेमेंट पद्धत (Refund Payment Mode) <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={certCancelPaymentMode}
+                onChange={(e) => setCertCancelPaymentMode(e.target.value as 'Cash' | 'Transfer' | 'Bank')}
+                className={inputClass}
+              >
+                <option value="Cash">💵 रोख (Cash)</option>
+                <option value="Transfer">🔄 बचत खात्यात वर्ग (Saving Transfer)</option>
+                <option value="Bank">🏦 बँक ट्रान्सफर / चेक (Bank Account)</option>
+              </select>
+            </div>
+
+            {certCancelPaymentMode === 'Transfer' && (
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  बचत खाते निवडा <span className="text-rose-500">*</span>
+                </label>
+                {memberSavingAccounts.length > 0 ? (
+                  <select
+                    value={certCancelSavingAccountId}
+                    onChange={(e) => setCertCancelSavingAccountId(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                    className={inputClass}
+                  >
+                    {memberSavingAccounts.map((acc: any) => (
+                      <option key={acc.savingAccountID} value={acc.savingAccountID}>
+                        {acc.accountNo} (शिल्लक: ₹{(acc.currentBalance || 0).toFixed(2)})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="text-[10px] text-rose-600 font-bold bg-rose-50 p-1.5 rounded border border-rose-200">
+                    ⚠️ या सभासदाचे सक्रिय बचत खाते उपलब्ध नाही.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {certCancelPaymentMode === 'Bank' && (
+              <div>
+                <BankLedgerSelect
+                  ledgers={allLedgers}
+                  value={certCancelBankLedgerId}
+                  onChange={(id) => setCertCancelBankLedgerId(id)}
+                  showCountBadge
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                रद्दीकरणाचे कारण (Cancellation Reason) <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                value={certCancelReason}
+                onChange={(e) => setCertCancelReason(e.target.value)}
+                placeholder="उदा. सभासद विनंतीनुसार / चुकीची नोंद दुरुस्ती..."
+                className="w-full h-20 p-2 text-xs border border-slate-300 rounded focus:ring-1 focus:ring-rose-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setCancelCertModal({ open: false, cert: null })}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded cursor-pointer"
+              >
+                मागे (Cancel)
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCancelCertificate}
+                disabled={loading || !certCancelReason.trim() || (certCancelPaymentMode === 'Bank' && certCancelBankLedgerId <= 0) || (certCancelPaymentMode === 'Transfer' && !certCancelSavingAccountId)}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded shadow cursor-pointer disabled:opacity-50"
+              >
+                {loading ? 'प्रक्रिया सुरू आहे...' : 'प्रमाणपत्र रद्द करा'}
               </button>
             </div>
           </div>

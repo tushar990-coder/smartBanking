@@ -1,4 +1,5 @@
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -167,7 +168,8 @@ export default function RdAccountOpening({
     interestRate: 8.0,
     maturityDate: '',
     maturityAmount: 0,
-    paymentMode: 'Cash', // Cash, AutoDebit_Saving
+    paymentMode: 'Cash', // Cash, Bank, AutoDebit_Saving
+    bankLedgerID: 0,
     savingAccountID: '',
     maturityInstruction: 'Cash_Payout', // Credit_Saving, Cash_Payout, Transfer_FD
     agentID: '',
@@ -278,6 +280,7 @@ export default function RdAccountOpening({
           nomineeRelation: rdAccount.nomineeRelation || '',
           remarks: rdAccount.remarks || '',
           paymentMode: rdAccount.paymentMode || 'Cash',
+          bankLedgerID: Number(rdAccount.bankLedgerID || rdAccount.bankAccountLedgerID || 0),
           savingAccountID: rdAccount.savingAccountID?.toString() || ''
         }));
       }
@@ -604,6 +607,7 @@ export default function RdAccountOpening({
       maturityDate: '',
       maturityAmount: 0,
       paymentMode: 'Cash',
+      bankLedgerID: 0,
       savingAccountID: '',
       maturityInstruction: 'Cash_Payout',
       agentID: '',
@@ -642,6 +646,10 @@ export default function RdAccountOpening({
       setError('ऑटो-डेबिटसाठी कृपया खातेदाराचे बचत खाते निवडा.');
       return;
     }
+    if (formData.paymentMode === 'Bank' && (!formData.bankLedgerID || Number(formData.bankLedgerID) <= 0)) {
+      setError('बँक ट्रान्सफरसाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
+      return;
+    }
 
     setLoading(true);
     setError('');
@@ -655,6 +663,7 @@ export default function RdAccountOpening({
         customerID: parseInt(formData.memberID, 10),
         rdSchemeID: parseInt(formData.rdSchemeID, 10),
         jointCustomerID: formData.accountType === 'Joint' && formData.jointMemberID ? parseInt(formData.jointMemberID, 10) : null,
+        bankLedgerID: formData.paymentMode === 'Bank' && Number(formData.bankLedgerID) > 0 ? Number(formData.bankLedgerID) : null,
         savingAccountID: formData.paymentMode === 'AutoDebit_Saving' && formData.savingAccountID ? parseInt(formData.savingAccountID, 10) : null,
         agentID: formData.agentID ? parseInt(formData.agentID, 10) : null,
         installmentAmount: parseFloat(formData.installmentAmount as any) || 0,
@@ -1097,13 +1106,14 @@ export default function RdAccountOpening({
                       <div className="sm:col-span-4">
                         <label className={labelClass}>हप्ता भरणा मोड <span className="text-red-500">*</span></label>
                         <select name="paymentMode" value={formData.paymentMode} onChange={handleChange} className={inputClass}>
-                          <option value="Cash">रोख (Cash)</option>
-                          <option value="AutoDebit_Saving">बचत खात्यातून ऑटो-डेबिट (Auto-Debit)</option>
+                          <option value="Cash">💵 रोख (Cash)</option>
+                          <option value="Bank">🏦 बँक ट्रान्सफर (Bank Transfer)</option>
+                          <option value="AutoDebit_Saving">💳 बचत खात्यातून ऑटो-डेबिट (Auto-Debit)</option>
                         </select>
                       </div>
                     </div>
 
-                    {/* Auto-Debit Linked Saving Account / Cash Badge Row */}
+                    {/* Auto-Debit Linked Saving Account / Bank GL / Cash Badge Row */}
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-0.5">
                       {formData.paymentMode === 'AutoDebit_Saving' ? (
                         <div className="sm:col-span-6">
@@ -1116,6 +1126,15 @@ export default function RdAccountOpening({
                               </option>
                             ))}
                           </select>
+                        </div>
+                      ) : formData.paymentMode === 'Bank' ? (
+                        <div className="sm:col-span-6 p-2 bg-blue-50/70 border border-blue-200 rounded">
+                          <BankLedgerSelect
+                            value={formData.bankLedgerID}
+                            onChange={(id) => setFormData((prev) => ({ ...prev, bankLedgerID: id }))}
+                            disabled={isPassingMode}
+                            showCountBadge
+                          />
                         </div>
                       ) : (
                         <div className="sm:col-span-6 flex items-center">
@@ -1280,7 +1299,11 @@ export default function RdAccountOpening({
                       <div className="flex items-center justify-between p-2">
                         <span className="text-slate-600 text-[11px]">भरणा पद्धत:</span>
                         <span className="font-semibold text-slate-800 text-[11px]">
-                          {formData.paymentMode === 'Cash' ? '💵 रोख भरणा' : '🏦 ऑटो-डेबिट (बचत)'}
+                          {formData.paymentMode === 'Cash'
+                            ? '💵 रोख भरणा'
+                            : formData.paymentMode === 'Bank'
+                              ? '🏦 बँक ट्रान्सफर'
+                              : '💳 ऑटो-डेबिट (बचत)'}
                         </span>
                       </div>
                     </div>
@@ -1348,7 +1371,9 @@ export default function RdAccountOpening({
                           <span>
                             {formData.paymentMode === 'AutoDebit_Saving'
                               ? 'पहिला हप्ता बचत खात्यातून ऑटो-डेबिट होऊन व्हाउचर तयार होईल.'
-                              : 'पहिला हप्ता रोख जमा होऊन स्वयंचलित पावती व्हाउचर पोस्ट होईल.'}
+                              : formData.paymentMode === 'Bank'
+                                ? 'पहिला हप्ता निवडलेल्या बँक जी.एल. खात्यात जमा होऊन पावती व्हाउचर तयार होईल.'
+                                : 'पहिला हप्ता रोख जमा होऊन स्वयंचलित पावती व्हाउचर पोस्ट होईल.'}
                           </span>
                         </div>
                       </>

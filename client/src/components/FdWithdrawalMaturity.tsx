@@ -26,7 +26,9 @@ import {
   Printer
 } from 'lucide-react';
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import SearchableSelect from './SearchableSelect';
+import { RawLedgerItem, filterBankAccountLedgers } from '../utils/bankLedgerUtils';
 import { FdInterestScheduleModal, FdScheduleOverdueInfo } from './FdInterestScheduleModal';
 import { generateFdInterestSchedule, FdScheduleSummary } from '../utils/fdInterestSchedule';
 import FdReceiptPrintModal from './FdReceiptPrintModal';
@@ -238,6 +240,7 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
   const [accounts, setAccounts] = useState<FdAccount[]>([]);
   const [schemes, setSchemes] = useState<FdScheme[]>([]);
+  const [allLedgers, setAllLedgers] = useState<RawLedgerItem[]>([]);
   const [bankLedgers, setBankLedgers] = useState<Ledger[]>([]);
   const [selectedAccId, setSelectedAccId] = useState<number>(0);
   const [selectedAccount, setSelectedAccount] = useState<FdAccount | null>(null);
@@ -301,8 +304,13 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const [chequeDate, setChequeDate] = useState<string>(activeBusinessDate);
   const [memberSavingAccounts, setMemberSavingAccounts] = useState<SavingAccount[]>([]);
   const [selectedSavingAccountId, setSelectedSavingAccountId] = useState<number | ''>('');
+  const [adjustInLoan, setAdjustInLoan] = useState<boolean>(false);
+  const [targetLoanAccountId, setTargetLoanAccountId] = useState<number>(0);
+  const [loanAdjustmentAmount, setLoanAdjustmentAmount] = useState<string>('');
+  const [surplusPaymentMode, setSurplusPaymentMode] = useState<'Cash' | 'Bank' | 'Transfer'>('Cash');
   const [surplusBankLedgerID, setSurplusBankLedgerID] = useState<number>(0);
   const [surplusSavingAccountId, setSurplusSavingAccountId] = useState<number | ''>('');
+  const [surplusChequeNo, setSurplusChequeNo] = useState<string>('');
   const [narration, setNarration] = useState<string>('');
 
   // Active Loans Info state (Informational only)
@@ -540,25 +548,10 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
   const fetchBankLedgers = async () => {
     try {
       const res = await axios.get(`${API_URL}/Ledgers`);
-      const allLedgers: Ledger[] = Array.isArray(res.data) ? res.data : [];
-      const bLedgers = allLedgers.filter((l: any) => {
-        if (!l) return false;
-        const name = (l.ledgerName || '').toLowerCase();
-        const type = (l.accountType || '').toLowerCase();
-        const group = l.groupID || 0;
-        return (
-          type.includes('bank') ||
-          name.includes('bank') ||
-          name.includes('बँक') ||
-          group === 12 || group === 8 || group === 9
-        );
-      });
-      const finalBankList = bLedgers.length > 0 ? bLedgers : allLedgers;
-      setBankLedgers(finalBankList);
-      if (finalBankList.length > 0) {
-        setBankAccountLedgerID(finalBankList[0].ledgerID);
-        setSurplusBankLedgerID(finalBankList[0].ledgerID);
-      }
+      const rawLedgers: RawLedgerItem[] = Array.isArray(res.data) ? res.data : [];
+      setAllLedgers(rawLedgers);
+      const filteredBanks = filterBankAccountLedgers(rawLedgers);
+      setBankLedgers(filteredBanks as Ledger[]);
     } catch (e) {
       console.error('Error fetching bank ledgers', e);
     }
@@ -606,6 +599,14 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       });
       const data: ActiveLoansResponse = res.data;
       setActiveLoansData(data);
+      if (data?.hasActiveLoan && Array.isArray(data.loans) && data.loans.length > 0) {
+        setTargetLoanAccountId(prev =>
+          prev > 0 && data.loans.some(l => l.loanAccountId === prev) ? prev : data.loans[0].loanAccountId
+        );
+      } else {
+        setTargetLoanAccountId(0);
+        setAdjustInLoan(false);
+      }
     } catch (err) {
       console.error('Error fetching active loans', err);
       setActiveLoansData(null);
@@ -828,6 +829,11 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
     setSelectedAccount(selected);
     setError('');
     setSuccess('');
+    setAdjustInLoan(false);
+    setLoanAdjustmentAmount('');
+    setSurplusPaymentMode('Cash');
+    setSurplusBankLedgerID(0);
+    setSurplusChequeNo('');
     handleResetManualOverride();
     if (selected) {
       fetchCustomerSavingsAccounts(selected.customerID, selected.memberID);
@@ -957,7 +963,8 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
 
   // Savings Transfer Backdating Validation (Prevent Scrambling Passbook Running Balance & SMS Mismatch)
   const isBackdatedSavingsTransfer = Boolean(
-    ((actionType === 'MaturityClose' || actionType === 'PrematureClose') && paymentMode === 'Transfer' && closureDate < todayStr) ||
+    ((actionType === 'MaturityClose' || actionType === 'PrematureClose') && !adjustInLoan && paymentMode === 'Transfer' && closureDate < todayStr) ||
+    ((actionType === 'MaturityClose' || actionType === 'PrematureClose') && adjustInLoan && surplusPaymentMode === 'Transfer' && closureDate < todayStr) ||
     (actionType === 'Renewal' && renewalType === 'PrincipalOnly' && paymentMode === 'Transfer' && Boolean(selectedSavingAccountId) && closureDate < todayStr)
   );
 
@@ -1305,23 +1312,69 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       return;
     }
 
-    // Standard Payment Mode Validations
-    if ((actionType === 'MaturityClose' || actionType === 'PrematureClose' || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && paymentMode === 'Bank') {
-      if (!bankAccountLedgerID || bankAccountLedgerID <= 0) {
-        setError('कृपया बँक खाते लेजर निवडा.');
+    const isClosureAction = actionType === 'MaturityClose' || actionType === 'PrematureClose';
+    const hasActiveLoanForAdjust = Boolean(activeLoansData?.hasActiveLoan && Array.isArray(activeLoansData?.loans) && activeLoansData.loans.length > 0);
+    const isLoanAdjustActive = Boolean(isClosureAction && adjustInLoan && hasActiveLoanForAdjust);
+
+    let effectiveTargetLoanId = 0;
+    let effectiveLoanAdjustVal = 0;
+    let surplusVal = 0;
+
+    if (isLoanAdjustActive && activeLoansData) {
+      const totalPayoutForAdjust = getTotalFdPayout();
+      const targetLoanObj =
+        activeLoansData.loans.find(l => l.loanAccountId === targetLoanAccountId) || activeLoansData.loans[0];
+      if (!targetLoanObj || !targetLoanObj.loanAccountId) {
+        setError('कृपया मुदत ठेवीची रक्कम समायोजित करण्यासाठी कर्ज खाते निवडा.');
         return;
       }
-    }
-
-    if ((actionType === 'MaturityClose' || actionType === 'PrematureClose' || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && paymentMode === 'Transfer') {
-      if (!selectedSavingAccountId || selectedSavingAccountId <= 0) {
-        setError('⚠️ रक्कम वर्ग करण्यासाठी खातेदाराचे कोणतेही सक्रिय बचत खाते निवडलेले नाही.');
+      effectiveTargetLoanId = targetLoanObj.loanAccountId;
+      const maxAdj = Math.min(totalPayoutForAdjust, targetLoanObj.totalDue);
+      effectiveLoanAdjustVal =
+        loanAdjustmentAmount !== ''
+          ? Math.min(Math.max(0, parseFloat(loanAdjustmentAmount) || 0), maxAdj)
+          : maxAdj;
+      if (effectiveLoanAdjustVal <= 0) {
+        setError('कर्जात समायोजित करावयाची रक्कम शून्यापेक्षा जास्त असणे आवश्यक आहे.');
         return;
       }
+      surplusVal = Math.max(0, Number((totalPayoutForAdjust - effectiveLoanAdjustVal).toFixed(2)));
 
-      if (isBackdatedSavingsTransfer) {
-        setError(`⚠️ बचत खात्यातील पासबुक विसंगती प्रतिबंध! बचत खात्यात (Saving Account Transfer) परतावा वर्ग करताना मागील तारीख (${closureDate.split('-').reverse().join('/')}) अनुज्ञेय नाही. पासबुकमधील रनिंग शिल्लक व एसएमएस ताळमेळ अचूक राहण्यासाठी हस्तांतरण आजच्याच तारखेने (${todayStr.split('-').reverse().join('/')}) होणे आवश्यक आहे.`);
-        return;
+      if (surplusVal > 0) {
+        if (surplusPaymentMode === 'Bank' && (!surplusBankLedgerID || surplusBankLedgerID <= 0)) {
+          setError('शिल्लक परतावा बँकेद्वारे अदा करण्यासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+          return;
+        }
+        if (surplusPaymentMode === 'Transfer') {
+          if (!surplusSavingAccountId || Number(surplusSavingAccountId) <= 0) {
+            setError('⚠️ शिल्लक परतावा वर्ग करण्यासाठी खातेदाराचे कोणतेही सक्रिय बचत खाते निवडलेले नाही.');
+            return;
+          }
+          if (closureDate < todayStr) {
+            setError(`⚠️ बचत खात्यातील पासबुक विसंगती प्रतिबंध! शिल्लक परतावा बचत खात्यात वर्ग करताना मागील तारीख (${closureDate.split('-').reverse().join('/')}) अनुज्ञेय नाही.`);
+            return;
+          }
+        }
+      }
+    } else {
+      // Standard Payment Mode Validations
+      if ((isClosureAction || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && paymentMode === 'Bank') {
+        if (!bankAccountLedgerID || bankAccountLedgerID <= 0) {
+          setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+          return;
+        }
+      }
+
+      if ((isClosureAction || (actionType === 'Renewal' && renewalType === 'PrincipalOnly')) && paymentMode === 'Transfer') {
+        if (!selectedSavingAccountId || selectedSavingAccountId <= 0) {
+          setError('⚠️ रक्कम वर्ग करण्यासाठी खातेदाराचे कोणतेही सक्रिय बचत खाते निवडलेले नाही.');
+          return;
+        }
+
+        if (isBackdatedSavingsTransfer) {
+          setError(`⚠️ बचत खात्यातील पासबुक विसंगती प्रतिबंध! बचत खात्यात (Saving Account Transfer) परतावा वर्ग करताना मागील तारीख (${closureDate.split('-').reverse().join('/')}) अनुज्ञेय नाही. पासबुकमधील रनिंग शिल्लक व एसएमएस ताळमेळ अचूक राहण्यासाठी हस्तांतरण आजच्याच तारखेने (${todayStr.split('-').reverse().join('/')}) होणे आवश्यक आहे.`);
+          return;
+        }
       }
     }
 
@@ -1330,11 +1383,20 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
       const basePayload: any = {
         closureDate: closureDate,
         paymentMode: paymentMode,
-        bankAccountLedgerID: paymentMode === 'Bank' ? bankAccountLedgerID : null,
-        chequeNo: paymentMode === 'Bank' ? chequeNo : null,
-        chequeDate: paymentMode === 'Bank' ? chequeDate : null,
-        savingAccountID: paymentMode === 'Transfer' ? selectedSavingAccountId : null,
+        bankAccountLedgerID: !isLoanAdjustActive && paymentMode === 'Bank' ? bankAccountLedgerID : null,
+        chequeNo: !isLoanAdjustActive && paymentMode === 'Bank' ? chequeNo : null,
+        chequeDate: !isLoanAdjustActive && paymentMode === 'Bank' ? chequeDate : null,
+        savingAccountID: !isLoanAdjustActive && paymentMode === 'Transfer' ? selectedSavingAccountId : null,
         narration: narration || null,
+        // 🛡️ Lien & Loan Recovery + Surplus Payout Support
+        adjustInLoan: isLoanAdjustActive,
+        targetLoanAccountID: isLoanAdjustActive ? effectiveTargetLoanId : null,
+        loanAdjustmentAmount: isLoanAdjustActive ? effectiveLoanAdjustVal : null,
+        surplusPaymentMode: isLoanAdjustActive ? surplusPaymentMode : 'Cash',
+        surplusBankLedgerID: isLoanAdjustActive && surplusVal > 0 && surplusPaymentMode === 'Bank' ? surplusBankLedgerID : null,
+        surplusSavingAccountID: isLoanAdjustActive && surplusVal > 0 && surplusPaymentMode === 'Transfer' ? Number(surplusSavingAccountId) : null,
+        surplusChequeNo: isLoanAdjustActive && surplusVal > 0 && surplusPaymentMode === 'Bank' ? (surplusChequeNo.trim() || null) : null,
+        surplusChequeDate: isLoanAdjustActive && surplusVal > 0 && surplusPaymentMode === 'Bank' ? chequeDate : null,
         // ✍️ Manual Amount Override (Legacy Reconciliation)
         isManualAmountOverride: isManualOverride,
         customAccruedInterest: isManualOverride 
@@ -2694,83 +2756,239 @@ const FdWithdrawalMaturity: React.FC<FdWithdrawalMaturityProps> = ({
                               </div>
                             ) : (
                               <>
-                                <FormRow label={actionType === 'Renewal' ? 'व्याज पेमेंट पद्धत (Mode)' : 'पेमेंट पद्धत (Mode)'} required>
-                                  <select
-                                    value={paymentMode}
-                                    onChange={(e) => setPaymentMode(e.target.value as 'Cash' | 'Bank' | 'Transfer')}
-                                    className={`${ctrl} font-semibold cursor-pointer`}
-                                  >
-                                    <option value="Cash">रोख (Cash)</option>
-                                    <option value="Bank">बँक (Bank)</option>
-                                    <option value="Transfer">बचत खात्यात वर्ग (Saving Transfer)</option>
-                                  </select>
-                                </FormRow>
+                                {(actionType === 'MaturityClose' || actionType === 'PrematureClose') &&
+                                  hasLien &&
+                                  activeLoansData &&
+                                  Array.isArray(activeLoansData.loans) &&
+                                  activeLoansData.loans.length > 0 && (() => {
+                                    const selectedLoanObj =
+                                      activeLoansData.loans.find(l => l.loanAccountId === targetLoanAccountId) ||
+                                      activeLoansData.loans[0];
+                                    const maxLoanAdj = selectedLoanObj ? Math.min(netPayout, selectedLoanObj.totalDue) : 0;
+                                    const effLoanAdj = adjustInLoan
+                                      ? (loanAdjustmentAmount !== ''
+                                          ? Math.min(Math.max(0, parseFloat(loanAdjustmentAmount) || 0), maxLoanAdj)
+                                          : maxLoanAdj)
+                                      : 0;
+                                    const surplusAmt = adjustInLoan
+                                      ? Math.max(0, Number((netPayout - effLoanAdj).toFixed(2)))
+                                      : 0;
 
-                                {paymentMode === 'Cash' && (
-                                  <FormRow label="रोख खाते (Cash Ledger)" align="start">
-                                    <CashLedgerReflectBadge
-                                      branchId={acc.branchID}
-                                      transactionType="Withdrawal"
-                                      customTitle="रोख खाते (Cash Ledger)"
-                                      className="!py-1.5 !px-2"
-                                    />
-                                  </FormRow>
-                                )}
+                                    return (
+                                      <div className="bg-amber-50/70 border border-amber-300 rounded-sm p-2.5 space-y-2 mb-1">
+                                        <label className="flex items-center gap-2 text-xs font-bold text-amber-950 cursor-pointer select-none">
+                                          <input
+                                            type="checkbox"
+                                            checked={adjustInLoan}
+                                            onChange={(e) => {
+                                              const checked = e.target.checked;
+                                              setAdjustInLoan(checked);
+                                              if (checked && selectedLoanObj) {
+                                                setTargetLoanAccountId(selectedLoanObj.loanAccountId);
+                                                setLoanAdjustmentAmount(String(Math.min(netPayout, selectedLoanObj.totalDue)));
+                                              }
+                                            }}
+                                            disabled={isPassingMode}
+                                            className="w-3.5 h-3.5 text-amber-600 rounded"
+                                          />
+                                          <span>
+                                            🛡️ सक्रिय कर्ज खात्यात परतावा रक्कम समायोजित करा (Adjust in Active Loan — एकूण कर्ज बाकी: ₹{fmt(activeLoansData.totalOutstandingLiability || 0)})
+                                          </span>
+                                        </label>
 
-                                {paymentMode === 'Bank' && (
-                                  <>
-                                    <FormRow label="बँक लेजर (Bank GL)" required>
-                                      <SearchableSelect
-                                        options={bankLedgers.map(b => ({
-                                          value: b.ledgerID.toString(),
-                                          label: `${b.ledgerID} - ${b.ledgerName}`
-                                        }))}
-                                        value={bankAccountLedgerID.toString()}
-                                        onChange={(val: any) => {
-                                          const v = typeof val === 'object' && val?.target ? val.target.value : val;
-                                          setBankAccountLedgerID(parseInt(String(v || 0)));
-                                        }}
-                                        placeholder="बँक खाते शोधा..."
-                                        disabled={isPassingMode}
-                                      />
-                                    </FormRow>
-                                    <FormRow label="धनादेश / UTR क्र.">
-                                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_170px] gap-2">
-                                        <input
-                                          type="text"
-                                          value={chequeNo}
-                                          onChange={(e) => setChequeNo(e.target.value)}
-                                          placeholder="उदा. Cheque 123456 / UTR"
-                                          className={`${ctrl} font-semibold`}
-                                        />
-                                        <input
-                                          type="date"
-                                          value={chequeDate}
-                                          onChange={(e) => setChequeDate(e.target.value)}
-                                          className={ctrl}
-                                          title="धनादेश तारीख (Cheque Date)"
-                                        />
+                                        {adjustInLoan && (
+                                          <div className="space-y-2 pt-1.5 border-t border-amber-200">
+                                            <FormRow label="कर्ज खाते (Loan A/c)" required>
+                                              <select
+                                                value={selectedLoanObj?.loanAccountId || 0}
+                                                onChange={(e) => {
+                                                  const newLoanId = parseInt(e.target.value) || 0;
+                                                  setTargetLoanAccountId(newLoanId);
+                                                  const foundLoan = activeLoansData.loans.find(l => l.loanAccountId === newLoanId);
+                                                  if (foundLoan) {
+                                                    setLoanAdjustmentAmount(String(Math.min(netPayout, foundLoan.totalDue)));
+                                                  }
+                                                }}
+                                                className={`${ctrl} font-semibold cursor-pointer`}
+                                              >
+                                                {activeLoansData.loans.map(ln => (
+                                                  <option key={ln.loanAccountId} value={ln.loanAccountId}>
+                                                    {ln.loanAccountNo} - {ln.loanType} (एकूण येणे: ₹{fmt(ln.totalDue)})
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </FormRow>
+
+                                            <FormRow label="कर्जात जमा रक्कम (₹)" required>
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <input
+                                                  type="number"
+                                                  step="0.01"
+                                                  min="0.01"
+                                                  max={maxLoanAdj}
+                                                  value={loanAdjustmentAmount !== '' ? loanAdjustmentAmount : maxLoanAdj}
+                                                  onChange={(e) => setLoanAdjustmentAmount(e.target.value)}
+                                                  className={`${ctrl} !w-40 font-mono font-bold`}
+                                                />
+                                                <span className="text-[11px] text-amber-900 font-semibold">
+                                                  कमाल मर्यादा: ₹{fmt(maxLoanAdj)} • उर्वरित शिल्लक परतावा (Surplus):{' '}
+                                                  <strong className="text-emerald-800 font-mono">₹{fmt(surplusAmt)}</strong>
+                                                </span>
+                                              </div>
+                                            </FormRow>
+
+                                            {surplusAmt > 0 && (
+                                              <div className="bg-white border border-blue-200 rounded-sm p-2.5 space-y-2">
+                                                <div className="text-[11px] font-bold text-blue-900">
+                                                  शिल्लक परतावा वाटप (Surplus Payout: ₹{fmt(surplusAmt)})
+                                                </div>
+
+                                                <FormRow label="शिल्लक परतावा पद्धत" required>
+                                                  <select
+                                                    value={surplusPaymentMode}
+                                                    onChange={(e) => setSurplusPaymentMode(e.target.value as 'Cash' | 'Bank' | 'Transfer')}
+                                                    className={`${ctrl} font-semibold cursor-pointer`}
+                                                  >
+                                                    <option value="Cash">रोख (Cash)</option>
+                                                    <option value="Bank">बँक (Bank)</option>
+                                                    <option value="Transfer">बचत खात्यात वर्ग (Saving Transfer)</option>
+                                                  </select>
+                                                </FormRow>
+
+                                                {surplusPaymentMode === 'Cash' && (
+                                                  <FormRow label="रोख खाते (Cash Ledger)" align="start">
+                                                    <CashLedgerReflectBadge
+                                                      branchId={acc.branchID}
+                                                      transactionType="Withdrawal"
+                                                      customTitle="शिल्लक रोख परतावा खाते"
+                                                      className="!py-1.5 !px-2"
+                                                    />
+                                                  </FormRow>
+                                                )}
+
+                                                {surplusPaymentMode === 'Bank' && (
+                                                  <>
+                                                    <FormRow label="शिल्लक बँक लेजर (Bank GL)" required align="start">
+                                                      <BankLedgerSelect
+                                                        ledgers={allLedgers}
+                                                        value={surplusBankLedgerID}
+                                                        onChange={(id) => setSurplusBankLedgerID(id)}
+                                                        disabled={isPassingMode}
+                                                        showCountBadge
+                                                      />
+                                                    </FormRow>
+                                                    <FormRow label="धनादेश / UTR क्र.">
+                                                      <input
+                                                        type="text"
+                                                        value={surplusChequeNo}
+                                                        onChange={(e) => setSurplusChequeNo(e.target.value)}
+                                                        placeholder="उदा. Cheque 123456 / UTR"
+                                                        className={`${ctrl} font-semibold`}
+                                                      />
+                                                    </FormRow>
+                                                  </>
+                                                )}
+
+                                                {surplusPaymentMode === 'Transfer' && (
+                                                  <FormRow label="शिल्लक बचत खाते (Saving A/c)" required>
+                                                    <select
+                                                      value={surplusSavingAccountId}
+                                                      onChange={(e) => setSurplusSavingAccountId(e.target.value ? parseInt(e.target.value) : '')}
+                                                      className={`${ctrl} font-semibold cursor-pointer`}
+                                                      required
+                                                    >
+                                                      <option value="">-- बचत खाते निवडा --</option>
+                                                      {memberSavingAccounts.map(s => (
+                                                        <option key={s.savingAccountID} value={s.savingAccountID}>
+                                                          {s.accountNo} (शिल्लक: ₹{s.currentBalance.toLocaleString()})
+                                                        </option>
+                                                      ))}
+                                                    </select>
+                                                  </FormRow>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
-                                    </FormRow>
-                                  </>
-                                )}
+                                    );
+                                  })()}
 
-                                {paymentMode === 'Transfer' && (
-                                  <FormRow label="बचत खाते (Saving A/c)" required>
-                                    <select
-                                      value={selectedSavingAccountId}
-                                      onChange={(e) => setSelectedSavingAccountId(e.target.value ? parseInt(e.target.value) : '')}
-                                      className={`${ctrl} font-semibold cursor-pointer`}
-                                      required
-                                    >
-                                      <option value="">-- बचत खाते निवडा --</option>
-                                      {memberSavingAccounts.map(s => (
-                                        <option key={s.savingAccountID} value={s.savingAccountID}>
-                                          {s.accountNo} (शिल्लक: ₹{s.currentBalance.toLocaleString()})
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </FormRow>
+                                {!((actionType === 'MaturityClose' || actionType === 'PrematureClose') && adjustInLoan && hasLien) && (
+                                  <>
+                                    <FormRow label={actionType === 'Renewal' ? 'व्याज पेमेंट पद्धत (Mode)' : 'पेमेंट पद्धत (Mode)'} required>
+                                      <select
+                                        value={paymentMode}
+                                        onChange={(e) => setPaymentMode(e.target.value as 'Cash' | 'Bank' | 'Transfer')}
+                                        className={`${ctrl} font-semibold cursor-pointer`}
+                                      >
+                                        <option value="Cash">रोख (Cash)</option>
+                                        <option value="Bank">बँक (Bank)</option>
+                                        <option value="Transfer">बचत खात्यात वर्ग (Saving Transfer)</option>
+                                      </select>
+                                    </FormRow>
+
+                                    {paymentMode === 'Cash' && (
+                                      <FormRow label="रोख खाते (Cash Ledger)" align="start">
+                                        <CashLedgerReflectBadge
+                                          branchId={acc.branchID}
+                                          transactionType="Withdrawal"
+                                          customTitle="रोख खाते (Cash Ledger)"
+                                          className="!py-1.5 !px-2"
+                                        />
+                                      </FormRow>
+                                    )}
+
+                                    {paymentMode === 'Bank' && (
+                                      <>
+                                        <FormRow label="बँक लेजर (Bank GL)" required align="start">
+                                          <BankLedgerSelect
+                                            ledgers={allLedgers}
+                                            value={bankAccountLedgerID}
+                                            onChange={(id) => setBankAccountLedgerID(id)}
+                                            disabled={isPassingMode}
+                                            showCountBadge
+                                          />
+                                        </FormRow>
+                                        <FormRow label="धनादेश / UTR क्र.">
+                                          <div className="grid grid-cols-1 sm:grid-cols-[1fr_170px] gap-2">
+                                            <input
+                                              type="text"
+                                              value={chequeNo}
+                                              onChange={(e) => setChequeNo(e.target.value)}
+                                              placeholder="उदा. Cheque 123456 / UTR"
+                                              className={`${ctrl} font-semibold`}
+                                            />
+                                            <input
+                                              type="date"
+                                              value={chequeDate}
+                                              onChange={(e) => setChequeDate(e.target.value)}
+                                              className={ctrl}
+                                              title="धनादेश तारीख (Cheque Date)"
+                                            />
+                                          </div>
+                                        </FormRow>
+                                      </>
+                                    )}
+
+                                    {paymentMode === 'Transfer' && (
+                                      <FormRow label="बचत खाते (Saving A/c)" required>
+                                        <select
+                                          value={selectedSavingAccountId}
+                                          onChange={(e) => setSelectedSavingAccountId(e.target.value ? parseInt(e.target.value) : '')}
+                                          className={`${ctrl} font-semibold cursor-pointer`}
+                                          required
+                                        >
+                                          <option value="">-- बचत खाते निवडा --</option>
+                                          {memberSavingAccounts.map(s => (
+                                            <option key={s.savingAccountID} value={s.savingAccountID}>
+                                              {s.accountNo} (शिल्लक: ₹{s.currentBalance.toLocaleString()})
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </FormRow>
+                                    )}
+                                  </>
                                 )}
 
                                 <FormRow label="तपशील / शेरा (Narration)">

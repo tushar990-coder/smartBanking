@@ -52,6 +52,7 @@ namespace Bhisi.Api.Controllers
                     s.DamagePenaltyDeduction,
                     s.NetRefundAmount,
                     s.RefundPaymentMode,
+                BankLedgerID = (s.RefundPaymentMode == "BankTransfer" || s.RefundPaymentMode == "Bank") && s.Voucher != null ? (s.Voucher.VoucherDetails.Where(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank")).Select(d => (int?)d.LedgerID).FirstOrDefault() ?? 0) : 0,
                     s.VoucherID,
                     VoucherNo = s.Voucher != null ? s.Voucher.VoucherNo : "",
                     s.Remarks,
@@ -151,6 +152,7 @@ namespace Bhisi.Api.Controllers
                 s.DamagePenaltyDeduction,
                 s.NetRefundAmount,
                 s.RefundPaymentMode,
+                BankLedgerID = (s.RefundPaymentMode == "BankTransfer" || s.RefundPaymentMode == "Bank") && s.Voucher != null ? (s.Voucher.VoucherDetails.Where(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank")).Select(d => (int?)d.LedgerID).FirstOrDefault() ?? 0) : 0,
                 s.Remarks,
                 Voucher = s.Voucher != null ? new {
                     s.Voucher.VoucherID,
@@ -192,6 +194,8 @@ namespace Bhisi.Api.Controllers
                 return BadRequest(new { message = $"हे लॉकर खाते आधीच बंद किंवा समर्पित केलेले आहे. स्थिती: {allotment.Status}" });
             }
 
+            int refundBankLedgerId = 0;
+            if (dto.NetRefundAmount > 0 && Helpers.BankLedgerHelper.IsBankPaymentMode(dto.RefundPaymentMode)) { var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerID); if (!bankCheck.IsValid) return BadRequest(new { message = bankCheck.ErrorMessage }); refundBankLedgerId = bankCheck.LedgerId; }
             int savingLiabilityLedgerId = 0;
             if (dto.NetRefundAmount > 0 && dto.RefundPaymentMode == "SavingCredit")
             {
@@ -225,7 +229,7 @@ namespace Bhisi.Api.Controllers
             {
                 int refundCreditLedgerId = dto.RefundPaymentMode == "SavingCredit"
                     ? savingLiabilityLedgerId
-                    : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, allotment.BranchID, "LOCKER");
+                    : (refundBankLedgerId > 0 ? refundBankLedgerId : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, allotment.BranchID, "LOCKER"));
 
                 int? allotmentCustomerId = allotment.CustomerID ?? allotment.Member?.CustomerID;
                 int? creditCustomerId = dto.RefundPaymentMode == "SavingCredit"
@@ -353,6 +357,8 @@ namespace Bhisi.Api.Controllers
         public decimal DamagePenaltyDeduction { get; set; }
         public decimal NetRefundAmount { get; set; }
         public string RefundPaymentMode { get; set; } = "Cash"; // Cash, SavingCredit, BankTransfer
+        public int? BankLedgerID { get; set; }
+        public string? ReferenceNo { get; set; }
         public string? Remarks { get; set; }
     }
 }

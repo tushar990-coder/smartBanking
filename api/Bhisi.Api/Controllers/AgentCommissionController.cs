@@ -316,6 +316,8 @@ namespace Bhisi.Api.Controllers
             public int? CashLedgerId { get; set; }
             public int? ExpenseLedgerId { get; set; }
             public int? AgentSavingAccountId { get; set; }
+            public int? BankLedgerId { get; set; }
+            public string? ReferenceNo { get; set; }
         }
 
         // POST: api/AgentCommission/Pay
@@ -385,7 +387,17 @@ namespace Bhisi.Api.Controllers
                 }
                 else
                 {
-                    if (request.CashLedgerId.HasValue && request.CashLedgerId.Value > 0)
+                    if (Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode))
+                    {
+                        var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                        if (!bankCheck.IsValid)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(bankCheck.ErrorMessage);
+                        }
+                        creditLedger = await _context.Ledgers.FindAsync(bankCheck.LedgerId) ?? bankCheck.Ledger;
+                    }
+                    else if (request.CashLedgerId.HasValue && request.CashLedgerId.Value > 0)
                     {
                         creditLedger = await _context.Ledgers.FindAsync(request.CashLedgerId.Value);
                     }
@@ -403,7 +415,8 @@ namespace Bhisi.Api.Controllers
                 string todayStr = effDate.ToString("yyyyMMdd");
                 string uniqueVoucherNo = $"VCH-COMM-{branchId}-{todayStr}-{Guid.NewGuid().ToString("N").Substring(0, 4)}";
 
-                string narration = $"Pigmy Agent Commission Paid to '{commission.Agent?.AgentName}' for period {commission.PeriodStartDate:dd/MM/yyyy} to {commission.PeriodEndDate:dd/MM/yyyy} ({request.PaymentMode})";
+                string refSuffix = !string.IsNullOrWhiteSpace(request.ReferenceNo) ? $" | Ref/UTR: {request.ReferenceNo.Trim()}" : "";
+                string narration = $"Pigmy Agent Commission Paid to '{commission.Agent?.AgentName}' for period {commission.PeriodStartDate:dd/MM/yyyy} to {commission.PeriodEndDate:dd/MM/yyyy} ({request.PaymentMode}){refSuffix}";
 
                 var voucher = new Voucher
                 {

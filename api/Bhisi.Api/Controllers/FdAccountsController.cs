@@ -733,9 +733,15 @@ namespace Bhisi.Api.Controllers
                     Ledger? fdLiabilityLedger = await ResolveFdLiabilityLedgerAsync(scheme);
 
                     Ledger? debitLedger = null;
-                    if (account.PaymentMode == "Bank" && account.BankAccountLedgerID.HasValue && account.BankAccountLedgerID.Value > 0)
+                    if (!account.IsLegacyAccount && BankLedgerHelper.IsBankPaymentMode(account.PaymentMode))
                     {
-                        debitLedger = await _context.Ledgers.FindAsync(account.BankAccountLedgerID.Value);
+                        var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, account.BankAccountLedgerID);
+                        if (!bankCheck.IsValid)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(bankCheck.ErrorMessage);
+                        }
+                        debitLedger = await _context.Ledgers.FindAsync(bankCheck.LedgerId);
                     }
                     else if (account.PaymentMode == "Transfer")
                     {
@@ -1281,13 +1287,18 @@ namespace Bhisi.Api.Controllers
             Ledger? debitLedger = null;
             SavingAccountMaster? sbAcc = null;
 
-            if (req.PaymentMode == "Bank")
+            if (BankLedgerHelper.IsBankPaymentMode(req.PaymentMode))
             {
                 if (!req.BankAccountLedgerID.HasValue || req.BankAccountLedgerID.Value <= 0)
                 {
-                    return BadRequest(new { message = "कृपया बँक लेजर खाते निवडा." });
+                    return BadRequest(new { message = "बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे." });
                 }
-                debitLedger = await _context.Ledgers.FindAsync(req.BankAccountLedgerID.Value);
+                var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, req.BankAccountLedgerID);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(new { message = bankCheck.ErrorMessage });
+                }
+                debitLedger = await _context.Ledgers.FindAsync(bankCheck.LedgerId);
                 if (debitLedger == null)
                 {
                     return BadRequest(new { message = "निवडलेले बँक खाते लेजर आढळले नाही." });
@@ -2639,9 +2650,15 @@ namespace Bhisi.Api.Controllers
                         int surplusLedgerId = 0;
                         if (surplusPayoutAmount > 0)
                         {
-                            if (surplusMode == "Bank" && req.SurplusBankLedgerID > 0)
+                            if (BankLedgerHelper.IsBankPaymentMode(surplusMode))
                             {
-                                surplusLedgerId = req.SurplusBankLedgerID.Value;
+                                var surplusBankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, req.SurplusBankLedgerID);
+                                if (!surplusBankCheck.IsValid)
+                                {
+                                    await transaction.RollbackAsync();
+                                    return BadRequest(surplusBankCheck.ErrorMessage);
+                                }
+                                surplusLedgerId = surplusBankCheck.LedgerId;
                             }
                             else if (surplusMode == "Transfer" && req.SurplusSavingAccountID > 0)
                             {
@@ -2795,9 +2812,15 @@ namespace Bhisi.Api.Controllers
                     {
                         // Standard Non-Loan Closure
                         int payoutLedgerId = 0;
-                        if (paymentMode == "Bank" && req?.BankAccountLedgerID > 0)
+                        if (BankLedgerHelper.IsBankPaymentMode(paymentMode))
                         {
-                            payoutLedgerId = req.BankAccountLedgerID.Value;
+                            var payoutBankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, req?.BankAccountLedgerID);
+                            if (!payoutBankCheck.IsValid)
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest(payoutBankCheck.ErrorMessage);
+                            }
+                            payoutLedgerId = payoutBankCheck.LedgerId;
                         }
                         else if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
                         {
@@ -3497,9 +3520,15 @@ namespace Bhisi.Api.Controllers
                         int surplusLedgerId = 0;
                         if (surplusPayoutAmount > 0)
                         {
-                            if (surplusMode == "Bank" && req.SurplusBankLedgerID > 0)
+                            if (BankLedgerHelper.IsBankPaymentMode(surplusMode))
                             {
-                                surplusLedgerId = req.SurplusBankLedgerID.Value;
+                                var surplusBankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, req.SurplusBankLedgerID);
+                                if (!surplusBankCheck.IsValid)
+                                {
+                                    await transaction.RollbackAsync();
+                                    return BadRequest(surplusBankCheck.ErrorMessage);
+                                }
+                                surplusLedgerId = surplusBankCheck.LedgerId;
                             }
                             else if (surplusMode == "Transfer" && req.SurplusSavingAccountID > 0)
                             {
@@ -3666,9 +3695,15 @@ namespace Bhisi.Api.Controllers
                     {
                         // Standard Non-Loan Closure
                         int payoutLedgerId = 0;
-                        if (paymentMode == "Bank" && req?.BankAccountLedgerID > 0)
+                        if (BankLedgerHelper.IsBankPaymentMode(paymentMode))
                         {
-                            payoutLedgerId = req.BankAccountLedgerID.Value;
+                            var payoutBankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, req?.BankAccountLedgerID);
+                            if (!payoutBankCheck.IsValid)
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest(payoutBankCheck.ErrorMessage);
+                            }
+                            payoutLedgerId = payoutBankCheck.LedgerId;
                         }
                         else if (paymentMode == "Transfer" && req?.SavingAccountID > 0)
                         {
@@ -4291,9 +4326,15 @@ namespace Bhisi.Api.Controllers
                     SavingTransaction? savTx = null;
                     if (request.RenewalType == "PrincipalOnly" && interestPayoutAmount > 0)
                     {
-                        if (paymentMode == "Bank" && request.BankAccountLedgerID > 0)
+                        if (BankLedgerHelper.IsBankPaymentMode(paymentMode))
                         {
-                            interestPayoutLedgerId = request.BankAccountLedgerID.Value;
+                            var intBankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankAccountLedgerID);
+                            if (!intBankCheck.IsValid)
+                            {
+                                await transaction.RollbackAsync();
+                                return BadRequest(intBankCheck.ErrorMessage);
+                            }
+                            interestPayoutLedgerId = intBankCheck.LedgerId;
                         }
                         else if (paymentMode == "Transfer" && request.SavingAccountID > 0)
                         {

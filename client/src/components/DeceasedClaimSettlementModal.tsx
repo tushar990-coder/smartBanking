@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import { 
   X, 
   CheckCircle, 
@@ -47,6 +48,8 @@ export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [settledResult, setSettledResult] = useState<any>(null);
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [bankLedgerId, setBankLedgerId] = useState<number>(0);
 
   const [formData, setFormData] = useState({
     deathDate: new Date().toISOString().split('T')[0],
@@ -66,6 +69,8 @@ export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId
     if (isOpen && memberId > 0) {
       fetchClaimInfo();
       setSettledResult(null);
+      setPaymentMode('Cash');
+      setBankLedgerId(0);
     }
   }, [isOpen, memberId]);
 
@@ -107,6 +112,11 @@ export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId
       return;
     }
 
+    if ((claimInfo?.netPayable || 0) > 0 && paymentMode === 'Bank' && (!bankLedgerId || bankLedgerId <= 0)) {
+      alert('बँक पेमेंटसाठी कृपया संस्थेचे बँक खाते लेजर (Bank GL Account) निवडा.');
+      return;
+    }
+
     const confirmMsg = `तुम्ही ${claimInfo?.memberName} (CIF: ${claimInfo?.cifNo}) यांचा क्लेम सेटल करू इच्छिता का?\n\nएकूण देय रक्कम: ₹${claimInfo?.netPayable.toLocaleString('en-IN')}\n\nवारसदार: ${formData.nomineeName}\n\nयानंतर सर्व संबंधित खाती बंद केली जातील आणि सभासद 'Mayat' म्हणून नोंदवला जाईल.`;
     if (!window.confirm(confirmMsg)) return;
 
@@ -114,7 +124,9 @@ export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId
     try {
       const payload = {
         branchId: 1,
-        ...formData
+        ...formData,
+        paymentMode: (claimInfo?.netPayable || 0) > 0 ? paymentMode : 'Cash',
+        bankLedgerId: (claimInfo?.netPayable || 0) > 0 && paymentMode === 'Bank' ? bankLedgerId : null
       };
 
       const res = await axios.post(`/api/Members/${memberId}/DeceasedClaimSettlement`, payload);
@@ -389,6 +401,34 @@ export default function DeceasedClaimSettlementModal({ isOpen, onClose, memberId
                       className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-primary"
                     />
                   </div>
+
+                  {claimInfo.netPayable > 0 && (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-700 mb-0.5">पेमेंट पद्धत (Payout Mode) *</label>
+                      <select
+                        value={paymentMode}
+                        onChange={(e) => {
+                          const mode = e.target.value as 'Cash' | 'Bank';
+                          setPaymentMode(mode);
+                          if (mode !== 'Bank') setBankLedgerId(0);
+                        }}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-xs font-bold focus:ring-1 focus:ring-primary bg-white"
+                      >
+                        <option value="Cash">💵 रोख (Cash)</option>
+                        <option value="Bank">🏦 बँक ट्रान्सफर / चेक (Bank Account)</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {claimInfo.netPayable > 0 && paymentMode === 'Bank' && (
+                    <div className="md:col-span-2">
+                      <BankLedgerSelect
+                        value={bankLedgerId}
+                        onChange={(id) => setBankLedgerId(id)}
+                        showCountBadge
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div>

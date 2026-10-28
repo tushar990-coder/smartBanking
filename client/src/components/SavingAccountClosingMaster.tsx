@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import { RotateCcw, Trash2, CheckCircle, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -58,7 +59,9 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
     savingAccountID: 0,
     closureDate: new Date().toISOString().split('T')[0],
     closingCharges: '0',
-    paymentMode: 'Cash'
+    paymentMode: 'Cash',
+    bankLedgerID: 0,
+    checkNo: ''
   });
 
   const API_URL = '/api';
@@ -84,7 +87,9 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
           savingAccountID: d.savingAccountID || d.savingAccount?.savingAccountID || 0,
           closureDate: d.closureDate ? d.closureDate.split('T')[0] : new Date().toISOString().split('T')[0],
           closingCharges: String(d.closingCharges || '0'),
-          paymentMode: d.paymentMode || 'Cash'
+          paymentMode: d.paymentMode || 'Cash',
+          bankLedgerID: d.bankLedgerID || 0,
+          checkNo: d.checkNo || ''
         });
 
         if (d.savingAccount) {
@@ -209,7 +214,11 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+      ...(name === 'paymentMode' && value !== 'Bank' ? { bankLedgerID: 0, checkNo: '' } : {})
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -225,6 +234,11 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
       return;
     }
 
+    if (formData.paymentMode === 'Bank' && (!formData.bankLedgerID || formData.bankLedgerID <= 0)) {
+      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
+
     if (!window.confirm("तुम्हाला खात्री आहे का की हे खाते कायमचे बंद करायचे आहे?")) return;
 
     setLoading(true);
@@ -237,6 +251,8 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
         closureDate: formData.closureDate,
         closingCharges: charges,
         paymentMode: formData.paymentMode,
+        bankLedgerID: formData.paymentMode === 'Bank' ? formData.bankLedgerID : null,
+        checkNo: formData.paymentMode === 'Bank' && formData.checkNo.trim() ? formData.checkNo.trim() : null,
         createdBy: user?.userID || 1
       });
 
@@ -245,7 +261,9 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
         savingAccountID: 0,
         closureDate: new Date().toISOString().split('T')[0],
         closingCharges: '0',
-        paymentMode: 'Cash'
+        paymentMode: 'Cash',
+        bankLedgerID: 0,
+        checkNo: ''
       });
       setSelectedAccount(null);
       fetchActiveAccounts();
@@ -470,6 +488,33 @@ const SavingAccountClosingMaster: React.FC<SavingAccountClosingMasterProps> = ({
                   <span className="font-bold text-red-600 ml-1">₹{netPayable.toFixed(2)}</span>
                 </div>
               </div>
+
+              {formData.paymentMode === 'Bank' && (
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-3 bg-blue-50/60 border border-blue-200 p-2 rounded-sm">
+                  <div className="md:col-span-2">
+                    <BankLedgerSelect
+                      value={formData.bankLedgerID}
+                      onChange={(id) => setFormData((prev) => ({ ...prev, bankLedgerID: id }))}
+                      disabled={isPassingMode}
+                      showCountBadge
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-blue-950 mb-0.5">
+                      चेक क्र. / UTR क्र. (Cheque / UTR No.)
+                    </label>
+                    <input
+                      type="text"
+                      name="checkNo"
+                      value={formData.checkNo}
+                      onChange={handleInputChange}
+                      disabled={isPassingMode}
+                      placeholder="ऐच्छिक (उदा. CHQ / UTR No.)"
+                      className="w-full border border-blue-300 px-2 py-1 rounded-sm focus:outline-none focus:border-blue-500 text-xs bg-white h-[30px]"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             </fieldset>
 

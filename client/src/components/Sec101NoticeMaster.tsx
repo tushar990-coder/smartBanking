@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { FileText, Printer, Search, Plus, Send, CheckCircle2, AlertTriangle, ShieldAlert, Clock, ArrowRight, Eye } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 
 interface EligibleLoan {
   loanAccountID: number;
@@ -77,6 +78,9 @@ export default function Sec101NoticeMaster() {
   const [interestDue, setInterestDue] = useState<number>(0);
   const [penalInterestDue, setPenalInterestDue] = useState<number>(0);
   const [noticeFee, setNoticeFee] = useState<number>(100);
+  const [noticeFeePaymentMode, setNoticeFeePaymentMode] = useState<string>('CASH');
+  const [noticeFeeBankLedgerId, setNoticeFeeBankLedgerId] = useState<number>(0);
+  const [noticeFeeReferenceNo, setNoticeFeeReferenceNo] = useState<string>('');
   const [postalTrackingNo, setPostalTrackingNo] = useState<string>('');
   const [remarks, setRemarks] = useState<string>('');
   const [generating, setGenerating] = useState<boolean>(false);
@@ -213,6 +217,11 @@ export default function Sec101NoticeMaster() {
       return;
     }
 
+    if (Number(noticeFee) > 0 && noticeFeePaymentMode === 'BANK_TRANSFER' && (!noticeFeeBankLedgerId || noticeFeeBankLedgerId <= 0)) {
+      alert('नोटीस फी बँकेद्वारे असल्यास कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
+      return;
+    }
+
     setGenerating(true);
     try {
       const res = await axios.post('/api/LegalRecovery/notice/generate', {
@@ -225,6 +234,9 @@ export default function Sec101NoticeMaster() {
         interestDue,
         penalInterestDue,
         noticeFee,
+        paymentMode: Number(noticeFee) > 0 ? noticeFeePaymentMode : 'CASH',
+        bankLedgerId: Number(noticeFee) > 0 && noticeFeePaymentMode === 'BANK_TRANSFER' ? noticeFeeBankLedgerId : null,
+        referenceNo: Number(noticeFee) > 0 && noticeFeePaymentMode === 'BANK_TRANSFER' ? noticeFeeReferenceNo : null,
         postalTrackingNo,
         remarks
       });
@@ -495,6 +507,49 @@ export default function Sec101NoticeMaster() {
               </div>
               <div className="text-xl font-black text-rose-700">₹{totalDemand.toLocaleString('en-IN')}</div>
             </div>
+
+            {Number(noticeFee) > 0 && (
+              <div className="bg-blue-50/60 border border-blue-200 rounded-lg p-3 space-y-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-800">नोटीस फी पेमेंट पद्धत (Notice Fee Mode):</label>
+                    <select
+                      value={noticeFeePaymentMode}
+                      onChange={(e) => {
+                        setNoticeFeePaymentMode(e.target.value);
+                        if (e.target.value !== 'BANK_TRANSFER') {
+                          setNoticeFeeBankLedgerId(0);
+                          setNoticeFeeReferenceNo('');
+                        }
+                      }}
+                      className="w-full mt-0.5 border border-gray-300 rounded-md px-2.5 py-1.5 text-xs font-bold text-gray-800 bg-white"
+                    >
+                      <option value="CASH">रोख (Cash)</option>
+                      <option value="BANK_TRANSFER">बँक खाते / ट्रान्सफर (Bank Account)</option>
+                    </select>
+                  </div>
+                  {noticeFeePaymentMode === 'BANK_TRANSFER' && (
+                    <div>
+                      <label className="text-[11px] font-bold text-blue-950">चेक / UTR संदर्भ क्र. (Reference No.):</label>
+                      <input
+                        type="text"
+                        placeholder="उदा. चेक क्र. किंवा UTR क्र. (ऐच्छिक)"
+                        value={noticeFeeReferenceNo}
+                        onChange={(e) => setNoticeFeeReferenceNo(e.target.value)}
+                        className="w-full mt-0.5 border border-blue-200 rounded-md px-2.5 py-1.5 text-xs bg-white"
+                      />
+                    </div>
+                  )}
+                </div>
+                {noticeFeePaymentMode === 'BANK_TRANSFER' && (
+                  <BankLedgerSelect
+                    value={noticeFeeBankLedgerId}
+                    onChange={setNoticeFeeBankLedgerId}
+                    showCountBadge
+                  />
+                )}
+              </div>
+            )}
 
             {/* Postal Tracking */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

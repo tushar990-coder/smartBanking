@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   XCircle
 } from 'lucide-react';
+import BankLedgerSelect from './common/BankLedgerSelect';
 
 interface PendingRenewal {
   allotmentID: number;
@@ -77,7 +78,9 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
   const [selectedAllotment, setSelectedAllotment] = useState<PendingRenewal | null>(null);
   const [payData, setPayData] = useState({
     paymentDate: activeBusinessDate,
-    paymentMode: 'Cash', // Cash, SavingDebit, Transfer
+    paymentMode: 'Cash', // Cash, SavingDebit, Bank
+    bankLedgerID: 0,
+    referenceNo: '',
     rentAmount: 0,
     penaltyAmount: 0,
     gstAmount: 0,
@@ -133,7 +136,9 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
           });
           setPayData({
             paymentDate: rp?.paymentDate ? rp.paymentDate.split('T')[0] : (data.voucher?.voucherDate ? data.voucher.voucherDate.split('T')[0] : new Date().toISOString().split('T')[0]),
-            paymentMode: rp?.paymentMode || 'Cash',
+            paymentMode: rp?.paymentMode === 'Transfer' ? 'Bank' : (rp?.paymentMode || 'Cash'),
+            bankLedgerID: data.bankLedgerID || 0,
+            referenceNo: '',
             rentAmount: rp ? rp.rentAmount : (data.voucher?.totalAmount || 0),
             penaltyAmount: rp ? rp.penaltyAmount : 0,
             gstAmount: rp ? rp.gstAmount : 0,
@@ -275,8 +280,10 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
   const openPayModal = (item: PendingRenewal) => {
     setSelectedAllotment(item);
     setPayData({
-      paymentDate: new Date().toISOString().split('T')[0],
+      paymentDate: user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0],
       paymentMode: item.linkedSavingAccountID && item.savingsBalance >= item.totalPayable ? 'SavingDebit' : 'Cash',
+      bankLedgerID: 0,
+      referenceNo: '',
       rentAmount: item.baseRent,
       penaltyAmount: item.lateFee,
       gstAmount: item.gstAmount,
@@ -289,10 +296,17 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
     e.preventDefault();
     if (!selectedAllotment) return;
 
+    if ((payData.paymentMode === 'Bank' || payData.paymentMode === 'Transfer') && (!payData.bankLedgerID || Number(payData.bankLedgerID) <= 0)) {
+      showMsg('बँक ट्रान्सफरसाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.', 'error');
+      return;
+    }
+
     const payload = {
       allotmentID: selectedAllotment.allotmentID,
       paymentDate: payData.paymentDate,
       paymentMode: payData.paymentMode,
+      bankLedgerID: (payData.paymentMode === 'Bank' || payData.paymentMode === 'Transfer') ? Number(payData.bankLedgerID) : null,
+      referenceNo: (payData.paymentMode === 'Bank' || payData.paymentMode === 'Transfer') ? payData.referenceNo.trim() : null,
       rentAmount: Number(payData.rentAmount),
       penaltyAmount: Number(payData.penaltyAmount),
       gstAmount: Number(payData.gstAmount),
@@ -742,19 +756,43 @@ const LockerRentRenewal: React.FC<LockerRentRenewalProps> = ({ onNavigate, vouch
                   <label className={labelClass}>पेमेंट पद्धत (Payment Mode) *</label>
                   <select
                     value={payData.paymentMode}
-                    onChange={(e) => setPayData({ ...payData, paymentMode: e.target.value })}
+                    onChange={(e) => setPayData({
+                      ...payData,
+                      paymentMode: e.target.value,
+                      bankLedgerID: e.target.value === 'Bank' ? payData.bankLedgerID : 0
+                    })}
                     className={inputClass}
                   >
-                    <option value="Cash">रोख (Cash)</option>
+                    <option value="Cash">💵 रोख (Cash)</option>
                     {selectedAllotment.linkedSavingAccountID && (
                       <option value="SavingDebit">
-                        बचत खात्यातून कपात (A/c: {selectedAllotment.linkedSavingAccountNo})
+                        💳 बचत खात्यातून कपात (A/c: {selectedAllotment.linkedSavingAccountNo})
                       </option>
                     )}
-                    <option value="Transfer">बँक ट्रान्सफर / इतर (Transfer)</option>
+                    <option value="Bank">🏦 बँक ट्रान्सफर (Bank Account)</option>
                   </select>
                 </div>
               </div>
+
+              {(payData.paymentMode === 'Bank' || payData.paymentMode === 'Transfer') && (
+                <div className="bg-blue-50/70 p-2.5 rounded-lg border border-blue-200 space-y-2">
+                  <BankLedgerSelect
+                    value={payData.bankLedgerID}
+                    onChange={(id) => setPayData({ ...payData, bankLedgerID: id })}
+                    showCountBadge
+                  />
+                  <div>
+                    <label className={labelClass}>चेक / युटीआर / संदर्भ क्र. (UTR / Cheque No)</label>
+                    <input
+                      type="text"
+                      value={payData.referenceNo}
+                      onChange={(e) => setPayData({ ...payData, referenceNo: e.target.value })}
+                      placeholder="उदा. UTR123456 / CHQ-001"
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Breakdown */}
               <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-200 space-y-2 text-xs">

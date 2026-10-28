@@ -127,6 +127,9 @@ namespace Bhisi.Api.Models
         [NotMapped]
         public string? FormattedAccountNo { get; set; }
 
+        [NotMapped]
+        public int? BankLedgerID { get; set; }
+
         // CBS Enterprise Fields
         [Column(TypeName = "decimal(18,2)")]
         public decimal CumulativeInterestAccrued { get; set; } = 0.00m;

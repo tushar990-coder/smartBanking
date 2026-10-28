@@ -29,6 +29,9 @@ namespace Bhisi.Api.Models
         [NotMapped]
         public int? BankLedgerID { get; set; }
 
+        [NotMapped]
+        public string? CheckNo { get; set; }
+
         [Required]
         public int BranchID { get; set; } = 1;
 

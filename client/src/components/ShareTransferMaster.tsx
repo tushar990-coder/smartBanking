@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import { useAuth } from '../context/AuthContext';
 import { 
   ArrowRight, ArrowLeft, RefreshCw, CheckCircle, XCircle, AlertCircle, Award, FileText, UserCheck, 
@@ -75,8 +76,9 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
   const [resolutionNo, setResolutionNo] = useState<string>('');
   const [resolutionDate, setResolutionDate] = useState<string>(activeBusinessDate);
   const [transferFee, setTransferFee] = useState<string>('0');
-  const [feePaymentMode, setFeePaymentMode] = useState<'None' | 'Cash' | 'Saving'>('None');
+  const [feePaymentMode, setFeePaymentMode] = useState<'None' | 'Cash' | 'Saving' | 'Bank'>('None');
   const [savingAccountId, setSavingAccountId] = useState<string>('');
+  const [bankLedgerId, setBankLedgerId] = useState<number>(0);
   const [narration, setNarration] = useState<string>('सभासद शेअर हस्तांतरण (Share Transfer)');
 
   // Sync with CBS Business Date
@@ -116,6 +118,8 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
           loadToMemberDetails(data.toMember.memberID.toString());
         }
         if (data.numberOfShares) setNumberOfShares(data.numberOfShares.toString());
+        if (data.paymentMode === 'Bank') setFeePaymentMode('Bank');
+        if (data.bankLedgerId) setBankLedgerId(Number(data.bankLedgerId));
         if (data.voucher?.narration) setNarration(data.voucher.narration);
         if (data.voucher?.voucherDate) {
           const vDate = data.voucher.voucherDate.split('T')[0];
@@ -319,6 +323,7 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
     setTransferFee('0');
     setFeePaymentMode('None');
     setSavingAccountId('');
+    setBankLedgerId(0);
     setNarration('सभासद शेअर हस्तांतरण (Share Transfer)');
     setFromShareAccount(null);
     setToShareAccount(null);
@@ -356,6 +361,11 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
       return;
     }
 
+    if (feePaymentMode === 'Bank' && (!bankLedgerId || bankLedgerId <= 0)) {
+      setMessage({ text: '⚠️ हस्तांतरण फी बँक मोडसाठी कृपया वैध बँक खाते लेजर निवडा.', type: 'error' });
+      return;
+    }
+
     const fromMemberObj = members.find(m => m.memberID.toString() === fromMemberId);
     const toMemberObj = members.find(m => m.memberID.toString() === toMemberId);
 
@@ -377,6 +387,7 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
         transferFee: feeAmt,
         feePaymentMode: feePaymentMode,
         savingAccountId: feePaymentMode === 'Saving' && savingAccountId ? parseInt(savingAccountId) : null,
+        bankLedgerId: feePaymentMode === 'Bank' ? bankLedgerId : null,
         narration: narration.trim()
       };
 
@@ -398,6 +409,7 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
         setResolutionNo('');
         setTransferFee('0');
         setFeePaymentMode('None');
+        setBankLedgerId(0);
         
         // Refresh details
         loadFromMemberDetails(fromMemberId);
@@ -917,14 +929,30 @@ export default function ShareTransferMaster({ onNavigate, voucherId, isPassingMo
               </label>
               <select
                 value={feePaymentMode}
-                onChange={(e) => setFeePaymentMode(e.target.value as any)}
+                onChange={(e) => {
+                  const val = e.target.value as 'None' | 'Cash' | 'Saving' | 'Bank';
+                  setFeePaymentMode(val);
+                  if (val !== 'Bank') setBankLedgerId(0);
+                }}
                 className={inputClass}
               >
                 <option value="None">काही नाही (No Fee / Waived)</option>
                 <option value="Cash">💵 रोख (Cash)</option>
                 <option value="Saving">🔄 बचत खात्यातून कपात (Saving Transfer)</option>
+                <option value="Bank">🏦 बँक ट्रान्सफर (Bank Transfer)</option>
               </select>
             </div>
+
+            {feePaymentMode === 'Bank' && (
+              <div>
+                <BankLedgerSelect
+                  value={bankLedgerId}
+                  onChange={(id) => setBankLedgerId(id)}
+                  disabled={isPassing}
+                  showCountBadge
+                />
+              </div>
+            )}
 
             {feePaymentMode === 'Saving' && (
               <div>

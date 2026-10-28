@@ -227,11 +227,20 @@ export default function LedgerMaster() {
   const cashAndBankCount = useMemo(() => {
     return ledgers.filter(l => 
       l.accountType === 'Cash In Hand' || 
+      l.accountType === 'Cash' ||
       l.accountType === 'Bank Account' ||
+      l.accountType === 'Bank' ||
       l.ledgerName.includes('रोख') ||
       l.ledgerName.includes('बँक') ||
       (l.ledgerNameEnglish && (l.ledgerNameEnglish.toLowerCase().includes('cash') || l.ledgerNameEnglish.toLowerCase().includes('bank')))
     ).length;
+  }, [ledgers]);
+
+  const bankAccountsOnlyCount = useMemo(() => {
+    return ledgers.filter(l => {
+      const t = (l.accountType || '').trim().toLowerCase();
+      return t === 'bank account' || t === 'bank';
+    }).length;
   }, [ledgers]);
 
   const balanceSheetCount = useMemo(() => {
@@ -336,12 +345,18 @@ export default function LedgerMaster() {
     setIsSaving(true);
     try {
       const assignedId = formData.ledgerID ? parseInt(formData.ledgerID) : (editId || 0);
+      const existingLedger = editId ? ledgers.find(l => l.ledgerID === editId) : null;
       const payload = {
+        ...(existingLedger ? {
+          ledgerCode: (existingLedger as any).ledgerCode,
+          excludeFromRule35Swanidhi: (existingLedger as any).excludeFromRule35Swanidhi,
+          legacyLedgerId: (existingLedger as any).legacyLedgerId,
+        } : {}),
         ...formData,
         ledgerID: assignedId,
         groupID: parseInt(formData.groupID),
-        openingBalance: 0,
-        openingBalanceType: 'Dr'
+        openingBalance: existingLedger ? existingLedger.openingBalance : 0,
+        openingBalanceType: existingLedger ? (existingLedger.openingBalanceType || 'Dr') : 'Dr'
       };
 
       let response;
@@ -378,13 +393,18 @@ export default function LedgerMaster() {
     setEditId(ledger.ledgerID);
     setSuccess('');
     setError('');
+    const rawAccType = (ledger.accountType || '').trim();
+    const normalizedAccType =
+      rawAccType.toLowerCase() === 'bank' ? 'Bank Account' :
+      rawAccType.toLowerCase() === 'cash' ? 'Cash In Hand' :
+      (rawAccType || 'GL');
     setFormData({
       ledgerID: ledger.ledgerID.toString(),
       ledgerName: ledger.ledgerName,
       ledgerNameEnglish: ledger.ledgerNameEnglish || '',
       groupID: ledger.groupID.toString(),
       reportType: ledger.reportType || 'ताळेबंद',
-      accountType: ledger.accountType || 'GL',
+      accountType: normalizedAccType,
       isActive: ledger.isActive
     });
 
@@ -476,9 +496,15 @@ const convertMarathiDigits = (val: string): string => {
       // Nature filter
       if (selectedNatureFilter === 'BalanceSheet' && l.reportType !== 'ताळेबंद' && l.reportType) return false;
       if (selectedNatureFilter === 'ProfitLoss' && l.reportType !== 'नफातोटा पत्रक') return false;
+      if (selectedNatureFilter === 'BankOnly') {
+        const t = (l.accountType || '').trim().toLowerCase();
+        if (t !== 'bank account' && t !== 'bank') return false;
+      }
       if (selectedNatureFilter === 'CashBank') {
         const isCashBank = l.accountType === 'Cash In Hand' || 
+          l.accountType === 'Cash' ||
           l.accountType === 'Bank Account' ||
+          l.accountType === 'Bank' ||
           l.ledgerName.includes('रोख') ||
           l.ledgerName.includes('बँक') ||
           (l.ledgerNameEnglish && (l.ledgerNameEnglish.toLowerCase().includes('cash') || l.ledgerNameEnglish.toLowerCase().includes('bank')));
@@ -541,10 +567,17 @@ const convertMarathiDigits = (val: string): string => {
       filtered = ledgers.filter(l => l.reportType === 'ताळेबंद' || !l.reportType);
     } else if (selectedNatureFilter === 'ProfitLoss') {
       filtered = ledgers.filter(l => l.reportType === 'नफातोटा पत्रक');
+    } else if (selectedNatureFilter === 'BankOnly') {
+      filtered = ledgers.filter(l => {
+        const t = (l.accountType || '').trim().toLowerCase();
+        return t === 'bank account' || t === 'bank';
+      });
     } else if (selectedNatureFilter === 'CashBank') {
       filtered = ledgers.filter(l => 
         l.accountType === 'Cash In Hand' || 
+        l.accountType === 'Cash' ||
         l.accountType === 'Bank Account' ||
+        l.accountType === 'Bank' ||
         l.ledgerName.includes('रोख') ||
         l.ledgerName.includes('बँक') ||
         (l.ledgerNameEnglish && (l.ledgerNameEnglish.toLowerCase().includes('cash') || l.ledgerNameEnglish.toLowerCase().includes('bank')))
@@ -972,6 +1005,7 @@ const convertMarathiDigits = (val: string): string => {
             </span>
             {[
               { id: 'All', label: 'सर्व खाती', count: totalLedgersCount },
+              { id: 'BankOnly', label: '🏦 बँक खाती', count: bankAccountsOnlyCount },
               { id: 'CashBank', label: 'बँक व रोख', count: cashAndBankCount },
               { id: 'BalanceSheet', label: 'ताळेबंद', count: balanceSheetCount },
               { id: 'ProfitLoss', label: 'नफातोटा', count: totalLedgersCount - balanceSheetCount },

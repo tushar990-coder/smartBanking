@@ -238,6 +238,28 @@ namespace Bhisi.Api.Controllers
                 }
 
                 // 1. Fetch overdue expenses from OverdueRecoveryLedger
+                bool isPigmyMode = collection.PaymentMode == "Pigmy Transfer" || collection.PaymentMode == "Pigmy";
+                bool isSavingMode = collection.PaymentMode == "Saving Transfer" || collection.PaymentMode == "Saving";
+                bool isBankMode = !isPigmyMode && !isSavingMode && Helpers.BankLedgerHelper.IsBankPaymentMode(collection.PaymentMode);
+                int validatedBankLedgerId = 0;
+
+                if (isBankMode)
+                {
+                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, collection.BankAccountLedgerID);
+                    if (!bankCheck.IsValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(bankCheck.ErrorMessage);
+                    }
+                    validatedBankLedgerId = bankCheck.LedgerId;
+                    collection.BankAccountLedgerID = validatedBankLedgerId;
+                }
+                else
+                {
+                    collection.BankAccountLedgerID = null;
+                    collection.BankName = null;
+                    collection.ChequeNo = null;
+                }
                 decimal overdueExpenses = await _context.OverdueRecoveryLedgers
                     .Where(l => l.LoanAccountID == collection.LoanAccountID)
                     .SumAsync(l => l.DebitAmount - l.CreditAmount);
@@ -610,7 +632,16 @@ namespace Bhisi.Api.Controllers
                 collection.BranchID = collectingBranch;
 
                 int surchargeLedgerId = loanRate?.SurchargeLedgerID ?? 0;
-                int cashLedgerId = collection.BankAccountLedgerID ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, collectingBranch, "LOAN");
+                int cashLedgerId;
+                if (isBankMode)
+                {
+                    cashLedgerId = validatedBankLedgerId;
+                }
+                else
+                {
+                    collection.BankAccountLedgerID = null;
+                    cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, collectingBranch, "LOAN");
+                }
 
                 PigmyAccount? sourcePigmyAcc = null;
                 if (collection.PaymentMode == "Pigmy Transfer" || collection.PaymentMode == "Pigmy")
@@ -1206,19 +1237,55 @@ namespace Bhisi.Api.Controllers
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = "तुम्हाला इतर शाखेची कर्ज वसुली पावती संपादित करण्याची परवानगी नाही." });
             }
 
+            bool isMinorPigmy = updatedData.PaymentMode == "Pigmy Transfer" || updatedData.PaymentMode == "Pigmy";
+            bool isMinorSaving = updatedData.PaymentMode == "Saving Transfer" || updatedData.PaymentMode == "Saving";
+            bool isMinorBank = !isMinorPigmy && !isMinorSaving && Helpers.BankLedgerHelper.IsBankPaymentMode(updatedData.PaymentMode);
+            if (isMinorBank)
+            {
+                int? targetBankLedgerId = updatedData.BankAccountLedgerID ?? existingCollection.BankAccountLedgerID;
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, targetBankLedgerId);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(bankCheck.ErrorMessage);
+                }
+                existingCollection.BankAccountLedgerID = bankCheck.LedgerId;
+                if (!string.IsNullOrWhiteSpace(updatedData.BankName)) existingCollection.BankName = updatedData.BankName;
+                if (!string.IsNullOrWhiteSpace(updatedData.ChequeNo)) existingCollection.ChequeNo = updatedData.ChequeNo;
+            }
+            else if (string.Equals(updatedData.PaymentMode, "Cash", StringComparison.OrdinalIgnoreCase) || isMinorPigmy || isMinorSaving)
+            {
+                existingCollection.BankAccountLedgerID = null;
+                existingCollection.BankName = null;
+                existingCollection.ChequeNo = null;
+            }
+
             existingCollection.CollectionDate = updatedData.CollectionDate;
             existingCollection.PaymentMode = updatedData.PaymentMode;
             existingCollection.Remarks = updatedData.Remarks;
 
-            // Also update the VoucherDate if a Voucher is associated
+            // Also update the VoucherDate and Debit GL Ledger (Bank vs Cash) if a Voucher is associated
             if (existingCollection.VoucherID.HasValue)
             {
-                var voucher = await _context.Vouchers.FindAsync(existingCollection.VoucherID.Value);
+                var voucher = await _context.Vouchers
+                    .Include(v => v.VoucherDetails)
+                    .FirstOrDefaultAsync(v => v.VoucherID == existingCollection.VoucherID.Value);
                 if (voucher != null)
                 {
                     voucher.VoucherDate = updatedData.CollectionDate;
                     voucher.Status = "Approved";
                     _context.Entry(voucher).State = EntityState.Modified;
+
+                    if (!isMinorPigmy && !isMinorSaving && voucher.VoucherDetails != null)
+                    {
+                        var drDetail = voucher.VoucherDetails.FirstOrDefault(vd => vd.DrCr == "Dr");
+                        if (drDetail != null)
+                        {
+                            drDetail.LedgerID = isMinorBank && existingCollection.BankAccountLedgerID.HasValue
+                                ? existingCollection.BankAccountLedgerID.Value
+                                : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, existingCollection.BranchID, "LOAN");
+                            _context.Entry(drDetail).State = EntityState.Modified;
+                        }
+                    }
                 }
             }
 

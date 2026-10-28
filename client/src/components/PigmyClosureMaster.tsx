@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import { 
   ExclamationTriangleIcon, 
   ShieldExclamationIcon, 
@@ -125,6 +126,9 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
   // Form States
   const [transactionDate, setTransactionDate] = useState<string>(activeBusinessDate);
   const [narration, setNarration] = useState('');
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [bankLedgerId, setBankLedgerId] = useState<number>(0);
+  const [referenceNo, setReferenceNo] = useState<string>('');
 
   useEffect(() => {
     if (user?.businessDate) {
@@ -293,6 +297,11 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       return;
     }
 
+    if (paymentMode === 'Bank' && (!bankLedgerId || bankLedgerId <= 0)) {
+      toast.error('बँक व्यवहारासाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
+      return;
+    }
+
     const confirmMsg = `खाते '${withdrawalPreview.accountNo}' मधून ₹${withdrawalPreview.requestedAmount.toLocaleString('en-IN')} विड्रॉल करून उर्वरित शिल्लक ₹${withdrawalPreview.remainingBalance.toLocaleString('en-IN')} साठी नवीन सायकल #${withdrawalPreview.currentCycleNumber + 1} (Day 1) सुरू करायची का?`;
     if (!window.confirm(confirmMsg)) return;
 
@@ -303,6 +312,9 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
         amount: withdrawalPreview.requestedAmount,
         branchId: 1,
         withdrawalDate: transactionDate,
+        paymentMode,
+        bankLedgerId: paymentMode === 'Bank' ? bankLedgerId : null,
+        referenceNo: paymentMode === 'Bank' && referenceNo.trim() ? referenceNo.trim() : null,
         narration,
         managerOverrideConfirmed: managerOverride
       });
@@ -316,6 +328,9 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       setWithdrawalPreview(null);
       setWithdrawalAmount('');
       setNarration('');
+      setPaymentMode('Cash');
+      setBankLedgerId(0);
+      setReferenceNo('');
     } catch (err: any) {
       const errMsg = err.response?.data?.message || err.response?.data || 'विड्रॉल करताना त्रुटी आली.';
       setMessage(errMsg);
@@ -333,6 +348,11 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       return;
     }
 
+    if (closurePreview.totalDepositedAmount > 0 && paymentMode === 'Bank' && (!bankLedgerId || bankLedgerId <= 0)) {
+      toast.error('बँक व्यवहारासाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
+      return;
+    }
+
     const confirmMsg = closurePreview.isPremature
       ? `हे मुदतपूर्व बंद (Premature) आहे. ₹${closurePreview.prematurePenaltyAmount.toLocaleString('en-IN')} कपात करून सभासदास निव्वळ ₹${closurePreview.netPayable.toLocaleString('en-IN')} अदा करण्यात येतील. पुढे जायचे का?`
       : `तुम्हाला खात्री आहे का? तुम्ही खाते '${closurePreview.accountNo}' बंद करून सभासदास ₹${closurePreview.netPayable.toLocaleString('en-IN', { minimumFractionDigits: 2 })} अदा करत आहात?`;
@@ -345,6 +365,9 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
         accountNo: closurePreview.accountNo,
         branchId: 1,
         closureDate: transactionDate,
+        paymentMode,
+        bankLedgerId: paymentMode === 'Bank' ? bankLedgerId : null,
+        referenceNo: paymentMode === 'Bank' && referenceNo.trim() ? referenceNo.trim() : null,
         narration,
         managerOverrideConfirmed: managerOverride
       });
@@ -354,6 +377,9 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
       setClosurePreview(null);
       setAccountNo('');
       setNarration('');
+      setPaymentMode('Cash');
+      setBankLedgerId(0);
+      setReferenceNo('');
       setManagerOverride(false);
     } catch (err: any) {
       const errMsg = err.response?.data?.message || err.response?.data || 'खाते बंद करताना सर्व्हर त्रुटी आली.';
@@ -661,7 +687,25 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                           </p>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-medium text-gray-600 mb-0.5">पेमेंट माध्यम (Payment Mode) *</label>
+                            <select
+                              value={paymentMode}
+                              onChange={(e) => {
+                                const mode = e.target.value as 'Cash' | 'Bank';
+                                setPaymentMode(mode);
+                                if (mode !== 'Bank') {
+                                  setBankLedgerId(0);
+                                  setReferenceNo('');
+                                }
+                              }}
+                              className="w-full border border-gray-300 rounded px-2 py-1 text-xs font-bold bg-white text-gray-900"
+                            >
+                              <option value="Cash">💵 रोख (Cash)</option>
+                              <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                            </select>
+                          </div>
                           <div>
                             <label className="block text-[11px] font-medium text-gray-600 mb-0.5">व्यवहार तारीख (Withdrawal Date)</label>
                             <input 
@@ -683,6 +727,27 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                             />
                           </div>
                         </div>
+
+                        {paymentMode === 'Bank' && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-2.5 bg-white border border-blue-200 rounded">
+                            <BankLedgerSelect
+                              value={bankLedgerId}
+                              onChange={setBankLedgerId}
+                              disabled={isPassingMode}
+                              showCountBadge
+                            />
+                            <div>
+                              <label className="block text-[11px] font-bold text-blue-950 mb-0.5">चेक / UTR संदर्भ क्र. (Cheque / UTR Ref No)</label>
+                              <input
+                                type="text"
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white h-[30px]"
+                                placeholder="उदा. Chq No / UTR (ऐच्छिक)"
+                                value={referenceNo}
+                                onChange={(e) => setReferenceNo(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        )}
 
                         {!isPassingMode && (
                           <div className="flex justify-end pt-1">
@@ -775,7 +840,25 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">पेमेंट माध्यम (Payment Mode) *</label>
+                      <select
+                        value={paymentMode}
+                        onChange={(e) => {
+                          const mode = e.target.value as 'Cash' | 'Bank';
+                          setPaymentMode(mode);
+                          if (mode !== 'Bank') {
+                            setBankLedgerId(0);
+                            setReferenceNo('');
+                          }
+                        }}
+                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs font-bold bg-white text-gray-900"
+                      >
+                        <option value="Cash">💵 रोख (Cash)</option>
+                        <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                      </select>
+                    </div>
                     <div>
                       <label className="block text-[11px] font-medium text-gray-600 mb-0.5">खाते बंद तारीख (Closure Date)</label>
                       <input 
@@ -797,6 +880,27 @@ const PigmyClosureMaster: React.FC<PigmyClosureMasterProps> = ({ voucherId: prop
                       />
                     </div>
                   </div>
+
+                  {paymentMode === 'Bank' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-2.5 bg-blue-50/50 border border-blue-200 rounded-sm">
+                      <BankLedgerSelect
+                        value={bankLedgerId}
+                        onChange={setBankLedgerId}
+                        disabled={isPassingMode}
+                        showCountBadge
+                      />
+                      <div>
+                        <label className="block text-[11px] font-bold text-blue-950 mb-0.5">चेक / UTR संदर्भ क्र. (Cheque / UTR Ref No)</label>
+                        <input
+                          type="text"
+                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white h-[30px]"
+                          placeholder="उदा. Chq No / UTR (ऐच्छिक)"
+                          value={referenceNo}
+                          onChange={(e) => setReferenceNo(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {!isPassingMode && (
                     <div className="pt-2 border-t border-gray-200 flex justify-end">

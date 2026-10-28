@@ -24,6 +24,7 @@ import {
   CreditCardIcon
 } from '@heroicons/react/24/outline';
 import { Lock, Unlock, AlertCircle } from 'lucide-react';
+import BankLedgerSelect from './common/BankLedgerSelect';
 
 interface Customer {
   customerID: number;
@@ -120,6 +121,15 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
           collectionAmount: (collection?.collectionAmount || voucher?.totalAmount || '').toString()
         });
       }
+      const hydratedBankId = Number(res.data?.bankLedgerId || voucher?.bankLedgerId || 0);
+      const rawColMode = String(collection?.paymentMode || '').trim().toUpperCase();
+      if (hydratedBankId > 0 || (rawColMode && rawColMode !== 'CASH')) {
+        setManualPaymentMode('Bank');
+        if (hydratedBankId > 0) setManualBankLedgerId(hydratedBankId);
+      } else {
+        setManualPaymentMode('Cash');
+        setManualBankLedgerId(0);
+      }
       if (agent) {
         setSelectedAgentId(agent.pigmyAgentID);
       }
@@ -189,6 +199,8 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
   const [collectionDate, setCollectionDate] = useState<string>(activeBusinessDate);
   const [bulkAmounts, setBulkAmounts] = useState<{ [accountId: number]: string }>({});
   const [sheetSearchTerm, setSheetSearchTerm] = useState<string>('');
+  const [bulkPaymentMode, setBulkPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [bulkBankLedgerId, setBulkBankLedgerId] = useState<number>(0);
 
   // Sync CBS Business Date if changed
   useEffect(() => {
@@ -247,8 +259,16 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     collectionDate: activeBusinessDate,
     collectionAmount: ''
   });
+  const [manualPaymentMode, setManualPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [manualBankLedgerId, setManualBankLedgerId] = useState<number>(0);
+
+  // Monthly Payment Mode State
+  const [monthlyPaymentMode, setMonthlyPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [monthlyBankLedgerId, setMonthlyBankLedgerId] = useState<number>(0);
 
   // App Sync State
+  const [appSyncPaymentMode, setAppSyncPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [appSyncBankLedgerId, setAppSyncBankLedgerId] = useState<number>(0);
   const [appSyncJson, setAppSyncJson] = useState('[\n  {\n    "pigmyAccountId": 1,\n    "agentId": 1,\n    "collectionDate": "2026-08-09",\n    "collectionAmount": 100,\n    "syncReferenceId": "uuid-1234"\n  }\n]');
   const [mobileQueue, setMobileQueue] = useState<{
     date: string;
@@ -563,11 +583,18 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       return;
     }
 
+    if (bulkPaymentMode === 'Bank' && (!bulkBankLedgerId || bulkBankLedgerId <= 0)) {
+      toast.error('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
         agentId: Number(selectedAgentId),
         collectionDate: collectionDate,
+        paymentMode: bulkPaymentMode,
+        bankLedgerId: bulkPaymentMode === 'Bank' ? bulkBankLedgerId : null,
         items: items
       };
 
@@ -1203,12 +1230,19 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       return;
     }
 
+    if (monthlyPaymentMode === 'Bank' && (!monthlyBankLedgerId || monthlyBankLedgerId <= 0)) {
+      toast.error('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
+
     setMonthlySaving(true);
     try {
       const payload = {
         agentId: Number(selectedMonthlyAgentId),
         monthYear: selectedMonth,
         activeBusinessDate: activeBusinessDate || collectionDate,
+        paymentMode: monthlyPaymentMode,
+        bankLedgerId: monthlyPaymentMode === 'Bank' ? monthlyBankLedgerId : null,
         entries: flatEntries
       };
 
@@ -1234,6 +1268,11 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
       return;
     }
 
+    if (manualPaymentMode === 'Bank' && (!manualBankLedgerId || manualBankLedgerId <= 0)) {
+      toast.error('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
+
     const selectedAcc = accounts.find(a => a.pigmyAccountID.toString() === manualForm.pigmyAccountId);
     if (!selectedAcc) return;
 
@@ -1243,7 +1282,9 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
         pigmyAccountId: parseInt(manualForm.pigmyAccountId),
         agentId: selectedAcc.pigmyAgentID,
         collectionDate: manualForm.collectionDate,
-        collectionAmount: parseFloat(manualForm.collectionAmount)
+        collectionAmount: parseFloat(manualForm.collectionAmount),
+        paymentMode: manualPaymentMode,
+        bankLedgerId: manualPaymentMode === 'Bank' ? manualBankLedgerId : null
       };
 
       const res = await axios.post('/api/PigmyCollections/Manual', payload);
@@ -1258,16 +1299,97 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
     }
   };
 
+  const isNonCashModeValue = (mode?: string | null): boolean => {
+    if (!mode) return false;
+    const m = String(mode).trim().toUpperCase();
+    return m !== '' && m !== 'CASH';
+  };
+
+  const hasNonCashInAppSyncJson = (() => {
+    try {
+      const parsed = JSON.parse(appSyncJson);
+      if (Array.isArray(parsed)) {
+        return parsed.some((it) => isNonCashModeValue(it?.paymentMode || it?.PaymentMode));
+      }
+    } catch {
+      // ignore invalid JSON while typing
+    }
+    return false;
+  })();
+
+  const pendingMobileQueueItems = (mobileQueue?.items || []).filter((it: any) => !it.isVoucherGenerated);
+  const hasNonCashInMobileQueue = (mobileQueue?.items || []).some((it: any) => isNonCashModeValue(it?.paymentMode));
+
   const handleAppSync = async () => {
     try {
-      const payload = JSON.parse(appSyncJson);
+      const parsed = JSON.parse(appSyncJson);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        toast.error('कृपया वैध JSON अॅरे प्रविष्ट करा.');
+        return;
+      }
+
+      const requiresBank =
+        appSyncPaymentMode === 'Bank' ||
+        parsed.some((it: any) => isNonCashModeValue(it?.paymentMode || it?.PaymentMode) && !Number(it?.bankLedgerId || it?.BankLedgerId));
+
+      if (requiresBank && (!appSyncBankLedgerId || appSyncBankLedgerId <= 0)) {
+        toast.error('बँक / UPI / Online सिंक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+        return;
+      }
+
+      const payload = parsed.map((it: any) => {
+        const rawItemMode = it?.paymentMode || it?.PaymentMode;
+        const effectiveItemMode = rawItemMode
+          ? String(rawItemMode)
+          : appSyncPaymentMode;
+        const itemNeedsBank = isNonCashModeValue(effectiveItemMode);
+        return {
+          ...it,
+          paymentMode: effectiveItemMode,
+          bankLedgerId: itemNeedsBank ? Number(it?.bankLedgerId || it?.BankLedgerId || appSyncBankLedgerId) : null
+        };
+      });
+
       setLoading(true);
       const res = await axios.post('/api/PigmyCollections/AppSync', payload);
       toast.success(res.data.message || 'अ‍ॅप डेटा सिंक यशस्वी!');
       fetchHistory();
       fetchAccounts();
+      fetchMobileQueue(selectedQueueAgent);
     } catch (err: any) {
       toast.error(err.response?.data || 'अवैध JSON किंवा सिंक त्रुटी.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApproveMobileQueue = async () => {
+    if (pendingMobileQueueItems.length === 0) {
+      toast.error('व्हाउचर तयार करण्यासाठी प्रलंबित सिंक नोंदी नाहीत.');
+      return;
+    }
+
+    const anyPendingNonCash = pendingMobileQueueItems.some((it: any) => isNonCashModeValue(it?.paymentMode));
+    const requiresBank = appSyncPaymentMode === 'Bank' || anyPendingNonCash;
+
+    if (requiresBank && (!appSyncBankLedgerId || appSyncBankLedgerId <= 0)) {
+      toast.error('बँक / UPI / Online सिंक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await axios.post('/api/PigmyCollections/ApproveMobileSync', {
+        agentId: selectedQueueAgent ? Number(selectedQueueAgent) : null,
+        collectionIds: pendingMobileQueueItems.map((it: any) => it.collectionId),
+        paymentMode: appSyncPaymentMode,
+        bankLedgerId: requiresBank ? appSyncBankLedgerId : null
+      });
+      toast.success(res.data?.message || 'प्रलंबित मोबाईल सिंक व्हाउचर यशस्वीरीत्या तयार झाले!');
+      fetchMobileQueue(selectedQueueAgent);
+      fetchHistory();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || err.response?.data || 'मोबाईल सिंक व्हाउचर मंजूर करताना त्रुटी आली.');
     } finally {
       setLoading(false);
     }
@@ -1399,7 +1521,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
         <div className="space-y-3">
           
           {/* Header Controls: Select Agent & Date */}
-          <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-2.5">
+          <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-2.5">
             
             {/* SELECT AGENT */}
             <div>
@@ -1491,6 +1613,35 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 />
               </div>
             </div>
+
+            {/* BULK PAYMENT MODE */}
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                ४. जमा पद्धत (Payment Mode) *
+              </label>
+              <select
+                value={bulkPaymentMode}
+                onChange={(e) => {
+                  const mode = e.target.value as 'Cash' | 'Bank';
+                  setBulkPaymentMode(mode);
+                  if (mode === 'Cash') setBulkBankLedgerId(0);
+                }}
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="Cash">💵 रोख (Cash)</option>
+                <option value="Bank">🏦 बँक ट्रान्सफर (Bank)</option>
+              </select>
+            </div>
+
+            {bulkPaymentMode === 'Bank' && (
+              <div className="md:col-span-4 bg-blue-50/70 p-2 rounded border border-blue-200">
+                <BankLedgerSelect
+                  value={bulkBankLedgerId}
+                  onChange={setBulkBankLedgerId}
+                  showCountBadge
+                />
+              </div>
+            )}
           </div>
 
           {/* Daily Excel Tools Bar */}
@@ -1757,7 +1908,7 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
           )}
 
           {/* Header Controls: Select Agent & Month */}
-          <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-2.5 items-end">
+          <div className="bg-gray-50/80 p-2.5 rounded border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-2.5 items-end">
             
             {/* SELECT AGENT */}
             <div>
@@ -1803,6 +1954,25 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
               />
             </div>
 
+            {/* MONTHLY PAYMENT MODE */}
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                ३. जमा पद्धत (Payment Mode) *
+              </label>
+              <select
+                value={monthlyPaymentMode}
+                onChange={(e) => {
+                  const mode = e.target.value as 'Cash' | 'Bank';
+                  setMonthlyPaymentMode(mode);
+                  if (mode === 'Cash') setMonthlyBankLedgerId(0);
+                }}
+                className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white text-gray-900 font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                <option value="Cash">💵 रोख (Cash)</option>
+                <option value="Bank">🏦 बँक ट्रान्सफर (Bank)</option>
+              </select>
+            </div>
+
             {/* ACTION BUTTONS: DOWNLOAD TEMPLATE & UPLOAD */}
             <div className="flex items-center gap-2">
               <button
@@ -1832,6 +2002,16 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 className="hidden"
               />
             </div>
+
+            {monthlyPaymentMode === 'Bank' && (
+              <div className="md:col-span-4 bg-blue-50/70 p-2 rounded border border-blue-200">
+                <BankLedgerSelect
+                  value={monthlyBankLedgerId}
+                  onChange={setMonthlyBankLedgerId}
+                  showCountBadge
+                />
+              </div>
+            )}
           </div>
 
           {/* Monthly Guide / Instructions when no file uploaded */}
@@ -2288,6 +2468,34 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                   required
                 />
               </div>
+
+              <div>
+                <label className="text-[11px] font-medium text-gray-600 mb-0.5 block">जमा पद्धत (Payment Mode) *</label>
+                <select
+                  value={manualPaymentMode}
+                  onChange={(e) => {
+                    const mode = e.target.value as 'Cash' | 'Bank';
+                    setManualPaymentMode(mode);
+                    if (mode === 'Cash') setManualBankLedgerId(0);
+                  }}
+                  disabled={isPassingMode}
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-blue-400"
+                >
+                  <option value="Cash">💵 रोख (Cash)</option>
+                  <option value="Bank">🏦 बँक ट्रान्सफर (Bank)</option>
+                </select>
+              </div>
+
+              {manualPaymentMode === 'Bank' && (
+                <div className="md:col-span-2 bg-blue-50/70 p-2.5 rounded border border-blue-200">
+                  <BankLedgerSelect
+                    value={manualBankLedgerId}
+                    onChange={setManualBankLedgerId}
+                    disabled={isPassingMode}
+                    showCountBadge
+                  />
+                </div>
+              )}
             </div>
 
             {!isPassingMode && (
@@ -2422,6 +2630,53 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 </div>
               )}
 
+              {/* Live Sync Approval / Bank Ledger Controls when pending or non-CASH items exist */}
+              {(pendingMobileQueueItems.length > 0 || hasNonCashInMobileQueue) && (
+                <div className="bg-white p-2.5 rounded border border-indigo-200 shadow-2xs space-y-2">
+                  <div className="flex flex-col md:flex-row md:items-end justify-between gap-2.5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 flex-1">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                          सिंक जमा पद्धत (Sync Payment Mode)
+                        </label>
+                        <select
+                          value={appSyncPaymentMode}
+                          onChange={(e) => {
+                            const mode = e.target.value as 'Cash' | 'Bank';
+                            setAppSyncPaymentMode(mode);
+                            if (mode === 'Cash' && !hasNonCashInMobileQueue) setAppSyncBankLedgerId(0);
+                          }}
+                          className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        >
+                          <option value="Cash">💵 रोख (Cash)</option>
+                          <option value="Bank">🏦 बँक / UPI / Online (Bank)</option>
+                        </select>
+                      </div>
+                      {(appSyncPaymentMode === 'Bank' || hasNonCashInMobileQueue) && (
+                        <div>
+                          <BankLedgerSelect
+                            value={appSyncBankLedgerId}
+                            onChange={setAppSyncBankLedgerId}
+                            showCountBadge
+                          />
+                        </div>
+                      )}
+                    </div>
+                    {pendingMobileQueueItems.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleApproveMobileQueue}
+                        disabled={loading}
+                        className="px-3.5 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white font-bold rounded-sm text-xs shadow-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      >
+                        {loading ? <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" /> : <CheckCircleIcon className="w-3.5 h-3.5" />}
+                        <span>प्रलंबित सिंक व्हाउचर तयार करा ({pendingMobileQueueItems.length})</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Live Collections Table */}
               <div className="overflow-x-auto border border-gray-200 rounded-sm bg-white">
                 <table className="w-full text-xs text-left border-collapse">
@@ -2502,6 +2757,36 @@ export default function PigmyCollectionMaster({ voucherId: propVoucherId, isPass
                 <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 font-bold text-[10px] rounded">
                   Idempotency Protected
                 </span>
+              </div>
+
+              <div className="bg-white p-2.5 rounded border border-indigo-200 grid grid-cols-1 md:grid-cols-3 gap-2.5 items-end">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                    जमा पद्धत (Sync Payment Mode) *
+                  </label>
+                  <select
+                    value={appSyncPaymentMode}
+                    onChange={(e) => {
+                      const mode = e.target.value as 'Cash' | 'Bank';
+                      setAppSyncPaymentMode(mode);
+                      if (mode === 'Cash' && !hasNonCashInAppSyncJson) setAppSyncBankLedgerId(0);
+                    }}
+                    className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="Cash">💵 रोख (Cash)</option>
+                    <option value="Bank">🏦 बँक / UPI / Online (Bank)</option>
+                  </select>
+                </div>
+
+                {(appSyncPaymentMode === 'Bank' || hasNonCashInAppSyncJson) && (
+                  <div className="md:col-span-2">
+                    <BankLedgerSelect
+                      value={appSyncBankLedgerId}
+                      onChange={setAppSyncBankLedgerId}
+                      showCountBadge
+                    />
+                  </div>
+                )}
               </div>
 
               <textarea

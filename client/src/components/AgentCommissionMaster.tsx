@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import { 
   Calculator, 
   Settings, 
@@ -122,6 +123,8 @@ export default function AgentCommissionMaster() {
   // Payment Modal State
   const [selectedPayCommission, setSelectedPayCommission] = useState<PendingCommission | null>(null);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'BANK' | 'AGENT_SB'>('CASH');
+  const [bankLedgerId, setBankLedgerId] = useState<number>(0);
+  const [referenceNo, setReferenceNo] = useState<string>('');
   const [selectedAgentSbAccountId, setSelectedAgentSbAccountId] = useState<number | ''>('');
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [payProcessing, setPayProcessing] = useState(false);
@@ -283,6 +286,11 @@ export default function AgentCommissionMaster() {
       return;
     }
 
+    if (paymentMode === 'BANK' && (!bankLedgerId || bankLedgerId <= 0)) {
+      alert('कृपया बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडा.');
+      return;
+    }
+
     setPayProcessing(true);
     try {
       const res = await axios.post('/api/AgentCommission/Pay', {
@@ -290,6 +298,8 @@ export default function AgentCommissionMaster() {
         branchId: selectedBranchId > 0 ? selectedBranchId : 1,
         paymentDate: paymentDate,
         paymentMode: paymentMode,
+        bankLedgerId: paymentMode === 'BANK' ? bankLedgerId : null,
+        referenceNo: paymentMode === 'BANK' && referenceNo.trim() ? referenceNo.trim() : null,
         agentSavingAccountId: selectedAgentSbAccountId !== '' ? Number(selectedAgentSbAccountId) : null
       });
 
@@ -299,6 +309,8 @@ export default function AgentCommissionMaster() {
       });
 
       setSelectedPayCommission(null);
+      setBankLedgerId(0);
+      setReferenceNo('');
       fetchPending();
       if (activeTab === 'history') fetchHistory();
     } catch (err: any) {
@@ -527,7 +539,13 @@ export default function AgentCommissionMaster() {
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           <button
-                            onClick={() => setSelectedPayCommission(p)}
+                            onClick={() => {
+                              setSelectedPayCommission(p);
+                              setPaymentMode('CASH');
+                              setBankLedgerId(0);
+                              setReferenceNo('');
+                              setSelectedAgentSbAccountId('');
+                            }}
                             className="bg-primary hover:bg-[#004a75] text-white px-3 py-1 rounded-xl text-xs font-extrabold shadow-2xs transition flex items-center justify-center gap-1 mx-auto"
                           >
                             <CreditCard className="w-3.5 h-3.5" />
@@ -928,6 +946,26 @@ export default function AgentCommissionMaster() {
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {paymentMode === 'BANK' && (
+                <div className="space-y-2.5 p-3 bg-blue-50/50 border border-blue-200 rounded-xl">
+                  <BankLedgerSelect
+                    value={bankLedgerId}
+                    onChange={setBankLedgerId}
+                    showCountBadge
+                  />
+                  <div>
+                    <label className={labelClass}>UTR / चेक संदर्भ क्र. (UTR / Cheque Ref No - ऐच्छिक)</label>
+                    <input
+                      type="text"
+                      value={referenceNo}
+                      onChange={(e) => setReferenceNo(e.target.value)}
+                      placeholder="उदा. UTR12345678 / Chq No."
+                      className={inputClass}
+                    />
+                  </div>
                 </div>
               )}
             </div>

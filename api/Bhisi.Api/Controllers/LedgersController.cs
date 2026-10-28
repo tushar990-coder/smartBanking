@@ -266,7 +266,30 @@ namespace Bhisi.Api.Controllers
             }
 
             ledger.AccountGroup = null;
-            _context.Entry(ledger).State = EntityState.Modified;
+            var existing = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerID == id);
+            if (existing == null)
+            {
+                return NotFound();
+            }
+
+            existing.LedgerName = ledger.LedgerName;
+            existing.LedgerNameEnglish = ledger.LedgerNameEnglish;
+            existing.GroupID = ledger.GroupID;
+            existing.ReportType = ledger.ReportType;
+            existing.AccountType = ledger.AccountType;
+            existing.IsActive = ledger.IsActive;
+            existing.OpeningBalance = ledger.OpeningBalance;
+            existing.OpeningBalanceType = string.IsNullOrWhiteSpace(ledger.OpeningBalanceType)
+                ? existing.OpeningBalanceType
+                : ledger.OpeningBalanceType;
+            if (!string.IsNullOrWhiteSpace(ledger.LedgerCode))
+            {
+                existing.LedgerCode = ledger.LedgerCode;
+            }
+            if (ledger.LegacyLedgerId.HasValue)
+            {
+                existing.LegacyLedgerId = ledger.LegacyLedgerId;
+            }
 
             try
             {

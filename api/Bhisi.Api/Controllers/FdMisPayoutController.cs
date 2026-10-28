@@ -65,6 +65,7 @@ namespace Bhisi.Api.Controllers
         public string DisbursementMode { get; set; } = "SavingTransfer";
         public int? TargetSavingAccountID { get; set; }
         public int? TargetLoanAccountID { get; set; }
+        public int? BankLedgerID { get; set; }
         public string? Remarks { get; set; }
     }
 
@@ -75,6 +76,7 @@ namespace Bhisi.Api.Controllers
         public int PayoutMonth { get; set; } = DateTime.Today.Month;
         public DateTime PayoutDate { get; set; } = DateTime.Today;
         public string AccountingMode { get; set; } = "DirectExpense"; // DirectExpense or ClearPayable
+        public int? BankLedgerID { get; set; }
         public List<FdMisBatchExecuteItemDto> SelectedItems { get; set; } = new();
     }
 
@@ -420,19 +422,37 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("निवडलेल्या सर्व खात्यांचे या महिन्याचे व्याज आधीच जमा झाले आहे किंवा रक्कम ० आहे.");
             }
 
+            // Upfront Bank GL validation if any item uses Bank disbursement mode
+            foreach (var bItem in validItems.Where(x => x.NetDisbursedAmount > 0 && BankLedgerHelper.IsBankPaymentMode(x.DisbursementMode)))
+            {
+                int? candidateBankLedgerId = (bItem.BankLedgerID.HasValue && bItem.BankLedgerID.Value > 0)
+                    ? bItem.BankLedgerID
+                    : req.BankLedgerID;
+                var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, candidateBankLedgerId);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(bankCheck.ErrorMessage);
+                }
+            }
+
             decimal totalBatchGross = validItems.Sum(x => x.GrossInterest);
+            bool hasCashOrBankPayout = validItems.Any(x =>
+                x.NetDisbursedAmount > 0 &&
+                (BankLedgerHelper.IsBankPaymentMode(x.DisbursementMode) ||
+                 string.Equals(x.DisbursementMode, "Cash", StringComparison.OrdinalIgnoreCase)));
 
             using (var transaction = await _context.Database.BeginTransactionAsync())
             {
                 try
                 {
-                    // 1. Create Combined Master Journal Voucher
+                    // 1. Create Combined Master Voucher (Payment when Cash/Bank disbursement is present, else Journal)
+                    string vPrefix = hasCashOrBankPayout ? "PV" : "JV";
                     var voucher = new Voucher
                     {
                         BranchID = req.BranchID,
-                        VoucherNo = $"JV-MIS-BR{req.BranchID}-{req.PayoutYear}{req.PayoutMonth:D2}-{DateTime.Now:HHmmss}",
+                        VoucherNo = $"{vPrefix}-MIS-BR{req.BranchID}-{req.PayoutYear}{req.PayoutMonth:D2}-{DateTime.Now:HHmmss}",
                         VoucherDate = req.PayoutDate,
-                        VoucherType = "Journal",
+                        VoucherType = hasCashOrBankPayout ? "Payment" : "Journal",
                         TotalAmount = totalBatchGross,
                         Narration = $"मुदत ठेव मासिक व्याज ट्रान्सफर (FD MIS Interest Payout [{req.AccountingMode}]): {req.PayoutMonth:D2}/{req.PayoutYear}",
                         CreatedBy = 1,
@@ -514,10 +534,30 @@ namespace Bhisi.Api.Controllers
                             }
                         }
 
-                        // C. Handle Saving Account Transfer
+                        // C. Handle Net Disbursement (Bank, Cash, Saving Account Transfer, or Suspense)
                         if (item.NetDisbursedAmount > 0)
                         {
-                            if (item.DisbursementMode == "SavingTransfer" && item.TargetSavingAccountID.HasValue && item.TargetSavingAccountID.Value > 0)
+                            if (BankLedgerHelper.IsBankPaymentMode(item.DisbursementMode))
+                            {
+                                int? effBankLedgerId = (item.BankLedgerID.HasValue && item.BankLedgerID.Value > 0)
+                                    ? item.BankLedgerID
+                                    : req.BankLedgerID;
+                                var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, effBankLedgerId);
+                                if (!bankCheck.IsValid)
+                                {
+                                    await transaction.RollbackAsync();
+                                    return BadRequest(bankCheck.ErrorMessage);
+                                }
+                                item.DisbursementMode = "Bank";
+                                voucherCreditGroups[bankCheck.LedgerId] = voucherCreditGroups.GetValueOrDefault(bankCheck.LedgerId) + item.NetDisbursedAmount;
+                            }
+                            else if (string.Equals(item.DisbursementMode, "Cash", StringComparison.OrdinalIgnoreCase))
+                            {
+                                item.DisbursementMode = "Cash";
+                                int cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, req.BranchID, "FD");
+                                voucherCreditGroups[cashLedgerId] = voucherCreditGroups.GetValueOrDefault(cashLedgerId) + item.NetDisbursedAmount;
+                            }
+                            else if (item.DisbursementMode == "SavingTransfer" && item.TargetSavingAccountID.HasValue && item.TargetSavingAccountID.Value > 0)
                             {
                                 var sbAcc = await _context.SavingAccountMasters
                                     .Include(s => s.Ledger)

@@ -24,6 +24,7 @@ namespace Bhisi.Api.Controllers
         {
             public required AssetMaintenance Maintenance { get; set; }
             public bool PostVoucher { get; set; }
+            public string? PaymentMode { get; set; }
             public int? DebitLedgerID { get; set; }
             public int? CreditLedgerID { get; set; }
         }
@@ -69,7 +70,7 @@ namespace Bhisi.Api.Controllers
             }
 
             // Auto-resolve branch cash ledger if no credit ledger provided
-            if (request.PostVoucher && (!request.CreditLedgerID.HasValue || request.CreditLedgerID.Value <= 0))
+            if (request.PostVoucher && Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode)) { var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.CreditLedgerID); if (!bankCheck.IsValid) return BadRequest(bankCheck.ErrorMessage); request.CreditLedgerID = bankCheck.LedgerId; } else if (request.PostVoucher && (!request.CreditLedgerID.HasValue || request.CreditLedgerID.Value <= 0))
             {
                 int cashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.Maintenance.BranchID, "ASSET");
                 if (cashId > 0) request.CreditLedgerID = cashId;

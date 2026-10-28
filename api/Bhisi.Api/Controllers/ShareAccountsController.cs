@@ -418,9 +418,15 @@ namespace Bhisi.Api.Controllers
                 {
                     debitLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savingAccount);
                 }
-                else if (request.PaymentMode == "Bank" && request.BankLedgerId.HasValue)
+                else if (Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode))
                 {
-                    debitLedgerId = request.BankLedgerId.Value;
+                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                    if (!bankCheck.IsValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = bankCheck.ErrorMessage });
+                    }
+                    debitLedgerId = bankCheck.LedgerId;
                 }
                 else if ((request.PaymentMode == "LedgerTransfer" || request.PaymentMode == "Cash") && request.SourceLedgerId.HasValue && request.SourceLedgerId.Value > 0)
                 {
@@ -499,7 +505,7 @@ namespace Bhisi.Api.Controllers
                     VoucherDate = voucherDate,
                     VoucherType = (request.PaymentMode == "Transfer" || request.PaymentMode == "LedgerTransfer") ? "Journal" : "Receipt",
                     TotalAmount = totalAmount,
-                    Narration = $"Share Allotment ({request.PaymentMode}) for {(member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "")}. Cert: {certNo}. {request.Narration}",
+                    Narration = $"Share Allotment ({request.PaymentMode}) for {(member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "")}. Cert: {certNo}. {request.Narration}{(string.IsNullOrWhiteSpace(request.ChequeNo) ? "" : $" [Ref: {request.ChequeNo.Trim()}]")}",
                     Status = "Pending", // 🌟 CBS Maker-Checker: Pending Voucher Passing Queue
                     CreatedBy = actionUserId,
                     ApprovedBy = null,
@@ -689,9 +695,15 @@ namespace Bhisi.Api.Controllers
                 {
                     creditLedgerId = await Helpers.SavingLedgerHelper.ResolveSavingLiabilityLedgerIdAsync(_context, savingAccount);
                 }
-                else if (request.PaymentMode == "Bank" && request.BankLedgerId.HasValue)
+                else if (Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode))
                 {
-                    creditLedgerId = request.BankLedgerId.Value;
+                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                    if (!bankCheck.IsValid)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = bankCheck.ErrorMessage });
+                    }
+                    creditLedgerId = bankCheck.LedgerId;
                 }
                 else if ((request.PaymentMode == "LedgerTransfer" || request.PaymentMode == "Cash") && request.SourceLedgerId.HasValue && request.SourceLedgerId.Value > 0)
                 {
@@ -724,7 +736,7 @@ namespace Bhisi.Api.Controllers
                     VoucherDate = voucherDate,
                     VoucherType = (request.PaymentMode == "Transfer" || request.PaymentMode == "LedgerTransfer") ? "Journal" : "Payment",
                     TotalAmount = totalAmount,
-                    Narration = $"Share Withdrawal ({request.PaymentMode}) for {(member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "")}. {request.Narration}",
+                    Narration = $"Share Withdrawal ({request.PaymentMode}) for {(member.Customer != null ? $"{member.Customer.FirstName} {member.Customer.LastName}".Trim() : "")}. {request.Narration}{(string.IsNullOrWhiteSpace(request.ChequeNo) ? "" : $" [Ref: {request.ChequeNo.Trim()}]")}",
                     Status = "Pending", // 🌟 CBS Maker-Checker: Pending Passing
                     CreatedBy = actionUserId,
                     ApprovedBy = null,
@@ -2522,7 +2534,8 @@ namespace Bhisi.Api.Controllers
             public string? ResolutionNo { get; set; }
             public DateTime? ResolutionDate { get; set; }
             public decimal TransferFee { get; set; } = 0M;
-            public string FeePaymentMode { get; set; } = "None"; // "Cash", "Saving", "None"
+            public string FeePaymentMode { get; set; } = "None"; // "Cash", "Saving", "Bank", "None"
+            public int? BankLedgerId { get; set; }
             public int? SavingAccountId { get; set; }
             public string Narration { get; set; } = "Share Transfer between members";
         }
@@ -2693,7 +2706,17 @@ namespace Bhisi.Api.Controllers
                     int feeIncomeLedgerId = feeIncomeLedger.LedgerID;
 
                     int feeDebitLedgerId;
-                    if (request.FeePaymentMode == "Saving" && request.SavingAccountId.HasValue)
+                    if (Helpers.BankLedgerHelper.IsBankPaymentMode(request.FeePaymentMode))
+                    {
+                        var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                        if (!bankCheck.IsValid)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(new { message = bankCheck.ErrorMessage });
+                        }
+                        feeDebitLedgerId = bankCheck.LedgerId;
+                    }
+                    else if (request.FeePaymentMode == "Saving" && request.SavingAccountId.HasValue)
                     {
                         var savingAcc = await _context.SavingAccountMasters.FindAsync(request.SavingAccountId.Value);
                         if (savingAcc != null && savingAcc.CurrentBalance >= request.TransferFee)
@@ -2734,7 +2757,7 @@ namespace Bhisi.Api.Controllers
                         BranchID = request.BranchId,
                         VoucherNo = feeVoucherNo,
                         VoucherDate = voucherDate,
-                        VoucherType = request.FeePaymentMode == "Cash" ? "Receipt" : "Journal",
+                        VoucherType = (request.FeePaymentMode == "Cash" || Helpers.BankLedgerHelper.IsBankPaymentMode(request.FeePaymentMode)) ? "Receipt" : "Journal",
                         TotalAmount = request.TransferFee,
                         Narration = $"Share Transfer Fee for transfer of {request.NumberOfShares} shares from {fromMemberName} to {toMemberName}",
                         Status = "Pending", // 🌟 CBS Maker-Checker: Pending Passing
@@ -3408,6 +3431,10 @@ namespace Bhisi.Api.Controllers
 
             var cert = shareAccount?.Certificates?.OrderByDescending(c => c.CertificateId).FirstOrDefault();
             bool isTransfer = outTxn != null || inTxn != null || voucher.Narration?.Contains("हस्तांतरण") == true;
+            var bankVd = voucher.VoucherDetails?.FirstOrDefault(vd => vd.Ledger != null && Helpers.BankLedgerHelper.IsBankAccountType(vd.Ledger.AccountType));
+            string resolvedPaymentMode = bankVd != null
+                ? "Bank"
+                : (voucher.VoucherType == "Journal" ? "Transfer" : (voucher.VoucherType == "Receipt" ? "Cash" : "Payment"));
 
             var result = new
             {
@@ -3471,7 +3498,8 @@ namespace Bhisi.Api.Controllers
                 } : null,
                 numberOfShares = mainTxn?.NumberOfShares ?? (int)(voucher.TotalAmount / 100),
                 amount = voucher.TotalAmount,
-                paymentMode = voucher.VoucherType == "Journal" ? "Transfer" : (voucher.VoucherType == "Receipt" ? "Cash" : "Payment")
+                paymentMode = resolvedPaymentMode,
+                bankLedgerId = bankVd?.LedgerID
             };
 
             return Ok(result);

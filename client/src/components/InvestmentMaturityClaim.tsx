@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 
 const InvestmentMaturityClaim: React.FC = () => {
   const { user } = useAuth();
@@ -49,6 +50,9 @@ const InvestmentMaturityClaim: React.FC = () => {
     maturityDate: activeBusinessDate,
     principalReceived: 0,
     interestReceived: 0,
+    paymentMode: 'Bank',
+    bankLedgerID: 0,
+    referenceNo: '',
   });
 
   const [prematureForm, setPrematureForm] = useState({
@@ -57,6 +61,9 @@ const InvestmentMaturityClaim: React.FC = () => {
     revisedInterestRate: 0,
     interestPaid: 0,
     penaltyAmount: 0,
+    paymentMode: 'Bank',
+    bankLedgerID: 0,
+    referenceNo: '',
   });
 
   const [renewalForm, setRenewalForm] = useState({
@@ -120,19 +127,25 @@ const InvestmentMaturityClaim: React.FC = () => {
       const expectedTotal = acc.expectedMaturityAmount || principal;
       const interest = Math.max(0, expectedTotal - principal);
 
-      setMaturityForm({
+      setMaturityForm(prev => ({
         maturityDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : activeBusinessDate,
         principalReceived: principal,
         interestReceived: Math.round(interest * 100) / 100,
-      });
+        paymentMode: prev.paymentMode || 'Bank',
+        bankLedgerID: prev.paymentMode === 'Bank' ? prev.bankLedgerID : 0,
+        referenceNo: '',
+      }));
 
-      setPrematureForm({
+      setPrematureForm(prev => ({
         withdrawalDate: activeBusinessDate,
         principalPaid: principal,
         revisedInterestRate: Math.max(0, (acc.interestRate || 0) - 1.0), // default 1% penalty reduction
         interestPaid: 0,
         penaltyAmount: 0,
-      });
+        paymentMode: prev.paymentMode || 'Bank',
+        bankLedgerID: prev.paymentMode === 'Bank' ? prev.bankLedgerID : 0,
+        referenceNo: '',
+      }));
 
       setRenewalForm({
         renewalDate: acc.maturityDate ? acc.maturityDate.split('T')[0] : activeBusinessDate,
@@ -152,18 +165,31 @@ const InvestmentMaturityClaim: React.FC = () => {
       setError('कृपया मुदत ठेव खाते निवडा.');
       return;
     }
+    if (maturityForm.paymentMode === 'Bank' && (!maturityForm.bankLedgerID || Number(maturityForm.bankLedgerID) <= 0)) {
+      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
 
     setSaving(true);
     try {
       const response = await axios.post(`${API_URL}/InvestmentAccounts/Maturity`, {
         investmentAccountID: selectedAccount.investmentAccountID,
-        ...maturityForm,
+        maturityDate: maturityForm.maturityDate,
+        principalReceived: maturityForm.principalReceived,
+        interestReceived: maturityForm.interestReceived,
+        paymentMode: maturityForm.paymentMode || 'Bank',
+        bankLedgerID: maturityForm.paymentMode === 'Bank' ? Number(maturityForm.bankLedgerID) : null,
+        referenceNo: maturityForm.referenceNo?.trim() || null,
       });
       setSuccess(`${response.data.message || 'मुदत ठेव खात्याची मुदतपूर्ती यशस्वीरीत्या झाली!'}`);
       setSelectedAccountId(0);
       fetchAccounts();
     } catch (err: any) {
-      setError(typeof err.response?.data === 'string' ? err.response.data : 'मुदतपूर्ती करताना त्रुटी आली.');
+      setError(
+        typeof err.response?.data === 'string'
+          ? err.response.data
+          : err.response?.data?.message || 'मुदतपूर्ती करताना त्रुटी आली.'
+      );
     } finally {
       setSaving(false);
     }
@@ -177,19 +203,34 @@ const InvestmentMaturityClaim: React.FC = () => {
       setError('कृपया मुदत ठेव खाते निवडा.');
       return;
     }
+    if (prematureForm.paymentMode === 'Bank' && (!prematureForm.bankLedgerID || Number(prematureForm.bankLedgerID) <= 0)) {
+      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
 
     setSaving(true);
     try {
       const response = await axios.post(`${API_URL}/InvestmentAccounts/PrematureWithdraw`, {
         investmentAccountID: selectedAccount.investmentAccountID,
-        ...prematureForm,
+        withdrawalDate: prematureForm.withdrawalDate,
+        principalPaid: prematureForm.principalPaid,
+        revisedInterestRate: prematureForm.revisedInterestRate,
+        interestPaid: prematureForm.interestPaid,
+        penaltyAmount: prematureForm.penaltyAmount,
         netPayout: (prematureForm.principalPaid || 0) + (prematureForm.interestPaid || 0) - (prematureForm.penaltyAmount || 0),
+        paymentMode: prematureForm.paymentMode || 'Bank',
+        bankLedgerID: prematureForm.paymentMode === 'Bank' ? Number(prematureForm.bankLedgerID) : null,
+        referenceNo: prematureForm.referenceNo?.trim() || null,
       });
       setSuccess(`${response.data.message || 'मुदत ठेव मुदतपूर्व यशस्वीरीत्या काढली!'}`);
       setSelectedAccountId(0);
       fetchAccounts();
     } catch (err: any) {
-      setError(typeof err.response?.data === 'string' ? err.response.data : 'मुदतपूर्व काढताना त्रुटी आली.');
+      setError(
+        typeof err.response?.data === 'string'
+          ? err.response.data
+          : err.response?.data?.message || 'मुदतपूर्व काढताना त्रुटी आली.'
+      );
     } finally {
       setSaving(false);
     }
@@ -555,6 +596,55 @@ const InvestmentMaturityClaim: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Maturity Receipt Mode & Bank GL Selection */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 items-start bg-white/80 p-2.5 rounded-sm border border-emerald-200">
+                  <div>
+                    <label className={labelClass}>जमा पद्धत (Receipt Mode) *</label>
+                    <select
+                      value={maturityForm.paymentMode}
+                      onChange={(e) => {
+                        const mode = e.target.value;
+                        setMaturityForm(prev => ({
+                          ...prev,
+                          paymentMode: mode,
+                          ...(mode !== 'Bank' ? { bankLedgerID: 0, referenceNo: '' } : {})
+                        }));
+                      }}
+                      className={`${inputClass} font-bold text-blue-950 border-blue-300`}
+                    >
+                      <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                      <option value="Cash">💵 रोख (Cash)</option>
+                    </select>
+                  </div>
+
+                  {maturityForm.paymentMode === 'Bank' ? (
+                    <>
+                      <div className="sm:col-span-2">
+                        <BankLedgerSelect
+                          value={maturityForm.bankLedgerID}
+                          onChange={(id) => setMaturityForm(prev => ({ ...prev, bankLedgerID: id }))}
+                          showCountBadge
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>UTR / धनादेश / संदर्भ क्र. (UTR / Ref No.)</label>
+                        <input
+                          type="text"
+                          value={maturityForm.referenceNo}
+                          onChange={(e) => setMaturityForm(prev => ({ ...prev, referenceNo: e.target.value }))}
+                          placeholder="उदा. UTR / NEFT / CHQ क्र."
+                          className={`${inputClass} font-mono`}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="sm:col-span-3 flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-sm text-[11px] font-bold text-emerald-900 mt-4">
+                      <CheckCircle className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                      <span>मुदतपूर्ती रक्कम शाखेच्या मुख्य रोख खात्यात (Branch Cash GL Account) जमा (Debit) केली जाईल.</span>
+                    </div>
+                  )}
+                </div>
+
                 <div className="pt-2 flex justify-end gap-2 border-t border-emerald-200">
                   <button
                     type="submit"
@@ -646,6 +736,55 @@ const InvestmentMaturityClaim: React.FC = () => {
                       className={`${inputClass} font-mono font-bold text-rose-700`}
                     />
                   </div>
+                </div>
+
+                {/* Premature Receipt Mode & Bank GL Selection */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 items-start bg-white/80 p-2.5 rounded-sm border border-amber-200">
+                  <div>
+                    <label className={labelClass}>जमा पद्धत (Receipt Mode) *</label>
+                    <select
+                      value={prematureForm.paymentMode}
+                      onChange={(e) => {
+                        const mode = e.target.value;
+                        setPrematureForm(prev => ({
+                          ...prev,
+                          paymentMode: mode,
+                          ...(mode !== 'Bank' ? { bankLedgerID: 0, referenceNo: '' } : {})
+                        }));
+                      }}
+                      className={`${inputClass} font-bold text-blue-950 border-blue-300`}
+                    >
+                      <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                      <option value="Cash">💵 रोख (Cash)</option>
+                    </select>
+                  </div>
+
+                  {prematureForm.paymentMode === 'Bank' ? (
+                    <>
+                      <div className="sm:col-span-2">
+                        <BankLedgerSelect
+                          value={prematureForm.bankLedgerID}
+                          onChange={(id) => setPrematureForm(prev => ({ ...prev, bankLedgerID: id }))}
+                          showCountBadge
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>UTR / धनादेश / संदर्भ क्र. (UTR / Ref No.)</label>
+                        <input
+                          type="text"
+                          value={prematureForm.referenceNo}
+                          onChange={(e) => setPrematureForm(prev => ({ ...prev, referenceNo: e.target.value }))}
+                          placeholder="उदा. UTR / NEFT / CHQ क्र."
+                          className={`${inputClass} font-mono`}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="sm:col-span-3 flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-sm text-[11px] font-bold text-amber-900 mt-4">
+                      <CheckCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                      <span>मुदतपूर्व निव्वळ रक्कम शाखेच्या मुख्य रोख खात्यात (Branch Cash GL Account) जमा (Debit) केली जाईल.</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between pt-1 border-t border-amber-200">

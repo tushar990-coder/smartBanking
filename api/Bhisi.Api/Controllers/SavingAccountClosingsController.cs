@@ -84,9 +84,12 @@ namespace Bhisi.Api.Controllers
                 return BadRequest("Account balance is less than the closing charges.");
             }
 
-            if (request.PaymentMode == "Bank" && (!request.BankLedgerID.HasValue || request.BankLedgerID.Value <= 0))
+            int validatedBankLedgerId = 0;
+            if (BankLedgerHelper.IsBankPaymentMode(request.PaymentMode))
             {
-                return BadRequest("बँक व्यवहारासाठी बँक खाते/लेजर (Bank Ledger) निवडणे बंधनकारक आहे.");
+                var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerID);
+                if (!bankCheck.IsValid) return BadRequest(bankCheck.ErrorMessage);
+                validatedBankLedgerId = bankCheck.LedgerId;
             }
 
             using var dbTransaction = await _context.Database.BeginTransactionAsync();
@@ -103,9 +106,9 @@ namespace Bhisi.Api.Controllers
                 {
                     cashBankLedgerID = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, account.BranchID, "SAVINGS");
                 }
-                else if (request.PaymentMode == "Bank" && request.BankLedgerID.HasValue && request.BankLedgerID.Value > 0)
+                else if (BankLedgerHelper.IsBankPaymentMode(request.PaymentMode))
                 {
-                    cashBankLedgerID = request.BankLedgerID.Value;
+                    cashBankLedgerID = validatedBankLedgerId;
                 }
                 else
                 {
@@ -158,7 +161,7 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = request.ClosureDate,
                         VoucherType = request.PaymentMode == "Cash" ? "Payment" : "Journal",
                         TotalAmount = grossBalance,
-                        Narration = $"बचत खाते बंद करणे (अंतिम हिशोब) - खाते क्र. {account.AccountNo} ({customerName}) | एकूण: ₹{grossBalance:N2}, आकार: ₹{request.ClosingCharges:N2}, दिलेली रक्कम: ₹{netPayable:N2}",
+                        Narration = $"बचत खाते बंद करणे (अंतिम हिशोब) - खाते क्र. {account.AccountNo} ({customerName}) | एकूण: ₹{grossBalance:N2}, आकार: ₹{request.ClosingCharges:N2}, दिलेली रक्कम: ₹{netPayable:N2}{(!string.IsNullOrWhiteSpace(request.CheckNo) ? $" | चेक/UTR: {request.CheckNo.Trim()}" : "")}",
                         CreatedBy = request.CreatedBy,
                         VoucherDetails = new List<VoucherDetail>()
                     };
@@ -292,7 +295,10 @@ namespace Bhisi.Api.Controllers
         [HttpGet("by-voucher/{voucherId}")]
         public async Task<ActionResult<object>> GetSavingAccountClosingByVoucher(int voucherId)
         {
-            var voucher = await _context.Vouchers.FindAsync(voucherId);
+            var voucher = await _context.Vouchers
+                .Include(v => v.VoucherDetails)
+                    .ThenInclude(vd => vd.Ledger)
+                .FirstOrDefaultAsync(v => v.VoucherID == voucherId);
             if (voucher == null)
             {
                 return NotFound(new { message = "व्हाउचर सापडले नाही (Voucher not found)." });
@@ -329,6 +335,16 @@ namespace Bhisi.Api.Controllers
                 return NotFound(new { message = "सदर व्हाउचरशी जोडलेली बचत खाते बंद नोंद सापडली नाही." });
             }
 
+            int? bankLedgerId = null;
+            if (BankLedgerHelper.IsBankPaymentMode(closing.PaymentMode))
+            {
+                var bankCrLine = voucher.VoucherDetails
+                    .FirstOrDefault(d => d.DrCr == "Cr" && BankLedgerHelper.IsBankAccountType(d.Ledger?.AccountType))
+                    ?? voucher.VoucherDetails.FirstOrDefault(d => d.DrCr == "Cr" && d.Amount == closing.NetPayable)
+                    ?? voucher.VoucherDetails.FirstOrDefault(d => d.DrCr == "Cr");
+                bankLedgerId = bankCrLine?.LedgerID;
+            }
+
             return Ok(new
             {
                 closing.ClosingID,
@@ -339,6 +355,7 @@ namespace Bhisi.Api.Controllers
                 closing.ClosingCharges,
                 closing.NetPayable,
                 closing.PaymentMode,
+                BankLedgerID = bankLedgerId,
                 closing.VoucherNo,
                 SavingAccount = closing.SavingAccount != null ? new
                 {
@@ -375,6 +392,7 @@ namespace Bhisi.Api.Controllers
         public decimal ClosingCharges { get; set; } = 0;
         public string PaymentMode { get; set; } = "Cash";
         public int? BankLedgerID { get; set; }
+        public string? CheckNo { get; set; }
         public int CreatedBy { get; set; } = 1;
     }
 }

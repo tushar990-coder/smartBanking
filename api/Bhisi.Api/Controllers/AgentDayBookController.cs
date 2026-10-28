@@ -26,6 +26,7 @@ namespace Bhisi.Api.Controllers
             public DateTime? CollectionDateTo { get; set; }
             public decimal Amount { get; set; }
             public string PaymentMode { get; set; } = "CASH";
+            public int? BankLedgerId { get; set; }
             public string Narration { get; set; } = string.Empty;
             public int? VoucherId { get; set; }
             public string? VoucherNo { get; set; }
@@ -338,6 +339,7 @@ namespace Bhisi.Api.Controllers
             public DateTime DepositDate { get; set; }
             public decimal Amount { get; set; }
             public string PaymentMode { get; set; } = "CASH";
+            public int? BankLedgerId { get; set; }
             public string? Narration { get; set; }
             public int BranchId { get; set; } = 1;
             public int? CashierId { get; set; }
@@ -413,6 +415,19 @@ namespace Bhisi.Api.Controllers
             int count5 = request.Count5 ?? 0;
             int countCoins = request.CountCoins ?? 0;
 
+            string effectivePaymentMode = string.IsNullOrWhiteSpace(request.PaymentMode) ? "CASH" : request.PaymentMode.Trim();
+            bool isBankMode = !string.Equals(effectivePaymentMode, "CASH", StringComparison.OrdinalIgnoreCase);
+            int resolvedBankLedgerId = 0;
+            if (isBankMode)
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(bankCheck.ErrorMessage);
+                }
+                resolvedBankLedgerId = bankCheck.LedgerId;
+            }
+
             decimal denomTotal = (count500 * 500) + (count200 * 200) + (count100 * 100) + (count50 * 50) + (count20 * 20) + (count10 * 10) + (count5 * 5) + countCoins;
 
             if (denomTotal > 0 && denomTotal != request.Amount)
@@ -460,8 +475,10 @@ namespace Bhisi.Api.Controllers
                 string combinedNarration = $"{dateRangeTag}{request.Narration}".Trim();
 
                 // Voucher Auto Generation Logic
-                int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "PIGMY");
-                var debitLedger = await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash" || l.AccountType == "Cash In Hand");
+                int branchCashId = isBankMode ? resolvedBankLedgerId : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "PIGMY");
+                var debitLedger = isBankMode
+                    ? await _context.Ledgers.FindAsync(resolvedBankLedgerId)
+                    : (await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Cash" || l.AccountType == "Cash In Hand"));
                 var creditLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy") || l.LedgerName.Contains("Suspense"));
                 
                 if (debitLedger == null) debitLedger = await _context.Ledgers.FirstAsync();
@@ -631,6 +648,7 @@ namespace Bhisi.Api.Controllers
                     DepositDate = deposit?.DepositDate ?? voucher.VoucherDate,
                     Amount = deposit?.Amount ?? voucher.TotalAmount,
                     PaymentMode = deposit?.PaymentMode ?? "CASH",
+                    BankLedgerId = (deposit?.PaymentMode != null && !string.Equals(deposit.PaymentMode, "CASH", StringComparison.OrdinalIgnoreCase)) ? voucher.VoucherDetails?.FirstOrDefault(vd => vd.DrCr == "Dr")?.LedgerID : null,
                     Narration = deposit?.Narration ?? voucher.Narration
                 },
                 denominations = denom != null ? new

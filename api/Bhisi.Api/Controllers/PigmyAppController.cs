@@ -360,11 +360,15 @@ namespace Bhisi.Api.Controllers
             public decimal CollectionAmount { get; set; }
             public DateTime? CollectionDate { get; set; }
             public string? ReceiptNo { get; set; }
+            public string? PaymentMode { get; set; }
+            public int? BankLedgerId { get; set; }
         }
 
         public class BulkAppCollectionRequest
         {
             public int? AgentId { get; set; }
+            public string? PaymentMode { get; set; }
+            public int? BankLedgerId { get; set; }
             public List<AppCollectionItemDto> Items { get; set; } = new List<AppCollectionItemDto>();
         }
 
@@ -576,7 +580,31 @@ namespace Bhisi.Api.Controllers
                     // Create Pending Voucher for Voucher Passing
                     var appBranchId = account.BranchID;
                     var appMapping = await _context.PigmyVoucherMappings.FirstOrDefaultAsync(m => m.BranchId == appBranchId && m.CollectionSource == "APP" && m.IsActive);
-                    int appDrLedgerId = appMapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, appBranchId, "PIGMY");
+                    string effectiveMode = !string.IsNullOrWhiteSpace(item.PaymentMode)
+                        ? item.PaymentMode.Trim()
+                        : (!string.IsNullOrWhiteSpace(request.PaymentMode) ? request.PaymentMode.Trim() : "CASH");
+                    bool isAppBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(effectiveMode);
+                    int validatedAppBankLedgerId = 0;
+                    if (isAppBankMode)
+                    {
+                        int? targetBankLedgerId = item.BankLedgerId ?? request.BankLedgerId;
+                        var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, targetBankLedgerId);
+                        if (!bankCheck.IsValid)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(bankCheck.ErrorMessage);
+                        }
+                        validatedAppBankLedgerId = bankCheck.LedgerId;
+                        newColl.PaymentMode = effectiveMode.Length <= 10 ? effectiveMode.ToUpperInvariant() : "BANK";
+                    }
+                    else
+                    {
+                        newColl.PaymentMode = "CASH";
+                    }
+
+                    int appDrLedgerId = isAppBankMode
+                        ? validatedAppBankLedgerId
+                        : (appMapping?.DebitLedgerId ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, appBranchId, "PIGMY"));
                     int appCrLedgerId = appMapping?.CreditLedgerId ?? (await _context.PigmySchemes.FirstOrDefaultAsync(s => s.PigmySchemeID == account.PigmySchemeID))?.PigmyLiabilityLedgerID ?? (await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("पिग्मी") || l.LedgerName.Contains("Pigmy")))?.LedgerID ?? 47;
 
                     string appVoucherNo = $"PV-{appBranchId}-{collDate:yyyyMMdd}-APP-{Guid.NewGuid().ToString("N").Substring(0, 4)}";

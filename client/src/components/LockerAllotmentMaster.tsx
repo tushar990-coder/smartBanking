@@ -24,6 +24,7 @@ import {
   XCircle
 } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
 import { useAuth } from '../context/AuthContext';
 
@@ -144,6 +145,9 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
     annualRent: '0',
     securityDepositAmount: '0',
     advanceRentPaid: '0',
+    paymentMode: 'Cash',
+    bankLedgerID: 0,
+    referenceNo: '',
     linkedSavingAccountID: '',
     isAutoDebitEnabled: false,
     nomineeName: '',
@@ -192,6 +196,9 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
             annualRent: (a.annualRent || 0).toString(),
             securityDepositAmount: (a.securityDepositAmount || 0).toString(),
             advanceRentPaid: (a.advanceRentPaid || 0).toString(),
+            paymentMode: a.paymentMode || 'Cash',
+            bankLedgerID: a.bankLedgerID || 0,
+            referenceNo: a.referenceNo || '',
             linkedSavingAccountID: a.linkedSavingAccountID ? a.linkedSavingAccountID.toString() : '',
             isAutoDebitEnabled: !!a.isAutoDebitEnabled,
             nomineeName: a.nomineeName || '',
@@ -396,6 +403,9 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
       annualRent: '0',
       securityDepositAmount: '0',
       advanceRentPaid: '0',
+      paymentMode: 'Cash',
+      bankLedgerID: 0,
+      referenceNo: '',
       linkedSavingAccountID: '',
       isAutoDebitEnabled: false,
       nomineeName: '',
@@ -418,6 +428,13 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
       return;
     }
 
+    const secDep = parseFloat(formData.securityDepositAmount) || 0;
+    const advRent = parseFloat(formData.advanceRentPaid) || 0;
+    if ((secDep + advRent) > 0 && formData.paymentMode === 'Bank' && (!formData.bankLedgerID || Number(formData.bankLedgerID) <= 0)) {
+      showMsg('बँक व्यवहारासाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.', 'error');
+      return;
+    }
+
     const payload = {
       branchID: Number(formData.branchID) || 1,
       lockerID: parseInt(formData.lockerID),
@@ -428,8 +445,11 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
       allotmentDate: formData.allotmentDate,
       rentStartDate: formData.rentStartDate,
       annualRent: parseFloat(formData.annualRent) || 0,
-      securityDepositAmount: parseFloat(formData.securityDepositAmount) || 0,
-      advanceRentPaid: parseFloat(formData.advanceRentPaid) || 0,
+      securityDepositAmount: secDep,
+      advanceRentPaid: advRent,
+      paymentMode: formData.paymentMode,
+      bankLedgerID: formData.paymentMode === 'Bank' ? Number(formData.bankLedgerID) : null,
+      referenceNo: formData.paymentMode === 'Bank' ? formData.referenceNo.trim() : null,
       linkedSavingAccountID: formData.linkedSavingAccountID ? parseInt(formData.linkedSavingAccountID) : null,
       isAutoDebitEnabled: formData.isAutoDebitEnabled,
       nomineeName: formData.nomineeName.trim(),
@@ -819,6 +839,53 @@ const LockerAllotmentMaster: React.FC<LockerAllotmentMasterProps> = ({ initialLo
                   </div>
                 </div>
               </div>
+
+              {(parseFloat(formData.securityDepositAmount || '0') + parseFloat(formData.advanceRentPaid || '0')) > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3 pt-3 border-t border-amber-200 items-end">
+                  <div>
+                    <label className={labelClass}>पेमेंट पद्धत (Payment Mode) *</label>
+                    <select
+                      name="paymentMode"
+                      value={formData.paymentMode}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          paymentMode: e.target.value,
+                          bankLedgerID: e.target.value === 'Bank' ? prev.bankLedgerID : 0
+                        }))
+                      }
+                      className={inputClass}
+                    >
+                      <option value="Cash">💵 रोख (Cash)</option>
+                      <option value="Bank">🏦 बँक ट्रान्सफर (Bank Account)</option>
+                    </select>
+                  </div>
+
+                  {formData.paymentMode === 'Bank' && (
+                    <>
+                      <div>
+                        <BankLedgerSelect
+                          value={formData.bankLedgerID}
+                          onChange={(id) => setFormData((prev) => ({ ...prev, bankLedgerID: id }))}
+                          disabled={Boolean(isPassing)}
+                          showCountBadge
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>चेक / युटीआर / संदर्भ क्र. (UTR / Cheque No)</label>
+                        <input
+                          type="text"
+                          name="referenceNo"
+                          value={formData.referenceNo}
+                          onChange={handleChange}
+                          placeholder="उदा. UTR123456 / CHQ-001"
+                          className={inputClass}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             </fieldset>

@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import { useAuth } from '../context/AuthContext';
 
 interface Institution {
@@ -103,6 +104,9 @@ const InvestmentAccountOpening: React.FC = () => {
     nomineeName: '',
     nomineeRelation: '',
     remarks: '',
+    paymentMode: 'Bank',
+    bankLedgerID: 0,
+    referenceNo: '',
   });
 
   // Sync CBS Business Date if changed
@@ -291,6 +295,14 @@ const InvestmentAccountOpening: React.FC = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement> | any) => {
     const { name, value, type } = e.target;
+    if (name === 'paymentMode') {
+      setFormData(prev => ({
+        ...prev,
+        paymentMode: String(value),
+        ...(value !== 'Bank' ? { bankLedgerID: 0, referenceNo: '' } : {})
+      }));
+      return;
+    }
     let val: any = type === 'number' ? (value === '' ? '' : parseFloat(value)) : value;
     if (name && (name === 'branchID' || name === 'investmentInstitutionID' || name === 'schemeID')) {
       val = parseInt(String(value), 10) || 0;
@@ -322,10 +334,16 @@ const InvestmentAccountOpening: React.FC = () => {
       nomineeName: '',
       nomineeRelation: '',
       remarks: '',
+      paymentMode: 'Bank',
+      bankLedgerID: 0,
+      referenceNo: '',
     });
     setCalcData({
       interestRate: 0,
+      durationType: 'Months',
       durationMonths: 0,
+      durationDays: 0,
+      durationDisplay: '',
       interestCalculationMethod: '',
       maturityDate: '',
       expectedMaturityAmount: 0
@@ -359,6 +377,10 @@ const InvestmentAccountOpening: React.FC = () => {
       setError('कृपया वैध गुंतवणूक रक्कम प्रविष्ट करा.');
       return;
     }
+    if (formData.paymentMode === 'Bank' && (!formData.bankLedgerID || Number(formData.bankLedgerID) <= 0)) {
+      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -381,6 +403,9 @@ const InvestmentAccountOpening: React.FC = () => {
         nomineeName: formData.nomineeName?.trim() || null,
         nomineeRelation: formData.nomineeRelation?.trim() || null,
         remarks: formData.remarks?.trim() || (isShareMode ? 'नवीन शेअर्स भांडवल गुंतवणूक' : 'नवीन बँक मुदत ठेव गुंतवणूक'),
+        paymentMode: formData.paymentMode || 'Bank',
+        bankLedgerID: formData.paymentMode === 'Bank' ? Number(formData.bankLedgerID) : null,
+        referenceNo: formData.referenceNo?.trim() || null,
         status: 'Active'
       };
 
@@ -392,6 +417,8 @@ const InvestmentAccountOpening: React.FC = () => {
       let errorMsg = 'गुंतवणूक खाते उघडताना त्रुटी आली.';
       if (typeof err.response?.data === 'string' && err.response.data.trim()) {
         errorMsg = err.response.data;
+      } else if (err.response?.data?.message) {
+        errorMsg = err.response.data.message;
       } else if (err.response?.data?.errors) {
         const validationErrors = Object.entries(err.response.data.errors)
           .map(([k, v]: [string, any]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`);
@@ -953,7 +980,69 @@ const InvestmentAccountOpening: React.FC = () => {
             </div>
           )}
 
-          {/* Section 3: Action Buttons */}
+          {/* Section 3: Payment Mode & Bank GL Account */}
+          <div className="bg-blue-50/40 p-3.5 rounded-sm border border-blue-200 border-t-2 border-blue-700 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-blue-200 pb-1.5">
+              <div className="flex items-center gap-1.5">
+                <Landmark className="w-4 h-4 text-blue-800" />
+                <h2 className="text-xs font-bold text-blue-950">
+                  ३. रक्कम अदा / व्यवहार पद्धत (Payment Mode & GL Account)
+                </h2>
+              </div>
+              <span className="text-[10px] bg-blue-100 text-blue-900 font-bold px-2 py-0.5 rounded border border-blue-300">
+                Payment Voucher (Cr)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 items-start">
+              <div>
+                <label className={labelClass}>
+                  व्यवहार पद्धत (Payment Mode) <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="paymentMode"
+                  value={formData.paymentMode}
+                  onChange={handleChange}
+                  className={`${inputClass} font-bold text-blue-950 border-blue-300`}
+                >
+                  <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                  <option value="Cash">💵 रोख (Cash)</option>
+                </select>
+              </div>
+
+              {formData.paymentMode === 'Bank' ? (
+                <>
+                  <div className="sm:col-span-2">
+                    <BankLedgerSelect
+                      value={formData.bankLedgerID}
+                      onChange={(id) => setFormData(prev => ({ ...prev, bankLedgerID: id }))}
+                      showCountBadge
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>
+                      धनादेश / UTR / संदर्भ क्र. (Cheque / UTR Ref No.)
+                    </label>
+                    <input
+                      type="text"
+                      name="referenceNo"
+                      value={formData.referenceNo}
+                      onChange={handleChange}
+                      placeholder="उदा. CHQ-452109 / UTR..."
+                      className={`${inputClass} font-mono`}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="sm:col-span-3 flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-sm text-[11px] font-bold text-emerald-900 mt-4">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                  <span>गुंतवणूक रक्कम शाखेच्या मुख्य रोख खात्यातून (Branch Cash GL Account) खर्च (Credit) नोंदवली जाईल.</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section 4: Action Buttons */}
           <div className="pt-2 flex justify-end gap-2 border-t border-gray-200">
             <button
               type="button"

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import { useAuth } from '../context/AuthContext';
 
 interface Customer extends Partial<CustomerOption> {
@@ -131,6 +132,8 @@ const SavingAccountMaster: React.FC = () => {
     legacyAccountNumber: '',
     openingDate: getTodayDate(),
     openingBalance: 0,
+    initialPaymentMode: 'Cash',
+    bankLedgerID: 0,
     interestRate: 4.0,
     minimumBalance: 500,
     lienAmount: 0,
@@ -428,6 +431,7 @@ const SavingAccountMaster: React.FC = () => {
       return {
         ...prev,
         [name]: val,
+        ...(name === 'initialPaymentMode' && val !== 'Bank' ? { bankLedgerID: 0 } : {}),
       };
     });
   };
@@ -479,6 +483,8 @@ const SavingAccountMaster: React.FC = () => {
       legacyAccountNumber: '',
       openingDate: getTodayDate(),
       openingBalance: 0,
+      initialPaymentMode: 'Cash',
+      bankLedgerID: 0,
       interestRate: 4.0,
       minimumBalance: 500,
       lienAmount: 0,
@@ -516,6 +522,8 @@ const SavingAccountMaster: React.FC = () => {
       displayAccountNo: acc.formattedAccountNo || format14DigitDisplay(acc.accountNo) || acc.accountNo || '',
       openingDate: dateStr,
       openingBalance: acc.openingBalance ?? 0,
+      initialPaymentMode: 'Cash',
+      bankLedgerID: 0,
       interestRate: acc.interestRate ?? 0,
       minimumBalance: acc.minimumBalance ?? 0,
       lienAmount: acc.lienAmount ?? 0,
@@ -583,11 +591,16 @@ const SavingAccountMaster: React.FC = () => {
       const selectedObj = customers.find(c => (c.customerID === Number(formData.customerID) || c.customerId === Number(formData.customerID)));
       const resolvedCustId = selectedObj?.customerID || selectedObj?.customerId || Number(formData.customerID);
 
+      const openBalNum = (formData.openingBalance as any) === '' ? 0 : parseFloat(formData.openingBalance as any) || 0;
+      const isInitialDepositActive = !isEditMode && !formData.isLegacyAccount && openBalNum > 0;
+
       const payload = {
         savingAccountID: isEditMode ? editAccountId : 0,
         ...formData,
         customerID: resolvedCustId,
-        openingBalance: (formData.openingBalance as any) === '' ? 0 : parseFloat(formData.openingBalance as any) || 0,
+        openingBalance: openBalNum,
+        initialPaymentMode: isInitialDepositActive ? formData.initialPaymentMode : 'Cash',
+        bankLedgerID: isInitialDepositActive && formData.initialPaymentMode === 'Bank' ? Number(formData.bankLedgerID) : null,
         minimumBalance: (formData.minimumBalance as any) === '' ? 0 : parseFloat(formData.minimumBalance as any) || 0,
         lienAmount: (formData.lienAmount as any) === '' ? 0 : parseFloat(formData.lienAmount as any) || 0,
         interestRate: (formData.interestRate as any) === '' ? 0 : parseFloat(formData.interestRate as any) || 0,
@@ -623,6 +636,17 @@ const SavingAccountMaster: React.FC = () => {
 
     if (formData.accountType === 'Joint' && jointHolderCustomerIDs.length === 0) {
       setError('संयुक्त खात्यासाठी किमान एक सह-खातेदार जोडा.');
+      return;
+    }
+
+    if (
+      !isEditMode &&
+      !formData.isLegacyAccount &&
+      Number(formData.openingBalance) > 0 &&
+      formData.initialPaymentMode === 'Bank' &&
+      (!formData.bankLedgerID || Number(formData.bankLedgerID) <= 0)
+    ) {
+      setError('आरंभिक बँक ठेवीसाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       return;
     }
     
@@ -1049,6 +1073,59 @@ const SavingAccountMaster: React.FC = () => {
                 className="w-full border border-amber-300 px-2.5 py-1 rounded-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors text-xs bg-amber-50/40 font-medium h-7"
               />
             </div>
+
+            {/* Initial Deposit / Opening Balance & Payment Mode (New Non-Legacy Account) */}
+            {!isEditMode && !formData.isLegacyAccount && (
+              <>
+                <div className="lg:col-span-3">
+                  <label className="block text-xs font-semibold text-emerald-800 mb-0.5">
+                    आरंभिक ठेव रक्कम (Initial Deposit ₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    name="openingBalance"
+                    value={formData.openingBalance}
+                    onChange={handleInputChange}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="0.00"
+                    className="w-full border border-emerald-400 px-2.5 py-1 rounded-sm focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 transition-colors text-xs font-bold text-emerald-900 bg-emerald-50/40 h-7"
+                  />
+                </div>
+
+                {Number(formData.openingBalance) > 0 && (
+                  <>
+                    <div className="lg:col-span-3">
+                      <label className="block text-xs font-semibold text-blue-900 mb-0.5">
+                        आरंभिक ठेव पेमेंट पद्धत (Payment Mode) *
+                      </label>
+                      <select
+                        name="initialPaymentMode"
+                        value={formData.initialPaymentMode}
+                        onChange={handleInputChange}
+                        className="w-full border border-blue-400 px-2.5 py-1 rounded-sm focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-500 transition-colors text-xs bg-white font-bold text-blue-950 h-7"
+                      >
+                        <option value="Cash">💵 रोख (Cash)</option>
+                        <option value="Bank">🏦 बँक ट्रान्सफर (Bank)</option>
+                      </select>
+                    </div>
+
+                    {formData.initialPaymentMode === 'Bank' && (
+                      <div className="lg:col-span-6">
+                        <BankLedgerSelect
+                          ledgers={allGlLedgers}
+                          value={formData.bankLedgerID}
+                          onChange={(id) => setFormData((prev) => ({ ...prev, bankLedgerID: id }))}
+                          showCountBadge
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
           </div>
 
           {/* Row 2: Joint Holders - Only shown when Account Type is Joint */}

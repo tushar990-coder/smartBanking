@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import CustomerSearchSelect, { CustomerOption } from './common/CustomerSearchSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import DeceasedClaimSettlementModal from './DeceasedClaimSettlementModal';
 import ShareCertificatePreview from './ShareCertificatePreview';
 import VoucherPrint from './VoucherPrint';
@@ -159,16 +160,18 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
     faceValue: number;
     admissionFee: number;
     buildingFund: number;
-    paymentMode: 'Cash' | 'Transfer';
+    paymentMode: 'Cash' | 'Transfer' | 'Bank';
     savingAccountId: number | '';
+    bankLedgerId: number;
   }>({
     allotmentDate: user?.businessDate ? user.businessDate.split('T')[0] : new Date().toISOString().split('T')[0],
     numberOfShares: '',
     faceValue: 100,
     admissionFee: 10,
     buildingFund: 0,
-    paymentMode: 'Cash', // Cash or Transfer
-    savingAccountId: ''
+    paymentMode: 'Cash', // Cash, Transfer, or Bank
+    savingAccountId: '',
+    bankLedgerId: 0
   });
 
   const [nextShareConfig, setNextShareConfig] = useState<{
@@ -658,6 +661,11 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       }
     }
 
+    if (!editingId && totalPayable > 0 && shareConfig.paymentMode === 'Bank' && (!shareConfig.bankLedgerId || shareConfig.bankLedgerId <= 0)) {
+      setError("बँक भरणा पर्यायासाठी कृपया वैध बँक खाते लेजर निवडा.");
+      return;
+    }
+
     if (!formData.memberCode?.trim()) {
       setError("कृपया सभासद क्रमांक (Member Code) भरा.");
       return;
@@ -685,7 +693,8 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
         admissionFee: Number(shareConfig.admissionFee) || 0,
         buildingFund: Number(shareConfig.buildingFund) || 0,
         paymentMode: shareConfig.paymentMode || 'Cash',
-        savingAccountId: shareConfig.paymentMode === 'Transfer' && shareConfig.savingAccountId ? Number(shareConfig.savingAccountId) : null
+        savingAccountId: shareConfig.paymentMode === 'Transfer' && shareConfig.savingAccountId ? Number(shareConfig.savingAccountId) : null,
+        bankLedgerId: shareConfig.paymentMode === 'Bank' && shareConfig.bankLedgerId > 0 ? Number(shareConfig.bankLedgerId) : null
       };
 
       let response;
@@ -867,7 +876,8 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
       admissionFee: 10,
       buildingFund: 0,
       paymentMode: 'Cash',
-      savingAccountId: ''
+      savingAccountId: '',
+      bankLedgerId: 0
     });
     setResolutionData({
       applicationDate: cbsDate,
@@ -1478,13 +1488,17 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
               </div>
 
               {/* Row 4: Payment Mode */}
-              <div className="sm:col-span-2 md:col-span-4">
+              <div className={shareConfig.paymentMode === 'Bank' ? 'sm:col-span-2 md:col-span-2' : 'sm:col-span-2 md:col-span-4'}>
                 <label className={labelClass}>भरणा प्रकार (Payment Mode) <span className="text-red-500">*</span></label>
                 <select
                   value={shareConfig.paymentMode}
                   onChange={e => {
-                    const newMode = e.target.value as 'Cash' | 'Transfer';
-                    setShareConfig(prev => ({ ...prev, paymentMode: newMode }));
+                    const newMode = e.target.value as 'Cash' | 'Transfer' | 'Bank';
+                    setShareConfig(prev => ({
+                      ...prev,
+                      paymentMode: newMode,
+                      bankLedgerId: newMode === 'Bank' ? prev.bankLedgerId : 0
+                    }));
                     if (newMode === 'Transfer' && selectedCustomerId && customerSavingAccounts.length === 0 && !loadingSavingAccounts) {
                       fetchCustomerSavingAccounts(Number(selectedCustomerId));
                     }
@@ -1492,9 +1506,21 @@ export default function MemberMaster({ onNavigate }: MemberMasterProps = {}) {
                   className={`${inputClass} font-bold max-w-sm`}
                 >
                   <option value="Cash">💵 रोख भरणा (Cash Deposit)</option>
-                  <option value="Transfer">🏦 बचत खात्यातून वर्ग (Transfer)</option>
+                  <option value="Transfer">🔄 बचत खात्यातून वर्ग (Transfer)</option>
+                  <option value="Bank">🏦 बँक ट्रान्सफर (Bank Transfer)</option>
                 </select>
               </div>
+
+              {shareConfig.paymentMode === 'Bank' && (
+                <div className="sm:col-span-2 md:col-span-2">
+                  <BankLedgerSelect
+                    value={shareConfig.bankLedgerId}
+                    onChange={(id) => setShareConfig(prev => ({ ...prev, bankLedgerId: id }))}
+                    disabled={isExistingMember}
+                    showCountBadge
+                  />
+                </div>
+              )}
 
               {/* Dynamic Customer Saving Account Dropdown when Transfer is selected */}
               {shareConfig.paymentMode === 'Transfer' && (

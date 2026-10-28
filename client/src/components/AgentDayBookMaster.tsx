@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import BankLedgerSelect from './common/BankLedgerSelect';
 
 interface Agent {
   pigmyAgentID: number;
@@ -95,6 +96,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
 
   const [depositAmount, setDepositAmount] = useState<number | ''>('');
   const [paymentMode, setPaymentMode] = useState<string>('CASH');
+  const [bankLedgerId, setBankLedgerId] = useState<number>(0);
   const [narration, setNarration] = useState('');
   const [message, setMessage] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState<RemittanceItem | null>(null);
@@ -148,6 +150,9 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         if (data.deposit) {
           setDepositAmount(data.deposit.amount);
           setPaymentMode(data.deposit.paymentMode || 'CASH');
+          if (data.deposit.bankLedgerId) {
+            setBankLedgerId(Number(data.deposit.bankLedgerId));
+          }
           if (data.deposit.depositDate) {
             setDepositDate(data.deposit.depositDate.split('T')[0]);
           }
@@ -337,6 +342,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
     setDepositAmount('');
     setNarration('');
     setPaymentMode('CASH');
+    setBankLedgerId(0);
     resetDenominations();
     setCollectionDateFrom(todayStr);
     setCollectionDateTo(todayStr);
@@ -348,6 +354,11 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
 
     if (new Date(collectionDateFrom) > new Date(collectionDateTo)) {
       setMessage('त्रुटी: संकलन सुरू दिनांक (From) ही संकलन शेवट दिनांक (To) पेक्षा मोठी असू शकत नाही.');
+      return;
+    }
+
+    if (paymentMode !== 'CASH' && (!bankLedgerId || bankLedgerId <= 0)) {
+      setMessage('त्रुटी: बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       return;
     }
 
@@ -364,6 +375,7 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
         depositDate: depositDate,
         amount: Number(depositAmount),
         paymentMode: paymentMode,
+        bankLedgerId: paymentMode !== 'CASH' ? bankLedgerId : null,
         narration: narration,
         branchId: 1
       };
@@ -694,7 +706,10 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
             <select
               className="w-full border border-gray-300 px-2 py-1 rounded-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors text-xs font-bold bg-white"
               value={paymentMode}
-              onChange={(e) => setPaymentMode(e.target.value)}
+              onChange={(e) => {
+                setPaymentMode(e.target.value);
+                if (e.target.value === 'CASH') setBankLedgerId(0);
+              }}
             >
               <option value="CASH">💵 रोख (Cash)</option>
               <option value="ONLINE">💳 ऑनलाईन (Online / NEFT / RTGS)</option>
@@ -702,6 +717,17 @@ const AgentDayBookMaster: React.FC<AgentDayBookMasterProps> = ({ voucherId: prop
               <option value="CHEQUE">📜 चेक (Cheque / Demand Draft)</option>
             </select>
           </div>
+
+          {paymentMode !== 'CASH' && (
+            <div className="mb-2 p-2 bg-blue-50/50 border border-blue-200 rounded-sm">
+              <BankLedgerSelect
+                value={bankLedgerId}
+                onChange={setBankLedgerId}
+                disabled={isPassingMode}
+                showCountBadge
+              />
+            </div>
+          )}
 
           <div className="mb-2">
             <div className="flex justify-between items-center mb-0.5">

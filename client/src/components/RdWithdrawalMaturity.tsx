@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
 
 interface RdAccount {
   rdAccountID: number;
@@ -20,6 +22,8 @@ interface RdAccount {
   status: string;
   openingDate: string;
   branchID?: number;
+  customerID?: number;
+  memberID?: number;
 }
 
 interface FdScheme {
@@ -71,9 +75,41 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
 
   const [previewData, setPreviewData] = useState<{ recalcInt: number, clawback: number, netPayout: number } | null>(null);
 
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank' | 'Transfer'>('Cash');
+  const [bankLedgerId, setBankLedgerId] = useState<number>(0);
+  const [savingAccountId, setSavingAccountId] = useState<number>(0);
+  const [customerSavingAccounts, setCustomerSavingAccounts] = useState<any[]>([]);
+  const [loadingSavingAccounts, setLoadingSavingAccounts] = useState<boolean>(false);
+
   const [activeSubTab, setActiveSubTab] = useState<'matured' | 'premature' | 'renew'>('matured');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+
+  const loadCustomerSavingAccounts = async (custId?: number, preferredSavingId?: number) => {
+    if (!custId || custId <= 0) {
+      setCustomerSavingAccounts([]);
+      setSavingAccountId(preferredSavingId || 0);
+      return;
+    }
+    setLoadingSavingAccounts(true);
+    try {
+      const sbRes = await axios.get(`/api/SavingAccounts?customerId=${custId}`);
+      const activeSbs = (sbRes.data || []).filter((s: any) => !s.status || s.status === 'Active');
+      setCustomerSavingAccounts(activeSbs);
+      if (preferredSavingId && preferredSavingId > 0) {
+        setSavingAccountId(preferredSavingId);
+      } else if (activeSbs.length > 0) {
+        setSavingAccountId(activeSbs[0].savingAccountID);
+      } else {
+        setSavingAccountId(0);
+      }
+    } catch (err) {
+      console.error('Failed to load customer saving accounts:', err);
+      setCustomerSavingAccounts([]);
+    } finally {
+      setLoadingSavingAccounts(false);
+    }
+  };
 
   const loadPassingClosure = async (vId: number) => {
     setPassingLoading(true);
@@ -87,6 +123,7 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
         setSelectedAcc({
           rdAccountID: rdAccount.rdAccountID,
           accountNo: rdAccount.accountNo,
+          legacyAccountNumber: rdAccount.legacyAccountNumber,
           memberCode: rdAccount.cifNo || '',
           memberName: rdAccount.customerName || '',
           schemeName: rdAccount.schemeName || '',
@@ -99,6 +136,8 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
           maturityAmount: rdAccount.maturityAmount,
           status: rdAccount.status,
           openingDate: rdAccount.openingDate,
+          branchID: rdAccount.branchID,
+          customerID: rdAccount.customerID,
         });
 
         const intDiff = (closureDetails?.totalPayoutAmount || voucher?.totalAmount || 0) - rdAccount.totalDepositedAmount;
@@ -118,6 +157,17 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
         if (closureDetails?.closureDate) {
           setClosureDate(closureDetails.closureDate.split('T')[0]);
         }
+
+        const hydratedMode = closureDetails?.paymentMode === 'Bank'
+          ? 'Bank'
+          : closureDetails?.paymentMode === 'Transfer'
+            ? 'Transfer'
+            : 'Cash';
+        setPaymentMode(hydratedMode);
+        setBankLedgerId(Number(closureDetails?.bankLedgerID || 0));
+        const hydratedSbId = Number(closureDetails?.savingAccountID || 0);
+        setSavingAccountId(hydratedSbId);
+        await loadCustomerSavingAccounts(rdAccount.customerID, hydratedSbId);
       }
     } catch (err: any) {
       console.error('Error loading RD closure voucher:', err);
@@ -280,15 +330,20 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
     if (val) {
       try {
         const res = await axios.get(`/api/RdAccounts/${val}`);
-        const accDetails = res.data.accountDetails;
+        const accDetails = res.data.accountDetails || res.data.AccountDetails || res.data;
+        const historyList = res.data.history || res.data.History || [];
         
         // Sum accrued interest from history
-        const accruals = res.data.history
+        const accruals = historyList
           .filter((t: any) => t.transactionType === 'Accrual')
           .reduce((sum: number, t: any) => sum + t.interestAmount, 0);
 
         setSelectedAcc(accDetails);
-        setAccruedInterest(accruals + accDetails.legacyAccruedInt);
+        setAccruedInterest(accruals + (accDetails.legacyAccruedInt || 0));
+        await loadCustomerSavingAccounts(
+          accDetails.customerID,
+          accDetails.savingAccountID ? Number(accDetails.savingAccountID) : undefined
+        );
         
         // Set tab default based on actual status
         if (accDetails.status === 'Matured') {
@@ -302,6 +357,8 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
     } else {
       setSelectedAcc(null);
       setAccruedInterest(0);
+      setCustomerSavingAccounts([]);
+      setSavingAccountId(0);
     }
   };
 
@@ -352,14 +409,37 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
     e.preventDefault();
     if (isPassingMode) return;
     if (!selectedAcc) return;
+
+    if (activeSubTab === 'matured' || activeSubTab === 'premature') {
+      if (paymentMode === 'Bank' && (!bankLedgerId || bankLedgerId <= 0)) {
+        setMessage('बँक पेमेंटसाठी कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
+        return;
+      }
+      if (paymentMode === 'Transfer' && (!savingAccountId || savingAccountId <= 0)) {
+        setMessage('बचत खात्यात वर्ग करण्यासाठी कृपया खातेदाराचे सक्रिय बचत खाते निवडा.');
+        return;
+      }
+    }
+
     setLoading(true);
     setMessage('');
     try {
+      const qParams = new URLSearchParams({
+        closureDate,
+        paymentMode,
+      });
+      if (paymentMode === 'Bank' && bankLedgerId > 0) {
+        qParams.set('bankLedgerId', String(bankLedgerId));
+      }
+      if (paymentMode === 'Transfer' && savingAccountId > 0) {
+        qParams.set('savingAccountId', String(savingAccountId));
+      }
+
       if (activeSubTab === 'matured') {
-        const res = await axios.post(`/api/RdAccounts/${selectedAcc.rdAccountID}/MaturedClose?closureDate=${closureDate}`);
-        setMessage(res.data);
+        const res = await axios.post(`/api/RdAccounts/${selectedAcc.rdAccountID}/MaturedClose?${qParams.toString()}`);
+        setMessage(typeof res.data === 'string' ? res.data : (res.data?.message || 'आरडी मुदतपूर्ती खाते यशस्वीरित्या बंद करण्यात आले!'));
       } else if (activeSubTab === 'premature') {
-        const res = await axios.post(`/api/RdAccounts/${selectedAcc.rdAccountID}/PrematureClose?closureDate=${closureDate}`);
+        await axios.post(`/api/RdAccounts/${selectedAcc.rdAccountID}/PrematureClose?${qParams.toString()}`);
         setMessage('मुदतपूर्व खाते यशस्वीरित्या बंद करण्यात आले!');
       } else if (activeSubTab === 'renew') {
         if (!targetFdSchemeId) {
@@ -375,9 +455,16 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
       setSelectedAccId('');
       setSelectedAcc(null);
       setPreviewData(null);
+      setPaymentMode('Cash');
+      setBankLedgerId(0);
+      setSavingAccountId(0);
+      setCustomerSavingAccounts([]);
       fetchAccounts();
     } catch (err: any) {
-      setMessage(err.response?.data || 'खाते बंद करताना काही तांत्रिक त्रुटी आली.');
+      const errMsg = typeof err.response?.data === 'string'
+        ? err.response.data
+        : (err.response?.data?.message || err.response?.data?.title || 'खाते बंद करताना काही तांत्रिक त्रुटी आली.');
+      setMessage(errMsg);
     } finally {
       setLoading(false);
     }
@@ -385,6 +472,75 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
 
   const labelClass = "block text-xs font-bold text-gray-700 mb-1";
   const inputClass = "w-full text-xs border border-gray-300 rounded-sm px-2 py-1 focus:outline-none focus:border-primary bg-white text-gray-900";
+
+  const renderPayoutDestinationSection = () => (
+    <div className="space-y-2.5 p-3 bg-slate-50 border border-slate-200 rounded-sm">
+      <div>
+        <label className={labelClass}>
+          पेमेंट पद्धत (Payout Mode) <span className="text-red-500">*</span>
+        </label>
+        <select
+          value={paymentMode}
+          onChange={(e) => setPaymentMode(e.target.value as 'Cash' | 'Bank' | 'Transfer')}
+          className={inputClass}
+          disabled={isPassingMode}
+          required
+        >
+          <option value="Cash">💵 रोख परतावा (Cash Payout)</option>
+          <option value="Bank">🏦 बँक ट्रान्सफर (Bank Account)</option>
+          <option value="Transfer">💳 बचत खात्यात वर्ग (Transfer to Saving Account)</option>
+        </select>
+      </div>
+
+      {paymentMode === 'Cash' && (
+        <CashLedgerReflectBadge
+          branchId={selectedAcc?.branchID}
+          transactionType="Withdrawal"
+          customTitle="रोख परतावा खाते (Cash Payout Ledger)"
+        />
+      )}
+
+      {paymentMode === 'Bank' && (
+        <BankLedgerSelect
+          value={bankLedgerId}
+          onChange={(id) => setBankLedgerId(id)}
+          disabled={isPassingMode}
+          required
+          showCountBadge
+        />
+      )}
+
+      {paymentMode === 'Transfer' && (
+        <div className="space-y-1.5">
+          <label className={labelClass}>
+            जमा करावयाचे बचत खाते निवडा (Target Saving Account) <span className="text-red-500">*</span>
+          </label>
+          <select
+            value={savingAccountId || ''}
+            onChange={(e) => setSavingAccountId(Number(e.target.value) || 0)}
+            className={inputClass}
+            disabled={isPassingMode || loadingSavingAccounts}
+            required
+          >
+            <option value="">
+              {loadingSavingAccounts ? 'बचत खाती लोड होत आहेत...' : '--- बचत खाते निवडा ---'}
+            </option>
+            {customerSavingAccounts.map((sb: any) => (
+              <option key={sb.savingAccountID} value={sb.savingAccountID}>
+                {sb.accountNo || sb.accountNumber} ({sb.schemeName || 'बचत खाते'}) — शिल्लक: ₹
+                {Number(sb.currentBalance ?? sb.balance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </option>
+            ))}
+          </select>
+          {!loadingSavingAccounts && customerSavingAccounts.length === 0 && (
+            <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-300 rounded-sm px-2.5 py-1.5 font-medium">
+              ⚠️ या ग्राहकाचे कोणतेही सक्रिय बचत खाते आढळले नाही. कृपया रोख किंवा बँक पेमेंट पद्धत निवडा, अथवा प्रथम बचत खाते उघडा.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="p-3 space-y-4">
@@ -561,6 +717,7 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
                           required
                         />
                       </div>
+                      {renderPayoutDestinationSection()}
                       <div className="bg-gray-50 p-4 rounded-sm border border-gray-250 flex justify-between items-center">
                         <span className="font-semibold text-gray-700 text-xs">एकूण देय पेमेंट (Net Payout):</span>
                         <span className="text-base font-black text-emerald-600">
@@ -582,6 +739,7 @@ export default function RdWithdrawalMaturity({ voucherId: propVoucherId, isPassi
                           required
                         />
                       </div>
+                      {renderPayoutDestinationSection()}
                       {!isPassingMode && (
                         <button
                           type="button"

@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import SearchableSelect from './SearchableSelect';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import { 
   CreditCard, 
   User, 
@@ -97,6 +98,8 @@ export default function PigmyAccountOpening() {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [createdAccountResult, setCreatedAccountResult] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [bankLedgerId, setBankLedgerId] = useState<number>(0);
 
   // Safe Property Resolvers
   const getCustomerId = (c: any): string => {
@@ -352,6 +355,13 @@ export default function PigmyAccountOpening() {
       return;
     }
 
+    const openingBalNum = parseFloat(formData.openingBalance) || 0;
+    if (openingBalNum > 0 && paymentMode === 'Bank' && (!bankLedgerId || bankLedgerId <= 0)) {
+      setErrorMessage('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      toast.error('कृपया बँक जी.एल. खाते निवडा.');
+      return;
+    }
+
     try {
       setSubmitting(true);
       const payload = {
@@ -362,7 +372,9 @@ export default function PigmyAccountOpening() {
         pigmySchemeID: parseInt(formData.pigmySchemeID),
         pigmyAgentID: parseInt(formData.pigmyAgentID),
         openingDate: formData.openingDate,
-        openingBalance: parseFloat(formData.openingBalance) || 0
+        openingBalance: openingBalNum,
+        paymentMode: openingBalNum > 0 ? paymentMode : 'Cash',
+        bankLedgerId: openingBalNum > 0 && paymentMode === 'Bank' ? bankLedgerId : null
       };
 
       const response = await axios.post('/api/PigmyAccounts/OpenAccount', payload);
@@ -387,6 +399,8 @@ export default function PigmyAccountOpening() {
           legacyAccountNumber: '',
           openingBalance: '0'
         }));
+        setPaymentMode('Cash');
+        setBankLedgerId(0);
         setSelectedCustomer(null);
       }
     } catch (error: any) {
@@ -856,6 +870,61 @@ export default function PigmyAccountOpening() {
                 onChange={(e) => setFormData({ ...formData, legacyAccountNumber: e.target.value })}
               />
             </div>
+
+            {/* INITIAL OPENING DEPOSIT */}
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">
+                प्रारंभिक जमा रक्कम (Initial Opening Deposit ₹)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="0"
+                className="w-full border border-slate-300 rounded-xl px-3 py-1.5 bg-slate-50 focus:bg-white focus:border-primary outline-none font-bold font-mono text-slate-900"
+                value={formData.openingBalance}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFormData({ ...formData, openingBalance: val });
+                  if ((parseFloat(val) || 0) <= 0) {
+                    setPaymentMode('Cash');
+                    setBankLedgerId(0);
+                  }
+                }}
+              />
+            </div>
+
+            {(parseFloat(formData.openingBalance) || 0) > 0 && (
+              <>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    भरणा माध्यम (Payment Mode) <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    className="w-full border border-slate-300 rounded-xl px-3 py-1.5 bg-white focus:border-primary outline-none font-bold text-slate-800"
+                    value={paymentMode}
+                    onChange={(e) => {
+                      const mode = e.target.value as 'Cash' | 'Bank';
+                      setPaymentMode(mode);
+                      if (mode !== 'Bank') setBankLedgerId(0);
+                    }}
+                  >
+                    <option value="Cash">💵 रोख (Cash)</option>
+                    <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                  </select>
+                </div>
+
+                {paymentMode === 'Bank' && (
+                  <div className="md:col-span-2 p-2.5 bg-blue-50/60 border border-blue-200 rounded-xl">
+                    <BankLedgerSelect
+                      value={bankLedgerId}
+                      onChange={setBankLedgerId}
+                      showCountBadge
+                    />
+                  </div>
+                )}
+              </>
+            )}
 
           </div>
         </div>

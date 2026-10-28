@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { PlusCircle, Search, Save, Edit, Trash2, X, FileText, CheckSquare, Printer, Calendar, CheckCircle, AlertCircle, Clock, Layers, CreditCard, ArrowRight, Building2, Award, Lock, Unlock, Coins, Landmark, UserCheck, Users } from 'lucide-react';
 import CustomerSearchSelect from './common/CustomerSearchSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import { filterBankAccountLedgers } from '../utils/bankLedgerUtils';
 import LoanCollectionReceiptPrint from './LoanCollectionReceiptPrint';
 import { useAuth } from '../context/AuthContext';
 
@@ -587,26 +589,7 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
     }, [accounts, selectedBorrowerKey, selectedCustomerId, selectedSchemeId]);
     const memberLoans = borrowerLoans;
 
-    const bankLedgers = ledgers.filter((l: any) => {
-        if (!l) return false;
-        const gId = l.groupID || l.accountGroupID || 0;
-        const parentGId = l.accountGroup?.parentGroupID || 0;
-        const gName = (l.accountGroup?.groupName || '').toLowerCase();
-        const lName = (l.ledgerName || '').toLowerCase();
-        const accType = (l.accountType || '').toLowerCase();
-
-        return (
-            gId === 32 || gId === 33 || gId === 34 ||
-            parentGId === 32 ||
-            gName.includes('बँक') || gName.includes('bank') ||
-            gName.includes('करंट') || gName.includes('current') ||
-            gName.includes('चालू') || gName.includes('शिल्लक') ||
-            lName.includes('बँक') || lName.includes('bank') ||
-            lName.includes('करंट') || lName.includes('current') ||
-            lName.includes('चालू') ||
-            accType.includes('bank') || accType.includes('current')
-        );
-    });
+    const bankLedgers = useMemo(() => filterBankAccountLedgers(ledgers), [ledgers]);
 
     const fetchBranches = async () => {
         try {
@@ -1647,6 +1630,13 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
             }
         }
 
+        if (formData.paymentMode === 'Bank' || formData.paymentMode === 'Cheque') {
+            if (!formData.bankAccountLedgerID || Number(formData.bankAccountLedgerID) <= 0) {
+                alert('बँक / चेक वसुलीसाठी कृपया वैध बँक जी.एल. खाते (Bank GL Account) निवडा.');
+                return;
+            }
+        }
+
         const targetAccountId = formData.loanAccountID || selectedAccount?.loanAccountID || (window as any).selectedLoanAccountId;
         if (!targetAccountId) {
             alert('कृपया आधी कर्जदार व सक्रिय कर्ज खाते निवडा.');
@@ -1655,8 +1645,12 @@ const LoanCollectionMaster: React.FC<LoanCollectionMasterProps> = ({ onNavigate 
 
         setIsSaving(true);
         try {
+            const isBankOrCheque = formData.paymentMode === 'Bank' || formData.paymentMode === 'Cheque';
             const payload = {
                 ...formData,
+                bankAccountLedgerID: isBankOrCheque ? Number(formData.bankAccountLedgerID) : null,
+                bankName: isBankOrCheque ? formData.bankName : null,
+                chequeNo: formData.paymentMode === 'Cheque' ? formData.chequeNo : null,
                 loanAccountID: targetAccountId,
                 branchID: selectedBranchId
             };
@@ -2180,7 +2174,16 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                                         value={formData.paymentMode} 
                                         onChange={(e) => {
                                             const val = e.target.value;
-                                            setFormData(p => ({ ...p, paymentMode: val }));
+                                            const isBankOrCheque = val === 'Bank' || val === 'Cheque';
+                                            setFormData(p => ({
+                                                ...p,
+                                                paymentMode: val,
+                                                ...(!isBankOrCheque
+                                                    ? { bankAccountLedgerID: undefined, bankName: undefined, chequeNo: undefined }
+                                                    : val !== 'Cheque'
+                                                        ? { chequeNo: undefined }
+                                                        : {})
+                                            }));
                                             if (val === 'Pigmy Transfer' && selectedCustomerId) {
                                                 fetchCustomerPigmyAccounts(selectedCustomerId);
                                             }
@@ -2406,46 +2409,46 @@ ${c.penaltyInterestCollected > 0 ? `• जादा व्याज: ₹ ${c.pe
                             
                             <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center mt-2 border-t pt-2 border-gray-100">
                                 {formData.paymentMode === 'Bank' && (
-                                    <select name="bankAccountLedgerID" value={formData.bankAccountLedgerID || ''} disabled={isPassingMode}
-                                        onChange={(e) => {
-                                            const ledgerId = parseInt(e.target.value);
-                                            const selectedBank = bankLedgers.find(l => l.ledgerID === ledgerId);
-                                            setFormData(p => ({ 
-                                                ...p, 
-                                                bankAccountLedgerID: ledgerId || undefined,
-                                                bankName: selectedBank ? selectedBank.ledgerName : undefined
-                                            }));
-                                        }}
-                                        className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} required>
-                                        <option value="">-- बँक खाते निवडा (Select Bank A/c) --</option>
-                                        {bankLedgers.map(l => (
-                                             <option key={l.ledgerID} value={l.ledgerID}>
-                                                {l.ledgerName}{l.accountGroup?.groupName ? ` (${l.accountGroup.groupName})` : ''}
-                                            </option>
-                                        ))}
-                                    </select>
-                                )}
-                                {formData.paymentMode === 'Cheque' && (
-                                    <>
-                                        <select name="bankAccountLedgerID" value={formData.bankAccountLedgerID || ''} disabled={isPassingMode}
-                                            onChange={(e) => {
-                                                const ledgerId = parseInt(e.target.value);
-                                                const selectedBank = bankLedgers.find(l => l.ledgerID === ledgerId);
-                                                setFormData(p => ({ 
-                                                    ...p, 
-                                                    bankAccountLedgerID: ledgerId || undefined,
+                                    <div className="w-full sm:min-w-[300px]">
+                                        <BankLedgerSelect
+                                            name="bankAccountLedgerID"
+                                            ledgers={ledgers}
+                                            value={formData.bankAccountLedgerID}
+                                            hideLabel
+                                            placeholder="🏦 बँक जी.एल. खाते निवडा (खाते क्र. / नाव) *"
+                                            disabled={isPassingMode}
+                                            onChange={(ledgerId) => {
+                                                const selectedBank = bankLedgers.find(l => Number(l.ledgerID) === Number(ledgerId));
+                                                setFormData(p => ({
+                                                    ...p,
+                                                    bankAccountLedgerID: ledgerId > 0 ? ledgerId : undefined,
                                                     bankName: selectedBank ? selectedBank.ledgerName : undefined
                                                 }));
                                             }}
-                                            className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} required>
-                                            <option value="">-- बँक खाते निवडा (Select Bank A/c) --</option>
-                                            {bankLedgers.map(l => (
-                                                <option key={l.ledgerID} value={l.ledgerID}>
-                                                    {l.ledgerName}{l.accountGroup?.groupName ? ` (${l.accountGroup.groupName})` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <input type="text" value={formData.chequeNo || ''} onChange={(e) => setFormData(p => ({ ...p, chequeNo: e.target.value }))} placeholder="चेक नंबर (Cheque No)" disabled={isPassingMode} className={`${inputClass} ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} required />
+                                        />
+                                    </div>
+                                )}
+                                {formData.paymentMode === 'Cheque' && (
+                                    <>
+                                        <div className="w-full sm:min-w-[300px]">
+                                            <BankLedgerSelect
+                                                name="bankAccountLedgerID"
+                                                ledgers={ledgers}
+                                                value={formData.bankAccountLedgerID}
+                                                hideLabel
+                                                placeholder="🏦 बँक जी.एल. खाते निवडा (खाते क्र. / नाव) *"
+                                                disabled={isPassingMode}
+                                                onChange={(ledgerId) => {
+                                                    const selectedBank = bankLedgers.find(l => Number(l.ledgerID) === Number(ledgerId));
+                                                    setFormData(p => ({
+                                                        ...p,
+                                                        bankAccountLedgerID: ledgerId > 0 ? ledgerId : undefined,
+                                                        bankName: selectedBank ? selectedBank.ledgerName : undefined
+                                                    }));
+                                                }}
+                                            />
+                                        </div>
+                                        <input type="text" value={formData.chequeNo || ''} onChange={(e) => setFormData(p => ({ ...p, chequeNo: e.target.value }))} placeholder="चेक नंबर (Cheque No)" disabled={isPassingMode} className={`${inputClass} sm:w-44 ${isPassingMode ? 'bg-slate-100 cursor-not-allowed' : ''}`} required />
                                     </>
                                 )}
                                 <label className={labelClass + " whitespace-nowrap !mb-0 text-gray-700"}>तपशील</label>

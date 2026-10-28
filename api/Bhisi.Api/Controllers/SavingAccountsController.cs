@@ -384,6 +384,8 @@ namespace Bhisi.Api.Controllers
             public string? LegacyAccountNumber { get; set; }
             public int LedgerID { get; set; }
             public decimal OpeningBalance { get; set; } = 0;
+            public string? InitialPaymentMode { get; set; } = "Cash";
+            public int? BankLedgerID { get; set; }
             public decimal InterestRate { get; set; } = 0;
             public decimal MinimumBalance { get; set; } = 500;
             public decimal LienAmount { get; set; } = 0;
@@ -482,6 +484,22 @@ namespace Bhisi.Api.Controllers
                         schemeCodeNum = parsedScheme;
                     }
                 }
+            }
+
+            string? previewLegacyNo = !string.IsNullOrWhiteSpace(dto.LegacyAccountNumber)
+                ? dto.LegacyAccountNumber.Trim()
+                : (!string.IsNullOrWhiteSpace(dto.OldAccountNo) ? dto.OldAccountNo.Trim() : dto.PreviousAccountNo?.Trim());
+            bool willBeLegacyAccount = dto.IsLegacyAccount || !string.IsNullOrWhiteSpace(previewLegacyNo);
+
+            int validatedInitialBankLedgerId = 0;
+            if (dto.OpeningBalance > 0 && !willBeLegacyAccount && BankLedgerHelper.IsBankPaymentMode(dto.InitialPaymentMode))
+            {
+                var bankCheck = await BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerID);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(bankCheck.ErrorMessage);
+                }
+                validatedInitialBankLedgerId = bankCheck.LedgerId;
             }
 
             // Determine account number: Custom (editable) or auto-generated CBS
@@ -610,7 +628,10 @@ namespace Bhisi.Api.Controllers
             if (savingAccount.OpeningBalance > 0 && !savingAccount.IsLegacyAccount)
             {
                 // 1. Resolve Branch-Specific Cash Ledger
-                int cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, savingAccount.BranchID, "SAVINGS");
+                bool isBankInitialDeposit = BankLedgerHelper.IsBankPaymentMode(dto.InitialPaymentMode);
+                int cashLedgerId = isBankInitialDeposit
+                    ? validatedInitialBankLedgerId
+                    : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, savingAccount.BranchID, "SAVINGS");
 
                 // 2. Generate Receipt Voucher
                 var todayStr = DateTime.Now.ToString("yyyyMMdd");
@@ -624,7 +645,7 @@ namespace Bhisi.Api.Controllers
                     VoucherDate = savingAccount.OpeningDate,
                     VoucherType = "Receipt",
                     TotalAmount = savingAccount.OpeningBalance,
-                    Narration = $"नवीन बचत खाते उघडणे - आरंभिक रोख ठेव जमा (खाते क्र.: {savingAccount.AccountNo})",
+                    Narration = $"नवीन बचत खाते उघडणे - आरंभिक {(isBankInitialDeposit ? "बँक ट्रान्सफर" : "रोख")} ठेव जमा (खाते क्र.: {savingAccount.AccountNo})",
                     CreatedBy = savingAccount.CreatedBy,
                     VoucherDetails = new List<VoucherDetail>
                     {
@@ -643,7 +664,7 @@ namespace Bhisi.Api.Controllers
                     BranchID = savingAccount.BranchID,
                     TransactionDate = savingAccount.OpeningDate,
                     TransactionType = "Deposit",
-                    PaymentMode = "Cash",
+                    PaymentMode = (!savingAccount.IsLegacyAccount && BankLedgerHelper.IsBankPaymentMode(dto.InitialPaymentMode)) ? "Bank" : "Cash",
                     Amount = savingAccount.OpeningBalance,
                     BalanceAfterTxn = savingAccount.OpeningBalance,
                     Narration = $"Opening Balance (Voucher: {voucher.VoucherNo})",
@@ -787,7 +808,7 @@ namespace Bhisi.Api.Controllers
                     BranchID = savingAccount.BranchID,
                     TransactionDate = savingAccount.OpeningDate,
                     TransactionType = "Deposit",
-                    PaymentMode = "Cash",
+                    PaymentMode = (!savingAccount.IsLegacyAccount && BankLedgerHelper.IsBankPaymentMode(dto.InitialPaymentMode)) ? "Bank" : "Cash",
                     Amount = savingAccount.OpeningBalance,
                     BalanceAfterTxn = savingAccount.OpeningBalance,
                     Narration = "Opening Balance",
@@ -828,6 +849,8 @@ namespace Bhisi.Api.Controllers
             public string AccountType { get; set; } = "Personal";
             public DateTime OpeningDate { get; set; } = DateTime.Today;
             public decimal OpeningBalance { get; set; } = 0;
+            public string? InitialPaymentMode { get; set; } = "Cash";
+            public int? BankLedgerID { get; set; }
             public string? OldAccountNo { get; set; }
             public string? LegacyAccountNumber { get; set; }
             public int LedgerID { get; set; }

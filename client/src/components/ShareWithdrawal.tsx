@@ -1,4 +1,5 @@
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import React, { useState, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
@@ -59,6 +60,7 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Transfer' | 'Bank'>('Cash');
   const [memberSavingAccounts, setMemberSavingAccounts] = useState<any[]>([]);
   const [selectedSavingAccountId, setSelectedSavingAccountId] = useState<number | ''>('');
+  const [bankLedgerId, setBankLedgerId] = useState<number>(0);
   const [chequeNo, setChequeNo] = useState('');
 
   useEffect(() => {
@@ -91,6 +93,9 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
           if (data.paymentMode === 'Transfer') setPaymentMode('Transfer');
           else if (data.paymentMode === 'Bank') setPaymentMode('Bank');
           else setPaymentMode('Cash');
+        }
+        if (data.bankLedgerId) {
+          setBankLedgerId(Number(data.bankLedgerId));
         }
       }
     } catch (err) {
@@ -312,6 +317,11 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
       return;
     }
 
+    if (paymentMode === 'Bank' && (!bankLedgerId || bankLedgerId <= 0)) {
+      setMessage('⚠️ बँक परताव्यासाठी कृपया वैध बँक खाते लेजर निवडा. (Please select a Bank GL Account).');
+      return;
+    }
+
     if (shareAccount && qty > shareAccount.totalShareCount) {
         setMessage(`तुम्ही जास्तीत जास्त ${shareAccount.totalShareCount} शेअर्स काढू शकता.`);
         return;
@@ -333,6 +343,7 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
           narration: formData.narration,
           paymentMode: paymentMode,
           savingAccountId: paymentMode === 'Transfer' ? selectedSavingAccountId : null,
+          bankLedgerId: paymentMode === 'Bank' ? bankLedgerId : null,
           chequeNo: paymentMode === 'Bank' ? chequeNo : null
         })
       });
@@ -525,14 +536,14 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setPaymentMode('Cash')}
+                        onClick={() => { setPaymentMode('Cash'); setBankLedgerId(0); }}
                         className={`flex-1 py-1 px-2 rounded text-xs font-bold border cursor-pointer transition-all ${paymentMode === 'Cash' ? 'bg-primary text-white border-primary shadow-xs' : 'bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100'}`}
                       >
                         💵 रोख (Cash)
                       </button>
                       <button
                         type="button"
-                        onClick={() => setPaymentMode('Transfer')}
+                        onClick={() => { setPaymentMode('Transfer'); setBankLedgerId(0); }}
                         className={`flex-1 py-1 px-2 rounded text-xs font-bold border cursor-pointer transition-all ${paymentMode === 'Transfer' ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' : 'bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100'}`}
                       >
                         🔄 बचत खात्यात (Transfer)
@@ -576,17 +587,25 @@ const ShareWithdrawal: React.FC<ShareWithdrawalProps> = ({ onNavigate, voucherId
                     </div>
                   )}
 
-                  {/* Conditional Cheque / Ref No Input for Bank */}
+                  {/* Conditional Bank Ledger Select & Cheque / Ref No Input for Bank */}
                   {paymentMode === 'Bank' && (
-                    <div>
-                      <label className="block text-[10px] font-bold text-amber-900 mb-0.5">चेक / संदर्भ क्र. (Cheque / Ref No)</label>
-                      <input 
-                        type="text" 
-                        className="w-full border border-amber-300 px-2 py-1 rounded-sm text-xs bg-white font-bold disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        placeholder="उदा. CHQ123456 / UTR987654"
-                        value={chequeNo}
-                        onChange={(e) => setChequeNo(e.target.value)}
+                    <div className="p-2 bg-amber-50/70 border border-amber-200 rounded-sm space-y-2">
+                      <BankLedgerSelect
+                        value={bankLedgerId}
+                        onChange={(id) => setBankLedgerId(id)}
+                        disabled={isPassing}
+                        showCountBadge
                       />
+                      <div>
+                        <label className="block text-[10px] font-bold text-amber-900 mb-0.5">चेक / संदर्भ क्र. (Cheque / Ref No)</label>
+                        <input 
+                          type="text" 
+                          className="w-full border border-amber-300 px-2 py-1 rounded-sm text-xs bg-white font-bold disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          placeholder="उदा. CHQ123456 / UTR987654"
+                          value={chequeNo}
+                          onChange={(e) => setChequeNo(e.target.value)}
+                        />
+                      </div>
                     </div>
                   )}
 

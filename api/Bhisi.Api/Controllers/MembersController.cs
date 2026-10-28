@@ -972,7 +972,17 @@ namespace Bhisi.Api.Controllers
                     int debitLedgerId;
                     string pMode = string.IsNullOrWhiteSpace(req.PaymentMode) ? "Cash" : req.PaymentMode.Trim();
 
-                    if (pMode.Equals("Transfer", StringComparison.OrdinalIgnoreCase))
+                    if (Helpers.BankLedgerHelper.IsBankPaymentMode(pMode))
+                    {
+                        var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, req.BankLedgerId);
+                        if (!bankCheck.IsValid)
+                        {
+                            await dbTransaction.RollbackAsync();
+                            return BadRequest(new { message = bankCheck.ErrorMessage });
+                        }
+                        debitLedgerId = bankCheck.LedgerId;
+                    }
+                    else if (pMode.Equals("Transfer", StringComparison.OrdinalIgnoreCase))
                     {
                         if (!req.SavingAccountId.HasValue || req.SavingAccountId.Value <= 0)
                         {
@@ -1366,6 +1376,8 @@ namespace Bhisi.Api.Controllers
             public int BranchId { get; set; } = 1;
             public DateTime? ClosureDate { get; set; }
             public string Narration { get; set; } = "Member Closure";
+            public string PaymentMode { get; set; } = "Cash";
+            public int? BankLedgerId { get; set; }
         }
 
         // POST: api/Members/{id}/Close
@@ -1419,7 +1431,19 @@ namespace Bhisi.Api.Controllers
                     decimal totalShareAmount = shareAccount.TotalShareAmount;
 
                     var shareCapitalLedger = await Helpers.ShareLedgerHelper.GetShareCapitalLedgerAsync(_context);
-                    int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "SHARE");
+                    bool isCloseBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode);
+                    int validatedCloseBankLedgerId = 0;
+                    if (isCloseBankMode)
+                    {
+                        var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                        if (!bankCheck.IsValid)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(new { message = bankCheck.ErrorMessage });
+                        }
+                        validatedCloseBankLedgerId = bankCheck.LedgerId;
+                    }
+                    int branchCashId = isCloseBankMode ? validatedCloseBankLedgerId : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "SHARE");
                     var cashLedger = await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Assets") ?? await _context.Ledgers.FirstAsync();
 
                     int vchCount = await _context.Vouchers.CountAsync() + 1;
@@ -1431,12 +1455,12 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = effCloseDate,
                         VoucherType = "Payment",
                         TotalAmount = totalShareAmount,
-                        Narration = $"Share Withdrawal on Member Closure for {memberName}. {request.Narration}",
+                        Narration = $"Share Withdrawal on Member Closure ({(isCloseBankMode ? "Bank" : "Cash")}) for {memberName}. {request.Narration}",
                         CreatedBy = userId,
                         VoucherDetails = new List<VoucherDetail>
                         {
                             new VoucherDetail { LedgerID = shareCapitalLedger.LedgerID, DrCr = "Dr", Amount = totalShareAmount, MemberID = member.MemberID },
-                            new VoucherDetail { LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = totalShareAmount, MemberID = member.MemberID }
+                            new VoucherDetail { LedgerID = isCloseBankMode ? validatedCloseBankLedgerId : cashLedger.LedgerID, DrCr = "Cr", Amount = totalShareAmount, MemberID = member.MemberID }
                         }
                     };
                     _context.Vouchers.Add(voucher);
@@ -1570,6 +1594,8 @@ namespace Bhisi.Api.Controllers
             public string? ResolutionNo { get; set; }
             public DateTime? ResolutionDate { get; set; }
             public string? Remarks { get; set; }
+            public string PaymentMode { get; set; } = "Cash";
+            public int? BankLedgerId { get; set; }
         }
 
         // POST: api/Members/5/DeceasedClaimSettlement
@@ -1653,7 +1679,19 @@ namespace Bhisi.Api.Controllers
                 int? voucherId = null;
                 if (netAmount > 0)
                 {
-                    int branchCashId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, req.BranchId, "CLAIM");
+                    bool isClaimBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(req.PaymentMode);
+                    int validatedClaimBankLedgerId = 0;
+                    if (isClaimBankMode)
+                    {
+                        var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, req.BankLedgerId);
+                        if (!bankCheck.IsValid)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest(new { message = bankCheck.ErrorMessage });
+                        }
+                        validatedClaimBankLedgerId = bankCheck.LedgerId;
+                    }
+                    int branchCashId = isClaimBankMode ? validatedClaimBankLedgerId : await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, req.BranchId, "CLAIM");
                     var cashLedger = await _context.Ledgers.FindAsync(branchCashId) ?? await _context.Ledgers.FirstOrDefaultAsync(l => l.AccountType == "Assets") ?? await _context.Ledgers.FirstAsync();
                     var claimLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("दावा") || l.LedgerName.Contains("Claim") || l.LedgerName.Contains("वारस")) ?? cashLedger;
 
@@ -1668,12 +1706,12 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = effClaimDate,
                         VoucherType = "Payment",
                         TotalAmount = netAmount,
-                        Narration = $"मयत सभासद वारसदार क्लेम सेटलमेंट: {memberCustName} (वारसदार: {req.NomineeName}, मयत दाखला: {req.DeathCertificateNo}, ठराव: {req.ResolutionNo})",
+                        Narration = $"मयत सभासद वारसदार क्लेम सेटलमेंट ({(isClaimBankMode ? "Bank" : "Cash")}): {memberCustName} (वारसदार: {req.NomineeName}{(string.IsNullOrWhiteSpace(req.NomineeBankAccount) ? "" : $", बँक तपशील: {req.NomineeBankAccount}")}, मयत दाखला: {req.DeathCertificateNo}, ठराव: {req.ResolutionNo})",
                         CreatedBy = userId,
                         VoucherDetails = new List<VoucherDetail>
                         {
                             new VoucherDetail { LedgerID = claimLedger.LedgerID, DrCr = "Dr", Amount = netAmount, MemberID = member.MemberID },
-                            new VoucherDetail { LedgerID = cashLedger.LedgerID, DrCr = "Cr", Amount = netAmount, MemberID = member.MemberID }
+                            new VoucherDetail { LedgerID = isClaimBankMode ? validatedClaimBankLedgerId : cashLedger.LedgerID, DrCr = "Cr", Amount = netAmount, MemberID = member.MemberID }
                         }
                     };
                     _context.Vouchers.Add(voucher);

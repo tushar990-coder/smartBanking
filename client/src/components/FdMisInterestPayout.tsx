@@ -18,6 +18,9 @@ import {
   History,
   Info
 } from 'lucide-react';
+import BankLedgerSelect from './common/BankLedgerSelect';
+
+type MisDisbursementMode = 'SavingTransfer' | 'LoanRecovery' | 'Suspense' | 'Bank' | 'Cash';
 
 interface PreviewItem {
   fdAccountID: number;
@@ -40,7 +43,8 @@ interface PreviewItem {
   tdsAmount: number;
   loanAdjustedAmount: number;
   netDisbursedAmount: number;
-  disbursementMode: 'SavingTransfer' | 'LoanRecovery' | 'Suspense';
+  disbursementMode: MisDisbursementMode;
+  originalDisbursementMode?: MisDisbursementMode;
   targetSavingAccountID?: number;
   targetSavingAccountNo?: string;
   targetSavingAccountBalance?: number;
@@ -107,6 +111,8 @@ export const FdMisInterestPayout: React.FC = () => {
   const [payoutMonth, setPayoutMonth] = useState<number>(today.getMonth() + 1);
   const [payoutDate, setPayoutDate] = useState<string>(today.toISOString().split('T')[0]);
   const [accountingMode, setAccountingMode] = useState<'DirectExpense' | 'ClearPayable'>('DirectExpense');
+  const [batchPayoutOverride, setBatchPayoutOverride] = useState<'Auto' | 'Bank' | 'Cash'>('Auto');
+  const [bankLedgerID, setBankLedgerID] = useState<number>(0);
 
   // Preview & Processing states
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -157,10 +163,21 @@ export const FdMisInterestPayout: React.FC = () => {
 
       const res = await axios.post(`${API_URL}/FdMisPayout/Preview`, payload);
       const data = res.data;
-      const items: PreviewItem[] = (data.Items || data.items || []).map((i: any) => ({
-        ...i,
-        isSelected: !i.isAlreadyPaid && i.grossInterest > 0
-      }));
+      const items: PreviewItem[] = (data.Items || data.items || []).map((i: any) => {
+        const origMode: MisDisbursementMode = i.disbursementMode || 'SavingTransfer';
+        const canOverride = !i.isAlreadyPaid && i.grossInterest > 0 && !i.isLienMarked;
+        const effectiveMode: MisDisbursementMode =
+          canOverride && batchPayoutOverride !== 'Auto' ? batchPayoutOverride : origMode;
+        const netAmt = Math.max(0, (i.grossInterest || 0) - (i.tdsAmount || 0));
+        return {
+          ...i,
+          originalDisbursementMode: origMode,
+          disbursementMode: effectiveMode,
+          loanAdjustedAmount: effectiveMode === 'LoanRecovery' ? i.loanAdjustedAmount : 0,
+          netDisbursedAmount: effectiveMode === 'LoanRecovery' ? 0 : netAmt,
+          isSelected: !i.isAlreadyPaid && i.grossInterest > 0
+        };
+      });
 
       setPreviewItems(items);
       if (items.length === 0) {
@@ -212,6 +229,44 @@ export const FdMisInterestPayout: React.FC = () => {
     );
   };
 
+  const handleRowModeChange = (fdAccountId: number, newMode: MisDisbursementMode) => {
+    setPreviewItems(prev =>
+      prev.map(i => {
+        if (i.fdAccountID !== fdAccountId || i.isAlreadyPaid || i.isLienMarked) return i;
+        const netAmt = Math.max(0, i.grossInterest - i.tdsAmount);
+        if (newMode === 'LoanRecovery' && i.targetLoanAccountID) {
+          return { ...i, disbursementMode: 'LoanRecovery', loanAdjustedAmount: netAmt, netDisbursedAmount: 0 };
+        }
+        return { ...i, disbursementMode: newMode, loanAdjustedAmount: 0, netDisbursedAmount: netAmt };
+      })
+    );
+  };
+
+  const handleBatchPayoutOverrideChange = (mode: 'Auto' | 'Bank' | 'Cash') => {
+    setBatchPayoutOverride(mode);
+    setPreviewItems(prev =>
+      prev.map(i => {
+        if (i.isAlreadyPaid || i.grossInterest <= 0 || i.isLienMarked) return i;
+        const netAmt = Math.max(0, i.grossInterest - i.tdsAmount);
+        if (mode === 'Auto') {
+          const restored: MisDisbursementMode = i.originalDisbursementMode || 'SavingTransfer';
+          return {
+            ...i,
+            disbursementMode: restored,
+            loanAdjustedAmount: restored === 'LoanRecovery' ? netAmt : 0,
+            netDisbursedAmount: restored === 'LoanRecovery' ? 0 : netAmt
+          };
+        }
+        return {
+          ...i,
+          disbursementMode: mode,
+          loanAdjustedAmount: 0,
+          netDisbursedAmount: netAmt
+        };
+      })
+    );
+  };
+
   // Summary Metrics
   const selectableItems = previewItems.filter(i => !i.isAlreadyPaid && i.grossInterest > 0);
   const selectedItems = previewItems.filter(i => i.isSelected && !i.isAlreadyPaid && i.grossInterest > 0);
@@ -220,14 +275,42 @@ export const FdMisInterestPayout: React.FC = () => {
   const totalSelectedSbDisb = selectedItems
     .filter(i => i.disbursementMode === 'SavingTransfer')
     .reduce((sum, i) => sum + i.netDisbursedAmount, 0);
+  const totalSelectedBankDisb = selectedItems
+    .filter(i => i.disbursementMode === 'Bank')
+    .reduce((sum, i) => sum + i.netDisbursedAmount, 0);
+  const totalSelectedCashDisb = selectedItems
+    .filter(i => i.disbursementMode === 'Cash')
+    .reduce((sum, i) => sum + i.netDisbursedAmount, 0);
   const totalSelectedSuspense = selectedItems
     .filter(i => i.disbursementMode === 'Suspense')
     .reduce((sum, i) => sum + i.netDisbursedAmount, 0);
+  const anySelectedUsesBank =
+    batchPayoutOverride === 'Bank' || selectedItems.some(i => i.disbursementMode === 'Bank');
+
+  const handleOpenConfirmModal = () => {
+    if (selectedItems.length === 0) {
+      setError('कृपया किमान एक खाते निवडा.');
+      return;
+    }
+    if (selectedItems.some(i => i.disbursementMode === 'Bank') && (!bankLedgerID || bankLedgerID <= 0)) {
+      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
+    setError('');
+    setShowConfirmModal(true);
+  };
 
   // Execute Batch
   const handleExecuteBatch = async () => {
     if (selectedItems.length === 0) {
       setError('कृपया किमान एक खाते निवडा.');
+      setShowConfirmModal(false);
+      return;
+    }
+
+    const usesBank = selectedItems.some(i => i.disbursementMode === 'Bank');
+    if (usesBank && (!bankLedgerID || bankLedgerID <= 0)) {
+      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
       setShowConfirmModal(false);
       return;
     }
@@ -243,6 +326,7 @@ export const FdMisInterestPayout: React.FC = () => {
         payoutMonth,
         payoutDate,
         accountingMode,
+        bankLedgerID: usesBank ? bankLedgerID : null,
         selectedItems: selectedItems.map(i => ({
           fdAccountID: i.fdAccountID,
           grossInterest: i.grossInterest,
@@ -252,6 +336,7 @@ export const FdMisInterestPayout: React.FC = () => {
           disbursementMode: i.disbursementMode,
           targetSavingAccountID: i.targetSavingAccountID,
           targetLoanAccountID: i.targetLoanAccountID,
+          bankLedgerID: i.disbursementMode === 'Bank' ? bankLedgerID : null,
           remarks: `MIS Payout ${payoutMonth}/${payoutYear}`
         }))
       };
@@ -519,6 +604,37 @@ export const FdMisInterestPayout: React.FC = () => {
 
           {/* Table Container */}
           <div className="bg-white rounded-sm shadow-xs border border-gray-200 p-2.5 space-y-2">
+            {/* Batch Payout Mode Override & Bank GL Account Selector */}
+            <div className="bg-blue-50/50 border border-blue-200 rounded-sm p-2.5 grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                  वाटप माध्यम / पेमेंट पद्धत (Batch Payout Mode)
+                </label>
+                <select
+                  value={batchPayoutOverride}
+                  onChange={(e) => handleBatchPayoutOverrideChange(e.target.value as 'Auto' | 'Bank' | 'Cash')}
+                  className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs focus:outline-none focus:border-primary bg-white font-semibold cursor-pointer h-[30px]"
+                >
+                  <option value="Auto">स्वयंचलित (Auto: बचत खाते / तारण कर्ज / उचंत)</option>
+                  <option value="Bank">🏦 बँक ट्रान्सफर / धनादेश (All Non-Lien via Bank)</option>
+                  <option value="Cash">💵 रोख पेमेंट (All Non-Lien via Cash)</option>
+                </select>
+                <span className="text-[10px] text-gray-500 block mt-0.5">
+                  खालील तक्त्यात प्रत्येक खात्याची वाटप पद्धत स्वतंत्रपणे देखील बदलता येईल.
+                </span>
+              </div>
+
+              {anySelectedUsesBank && (
+                <div className="md:col-span-2">
+                  <BankLedgerSelect
+                    value={bankLedgerID}
+                    onChange={(id) => setBankLedgerID(id)}
+                    showCountBadge
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Table Header Action Bar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-gray-200">
               <div className="flex items-center gap-3">
@@ -558,7 +674,7 @@ export const FdMisInterestPayout: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => setShowConfirmModal(true)}
+                  onClick={handleOpenConfirmModal}
                   disabled={selectedItems.length === 0 || loadingExecute}
                   className="bg-primary hover:opacity-90 text-white px-3 py-1 rounded-sm shadow-xs text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
@@ -687,18 +803,27 @@ export const FdMisInterestPayout: React.FC = () => {
                               <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-gray-200">
                                 <CheckCircle2 size={10} /> आधीच जमा झाले
                               </span>
-                            ) : item.disbursementMode === 'LoanRecovery' ? (
+                            ) : item.isLienMarked && item.disbursementMode === 'LoanRecovery' ? (
                               <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-amber-200">
                                 <ShieldAlert size={10} /> तारण कर्जात वळती
                               </span>
-                            ) : item.disbursementMode === 'Suspense' ? (
-                              <span className="inline-flex items-center gap-1 bg-rose-50 text-rose-800 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-rose-200">
-                                <AlertCircle size={10} /> उचंत खात्यात वळती
-                              </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold border border-emerald-200">
-                                <CheckCircle2 size={10} /> बचत खात्यात ट्रान्सफर
-                              </span>
+                              <select
+                                value={item.disbursementMode}
+                                disabled={isDisabled}
+                                onChange={(e) => handleRowModeChange(item.fdAccountID, e.target.value as MisDisbursementMode)}
+                                className="border border-gray-300 rounded-sm px-1.5 py-0.5 text-[11px] font-bold bg-white text-gray-800 focus:outline-none focus:border-primary cursor-pointer"
+                              >
+                                {item.targetSavingAccountID && (
+                                  <option value="SavingTransfer">बचत खात्यात (SB)</option>
+                                )}
+                                <option value="Bank">🏦 बँक (Bank)</option>
+                                <option value="Cash">💵 रोख (Cash)</option>
+                                <option value="Suspense">उचंत (Suspense)</option>
+                                {item.targetLoanAccountID && (
+                                  <option value="LoanRecovery">तारण कर्जात वळती</option>
+                                )}
+                              </select>
                             )}
 
                             {item.warningNote && (
@@ -810,7 +935,15 @@ export const FdMisInterestPayout: React.FC = () => {
                         {row.netDisbursedAmount > 0 ? `₹ ${row.netDisbursedAmount.toLocaleString('en-IN')}` : '₹ ०'}
                       </td>
                       <td className="p-2 text-gray-600 text-xs">
-                        {row.targetSavingAccountNo ? `बचत: ${row.targetSavingAccountNo}` : (row.targetLoanAccountNo ? `कर्ज: ${row.targetLoanAccountNo}` : 'उचंत खाते')}
+                        {row.disbursementMode === 'Bank'
+                          ? 'बँक ट्रान्सफर (Bank)'
+                          : row.disbursementMode === 'Cash'
+                            ? 'रोख पेमेंट (Cash)'
+                            : row.targetSavingAccountNo
+                              ? `बचत: ${row.targetSavingAccountNo}`
+                              : row.targetLoanAccountNo
+                                ? `कर्ज: ${row.targetLoanAccountNo}`
+                                : 'उचंत खाते'}
                       </td>
                       <td className="p-2 text-center">
                         <span className="text-[10px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded-sm font-semibold border border-gray-200">
@@ -897,6 +1030,18 @@ export const FdMisInterestPayout: React.FC = () => {
                         <div className="flex justify-between bg-gray-50 p-1 rounded-sm border border-gray-200 text-[11px]">
                           <span className="font-medium text-emerald-800">बचत ठेवी (SB Credits)</span>
                           <span className="font-bold text-emerald-700">₹ {totalSelectedSbDisb.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                      {totalSelectedBankDisb > 0 && (
+                        <div className="flex justify-between bg-gray-50 p-1 rounded-sm border border-gray-200 text-[11px]">
+                          <span className="font-medium text-blue-800">बँक जी.एल. खाते (Bank Payout)</span>
+                          <span className="font-bold text-blue-700">₹ {totalSelectedBankDisb.toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                      {totalSelectedCashDisb > 0 && (
+                        <div className="flex justify-between bg-gray-50 p-1 rounded-sm border border-gray-200 text-[11px]">
+                          <span className="font-medium text-teal-800">रोख खाते (Cash Payout)</span>
+                          <span className="font-bold text-teal-700">₹ {totalSelectedCashDisb.toLocaleString('en-IN')}</span>
                         </div>
                       )}
                       {totalSelectedLoanAdj > 0 && (

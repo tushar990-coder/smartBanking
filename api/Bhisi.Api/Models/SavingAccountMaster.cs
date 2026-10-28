@@ -47,6 +47,12 @@ namespace Bhisi.Api.Models
         [NotMapped]
         public string? PreviousAccountNo { get; set; }
 
+        [NotMapped]
+        public string? InitialPaymentMode { get; set; } = "Cash";
+
+        [NotMapped]
+        public int? BankLedgerID { get; set; }
+
         // बचत योजना (Saving Scheme Mapping)
         public int? SavingSchemeID { get; set; }
 

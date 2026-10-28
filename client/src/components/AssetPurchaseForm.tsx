@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import { RawLedgerItem } from '../utils/bankLedgerUtils';
 
 interface Category {
   categoryID: number;
@@ -9,7 +11,7 @@ interface Category {
   categoryCode: string;
 }
 
-interface Ledger {
+interface Ledger extends RawLedgerItem {
   ledgerID: number;
   ledgerName: string;
 }
@@ -315,7 +317,10 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
         creditLedgerID: 0,
       });
     } catch (err: any) {
-      setError(err.response?.data || 'जतन करताना त्रुटी आली. (Error recording purchase.)');
+      const errMsg = typeof err.response?.data === 'string'
+        ? err.response.data
+        : (err.response?.data?.message || 'जतन करताना त्रुटी आली. (Error recording purchase.)');
+      setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -485,12 +490,18 @@ const AssetPurchaseForm: React.FC<AssetPurchaseFormProps> = ({ onNavigate, vouch
                   </div>
                   {formData.purchase.paymentMode === 'Bank' && (
                     <div>
-                      <label className="block text-[11px] font-medium text-gray-600 mb-0.5">जमा बँक खाते (Credit Bank Ledger) *</label>
-                      <select name="bankLedgerID" value={formData.purchase.bankLedgerID} onChange={handlePurchaseChange} required
-                        className="w-full border border-gray-300 rounded-sm px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
-                        <option value={0}>-- बँक खाते निवडा --</option>
-                        {ledgers.map((l) => <option key={l.ledgerID} value={l.ledgerID}>{l.ledgerName}</option>)}
-                      </select>
+                      <BankLedgerSelect
+                        label="🏦 जमा बँक जी.एल. खाते (Credit Bank GL) *"
+                        ledgers={ledgers}
+                        value={formData.purchase.bankLedgerID}
+                        disabled={Boolean(isPassing)}
+                        onChange={(id) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            purchase: { ...prev.purchase, bankLedgerID: id }
+                          }))
+                        }
+                      />
                     </div>
                   )}
                   {formData.purchase.paymentMode === 'Credit' && (

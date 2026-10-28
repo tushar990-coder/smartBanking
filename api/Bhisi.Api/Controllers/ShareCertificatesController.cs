@@ -440,9 +440,15 @@ namespace Bhisi.Api.Controllers
                         creditLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.BranchId, "SHARE");
                     }
                 }
-                else if (request.PaymentMode == "Bank" && request.BankLedgerId.HasValue)
+                else if (Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode))
                 {
-                    creditLedgerId = request.BankLedgerId.Value;
+                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                    if (!bankCheck.IsValid)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest(new { message = bankCheck.ErrorMessage });
+                    }
+                    creditLedgerId = bankCheck.LedgerId;
                 }
                 else if (request.CashLedgerId.HasValue && request.CashLedgerId.Value > 0)
                 {

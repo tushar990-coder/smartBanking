@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { FileSpreadsheet, Download, Search, Printer, DollarSign, Scale, Calendar, Plus, RefreshCw } from 'lucide-react';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 
 interface CaseReportItem {
   caseId: number;
@@ -55,6 +56,8 @@ export default function Sec101LegalReports() {
   const [expAmount, setExpAmount] = useState<number>(1000);
   const [expPayee, setExpPayee] = useState<string>('');
   const [expMode, setExpMode] = useState<string>('CASH');
+  const [expBankLedgerId, setExpBankLedgerId] = useState<number>(0);
+  const [expReferenceNo, setExpReferenceNo] = useState<string>('');
   const [expRemarks, setExpRemarks] = useState<string>('');
   const [addingExpense, setAddingExpense] = useState<boolean>(false);
 
@@ -158,6 +161,11 @@ export default function Sec101LegalReports() {
       return;
     }
 
+    if (expMode === 'BANK_TRANSFER' && (!expBankLedgerId || expBankLedgerId <= 0)) {
+      alert('कृपया बँक जी.एल. खाते (Bank GL Account) निवडा.');
+      return;
+    }
+
     setAddingExpense(true);
     try {
       const res = await axios.post('/api/LegalRecovery/expense/add', {
@@ -168,6 +176,8 @@ export default function Sec101LegalReports() {
         amount: expAmount,
         payeeName: expPayee,
         paymentMode: expMode,
+        bankLedgerId: expMode === 'BANK_TRANSFER' ? expBankLedgerId : null,
+        referenceNo: expMode === 'BANK_TRANSFER' ? expReferenceNo : null,
         isDebitedToBorrower: true,
         remarks: expRemarks
       });
@@ -175,6 +185,8 @@ export default function Sec101LegalReports() {
       if (res.status === 200) {
         const result = res.data;
         alert(`कायदेशीर खर्च नोंद यशस्वीरीत्या सेव्ह झाली!\nव्हाउचर क्र.: ${result.voucherNumber || 'ऑटो-पोस्ट'}`);
+        setExpBankLedgerId(0);
+        setExpReferenceNo('');
         setShowAddExpenseModal(false);
         fetchData();
       } else {
@@ -492,13 +504,39 @@ export default function Sec101LegalReports() {
                 <label className="font-bold text-gray-700">पेमेंट पद्धत:</label>
                 <select
                   value={expMode}
-                  onChange={(e) => setExpMode(e.target.value)}
+                  onChange={(e) => {
+                    setExpMode(e.target.value);
+                    if (e.target.value !== 'BANK_TRANSFER') {
+                      setExpBankLedgerId(0);
+                      setExpReferenceNo('');
+                    }
+                  }}
                   className="w-full mt-1 border rounded-md px-2.5 py-1.5 font-bold text-gray-800 bg-white"
                 >
                   <option value="CASH">रोख (Cash)</option>
-                  <option value="BANK_TRANSFER">बँक ट्रान्सफर / चेक (Bank)</option>
+                  <option value="BANK_TRANSFER">बँक ट्रान्सफर / चेक (Bank Account)</option>
                 </select>
               </div>
+
+              {expMode === 'BANK_TRANSFER' && (
+                <div className="bg-blue-50/70 border border-blue-200 rounded-lg p-2.5 space-y-2">
+                  <BankLedgerSelect
+                    value={expBankLedgerId}
+                    onChange={setExpBankLedgerId}
+                    showCountBadge
+                  />
+                  <div>
+                    <label className="font-bold text-blue-950 text-[11px]">चेक / UTR / संदर्भ क्र. (Reference No.):</label>
+                    <input
+                      type="text"
+                      placeholder="उदा. चेक क्र. किंवा UTR क्र. (ऐच्छिक)"
+                      value={expReferenceNo}
+                      onChange={(e) => setExpReferenceNo(e.target.value)}
+                      className="w-full mt-0.5 border border-blue-200 rounded-md px-2.5 py-1.5 bg-white"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="font-bold text-gray-700">शेरा (Remarks):</label>

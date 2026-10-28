@@ -21,6 +21,9 @@ namespace Bhisi.Api.Controllers
         public decimal PenalInterestDue { get; set; }
         public decimal NoticeFee { get; set; } = 0;
         public string? PostalTrackingNo { get; set; }
+        public string? PaymentMode { get; set; } = "CASH";
+        public int? BankLedgerId { get; set; }
+        public string? ReferenceNo { get; set; }
         public string? Remarks { get; set; }
     }
 
@@ -38,6 +41,9 @@ namespace Bhisi.Api.Controllers
         public decimal OtherChargesClaim { get; set; }
         public decimal CourtFeeAmount { get; set; }
         public string? CourtFeeChallanNo { get; set; }
+        public string? PaymentMode { get; set; } = "CASH";
+        public int? BankLedgerId { get; set; }
+        public string? ReferenceNo { get; set; }
         public string? Remarks { get; set; }
     }
 
@@ -100,6 +106,8 @@ namespace Bhisi.Api.Controllers
         public string? PaidTo { get; set; }
         public string? PayeeName { get; set; }
         public string? PaymentMode { get; set; } = "CASH";
+        public int? BankLedgerId { get; set; }
+        public string? ReferenceNo { get; set; }
         public bool PostVoucher { get; set; } = true;
         public bool IsDebitedToBorrower { get; set; } = true;
         public string? Remarks { get; set; }
@@ -358,6 +366,12 @@ namespace Bhisi.Api.Controllers
                 _ => "NOT"
             };
 
+            if (dto.NoticeFee > 0 && Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode))
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerId);
+                if (!bankCheck.IsValid) return BadRequest(new { message = bankCheck.ErrorMessage });
+            }
+
             int nextSeq = await _context.Sec101NoticeHistories.CountAsync(n => n.BranchId == dto.BranchId) + 1;
             string noticeNo = $"{prefix}/{dto.BranchId}/{DateTime.Today:yyyy}/{nextSeq:D4}";
 
@@ -389,7 +403,7 @@ namespace Bhisi.Api.Controllers
             // Auto-post notice fee if applicable and dynamic mapping exists
             if (dto.NoticeFee > 0)
             {
-                await TryAutoPostLegalExpenseAsync(dto.BranchId, null, dto.LoanAccountId, "NOTICE_FEE", dto.NoticeFee, dto.NoticeDate, "नोटीस टपाल व प्रशासकीय फी");
+                await TryAutoPostLegalExpenseAsync(dto.BranchId, null, dto.LoanAccountId, "NOTICE_FEE", dto.NoticeFee, dto.NoticeDate, "नोटीस टपाल व प्रशासकीय फी", dto.PaymentMode, dto.BankLedgerId, dto.ReferenceNo);
             }
 
             return Ok(new
@@ -472,6 +486,12 @@ namespace Bhisi.Api.Controllers
             var loan = await _context.LoanAccounts.FindAsync(dto.LoanAccountId);
             if (loan == null) return NotFound("Loan account not found.");
 
+            if (dto.CourtFeeAmount > 0 && Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode))
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerId);
+                if (!bankCheck.IsValid) return BadRequest(new { message = bankCheck.ErrorMessage });
+            }
+
             decimal totalClaim = dto.PrincipalClaim + dto.InterestClaim + dto.PenalInterestClaim + dto.OtherChargesClaim;
 
             var legalCase = new Sec101CaseMaster
@@ -501,7 +521,7 @@ namespace Bhisi.Api.Controllers
             // Auto-post court fee if entered and dynamic mapping configured
             if (dto.CourtFeeAmount > 0)
             {
-                await TryAutoPostLegalExpenseAsync(dto.BranchId, legalCase.CaseId, dto.LoanAccountId, "COURT_FEE", dto.CourtFeeAmount, dto.FilingDate, $"कलम १०१ कोर्ट फी - चलन क्र. {dto.CourtFeeChallanNo}");
+                await TryAutoPostLegalExpenseAsync(dto.BranchId, legalCase.CaseId, dto.LoanAccountId, "COURT_FEE", dto.CourtFeeAmount, dto.FilingDate, $"कलम १०१ कोर्ट फी - चलन क्र. {dto.CourtFeeChallanNo}", dto.PaymentMode, dto.BankLedgerId, dto.ReferenceNo ?? dto.CourtFeeChallanNo);
             }
 
             return Ok(new
@@ -847,8 +867,31 @@ namespace Bhisi.Api.Controllers
         {
             if (dto == null || dto.Amount <= 0) return BadRequest("Invalid expense details.");
 
+            if (Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode))
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerId);
+                if (!bankCheck.IsValid) return BadRequest(new { message = bankCheck.ErrorMessage });
+            }
+
+            int effectiveBranchId = dto.BranchId;
+            int effectiveLoanAccountId = dto.LoanAccountId;
+            if (dto.CaseId.HasValue && dto.CaseId.Value > 0 && (effectiveLoanAccountId <= 0 || effectiveBranchId <= 0))
+            {
+                var caseRef = await _context.Sec101CaseMasters
+                    .AsNoTracking()
+                    .Where(c => c.CaseId == dto.CaseId.Value)
+                    .Select(c => new { c.LoanAccountId, c.BranchId })
+                    .FirstOrDefaultAsync();
+                if (caseRef != null)
+                {
+                    if (effectiveLoanAccountId <= 0) effectiveLoanAccountId = caseRef.LoanAccountId;
+                    if (effectiveBranchId <= 0) effectiveBranchId = caseRef.BranchId;
+                }
+            }
+            if (effectiveBranchId <= 0) effectiveBranchId = 1;
+
             string payee = dto.PaidTo ?? dto.PayeeName ?? "कायदेशीर सल्लागार / अधिकारी";
-            var voucher = await TryAutoPostLegalExpenseAsync(dto.BranchId, dto.CaseId, dto.LoanAccountId, dto.ExpenseType, dto.Amount, dto.ExpenseDate, dto.Remarks ?? $"कायदेशीर खर्च ({dto.ExpenseType}) - {payee}");
+            var voucher = await TryAutoPostLegalExpenseAsync(effectiveBranchId, dto.CaseId, effectiveLoanAccountId, dto.ExpenseType, dto.Amount, dto.ExpenseDate, !string.IsNullOrWhiteSpace(dto.Remarks) ? dto.Remarks! : $"कायदेशीर खर्च ({dto.ExpenseType}) - {payee}", dto.PaymentMode, dto.BankLedgerId, dto.ReferenceNo, payee);
 
             return Ok(new
             {
@@ -891,7 +934,9 @@ namespace Bhisi.Api.Controllers
                     x.VoucherId,
                     VoucherNo = x.Voucher != null ? x.Voucher.VoucherNo : "",
                     VoucherNumber = x.Voucher != null ? x.Voucher.VoucherNo : "",
-                    PaymentMode = "CASH",
+                    MemberName = (x.Case != null && x.Case.Member != null && x.Case.Member.Customer != null) ? $"{x.Case.Member.Customer.FirstName} {x.Case.Member.Customer.LastName}".Trim() : "",
+                    PaymentMode = (x.Voucher != null && x.Voucher.VoucherDetails.Any(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank"))) ? "BANK_TRANSFER" : "CASH",
+                    BankLedgerId = x.Voucher != null ? (x.Voucher.VoucherDetails.Where(d => d.DrCr == "Cr" && d.Ledger != null && (d.Ledger.AccountType == "Bank Account" || d.Ledger.AccountType == "Bank")).Select(d => (int?)d.LedgerID).FirstOrDefault() ?? 0) : 0,
                     IsDebitedToBorrower = x.IsDebitedToLoan,
                     x.IsDebitedToLoan,
                     x.Remarks
@@ -902,7 +947,7 @@ namespace Bhisi.Api.Controllers
         }
 
         // Helper: Dynamic Ledger Lookup & Auto-Voucher Posting (ZERO HARDCODING)
-        private async Task<Voucher?> TryAutoPostLegalExpenseAsync(int branchId, int? caseId, int loanAccountId, string expenseType, decimal amount, DateTime expenseDate, string narration)
+        private async Task<Voucher?> TryAutoPostLegalExpenseAsync(int branchId, int? caseId, int loanAccountId, string expenseType, decimal amount, DateTime expenseDate, string narration, string? paymentMode = "CASH", int? bankLedgerId = null, string? referenceNo = null, string? payeeName = null)
         {
             try
             {
@@ -922,6 +967,15 @@ namespace Bhisi.Api.Controllers
                     debitLedgerId = dynDr?.LedgerID ?? 1;
                 }
 
+                bool isBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(paymentMode) && bankLedgerId.HasValue && bankLedgerId.Value > 0;
+                if (isBankMode)
+                {
+                    creditLedgerId = bankLedgerId!.Value;
+                }
+                else if (!creditLedgerId.HasValue || creditLedgerId.Value == 0)
+                {
+                    creditLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, branchId > 0 ? branchId : 1, "LEGAL");
+                }
                 if (!creditLedgerId.HasValue || creditLedgerId.Value == 0)
                 {
                     var dynCr = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("रोख") || l.LedgerName.Contains("Cash") || l.AccountType == "Cash");
@@ -931,6 +985,9 @@ namespace Bhisi.Api.Controllers
                 var loan = await _context.LoanAccounts.FindAsync(loanAccountId);
                 int memberId = loan?.MemberID ?? 1;
 
+                string finalNarration = (!string.IsNullOrWhiteSpace(referenceNo) && !narration.Contains(referenceNo))
+                    ? $"{narration} (Ref: {referenceNo.Trim()})"
+                    : narration;
                 string vNo = $"LEG-{branchId}-{expenseDate:yyyyMMdd}-{DateTime.UtcNow.Ticks % 10000:D4}";
 
                 var voucher = new Voucher
@@ -938,9 +995,9 @@ namespace Bhisi.Api.Controllers
                     BranchID = branchId > 0 ? branchId : 1,
                     VoucherNo = vNo,
                     VoucherDate = expenseDate,
-                    VoucherType = "Journal",
+                    VoucherType = isBankMode ? "Payment" : "Journal",
                     Status = "Approved",
-                    Narration = narration,
+                    Narration = finalNarration,
                     TotalAmount = amount,
                     CreatedBy = 1,
                     CreatedOn = DateTime.UtcNow
@@ -974,10 +1031,10 @@ namespace Bhisi.Api.Controllers
                     ExpenseType = expenseType,
                     Amount = amount,
                     ExpenseDate = expenseDate,
-                    PaidTo = narration,
+                    PaidTo = !string.IsNullOrWhiteSpace(payeeName) ? payeeName : finalNarration,
                     VoucherId = voucher.VoucherID,
                     IsDebitedToLoan = true,
-                    Remarks = narration,
+                    Remarks = finalNarration,
                     CreatedAt = DateTime.UtcNow
                 };
 

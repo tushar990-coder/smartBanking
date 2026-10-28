@@ -8116,13 +8116,23 @@ namespace Bhisi.Api.Controllers
                 int ibtInTo = await Helpers.IbtLedgerHelper.GetIbtLedgerIdAsync(_context, request.ToBranchID, request.FromBranchID);
 
                 // Identify Settlement Source/Destination Ledgers (Bank or Cash)
-                int fromFundLedgerId = request.PaymentMode.Equals("Cash", StringComparison.OrdinalIgnoreCase)
-                    ? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.FromBranchID)
-                    : (request.BankLedgerID ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.FromBranchID));
-
-                int toFundLedgerId = request.PaymentMode.Equals("Cash", StringComparison.OrdinalIgnoreCase)
-                    ? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.ToBranchID)
-                    : (request.BankLedgerID ?? await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.ToBranchID));
+                int fromFundLedgerId;
+                int toFundLedgerId;
+                if (string.Equals(request.PaymentMode, "Cash", StringComparison.OrdinalIgnoreCase))
+                {
+                    fromFundLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.FromBranchID);
+                    toFundLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, request.ToBranchID);
+                }
+                else
+                {
+                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerID);
+                    if (!bankCheck.IsValid)
+                    {
+                        return BadRequest(bankCheck.ErrorMessage);
+                    }
+                    fromFundLedgerId = bankCheck.LedgerId;
+                    toFundLedgerId = bankCheck.LedgerId;
+                }
 
                 // 1. Voucher in FromBranch (Payment: Dr IBT, Cr Fund)
                 int countFrom = await _context.Vouchers.CountAsync(v => v.BranchID == request.FromBranchID && v.VoucherType == "Payment") + 1;

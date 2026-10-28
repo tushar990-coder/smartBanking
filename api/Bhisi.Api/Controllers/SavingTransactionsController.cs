@@ -150,7 +150,7 @@ namespace Bhisi.Api.Controllers
                 }
 
                 var bankLedger = await _context.Ledgers.FindAsync(txn.BankLedgerID.Value);
-                if (bankLedger == null)
+                if (bankLedger == null || !bankLedger.IsActive || !Helpers.BankLedgerHelper.IsBankAccountType(bankLedger.AccountType))
                 {
                     return BadRequest("निवडलेले बँक लेजर सापडले नाही.");
                 }
@@ -216,6 +216,15 @@ namespace Bhisi.Api.Controllers
                 txn.CustomerID = account.CustomerID;
                 txn.BalanceAfterTxn = account.CurrentBalance;
                 txn.CreatedOn = DateTime.Now;
+
+                if (!string.IsNullOrWhiteSpace(txn.CheckNo))
+                {
+                    var cleanRef = txn.CheckNo.Trim();
+                    var refTag = $"[संदर्भ/UTR: {cleanRef}]";
+                    txn.Narration = string.IsNullOrWhiteSpace(txn.Narration)
+                        ? refTag
+                        : (txn.Narration.Contains(cleanRef) ? txn.Narration : $"{txn.Narration} {refTag}");
+                }
 
                 _context.SavingTransactions.Add(txn);
                 _context.Entry(account).State = EntityState.Modified;
@@ -755,6 +764,13 @@ namespace Bhisi.Api.Controllers
                 txn.SavingAccountID,
                 txn.CustomerID,
                 txn.TargetSavingAccountID,
+                BankLedgerID = string.Equals(txn.PaymentMode, "Bank", StringComparison.OrdinalIgnoreCase)
+                    ? (voucher.VoucherDetails.FirstOrDefault(d => d.DrCr == ((txn.TransactionType == "Deposit" || txn.TransactionType == "Interest") ? "Dr" : "Cr"))?.LedgerID
+                        ?? voucher.VoucherDetails.FirstOrDefault(d => d.Ledger != null &&
+                            (string.Equals(d.Ledger.AccountType, "Bank Account", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(d.Ledger.AccountType, "Bank", StringComparison.OrdinalIgnoreCase)))?.LedgerID
+                        ?? 0)
+                    : 0,
                 txn.TransactionDate,
                 txn.TransactionType,
                 txn.PaymentMode,

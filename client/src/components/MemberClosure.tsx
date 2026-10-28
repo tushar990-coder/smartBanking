@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import SearchableSelect from './SearchableSelect';
 import MemberSearchSelect, { MemberOption } from './common/MemberSearchSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 
 interface Member extends MemberOption {}
 
@@ -42,6 +43,8 @@ const MemberClosure: React.FC = () => {
   
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Bank'>('Cash');
+  const [bankLedgerId, setBankLedgerId] = useState<number>(0);
 
   useEffect(() => {
     fetchMembers();
@@ -110,6 +113,8 @@ const MemberClosure: React.FC = () => {
   const handleMemberChange = (e: { target: { name?: string; value: string | number } } | React.ChangeEvent<HTMLSelectElement>) => {
     const val = String(e.target.value || '');
     setSelectedMemberId(val);
+    setPaymentMode('Cash');
+    setBankLedgerId(0);
     if (val !== '') {
       loadClosureInfo(val);
     } else {
@@ -131,6 +136,11 @@ const MemberClosure: React.FC = () => {
       return;
     }
 
+    if (closureInfo.shareBalance > 0 && paymentMode === 'Bank' && (!bankLedgerId || bankLedgerId <= 0)) {
+      setMessage('शेअर भांडवल बँक परताव्यासाठी कृपया वैध बँक खाते लेजर निवडा.');
+      return;
+    }
+
     let confirmMsg = `तुम्ही नक्की ${closureInfo.memberName} यांचे सभासदत्व रद्द करू इच्छिता? (Are you sure?)`;
     if (closureInfo.shareBalance > 0) {
       confirmMsg += `\n\nया सभासदाचे ₹${closureInfo.shareBalance} चे शेअर्स आहेत. सभासदत्व रद्द केल्यावर हे शेअर्स काढून (Withdraw) त्याचे व्हाउचर आपोआप तयार होईल.`;
@@ -145,7 +155,9 @@ const MemberClosure: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           branchId: 1,
-          narration: 'Member Closure'
+          narration: 'Member Closure',
+          paymentMode: closureInfo.shareBalance > 0 ? paymentMode : 'Cash',
+          bankLedgerId: closureInfo.shareBalance > 0 && paymentMode === 'Bank' ? bankLedgerId : null
         })
       });
       const data = await res.json();
@@ -153,6 +165,8 @@ const MemberClosure: React.FC = () => {
         setMessage('सभासदत्व यशस्वीरित्या रद्द करण्यात आले आहे (Member successfully closed).');
         setClosureInfo(null);
         setSelectedMemberId('');
+        setPaymentMode('Cash');
+        setBankLedgerId(0);
         fetchMembers(); // refresh list
       } else {
         setMessage(data.message || (typeof data === 'string' ? data : 'Closure failed.'));
@@ -343,7 +357,7 @@ const MemberClosure: React.FC = () => {
           )}
 
           {/* Share Capital Highlight Box */}
-          <div className="p-3 rounded-sm shadow-xs border bg-primary/5 border-primary/20">
+          <div className="p-3 rounded-sm shadow-xs border bg-primary/5 border-primary/20 space-y-3">
             <div className="flex justify-between items-center">
               <div>
                 <div className="text-xs font-extrabold flex items-center gap-1 text-primary">
@@ -362,6 +376,38 @@ const MemberClosure: React.FC = () => {
                 <div className="text-xl font-black text-primary">₹{closureInfo.shareBalance.toFixed(2)}</div>
               </div>
             </div>
+
+            {closureInfo.shareBalance > 0 && (
+              <div className="pt-2 border-t border-primary/20 grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                    शेअर परतावा पेमेंट पद्धत (Refund Payment Mode) <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={paymentMode}
+                    onChange={(e) => {
+                      const mode = e.target.value as 'Cash' | 'Bank';
+                      setPaymentMode(mode);
+                      if (mode !== 'Bank') setBankLedgerId(0);
+                    }}
+                    className="w-full text-[11px] border border-gray-300 rounded-sm px-2 py-1 focus:ring-1 focus:ring-primary focus:border-primary focus:outline-none bg-white text-gray-900 font-bold h-[28px]"
+                  >
+                    <option value="Cash">💵 रोख (Cash)</option>
+                    <option value="Bank">🏦 बँक ट्रान्सफर / चेक (Bank Account)</option>
+                  </select>
+                </div>
+
+                {paymentMode === 'Bank' && (
+                  <div>
+                    <BankLedgerSelect
+                      value={bankLedgerId}
+                      onChange={(id) => setBankLedgerId(id)}
+                      showCountBadge
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {!closureInfo.canClose && (

@@ -12,6 +12,8 @@ import {
 import SearchableSelect, { SearchableSelectOption } from './SearchableSelect';
 import LoanDistributionListModal from './LoanDistributionListModal';
 import CashLedgerReflectBadge from './common/CashLedgerReflectBadge';
+import BankLedgerSelect from './common/BankLedgerSelect';
+import { filterBankAccountLedgers } from '../utils/bankLedgerUtils';
 import { useAuth } from '../context/AuthContext';
 
 interface Member {
@@ -618,26 +620,7 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
             setApplications(availableApps);
             const filteredAccs = (accRes.data || []).filter((a: any) => !a.isOpeningBalance && (!bId || a.branchID === bId));
             setAccounts(filteredAccs);
-            const filteredBankLedgers = (ledgersRes.data || []).filter((l: any) => {
-                if (!l) return false;
-                const gId = l.groupID || l.accountGroupID || 0;
-                const parentGId = l.accountGroup?.parentGroupID || 0;
-                const gName = (l.accountGroup?.groupName || '').toLowerCase();
-                const lName = (l.ledgerName || '').toLowerCase();
-                const accType = (l.accountType || '').toLowerCase();
-
-                return (
-                    gId === 32 || gId === 33 || gId === 34 ||
-                    parentGId === 32 ||
-                    gName.includes('बँक') || gName.includes('bank') ||
-                    gName.includes('करंट') || gName.includes('current') ||
-                    gName.includes('चालू') || gName.includes('शिल्लक') ||
-                    lName.includes('बँक') || lName.includes('bank') ||
-                    lName.includes('करंट') || lName.includes('current') ||
-                    lName.includes('चालू') ||
-                    accType.includes('bank') || accType.includes('current')
-                );
-            });
+            const filteredBankLedgers = filterBankAccountLedgers(ledgersRes.data || []);
             setBankLedgers(filteredBankLedgers);
             setAllLedgers(ledgersRes.data || []);
             setBranches(branchesRes.data || []);
@@ -1251,8 +1234,8 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                 return;
             }
         } else if (formData.paymentMode === 'Bank' || formData.paymentMode === 'Cheque') {
-            if (!formData.bankAccountLedgerID || formData.bankAccountLedgerID <= 0) {
-                const m = 'बँक / चेक पेमेंटसाठी कृपया वैध बँक खाते (Bank A/c) निवडा!';
+            if (!formData.bankAccountLedgerID || Number(formData.bankAccountLedgerID) <= 0) {
+                const m = 'बँक / चेक पेमेंटसाठी कृपया वैध बँक जी.एल. खाते (Bank GL Account) निवडा!';
                 setErrorMessage(m);
                 alert(m);
                 return;
@@ -1261,8 +1244,11 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
 
         setIsSaving(true);
         try {
+            const isBankOrCheque = formData.paymentMode === 'Bank' || formData.paymentMode === 'Cheque';
             const payload: any = { 
                 ...formData, 
+                bankAccountLedgerID: isBankOrCheque ? Number(formData.bankAccountLedgerID) : null,
+                chequeNo: formData.paymentMode === 'Cheque' ? (formData.chequeNo || '') : null,
                 branchID: effectiveBranchId || selectedBranchId,
                 deductions: deductions.filter(d => d.ledgerID && d.amount > 0)
             };
@@ -2300,7 +2286,18 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                         <select 
                                             name="paymentMode" 
                                             value={formData.paymentMode} 
-                                            onChange={(e) => setFormData(p => ({ ...p, paymentMode: e.target.value }))}
+                                            onChange={(e) => {
+                                                const nextMode = e.target.value;
+                                                setFormData(p => ({
+                                                    ...p,
+                                                    paymentMode: nextMode,
+                                                    ...(nextMode !== 'Bank' && nextMode !== 'Cheque'
+                                                        ? { bankAccountLedgerID: undefined, chequeNo: '' }
+                                                        : nextMode !== 'Cheque'
+                                                            ? { chequeNo: '' }
+                                                            : {})
+                                                }));
+                                            }}
                                             className={inputClass}
                                         >
                                             <option value="Cash">Cash (रोख)</option>
@@ -2322,23 +2319,14 @@ const LoanDisbursementMaster: React.FC<Props> = ({ draftApplication, editingDisb
                                         )}
 
                                         {(formData.paymentMode === 'Bank' || formData.paymentMode === 'Cheque') && (
-                                            <div>
-                                                <label className={labelClass}>बँक खाते (Bank A/c) <span className="text-red-500">*</span></label>
-                                                <select 
-                                                    name="bankAccountLedgerID" 
-                                                    value={formData.bankAccountLedgerID || ''} 
-                                                    onChange={(e) => setFormData(p => ({ ...p, bankAccountLedgerID: parseInt(e.target.value, 10) }))}
-                                                    className={inputClass} 
-                                                    required
-                                                >
-                                                    <option value="">-- बँक खाते निवडा --</option>
-                                                    {bankLedgers.map(l => (
-                                                        <option key={l.ledgerID} value={l.ledgerID}>
-                                                            {l.ledgerName}{l.accountGroup?.groupName ? ` (${l.accountGroup.groupName})` : ''}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
+                                            <BankLedgerSelect
+                                                name="bankAccountLedgerID"
+                                                ledgers={allLedgers}
+                                                value={formData.bankAccountLedgerID}
+                                                onChange={(id) => setFormData(prev => ({ ...prev, bankAccountLedgerID: id > 0 ? id : undefined }))}
+                                                disabled={isPassingMode}
+                                                showCountBadge
+                                            />
                                         )}
 
                                         {formData.paymentMode === 'Saving Transfer' && (

@@ -264,8 +264,10 @@ namespace Bhisi.Api.Controllers
             locker.Status = "Allotted";
 
             // Find Cash Ledger
-            var cashLedger = await _context.Ledgers.FirstOrDefaultAsync(l => l.LedgerName.Contains("रोख") || l.LedgerName.Contains("Cash"));
-            int cashLedgerId = cashLedger?.LedgerID ?? 1;
+            int cashLedgerId;
+            if ((dto.SecurityDepositAmount > 0 || dto.AdvanceRentPaid > 0) && Helpers.BankLedgerHelper.IsBankPaymentMode(dto.PaymentMode)) { var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, dto.BankLedgerID); if (!bankCheck.IsValid) return BadRequest(new { message = bankCheck.ErrorMessage }); cashLedgerId = bankCheck.LedgerId; } else { cashLedgerId = await Helpers.CashLedgerHelper.GetCashLedgerIdAsync(_context, dto.BranchID, "LOCKER"); }
+            var cashLedger = (Ledger?)null;
+            if (cashLedger != null) cashLedgerId = cashLedger.LedgerID;
 
             int? depositVoucherId = null;
             int? rentVoucherId = null;
@@ -515,6 +517,9 @@ namespace Bhisi.Api.Controllers
         public decimal AnnualRent { get; set; }
         public decimal SecurityDepositAmount { get; set; }
         public decimal AdvanceRentPaid { get; set; }
+        public string? PaymentMode { get; set; } = "Cash";
+        public int? BankLedgerID { get; set; }
+        public string? ReferenceNo { get; set; }
         public int? LinkedSavingAccountID { get; set; }
         public bool IsAutoDebitEnabled { get; set; }
         public string? NomineeName { get; set; }

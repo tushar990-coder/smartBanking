@@ -246,9 +246,12 @@ namespace Bhisi.Api.Controllers
 
                 // Fail-Fast: Validate Saving Transfer target account (Same-Branch, Active, Liability Ledger) or Bank Ledger upfront
                 bool isSavingTransfer = Helpers.LoanDisbursementReversalHelper.IsSavingTransferMode(disbursement.PaymentMode);
+                bool isBankMode = !isSavingTransfer && Helpers.BankLedgerHelper.IsBankPaymentMode(disbursement.PaymentMode);
                 Helpers.SavingTransferTargetResult? savingTransferTarget = null;
+                int validatedBankLedgerId = 0;
                 if (isSavingTransfer)
                 {
+                    disbursement.BankAccountLedgerID = null;
                     try
                     {
                         savingTransferTarget = await Helpers.LoanDisbursementReversalHelper.ResolveSavingTransferTargetAsync(
@@ -265,13 +268,20 @@ namespace Bhisi.Api.Controllers
                         return BadRequest(new { message = valEx.Message });
                     }
                 }
-                else if (disbursement.PaymentMode == "Bank" || disbursement.PaymentMode == "Cheque" || disbursement.PaymentMode == "RTGS")
+                else if (isBankMode)
                 {
-                    if (!disbursement.BankAccountLedgerID.HasValue || disbursement.BankAccountLedgerID.Value <= 0 || !validLedgerDict.ContainsKey(disbursement.BankAccountLedgerID.Value))
+                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, disbursement.BankAccountLedgerID);
+                    if (!bankCheck.IsValid)
                     {
                         await transaction.RollbackAsync();
-                        return BadRequest(new { message = "बँक / चेक पेमेंटसाठी कृपया वैध बँक खाते (Bank Ledger) निवडा." });
+                        return BadRequest(new { message = bankCheck.ErrorMessage });
                     }
+                    validatedBankLedgerId = bankCheck.LedgerId;
+                    disbursement.BankAccountLedgerID = validatedBankLedgerId;
+                }
+                else
+                {
+                    disbursement.BankAccountLedgerID = null;
                 }
 
                 if (existingLoanAcc != null)
@@ -622,9 +632,9 @@ namespace Bhisi.Api.Controllers
                 {
                     cashLedgerId = savingTransferTarget.SavingLiabilityLedgerId;
                 }
-                else if (disbursement.PaymentMode == "Bank" || disbursement.PaymentMode == "Cheque" || disbursement.PaymentMode == "RTGS")
+                else if (isBankMode)
                 {
-                    cashLedgerId = disbursement.BankAccountLedgerID!.Value;
+                    cashLedgerId = validatedBankLedgerId;
                 }
                 else
                 {
@@ -1162,9 +1172,13 @@ namespace Bhisi.Api.Controllers
                     : currentDisbBranchId;
 
                 bool isSavingTransfer = Helpers.LoanDisbursementReversalHelper.IsSavingTransferMode(disbursement.PaymentMode);
+                bool isBankMode = !isSavingTransfer && Helpers.BankLedgerHelper.IsBankPaymentMode(disbursement.PaymentMode);
                 Helpers.SavingTransferTargetResult? savingTransferTarget = null;
+                int validatedBankLedgerId = 0;
                 if (isSavingTransfer)
                 {
+                    disbursement.BankAccountLedgerID = null;
+                    existingDisbursement.BankAccountLedgerID = null;
                     savingTransferTarget = await Helpers.LoanDisbursementReversalHelper.ResolveSavingTransferTargetAsync(
                         _context,
                         disbursement.TransferToSavingAccountNo,
@@ -1173,13 +1187,22 @@ namespace Bhisi.Api.Controllers
                         ledgers);
                     existingDisbursement.TransferToSavingAccountNo = savingTransferTarget.SavingAccount.AccountNo;
                 }
-                else if (disbursement.PaymentMode == "Bank" || disbursement.PaymentMode == "Cheque" || disbursement.PaymentMode == "RTGS")
+                else if (isBankMode)
                 {
-                    if (!disbursement.BankAccountLedgerID.HasValue || disbursement.BankAccountLedgerID.Value <= 0 || !validLedgerDict.ContainsKey(disbursement.BankAccountLedgerID.Value))
+                    var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, disbursement.BankAccountLedgerID);
+                    if (!bankCheck.IsValid)
                     {
                         await transaction.RollbackAsync();
-                        return BadRequest(new { message = "बँक / चेक पेमेंटसाठी कृपया वैध बँक खाते (Bank Ledger) निवडा." });
+                        return BadRequest(new { message = bankCheck.ErrorMessage });
                     }
+                    validatedBankLedgerId = bankCheck.LedgerId;
+                    disbursement.BankAccountLedgerID = validatedBankLedgerId;
+                    existingDisbursement.BankAccountLedgerID = validatedBankLedgerId;
+                }
+                else
+                {
+                    disbursement.BankAccountLedgerID = null;
+                    existingDisbursement.BankAccountLedgerID = null;
                 }
 
                 if (loanAccFetched != null)
@@ -1272,9 +1295,9 @@ namespace Bhisi.Api.Controllers
                     {
                         cashLedgerId = savingTransferTarget.SavingLiabilityLedgerId;
                     }
-                    else if (disbursement.PaymentMode == "Bank" || disbursement.PaymentMode == "Cheque" || disbursement.PaymentMode == "RTGS")
+                    else if (isBankMode)
                     {
-                        cashLedgerId = disbursement.BankAccountLedgerID!.Value;
+                        cashLedgerId = validatedBankLedgerId;
                     }
                     else
                     {

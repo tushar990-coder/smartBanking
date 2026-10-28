@@ -63,6 +63,9 @@ namespace Bhisi.Api.Controllers
             public string AccountNo { get; set; } = string.Empty;
             public int BranchId { get; set; } = 1;
             public DateTime? ClosureDate { get; set; }
+            public string PaymentMode { get; set; } = "Cash";
+            public int? BankLedgerId { get; set; }
+            public string? ReferenceNo { get; set; }
             public string Narration { get; set; } = string.Empty;
             public bool ManagerOverrideConfirmed { get; set; } = false;
         }
@@ -100,6 +103,9 @@ namespace Bhisi.Api.Controllers
             public decimal Amount { get; set; }
             public int BranchId { get; set; } = 1;
             public DateTime? WithdrawalDate { get; set; }
+            public string PaymentMode { get; set; } = "Cash";
+            public int? BankLedgerId { get; set; }
+            public string? ReferenceNo { get; set; }
             public string Narration { get; set; } = string.Empty;
             public bool ManagerOverrideConfirmed { get; set; } = false;
         }
@@ -387,6 +393,19 @@ namespace Bhisi.Api.Controllers
             decimal netPaid = Math.Max(0, request.Amount - penaltyAmount + interestAmount);
             decimal newBalance = Math.Max(0, account.TotalDepositedAmount - request.Amount);
 
+            bool isBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode);
+            int resolvedBankLedgerId = 0;
+            if (isBankMode)
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(bankCheck.ErrorMessage);
+                }
+                resolvedBankLedgerId = bankCheck.LedgerId;
+            }
+            string refNote = !string.IsNullOrWhiteSpace(request.ReferenceNo) ? $" [Ref/UTR: {request.ReferenceNo.Trim()}]" : "";
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
@@ -433,6 +452,10 @@ namespace Bhisi.Api.Controllers
                 }
 
                 int expenseLedgerId = account.PigmyScheme?.InterestExpenseLedgerID ?? liabilityLedger.LedgerID;
+                if (isBankMode && resolvedBankLedgerId > 0)
+                {
+                    cashLedger = await _context.Ledgers.FindAsync(resolvedBankLedgerId) ?? cashLedger;
+                }
                 string finalVoucherNo;
 
                 if (!isCrossBranchTxn)
@@ -487,7 +510,7 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = effDate,
                         VoucherType = "Payment",
                         TotalAmount = request.Amount + interestAmount,
-                        Narration = $"पिग्मी अंशतः विड्रॉल (सायकल #{account.CurrentCycleNumber}) खाते {account.AccountNo} - {account.Customer?.FirstName}. {penaltyNotice} {request.Narration}".Trim(),
+                        Narration = $"पिग्मी अंशतः विड्रॉल (सायकल #{account.CurrentCycleNumber}) खाते {account.AccountNo} - {account.Customer?.FirstName}. {penaltyNotice}{refNote} {request.Narration}".Trim(),
                         CreatedBy = 1,
                         VoucherDetails = voucherDetails
                     };
@@ -770,6 +793,18 @@ namespace Bhisi.Api.Controllers
 
             // 2. Compute Final Cycle Tenure & Dynamic Slab Outcome (Option B: Fixed Expiry Date)
             DateTime effClosureDate = request.ClosureDate?.Date ?? DateTime.Today;
+            bool isBankMode = Helpers.BankLedgerHelper.IsBankPaymentMode(request.PaymentMode);
+            int resolvedBankLedgerId = 0;
+            if (account.TotalDepositedAmount > 0 && isBankMode)
+            {
+                var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.BankLedgerId);
+                if (!bankCheck.IsValid)
+                {
+                    return BadRequest(bankCheck.ErrorMessage);
+                }
+                resolvedBankLedgerId = bankCheck.LedgerId;
+            }
+            string refNote = !string.IsNullOrWhiteSpace(request.ReferenceNo) ? $" [Ref/UTR: {request.ReferenceNo.Trim()}]" : "";
             bool isPremature = effClosureDate < account.MaturityDate;
             DateTime cycleStart = account.EffectiveStartDate ?? account.OpeningDate;
             int tenureDaysInCycle = Math.Max(0, (int)(effClosureDate - cycleStart).TotalDays);
@@ -838,6 +873,10 @@ namespace Bhisi.Api.Controllers
                 }
 
                 int expenseLedgerId = account.PigmyScheme?.InterestExpenseLedgerID ?? liabilityLedger.LedgerID;
+                if (isBankMode && resolvedBankLedgerId > 0)
+                {
+                    cashLedger = await _context.Ledgers.FindAsync(resolvedBankLedgerId) ?? cashLedger;
+                }
                 string finalVoucherNo;
 
                 if (!isCrossBranchTxn)
@@ -892,7 +931,7 @@ namespace Bhisi.Api.Controllers
                         VoucherDate = effClosureDate,
                         VoucherType = "Payment",
                         TotalAmount = account.TotalDepositedAmount + interestAmount,
-                        Narration = $"{typeLabel}Pigmy Closure for A/c {account.AccountNo} - {account.Customer?.FirstName}. (सायकल #{account.CurrentCycleNumber}, {tenureMonthsInCycle:N1}M){penaltyNotice}{interestNotice}{overrideNotice} {request.Narration}".Trim(),
+                        Narration = $"{typeLabel}Pigmy Closure for A/c {account.AccountNo} - {account.Customer?.FirstName}. (सायकल #{account.CurrentCycleNumber}, {tenureMonthsInCycle:N1}M){penaltyNotice}{interestNotice}{overrideNotice}{refNote} {request.Narration}".Trim(),
                         CreatedBy = 1,
                         VoucherDetails = voucherDetails
                     };

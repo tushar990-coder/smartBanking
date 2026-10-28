@@ -101,7 +101,7 @@ namespace Bhisi.Api.Controllers
                 {
                     // Find credit ledger based on payment mode
                     int creditLedgerId = 0;
-                    if (request.Purchase.PaymentMode == "Bank" && request.Purchase.BankLedgerID.HasValue)
+                    if (request.Purchase.PaymentMode == "Bank") { var bankCheck = await Helpers.BankLedgerHelper.ValidateBankLedgerAsync(_context, request.Purchase.BankLedgerID); if (!bankCheck.IsValid) return BadRequest(bankCheck.ErrorMessage); creditLedgerId = bankCheck.LedgerId; } else if (false && request.Purchase.BankLedgerID.HasValue)
                     {
                         creditLedgerId = request.Purchase.BankLedgerID.Value;
                     }

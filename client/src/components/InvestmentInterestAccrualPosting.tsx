@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchableSelect from './SearchableSelect';
+import BankLedgerSelect from './common/BankLedgerSelect';
 import { useAuth } from '../context/AuthContext';
 
 const InvestmentInterestAccrualPosting: React.FC = () => {
@@ -50,6 +51,9 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
     receiptDate: new Date().toISOString().split('T')[0],
     receivedAmount: 0,
     remarks: 'व्याज प्राप्ती',
+    paymentMode: 'Bank',
+    bankLedgerID: 0,
+    referenceNo: '',
   });
 
   useEffect(() => {
@@ -124,11 +128,20 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
       setError('कृपया मिळालेली रक्कम प्रविष्ट करा.');
       return;
     }
+    if (receiptForm.paymentMode === 'Bank' && (!receiptForm.bankLedgerID || Number(receiptForm.bankLedgerID) <= 0)) {
+      setError('बँक व्यवहारासाठी बँक जी.एल. खाते (Bank GL Account) निवडणे बंधनकारक आहे.');
+      return;
+    }
 
     setSaving(true);
     try {
       const response = await axios.post(`${API_URL}/InvestmentAccounts/InterestReceipt`, {
-        ...receiptForm,
+        investmentAccountID: Number(receiptForm.investmentAccountID),
+        receiptDate: receiptForm.receiptDate,
+        receivedAmount: receiptForm.receivedAmount,
+        paymentMode: receiptForm.paymentMode || 'Bank',
+        bankLedgerID: receiptForm.paymentMode === 'Bank' ? Number(receiptForm.bankLedgerID) : null,
+        referenceNo: receiptForm.referenceNo?.trim() || null,
         remarks: receiptType === 'ShareDividend' ? `शेअर्स लाभांश प्राप्ती (${receiptForm.remarks})` : receiptForm.remarks
       });
       setSuccess(response.data.message || 'उत्पन्न प्राप्ती यशस्वीरीत्या नोंदवली!');
@@ -137,10 +150,17 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
         receiptDate: new Date().toISOString().split('T')[0],
         receivedAmount: 0,
         remarks: 'व्याज प्राप्ती',
+        paymentMode: 'Bank',
+        bankLedgerID: 0,
+        referenceNo: '',
       });
       fetchReceipts();
     } catch (err: any) {
-      setError(typeof err.response?.data === 'string' ? err.response.data : 'प्राप्ती नोंदवताना त्रुटी आली.');
+      setError(
+        typeof err.response?.data === 'string'
+          ? err.response.data
+          : err.response?.data?.message || 'प्राप्ती नोंदवताना त्रुटी आली.'
+      );
     } finally {
       setSaving(false);
     }
@@ -536,9 +556,57 @@ const InvestmentInterestAccrualPosting: React.FC = () => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 items-start bg-white/80 p-2.5 rounded-sm border border-emerald-200">
+                <div>
+                  <label className={labelClass}>जमा पद्धत (Receipt Mode) *</label>
+                  <select
+                    value={receiptForm.paymentMode}
+                    onChange={(e) => {
+                      const mode = e.target.value;
+                      setReceiptForm(prev => ({
+                        ...prev,
+                        paymentMode: mode,
+                        ...(mode !== 'Bank' ? { bankLedgerID: 0, referenceNo: '' } : {})
+                      }));
+                    }}
+                    className={`${inputClass} font-bold text-blue-950 border-blue-300`}
+                  >
+                    <option value="Bank">🏦 बँक खाते (Bank Account)</option>
+                    <option value="Cash">💵 रोख (Cash)</option>
+                  </select>
+                </div>
+
+                {receiptForm.paymentMode === 'Bank' ? (
+                  <>
+                    <div className="sm:col-span-2">
+                      <BankLedgerSelect
+                        value={receiptForm.bankLedgerID}
+                        onChange={(id) => setReceiptForm(prev => ({ ...prev, bankLedgerID: id }))}
+                        showCountBadge
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>UTR / धनादेश / संदर्भ क्र. (UTR / Ref No.)</label>
+                      <input
+                        type="text"
+                        value={receiptForm.referenceNo}
+                        onChange={(e) => setReceiptForm(prev => ({ ...prev, referenceNo: e.target.value }))}
+                        placeholder="उदा. UTR / NEFT / CHQ क्र."
+                        className={`${inputClass} font-mono`}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="sm:col-span-3 flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-sm text-[11px] font-bold text-emerald-900 mt-4">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                    <span>प्राप्त व्याज / लाभांश रक्कम शाखेच्या मुख्य रोख खात्यात (Branch Cash GL Account) जमा (Debit) केली जाईल.</span>
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>
-                  <label className={labelClass}>शेरा / ठराव / चेक संदर्भ</label>
+                  <label className={labelClass}>शेरा / ठराव संदर्भ</label>
                   <input
                     type="text"
                     value={receiptForm.remarks}

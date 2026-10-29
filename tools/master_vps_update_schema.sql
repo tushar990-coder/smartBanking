@@ -6589,6 +6589,48 @@ BEGIN
 END
 GO
 
+-- ========================================================================
+-- v2.6.05: SAVING SCHEME DYNAMIC MINIMUM BALANCE & SCHEME LINKAGE SYNC
+-- ========================================================================
+IF OBJECT_ID('dbo.SavingInterestSettings', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('SavingInterestSettings', 'MinimumBalance') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[SavingInterestSettings]
+        ADD [MinimumBalance] DECIMAL(18,2) NOT NULL
+        CONSTRAINT [DF_SavingInterestSettings_MinimumBalance] DEFAULT 500.00;
+        PRINT 'Added MinimumBalance column to SavingInterestSettings';
+    END
+END
+GO
+
+IF OBJECT_ID('dbo.SavingAccountMasters', 'U') IS NOT NULL
+BEGIN
+    IF COL_LENGTH('SavingAccountMasters', 'SavingSchemeID') IS NULL
+    BEGIN
+        ALTER TABLE [dbo].[SavingAccountMasters] ADD [SavingSchemeID] INT NULL;
+        PRINT 'Added SavingSchemeID column to SavingAccountMasters';
+    END
+
+    IF OBJECT_ID('dbo.SavingInterestSettings', 'U') IS NOT NULL
+    BEGIN
+        EXEC(N'
+        UPDATE sa
+        SET sa.[SavingSchemeID] = matched.[SettingID]
+        FROM [dbo].[SavingAccountMasters] sa
+        OUTER APPLY (
+            SELECT TOP 1 s.[SettingID]
+            FROM [dbo].[SavingInterestSettings] s
+            WHERE s.[SavingLiabilityLedgerID] = sa.[LedgerID]
+               OR s.[LedgerID] = sa.[LedgerID]
+            ORDER BY s.[EffectiveDate] DESC, s.[SettingID] DESC
+        ) matched
+        WHERE sa.[SavingSchemeID] IS NULL AND matched.[SettingID] IS NOT NULL;
+        ');
+    END
+END
+GO
+
 PRINT '  [SUCCESS] SMARTBANKING VPS DATABASE UPDATE COMPLETED WITH ZERO LOSS!  ';
 PRINT '========================================================================';
 GO

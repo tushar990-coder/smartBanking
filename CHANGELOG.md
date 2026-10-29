@@ -1,5 +1,26 @@
 # SmartBanking ERP - तपशीलवार आवृत्ती व बदल नोंदी (Changelog)
 
+## 📅 [2026-10-29] - आवृत्ती v2.6.05 (Dynamic Saving Scheme Minimum Balance Across All Modules, RD Post-Maturity & Partial Installment Waterfall + Rollback, FD Transfer Voucher Flow & General Ledger Fix Master Patch)
+
+### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
+* **बचत व्याजदर सेटिंगमध्ये डायनॅमिक 'किमान शिल्लक (Minimum Balance)' पॅरामीटर व ठेव नावे दुरुस्ती (`SavingInterestSettingMaster.tsx`, `SavingSettingsController.cs`, `SavingLedgerHelper.cs`, `SavingTransactionEntry.tsx`):**
+  * बचत व्याजदर व योजना मास्टरमध्ये प्रत्येक बचत योजनेसाठी **`किमान शिल्लक मर्यादा / Minimum Balance (₹)`** सेट आणि कधीही संपादित (Edit) करण्याची सुविधा जोडली आहे (झिरो-बॅलन्स खात्यासाठी `₹0` किंवा कोणतीही रक्कम).
+  * योजनेची किमान शिल्लक बदलल्यास त्या योजनेशी संलग्न सर्व बचत खात्यांचे `MinimumBalance` आपोआप सिंक होते.
+  * ठेव नावे स्क्रीन (`SavingTransactionEntry.tsx`), प्रारंभिक शिल्लक (`SavingOpeningBalance.tsx`) व खाते मास्टर (`SavingAccountMaster.tsx`) मधील हार्डकोडेड `|| 500` (Falsy-Zero बग) पूर्णपणे काढून `₹500` च्या आतील शिल्लक रकमेची **ठेव नावे (Withdrawal)** टाकणे तात्काळ कार्यान्वित केले आहे.
+* **सर्व संलग्न मॉड्यूल्स व अहवालांमध्ये एकसंध उपलब्ध शिल्लक (`CurrentBalance - LienAmount - EffectiveMinimumBalance`):**
+  * मुदत ठेव (FD Single व Bulk उघडणी), आवर्ती ठेव (RD उघडणी व हप्ता संकलन), कर्ज वसुली (`Saving Transfer`), शेअर्स वाटप, सभासद नोंदणी, लॉकर भाडे नूतनीकरण व ऑटो-डेबिट, कर्ज ठेव तारण LTV आणि अंतर्गत बचत ट्रान्सफर या सर्व मॉड्यूल्समध्ये डायनॅमिक किमान शिल्लक व तारण (`LienAmount`) तपासणी लागू केली आहे.
+  * बचत खाते यादी अहवाल (`SavingAccountListReport.tsx`), पासबुक मुखपृष्ठ (`SavingPassbookMaster.tsx`) आणि बचत खतावणी (`SavingKhatavaniReport.tsx`) मध्ये डायनॅमिक किमान शिल्लक, तारण व काढण्यायोग्य उपलब्ध शिल्लक अचूक दर्शविली जाते.
+* **मासिक आरडी हप्ता संकलन — मुदतपूर्तीनंतर पुढील हप्ता पॉपअप, अंशतः हप्ता Waterfall समायोजन व सेव्हिंग रोलबॅक (`RdInstallmentCollection.tsx`, `RdAccountsController.cs`, `RdInstallmentCollectionRollbackHelper.cs`):**
+  * ठेव कालावधी पूर्ण झालेल्या खात्यांवर पुढील हप्ता स्वीकारताना **`"ठेव कालावधी पूर्ण झाला आहे, तरीही पुढील हप्ता घ्यायचा आहे का?"`** असा Confirmation Popup दाखवून `होय (Yes)` निवडल्यास वाढीव हप्ते वेळापत्रकात डायनॅमिकरित्या जोडले जातात.
+  * अंशतः हप्ता भरणा (उदा. `₹500` चा हप्ता असताना `₹300` भरल्यास बाकी `₹200` Pending/Partial आणि पुढे `₹500` भरल्यास प्रथम मागील `₹200` पूर्ण करून पुढील हप्ता `₹300` जमा / `₹200` बाकी) FIFO Waterfall पद्धतीने अचूक अद्ययावत होतो.
+  * आरडी हप्ता संकलन व्हाउचर डिलीट/रिजेक्ट/रद्द केल्यास बचत खात्याची शिल्लक व आरडी वेळापत्रक पूर्ववत सुरक्षित रोलबॅक होते.
+* **मुदत ठेव (`FD Transfer`) ओपनिंग व्हाउचर फ्लो व जनरल लेजर त्रुटी निवारण (`FdAccountsController.cs`, `VoucherPostingController.cs`, `GeneralLedger.tsx`):**
+  * बचत ट्रान्सफरने उघडलेल्या नवीन मुदत ठेव व्हाउचर्सची व्हाउचर पासिंग रांग, कच्ची रोजकीर्द व डिलीट रोलबॅक अखंड केले आणि जनरल लेजर उघडताना येणारा `Cannot read properties of null (reading 'openingBalance')` एरर दूर केला.
+* **१-क्लिक मल्टि-ॲप मास्टर पॅच (`SmartBanking_VPS_Multi_App_Master_Patch.zip` & `SmartBanking_Patch_v2.6.05.patch`):**
+  * सर्व ९ कॉन्फिगर केलेल्या संस्थांसाठी तयार केलेला मास्टर पॅच व गिट पॅच उपलब्ध.
+
+---
+
 ## 📅 [2026-10-29] - आवृत्ती v2.6.04 (RD Editable Payout & Balanced Double-Entry GL Settlement, Zero-Balance RD Khatavani, Closure/Renewal Rollback & Deadstock OB Master Patch)
 
 ### 🌟 प्रमुख वैशिष्ट्ये व सुधारणा (Key Highlights)
